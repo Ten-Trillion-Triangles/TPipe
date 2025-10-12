@@ -1,0 +1,354 @@
+package com.TTT.Pipe
+
+import com.TTT.Context.ContextWindow
+import com.TTT.Context.MiniBank
+import com.TTT.PipeContextProtocol.PcPRequest
+import com.TTT.PipeContextProtocol.PcpContext
+import com.TTT.Util.deserialize
+import com.TTT.Util.serialize
+import kotlinx.serialization.Serializable
+import java.util.Base64
+
+/**
+ * Represents binary content that can be passed through TPipe pipelines.
+ * Supports multiple transport formats and automatic conversion between them.
+ */
+@Serializable
+sealed class BinaryContent {
+    
+    /**
+     * Raw binary data stored as byte array
+     */
+    @Serializable
+    data class Bytes(
+        val data: ByteArray,
+        val mimeType: String,
+        val filename: String? = null
+    ) : BinaryContent() {
+        
+        fun toBase64(): Base64String = Base64String(
+            data = Base64.getEncoder().encodeToString(data),
+            mimeType = mimeType,
+            filename = filename
+        )
+        
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+            other as Bytes
+            return data.contentEquals(other.data) && mimeType == other.mimeType && filename == other.filename
+        }
+        
+        override fun hashCode(): Int {
+            var result = data.contentHashCode()
+            result = 31 * result + mimeType.hashCode()
+            result = 31 * result + (filename?.hashCode() ?: 0)
+            return result
+        }
+    }
+    
+    /**
+     * Base64 encoded binary data
+     */
+    @Serializable
+    data class Base64String(
+        val data: String,
+        val mimeType: String,
+        val filename: String? = null
+    ) : BinaryContent() {
+        
+        fun toBytes(): Bytes = Bytes(
+            data = Base64.getDecoder().decode(data),
+            mimeType = mimeType,
+            filename = filename
+        )
+    }
+    
+    /**
+     * Reference to binary data stored in cloud storage
+     */
+    @Serializable
+    data class CloudReference(
+        val uri: String,
+        val mimeType: String,
+        val filename: String? = null
+    ) : BinaryContent()
+    
+    /**
+     * Text content that should be treated as a document
+     */
+    @Serializable
+    data class TextDocument(
+        val content: String,
+        val mimeType: String = "text/plain",
+        val filename: String? = null
+    ) : BinaryContent()
+}
+
+/**
+ * Represents multimodal content that can contain both text and binary data
+ * @param text Any text to pass into the llm prompt.
+ * @param binaryContent Binary content the llm may work with. Is transformed to various forms depending on
+ * specifics of model support.
+ * @param terminatePipeline Signals a critical failure forcing the pipeline to terminate. Should be only set internally
+ * by validation checks and functions.
+ * @param repeatPipe If true, this pipe will be called again until this is false. This allows for complex multi-step tasks
+ * by a single llm, or creating a reasoning, or thinking mode for llm's that do not support model reasoning natively.
+ * @param context The context window from the TPipe context system being passed. This is present to allow the coder
+ * to manipulate and check the context data in their validation functions. The when exiting functions the Pipe class
+ * will determine weather to push to the pipeline's context, or to the global context on the spot with the components
+ * of this data.
+ * @param workspaceContext Optional scratchpad context window for local passing of context data. The Pipe class
+ * will not overwrite this, or auto update the global context with this allowing for custom context control at a
+ * granular level when needed.
+ * @param tools List of pcp requests the llm may have generated. This is stored here because we often need to construct
+ * a converse data object and need the tool requests the llm made to be preserved. In those cases we're typically stuck
+ * in a situation where we only have the multiModalContent object the pcp context is just not available.
+ * @param useSnapshot If true this object will be copied to the snapshot key of its own metadata to preserve a
+ * copy of it prior to any events that occurred in the llm step of the pipe. This is useful for restoring to
+ * a prior state in the event of an llm refusal or other reversal needed in a branch function. This however doubles
+ * the memory usage that this pipe takes so it may be not desirable inn cases of larger content such as images,
+ * video, or other binary data.
+ */
+@Serializable
+class MultimodalContent(
+    var text: String = "",
+    var binaryContent: MutableList<BinaryContent> = mutableListOf(),
+    var terminatePipeline: Boolean = false,
+    var context: ContextWindow = ContextWindow(),
+    var workspaceContext: MiniBank = MiniBank(),
+    var tools: PcPRequest = PcPRequest(),
+   @kotlinx.serialization.Transient var modelReasoning: String = "",
+    var useSnapshot: Boolean = false
+) {
+
+//---------------------------------------Internal vars------------------------------------------------------------------
+    /**
+     * Determines where to jump to if this is non-empty. Allows for complex pipeline traversal such as skipping forward,
+     * jumping forward to a specific pipe, or jumping backwards in time to a prior pipe in the pipeline. This variable
+     * is kept private because the skipping feature is treated more like a bool, and the jumping feature is more of
+     * a destination forward or backwards.
+     */
+    @kotlinx.serialization.Transient
+   private var jumpToPipe = ""
+
+    /**
+     * If true the pipe using this content will be called again, passing exact content object back in. The pipe will
+     * continue to call itself passing the content to itself until the programmer sets this to false. The pipe will
+     * then be able to exit and move according to the pipe's jumpToPipe variable.
+     */
+   @kotlinx.serialization.Transient
+   var repeatPipe: Boolean = false
+
+    /**
+     * Allows the pipeline to exit early without being considered an error. This is useful for cases where extra
+     * steps are not needed for one reason or another and the given task can now exit early as completed.
+     */
+   @kotlinx.serialization.Transient
+   var passPipeline: Boolean = false
+
+    /**
+     * Map of generic metadata that can be used by various functions interacting with this content object to store,
+     * data, messages, signals, hooks, or any other information that is required to be passed into validation,
+     * transformation, and branch failure functions or pipes to facilitate advanced logic, conditional branching,
+     * and other more complex states when handling "human in the loop" events.
+     *
+     * This can be treated as a scratch pad, workspace, or anything else needed.
+     */
+   @kotlinx.serialization.Transient
+   var metadata = mutableMapOf<Any, Any>()
+
+    /**
+     * Current pipe that is working on this content object. Useful for handling tasks like pipe templating
+     * inside branch functions.
+     */
+   @kotlinx.serialization.Transient
+   var currentPipe: Pipe? = null
+
+//---------------------------------------Functions---------------------------------------------------------------------
+
+    /**
+     * Add binary content to this multimodal content
+     */
+    fun addBinary(content: ByteArray, mimeType: String, filename: String? = null)
+    {
+        binaryContent.add(BinaryContent.Bytes(content, mimeType, filename))
+    }
+
+    
+    /**
+     * Add binary content to this multimodal content
+     */
+    fun addBinary(content: BinaryContent)
+    {
+        binaryContent.add(content)
+    }
+    
+    /**
+     * Add text to this multimodal content
+     */
+    fun addText(additionalText: String)
+    {
+        text = if (text.isEmpty()) additionalText else "$text\n\n$additionalText"
+    }
+    
+    /**
+     * Mark this content to terminate the pipeline
+     */
+    fun terminate()
+    {
+        terminatePipeline = true
+    }
+
+    fun repeat()
+    {
+        repeatPipe = true
+    }
+    
+    /**
+     * Check if content is empty (equivalent to empty string check)
+     */
+    fun isEmpty(): Boolean = text.isEmpty() && binaryContent.isEmpty()
+    
+    /**
+     * Check if this content contains any binary data
+     */
+    fun hasBinaryContent(): Boolean = binaryContent.isNotEmpty()
+    
+    /**
+     * Check if pipeline should be terminated
+     */
+    fun shouldTerminate(): Boolean = terminatePipeline || isEmpty()
+    
+    /**
+     * Get all images from binary content
+     */
+    fun getImages(): List<BinaryContent> = 
+        binaryContent.filter { it.getMimeType().startsWith("image/") }
+    
+    /**
+     * Get all documents from binary content
+     */
+    fun getDocuments(): List<BinaryContent> = 
+        binaryContent.filter { 
+            val mime = it.getMimeType()
+            mime.startsWith("application/") || mime == "text/plain" || mime == "text/html"
+        }
+
+    /**
+     * Mark this content to skip to the next pipe in the pipeline. Uses a specific internal string name to
+     * act as a boolean to simplify the logic for pipe traversal.
+     */
+    fun skipToNextPipe()
+    {
+        jumpToPipe = "skip-to-next-pipe"
+    }
+
+    /**
+     * Mark this content to jump to a specific pipe in the pipeline. The pipeline will then continue forward from
+     * where the jump lands. This will occur even if you jump backwards in the pipeline.
+     *
+     * @param pipeName Name of the pipe to jump to. The target pipe must have its name set correctly for it to be
+     * reachable.
+     *
+     * @see com.TTT.Pipe.Pipe.setPipeName
+     * @throws IllegalArgumentException If the pipeName is "skip-to-next-pipe" as this is a reserved internal name.
+     */
+    fun jumpToPipe(pipeName: String)
+    {
+        if(pipeName == "skip-to-next-pipe")
+        {
+            throw IllegalArgumentException("skip-to-next-pipe is a reserved internal name that cannot be used.")
+        }
+
+        jumpToPipe = pipeName
+    }
+
+    /**
+     * Getter that returns a copy of our target pipe jump destination.
+     */
+    fun getJumpToPipe(): String = jumpToPipe
+
+    /**
+     * Clear the jump to pipe variable. This is called by the Pipe class after the jump has been executed.
+     */
+    fun clearJumpToPipe()
+    {
+        jumpToPipe = ""
+    }
+
+    /**
+     * Attempt to copy this content object. Useful for snapshots and other metadata actions.
+     */
+    fun copyMultimodal() : MultimodalContent?
+    {
+        val json = serialize(this)
+        val newObject = deserialize<MultimodalContent>(json, false)
+        return newObject
+    }
+
+    /**
+     * Get the snapshot if present. This is a helper function to simplify using the multiModalContent's snapshot
+     * feature.
+     *
+     * @see Pipe.executeMultimodal For more details on how snapshots are stored in the metadata variable of this
+     * object.
+     */
+    fun getSnapshot() : MultimodalContent?
+    {
+        return metadata["snapshot"] as? MultimodalContent
+    }
+    
+    /**
+     * Merge another MultimodalContent object into this one, appending B to A.
+     * @param other The MultimodalContent object to merge from (B)
+     */
+    fun merge(other: MultimodalContent)
+    {
+        // Merge text content
+        if (other.text.isNotEmpty()) {
+            addText(other.text)
+        }
+        
+        // Replace binary content if other has content
+        if (other.binaryContent.isNotEmpty()) {
+            binaryContent = other.binaryContent.toMutableList()
+        }
+        
+        // Replace model reasoning if other has content
+        if (other.modelReasoning.isNotEmpty()) {
+            modelReasoning = other.modelReasoning
+        }
+        
+        // Merge contexts
+        context.merge(other.context)
+        workspaceContext.merge(other.workspaceContext)
+        
+        // Merge metadata
+        other.metadata.forEach { (key, value) ->
+            metadata[key] = value
+        }
+    }
+
+
+}
+
+/**
+ * Extension function to get MIME type from BinaryContent
+ */
+fun BinaryContent.getMimeType(): String = when (this) {
+    is BinaryContent.Bytes -> mimeType
+    is BinaryContent.Base64String -> mimeType
+    is BinaryContent.CloudReference -> mimeType
+    is BinaryContent.TextDocument -> mimeType
+}
+
+/**
+ * Extension function to get filename from BinaryContent
+ */
+fun BinaryContent.getFilename(): String? = when (this) {
+    is BinaryContent.Bytes -> filename
+    is BinaryContent.Base64String -> filename
+    is BinaryContent.CloudReference -> filename
+    is BinaryContent.TextDocument -> filename
+}

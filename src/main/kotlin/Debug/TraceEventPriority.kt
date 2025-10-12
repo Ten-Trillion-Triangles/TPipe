@@ -1,0 +1,99 @@
+package com.TTT.Debug
+
+enum class TraceEventPriority {
+    CRITICAL,    // MINIMAL level events
+    STANDARD,    // NORMAL level events  
+    DETAILED,    // VERBOSE level events
+    INTERNAL     // DEBUG level events
+}
+
+object EventPriorityMapper {
+    fun getPriority(eventType: TraceEventType): TraceEventPriority {
+        return when (eventType) {
+            // Existing CRITICAL events
+            TraceEventType.PIPE_FAILURE,
+            TraceEventType.API_CALL_FAILURE,
+            TraceEventType.PIPELINE_TERMINATION,
+            // New Manifold CRITICAL events
+            TraceEventType.MANIFOLD_FAILURE,
+            TraceEventType.P2P_COMMUNICATION_FAILURE,
+            TraceEventType.AGENT_REQUEST_INVALID,
+            // New Splitter CRITICAL events
+            TraceEventType.SPLITTER_FAILURE -> TraceEventPriority.CRITICAL
+            
+            // Existing STANDARD events
+            TraceEventType.PIPE_START,
+            TraceEventType.PIPE_SUCCESS,
+            TraceEventType.API_CALL_START,
+            TraceEventType.API_CALL_SUCCESS,
+            // New Manifold STANDARD events
+            TraceEventType.MANIFOLD_START,
+            TraceEventType.MANIFOLD_END,
+            TraceEventType.MANIFOLD_SUCCESS,
+            TraceEventType.MANAGER_DECISION,
+            TraceEventType.AGENT_DISPATCH,
+            TraceEventType.AGENT_RESPONSE,
+            TraceEventType.P2P_REQUEST_START,
+            TraceEventType.P2P_REQUEST_SUCCESS,
+            TraceEventType.P2P_REQUEST_FAILURE,
+            // New Splitter STANDARD events
+            TraceEventType.SPLITTER_START,
+            TraceEventType.SPLITTER_END,
+            TraceEventType.SPLITTER_SUCCESS,
+            TraceEventType.SPLITTER_PIPELINE_COMPLETION -> TraceEventPriority.STANDARD
+            
+            // Existing DETAILED events
+            TraceEventType.VALIDATION_START,
+            TraceEventType.VALIDATION_SUCCESS,
+            TraceEventType.VALIDATION_FAILURE,
+            TraceEventType.TRANSFORMATION_START,
+            TraceEventType.TRANSFORMATION_SUCCESS,
+            TraceEventType.TRANSFORMATION_FAILURE,
+            TraceEventType.CONTEXT_PULL,
+            TraceEventType.PRE_INVOKE,
+            TraceEventType.CONTEXT_TRUNCATE,
+            // New Manifold DETAILED events
+            TraceEventType.MANAGER_TASK_ANALYSIS,
+            TraceEventType.MANAGER_AGENT_SELECTION,
+            TraceEventType.TASK_PROGRESS_UPDATE,
+            TraceEventType.TASK_COMPLETION_CHECK,
+            TraceEventType.TASK_NEXT_STEPS,
+            TraceEventType.AGENT_REQUEST_VALIDATION,
+            TraceEventType.AGENT_RESPONSE_PROCESSING,
+            TraceEventType.P2P_TRANSPORT_SEND,
+            TraceEventType.P2P_TRANSPORT_RECEIVE,
+            TraceEventType.PCP_CONTEXT_TRANSFER,
+            // New Splitter DETAILED events
+            TraceEventType.SPLITTER_CONTENT_DISTRIBUTION,
+            TraceEventType.SPLITTER_PIPELINE_DISPATCH,
+            TraceEventType.SPLITTER_PIPELINE_CALLBACK,
+            TraceEventType.SPLITTER_COMPLETION_CALLBACK -> TraceEventPriority.DETAILED
+            
+            // Existing INTERNAL events
+            TraceEventType.PIPE_END,
+            TraceEventType.BRANCH_PIPE_TRIGGERED,
+            // New Manifold INTERNAL events
+            TraceEventType.MANIFOLD_LOOP_ITERATION,
+            TraceEventType.MANIFOLD_TERMINATION_CHECK,
+            TraceEventType.CONVERSE_HISTORY_UPDATE,
+            TraceEventType.MANIFOLD_RECOVERY_ATTEMPT,
+            // New Splitter INTERNAL events
+            TraceEventType.SPLITTER_PARALLEL_START,
+            TraceEventType.SPLITTER_PARALLEL_AWAIT,
+            TraceEventType.SPLITTER_RESULT_COLLECTION -> TraceEventPriority.INTERNAL
+            
+            // Default case for any unmapped events
+            else -> TraceEventPriority.STANDARD
+        }
+    }
+    
+    fun shouldTrace(eventType: TraceEventType, detailLevel: TraceDetailLevel): Boolean {
+        val priority = getPriority(eventType)
+        return when (detailLevel) {
+            TraceDetailLevel.MINIMAL -> priority == TraceEventPriority.CRITICAL
+            TraceDetailLevel.NORMAL -> priority in listOf(TraceEventPriority.CRITICAL, TraceEventPriority.STANDARD)
+            TraceDetailLevel.VERBOSE -> priority in listOf(TraceEventPriority.CRITICAL, TraceEventPriority.STANDARD, TraceEventPriority.DETAILED)
+            TraceDetailLevel.DEBUG -> true // All events
+        }
+    }
+}

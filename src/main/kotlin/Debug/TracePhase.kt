@@ -1,0 +1,18 @@
+package com.TTT.Debug
+
+enum class TracePhase {
+    INITIALIZATION,
+    CONTEXT_PREPARATION,
+    PRE_VALIDATION,
+    EXECUTION,
+    POST_PROCESSING,
+    VALIDATION,
+    TRANSFORMATION,
+    CLEANUP,
+    
+    // Manifold-specific phases
+    ORCHESTRATION,
+    AGENT_COMMUNICATION,
+    TASK_MANAGEMENT,
+    P2P_TRANSPORT
+}

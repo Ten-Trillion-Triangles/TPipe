@@ -1,0 +1,16 @@
+{
+  "typeMapping": {
+    "string": "String",
+    "integer": "Int",
+    "number": "Float",
+    "boolean": "Bool",
+    "array": "List",
+    "object": "Map"
+  },
+  "commandMapping": {
+    "file_read": "cat",
+    "file_write": "tee",
+    "file_list": "ls",
+    "execute": "bash"
+  }
+}

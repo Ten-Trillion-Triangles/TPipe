@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>ConverseHistory Serialization Functions</title>
+<style>
+body { font-family: 'Segoe UI', sans-serif; background: #f4f7fb; color: #1f2b3a; margin: 0; padding: 32px; }
+section { max-width: 900px; margin: auto; background: #ffffff; border-radius: 14px; box-shadow: 0 18px 45px rgba(15, 32, 71, 0.15); padding: 36px 44px; }
+h1 { font-size: 2rem; margin: 0 0 12px 0; color: #0d2c54; }
+p.desc { font-size: 1rem; color: #4c6072; margin-bottom: 30px; line-height: 1.5; }
+div.grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
+div.card { padding: 20px; border-radius: 12px; background: linear-gradient(135deg, rgba(241,245,255,1), rgba(229,239,255,0.8)); border: 1px solid rgba(125, 162, 222, 0.45); box-shadow: 0 8px 18px rgba(12, 22, 46, 0.05); }
+div.card h2 { margin: 0 0 8px 0; font-size: 1.05rem; color: #143d6b; }
+div.card .location { font-size: 0.9rem; color: #395475; margin-bottom: 10px; }
+div.card .usage { font-size: 0.95rem; color: #26384b; line-height: 1.4; }
+code { background: rgba(13, 57, 105, 0.08); padding: 2px 6px; border-radius: 4px; font-size: 0.86rem; }
+</style>
+</head>
+<body>
+<section>
+  <h1>ConverseHistory Serialization Touchpoints</h1>
+  <p class="desc">These functions serialize or re-serialize <code>ConverseHistory</code> instances, shaping the conversation state that flows through TPipe orchestration.</p>
+  <div class="grid">
+    <div class="card">
+      <h2><code>copySystemPrompt(userPrompt)</code></h2>
+      <div class="location">File: <code>src/main/kotlin/Pipe/Pipe.kt:824</code></div>
+      <div class="usage">Copies the system prompt into a <code>ConverseHistory</code>, serializes the merged system/user conversation, and replaces the user prompt with the resulting JSON.</div>
+    </div>
+    <div class="card">
+      <h2><code>truncateToFitTokenBudget(content)</code></h2>
+      <div class="location">File: <code>src/main/kotlin/Pipe/Pipe.kt:2215</code></div>
+      <div class="usage">Deserializes any existing <code>ConverseHistory</code>, truncates it to fit token constraints, then serializes the trimmed history back into the prompt.</div>
+    </div>
+    <div class="card">
+      <h2><code>executeReasoningPipe(content)</code></h2>
+      <div class="location">File: <code>src/main/kotlin/Pipe/Pipe.kt:3096</code></div>
+      <div class="usage">When reasoning uses converse mode, it builds a fresh <code>ConverseHistory</code>, serializing it at each stage as rounds of reasoning are appended.</div>
+    </div>
+    <div class="card">
+      <h2><code>injectTPipeReasoning(content)</code></h2>
+      <div class="location">File: <code>src/main/kotlin/Pipe/Pipe.kt:3323</code></div>
+      <div class="usage">Parses existing converse blocks, injects reasoning entries as system turns, and re-serializes the updated <code>ConverseHistory</code>.</div>
+    </div>
+    <div class="card">
+      <h2><code>execute(content)</code> (Manifold)</h2>
+      <div class="location">File: <code>src/main/kotlin/Pipeline/Manifold.kt:712</code></div>
+      <div class="usage">Constructs and maintains the manifold conversation log by serializing <code>ConverseHistory</code> back into the working content after each manager/agent exchange.</div>
+    </div>
+  </div>
+</section>
+</body>
+</html>
