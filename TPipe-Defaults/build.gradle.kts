@@ -33,6 +33,7 @@ dependencies {
     // Provider module dependencies
     implementation(project(":TPipe-Bedrock"))
     implementation(project(":TPipe-Ollama"))
+    implementation(libs.ktor.serialization.kotlinx.json)
     
     // Test dependencies
     testImplementation("org.jetbrains.kotlin:kotlin-test")

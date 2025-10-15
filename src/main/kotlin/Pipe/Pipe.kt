@@ -1139,6 +1139,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun requireJsonPromptInjection(stripExternalText: Boolean = false): Pipe
     {
         this.supportsNativeJson = false
+        stripNonJson = true
         return this
     }
 
@@ -2223,9 +2224,6 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * Each module implements models for a given provider. The developer of each TPipe module can proceed to
      * directly handle exact configurations for truncation or just use the class variables here to supply
      * the function parameters for truncation.
-     *
-     * This function also doubles as a setter to define and save truncation settings for each given provider
-     * and different models it supports (This comes into play with providers like Bedrock and Ollama.)
      */
     private suspend fun truncateToFitTokenBudget(content: MultimodalContent) : MultimodalContent
     {
@@ -2249,9 +2247,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         val userPromptTokenCost = Dictionary.countTokens(userPrompt, truncationSettings)
 
         /**
-         * First we need to count up all the tokens all the binary content stored here is using. This allows us
+         * First we need to count up all the tokens and all the binary content stored here is using. This allows us
          * to determine how much actual remaining space we have in our context window for external context.
-         * Binary data cannot be compressed any further. And semantic compression only works on text that's actually
+         * Binary data cannot be compressed any further, and semantic compression only works on text that's actually
          * text. Base64 does not qualify this check, so we have to just chop out any binary token usage from our
          * available space.
          *

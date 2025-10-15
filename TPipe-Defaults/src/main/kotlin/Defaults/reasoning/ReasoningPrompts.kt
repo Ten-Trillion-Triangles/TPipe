@@ -1,5 +1,9 @@
 package Defaults.reasoning
 
+
+
+
+
 /**
  * Holds default reasoning prompts for system and user prompts that are
  * used to passing the default values to a reasoning pipe during it's build steps.
@@ -29,8 +33,7 @@ object ReasoningPrompts
             Output Format:
             - Emit ALL thinking as you go
             - Never hold back reasoning steps
-            - When finished thinking, immediately output: ##Final Answer##
-            - The final answer should be concise and directly address the original question
+            
             
             ${"$duration"}
         """.trimIndent()
@@ -65,7 +68,7 @@ object ReasoningPrompts
             Output Requirements:
             - Emit ALL thinking in real-time using the phase structure above
             - Complete all phases before final answer
-            - Terminate with: ##Final Answer##
+            
             
             ${"$duration"}
         """.trimIndent()
@@ -104,7 +107,6 @@ object ReasoningPrompts
             Output Protocol:
             - Stream ALL thinking process continuously
             - Use the analytical framework above
-            - Conclude exclusively with: ##Final Answer##
             
             ${"$duration"}
         """.trimIndent()
