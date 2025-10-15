@@ -3,7 +3,6 @@ package com.TTT.Pipe
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
 import com.TTT.PipeContextProtocol.PcPRequest
-import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import kotlinx.serialization.Serializable
@@ -98,9 +97,8 @@ sealed class BinaryContent {
  * to manipulate and check the context data in their validation functions. The when exiting functions the Pipe class
  * will determine weather to push to the pipeline's context, or to the global context on the spot with the components
  * of this data.
- * @param workspaceContext Optional scratchpad context window for local passing of context data. The Pipe class
- * will not overwrite this, or auto update the global context with this allowing for custom context control at a
- * granular level when needed.
+ * @param miniBankContext MiniBank context object that can be interacted with in the same way as the regular context
+ * object to automatically update the minibank context of the parent pipe.
  * @param tools List of pcp requests the llm may have generated. This is stored here because we often need to construct
  * a converse data object and need the tool requests the llm made to be preserved. In those cases we're typically stuck
  * in a situation where we only have the multiModalContent object the pcp context is just not available.
@@ -116,9 +114,9 @@ class MultimodalContent(
     var binaryContent: MutableList<BinaryContent> = mutableListOf(),
     var terminatePipeline: Boolean = false,
     var context: ContextWindow = ContextWindow(),
-    var workspaceContext: MiniBank = MiniBank(),
+    var miniBankContext: MiniBank = MiniBank(),
     var tools: PcPRequest = PcPRequest(),
-   @kotlinx.serialization.Transient var modelReasoning: String = "",
+    @kotlinx.serialization.Transient var modelReasoning: String = "",
     var useSnapshot: Boolean = false
 ) {
 
@@ -322,7 +320,7 @@ class MultimodalContent(
         
         // Merge contexts
         context.merge(other.context)
-        workspaceContext.merge(other.workspaceContext)
+        miniBankContext.merge(other.miniBankContext)
         
         // Merge metadata
         other.metadata.forEach { (key, value) ->

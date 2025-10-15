@@ -12,11 +12,11 @@ data class MiniBank(var contextMap: MutableMap<String, ContextWindow> = mutableM
      * Merge another MiniBank into this one, combining context windows by key.
      * @param other The MiniBank to merge from
      */
-    fun merge(other: MiniBank) 
+    fun merge(other: MiniBank, emplaceLorebookKeys: Boolean = true, appendKeys: Boolean = false)
     {
         other.contextMap.forEach { (key, contextWindow) ->
             if (contextMap.containsKey(key)) {
-                contextMap[key]?.merge(contextWindow)
+                contextMap[key]?.merge(contextWindow, emplaceLorebookKeys, appendKeys)
             } else {
                 contextMap[key] = contextWindow
             }

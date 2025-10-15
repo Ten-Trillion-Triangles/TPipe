@@ -108,25 +108,68 @@ open class BedrockMultimodalPipe : BedrockPipe() {
             val (textResult, response) = generateGptOssWithConverseApiAndResponse(client, modelId, content.text)
             
             // Extract reasoning content from the response for tracing
-            if (response != null) {
-                val reasoningContent = extractReasoningFromConverseResponse(response)
-                if (reasoningContent.isNotEmpty()) {
-                    trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
-                          metadata = mapOf(
-                              "reasoningContent" to reasoningContent,
-                              "modelSupportsReasoning" to true,
-                              "reasoningEnabled" to useModelReasoning
-                          ))
+            val reasoningContent = if (response != null) {
+                extractReasoningFromConverseResponse(response)
+            } else ""
+            
+            if (reasoningContent.isNotEmpty()) {
+                trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+                      metadata = mapOf(
+                          "reasoningContent" to reasoningContent,
+                          "modelSupportsReasoning" to true,
+                          "reasoningEnabled" to useModelReasoning
+                      ))
+            }
+            
+            return MultimodalContent(
+                text = textResult, 
+                binaryContent = content.binaryContent,
+                modelReasoning = reasoningContent
+            )
+        }
+        
+        // DeepSeek models need special handling - get response and extract reasoning
+        if (modelId.contains("deepseek")) {
+            val converseRequest = buildDeepSeekConverseRequestObject(modelId, listOf(ContentBlock.Text(content.text)))
+            
+            // Check for streaming first
+            if (streamingEnabled) {
+                val streamingResult = executeConverseStream(client, modelId, converseRequest, "DeepSeek ConverseStream")
+                if (streamingResult != null) {
+                    return MultimodalContent(
+                        text = streamingResult,
+                        binaryContent = content.binaryContent,
+                        modelReasoning = ""
+                    )
                 }
             }
             
-            return MultimodalContent(text = textResult, binaryContent = content.binaryContent)
-        }
-        
-        // DeepSeek models need special handling - delegate to parent class
-        if (modelId.contains("deepseek")) {
-            val textResult = generateTextWithConverseApi(client, modelId, content.text)
-            return MultimodalContent(text = textResult, binaryContent = content.binaryContent)
+            val response = client.converse(converseRequest)
+            
+            // Extract text content
+            val textResult = response.output?.asMessage()?.content?.mapNotNull { contentBlock ->
+                when (contentBlock) {
+                    is ContentBlock.Text -> contentBlock.value
+                    else -> null
+                }
+            }?.joinToString("\n") ?: ""
+            
+            // Extract reasoning content
+            val reasoningContent = extractReasoningFromConverseResponse(response)
+            if (reasoningContent.isNotEmpty()) {
+                trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+                      metadata = mapOf(
+                          "reasoningContent" to reasoningContent,
+                          "modelSupportsReasoning" to true,
+                          "reasoningEnabled" to useModelReasoning
+                      ))
+            }
+            
+            return MultimodalContent(
+                text = textResult, 
+                binaryContent = content.binaryContent,
+                modelReasoning = reasoningContent
+            )
         }
         
         // Convert multimodal content to ContentBlocks (STAYS in this class - binary expertise)
@@ -168,6 +211,18 @@ open class BedrockMultimodalPipe : BedrockPipe() {
             modelId.contains("mistral") -> buildMistralConverseRequest(contentBlocks)
             modelId.contains("openai.gpt-oss") -> buildGptOssConverseRequest(modelId, contentBlocks)
             else -> buildGenericConverseRequest(contentBlocks)
+        }
+        
+        // Check for streaming first
+        if (streamingEnabled) {
+            val streamingResult = executeConverseStream(client, modelId, converseRequest, "ConverseStream")
+            if (streamingResult != null) {
+                return MultimodalContent(
+                    text = streamingResult,
+                    binaryContent = content.binaryContent,
+                    modelReasoning = ""
+                )
+            }
         }
         
         // Execute API call and process response (existing logic STAYS here - binary expertise)

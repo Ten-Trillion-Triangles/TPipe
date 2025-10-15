@@ -609,6 +609,19 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     @kotlinx.serialization.Transient
     var reasoningPipe : Pipe? = null
 
+    /**
+     * Flag to indicate when this pipe is executing as a reasoning pipe.
+     * Used to modify trace behavior to mark output as reasoningContent.
+     */
+    @kotlinx.serialization.Transient
+    private var isExecutingAsReasoningPipe = false
+    
+    /**
+     * Flag to prevent duplicate reasoning content in the same execution cycle.
+     */
+    @kotlinx.serialization.Transient
+    private var reasoningContentAlreadyTraced = false
+
 
 
     /**
@@ -2025,6 +2038,16 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             }
         }
         
+        // Add reasoning pipe metadata only once per execution to avoid duplication
+        if (isExecutingAsReasoningPipe && !reasoningContentAlreadyTraced && eventType == TraceEventType.API_CALL_SUCCESS && content != null)
+        {
+            metadata["reasoningContent"] = content.text
+            metadata["isReasoningPipe"] = true
+            metadata["modelSupportsReasoning"] = true
+            metadata["reasoningEnabled"] = true
+            reasoningContentAlreadyTraced = true
+        }
+        
         return metadata
     }
     
@@ -2614,6 +2637,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             else if(readFromPipelineContext)
             {
                 contextWindow = pipelineRef?.context ?: ContextWindow()
+                miniContextBank = pipelineRef?.miniBank ?: miniContextBank
             }
 
             /**
@@ -2784,7 +2808,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              * to the context
              */
             processedContent.context = contextWindow
-            processedContent.workspaceContext = miniContextBank
+            processedContent.miniBankContext = miniContextBank
 
 
             /**
@@ -2937,10 +2961,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         if(updatePipelineContextOnExit)
                         {
                             pipelineRef?.context?.merge(contextWindow, emplaceLorebook, appendLoreBook)
+                            pipelineRef?.miniBank?.merge(miniContextBank, emplaceLorebook, appendLoreBook)
                         }
 
                         trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, finalResult,
-                              metadata = mapOf("outputText" to finalResult.text))
+                              metadata = mapOf("outputText" to if (isExecutingAsReasoningPipe) "" else finalResult.text))
                         return@coroutineScope finalResult
                     }
                     else
@@ -2991,7 +3016,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     }
 
                     trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, finalResult,
-                          metadata = mapOf("outputText" to finalResult.text))
+                          metadata = mapOf("outputText" to if (isExecutingAsReasoningPipe) "" else finalResult.text))
                     return@coroutineScope finalResult
                 }
 
@@ -3279,7 +3304,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              * into the reasoning block of the copied content. The loop will continue until we've cleared every
              * step of the reasoning process.
              */
-            val result = reasoningPipe?.executeMultimodal(contentCopy) ?: content
+            val result = reasoningPipe?.let { pipe ->
+                pipe.isExecutingAsReasoningPipe = true
+                pipe.reasoningContentAlreadyTraced = false
+                val pipeResult = pipe.executeMultimodal(contentCopy)
+                pipe.isExecutingAsReasoningPipe = false
+                pipeResult
+            } ?: content
             contentCopy.modelReasoning += " ${result.text}"
         }
 
@@ -3428,6 +3459,18 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         content.text.replace(asJsonString, newConverseJson)
                     }
                 }
+            }
+
+            /**
+             * Apply as reasoning. The user will need to explain how the key works and what the content of the
+             * context window should be.
+             */
+            "AsContext" -> {
+                val newContextWindow = ContextWindow()
+                newContextWindow.addLoreBookEntry("reasoning", content.text)
+
+                if(!contextWindow.isEmpty()) contextWindow.merge(newContextWindow)
+                if(!miniContextBank.isEmpty()) miniContextBank.contextMap["reasoning"] = newContextWindow
             }
         }
     }

@@ -13,7 +13,7 @@ suspend fun preInitEntryPipe(content: MultimodalContent)
 {
     val context = ContextWindow()
     context.contextElements.add(content.text)
-    content.workspaceContext.contextMap["history"] = context
+    content.metadata["history"] = context
 }
 
 suspend fun transformEntryPipe(content: MultimodalContent) : MultimodalContent
@@ -26,6 +26,6 @@ suspend fun transformEntryPipe(content: MultimodalContent) : MultimodalContent
         content.passPipeline = true //End the manifold because the task is finished.
     }
 
-    content.context = content.workspaceContext.contextMap["history"] ?: ContextWindow()
+    content.context = content.metadata["history"] as? ContextWindow ?: ContextWindow()
     return content
 }

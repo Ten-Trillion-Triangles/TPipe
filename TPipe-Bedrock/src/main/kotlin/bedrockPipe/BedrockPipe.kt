@@ -127,7 +127,7 @@ open class BedrockPipe : Pipe() {
      * @see executeInvokeStream for streaming implementation
      */
     @kotlinx.serialization.Serializable
-    private var streamingEnabled: Boolean = false
+    protected var streamingEnabled: Boolean = false
 
     /**
      * Suspendable callback function for handling streaming response tokens.
@@ -2394,11 +2394,16 @@ put("system", if (enableCaching && cacheControl != null) {
                 modelId.contains("cohere.command") -> buildCohereConverseRequest(prompt)
                 modelId.contains("meta.llama") -> buildLlamaConverseRequest(prompt)
                 modelId.contains("mistral") -> buildMistralConverseRequest(prompt)
-                modelId.contains("deepseek") -> {
-                    // Use existing DeepSeek Converse logic
-                    return generateTextWithConverseApi(client, modelId, prompt)
-                }
+                modelId.contains("deepseek") -> buildDeepSeekConverseRequestObject(modelId, prompt)
                 else -> buildGenericConverseRequest(prompt) // Fallback
+            }
+            
+            // Check for streaming first
+            if (streamingEnabled) {
+                val streamingResult = executeConverseStream(client, modelId, converseRequest, "ConverseStream")
+                if (streamingResult != null) {
+                    return streamingResult
+                }
             }
             
             val response = client.converse(converseRequest)
@@ -2486,22 +2491,6 @@ put("system", if (enableCaching && cacheControl != null) {
      * @return Generated text response
      */
     // DEPRECATED: Legacy wrapper function - no longer used
-    // All calls now use generateWithConverseApi() directly
-    /*
-    private suspend fun handleConverseGeneration(
-        client: BedrockRuntimeClient,
-        modelId: String,
-        prompt: String,
-        originalPrompt: String
-    ): String {
-        return when {
-            modelId.contains("openai.gpt-oss") -> handleGptOssConverse(client, modelId, prompt)
-            modelId.contains("deepseek") -> handleDeepSeekConverse(client, modelId, prompt, originalPrompt)
-            else -> handleGenericConverse(client, modelId, prompt)
-        }
-    }
-    */
-
     /**
      * Handles GPT-OSS Converse API calls with streaming support.
      * 
@@ -2631,7 +2620,7 @@ put("system", if (enableCaching && cacheControl != null) {
         return result
     }
 
-    private suspend fun executeConverseStream(
+    protected suspend fun executeConverseStream(
         client: BedrockRuntimeClient,
         modelId: String,
         request: ConverseRequest,

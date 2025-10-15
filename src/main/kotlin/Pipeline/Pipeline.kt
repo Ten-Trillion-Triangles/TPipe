@@ -2,6 +2,7 @@ package com.TTT.Pipeline
 
 import com.TTT.Context.ContextBank
 import com.TTT.Context.ContextWindow
+import com.TTT.Context.MiniBank
 import com.TTT.Debug.*
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PInterface
@@ -52,6 +53,12 @@ class Pipeline : P2PInterface {
      * or other functions that manipulate the llm outputs and inputs.
      */
     var context = ContextWindow()
+
+    /**
+     * Pipeline mini-bank for multiple pages of supported context. Allows for more complex storage to still
+     * be sandboxed to the pipeline as a minibank.
+     */
+    var miniBank = MiniBank()
 
     /**
      * Weather the pipeline should update the global context window system of TPipe which allows multiple pipes,
@@ -594,6 +601,31 @@ class Pipeline : P2PInterface {
             if(pageKey.isNotEmpty())
             {
                 ContextBank.emplaceWithMutex(pageKey, context)
+            }
+
+            if(!miniBank.isEmpty())
+            {
+                val pageKeyList = pageKey.split(", ")
+
+                if(pageKeyList.isNotEmpty())
+                {
+                    for(page in pageKeyList)
+                    {
+                        val contextFromMiniBank = miniBank.contextMap[page]
+                        if(contextFromMiniBank != null)
+                        {
+                            ContextBank.emplaceWithMutex(page, contextFromMiniBank)
+                        }
+                    }
+                }
+
+                else
+                {
+                    for(it in miniBank.contextMap)
+                    {
+                        ContextBank.emplaceWithMutex(it.key, it.value)
+                    }
+                }
             }
 
             else
