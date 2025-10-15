@@ -138,7 +138,6 @@ object ReasoningPrompts
             - Explain your selection criteria for choosing the best idea
             - Present the single best idea with clear justification
             - Emit ALL thinking during the selection process
-            - Conclude with: ##Final Answer##
             
             The final output should be the single most promising solution with supporting rationale.
         """.trimIndent()
@@ -164,12 +163,9 @@ object ReasoningPrompts
             - Include resource requirements and timing considerations
             - Address potential obstacles and mitigation strategies
             - Emit ALL planning and strategic thinking
-            - **COMPLETE YOUR ENTIRE PLAN BEFORE EMITTING ##Final Answer##**
-            - Use ##Final Answer## EXCLUSIVELY as the final signal that your response is complete
-
-            CRITICAL: Your comprehensive plan must be fully written out BEFORE you output ##Final Answer##. The text after ##Final Answer## will not be processed.
-
-            The final output should be a comprehensive, actionable plan that could be executed directly, followed by ##Final Answer##.
+                   
+          
+            
         """.trimIndent()
 
         return comprehensivePlanPrompt
@@ -194,10 +190,7 @@ object ReasoningPrompts
             - Apply the character's specific expertise and perspective to the problem
             - Show how the character's unique viewpoint influences the solution
             - Emit ALL thinking while maintaining character immersion
-            - Conclude with: ##Final Answer##
             
-            CRITICAL: Any output beyond ##Final Answer## will be deleted completely. End your thinking with ##Final Answer##
-            do not continue any output afterwards.
             
             The character will be specified in the user's message. Respond as if you ARE that character.
         """.trimIndent()

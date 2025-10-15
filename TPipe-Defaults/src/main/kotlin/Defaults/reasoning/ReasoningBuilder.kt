@@ -13,7 +13,13 @@ import Defaults.reasoning.ReasoningPrompts.selectDepth
 import Defaults.reasoning.ReasoningPrompts.selectDuration
 import com.TTT.Context.ConverseHistory
 import com.TTT.Pipe.Pipe
+import com.TTT.Structs.BestIdeaResponse
+import com.TTT.Structs.ExplicitReasoningDetailed
+import com.TTT.Structs.MethodActorResponse
+import com.TTT.Structs.MultiPhasePlan
 import com.TTT.Structs.PipeSettings
+import com.TTT.Structs.ProcessFocusedResult
+import com.TTT.Structs.StructuredCot
 
 /**
  * Defines the strategy that will be used to make the llm think.
@@ -110,34 +116,57 @@ object ReasoningBuilder
     {
         var targetSystemPrompt = ""
 
+        var jsonOutputObject : Any? = null
+
         /**
          * Assign the system prompt to configure the pipe to have chain of thought behavior based on the enum
          * settings provided.
          */
         when (settings.reasoningMethod)
         {
-            ReasoningMethod.StructuredCot -> targetSystemPrompt = chainOfThoughtSystemPrompt(
-                selectDepth(settings.depth),
-                selectDuration(settings.duration),
-                settings.reasoningMethod)
+            ReasoningMethod.StructuredCot ->{
+                targetSystemPrompt = chainOfThoughtSystemPrompt(
+                    selectDepth(settings.depth),
+                    selectDuration(settings.duration),
+                    settings.reasoningMethod)
 
-            ReasoningMethod.processFocusedCot -> targetSystemPrompt = chainOfThoughtSystemPrompt(
-                selectDepth(settings.depth),
-                selectDuration(settings.duration),
-                settings.reasoningMethod
-            )
+                jsonOutputObject = StructuredCot()
+            }
 
-            ReasoningMethod.ExplicitCot -> targetSystemPrompt = chainOfThoughtSystemPrompt(
-                selectDepth(settings.depth),
-                selectDuration(settings.duration),
-                settings.reasoningMethod
-            )
+            ReasoningMethod.processFocusedCot -> {
+                targetSystemPrompt = chainOfThoughtSystemPrompt(
+                    selectDepth(settings.depth),
+                    selectDuration(settings.duration),
+                    settings.reasoningMethod
+                )
 
-            ReasoningMethod.BestIdea -> bestIdeaPrompt()
+                jsonOutputObject = ProcessFocusedResult()
+            }
 
-            ReasoningMethod.RolePlay -> rolePlayPrompt(settings.roleCharacter)
+            ReasoningMethod.ExplicitCot -> {
+                targetSystemPrompt = chainOfThoughtSystemPrompt(
+                    selectDepth(settings.depth),
+                    selectDuration(settings.duration),
+                    settings.reasoningMethod
+                )
 
-            ReasoningMethod.ComprehensivePlan -> comprehensivePlanPrompt()
+                jsonOutputObject = ExplicitReasoningDetailed()
+            }
+
+            ReasoningMethod.BestIdea -> {
+                targetSystemPrompt = bestIdeaPrompt()
+                jsonOutputObject = BestIdeaResponse()
+            }
+
+            ReasoningMethod.RolePlay -> {
+                targetSystemPrompt = rolePlayPrompt(settings.roleCharacter)
+                jsonOutputObject = MethodActorResponse()
+            }
+
+            ReasoningMethod.ComprehensivePlan -> {
+                targetSystemPrompt = comprehensivePlanPrompt()
+                jsonOutputObject = MultiPhasePlan()
+            }
         }
 
         //Assign our system prompt to order the pipe to reason/think.
@@ -152,6 +181,8 @@ object ReasoningBuilder
             .setTopK(pipeSettings.topK)
             .setMaxTokens(pipeSettings.maxTokens)
             .setContextWindowSize(pipeSettings.contextWindowSize)
+            .requireJsonPromptInjection()
+            .setJsonOutput(jsonOutputObject)
 
         if(settings.numberOfRounds > 1)
         {
@@ -184,7 +215,8 @@ object ReasoningBuilder
 
         //Beware, we have to use .toString to evade a circular reference problem.
         targetPipe.pipeMetadata["injectionMethod"] = settings.reasoningInjector.toString()
-        targetPipe.setStopSequences(listOf("##Final Answer##")) //Assign the expected stop sequence.
+
+        targetPipe.pipeMetadata["reasoningMethod"] = settings.reasoningMethod.toString()
 
         //Bind now to cache our system prompt we saved as the original system prompt.
         targetPipe.applySystemPrompt()

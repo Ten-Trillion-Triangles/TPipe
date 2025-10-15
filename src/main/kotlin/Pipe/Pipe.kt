@@ -24,6 +24,7 @@ import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Structs.PipeSettings
+import com.TTT.Structs.extractReasoningContent
 import com.TTT.Util.deepCopy
 import com.TTT.Util.deserialize
 import com.TTT.Util.exampleFor
@@ -3309,6 +3310,14 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 pipe.isExecutingAsReasoningPipe = false
                 pipeResult
             } ?: content
+
+            /**
+             * TPipe reasoning now stores the output as json to further coercee misbehaving models. This data needs
+             * to be turned back to a fully structured string formatted to be a proper stream of model reasoning.
+             * The assumption is that [ReasoningBuilder.assignDefaults] was correctly invoked. Prior. If not the
+             * output of the reasoning pipe will become empty.
+             */
+            result.text = extractReasoningContent(pipeMetadata["reasoningMethod"] as? String ?: "", result)
             contentCopy.modelReasoning += " ${result.text}"
         }
 
