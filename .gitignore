@@ -13,6 +13,7 @@ gradle-app.setting
 *.nar
 hs_err_pid*
 replay_pid*
+META-INF/
 
 # IDE
 .idea/
