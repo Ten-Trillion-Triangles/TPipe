@@ -20,6 +20,7 @@ import com.TTT.Structs.MultiPhasePlan
 import com.TTT.Structs.PipeSettings
 import com.TTT.Structs.ProcessFocusedResult
 import com.TTT.Structs.StructuredCot
+import kotlin.reflect.KClass
 
 /**
  * Defines the strategy that will be used to make the llm think.
@@ -117,6 +118,7 @@ object ReasoningBuilder
         var targetSystemPrompt = ""
 
         var jsonOutputObject : Any? = null
+        var jsonOutputClass : KClass<*>? = null
 
         /**
          * Assign the system prompt to configure the pipe to have chain of thought behavior based on the enum
@@ -131,6 +133,7 @@ object ReasoningBuilder
                     settings.reasoningMethod)
 
                 jsonOutputObject = StructuredCot()
+                jsonOutputClass = StructuredCot::class
             }
 
             ReasoningMethod.processFocusedCot -> {
@@ -141,6 +144,7 @@ object ReasoningBuilder
                 )
 
                 jsonOutputObject = ProcessFocusedResult()
+                jsonOutputClass = ProcessFocusedResult::class
             }
 
             ReasoningMethod.ExplicitCot -> {
@@ -182,7 +186,15 @@ object ReasoningBuilder
             .setMaxTokens(pipeSettings.maxTokens)
             .setContextWindowSize(pipeSettings.contextWindowSize)
             .requireJsonPromptInjection()
-            .setJsonOutput(jsonOutputObject)
+        // Type-safe JSON output using cast
+        when (jsonOutputClass) {
+            StructuredCot::class -> targetPipe.setJsonOutput(jsonOutputObject as StructuredCot)
+            ProcessFocusedResult::class -> targetPipe.setJsonOutput(jsonOutputObject as ProcessFocusedResult)
+            ExplicitReasoningDetailed::class -> targetPipe.setJsonOutput(jsonOutputObject as ExplicitReasoningDetailed)
+            BestIdeaResponse::class -> targetPipe.setJsonOutput(jsonOutputObject as BestIdeaResponse)
+            MethodActorResponse::class -> targetPipe.setJsonOutput(jsonOutputObject as MethodActorResponse)
+            MultiPhasePlan::class -> targetPipe.setJsonOutput(jsonOutputObject as MultiPhasePlan)
+        }
 
         if(settings.numberOfRounds > 1)
         {
