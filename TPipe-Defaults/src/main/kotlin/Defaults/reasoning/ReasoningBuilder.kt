@@ -187,7 +187,8 @@ object ReasoningBuilder
             .setContextWindowSize(pipeSettings.contextWindowSize)
             .requireJsonPromptInjection()
         // Type-safe JSON output using cast
-        when (jsonOutputClass) {
+        when (jsonOutputClass) 
+        {
             StructuredCot::class -> targetPipe.setJsonOutput(jsonOutputObject as StructuredCot)
             ProcessFocusedResult::class -> targetPipe.setJsonOutput(jsonOutputObject as ProcessFocusedResult)
             ExplicitReasoningDetailed::class -> targetPipe.setJsonOutput(jsonOutputObject as ExplicitReasoningDetailed)
