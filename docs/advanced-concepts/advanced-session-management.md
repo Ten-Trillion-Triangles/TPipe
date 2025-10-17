@@ -13,7 +13,10 @@
 `StdioExecutor` supports long-lived processes so the model can maintain environment state across
 multiple PCP calls—for example, starting `bash`, running `cd`, then compiling inside the same shell.
 Interactive mode keeps the process alive, tracks per-session buffers, and exposes handles you can
-tunnel back into later.
+tunnel back into later. The `keepSessionAlive` flag is now honoured directly by the executor, so a
+session stays active after the first command only when you opt in. Likewise, `bufferPersistence`
+controls whether IO is captured for reconnect or replay flows—set it intentionally because it has a
+direct impact on memory usage.
 
 Create an interactive option by switching the execution mode:
 
@@ -34,7 +37,11 @@ val shell = StdioContextOptions().apply {
 
 `StdioExecutor` returns a `PcpRequestResult` whose output string contains the generated
 `sessionId` and optional `bufferId`. Subsequent PCP requests can reconnect by setting
-`executionMode = CONNECT` and providing the same `sessionId`.
+`executionMode = CONNECT` and providing the same `sessionId`. When reconnection or buffer replay is
+enabled you should also flip `PcpContext.enableSessionAccessControl` or
+`enableBufferAccessControl`—the executor now validates ownership and the permissions declared in the
+matching `StdioContextOptions`. If the context does not contain an entry for the command, buffer
+writes are rejected instead of falling back to a permissive default.
 
 ## Session Lifecycle API
 
@@ -77,7 +84,11 @@ down proactively.
 ## Buffer Management
 
 When `bufferPersistence = true`, `StdioExecutor` routes IO through `StdioBufferManager`. Buffers are
-plain in-memory archives keyed by `bufferId`.
+plain in-memory archives keyed by `bufferId`. Access checks respect the context: a caller needs
+`Permissions.Read` to read a buffer and `Permissions.Write` to append new entries whenever
+`enableBufferAccessControl` is active. If those permissions are missing the append call fails with a
+security exception, so make sure the LLM’s context entry mirrors how you expect the session to be
+used.
 
 ```kotlin
 import com.TTT.PipeContextProtocol.StdioBufferManager
@@ -113,11 +124,15 @@ To persist or restore session history, use `saveBuffer` and `loadBuffer`. Both r
    value for long-running builds and a tighter one for simple inspection commands.
 2. **Buffer size** – Cap `maxBufferSize` to keep runaway output from exhausting memory. The executor
    truncates output once the threshold is reached.
-3. **Environment variables** – `environmentVariables` overrides inherited variables per session,
+3. **Access control flags** – Enable `enableSessionAccessControl` and
+   `enableBufferAccessControl` in the `PcpContext` whenever you rely on `keepSessionAlive` or
+   persisted buffers. Both toggles now enforce ownership and permission checks instead of acting as
+   placeholders.
+4. **Environment variables** – `environmentVariables` overrides inherited variables per session,
    which is useful when bootstrapping toolchains.
-4. **Working directories** – set `workingDirectory` to control where the process starts. Combine this
+5. **Working directories** – set `workingDirectory` to control where the process starts. Combine this
    with `PcpContext.allowedDirectoryPaths` to stop the model from escaping its sandbox.
-5. **Cleanup** – call `closeSession` for idle sessions. The manager destroys the process and releases
+6. **Cleanup** – call `closeSession` for idle sessions. The manager destroys the process and releases
    buffered resources.
 
 ## Common Workflows

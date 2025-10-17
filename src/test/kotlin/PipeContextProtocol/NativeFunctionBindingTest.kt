@@ -11,6 +11,12 @@ import kotlin.test.assertTrue
  */
 class NativeFunctionBindingTest 
 {
+    enum class AccessLevel
+    {
+        READ,
+        WRITE
+    }
+
     /**
      * Test function with multiple inputs and return value.
      * Calculates area of rectangle and returns formatted result.
@@ -36,6 +42,14 @@ class NativeFunctionBindingTest
     fun greet(name: String, punctuation: String = "!"): String
     {
         return "$name$punctuation"
+    }
+
+    /**
+     * Test function that enforces enum handling and defaults.
+     */
+    fun assignRole(user: String, level: AccessLevel = AccessLevel.READ): String
+    {
+        return "$user:${level.name}"
     }
     
     @Test
@@ -99,6 +113,104 @@ class NativeFunctionBindingTest
 
             assertTrue(response.success, "Function execution should succeed with missing optional parameter")
             assertEquals("Hello!", response.result, "Default punctuation should be applied")
+
+            handler.clearStoredReturnValues()
+            FunctionRegistry.clear()
+        }
+    }
+
+    @Test
+    fun testEnumParameterValidation()
+    {
+        runBlocking {
+            FunctionRegistry.clear()
+
+            FunctionRegistry.registerFunction("assignRole", ::assignRole)
+
+            val handler = PcpFunctionHandler()
+
+            val successRequest = PcPRequest(
+                tPipeContextOptions = TPipeContextOptions().apply {
+                    functionName = "assignRole"
+                },
+                argumentsOrFunctionParams = listOf("alice", "WRITE")
+            )
+
+            val successResponse = handler.handleFunctionRequest(successRequest)
+            assertTrue(successResponse.success, "Enum parameter should accept valid values")
+            assertEquals("alice:WRITE", successResponse.result)
+
+            val failureRequest = PcPRequest(
+                tPipeContextOptions = TPipeContextOptions().apply {
+                    functionName = "assignRole"
+                },
+                argumentsOrFunctionParams = listOf("bob", "EXECUTE")
+            )
+
+            val failureResponse = handler.handleFunctionRequest(failureRequest)
+            assertTrue(!failureResponse.success, "Enum parameter should reject invalid values")
+            assertTrue(
+                failureResponse.error?.contains("Invalid value 'EXECUTE' for parameter 'level'") == true,
+                "Expected enum validation error, got: ${failureResponse.error}"
+            )
+
+            handler.clearStoredReturnValues()
+            FunctionRegistry.clear()
+        }
+    }
+
+    @Test
+    fun testMissingRequiredParameterFails()
+    {
+        runBlocking {
+            FunctionRegistry.clear()
+
+            FunctionRegistry.registerFunction("multiply", ::multiplyNumbers)
+
+            val handler = PcpFunctionHandler()
+            val request = PcPRequest(
+                tPipeContextOptions = TPipeContextOptions().apply {
+                    functionName = "multiply"
+                },
+                argumentsOrFunctionParams = listOf("4")
+            )
+
+            val response = handler.handleFunctionRequest(request)
+
+            assertTrue(!response.success, "Missing required argument should fail validation")
+            assertTrue(
+                response.error?.contains("Missing required parameter: b") == true,
+                "Expected missing parameter error, got: ${response.error}"
+            )
+
+            handler.clearStoredReturnValues()
+            FunctionRegistry.clear()
+        }
+    }
+
+    @Test
+    fun testTypeConversionFailure()
+    {
+        runBlocking {
+            FunctionRegistry.clear()
+
+            FunctionRegistry.registerFunction("multiply", ::multiplyNumbers)
+
+            val handler = PcpFunctionHandler()
+            val request = PcPRequest(
+                tPipeContextOptions = TPipeContextOptions().apply {
+                    functionName = "multiply"
+                },
+                argumentsOrFunctionParams = listOf("foo", "2")
+            )
+
+            val response = handler.handleFunctionRequest(request)
+
+            assertTrue(!response.success, "Invalid type conversion should fail")
+            assertTrue(
+                response.error?.contains("Cannot convert 'foo' to kotlin.Int") == true,
+                "Expected conversion error, got: ${response.error}"
+            )
 
             handler.clearStoredReturnValues()
             FunctionRegistry.clear()

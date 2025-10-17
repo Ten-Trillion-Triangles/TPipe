@@ -80,6 +80,16 @@ pythonExecutor.allowFunctions("exec")
 pythonExecutor.allowPatterns("import\\s+socket")
 ```
 
+Whenever an override is used, the executor adds a `Warnings:` preamble to the output so reviews can
+spot that the script relied on an expanded policy. For example, after calling
+`pythonExecutor.allowImports("subprocess")` the warning list contains
+“Import 'subprocess' allowed via security override”.
+
+`PythonContext.availablePackages` now merges the request and context lists before validation. A
+module is accepted when it appears in *either* list; if both are empty the executor permits any
+import. Attempting to load a package that is missing from the combined whitelist yields
+`Import '<module>' not in allowed packages list` and the script is not executed.
+
 ## Native Function Binding
 
 Binding native Kotlin functions exposes them to PCP as structured tools. The runtime handles
@@ -100,6 +110,8 @@ fun registerAutomatic(context: PcpContext) {
     context.bindFunction(signature.name, ::calculateSum)
 }
 ```
+
+Optional parameters keep their Kotlin default values because the wrapper delegates to `callBy`/`callSuspendBy`. You can omit optional PCP arguments and the runtime substitutes the same default your Kotlin signature declares. Enum parameters are validated against their `enumValues`; if the model supplies anything else the dispatcher rejects the request before your function runs.
 
 `bindFunction` converts the signature into a `TPipeContextOptions` entry so the model receives type
 information in the prompt.

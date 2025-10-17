@@ -99,26 +99,59 @@ class PrimitiveConverter : TypeConverter
         val className = targetType.removeSuffix("?")
         val candidate = value.trim()
 
+        val enumClass = resolveEnumClass(className)
+
         return try
         {
-            val rawClass = Class.forName(className)
-            if (!rawClass.isEnum)
-            {
-                throw IllegalArgumentException("Type '$className' is not an enum")
-            }
-
-            @Suppress("UNCHECKED_CAST")
-            val enumClass = rawClass as Class<out Enum<*>>
             java.lang.Enum.valueOf(enumClass, candidate)
-        }
-        catch (e: ClassNotFoundException)
-        {
-            throw IllegalArgumentException("Enum type '$className' not found", e)
         }
         catch (e: IllegalArgumentException)
         {
-            throw IllegalArgumentException("Value '$candidate' is not valid for enum $className", e)
+            throw IllegalArgumentException("Value '$candidate' is not valid for enum ${enumClass.name}", e)
         }
+    }
+
+    private fun resolveEnumClass(className: String): Class<out Enum<*>>
+    {
+        val attempts = LinkedHashSet<String>()
+        attempts.add(className)
+
+        var binaryCandidate = className
+        while (true)
+        {
+            val lastDot = binaryCandidate.lastIndexOf('.')
+            if (lastDot < 0) break
+            binaryCandidate = binaryCandidate.substring(0, lastDot) + "$" + binaryCandidate.substring(lastDot + 1)
+            attempts.add(binaryCandidate)
+        }
+
+        val classLoaders = listOfNotNull(
+            Thread.currentThread().contextClassLoader,
+            PrimitiveConverter::class.java.classLoader,
+            ClassLoader.getSystemClassLoader()
+        ).distinct()
+
+        for (loader in classLoaders)
+        {
+            for (candidate in attempts)
+            {
+                try
+                {
+                    val rawClass = loader.loadClass(candidate)
+                    if (rawClass.isEnum)
+                    {
+                        @Suppress("UNCHECKED_CAST")
+                        return rawClass as Class<out Enum<*>>
+                    }
+                }
+                catch (_: ClassNotFoundException)
+                {
+                    // Try next candidate
+                }
+            }
+        }
+
+        throw IllegalArgumentException("Enum type '$className' not found")
     }
 
     /**

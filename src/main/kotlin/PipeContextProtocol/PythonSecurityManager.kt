@@ -211,6 +211,19 @@ class PythonSecurityManager(
                 }
             }
         }
+
+        securityConfig.allowedImports.forEach { allowedImport ->
+            val importPatterns = listOf(
+                "import\\s+$allowedImport\\b",
+                "from\\s+$allowedImport\\s+import",
+                "import\\s+$allowedImport\\s+as\\s+\\w+"
+            )
+
+            if (importPatterns.any { pattern -> getCompiledRegex(pattern).containsMatchIn(script) })
+            {
+                warnings.add("Import '$allowedImport' allowed via security override")
+            }
+        }
         
         // Check blocked functions with better pattern matching
         val blockedFunctions = getBlockedFunctions() - securityConfig.allowedFunctions
@@ -228,6 +241,18 @@ class PythonSecurityManager(
                 }
             }
         }
+
+        securityConfig.allowedFunctions.forEach { allowedFunction ->
+            val functionPatterns = listOf(
+                "$allowedFunction\\s*\\(",
+                "getattr\\s*\\([^,]+,\\s*['\"]${allowedFunction.split(".").last()}['\"]\\s*\\)"
+            )
+
+            if (functionPatterns.any { pattern -> getCompiledRegex(pattern).containsMatchIn(script) })
+            {
+                warnings.add("Function '$allowedFunction' allowed via security override")
+            }
+        }
         
         // Check blocked patterns with compiled regex
         val blockedPatterns = getBlockedPatterns() - securityConfig.allowedPatterns
@@ -235,6 +260,13 @@ class PythonSecurityManager(
             if (getCompiledRegex(pattern).containsMatchIn(script))
             {
                 errors.add("Pattern '$pattern' is not allowed at current security level")
+            }
+        }
+
+        securityConfig.allowedPatterns.forEach { pattern ->
+            if (getCompiledRegex(pattern).containsMatchIn(script))
+            {
+                warnings.add("Pattern '$pattern' allowed via security override")
             }
         }
         
