@@ -95,18 +95,33 @@ class PythonIntegrationTest
             val pcpRequest = PcPRequest(
                 pythonContextOptions = PythonContext().apply {
                     permissions = mutableListOf(Permissions.Read, Permissions.Write)
+                    availablePackages = mutableListOf("json", "os")
                 },
                 argumentsOrFunctionParams = listOf(pythonScript)
             )
-            
-            // Execute via dispatcher
-            val dispatcher = PcpExecutionDispatcher()
-            val result = dispatcher.executeRequest(pcpRequest, PcpContext())
+
+            val context = PcpContext().apply {
+                pythonOptions.availablePackages = mutableListOf("json", "os")
+                pythonOptions.permissions = mutableListOf(Permissions.Read, Permissions.Write)
+            }
+
+            val pythonExecutor = PythonExecutor().apply {
+                allowImports("os")
+            }
+
+            val dispatcher = PcpExecutionDispatcher().also { current ->
+                val field = current.javaClass.getDeclaredField("pythonExecutor")
+                field.isAccessible = true
+                field.set(current, pythonExecutor)
+            }
+
+            val result = dispatcher.executeRequest(pcpRequest, context)
             
             // Verify execution
             assertTrue(result.success, "Python file operations should execute successfully")
             assertTrue(result.output.contains("File operation successful"), "Should confirm file operations")
             assertTrue(result.output.contains("Hello from Python!"), "Should contain expected message")
+            assertTrue(result.output.contains("Warnings:\n"), "Override warning should be surfaced")
             
             println("✅ Python file operations executed successfully!")
             println("📁 Output: ${result.output}")

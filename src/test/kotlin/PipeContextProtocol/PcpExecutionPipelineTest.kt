@@ -41,7 +41,13 @@ class PcpExecutionPipelineTest
             assertEquals(1, parseResult.requests.size, "Should find one request")
             
             // 2. Execute through dispatcher
-            val executionResult = dispatcher.executeRequests(parseResult.requests, PcpContext())
+            val context = PcpContext().apply {
+                addTPipeOption(TPipeContextOptions().apply {
+                    functionName = "add"
+                })
+            }
+
+            val executionResult = dispatcher.executeRequests(parseResult.requests, context)
             assertTrue(executionResult.success, "Should execute successfully")
             assertEquals(1, executionResult.results.size, "Should have one result")
             
