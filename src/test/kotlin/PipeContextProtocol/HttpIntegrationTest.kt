@@ -40,7 +40,7 @@ class HttpIntegrationTest
             assertEquals(Transport.Http, parser.determineTransport(request), "Should detect HTTP transport")
             
             // 2. Execute through dispatcher
-            val executionResult = dispatcher.executeRequests(parseResult.requests)
+            val executionResult = dispatcher.executeRequests(parseResult.requests, PcpContext())
             assertTrue(executionResult.success, "Should execute HTTP request successfully")
             assertEquals(1, executionResult.results.size, "Should have one result")
             
@@ -72,7 +72,7 @@ class HttpIntegrationTest
             val parseResult = parser.extractPcpRequests(ssrfResponse)
             assertTrue(parseResult.success, "Should parse SSRF request")
             
-            val executionResult = dispatcher.executeRequests(parseResult.requests)
+            val executionResult = dispatcher.executeRequests(parseResult.requests, PcpContext())
             assertTrue(!executionResult.success, "Should block SSRF attempt")
             
             val result = executionResult.results.first()
@@ -107,7 +107,7 @@ class HttpIntegrationTest
             val parseResult = parser.extractPcpRequests(authResponse)
             assertTrue(parseResult.success, "Should parse auth request successfully")
             
-            val executionResult = dispatcher.executeRequests(parseResult.requests)
+            val executionResult = dispatcher.executeRequests(parseResult.requests, PcpContext())
             assertTrue(executionResult.success, "Should execute auth request successfully")
             
             val result = executionResult.results.first()
@@ -142,7 +142,7 @@ class HttpIntegrationTest
             val parseResult = parser.extractPcpRequests(postResponse)
             assertTrue(parseResult.success, "Should parse POST request successfully")
             
-            val executionResult = dispatcher.executeRequests(parseResult.requests)
+            val executionResult = dispatcher.executeRequests(parseResult.requests, PcpContext())
             assertTrue(executionResult.success, "Should execute POST request successfully")
             
             val result = executionResult.results.first()
@@ -173,7 +173,7 @@ class HttpIntegrationTest
             val parseResult = parser.extractPcpRequests(postWithoutPermission)
             assertTrue(parseResult.success, "Should parse POST request")
             
-            val executionResult = dispatcher.executeRequests(parseResult.requests)
+            val executionResult = dispatcher.executeRequests(parseResult.requests, PcpContext())
             assertTrue(!executionResult.success, "Should fail due to missing permission")
             
             val result = executionResult.results.first()

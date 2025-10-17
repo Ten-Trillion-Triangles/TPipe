@@ -362,6 +362,21 @@ data class PcpContext(@kotlinx.serialization.Transient val cinit : Boolean = fal
      */
     var forbiddenFiles = mutableListOf<String>()
 
+    /**
+     * Enable session access control validation (optional security).
+     */
+    var enableSessionAccessControl: Boolean = false
+
+    /**
+     * Enable buffer access control validation (optional security).
+     */
+    var enableBufferAccessControl: Boolean = false
+
+    /**
+     * Current user ID for access control validation.
+     */
+    var currentUserId: String = System.getProperty("user.name")
+
 
 
     /**

@@ -1,0 +1,63 @@
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>TPipe Manifold Execution Flow</title>
+                <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+                <style>
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #f5f5f5; }
+                    .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                    h1 { color: #333; text-align: center; margin-bottom: 30px; }
+                    .manifold-section { margin: 20px 0; padding: 15px; border-radius: 8px; }
+                    .orchestration { background: #f8f9fa; border-left: 4px solid #007bff; }
+                    .agent-interaction { background: #e8f5e8; border-left: 4px solid #28a745; }
+                    .success { color: #28a745; font-weight: bold; }
+                    .failure { color: #dc3545; font-weight: bold; }
+                    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+                    th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+                    th { background-color: #f8f9fa; font-weight: 600; }
+                    tr:nth-child(even) { background-color: #f8f9fa; }
+                    .mermaid { text-align: center; background: white; padding: 20px; border-radius: 8px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>🎯 TPipe Manifold Execution Analysis</h1>
+                    
+                    <div class="manifold-section orchestration">
+                        <h2>📊 Orchestration Flow</h2>
+                        <div class="mermaid">graph TD
+    M["🎯 Manifold"]
+    MG["🧠 Manager"]
+    W0["⚙️ DataAnalyzer"]
+    M --> MG
+    MG --> W0
+    W0 --> MG
+    M:::success
+    MG:::success
+    W0:::success
+
+    classDef success fill:#d4edda,stroke:#28a745,stroke-width:2px
+    classDef failure fill:#f8d7da,stroke:#dc3545,stroke-width:2px
+</div>
+                    </div>
+                    
+                    <div class="manifold-section orchestration">
+                        <h2>🎯 Orchestration Timeline</h2>
+                        <table><tr><th>⏱️ Time</th><th>📝 Event</th><th>📊 Details</th></tr><tr><td>+0ms</td><td>MANIFOLD_START</td><td>MANIFOLD_START</td></tr><tr><td>+800ms</td><td>MANAGER_DECISION</td><td>MANAGER_DECISION</td></tr><tr><td>+900ms</td><td>AGENT_DISPATCH</td><td>Agent: DataAnalyzer</td></tr><tr><td>+2500ms</td><td>AGENT_RESPONSE</td><td>Response from: DataAnalyzer</td></tr></table>
+                    </div>
+                    
+                    <div class="manifold-section agent-interaction">
+                        <h2>🤖 Agent Interactions</h2>
+                        <table><tr><th>🤖 Agent</th><th>📤 Dispatches</th><th>📥 Responses</th><th>✅ Success Rate</th></tr><tr><td>DataAnalyzer</td><td>1</td><td>1</td><td>100%</td></tr></table>
+                    </div>
+                </div>
+                
+                <script>
+                    mermaid.initialize({ 
+                        startOnLoad: true,
+                        theme: 'default',
+                        flowchart: { useMaxWidth: true, htmlLabels: true }
+                    });
+                </script>
+            </body>
+            </html>

@@ -55,6 +55,7 @@ data class BufferMatch(
 class StdioBufferManager
 {
     private val buffers = ConcurrentHashMap<String, StdioBuffer>()
+    private val bufferLimits = ConcurrentHashMap<String, Int>()
     
     /**
      * Create new buffer for session.
@@ -70,9 +71,68 @@ class StdioBufferManager
         buffers[bufferId] = buffer
         return buffer
     }
+
+    /**
+     * Ensure buffer exists for session, optionally applying a size limit.
+     */
+    fun ensureBuffer(bufferId: String, sessionId: String, maxSizeBytes: Int? = null): StdioBuffer
+    {
+        val buffer = buffers[bufferId] ?: StdioBuffer(
+            bufferId = bufferId,
+            sessionId = sessionId
+        ).also { buffers[bufferId] = it }
+
+        maxSizeBytes?.takeIf { it > 0 }?.let { limit ->
+            bufferLimits[bufferId] = limit
+            enforceBufferLimit(bufferId, buffer)
+        }
+
+        return buffer
+    }
     
     /**
-     * Append data to buffer.
+     * Append data to buffer with optional access control.
+     */
+    fun appendToBuffer(
+        bufferId: String,
+        data: String,
+        direction: BufferDirection,
+        metadata: Map<String, String> = emptyMap(),
+        context: PcpContext? = null,
+        requiredPermissions: List<Permissions> = emptyList()
+    )
+    {
+        val buffer = buffers[bufferId] ?: return
+
+        if (context?.enableBufferAccessControl == true)
+        {
+            val permissions = if (requiredPermissions.isEmpty()) listOf(Permissions.Write) else requiredPermissions
+            ensureBufferAccess(bufferId, context, permissions)
+        }
+
+        val entry = BufferEntry(
+            timestamp = System.currentTimeMillis(),
+            direction = direction,
+            content = data,
+            metadata = metadata
+        )
+
+        synchronized(buffer.entries)
+        {
+            buffer.entries.add(entry)
+
+            // Limit buffer size to prevent memory issues
+            if (buffer.entries.size > 10000)
+            {
+                buffer.entries.removeAt(0)
+            }
+
+            enforceBufferLimit(bufferId, buffer)
+        }
+    }
+    
+    /**
+     * Legacy method for backward compatibility.
      */
     fun appendToBuffer(
         bufferId: String, 
@@ -81,41 +141,48 @@ class StdioBufferManager
         metadata: Map<String, String> = emptyMap()
     )
     {
-        val buffer = buffers[bufferId] ?: return
-        
-        val entry = BufferEntry(
-            timestamp = System.currentTimeMillis(),
-            direction = direction,
-            content = data,
-            metadata = metadata
-        )
-        
-        synchronized(buffer.entries)
-        {
-            buffer.entries.add(entry)
-            
-            // Limit buffer size to prevent memory issues
-            if (buffer.entries.size > 10000)
-            {
-                buffer.entries.removeAt(0)
-            }
-        }
+        appendToBuffer(bufferId, data, direction, metadata, null)
     }
     
     /**
      * Get buffer by ID.
      */
+    /**
+     * Get buffer with optional access control validation.
+     */
+    fun getBuffer(bufferId: String, context: PcpContext? = null, requiredPermissions: List<Permissions> = emptyList()): StdioBuffer?
+    {
+        val buffer = buffers[bufferId] ?: return null
+
+        if (context?.enableBufferAccessControl == true)
+        {
+            val permissions = if (requiredPermissions.isEmpty()) listOf(Permissions.Read) else requiredPermissions
+            ensureBufferAccess(bufferId, context, permissions)
+        }
+
+        return buffer
+    }
+
+    /**
+     * Legacy method for backward compatibility.
+     */
     fun getBuffer(bufferId: String): StdioBuffer?
     {
-        return buffers[bufferId]
+        return getBuffer(bufferId, null)
     }
     
     /**
-     * Search buffer for pattern.
+     * Search buffer for pattern with optional access control.
      */
-    fun searchBuffer(bufferId: String, pattern: String): List<BufferMatch>
+    fun searchBuffer(bufferId: String, pattern: String, context: PcpContext? = null): List<BufferMatch>
     {
         val buffer = buffers[bufferId] ?: return emptyList()
+
+        if (context?.enableBufferAccessControl == true)
+        {
+            ensureBufferAccess(bufferId, context, listOf(Permissions.Read))
+        }
+
         val matches = mutableListOf<BufferMatch>()
         
         synchronized(buffer.entries)
@@ -135,6 +202,14 @@ class StdioBufferManager
         }
         
         return matches
+    }
+
+    /**
+     * Legacy method for backward compatibility.
+     */
+    fun searchBuffer(bufferId: String, pattern: String): List<BufferMatch>
+    {
+        return searchBuffer(bufferId, pattern, null)
     }
     
     /**
@@ -198,6 +273,7 @@ class StdioBufferManager
      */
     fun removeBuffer(bufferId: String): Boolean
     {
+        bufferLimits.remove(bufferId)
         return buffers.remove(bufferId) != null
     }
     
@@ -226,4 +302,55 @@ class StdioBufferManager
             )
         }
     }
+
+    private fun enforceBufferLimit(bufferId: String, buffer: StdioBuffer)
+    {
+        val limit = bufferLimits[bufferId] ?: return
+
+        if (limit <= 0) return
+
+        var currentSize = buffer.entries.sumOf { it.content.length }
+
+        while (currentSize > limit && buffer.entries.isNotEmpty())
+        {
+            val removed = buffer.entries.removeAt(0)
+            currentSize -= removed.content.length
+        }
+    }
+
+    private fun ensureBufferAccess(bufferId: String, context: PcpContext, requiredPermissions: List<Permissions>)
+    {
+        val buffer = buffers[bufferId] ?: throw SecurityException("Buffer access denied: unknown buffer $bufferId")
+
+        val session = StdioSessionManager.getSession(buffer.sessionId)
+            ?: throw SecurityException("Buffer access denied: session not found for $bufferId")
+
+        if (session.ownerId != context.currentUserId)
+        {
+            throw SecurityException("Buffer access denied for user ${context.currentUserId}")
+        }
+
+        if (requiredPermissions.isNotEmpty())
+        {
+            if (context.stdioOptions.isEmpty())
+            {
+                throw SecurityException("Buffer access denied: no stdio options configured for access control")
+            }
+
+            val allowedPermissions = context.stdioOptions
+                .find { it.command == session.command }
+                ?.permissions
+                ?.takeIf { it.isNotEmpty() }
+                ?: throw SecurityException("Buffer access denied: command '${session.command}' missing from context")
+
+            val hasPermission = requiredPermissions.all { allowedPermissions.contains(it) }
+
+            if (!hasPermission)
+            {
+                val missing = requiredPermissions.joinToString(", ")
+                throw SecurityException("Buffer access denied: missing permissions [$missing]")
+            }
+        }
+    }
+
 }

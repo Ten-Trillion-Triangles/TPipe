@@ -22,6 +22,7 @@ data class StdioSession(
     val workingDirectory: String?,
     val createdAt: Long,
     val bufferId: String,
+    val ownerId: String,
     var isActive: Boolean = true
 )
 
@@ -50,7 +51,7 @@ data class SessionResult(
  * Manages persistent stdio sessions for long-form communication.
  * Handles session lifecycle, buffer management, and cleanup.
  */
-class StdioSessionManager
+object StdioSessionManager
 {
     private val activeSessions = ConcurrentHashMap<String, StdioSession>()
     private val sessionReaders = ConcurrentHashMap<String, BufferedReader>()
@@ -62,11 +63,20 @@ class StdioSessionManager
     suspend fun createSession(
         command: String, 
         args: List<String>, 
+        ownerId: String,
         workingDir: String? = null
     ): StdioSession = withContext(Dispatchers.IO)
     {
         val sessionId = generateSessionId()
         val bufferId = "buffer_$sessionId"
+        
+        // Always check resource limits before creating session (hard enforced)
+        val securityManager = CommandSecurityManager()
+        val resourceCheck = securityManager.checkResourceLimits(sessionId)
+        if (!resourceCheck.isValid)
+        {
+            throw SecurityException("Resource limit exceeded: ${resourceCheck.warnings.joinToString(", ")}")
+        }
         
         try
         {
@@ -89,6 +99,7 @@ class StdioSessionManager
                 workingDirectory = workingDir,
                 createdAt = System.currentTimeMillis(),
                 bufferId = bufferId,
+                ownerId = ownerId,
                 isActive = true
             )
             
@@ -107,6 +118,14 @@ class StdioSessionManager
     fun getSession(sessionId: String): StdioSession?
     {
         return activeSessions[sessionId]
+    }
+    
+    /**
+     * Get all active sessions.
+     */
+    fun getActiveSessions(): Collection<StdioSession>
+    {
+        return activeSessions.values.filter { it.isActive }
     }
     
     /**

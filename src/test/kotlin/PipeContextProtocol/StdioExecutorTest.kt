@@ -2,6 +2,7 @@ package com.TTT.PipeContextProtocol
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
+import kotlin.text.Regex
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertFalse
@@ -30,7 +31,7 @@ class StdioExecutorTest
             )
             
             // Execute through dispatcher
-            val result = dispatcher.executeRequest(request)
+            val result = dispatcher.executeRequest(request, PcpContext())
             
             assertTrue(result.success, "One-shot execution should succeed")
             assertTrue(result.output.contains("Hello World"), "Output should contain expected text")
@@ -54,7 +55,7 @@ class StdioExecutorTest
                 }
             )
             
-            val result = dispatcher.executeRequest(request)
+            val result = dispatcher.executeRequest(request, PcpContext())
             
             assertTrue(result.success, "Interactive session creation should succeed")
             assertTrue(result.output.contains("Session created:"), "Should indicate session creation")
@@ -76,7 +77,7 @@ class StdioExecutorTest
                 }
             )
             
-            val result = dispatcher.executeRequest(dangerousRequest)
+            val result = dispatcher.executeRequest(dangerousRequest, PcpContext())
             
             assertFalse(result.success, "Dangerous command should be rejected")
             assertTrue(result.error?.contains("not allowed") == true, "Should indicate command not allowed")
@@ -98,7 +99,7 @@ class StdioExecutorTest
                 }
             )
             
-            val result = dispatcher.executeRequest(injectionRequest)
+            val result = dispatcher.executeRequest(injectionRequest, PcpContext())
             
             assertFalse(result.success, "Command injection should be prevented")
             assertTrue(result.error?.contains("injection") == true, "Should detect injection attempt")
@@ -132,5 +133,42 @@ class StdioExecutorTest
         assertEquals(1, stats?.get("inputEntries"), "Should have 1 input entry")
         assertEquals(1, stats?.get("outputEntries"), "Should have 1 output entry")
         assertEquals(1, stats?.get("errorEntries"), "Should have 1 error entry")
+    }
+
+    @Test
+    fun testKeepSessionAliveCreatesSession()
+    {
+        runBlocking {
+            val dispatcher = PcpExecutionDispatcher()
+
+            val request = PcPRequest(
+                stdioContextOptions = StdioContextOptions().apply {
+                    command = "sh"
+                    executionMode = StdioExecutionMode.ONE_SHOT
+                    keepSessionAlive = true
+                    bufferPersistence = true
+                    permissions = mutableListOf(Permissions.Execute)
+                    timeoutMs = 500
+                }
+            )
+
+            val result = dispatcher.executeRequest(request, PcpContext())
+
+            assertTrue(result.success, "Persistent session creation should succeed")
+            val sessionId = Regex("Session created: (\\S+)").find(result.output)?.groupValues?.get(1)
+            assertTrue(!sessionId.isNullOrEmpty(), "Result should contain session ID")
+
+            sessionId?.let {
+                val session = StdioSessionManager.getSession(it)
+                try
+                {
+                    assertTrue(session != null, "Session should be registered")
+                }
+                finally
+                {
+                    StdioSessionManager.closeSession(it)
+                }
+            }
+        }
     }
 }

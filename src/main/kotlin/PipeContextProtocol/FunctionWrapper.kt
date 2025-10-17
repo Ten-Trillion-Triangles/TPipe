@@ -1,6 +1,7 @@
 package com.TTT.PipeContextProtocol
 
-import kotlin.reflect.KFunction
+import kotlin.reflect.*
+import kotlin.reflect.full.*
 
 /**
  * Abstract base class for all native function wrappers.
@@ -37,58 +38,43 @@ abstract class NativeFunction
 class KotlinFunction(
     private val function: KFunction<*>,
     override val signature: FunctionSignature
-) : NativeFunction() 
+) : NativeFunction()
 {
-    /**
-     * Invoke the Kotlin function using reflection with parameter mapping.
-     * Converts the parameter map to ordered arguments based on function signature.
-     * For missing optional parameters, assigns type-appropriate default values.
-     */
-    override suspend fun invoke(parameters: Map<String, Any?>): Any? 
+    override suspend fun invoke(parameters: Map<String, Any?>): Any?
     {
-        // Create ordered parameter array based on function signature
-        val orderedParams = signature.parameters.map { paramInfo ->
-            parameters[paramInfo.name] ?: if (paramInfo.isOptional) {
-                getDefaultValueForType(paramInfo.kotlinType)
-            } else {
-                throw IllegalArgumentException("Required parameter '${paramInfo.name}' not provided")
+        // Reject unbound member or extension references where we cannot infer receivers.
+        function.instanceParameter?.let {
+            throw IllegalStateException(
+                "Unbound member references are not supported. Bind an instance before registering '${function.name}'."
+            )
+        }
+
+        function.extensionReceiverParameter?.let {
+            throw IllegalStateException(
+                "Extension functions are not supported for native binding (${function.name})."
+            )
+        }
+
+        val callArguments = mutableMapOf<KParameter, Any?>()
+
+        function.valueParameters.forEach { kParameter ->
+            val name = kParameter.name ?: return@forEach
+            if (parameters.containsKey(name))
+            {
+                callArguments[kParameter] = parameters[name]
             }
-        }.toTypedArray()
-        
-        // Invoke function with reflection
-        return function.call(*orderedParams)
-    }
-    
-    /**
-     * Get appropriate default value for a given Kotlin type.
-     */
-    private fun getDefaultValueForType(kotlinType: String): Any? 
-    {
-        return when {
-            kotlinType.contains("String") -> ""
-            kotlinType.contains("Int") -> 0
-            kotlinType.contains("Long") -> 0L
-            kotlinType.contains("Double") -> 0.0
-            kotlinType.contains("Float") -> 0.0f
-            kotlinType.contains("Boolean") -> false
-            kotlinType.contains("List") -> emptyList<Any>()
-            kotlinType.contains("Map") -> emptyMap<Any, Any>()
-            kotlinType.contains("Array") -> emptyArray<Any>()
-            kotlinType.endsWith("?") -> null // Nullable types default to null
-            // For enums, try to get the first enum constant
-            kotlinType.contains("enum") || kotlinType.contains("Enum") -> {
-                try {
-                    val clazz = Class.forName(kotlinType.substringBefore("?").trim())
-                    if (clazz.isEnum) {
-                        clazz.enumConstants?.firstOrNull()
-                    } else null
-                } catch (e: Exception) { null }
-            }
-            // For objects and custom classes, return null (can't instantiate safely)
-            else -> null
+        }
+
+        return if (function.isSuspend)
+        {
+            function.callSuspendBy(callArguments)
+        }
+        else
+        {
+            function.callBy(callArguments)
         }
     }
-    
+
     /**
      * Validate that the KFunction matches the provided signature.
      * Checks parameter count and basic type compatibility.
@@ -97,8 +83,15 @@ class KotlinFunction(
     {
         return try 
         {
-            // Basic validation - check parameter count matches
-            function.parameters.size == signature.parameters.size
+            if (function.instanceParameter != null || function.extensionReceiverParameter != null)
+            {
+                false
+            }
+            else
+            {
+                // Basic validation - check parameter count matches value parameters
+                function.valueParameters.size == signature.parameters.size
+            }
         } 
         catch (e: Exception) 
         {

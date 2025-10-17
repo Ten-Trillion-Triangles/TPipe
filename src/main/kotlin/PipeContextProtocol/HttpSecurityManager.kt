@@ -189,6 +189,13 @@ class HttpSecurityManager(
             errors.add("Base URL is required")
         }
         
+        val normalizedMethod = options.method.uppercase()
+
+        if (!HttpConstants.ALL_METHODS.contains(normalizedMethod))
+        {
+            errors.add("Unsupported HTTP method: ${options.method}")
+        }
+
         // PERMISSION VALIDATION - Prevent unauthorized requests
         // Unlike the original stdio system that allowed any command with empty permissions,
         // we require explicit permissions for ALL HTTP methods by default
@@ -196,29 +203,49 @@ class HttpSecurityManager(
         {
             when
             {
-                options.method.uppercase() in HttpConstants.READ_METHODS ->
+                normalizedMethod in HttpConstants.READ_METHODS ->
                 {
                     if (!options.permissions.contains(Permissions.Read))
                     {
-                        errors.add("Read permission required for ${options.method} requests")
+                        errors.add("Read permission required for ${normalizedMethod} requests")
                     }
                 }
-                options.method.uppercase() in HttpConstants.WRITE_METHODS ->
+                normalizedMethod in HttpConstants.WRITE_METHODS ->
                 {
                     if (!options.permissions.contains(Permissions.Write))
                     {
-                        errors.add("Write permission required for ${options.method} requests")
+                        errors.add("Write permission required for ${normalizedMethod} requests")
                     }
                 }
             }
         }
-        
+
+        // Endpoint sanitisation
+        val trimmedEndpoint = options.endpoint.trim()
+        if (trimmedEndpoint.startsWith("http", ignoreCase = true) || trimmedEndpoint.startsWith("//"))
+        {
+            errors.add("Endpoint must be relative and may not include a scheme or host")
+        }
+        if (trimmedEndpoint.contains(".."))
+        {
+            errors.add("Relative path traversal (.. segments) is not allowed in endpoint")
+        }
+        if (trimmedEndpoint.contains('\\'))
+        {
+            errors.add("Backslash characters are not allowed in HTTP endpoints")
+        }
+
         // HOST ALLOWLIST VALIDATION - Prevent requests to arbitrary external services
         // This prevents LLMs from making requests to any website on the internet
         // unless explicitly allowed by the developer
         if (securityConfig.requireExplicitHosts && options.allowedHosts.isEmpty())
         {
             errors.add("Allowed hosts list is required at current security level")
+        }
+
+        if (options.allowedHosts.any { it.trim() == "*" })
+        {
+            errors.add("Wildcard host '*' is not permitted in allowed hosts")
         }
         
         // METHOD ALLOWLIST VALIDATION - Prevent use of dangerous HTTP methods
@@ -229,11 +256,11 @@ class HttpSecurityManager(
         }
         
         // Validate method against allowed methods if specified
-        if (options.allowedMethods.isNotEmpty() && !options.allowedMethods.contains(options.method.uppercase()))
+        if (options.allowedMethods.isNotEmpty() && !options.allowedMethods.contains(normalizedMethod))
         {
-            errors.add("Method ${options.method} not in allowed methods list")
+            errors.add("Method ${normalizedMethod} not in allowed methods list")
         }
-        
+
         // RESOURCE LIMIT VALIDATION - Prevent resource exhaustion attacks
         // These limits prevent LLMs from creating requests that could hang or crash the system
         if (options.timeoutMs > securityConfig.maxTimeoutMs)
@@ -252,7 +279,17 @@ class HttpSecurityManager(
         }
         
         // URL SECURITY VALIDATION - Prevent SSRF and malicious URLs
-        val fullUrl = options.baseUrl + options.endpoint
+        val fullUrl = buildString {
+            append(options.baseUrl)
+            if (trimmedEndpoint.isNotEmpty())
+            {
+                if (!options.baseUrl.endsWith("/") && !trimmedEndpoint.startsWith("/"))
+                {
+                    append('/')
+                }
+                append(trimmedEndpoint)
+            }
+        }
         val urlValidation = validateUrl(fullUrl, options.allowedHosts)
         if (!urlValidation.isValid)
         {
@@ -315,9 +352,22 @@ class HttpSecurityManager(
             if (allowedHosts.isNotEmpty())
             {
                 val host = urlObj.host.lowercase()
-                if (!allowedHosts.any { allowedHost -> 
-                    host == allowedHost.lowercase() || host.endsWith(".$allowedHost".lowercase())
-                })
+                val hostWithPort = if (urlObj.port > 0 && urlObj.port != urlObj.defaultPort)
+                {
+                    "$host:${urlObj.port}"
+                }
+                else host
+
+                val normalizedAllowed = allowedHosts.map { it.trim().lowercase() }
+                val matches = normalizedAllowed.any { allowed ->
+                    when
+                    {
+                        allowed.contains(":") -> hostWithPort == allowed
+                        else -> host == allowed || host.endsWith(".${allowed.trimStart('.')}")
+                    }
+                }
+
+                if (!matches)
                 {
                     errors.add("Host '${urlObj.host}' is not in allowed hosts list")
                 }
@@ -417,40 +467,152 @@ class HttpSecurityManager(
     /**
      * Sanitize request body based on content type.
      */
+    /**
+     * Sanitize HTTP request body with real security validation.
+     */
     fun sanitizeRequestBody(body: String, contentType: String): String
     {
+        if (body.isEmpty()) return body
+        
         var sanitized = body
         
         when
         {
             contentType.contains("application/json") ->
             {
-                // Basic JSON sanitization - remove control characters
-                sanitized = sanitized.replace(Regex("[\\x00-\\x1F\\x7F]"), "")
+                // JSON sanitization
+                sanitized = sanitizeJsonBody(sanitized)
             }
-            
             contentType.contains("application/x-www-form-urlencoded") ->
             {
-                // URL encode special characters
-                sanitized = sanitized.replace("&", "%26")
-                    .replace("=", "%3D")
-                    .replace("+", "%2B")
+                // Form data sanitization
+                sanitized = sanitizeFormData(sanitized)
             }
-            
             contentType.contains("text/") ->
             {
-                // Remove control characters for text content
-                sanitized = sanitized.replace(Regex("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]"), "")
+                // Text content sanitization
+                sanitized = sanitizeTextContent(sanitized)
             }
         }
         
-        // Limit body size
-        if (sanitized.length > 1048576) // 1MB limit
+        // Apply general sanitization
+        sanitized = applyGeneralSanitization(sanitized)
+        
+        return sanitized
+    }
+    
+    /**
+     * Sanitize JSON request body.
+     */
+    private fun sanitizeJsonBody(json: String): String
+    {
+        var sanitized = json
+        
+        // Remove control characters that could break JSON parsing
+        sanitized = sanitized.replace(Regex("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]"), "")
+        
+        // Prevent JSON injection by escaping dangerous patterns
+        sanitized = sanitized.replace("</script>", "<\\/script>")
+        sanitized = sanitized.replace("javascript:", "javascript\\u003a")
+        
+        // Limit JSON depth to prevent parser attacks
+        if (countJsonDepth(sanitized) > MAX_JSON_DEPTH)
         {
-            sanitized = sanitized.take(1048576)
+            throw SecurityException("JSON depth exceeds maximum allowed: $MAX_JSON_DEPTH")
         }
         
         return sanitized
+    }
+    
+    /**
+     * Sanitize form data.
+     */
+    private fun sanitizeFormData(formData: String): String
+    {
+        var sanitized = formData
+        
+        // Remove dangerous characters
+        sanitized = sanitized.replace(Regex("[<>\"'&=]"), "")
+        
+        // Limit length
+        if (sanitized.length > MAX_TEXT_LENGTH)
+        {
+            sanitized = sanitized.substring(0, MAX_TEXT_LENGTH)
+        }
+        
+        return sanitized
+    }
+    
+    /**
+     * Sanitize text content.
+     */
+    private fun sanitizeTextContent(text: String): String
+    {
+        var sanitized = text
+        
+        // Remove control characters
+        sanitized = sanitized.replace(Regex("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]"), "")
+        
+        // Limit length to prevent DoS
+        if (sanitized.length > MAX_TEXT_LENGTH)
+        {
+            sanitized = sanitized.substring(0, MAX_TEXT_LENGTH)
+        }
+        
+        return sanitized
+    }
+    
+    /**
+     * Apply general sanitization rules.
+     */
+    private fun applyGeneralSanitization(content: String): String
+    {
+        var sanitized = content
+        
+        // Remove null bytes
+        sanitized = sanitized.replace("\u0000", "")
+        
+        // Limit total size
+        if (sanitized.length > MAX_BODY_SIZE)
+        {
+            throw SecurityException("Request body size exceeds maximum: $MAX_BODY_SIZE bytes")
+        }
+        
+        return sanitized
+    }
+    
+    /**
+     * Count JSON nesting depth to prevent parser attacks.
+     */
+    private fun countJsonDepth(json: String): Int
+    {
+        var depth = 0
+        var maxDepth = 0
+        
+        for (char in json)
+        {
+            when (char)
+            {
+                '{', '[' ->
+                {
+                    depth++
+                    maxDepth = maxOf(maxDepth, depth)
+                }
+                '}', ']' ->
+                {
+                    depth--
+                }
+            }
+        }
+        
+        return maxDepth
+    }
+    
+    companion object
+    {
+        private const val MAX_JSON_DEPTH = 20
+        private const val MAX_TEXT_LENGTH = 1048576 // 1MB
+        private const val MAX_BODY_SIZE = 10485760 // 10MB
     }
     
     /**

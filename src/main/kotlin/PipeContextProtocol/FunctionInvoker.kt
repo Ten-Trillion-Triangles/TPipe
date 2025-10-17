@@ -129,25 +129,17 @@ class FunctionInvoker
         
         signature.parameters.forEach { paramInfo ->
             val paramValue = parameters[paramInfo.name]
-            
-            if (paramValue != null) 
+
+            if (paramValue != null)
             {
-                // Find appropriate converter and convert value
                 val converter = typeConverters.find { it.canConvert(paramInfo.type, paramInfo.kotlinType) }
-                if (converter != null) 
-                {
-                    convertedParams[paramInfo.name] = converter.convert(paramValue, paramInfo.kotlinType)
-                } 
-                else 
-                {
-                    throw IllegalArgumentException("No converter found for parameter '${paramInfo.name}' of type '${paramInfo.kotlinType}'")
-                }
-            } 
-            else if (paramInfo.isOptional) 
-            {
-                // Use default value for optional parameters
-                convertedParams[paramInfo.name] = null
+                    ?: throw IllegalArgumentException(
+                        "No converter found for parameter '${paramInfo.name}' of type '${paramInfo.kotlinType}'"
+                    )
+
+                convertedParams[paramInfo.name] = converter.convert(paramValue, paramInfo.kotlinType)
             }
+            // Missing optional parameters are intentionally omitted so that Kotlin callBy can apply defaults.
         }
         
         return convertedParams

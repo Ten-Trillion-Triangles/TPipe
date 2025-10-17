@@ -12,8 +12,7 @@ data class FunctionSignature(
     val name: String,
     val parameters: List<ParameterInfo>,
     val returnType: ReturnTypeInfo,
-    val description: String = "",
-    val permissions: List<Permissions> = emptyList()
+    val description: String = ""
 )
 
 /**

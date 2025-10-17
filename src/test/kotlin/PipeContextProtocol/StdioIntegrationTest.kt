@@ -40,7 +40,7 @@ class StdioIntegrationTest
             assertEquals(Transport.Stdio, parser.determineTransport(request), "Should detect Stdio transport")
             
             // 2. Execute through dispatcher
-            val executionResult = dispatcher.executeRequests(parseResult.requests)
+            val executionResult = dispatcher.executeRequests(parseResult.requests, PcpContext())
             assertTrue(executionResult.success, "Should execute stdio command successfully")
             assertEquals(1, executionResult.results.size, "Should have one result")
             
@@ -73,12 +73,12 @@ class StdioIntegrationTest
             val parseResult = parser.extractPcpRequests(maliciousResponse)
             assertTrue(parseResult.success, "Should parse malicious request")
             
-            val executionResult = dispatcher.executeRequests(parseResult.requests)
+            val executionResult = dispatcher.executeRequests(parseResult.requests, PcpContext())
             assertTrue(!executionResult.success, "Dispatcher should report failure when security blocks request")
             
             val result = executionResult.results.first()
             assertTrue(!result.success, "Malicious command should be blocked")
-            assertTrue(result.error?.contains("exceeds maximum allowed level") == true, 
+            assertTrue(result.error?.contains("is not allowed") == true,
                 "Should indicate security level exceeded")
         }
     }

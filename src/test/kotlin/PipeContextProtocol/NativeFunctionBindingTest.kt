@@ -29,6 +29,14 @@ class NativeFunctionBindingTest
     {
         return a * b
     }
+
+    /**
+     * Test function with a Kotlin default parameter.
+     */
+    fun greet(name: String, punctuation: String = "!"): String
+    {
+        return "$name$punctuation"
+    }
     
     @Test
     fun testNativeFunctionBinding() 
@@ -70,7 +78,33 @@ class NativeFunctionBindingTest
             FunctionRegistry.clear()
         }
     }
-    
+
+    @Test
+    fun testDefaultParameterHandling()
+    {
+        runBlocking {
+            FunctionRegistry.clear()
+
+            FunctionRegistry.registerFunction("greet", ::greet)
+
+            val handler = PcpFunctionHandler()
+            val request = PcPRequest(
+                tPipeContextOptions = TPipeContextOptions().apply {
+                    functionName = "greet"
+                },
+                argumentsOrFunctionParams = listOf("Hello")
+            )
+
+            val response = handler.handleFunctionRequest(request)
+
+            assertTrue(response.success, "Function execution should succeed with missing optional parameter")
+            assertEquals("Hello!", response.result, "Default punctuation should be applied")
+
+            handler.clearStoredReturnValues()
+            FunctionRegistry.clear()
+        }
+    }
+
     @Test
     fun testIntegerReturnFunction() 
     {

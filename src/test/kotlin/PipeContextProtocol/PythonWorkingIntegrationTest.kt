@@ -45,7 +45,7 @@ class PythonWorkingIntegrationTest
             
             // Execute via PCP dispatcher
             val dispatcher = PcpExecutionDispatcher()
-            val result = dispatcher.executeRequest(pcpRequest)
+            val result = dispatcher.executeRequest(pcpRequest, PcpContext())
             
             // Print results
             println("✅ Execution successful: ${result.success}")
@@ -84,7 +84,7 @@ class PythonWorkingIntegrationTest
             )
             
             val dispatcher = PcpExecutionDispatcher()
-            val result = dispatcher.executeRequest(pcpRequest)
+            val result = dispatcher.executeRequest(pcpRequest, PcpContext())
             
             println("🚫 Blocked successfully: ${!result.success}")
             println("🛡️ Security error: ${result.error}")
@@ -121,7 +121,7 @@ class PythonWorkingIntegrationTest
                 argumentsOrFunctionParams = listOf(script)
             )
             
-            val result = executor.execute(pcpRequest)
+            val result = executor.execute(pcpRequest, PcpContext())
             
             println("✅ Override successful: ${result.success}")
             println("📂 Output: ${result.output}")

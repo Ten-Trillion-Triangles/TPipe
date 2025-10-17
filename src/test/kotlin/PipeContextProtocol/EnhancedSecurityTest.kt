@@ -49,7 +49,7 @@ class EnhancedSecurityTest
                 }
             )
             
-            val blockedResult = dispatcher.executeRequest(blockedRequest)
+            val blockedResult = dispatcher.executeRequest(blockedRequest, PcpContext())
             assertFalse(blockedResult.success, "rm should be blocked with Execute permission")
             
             // Test that rm is allowed with Delete permission (FORBIDDEN level)
@@ -61,7 +61,7 @@ class EnhancedSecurityTest
                 }
             )
             
-            val allowedResult = dispatcher.executeRequest(allowedRequest)
+            val allowedResult = dispatcher.executeRequest(allowedRequest, PcpContext())
             // Note: This will still fail because rm will actually try to delete a file
             // But the security validation should pass (different error message)
             assertTrue(allowedResult.error?.contains("exceeds maximum allowed level") != true, 

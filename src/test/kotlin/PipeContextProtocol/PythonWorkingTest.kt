@@ -26,7 +26,7 @@ class PythonWorkingTest
             
             // Execute via dispatcher
             val dispatcher = PcpExecutionDispatcher()
-            val result = dispatcher.executeRequest(pcpRequest)
+            val result = dispatcher.executeRequest(pcpRequest, PcpContext())
             
             // Print results for debugging
             println("=== Python Execution Results ===")

@@ -1,6 +1,7 @@
 package com.TTT
 
 import com.TTT.Util.extractJson
+import com.TTT.Serializers.IntCoercionSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
@@ -9,7 +10,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 @Serializable
-data class TestWeight(val weight: Int)
+data class TestWeight(@Serializable(with = IntCoercionSerializer::class) val weight: Int)
 
 class CoercionTest {
 

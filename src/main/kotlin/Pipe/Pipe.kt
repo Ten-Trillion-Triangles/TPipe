@@ -13,6 +13,9 @@ import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Enums.PromptMode
 import com.TTT.Enums.ProviderName
 import com.TTT.P2P.AgentDescriptor
+import com.TTT.PipeContextProtocol.PcpExecutionDispatcher
+import com.TTT.PipeContextProtocol.PcpExecutionResult
+import com.TTT.PipeContextProtocol.PcpResponseParser
 import com.TTT.P2P.AgentRequest
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PDescriptor
@@ -281,6 +284,12 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     @Serializable
     protected var pcpContext = PcpContext()
+
+    /**
+     * PCP execution dispatcher for processing parsed requests with context validation.
+     */
+    @kotlinx.serialization.Transient
+    private val pcpDispatcher = PcpExecutionDispatcher()
 
     /**
      * TPipe Pipe to Pipe agent request settings. Allows the pipe to be informed of what agents it can call.
@@ -774,7 +783,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         this.systemPrompt = prompt
         rawSystemPrompt = prompt
 
-        if(!pcpContext.tpipeOptions.isEmpty() && pcpContext.httpOptions.isEmpty() && pcpContext.stdioOptions.isEmpty())
+        if(!pcpContext.tpipeOptions.isEmpty() || !pcpContext.httpOptions.isEmpty() || !pcpContext.stdioOptions.isEmpty() || pcpContext.pythonOptions.availablePackages.isNotEmpty())
         {
             val pcpAsJson = serialize(pcpContext, false)
             val pcpRequestAsJson = exampleFor(PcPRequest::class)
@@ -934,7 +943,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          * a second set of returning json. TPipe does support handling multiple, but it's strongly advised to avoid
          * such a design pattern.
          */
-        if(!pcpContext.tpipeOptions.isEmpty() && pcpContext.httpOptions.isEmpty() && pcpContext.stdioOptions.isEmpty())
+        if(!pcpContext.tpipeOptions.isEmpty() || !pcpContext.httpOptions.isEmpty() || !pcpContext.stdioOptions.isEmpty() || pcpContext.pythonOptions.availablePackages.isNotEmpty())
         {
             val pcpAsJson = serialize(pcpContext, false)
             val pcpRequestAsJson = exampleFor(PcPRequest::class)
@@ -1853,6 +1862,35 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     {
         pcpDescription = description
         return this
+    }
+
+    /**
+     * Process LLM response for PCP requests and execute them with context validation.
+     * This is the main integration point between Pipe and PCP execution.
+     * 
+     * @param llmResponse The raw LLM response containing potential PCP requests
+     * @return PcpExecutionResult with execution results and any errors
+     * 
+     * @since This method enforces context restrictions and security policies.
+     * Ensure pcpContext is properly configured before calling.
+     */
+    suspend fun processPcpResponse(llmResponse: String): PcpExecutionResult
+    {
+        val parser = PcpResponseParser()
+        val parseResult = parser.extractPcpRequests(llmResponse)
+        
+        if (!parseResult.success)
+        {
+            return PcpExecutionResult(
+                success = false,
+                results = emptyList(),
+                errors = parseResult.errors,
+                executionTimeMs = 0
+            )
+        }
+        
+        // Execute with actual pipe context (fixes dispatcher wiring issue)
+        return pcpDispatcher.executeRequests(parseResult.requests, pcpContext)
     }
 
     /**

@@ -44,7 +44,7 @@ class PythonIntegrationTest
             
             // Execute via dispatcher
             val dispatcher = PcpExecutionDispatcher()
-            val result = dispatcher.executeRequest(pcpRequest)
+            val result = dispatcher.executeRequest(pcpRequest, PcpContext())
             
             // Verify execution
             assertTrue(result.success, "Python script should execute successfully")
@@ -101,7 +101,7 @@ class PythonIntegrationTest
             
             // Execute via dispatcher
             val dispatcher = PcpExecutionDispatcher()
-            val result = dispatcher.executeRequest(pcpRequest)
+            val result = dispatcher.executeRequest(pcpRequest, PcpContext())
             
             // Verify execution
             assertTrue(result.success, "Python file operations should execute successfully")
@@ -133,7 +133,7 @@ class PythonIntegrationTest
             
             // Execute via dispatcher
             val dispatcher = PcpExecutionDispatcher()
-            val result = dispatcher.executeRequest(pcpRequest)
+            val result = dispatcher.executeRequest(pcpRequest, PcpContext())
             
             // Verify security blocking
             assertTrue(!result.success, "Dangerous Python script should be blocked")
@@ -169,7 +169,7 @@ class PythonIntegrationTest
             )
             
             // Execute directly with overridden executor
-            val result = executor.execute(pcpRequest)
+            val result = executor.execute(pcpRequest, PcpContext())
             
             // Verify override works
             assertTrue(result.success, "Python script with security override should execute")

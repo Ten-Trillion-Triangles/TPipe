@@ -37,7 +37,7 @@ class PythonDebugTest
             )
             
             val dispatcher = PcpExecutionDispatcher()
-            val result = dispatcher.executeRequest(pcpRequest)
+            val result = dispatcher.executeRequest(pcpRequest, PcpContext())
             
             println("Success: ${result.success}")
             println("Output: '${result.output}'")

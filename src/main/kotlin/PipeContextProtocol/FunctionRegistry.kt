@@ -1,7 +1,7 @@
 package com.TTT.PipeContextProtocol
 
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.reflect.KFunction
+import kotlin.reflect.*
 import kotlin.reflect.full.valueParameters
 import kotlin.reflect.jvm.javaType
 
@@ -26,6 +26,9 @@ object FunctionRegistry
     /**
      * Register a native function with automatic signature detection.
      * Uses reflection to analyze the KFunction and create appropriate signature metadata.
+     *
+     * Note: passing unbound member or extension references is not supported. Bind the receiver
+     * before registration (e.g. `instance::method`).
      * 
      * @param name The name to register the function under
      * @param function The KFunction to register
@@ -65,6 +68,14 @@ object FunctionRegistry
     fun getFunction(name: String): NativeFunction? 
     {
         return functions[name]
+    }
+    
+    /**
+     * Get function signature by name.
+     */
+    fun getSignature(name: String): FunctionSignature?
+    {
+        return functions[name]?.signature
     }
     
     /**
@@ -131,8 +142,8 @@ object FunctionRegistry
                 type = paramType,
                 kotlinType = kotlinType,
                 isOptional = param.isOptional,
-                defaultValue = null,
-                enumValues = emptyList(),
+                defaultValue = null, // Kotlin defaults cannot be extracted via reflection
+                enumValues = extractEnumValues(param.type),
                 description = ""
             )
         }
@@ -149,9 +160,18 @@ object FunctionRegistry
             name = name,
             parameters = parameters,
             returnType = returnType,
-            description = "",
-            permissions = emptyList()
+            description = ""
         )
+    }
+    
+    private fun extractEnumValues(type: KType): List<String>
+    {
+        val classifier = type.classifier as? KClass<*>
+        return if (classifier?.java?.isEnum == true) {
+            classifier.java.enumConstants.map { it.toString() }
+        } else {
+            emptyList()
+        }
     }
     
     /**

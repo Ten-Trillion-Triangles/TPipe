@@ -58,6 +58,7 @@ class PrimitiveConverter : TypeConverter
             ParamType.Int -> to.contains("Int")
             ParamType.Bool -> to.contains("Boolean")
             ParamType.Float -> to.contains("Float") || to.contains("Double")
+            ParamType.Enum -> true // Can convert any enum type
             else -> false
         }
     }
@@ -75,16 +76,16 @@ class PrimitiveConverter : TypeConverter
         
         if (stringValue.isEmpty() && isNullable) return null
         
-        return try 
+        return try
         {
-            when 
+            when
             {
                 targetType.contains("String") -> stringValue
                 targetType.contains("Int") -> stringValue.toInt()
                 targetType.contains("Boolean") -> stringValue.toBoolean()
                 targetType.contains("Double") -> stringValue.toDouble()
                 targetType.contains("Float") -> stringValue.toFloat()
-                else -> throw IllegalArgumentException("Unsupported target type: $targetType")
+                else -> convertToEnum(stringValue, targetType)
             }
         } 
         catch (e: NumberFormatException) 
@@ -92,14 +93,46 @@ class PrimitiveConverter : TypeConverter
             throw IllegalArgumentException("Cannot convert '$stringValue' to $targetType: ${e.message}")
         }
     }
-    
+
+    private fun convertToEnum(value: String, targetType: String): Any?
+    {
+        val className = targetType.removeSuffix("?")
+        val candidate = value.trim()
+
+        return try
+        {
+            val rawClass = Class.forName(className)
+            if (!rawClass.isEnum)
+            {
+                throw IllegalArgumentException("Type '$className' is not an enum")
+            }
+
+            @Suppress("UNCHECKED_CAST")
+            val enumClass = rawClass as Class<out Enum<*>>
+            java.lang.Enum.valueOf(enumClass, candidate)
+        }
+        catch (e: ClassNotFoundException)
+        {
+            throw IllegalArgumentException("Enum type '$className' not found", e)
+        }
+        catch (e: IllegalArgumentException)
+        {
+            throw IllegalArgumentException("Value '$candidate' is not valid for enum $className", e)
+        }
+    }
+
     /**
      * Convert primitive value back to string format for PCP protocol.
      * Handles null values and provides consistent string representation.
      */
     override fun convertBack(value: Any?, sourceType: ParamType): String 
     {
-        return value?.toString() ?: ""
+        return when
+        {
+            value == null -> ""
+            sourceType == ParamType.Enum && value is Enum<*> -> value.name
+            else -> value.toString()
+        }
     }
 }
 

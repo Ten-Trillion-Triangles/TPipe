@@ -456,7 +456,11 @@ class CommandSecurityManager
      */
     fun validateSessionAccess(sessionId: String, userId: String): Boolean
     {
-        return sessionId.isNotEmpty() && userId.isNotEmpty()
+        if (sessionId.isEmpty() || userId.isEmpty()) return false
+        
+        val session = StdioSessionManager.getSession(sessionId)
+        
+        return session?.isActive == true && session.ownerId == userId
     }
     
     /**
@@ -464,7 +468,7 @@ class CommandSecurityManager
      */
     fun validateBufferAccess(bufferId: String, permissions: List<Permissions>): Boolean
     {
-        return bufferId.isNotEmpty() && permissions.contains(Permissions.Read)
+        return bufferId.isNotEmpty() && permissions.isNotEmpty()
     }
     
     /**
@@ -491,12 +495,32 @@ class CommandSecurityManager
      */
     fun checkResourceLimits(sessionId: String): ResourceValidation
     {
+        val activeSessions = StdioSessionManager.getActiveSessions()
+        val sessionCount = activeSessions.size
+        
+        val memoryUsage = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()
+        val maxMemory = Runtime.getRuntime().maxMemory()
+        val memoryPercent = (memoryUsage.toDouble() / maxMemory) * 100
+        
+        val warnings = mutableListOf<String>()
+        var isValid = true
+        
+        if (sessionCount > 10) {
+            warnings.add("Too many active sessions: $sessionCount")
+            isValid = false
+        }
+        
+        if (memoryPercent > 80) {
+            warnings.add("High memory usage: ${memoryPercent.toInt()}%")
+            isValid = false
+        }
+        
         return ResourceValidation(
-            isValid = true,
-            memoryUsage = 0,
+            isValid = isValid,
+            memoryUsage = memoryUsage,
             cpuUsage = 0.0,
-            sessionCount = 1,
-            warnings = emptyList()
+            sessionCount = sessionCount,
+            warnings = warnings
         )
     }
     

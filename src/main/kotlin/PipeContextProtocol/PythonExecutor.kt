@@ -1,6 +1,8 @@
 package com.TTT.PipeContextProtocol
 
 import kotlinx.serialization.Serializable
+import java.io.File
+import java.util.concurrent.TimeUnit
 
 /**
  * Executes Python scripts with cross-platform environment management and security controls.
@@ -68,128 +70,196 @@ class PythonExecutor : PcpExecutor
     }
     
     /**
-     * Execute Python script based on PCP context options.
+     * Execute Python script with context validation and security enforcement.
+     * 
+     * @param request The PCP request to execute
+     * @param context The security context defining allowed operations
+     * @return PcpRequestResult with execution results or validation errors
      */
-    override suspend fun execute(request: PcPRequest): PcpRequestResult
+    override suspend fun execute(request: PcPRequest, context: PcpContext): PcpRequestResult
+    {
+        val startTime = System.currentTimeMillis()
+        
+        // Merge context options with request options (context takes precedence for security)
+        val mergedOptions = mergeContextOptions(request.pythonContextOptions, context.pythonOptions)
+        
+        // Validate Python request through security manager
+        val script = request.argumentsOrFunctionParams.joinToString("\n")
+        val validation = securityManager.validatePythonRequest(script, mergedOptions)
+        if (!validation.isValid)
+        {
+            return PcpRequestResult(
+                success = false,
+                output = "",
+                executionTimeMs = System.currentTimeMillis() - startTime,
+                transport = Transport.Python,
+                error = "Python security validation failed: ${validation.errors.joinToString("; ")}"
+            )
+        }
+        
+        // Get script content
+        if (script.isEmpty())
+        {
+            return PcpRequestResult(
+                success = false,
+                output = "",
+                executionTimeMs = System.currentTimeMillis() - startTime,
+                transport = Transport.Python,
+                error = "Python script content is required"
+            )
+        }
+        
+        // Validate package imports against context whitelist
+        val importValidation = validatePackageImports(script, context.pythonOptions)
+        if (!importValidation.isValid)
+        {
+            return PcpRequestResult(
+                success = false,
+                output = "",
+                executionTimeMs = System.currentTimeMillis() - startTime,
+                transport = Transport.Python,
+                error = importValidation.error
+            )
+        }
+        
+        // Execute with merged options (security enforced)
+        val secureRequest = request.copy(pythonContextOptions = mergedOptions)
+        return executeSecure(secureRequest)
+    }
+    
+    /**
+     * Merge context Python options with request options.
+     * Context options take precedence for security settings.
+     */
+    private fun mergeContextOptions(requestOptions: PythonContext, contextOptions: PythonContext): PythonContext
+    {
+        return PythonContext().apply {
+            // Use context interpreter path if specified, otherwise request path
+            pythonPath = if (contextOptions.pythonPath.isNotEmpty()) 
+                contextOptions.pythonPath else requestOptions.pythonPath
+            
+            // Use context timeout if specified, otherwise request timeout
+            timeoutMs = if (contextOptions.timeoutMs > 0) 
+                contextOptions.timeoutMs else requestOptions.timeoutMs
+            
+            // CRITICAL: Use context package whitelist (security override)
+            availablePackages.addAll(contextOptions.availablePackages)
+            if (availablePackages.isEmpty())
+            {
+                availablePackages.addAll(requestOptions.availablePackages)
+            }
+            
+            // Context permissions override request permissions
+            permissions.addAll(contextOptions.permissions)
+            if (permissions.isEmpty())
+            {
+                permissions.addAll(requestOptions.permissions)
+            }
+            
+            // Context working directory overrides request
+            workingDirectory = if (contextOptions.workingDirectory.isNotEmpty()) 
+                contextOptions.workingDirectory else requestOptions.workingDirectory
+                
+            // Merge environment variables (context takes precedence)
+            environmentVariables.putAll(requestOptions.environmentVariables)
+            environmentVariables.putAll(contextOptions.environmentVariables)
+            
+            // Context capture output setting overrides request
+            captureOutput = contextOptions.captureOutput
+            
+            // Context python version overrides request
+            pythonVersion = if (contextOptions.pythonVersion.isNotEmpty())
+                contextOptions.pythonVersion else requestOptions.pythonVersion
+        }
+    }
+    
+    /**
+     * Execute Python script with merged security options.
+     */
+    private suspend fun executeSecure(request: PcPRequest): PcpRequestResult
     {
         val startTime = System.currentTimeMillis()
         val options = request.pythonContextOptions
         
         return try
         {
-            // Get script content from argumentsOrFunctionParams
+            // Get script content from request
             val script = request.argumentsOrFunctionParams.joinToString("\n")
-            if (script.isEmpty())
+            
+            // Create temporary script file
+            val scriptFile = File.createTempFile("tpipe_python_", ".py")
+            scriptFile.writeText(script)
+            
+            // Build command
+            val command = buildList<String> {
+                add(options.pythonPath.ifEmpty { resolvePythonExecutable(options) ?: "python3" })
+                add(scriptFile.absolutePath)
+            }
+            
+            // Execute Python script
+            val processBuilder = ProcessBuilder(command)
+            
+            // Set working directory if specified
+            if (options.workingDirectory.isNotEmpty())
             {
+                processBuilder.directory(File(options.workingDirectory))
+            }
+            
+            // Set environment variables
+            val environment = processBuilder.environment()
+            options.environmentVariables.forEach { (key, value) ->
+                environment[key] = value
+            }
+            
+            val process = processBuilder.start()
+            
+            // Handle timeout
+            val completed = if (options.timeoutMs > 0)
+            {
+                process.waitFor(options.timeoutMs.toLong(), TimeUnit.MILLISECONDS)
+            }
+            else
+            {
+                process.waitFor()
+                true
+            }
+            
+            if (!completed)
+            {
+                process.destroyForcibly()
+                scriptFile.delete()
                 return PcpRequestResult(
                     success = false,
                     output = "",
                     executionTimeMs = System.currentTimeMillis() - startTime,
                     transport = Transport.Python,
-                    error = "Python script content is required"
+                    error = "Python script timed out after ${options.timeoutMs}ms"
                 )
             }
             
-            // Sanitize script input
-            if (script.contains('\u0000'))
+            // Capture output
+            val output = process.inputStream.bufferedReader().readText()
+            val errorOutput = process.errorStream.bufferedReader().readText()
+            
+            val finalOutput = if (errorOutput.isNotEmpty())
             {
-                return PcpRequestResult(
-                    success = false,
-                    output = "",
-                    executionTimeMs = System.currentTimeMillis() - startTime,
-                    transport = Transport.Python,
-                    error = "Script contains null bytes"
-                )
+                "$output\nSTDERR: $errorOutput"
+            }
+            else
+            {
+                output
             }
             
-            // Validate security
-            val validation = securityManager.validatePythonRequest(script, options)
-            if (!validation.isValid)
-            {
-                return PcpRequestResult(
-                    success = false,
-                    output = "",
-                    executionTimeMs = System.currentTimeMillis() - startTime,
-                    transport = Transport.Python,
-                    error = "Python validation failed: ${validation.errors.joinToString(", ")}"
-                )
-            }
+            // Clean up
+            scriptFile.delete()
             
-            // Detect or use specified Python executable
-            val pythonExecutable = resolvePythonExecutable(options)
-            if (pythonExecutable == null)
-            {
-                return PcpRequestResult(
-                    success = false,
-                    output = "",
-                    executionTimeMs = System.currentTimeMillis() - startTime,
-                    transport = Transport.Python,
-                    error = "No suitable Python installation found"
-                )
-            }
-            
-            // Write script to temporary file to avoid command injection
-            val tempFile = createTempScriptFile(script)
-            
-            try
-            {
-                // Build Python command using temp file
-                val command = listOf(pythonExecutable, tempFile.absolutePath)
-                
-                // Execute Python process directly
-                val processBuilder = ProcessBuilder(command)
-                processBuilder.directory(java.io.File(options.workingDirectory.ifEmpty { System.getProperty("user.dir") }))
-                
-                // Set environment variables
-                val environment = processBuilder.environment()
-                options.environmentVariables.forEach { (key, value) ->
-                    environment[key] = value
-                }
-                
-                val process = processBuilder.start()
-                
-                // Wait for completion with timeout
-                val completed = process.waitFor(options.timeoutMs.toLong(), java.util.concurrent.TimeUnit.MILLISECONDS)
-                
-                if (!completed)
-                {
-                    process.destroyForcibly()
-                    return PcpRequestResult(
-                        success = false,
-                        output = "",
-                        executionTimeMs = System.currentTimeMillis() - startTime,
-                        transport = Transport.Python,
-                        error = "Python script execution timed out after ${options.timeoutMs}ms"
-                    )
-                }
-                
-                // Capture output
-                val output = if (options.captureOutput)
-                {
-                    process.inputStream.bufferedReader().readText()
-                }
-                else
-                {
-                    ""
-                }
-                
-                val errorOutput = process.errorStream.bufferedReader().readText()
-                val exitCode = process.exitValue()
-                
-                // Return result
-                PcpRequestResult(
-                    success = exitCode == 0,
-                    output = output + if (errorOutput.isNotEmpty()) "\nSTDERR: $errorOutput" else "",
-                    executionTimeMs = System.currentTimeMillis() - startTime,
-                    transport = Transport.Python,
-                    error = if (exitCode != 0) "Python script exited with code $exitCode" else null
-                )
-            }
-            finally
-            {
-                // Clean up temp file
-                tempFile.delete()
-            }
+            PcpRequestResult(
+                success = process.exitValue() == 0,
+                output = finalOutput,
+                executionTimeMs = System.currentTimeMillis() - startTime,
+                transport = Transport.Python,
+                error = if (process.exitValue() != 0) "Python script failed with exit code: ${process.exitValue()}" else null
+            )
         }
         catch (e: Exception)
         {
@@ -202,6 +272,74 @@ class PythonExecutor : PcpExecutor
             )
         }
     }
+    
+    /**
+     * Validate Python script imports against context package whitelist.
+     */
+    private fun validatePackageImports(script: String, contextOptions: PythonContext): PythonValidationResult
+    {
+        // If no package restrictions, allow all imports
+        if (contextOptions.availablePackages.isEmpty())
+        {
+            return PythonValidationResult(true, null)
+        }
+        
+        // Extract import statements from script
+        val imports = extractImportStatements(script)
+        
+        // Check each import against whitelist
+        for (importName in imports)
+        {
+            val isAllowed = contextOptions.availablePackages.any { allowedPackage ->
+                importName == allowedPackage || importName.startsWith("$allowedPackage.")
+            }
+            
+            if (!isAllowed)
+            {
+                return PythonValidationResult(false, "Import '$importName' not in allowed packages list")
+            }
+        }
+        
+        return PythonValidationResult(true, null)
+    }
+    
+    /**
+     * Extract import statements from Python script.
+     */
+    private fun extractImportStatements(script: String): List<String>
+    {
+        val imports = mutableListOf<String>()
+        val lines = script.lines()
+        
+        for (line in lines)
+        {
+            val trimmed = line.trim()
+            
+            // Handle "import module" statements
+            if (trimmed.startsWith("import ") && !trimmed.startsWith("import *"))
+            {
+                val parts = trimmed.substring(7).split(",")
+                parts.forEach { part ->
+                    val moduleName = part.trim().split(" ")[0]
+                    if (moduleName.isNotEmpty()) imports.add(moduleName)
+                }
+            }
+            
+            // Handle "from module import" statements
+            else if (trimmed.startsWith("from ") && " import " in trimmed)
+            {
+                val fromPart = trimmed.substring(5, trimmed.indexOf(" import ")).trim()
+                if (fromPart.isNotEmpty()) imports.add(fromPart)
+            }
+        }
+        
+        return imports.distinct()
+    }
+    
+    /**
+     * Python validation result for context checks.
+     */
+    private data class PythonValidationResult(val isValid: Boolean, val error: String?)
     
     /**
      * Resolve Python executable to use for execution.

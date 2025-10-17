@@ -32,7 +32,7 @@ data class PcpExecutionResult(
  */
 interface PcpExecutor
 {
-    suspend fun execute(request: PcPRequest): PcpRequestResult
+    suspend fun execute(request: PcPRequest, context: PcpContext): PcpRequestResult
 }
 
 /**
@@ -62,15 +62,29 @@ class PcpExecutionDispatcher
     }
     
     /**
-     * Execute a single PCP request.
+     * Execute a single PCP request with context validation.
      */
-    suspend fun executeRequest(request: PcPRequest): PcpRequestResult
+    suspend fun executeRequest(request: PcPRequest, context: PcpContext): PcpRequestResult
     {
         return try
         {
-            val transport = responseParser.determineTransport(request)
-            val executor = routeRequest(transport)
-            executor.execute(request)
+            val requestTransport = responseParser.determineTransport(request)
+            
+            // Validate transport against context restrictions
+            val transportValidation = validateTransport(requestTransport, context)
+            if (!transportValidation.isValid)
+            {
+                return PcpRequestResult(
+                    success = false,
+                    output = "",
+                    executionTimeMs = 0,
+                    transport = requestTransport,
+                    error = transportValidation.error
+                )
+            }
+            
+            val executor = routeRequest(requestTransport)
+            executor.execute(request, context)
         }
         catch (e: Exception)
         {
@@ -86,9 +100,37 @@ class PcpExecutionDispatcher
     }
     
     /**
-     * Execute multiple PCP requests.
+     * Validate request transport against context restrictions.
      */
-    suspend fun executeRequests(requests: List<PcPRequest>): PcpExecutionResult = coroutineScope {
+    private fun validateTransport(requestTransport: Transport, context: PcpContext): TransportValidationResult
+    {
+        // Auto transport allows any request type
+        if (context.transport == Transport.Auto)
+        {
+            return TransportValidationResult(true, null)
+        }
+        
+        // Specific transport must match context
+        if (context.transport != requestTransport)
+        {
+            return TransportValidationResult(
+                false, 
+                "Transport mismatch: context allows ${context.transport}, request uses $requestTransport"
+            )
+        }
+        
+        return TransportValidationResult(true, null)
+    }
+    
+    /**
+     * Transport validation result.
+     */
+    private data class TransportValidationResult(val isValid: Boolean, val error: String?)
+    
+    /**
+     * Execute multiple PCP requests with context validation.
+     */
+    suspend fun executeRequests(requests: List<PcPRequest>, context: PcpContext): PcpExecutionResult = coroutineScope {
         val startTime = System.currentTimeMillis()
         val results = mutableListOf<PcpRequestResult>()
         val errors = mutableListOf<String>()
@@ -96,7 +138,7 @@ class PcpExecutionDispatcher
         try
         {
             val jobs = requests.map { request ->
-                async { executeRequest(request) }
+                async { executeRequest(request, context) }
             }
             
             jobs.forEach { job ->
@@ -113,12 +155,10 @@ class PcpExecutionDispatcher
             errors.add("Execution dispatcher failed: ${e.message}")
         }
         
-        val executionTime = System.currentTimeMillis() - startTime
-        
-        PcpExecutionResult(
-            success = errors.isEmpty() && results.all { it.success },
+        return@coroutineScope PcpExecutionResult(
+            success = errors.isEmpty(),
             results = results,
-            executionTimeMs = executionTime,
+            executionTimeMs = System.currentTimeMillis() - startTime,
             errors = errors
         )
     }

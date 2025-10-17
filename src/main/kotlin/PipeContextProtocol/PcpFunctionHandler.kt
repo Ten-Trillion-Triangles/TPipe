@@ -11,10 +11,51 @@ class PcpFunctionHandler : PcpExecutor
     private val returnValueHandler = ReturnValueHandler()
     
     /**
-     * Execute PCP request by wrapping existing handleFunctionRequest.
-     * Implements PcpExecutor interface for integration with execution dispatcher.
+     * Execute PCP request with context validation and function whitelist enforcement.
+     * 
+     * @param request The PCP request to execute
+     * @param context The security context defining allowed operations
+     * @return PcpRequestResult with execution results or validation errors
      */
-    override suspend fun execute(request: PcPRequest): PcpRequestResult
+    override suspend fun execute(request: PcPRequest, context: PcpContext): PcpRequestResult
+    {
+        val startTime = System.currentTimeMillis()
+        
+        // Check if function execution is allowed in context
+        if (context.tpipeOptions.isEmpty())
+        {
+            return PcpRequestResult(
+                success = false,
+                output = "",
+                executionTimeMs = System.currentTimeMillis() - startTime,
+                transport = Transport.Tpipe,
+                error = "Function execution not enabled in context"
+            )
+        }
+        
+        // Find matching function in context
+        val functionName = request.tPipeContextOptions.functionName
+        val matchingFunction = context.tpipeOptions.find { it.functionName == functionName }
+        
+        if (matchingFunction == null)
+        {
+            return PcpRequestResult(
+                success = false,
+                output = "",
+                executionTimeMs = System.currentTimeMillis() - startTime,
+                transport = Transport.Tpipe,
+                error = "Function '$functionName' not in context whitelist"
+            )
+        }
+        
+        // Execute with validation (parameter validation already integrated)
+        return executeSecure(request, context)
+    }
+    
+    /**
+     * Execute function with context validation.
+     */
+    private suspend fun executeSecure(request: PcPRequest, context: PcpContext): PcpRequestResult
     {
         val functionResponse = handleFunctionRequest(request)
         
@@ -50,6 +91,17 @@ class PcpFunctionHandler : PcpExecutor
             
             // Convert arguments to parameter map
             val parameters = convertArgumentsToParameters(functionName, request.argumentsOrFunctionParams)
+            
+            // Validate function parameters
+            val parameterValidation = validateFunctionParameters(functionName, parameters)
+            if (!parameterValidation.isValid)
+            {
+                return PcpFunctionResponse(
+                    success = false,
+                    result = "",
+                    error = parameterValidation.error ?: "Function parameter validation failed"
+                )
+            }
             
             // Execute the function
             val invocationResult = executeFunction(functionName, parameters)
@@ -137,6 +189,63 @@ class PcpFunctionHandler : PcpExecutor
     {
         return returnValueHandler.getReturnValue(key)
     }
+    
+    /**
+     * Validate function parameters before execution.
+     */
+    private fun validateFunctionParameters(functionName: String, parameters: Map<String, String>): FunctionValidationResult
+    {
+        // Get function signature
+        val signature = getFunctionSignature(functionName)
+            ?: return FunctionValidationResult(false, "Function '$functionName' not found")
+        
+        // Validate parameters
+        return validateParameters(signature, parameters)
+    }
+    
+    /**
+     * Validate function parameters against signature.
+     */
+    private fun validateParameters(signature: FunctionSignature, parameters: Map<String, String>): FunctionValidationResult
+    {
+        // Check each parameter in signature
+        for (paramInfo in signature.parameters)
+        {
+            val paramName = paramInfo.name
+            val providedValue = parameters[paramName]
+            
+            // Check required parameters
+            if (!paramInfo.isOptional && providedValue == null)
+            {
+                return FunctionValidationResult(false, "Missing required parameter: $paramName")
+            }
+            
+            // Validate enum values
+            if (providedValue != null && paramInfo.enumValues.isNotEmpty())
+            {
+                if (!paramInfo.enumValues.contains(providedValue))
+                {
+                    return FunctionValidationResult(false, "Invalid value '$providedValue' for parameter '$paramName'. Allowed: ${paramInfo.enumValues.joinToString(", ")}")
+                }
+            }
+        }
+        
+        return FunctionValidationResult(true, null)
+    }
+    
+    /**
+     * Get function signature by name.
+     */
+    private fun getFunctionSignature(functionName: String): FunctionSignature?
+    {
+        // Access registered functions to get signature
+        return FunctionRegistry.getSignature(functionName)
+    }
+    
+    /**
+     * Function validation result.
+     */
+    private data class FunctionValidationResult(val isValid: Boolean, val error: String?)
     
     /**
      * Clear stored return values.
