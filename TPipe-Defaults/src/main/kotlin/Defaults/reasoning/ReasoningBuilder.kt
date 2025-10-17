@@ -155,21 +155,25 @@ object ReasoningBuilder
                 )
 
                 jsonOutputObject = ExplicitReasoningDetailed()
+                jsonOutputClass = ExplicitReasoningDetailed::class
             }
 
             ReasoningMethod.BestIdea -> {
                 targetSystemPrompt = bestIdeaPrompt()
                 jsonOutputObject = BestIdeaResponse()
+                jsonOutputClass = BestIdeaResponse::class
             }
 
             ReasoningMethod.RolePlay -> {
                 targetSystemPrompt = rolePlayPrompt(settings.roleCharacter)
                 jsonOutputObject = MethodActorResponse()
+                jsonOutputClass = MethodActorResponse::class
             }
 
             ReasoningMethod.ComprehensivePlan -> {
                 targetSystemPrompt = comprehensivePlanPrompt()
                 jsonOutputObject = MultiPhasePlan()
+                jsonOutputClass = MultiPhasePlan::class
             }
         }
 
@@ -187,8 +191,7 @@ object ReasoningBuilder
             .setContextWindowSize(pipeSettings.contextWindowSize)
             .requireJsonPromptInjection()
         // Type-safe JSON output using cast
-        when (jsonOutputClass) 
-        {
+        when (jsonOutputClass) {
             StructuredCot::class -> targetPipe.setJsonOutput(jsonOutputObject as StructuredCot)
             ProcessFocusedResult::class -> targetPipe.setJsonOutput(jsonOutputObject as ProcessFocusedResult)
             ExplicitReasoningDetailed::class -> targetPipe.setJsonOutput(jsonOutputObject as ExplicitReasoningDetailed)

@@ -42,17 +42,51 @@ class KotlinFunction(
     /**
      * Invoke the Kotlin function using reflection with parameter mapping.
      * Converts the parameter map to ordered arguments based on function signature.
+     * For missing optional parameters, assigns type-appropriate default values.
      */
     override suspend fun invoke(parameters: Map<String, Any?>): Any? 
     {
         // Create ordered parameter array based on function signature
         val orderedParams = signature.parameters.map { paramInfo ->
-            parameters[paramInfo.name] ?: if (paramInfo.isOptional) null 
-            else throw IllegalArgumentException("Required parameter '${paramInfo.name}' not provided")
+            parameters[paramInfo.name] ?: if (paramInfo.isOptional) {
+                getDefaultValueForType(paramInfo.kotlinType)
+            } else {
+                throw IllegalArgumentException("Required parameter '${paramInfo.name}' not provided")
+            }
         }.toTypedArray()
         
         // Invoke function with reflection
         return function.call(*orderedParams)
+    }
+    
+    /**
+     * Get appropriate default value for a given Kotlin type.
+     */
+    private fun getDefaultValueForType(kotlinType: String): Any? 
+    {
+        return when {
+            kotlinType.contains("String") -> ""
+            kotlinType.contains("Int") -> 0
+            kotlinType.contains("Long") -> 0L
+            kotlinType.contains("Double") -> 0.0
+            kotlinType.contains("Float") -> 0.0f
+            kotlinType.contains("Boolean") -> false
+            kotlinType.contains("List") -> emptyList<Any>()
+            kotlinType.contains("Map") -> emptyMap<Any, Any>()
+            kotlinType.contains("Array") -> emptyArray<Any>()
+            kotlinType.endsWith("?") -> null // Nullable types default to null
+            // For enums, try to get the first enum constant
+            kotlinType.contains("enum") || kotlinType.contains("Enum") -> {
+                try {
+                    val clazz = Class.forName(kotlinType.substringBefore("?").trim())
+                    if (clazz.isEnum) {
+                        clazz.enumConstants?.firstOrNull()
+                    } else null
+                } catch (e: Exception) { null }
+            }
+            // For objects and custom classes, return null (can't instantiate safely)
+            else -> null
+        }
     }
     
     /**

@@ -6,6 +6,7 @@ package com.TTT.PipeContextProtocol
  */
 enum class Transport
 {
+    Auto,
     Stdio,
     Tpipe,
     Http,
@@ -315,7 +316,7 @@ data class PcpContext(@kotlinx.serialization.Transient val cinit : Boolean = fal
      * Transport mechanism for this context.
      */
     @kotlinx.serialization.Serializable
-    var transport = Transport.Stdio
+    var transport = Transport.Auto
 
     /**
      * Stdio context options.

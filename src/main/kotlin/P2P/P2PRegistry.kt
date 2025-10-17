@@ -509,6 +509,7 @@ object P2PRegistry
             Transport.Tpipe -> return executeP2pRequest(request)
             Transport.Python -> throw IllegalArgumentException("python is not supported in p2p.")
             Transport.Unknown -> throw IllegalArgumentException("unknown transport type.")
+            Transport.Auto -> throw IllegalArgumentException("auto transport not supported in p2p.")
         }
 
     }
