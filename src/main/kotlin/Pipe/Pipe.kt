@@ -3446,25 +3446,32 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
                 for(jsonObject in jsonObjectsFound)
                 {
-                    val asJsonString = jsonObject.toString()
+                    val asJsonString = serialize(jsonObject)
                     val converseHistory = deserialize<ConverseHistory>(jsonObject.toString())
+                    foundConverse = converseHistory != null
 
-                    val newConverseEntry = ConverseData(
-                        ConverseRole.system,
-                        MultimodalContent("$injectionMessage ${content.modelReasoning}"))
-
-                    //Insert at 0. For some reason kotlin doesn't have an insert function and overloads add().
-                    converseHistory?.history?.add(0, newConverseEntry)
-
-                    /**
-                     *  We need to be very careful and only replace the converse history and not any context or other
-                     *  present context.
-                     */
-                    if(converseHistory != null)
+                    if(foundConverse)
                     {
-                        val newConverseJson = serialize(converseHistory, encodedefault = false)
-                        content.text.replace(asJsonString, newConverseJson)
+                        val newConverseEntry = ConverseData(
+                            ConverseRole.system,
+                            MultimodalContent("$injectionMessage ${content.modelReasoning}"))
+
+                        //Insert at 0. For some reason kotlin doesn't have an insert function and overloads add().
+                        converseHistory?.history?.add(0, newConverseEntry)
+
+                        /**
+                         *  We need to be very careful and only replace the converse history and not any context or other
+                         *  present context.
+                         */
+                        if(converseHistory != null)
+                        {
+                            val newConverseJson = serialize(converseHistory, encodedefault = false)
+                            content.text = newConverseJson
+                            break
+                        }
                     }
+
+
                 }
             }
 
@@ -3488,25 +3495,32 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
                 for(jsonObject in jsonObjectsFound)
                 {
-                    val asJsonString = jsonObject.toString()
+                    val asJsonString = serialize(jsonObject)
                     val converseHistory = deserialize<ConverseHistory>(jsonObject.toString())
+                    foundConverse = converseHistory != null
 
-                    val newConverseEntry = ConverseData(
-                        ConverseRole.system,
-                        MultimodalContent("$injectionMessage ${content.modelReasoning}"))
-
-                    //Insert at 0. For some reason kotlin doesn't have an insert function and overloads add().
-                    converseHistory?.history?.add(newConverseEntry)
-
-                    /**
-                     *  We need to be very careful and only replace the converse history and not any context or other
-                     *  present context.
-                     */
-                    if(converseHistory != null)
+                    if(foundConverse)
                     {
-                        val newConverseJson = serialize(converseHistory, encodedefault = false)
-                        content.text.replace(asJsonString, newConverseJson)
+                        val newConverseEntry = ConverseData(
+                            ConverseRole.system,
+                            MultimodalContent("$injectionMessage ${content.modelReasoning}"))
+
+                        //Insert at 0. For some reason kotlin doesn't have an insert function and overloads add().
+                        converseHistory?.history?.add(newConverseEntry)
+
+                        /**
+                         *  We need to be very careful and only replace the converse history and not any context or other
+                         *  present context.
+                         */
+                        if(converseHistory != null)
+                        {
+                            val newConverseJson = serialize(converseHistory, encodedefault = false)
+                            content.text = newConverseJson
+                            break
+                        }
                     }
+
+
                 }
             }
 
