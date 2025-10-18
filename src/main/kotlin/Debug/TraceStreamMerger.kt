@@ -28,13 +28,19 @@ object TraceStreamMerger
             val child = objects[i]
             val parent = objects[i - 1]
             
-            val childId = getTraceId(child) ?: continue
-            val parentId = getTraceId(parent) ?: continue
+            val childId = getTraceId(child)
+            val parentId = getTraceId(parent)
             
-            // Merge child into parent
+            // Skip if either trace ID is null
+            if (childId == null || parentId == null) continue
+            
+            // Get traces - if either is empty, skip merge
             val parentEvents = PipeTracer.getTrace(parentId).toMutableList()
             val childEvents = PipeTracer.getTrace(childId)
             
+            if (childEvents.isEmpty()) continue
+            
+            // Merge child into parent
             parentEvents.addAll(childEvents)
             parentEvents.sortBy { it.timestamp }
             

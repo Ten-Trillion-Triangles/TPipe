@@ -110,7 +110,7 @@ fun main() {
         .setTemperature(0.7)
         .setMaxTokens(1000)
     
-    val result = pipe.execute("What is artificial intelligence?")
+    val result = runBlocking { pipe.execute("What is artificial intelligence?") }
     println(result.text)
 }
 ```
@@ -128,7 +128,7 @@ fun main() {
             .setTemperature(0.7)
             .setMaxTokens(1000)
         
-        val result = pipe.execute("Explain quantum computing in simple terms.")
+        val result = runBlocking { pipe.execute("Explain quantum computing in simple terms.") }
         println("Response: ${result.text}")
         
     } catch (e: Exception) {
@@ -227,7 +227,7 @@ val pipe = BedrockPipe()
     .setJsonOutput(TechnicalAnalysis("", emptyList(), emptyList(), ""))
     .requireJsonPromptInjection()
 
-val result = pipe.execute("Analyze this technical specification...")
+val result = runBlocking { pipe.execute("Analyze this technical specification...") }
 val analysis = Json.decodeFromString<TechnicalAnalysis>(result.text)
 ```
 
@@ -250,7 +250,7 @@ context.contextElements.add("Current year: 2024")
 // Store in global context
 ContextBank.emplaceWithMutex("companyInfo", context)
 
-val result = pipe.execute("Tell me about ACME Corp")
+val result = runBlocking { pipe.execute("Tell me about ACME Corp") }
 ```
 
 ### Human-in-the-Loop Functions
@@ -294,7 +294,7 @@ val analysisPipeline = Pipeline()
         .autoInjectContext("Use the analysis results to create a comprehensive summary.")
     )
 
-val result = analysisPipeline.execute("Large document content here...")
+val result = runBlocking { analysisPipeline.execute("Large document content here...") }
 ```
 
 ## Best Practices
@@ -435,7 +435,7 @@ fun testBedrockConnection() {
             .setModel("anthropic.claude-3-haiku-20240307-v1:0")  // Use fast model for testing
             .setMaxTokens(10)
         
-        val result = pipe.execute("Hello")
+        val result = runBlocking { pipe.execute("Hello") }
         println("Connection successful: ${result.text}")
         
     } catch (e: Exception) {

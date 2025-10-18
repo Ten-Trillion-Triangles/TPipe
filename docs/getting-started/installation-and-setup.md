@@ -32,6 +32,22 @@ TPipe/
 
 ## Adding TPipe to Your Project
 
+### Project Configuration (settings.gradle.kts)
+
+First, configure your `settings.gradle.kts` to include TPipe as a composite build:
+
+```kotlin
+rootProject.name = "your-project-name"
+
+// Include TPipe as a composite build
+includeBuild("../TPipe/TPipe")
+```
+
+**Path Notes:**
+- Adjust the path relative to your project location
+- Example: If TPipe is in a sibling directory, use `"../TPipe/TPipe"`
+- Example: If TPipe is in a subdirectory, use `"TPipe/TPipe"`
+
 ### Kotlin Gradle DSL (build.gradle.kts)
 
 TPipe **only supports Kotlin Gradle DSL**. Add TPipe dependencies to your `build.gradle.kts`:
@@ -163,7 +179,7 @@ fun main() {
         .setModel("anthropic.claude-3-haiku-20240307-v1:0")
         .setRegion("us-west-2")
     
-    val response = pipe.generateText("Hello, world!")
+    val response = runBlocking { pipe.generateText("Hello, world!") }
     println(response)
 }
 ```

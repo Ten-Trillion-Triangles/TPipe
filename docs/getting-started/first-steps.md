@@ -62,8 +62,10 @@ fun main() {
         .setModel("anthropic.claude-3-haiku-20240307-v1:0")
         .setRegion("us-west-2")
     
-    val response = pipe.generateText("Hello, world!")
-    println(response)
+    runBlocking {
+        val response = pipe.generateText("Hello, world!")
+        println(response)
+    }
 }
 ```
 
@@ -74,6 +76,7 @@ Some models require cross-region ARN binding to connect:
 ```kotlin
 import bedrockPipe.BedrockPipe
 import env.bedrockEnv
+import kotlinx.coroutines.runBlocking
 
 fun main() {
     // Required for cross-region models
@@ -86,8 +89,10 @@ fun main() {
         .setModel("anthropic.claude-3-5-sonnet-20241022-v2:0")
         .setRegion("us-east-1")
     
-    val response = pipe.generateText("Hello from cross-region model!")
-    println(response)
+    runBlocking {
+        val response = pipe.generateText("Hello from cross-region model!")
+        println(response)
+    }
 }
 ```
 
@@ -95,6 +100,7 @@ fun main() {
 
 ```kotlin
 import bedrockPipe.BedrockPipe
+import kotlinx.coroutines.runBlocking
 
 fun main() {
     val pipe = BedrockPipe()
@@ -105,8 +111,10 @@ fun main() {
             print(chunk)
         }
     
-    pipe.generateText("Tell me a short story.")
-    println("\nDone!")
+    runBlocking {
+        pipe.generateText("Tell me a short story.")
+        println("\nDone!")
+    }
 }
 ```
 

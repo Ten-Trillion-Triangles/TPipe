@@ -263,7 +263,7 @@ fun setupInferenceBinding() {
         .setModel("amazon.nova-pro-v1:0")  // Uses bound profile automatically
         .setSystemPrompt("You are a helpful assistant.")
     
-    val result = pipe.execute("Hello world")
+    val result = runBlocking { pipe.execute("Hello world") }
 }
 ```
 

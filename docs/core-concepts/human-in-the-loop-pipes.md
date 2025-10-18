@@ -131,7 +131,7 @@ val contentPipe = BedrockPipe()
     .setTransformationPipe(styleTransformer)  // First transformation
     .setTransformationFunction { content ->
         // Additional transformation after AI processing
-        val formatted = formatTransformer.execute(content.text)
+        val formatted = runBlocking { formatTransformer.execute(content.text) }
         content.text = formatted.text
         content
     }

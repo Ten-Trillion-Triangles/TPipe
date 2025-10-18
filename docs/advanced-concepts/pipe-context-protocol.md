@@ -166,8 +166,9 @@ fun configurePipe(pipe: Pipe) {
 }
 ```
 
-When you subsequently call `pipe.generateContent`, the runtime serialises the context into the
+When you subsequently call `pipe.generateText()` or `pipe.execute()`, the runtime serialises the context into the
 system prompt. Any PCP requests produced by the LLM will be validated against the same context.
+To process PCP replies, call `Pipe.processPcpResponse(llmResponse)` after getting the LLM response.
 
 ## PCP Requests and Responses
 
