@@ -311,7 +311,7 @@ val request = DocumentRequest(
 )
 
 val jsonInput = Json.encodeToString(request)
-val response = analysisPipe.generateText(jsonInput)
+val response = runBlocking { analysisPipe.generateText(jsonInput) }
 val result = Json.decodeFromString<DocumentAnalysis>(response)
 ```
 
@@ -336,7 +336,7 @@ enum class Status { PENDING, PROCESSING, COMPLETE }
 fun safeJsonProcessing(pipe: BedrockPipe, input: Any): MyResponse? {
     return try {
         val jsonInput = Json.encodeToString(input)
-        val response = pipe.generateText(jsonInput)
+        val response = runBlocking { pipe.generateText(jsonInput) }
         Json.decodeFromString<MyResponse>(response)
     } catch (e: SerializationException) {
         // Handle malformed JSON from AI

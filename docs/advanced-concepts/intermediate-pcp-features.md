@@ -66,11 +66,12 @@ val granularConfig = PythonSecurityConfig(
     requirePermissions = true,
     allowedImports = setOf("pandas", "numpy"),
     allowedFunctions = setOf("open", "print"),
-    allowedPatterns = setOf("from\\s+datetime\\s+import"),
-    availablePackages = listOf("json", "pandas", "numpy")
+    allowedPatterns = setOf("from\\s+datetime\\s+import")
 )
 pythonExecutor.setSecurityConfig(granularConfig)
 ```
+
+**Note**: Package whitelists are managed through the `PythonContext` rather than `PythonSecurityConfig`. The merged whitelist comes from the context + request during execution.
 
 You can selectively re-enable blocked behaviour using helper methods:
 

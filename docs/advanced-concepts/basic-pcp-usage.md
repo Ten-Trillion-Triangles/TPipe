@@ -144,11 +144,13 @@ with `PcpResponseParser.validatePcpRequest` before dispatch.
 Each executor returns a `PcpRequestResult`:
 
 ```kotlin
-when (val result = dispatcher.executeRequest(request, context)) {
-    else -> if (result.success) {
-        println(result.output)
-    } else {
-        println("PCP error (${result.transport}): ${result.error}")
+runBlocking {
+    when (val result = dispatcher.executeRequest(request, context)) {
+        else -> if (result.success) {
+            println(result.output)
+        } else {
+            println("PCP error (${result.transport}): ${result.error}")
+        }
     }
 }
 ```

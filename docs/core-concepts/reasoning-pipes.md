@@ -475,7 +475,7 @@ val businessDecisionPipe = BedrockPipe()
     .pullPipelineContext()
 
 // Usage
-val decision = businessDecisionPipe.execute("Should we expand into the European market?")
+val decision = runBlocking { businessDecisionPipe.execute("Should we expand into the European market?") }
 ```
 
 ### Technical Problem Solving
@@ -500,7 +500,7 @@ val systemDesignPipe = BedrockPipe()
     .setReasoningPipe(engineerReasoningPipe)
 
 // Usage
-val design = systemDesignPipe.execute("Design a microservices architecture for our e-commerce platform")
+val design = runBlocking { systemDesignPipe.execute("Design a microservices architecture for our e-commerce platform") }
 ```
 
 ### Creative Innovation
@@ -530,7 +530,7 @@ val innovationPipe = BedrockPipe()
     .setReasoningPipe(creativeReasoningPipe)
 
 // Usage
-val innovation = innovationPipe.execute("Create a new mobile app concept for remote team collaboration")
+val innovation = runBlocking { innovationPipe.execute("Create a new mobile app concept for remote team collaboration") }
 ```
 
 ## Best Practices

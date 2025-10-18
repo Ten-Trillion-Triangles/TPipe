@@ -32,7 +32,7 @@ val pipe = BedrockPipe()
     .enableTracing()  // Enable basic tracing
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
 
-val result = pipe.execute("Hello world")
+val result = runBlocking { pipe.execute("Hello world") }
 // Tracing output will be logged to console
 ```
 
@@ -49,7 +49,7 @@ val pipeline = Pipeline()
         .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
     )
 
-val result = pipeline.execute("Complex input requiring analysis")
+val result = runBlocking { pipeline.execute("Complex input requiring analysis") }
 ```
 
 ### Conditional Tracing
@@ -162,7 +162,7 @@ val pipe = BedrockPipe()
     .enableTracing()  // Enable to see context loading
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
 
-val result = pipe.execute("What do you know about me?")
+val result = runBlocking { pipe.execute("What do you know about me?") }
 
 // Trace output will show:
 // - CONTEXT_PULL: Loading context from ContextBank
@@ -188,7 +188,7 @@ val pipe = BedrockPipe()
     .enableTracing()  // See validation process
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
 
-val result = pipe.execute("Create a user profile for John Doe")
+val result = runBlocking { pipe.execute("Create a user profile for John Doe") }
 
 // Trace output will show:
 // - VALIDATION_START: Beginning validation
@@ -207,7 +207,7 @@ val pipe = BedrockPipe()
 
 val largeDocument = "..." // Large text content
 
-val result = pipe.execute(largeDocument)
+val result = runBlocking { pipe.execute(largeDocument) }
 
 // Trace output will show:
 // - Token counting time
@@ -236,7 +236,7 @@ val analysisPipeline = Pipeline()
         .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
     )
 
-val result = analysisPipeline.execute("Large document content...")
+val result = runBlocking { analysisPipeline.execute("Large document content...") }
 
 // Trace output will show:
 // - Each pipe's execution with names

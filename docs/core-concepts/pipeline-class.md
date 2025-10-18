@@ -27,7 +27,7 @@ val pipeline = Pipeline()
     .add(generationPipe)    // Stage 2: Generate content
     .add(validationPipe)    // Stage 3: Validate output
 
-val result = pipeline.execute("Process this document...")
+val result = runBlocking { pipeline.execute("Process this document...") }
 ```
 
 **What this does**: Executes pipes in sequence, where each pipe receives the output of the previous pipe as input.
@@ -83,14 +83,14 @@ pipeline.add(pipe1)
 ### Executing Pipelines
 ```kotlin
 // Text-only execution
-val result: String = pipeline.execute("Input text")
+val result: String = runBlocking { pipeline.execute("Input text") }
 
 // Multimodal execution
 val content = MultimodalContent(
     text = "Analyze this document",
     binaryContent = listOf(BinaryContent.fromFile("document.pdf"))
 )
-val result: MultimodalContent = pipeline.execute(content)
+val result: MultimodalContent = runBlocking { pipeline.execute(content) }
 ```
 
 ### Pipeline Information
@@ -206,7 +206,7 @@ documentPipeline.add(extractorPipe)
     .add(analyzerPipe)
     .add(summarizerPipe)
 
-val result = documentPipeline.execute(documentContent)
+val result = runBlocking { documentPipeline.execute(documentContent) }
 ```
 
 ### 2. Quality Assurance Pipeline

@@ -193,7 +193,7 @@ try {
 ### Runtime Token Management
 ```kotlin
 try {
-    val response = pipe.generateText(largeInput)
+    val response = runBlocking { pipe.generateText(largeInput) }
 } catch (e: Exception) {
     if (e.message?.contains("Context window size is too small") == true) {
         // Input + context exceeds available space
