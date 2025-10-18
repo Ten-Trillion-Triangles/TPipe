@@ -2901,8 +2901,12 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             if(stripNonJson)
             {
                 val jsonObjects = extractAllJsonObjects(generatedContent.text)
-                val newText = jsonObjects.toString()
-                generatedContent.text = newText
+                if(jsonObjects.isNotEmpty())
+                {
+                    val newText = jsonObjects.toString()
+                    generatedContent.text = newText
+                }
+
             }
 
 
@@ -3355,7 +3359,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              * The assumption is that [ReasoningBuilder.assignDefaults] was correctly invoked. Prior. If not the
              * output of the reasoning pipe will become empty.
              */
-            result.text = extractReasoningContent(pipeMetadata["reasoningMethod"] as? String ?: "", result)
+            result.text = extractReasoningContent(reasoningPipe?.pipeMetadata["reasoningMethod"] as? String ?: "", result)
             contentCopy.modelReasoning += " ${result.text}"
         }
 

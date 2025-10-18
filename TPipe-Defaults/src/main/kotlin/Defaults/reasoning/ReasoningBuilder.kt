@@ -168,6 +168,7 @@ object ReasoningBuilder
                 targetSystemPrompt = rolePlayPrompt(settings.roleCharacter)
                 jsonOutputObject = MethodActorResponse()
                 jsonOutputClass = MethodActorResponse::class
+                targetSystemPrompt += """ROLE PLAY AS THE FOLLOWING CHARACTER: ${settings.roleCharacter}"""
             }
 
             ReasoningMethod.ComprehensivePlan -> {
@@ -233,6 +234,12 @@ object ReasoningBuilder
         targetPipe.pipeMetadata["injectionMethod"] = settings.reasoningInjector.toString()
 
         targetPipe.pipeMetadata["reasoningMethod"] = settings.reasoningMethod.toString()
+
+        targetPipe.setFooterPrompt("""
+            
+            IMPORTANT: You must fill all json values of your output. This INCLUDES NESTED JSON OBJECTS!! Fully
+            complete your json output when producing your response.
+        """.trimIndent())
 
         //Bind now to cache our system prompt we saved as the original system prompt.
         targetPipe.applySystemPrompt()

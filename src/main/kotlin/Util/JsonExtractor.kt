@@ -42,19 +42,29 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
         if (!overlapsWithProcessed(range, processedRanges))
         {
             val jsonCandidate = input.substring(range)
-            val repaired = repairJsonString(jsonCandidate)
             
             try {
-                val element = json.parseToJsonElement(repaired)
+                // Try parsing original first
+                val element = json.parseToJsonElement(jsonCandidate)
                 results.add(element)
                 processedRanges.add(range)
             }
             catch (e: Exception)
             {
-                // Try fallback repair for severely malformed JSON
-                tryFallbackExtraction(jsonCandidate)?.let { fallbackElement ->
-                    results.add(fallbackElement)
+                // Only repair if original parsing failed
+                try {
+                    val repaired = repairJsonString(jsonCandidate)
+                    val element = json.parseToJsonElement(repaired)
+                    results.add(element)
                     processedRanges.add(range)
+                }
+                catch (e2: Exception)
+                {
+                    // Try fallback repair for severely malformed JSON
+                    tryFallbackExtraction(jsonCandidate)?.let { fallbackElement ->
+                        results.add(fallbackElement)
+                        processedRanges.add(range)
+                    }
                 }
             }
         }
@@ -65,19 +75,29 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
         if (!overlapsWithProcessed(range, processedRanges))
         {
             val jsonCandidate = input.substring(range)
-            val repaired = repairJsonString(jsonCandidate)
             
             try {
-                val element = json.parseToJsonElement(repaired)
+                // Try parsing original first
+                val element = json.parseToJsonElement(jsonCandidate)
                 results.add(element)
                 processedRanges.add(range)
             }
             catch (e: Exception)
             {
-                // Arrays are less likely to need fallback, but attempt if needed
-                tryFallbackExtraction(jsonCandidate)?.let { fallbackElement ->
-                    results.add(fallbackElement)
+                // Only repair if original parsing failed
+                try {
+                    val repaired = repairJsonString(jsonCandidate)
+                    val element = json.parseToJsonElement(repaired)
+                    results.add(element)
                     processedRanges.add(range)
+                }
+                catch (e2: Exception)
+                {
+                    // Arrays are less likely to need fallback, but attempt if needed
+                    tryFallbackExtraction(jsonCandidate)?.let { fallbackElement ->
+                        results.add(fallbackElement)
+                        processedRanges.add(range)
+                    }
                 }
             }
         }
@@ -87,47 +107,45 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
 }
 
 /**
- * Finds the boundaries of JSON objects or arrays by matching opening and closing brackets.
- * Handles nested structures correctly by tracking bracket depth.
+ * Finds the boundaries of JSON objects by tracking nesting depth from first { to matching }.
+ * When depth returns to 0, we have a complete object. Continue scanning for next top-level {.
  */
 private fun findJsonBoundaries(input: String, openChar: Char, closeChar: Char): List<IntRange>
 {
     val boundaries = mutableListOf<IntRange>()
     var i = 0
     
-    while (i < input.length)
-    {
-        if (input[i] == openChar)
-        {
-            val start = i
-            var depth = 1
-            var inString = false
-            var escaped = false
+    while (i < input.length) {
+        // Find next top-level opening bracket
+        while (i < input.length && input[i] != openChar) {
             i++
-            
-            while (i < input.length && depth > 0)
-            {
-                val char = input[i]
-                
-                when
-                {
-                    escaped -> escaped = false
-                    char == '\\' -> escaped = true
-                    char == '"' && !escaped -> inString = !inString
-                    !inString && char == openChar -> depth++
-                    !inString && char == closeChar -> depth--
-                }
-                
-                i++
-            }
-            
-            if (depth == 0)
-            {
-                boundaries.add(start until i)
-            }
         }
-        else
-        {
+        
+        if (i >= input.length) break
+        
+        val start = i
+        var depth = 0
+        var inString = false
+        var escaped = false
+        
+        // Track from opening bracket to matching closing bracket
+        while (i < input.length) {
+            val char = input[i]
+            
+            when {
+                escaped -> escaped = false
+                char == '\\' && inString -> escaped = true
+                char == '"' && !escaped -> inString = !inString
+                !inString && char == openChar -> depth++
+                !inString && char == closeChar -> {
+                    depth--
+                    if (depth == 0) {
+                        boundaries.add(start..i)
+                        i++
+                        break
+                    }
+                }
+            }
             i++
         }
     }

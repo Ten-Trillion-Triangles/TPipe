@@ -93,7 +93,7 @@ import. Attempting to load a package that is missing from the combined whitelist
 ## Native Function Binding
 
 Binding native Kotlin functions exposes them to PCP as structured tools. The runtime handles
-argument conversion using `FunctionInvoker` and `TypeConverter`s.
+argument conversion using `FunctionInvoker` and `TypeConverter`.
 
 ### Automatic signature detection
 

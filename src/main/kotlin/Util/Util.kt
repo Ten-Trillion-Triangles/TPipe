@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import kotlinx.io.*
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.JsonElement
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import kotlin.reflect.KClass
@@ -120,45 +121,118 @@ fun repairJsonString(input: String): String
 {
     var repaired = input.trim()
     
-    // Decode HTML entities first
+    // Decode HTML entities and common escape sequences
     repaired = repaired
         .replace("&quot;", "\"")
         .replace("&amp;", "&")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&#39;", "'")
+        .replace("\\n", "\n")
+        .replace("\\t", "\t")
+        .replace("\\r", "\r")
     
-    // Extract JSON boundaries
-    val jsonStart = repaired.indexOfFirst { it == '{' || it == '[' }
-    val jsonEnd = repaired.indexOfLast { it == '}' || it == ']' }
-    if (jsonStart != -1 && jsonEnd != -1) {
-        repaired = repaired.substring(jsonStart, jsonEnd + 1)
+    // Extract JSON boundaries with proper bracket matching
+    val jsonBounds = findJsonBounds(repaired)
+    if (jsonBounds != null) {
+        repaired = repaired.substring(jsonBounds.first, jsonBounds.second + 1)
     }
     
-    // Apply repair strategies
+    // Fix structural issues
     repaired = repaired
-        .replace(",}", "}") // Remove trailing commas before }
-        .replace(",]", "]") // Remove trailing commas before ]
-        .replace(",,", ",") // Fix double commas
-        .replace(": ,", ": null,") // Fix empty values
-        .replace(":,", ": null,") // Fix empty values without space
+        .replace(Regex(",+\\s*([}\\]])"), "$1") // Remove trailing commas
+        .replace(Regex(",+"), ",") // Fix multiple commas
+        .replace(Regex(":\\s*,"), ": null,") // Fix empty values
+        .replace(Regex(":\\s*([}\\]])"), ": null$1") // Fix missing values at end
     
-    // Add quotes around unquoted keys (but not if already quoted)
-    repaired = Regex("([{,]\\s*)([a-zA-Z_][a-zA-Z0-9_]*)\\s*:").replace(repaired) { match ->
-        "${match.groupValues[1]}\"${match.groupValues[2]}\":"
+    // Fix unquoted keys - more comprehensive pattern
+    repaired = Regex("([{,]\\s*)([a-zA-Z_][\\w\\s-]*?)\\s*:").replace(repaired) { match ->
+        val key = match.groupValues[2].trim()
+        "${match.groupValues[1]}\"$key\":"
     }
     
-    // Add quotes around unquoted string values (skip if value is already a quoted string, boolean, null, or number)
-    repaired = Regex(":\\s*(?!\")([a-zA-Z][^,}\\]\"]*?)([,}\\]])").replace(repaired) { match ->
-        val value = match.groupValues[1].trim()
-        if (!value.matches(Regex("true|false|null|\\d+(\\.\\d+)?"))) {
-            ": \"$value\"${match.groupValues[2]}"
-        } else {
-            match.value
+    // Fix unquoted string values - handle more cases
+    repaired = fixUnquotedValues(repaired)
+    
+    // Fix incomplete structures
+    repaired = completeStructure(repaired)
+    
+    return repaired
+}
+
+private fun findJsonBounds(input: String): Pair<Int, Int>?
+{
+    val start = input.indexOfFirst { it == '{' || it == '[' }
+    if (start == -1) return null
+    
+    val openChar = input[start]
+    val closeChar = if (openChar == '{') '}' else ']'
+    var depth = 0
+    var inString = false
+    var escaped = false
+    
+    for (i in start until input.length) {
+        val char = input[i]
+        when {
+            escaped -> escaped = false
+            char == '\\' -> escaped = true
+            char == '"' && !escaped -> inString = !inString
+            !inString && char == openChar -> depth++
+            !inString && char == closeChar -> {
+                depth--
+                if (depth == 0) return Pair(start, i)
+            }
         }
     }
     
-    return repaired
+    // If unclosed, find reasonable end point
+    val lastBrace = input.lastIndexOf(closeChar)
+    return if (lastBrace > start) Pair(start, lastBrace) else null
+}
+
+private fun fixUnquotedValues(input: String): String
+{
+    var result = input
+    
+    // Pattern to match unquoted values after colons
+    val valuePattern = Regex("(:\\s*)(?![\"{\\[\\]\\-\\d]|true|false|null)([^,}\\]\"\\n]+?)(?=[,}\\]\\n])")
+    
+    result = valuePattern.replace(result) { match ->
+        val prefix = match.groupValues[1]
+        val value = match.groupValues[2].trim()
+        
+        // Don't quote if it's clearly a number, boolean, or null
+        if (value.matches(Regex("\\-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?|true|false|null"))) {
+            match.value
+        } else {
+            "$prefix\"$value\""
+        }
+    }
+    
+    return result
+}
+
+private fun completeStructure(input: String): String
+{
+    var result = input.trim()
+    
+    // Count opening vs closing brackets
+    val openBraces = result.count { it == '{' }
+    val closeBraces = result.count { it == '}' }
+    val openBrackets = result.count { it == '[' }
+    val closeBrackets = result.count { it == ']' }
+    
+    // Add missing closing braces/brackets
+    repeat(openBraces - closeBraces) { result += "}" }
+    repeat(openBrackets - closeBrackets) { result += "]" }
+    
+    // Handle truncated strings
+    val quoteCount = result.count { it == '"' }
+    if (quoteCount % 2 != 0) {
+        result += "\""
+    }
+    
+    return result
 }
 
 
@@ -187,14 +261,122 @@ inline fun <reified T> repairAndDeserialize(malformedJson: String): T?
         decodeEnumsCaseInsensitive = true
     }
     
+    // Try standard repair first
     val result = try {
         json.decodeFromString<T>(repaired)
     } catch (e: Exception) {
         null
     }
     
-    // If repair failed, try reflection-based reconstruction
-    return result ?: reflectionBasedReconstruct<T>(malformedJson)
+    // If repair failed, try aggressive extraction
+    return result ?: aggressiveExtraction<T>(malformedJson)
+}
+
+/**
+ * Aggressive extraction using multiple fallback strategies when standard repair fails.
+ */
+@OptIn(ExperimentalSerializationApi::class)
+inline fun <reified T> aggressiveExtraction(malformedJson: String): T?
+{
+    // Strategy 1: Try reflection-based reconstruction
+    reflectionBasedReconstruct<T>(malformedJson)?.let { return it }
+    
+    // Strategy 2: Extract from multiple JSON fragments
+    val allJsonObjects = extractAllJsonObjects(malformedJson)
+    for (jsonElement in allJsonObjects) {
+        try {
+            val jsonString = Json.encodeToString(JsonElement.serializer(), jsonElement)
+            return Json { 
+                ignoreUnknownKeys = true
+                isLenient = true
+                coerceInputValues = true
+            }.decodeFromString<T>(jsonString)
+        } catch (e: Exception) { continue }
+    }
+    
+    // Strategy 3: Aggressive text mining
+    aggressiveTextMining<T>(malformedJson)?.let { return it }
+    
+    // Strategy 4: Template-based reconstruction
+    return templateBasedReconstruction<T>(malformedJson)
+}
+
+/**
+ * Mines text for any recognizable patterns and attempts reconstruction.
+ */
+@OptIn(ExperimentalSerializationApi::class)
+inline fun <reified T> aggressiveTextMining(text: String): T?
+{
+    val clazz = T::class.java
+    val reconstructed = mutableMapOf<String, Any?>()
+    
+    // Get field names from target class
+    val fieldNames = clazz.declaredFields.map { it.name }
+    
+    // Mine for field values using multiple patterns
+    for (fieldName in fieldNames) {
+        val patterns = listOf(
+            Regex("$fieldName[\"'\\s]*[:=][\"'\\s]*([^,}\\]\\n]+)", RegexOption.IGNORE_CASE),
+            Regex("\"$fieldName\"[\\s]*:[\\s]*\"([^\"]*)", RegexOption.IGNORE_CASE),
+            Regex("$fieldName[\\s]*=[\\s]*([^,\\n]+)", RegexOption.IGNORE_CASE),
+            Regex("$fieldName[\\s]*is[\\s]*([^,\\n]+)", RegexOption.IGNORE_CASE)
+        )
+        
+        for (pattern in patterns) {
+            pattern.find(text)?.let { match ->
+                val value = match.groupValues[1].trim().removeSurrounding("\"", "'")
+                if (value.isNotEmpty()) {
+                    reconstructed[fieldName] = value
+                    break
+                }
+            }
+        }
+    }
+    
+    return if (reconstructed.isNotEmpty()) {
+        try {
+            val jsonString = Json.encodeToString(reconstructed)
+            Json { 
+                ignoreUnknownKeys = true
+                isLenient = true
+                coerceInputValues = true
+            }.decodeFromString<T>(jsonString)
+        } catch (e: Exception) { null }
+    } else null
+}
+
+/**
+ * Creates a template instance and fills it with any extractable data.
+ */
+@OptIn(ExperimentalSerializationApi::class)
+inline fun <reified T> templateBasedReconstruction(text: String): T?
+{
+    return try {
+        val clazz = T::class.java
+        val constructor = clazz.getDeclaredConstructor()
+        constructor.isAccessible = true
+        val instance = constructor.newInstance()
+        
+        // Try to fill fields with extracted data
+        val extracted = extractJsonData(text)
+        clazz.declaredFields.forEach { field ->
+            field.isAccessible = true
+            extracted[field.name]?.let { value ->
+                try {
+                    when (field.type) {
+                        String::class.java -> field.set(instance, value)
+                        Boolean::class.java -> field.set(instance, value.lowercase() == "true")
+                        Int::class.java -> field.set(instance, value.toIntOrNull() ?: 0)
+                        Double::class.java -> field.set(instance, value.toDoubleOrNull() ?: 0.0)
+                    }
+                } catch (e: Exception) { /* Skip field */ }
+            }
+        }
+        
+        instance as T
+    } catch (e: Exception) {
+        null
+    }
 }
 
 
@@ -206,14 +388,26 @@ fun extractJsonData(malformedJson: String): Map<String, String>
 {
     val result = mutableMapOf<String, String>()
     
-    // Pattern for "key": "value" or key: value
-    val keyValuePattern = Regex("\"?([a-zA-Z_][a-zA-Z0-9_]*)\"?\\s*:\\s*\"([^\"]*)\"|\"?([a-zA-Z_][a-zA-Z0-9_]*)\"?\\s*:\\s*([^,}\\]]+)")
+    // More comprehensive pattern for key-value pairs
+    val patterns = listOf(
+        // "key": "value" or 'key': 'value'
+        Regex("\"([^\"]+)\"\\s*:\\s*\"([^\"]*(?:\\\\.[^\"]*)*)\""),
+        Regex("'([^']+)'\\s*:\\s*'([^']*(?:\\\\.[^']*)*)'"),
+        // "key": value (unquoted values)
+        Regex("\"([^\"]+)\"\\s*:\\s*([^,}\\]\\n]+?)(?=[,}\\]\\n]|$)"),
+        // key: "value" (unquoted keys)
+        Regex("([a-zA-Z_][\\w\\s-]*)\\s*:\\s*\"([^\"]*(?:\\\\.[^\"]*)*)\""),
+        // key: value (both unquoted)
+        Regex("([a-zA-Z_][\\w\\s-]*)\\s*:\\s*([^,}\\]\\n]+?)(?=[,}\\]\\n]|$)")
+    )
     
-    keyValuePattern.findAll(malformedJson).forEach { match ->
-        val key = match.groupValues[1].ifEmpty { match.groupValues[3] }
-        val value = match.groupValues[2].ifEmpty { match.groupValues[4].trim() }
-        if (key.isNotEmpty()) {
-            result[key] = value
+    for (pattern in patterns) {
+        pattern.findAll(malformedJson).forEach { match ->
+            val key = match.groupValues[1].trim()
+            val value = match.groupValues[2].trim()
+            if (key.isNotEmpty() && !result.containsKey(key)) {
+                result[key] = value
+            }
         }
     }
     
@@ -325,7 +519,7 @@ inline fun <reified T> reflectionBasedReconstruct(malformedJson: String): T?
             useArrayPolymorphism = true
             decodeEnumsCaseInsensitive = true
             useAlternativeNames = true
-            explicitNulls = true
+            allowTrailingComma = true
         }
         
         val jsonString = try {
