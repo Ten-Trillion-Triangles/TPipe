@@ -31,7 +31,7 @@ val p2pRequest = P2PRequest(
     authBody = "auth-token",
     contextExplanationMessage = "Use these processing rules",
     context = ContextWindow().apply {
-        contextElements["rules"] = processingRules
+        contextElements.add("rules: ${processingRules}")
     },
     customContextDescriptions = mutableMapOf(
         "DataProcessor" to "Custom processing instructions"
@@ -59,7 +59,7 @@ val template = P2PRequest().apply {
     authBody = "default-auth-token"
     prompt.addText("<system>You are a data processor.</system>")
     context = ContextWindow().apply {
-        contextElements["guidelines"] = "Always validate input data"
+        contextElements.add("guidelines: Always validate input data")
     }
 }
 ```
@@ -106,10 +106,11 @@ Attach PCP tool requests to P2P calls:
 
 ```kotlin
 val pcpRequest = PcPRequest(
-    tools = mutableMapOf(
-        "file-reader" to mapOf("path" to "/data/input.csv"),
-        "validator" to mapOf("schema" to "csv-schema")
-    )
+    stdioContextOptions = StdioContextOptions().apply {
+        command = "file-reader"
+        args.add("/data/input.csv")
+        args.add("--validate")
+    }
 )
 
 val p2pRequest = P2PRequest().apply {
@@ -150,8 +151,8 @@ val request = P2PRequest().apply {
 val request = P2PRequest().apply {
     contextExplanationMessage = "Use the provided business rules"
     context = ContextWindow().apply {
-        contextElements["business-rules"] = rulesDocument
-        contextElements["examples"] = exampleData
+        contextElements.add("business-rules: ${rulesDocument}")
+        contextElements.add("examples: ${exampleData}")
     }
     customContextDescriptions = mutableMapOf(
         "RuleEngine" to "Apply strict validation rules",

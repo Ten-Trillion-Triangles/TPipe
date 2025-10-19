@@ -3,6 +3,7 @@
 **Enhancements:**
 - Add creator functions to help simplify creating converseHistory adds.
 - Add human in the loop functions to the advanced container classes.
+- Add link table to trace file system.
 
 **New features:**
 - Add DistributionGrid class that enables "swarm" style agents with TPipe pipelines.
