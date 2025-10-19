@@ -41,12 +41,72 @@ Essential TPipe features organized by complexity:
 - [Pipeline Flow Control](docs/core-concepts/pipeline-flow-control.md) - Dynamic routing and conditional execution
 - [Tracing and Debugging](docs/core-concepts/tracing-and-debugging.md) - Monitoring and troubleshooting
 
-### ☁️ AWS Bedrock Integration
+### 🏗️ Container Architecture
 
-Complete guide to using TPipe with AWS Bedrock foundation models:
+Advanced pipeline orchestration and multi-agent systems:
 
+- [Container Overview](docs/containers/container-overview.md) - Introduction to TPipe containers
+- [Manifold - Multi-Agent Orchestration](docs/containers/manifold.md) - Coordinating multiple AI agents
+- [Connector - Pipeline Branching](docs/containers/connector.md) - Conditional pipeline routing
+- [Splitter - Parallel Processing](docs/containers/splitter.md) - Concurrent pipeline execution
+- [Junction - Pipeline Merging](docs/containers/junction.md) - Combining pipeline results
+- [MultiConnector - Advanced Routing](docs/containers/multiconnector.md) - Complex routing patterns
+- [DistributionGrid - Load Balancing](docs/containers/distributiongrid.md) - Distributed processing
+- [Cross-Cutting Topics](docs/containers/cross-cutting-topics.md) - Shared container concepts
+
+### 🔧 Advanced Concepts
+
+Complex features and protocol integration:
+
+#### Pipe Context Protocol (PCP)
+- [Pipe Context Protocol Overview](docs/advanced-concepts/pipe-context-protocol.md) - TPipe's native tool protocol
+- [Basic PCP Usage](docs/advanced-concepts/basic-pcp-usage.md) - Getting started with PCP
+- [Intermediate PCP Features](docs/advanced-concepts/intermediate-pcp-features.md) - Advanced PCP capabilities
+- [Advanced Session Management](docs/advanced-concepts/advanced-session-management.md) - Complex session handling
+- [Conversation History Management](docs/advanced-concepts/conversation-history-management.md) - Managing conversation state
+
+#### P2P Agent Communication
+- [P2P Overview](docs/advanced-concepts/p2p/p2p-overview.md) - Distributed agent communication
+- [P2P Descriptors and Transport](docs/advanced-concepts/p2p/p2p-descriptors-and-transport.md) - Agent discovery and addressing
+- [P2P Registry and Routing](docs/advanced-concepts/p2p/p2p-registry-and-routing.md) - Agent management and routing
+- [P2P Requests and Templates](docs/advanced-concepts/p2p/p2p-requests-and-templates.md) - Request handling and templates
+- [P2P Requirements and Validation](docs/advanced-concepts/p2p/p2p-requirements-and-validation.md) - Security and validation
+
+### ☁️ Provider Integration
+
+Integration guides for different AI providers:
+
+#### AWS Bedrock
 - [Getting Started with TPipe-Bedrock](docs/bedrock/getting-started.md) - Setup, configuration, and first steps
 - [AWS Bedrock Inference Binding](docs/bedrock/inference-binding.md) - Cross-region model access and configuration
+
+### 📚 API Reference
+
+Complete API documentation for all TPipe components:
+
+#### Core APIs
+- [Pipe Class API](docs/api/pipe.md) - Complete Pipe class reference
+- [Pipeline Class API](docs/api/pipeline.md) - Pipeline orchestration methods
+- [MultimodalContent API](docs/api/multimodal-content.md) - Content handling and processing
+
+#### Context Management APIs
+- [ContextWindow API](docs/api/context-window.md) - Memory and context operations
+- [ContextBank API](docs/api/context-bank.md) - Global context management
+- [MiniBank API](docs/api/minibank.md) - Multi-page context handling
+- [ConverseHistory API](docs/api/converse-history.md) - Conversation management
+- [Dictionary API](docs/api/dictionary.md) - Token counting and truncation
+- [Lorebook API](docs/api/lorebook.md) - Knowledge base management
+
+#### Advanced APIs
+- [Debug Package API](docs/api/debug-package.md) - Tracing and monitoring tools
+- [P2P Interface API](docs/api/p2p-interface.md) - Agent communication interface
+- [P2P Package API](docs/api/p2p-package.md) - Distributed agent system
+- [PipeContextProtocol API](docs/api/pipe-context-protocol.md) - Tool execution framework
+- [Util Package API](docs/api/util-package.md) - Utility functions and helpers
+
+#### Extension APIs
+- [TPipe-MCP Package API](docs/api/tpipe-mcp-package.md) - Model Context Protocol bridge
+- [TPipe-Defaults API](docs/api/tpipe-defaults-package.md) - Pre-configured components and reasoning
 
 ## Quick Start
 
@@ -88,5 +148,3 @@ dependencies {
     implementation("com.TTT:TPipe-Ollama:1.0.0")   // For Ollama
 }
 ```
-# TPipe
-# TPipe
