@@ -3211,7 +3211,14 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          * "user". Then we'll work our way forward treating the focus data as "system" and reasoning as
          * "assistant".
          */
-        val usingConverse = converseSchemaRef != null && !converseSchemaRef.isEmpty() || rounds > 1
+        var usingConverse = converseSchemaRef != null || rounds > 1
+
+        //Really dumb hack to restore working order while I get a proper fix in for this unexpected behavior.
+        if(usingConverse)
+        {
+            usingConverse = converseSchemaRef?.isEmpty() == false
+        }
+
         if(usingConverse)
         {
             /**

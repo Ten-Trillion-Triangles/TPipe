@@ -267,9 +267,13 @@ inline fun <reified T> repairAndDeserialize(malformedJson: String): T?
     } catch (e: Exception) {
         null
     }
+
+    val agressiveResult  = aggressiveExtraction<T>(malformedJson)
+
+
     
     // If repair failed, try aggressive extraction
-    return result ?: aggressiveExtraction<T>(malformedJson)
+    return agressiveResult as? T?
 }
 
 /**
@@ -282,17 +286,33 @@ inline fun <reified T> aggressiveExtraction(malformedJson: String): T?
     reflectionBasedReconstruct<T>(malformedJson)?.let { return it }
     
     // Strategy 2: Extract from multiple JSON fragments
-    val allJsonObjects = extractAllJsonObjects(malformedJson)
-    for (jsonElement in allJsonObjects) {
-        try {
-            val jsonString = Json.encodeToString(JsonElement.serializer(), jsonElement)
-            return Json { 
-                ignoreUnknownKeys = true
-                isLenient = true
-                coerceInputValues = true
-            }.decodeFromString<T>(jsonString)
-        } catch (e: Exception) { continue }
+    var allJsonObjects : List<JsonElement>? = extractAllJsonObjects(malformedJson)
+    if(!allJsonObjects!!.isEmpty())
+    {
+        for (jsonElement in allJsonObjects) //We have to skip this if we fail to find anything due to nullptr shenanagins above.
+        {
+            try {
+                val jsonString = Json.encodeToString(JsonElement.serializer(), jsonElement)
+                return Json {
+                    ignoreUnknownKeys = true
+                    isLenient = true
+                    coerceInputValues = true
+                }.decodeFromString<T>(jsonString)
+            } catch (e: Exception) { continue }
+        }
     }
+
+    /**
+     * Forcefully null this out if it's empty so we don't break the contract and expecations for the coder.
+     * The contract is that if it's null it fails allowing the coder to determine weather something is
+     * a type of json or not. If this returns an empty list object, it won't be null and will end up passing
+     * in places it really shouldn't causing chaos and major breakage.
+     */
+    else
+    {
+        allJsonObjects = null
+    }
+
     
     // Strategy 3: Aggressive text mining
     aggressiveTextMining<T>(malformedJson)?.let { return it }
