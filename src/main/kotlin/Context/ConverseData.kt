@@ -81,4 +81,9 @@ data class ConverseHistory(
         history.add(converseData)
     }
 
+    fun isEmpty() : Boolean
+    {
+        return history.isEmpty()
+    }
+
 }
