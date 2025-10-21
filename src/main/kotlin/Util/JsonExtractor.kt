@@ -271,12 +271,24 @@ inline fun <reified T> deserializeFirstMatch(jsonElements: List<JsonElement>): T
     for (element in jsonElements)
     {
         try {
-            // Properly serialize JsonElement to JSON string, then deserialize
+            // Try direct deserialization first
             val jsonString = json.encodeToString(JsonElement.serializer(), element)
             return json.decodeFromString<T>(jsonString)
         }
         catch (e: Exception)
         {
+            // If element is an array, try deserializing its first element
+            if (element is kotlinx.serialization.json.JsonArray && element.isNotEmpty()) {
+                try {
+                    val firstElement = element[0]
+                    val jsonString = json.encodeToString(JsonElement.serializer(), firstElement)
+                    return json.decodeFromString<T>(jsonString)
+                }
+                catch (e3: Exception) {
+                    // Continue to repair fallback
+                }
+            }
+            
             // Try with repair as fallback
             try {
                 val jsonString = json.encodeToString(JsonElement.serializer(), element)
