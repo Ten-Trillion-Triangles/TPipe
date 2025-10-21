@@ -3225,7 +3225,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              * System prompt must be copied from this pipe to the user prompt we're passing to our target reasoning
              * pipe.
              */
-            val systemConverseData = ConverseData(ConverseRole.developer, MultimodalContent(systemPrompt))
+            val systemConverseData = ConverseData(ConverseRole.developer, MultimodalContent(rawSystemPrompt))
 
             //Now we can add the user's original prompt.
             val converseData = ConverseData(ConverseRole.user, content)
@@ -3247,7 +3247,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         else
         {
             val combinedPrompt = """##DEVELOPER PROMPT##
-                |$systemPrompt
+                |$rawSystemPrompt
                 |
                 |##USER PROMPT##
                 |${content.text}
