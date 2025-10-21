@@ -10,6 +10,7 @@ import java.io.File
 import kotlinx.io.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.serializer
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import kotlin.reflect.KClass
@@ -100,8 +101,21 @@ inline fun <reified T> deserialize(jsonString: String, useRepair: Boolean = true
         decodeEnumsCaseInsensitive = true
     }
 
+    if(jsonString.isEmpty())
+    {
+        return null
+    }
+
     return try {
-        json.decodeFromString(jsonString)
+        val result = json.decodeFromString<T>(jsonString)
+        
+        // Validate that the JSON structure matches the target type
+        val extracted = extractJsonData(jsonString)
+        if (!validateFieldRequirements<T>(extracted.keys.toSet())) {
+            return null
+        }
+        
+        result
     }
     catch (e: Exception)
     {
@@ -302,17 +316,6 @@ inline fun <reified T> aggressiveExtraction(malformedJson: String): T?
         }
     }
 
-    /**
-     * Forcefully null this out if it's empty so we don't break the contract and expecations for the coder.
-     * The contract is that if it's null it fails allowing the coder to determine weather something is
-     * a type of json or not. If this returns an empty list object, it won't be null and will end up passing
-     * in places it really shouldn't causing chaos and major breakage.
-     */
-    else
-    {
-        allJsonObjects = null
-    }
-
     
     // Strategy 3: Aggressive text mining
     aggressiveTextMining<T>(malformedJson)?.let { return it }
@@ -366,6 +369,45 @@ inline fun <reified T> aggressiveTextMining(text: String): T?
 }
 
 /**
+ * Validates that extracted fields match the target type's structure.
+ * Requires all non-optional fields OR at least one optional field to match.
+ */
+@OptIn(ExperimentalSerializationApi::class)
+inline fun <reified T> validateFieldRequirements(extractedFields: Set<String>): Boolean {
+    return try {
+        val serializer = serializer<T>()
+        val descriptor = serializer.descriptor
+        
+        val requiredFields = mutableSetOf<String>()
+        val optionalFields = mutableSetOf<String>()
+        
+        for (i in 0 until descriptor.elementsCount) {
+            val fieldName = descriptor.getElementName(i)
+            if (descriptor.isElementOptional(i)) {
+                optionalFields.add(fieldName)
+            } else {
+                requiredFields.add(fieldName)
+            }
+        }
+        
+        val hasAllRequired = requiredFields.isEmpty() || requiredFields.all { it in extractedFields }
+        val hasOneOptional = optionalFields.any { it in extractedFields }
+        
+        // Fixed logic: If there are required fields, they must all match
+        // If there are no required fields, at least one optional field must match
+        val result = if (requiredFields.isNotEmpty()) {
+            hasAllRequired
+        } else {
+            hasOneOptional
+        }
+        
+        result
+    } catch (e: Exception) {
+        false // If we can't validate, reject to be safe
+    }
+}
+
+/**
  * Creates a template instance and fills it with any extractable data.
  */
 @OptIn(ExperimentalSerializationApi::class)
@@ -379,6 +421,13 @@ inline fun <reified T> templateBasedReconstruction(text: String): T?
         
         // Try to fill fields with extracted data
         val extracted = extractJsonData(text)
+        if (extracted.isEmpty()) return null
+        
+        // Validate that extracted fields match target type structure
+        if (!validateFieldRequirements<T>(extracted.keys.toSet())) {
+            return null
+        }
+        
         clazz.declaredFields.forEach { field ->
             field.isAccessible = true
             extracted[field.name]?.let { value ->

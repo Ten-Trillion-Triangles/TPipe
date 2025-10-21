@@ -37,8 +37,15 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
         allowTrailingComma = true
     }
     
-    // Find all potential JSON objects
-    findJsonBoundaries(input, '{', '}').forEach { range ->
+    // Find boundaries for both objects and arrays
+    val objectBoundaries = findJsonBoundaries(input, '{', '}')
+    val arrayBoundaries = findJsonBoundaries(input, '[', ']')
+    
+    // Combine and sort by range size (larger ranges first to prefer complete objects over nested arrays)
+    val allBoundaries = (objectBoundaries + arrayBoundaries).sortedByDescending { it.last - it.first }
+    
+    // Process all boundaries, preferring larger ranges
+    allBoundaries.forEach { range ->
         if (!overlapsWithProcessed(range, processedRanges))
         {
             val jsonCandidate = input.substring(range)
@@ -70,8 +77,8 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
         }
     }
     
-    // Find all potential JSON arrays
-    findJsonBoundaries(input, '[', ']').forEach { range ->
+    // Also find JSON arrays
+    arrayBoundaries.forEach { range ->
         if (!overlapsWithProcessed(range, processedRanges))
         {
             val jsonCandidate = input.substring(range)
@@ -93,7 +100,7 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
                 }
                 catch (e2: Exception)
                 {
-                    // Arrays are less likely to need fallback, but attempt if needed
+                    // Try fallback repair for severely malformed JSON
                     tryFallbackExtraction(jsonCandidate)?.let { fallbackElement ->
                         results.add(fallbackElement)
                         processedRanges.add(range)
@@ -147,6 +154,11 @@ private fun findJsonBoundaries(input: String, openChar: Char, closeChar: Char): 
                 }
             }
             i++
+        }
+        
+        // Handle truncated JSON - if we reached end of input with unclosed brackets
+        if (depth > 0 && start < input.length) {
+            boundaries.add(start until input.length)
         }
     }
     

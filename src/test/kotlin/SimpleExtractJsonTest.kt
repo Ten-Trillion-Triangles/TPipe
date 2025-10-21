@@ -3,11 +3,13 @@ package com.TTT
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.LoreBook
 import com.TTT.Util.extractJson
+import com.TTT.Util.deserialize
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 class SimpleExtractJsonTest {
 
@@ -45,5 +47,24 @@ class SimpleExtractJsonTest {
         println("   - Extracted ${extracted.loreBookKeys.size} lorebook entries")
         println("   - Context size: ${extracted.contextSize}")
         println("   - First key: ${extracted.loreBookKeys.values.first().key}")
+    }
+    
+    @Test
+    fun `deserialize should reject unrelated JSON types`() {
+        // Test that deserialize returns null for JSON with completely different field structure
+        val result = deserialize<ContextWindow>("""{"userId": 123, "email": "test@example.com", "productId": "abc"}""")
+        assertNull(result, "Should return null when JSON fields don't match target type structure")
+        
+        println("✅ SUCCESS: deserialize correctly rejects unrelated JSON types")
+    }
+    
+    @Test
+    fun `deserialize should work with matching field structures`() {
+        // Test that deserialize works when JSON has fields that match the target type
+        val result = deserialize<ContextWindow>("""{"contextSize": 5000}""")
+        assertNotNull(result, "Should create ContextWindow when JSON has matching fields")
+        assertEquals(5000, result?.contextSize)
+        
+        println("✅ SUCCESS: deserialize works with matching field structures")
     }
 }
