@@ -2903,7 +2903,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 val jsonObjects = extractAllJsonObjects(generatedContent.text)
                 if(jsonObjects.isNotEmpty())
                 {
-                    val newText = jsonObjects.toString()
+                    val newText = serialize(jsonObjects)
                     generatedContent.text = newText
                 }
 
@@ -3213,11 +3213,6 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          */
         var usingConverse = converseSchemaRef != null || rounds > 1
 
-        //Really dumb hack to restore working order while I get a proper fix in for this unexpected behavior.
-        if(usingConverse)
-        {
-            usingConverse = converseSchemaRef?.isEmpty() == false
-        }
 
         if(usingConverse)
         {
@@ -3225,7 +3220,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              * System prompt must be copied from this pipe to the user prompt we're passing to our target reasoning
              * pipe.
              */
-            val systemConverseData = ConverseData(ConverseRole.developer, MultimodalContent(rawSystemPrompt))
+            val systemConverseData = ConverseData(ConverseRole.developer, MultimodalContent("$rawSystemPrompt ${getMiddlePromptForReasoning()} ${getFooterPromptForReasoning()}"))
 
             //Now we can add the user's original prompt.
             val converseData = ConverseData(ConverseRole.user, content)
@@ -3247,7 +3242,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         else
         {
             val combinedPrompt = """##DEVELOPER PROMPT##
-                |$rawSystemPrompt
+                |$rawSystemPrompt ${getMiddlePromptForReasoning()} ${getFooterPromptForReasoning()}
                 |
                 |##USER PROMPT##
                 |${content.text}
@@ -3622,6 +3617,34 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             pipeId = pipeId,
             currentPipelineId = currentPipelineId
         )
+    }
+
+    /**
+     * Getter function to retrieve the middle prompt instructions from a pipe if the pipe's reasoning settings
+     * were defined. Called on the parent pipe and attempts to poll the reasoning pipe to determine if it has
+     * been set to use the middle prompt or not. If true, this parent pipe's middle prompt will be returned.
+     * Otherwise, returns an empty string.
+     */
+    fun getMiddlePromptForReasoning() : String
+    {
+        if(reasoningPipe == null) return ""
+        val usingMiddlePrompt = reasoningPipe?.pipeMetadata["injectMiddlePrompt"] as Boolean
+        if(!usingMiddlePrompt) return ""
+        return middlePromptInstructions
+    }
+
+    /**
+     * Get and retrive this parent pipe's footer prompt for a reasoning pipe if it has been set to inject
+     * the footer prompt back in. The reasoning pipe of this parent pipe will be checked for, and if it exists
+     * we'll return the footer prompt. Otherwise, if it does not, or it does not have the setting applied to
+     * its pipe metadata, return an empty string instead.
+     */
+    fun getFooterPromptForReasoning() : String
+    {
+        if(reasoningPipe == null) return ""
+        val usingFooterPrompt = reasoningPipe?.pipeMetadata["injectFooterPrompt"] as Boolean
+        if(!usingFooterPrompt) return ""
+        return footerPrompt
     }
 
 //============================================== P2PInterface Implementation ==========================================

@@ -91,6 +91,8 @@ enum class ReasoningDuration
  * @param focusPoints Maps a round number to a request in string form of instructions you want the pipe to focus
  * reasoning on specifically. This allows for specific aspects of a task to be thought about for longer, or for
  * a dedicated amount of time over other portions of the task.
+ * @param injectMiddlePrompt If true, the middle prompt of the system prompt will be visible to the reasoning pipe.
+ * @param injectFooterPrompt If true, the footer prompt of the system prompt will be visible to the reasoning pipe.
  */
 data class ReasoningSettings(
     var reasoningMethod: ReasoningMethod = ReasoningMethod.StructuredCot,
@@ -99,7 +101,9 @@ data class ReasoningSettings(
     var roleCharacter: String = "You are a helpful assistant.",
     var reasoningInjector: ReasoningInjector = ReasoningInjector.SystemPrompt,
     var numberOfRounds: Int = 1,
-    var focusPoints: MutableMap<Int, String> = mutableMapOf()
+    var focusPoints: MutableMap<Int, String> = mutableMapOf(),
+    var injectMiddlePrompt: Boolean = false,
+    var injectFooterPrompt: Boolean = false
 )
 
 /**
@@ -234,6 +238,10 @@ object ReasoningBuilder
         targetPipe.pipeMetadata["injectionMethod"] = settings.reasoningInjector.toString()
 
         targetPipe.pipeMetadata["reasoningMethod"] = settings.reasoningMethod.toString()
+
+        //Settings to define if we should keep these parts of the system prompt, or discard them.
+        targetPipe.pipeMetadata["injectMiddlePrompt"] = settings.injectMiddlePrompt
+        targetPipe.pipeMetadata["injectFooterPrompt"] = settings.injectFooterPrompt
 
         targetPipe.setFooterPrompt("""
             
