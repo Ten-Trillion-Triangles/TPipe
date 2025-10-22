@@ -109,12 +109,6 @@ inline fun <reified T> deserialize(jsonString: String, useRepair: Boolean = true
     return try {
         val result = json.decodeFromString<T>(jsonString)
         
-        // Validate that the JSON structure matches the target type
-        val extracted = extractJsonData(jsonString)
-        if (!validateFieldRequirements<T>(extracted.keys.toSet())) {
-            return null
-        }
-        
         result
     }
     catch (e: Exception)
