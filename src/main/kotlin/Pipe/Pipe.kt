@@ -1450,6 +1450,15 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
     /**
+     * Get the settings for the lorebook scheme.
+     * @return [appendLoreBook] is first, [emplaceLorebook] is second
+     */
+    fun getLorebookScheme() : Pair<Boolean, Boolean>
+    {
+        return Pair(appendLoreBook, emplaceLorebook)
+    }
+
+    /**
      * Sets the page key for context bank operations. Can accept multiple page keys by using the delmiter ", " to
      * pass in many at once.
      * @param key The page key to use for context separation
@@ -2594,7 +2603,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          */
         if(inputContent.useSnapshot)
         {
-            inputContent.metadata["snapshot"] = inputContent.copyMultimodal() as Any
+            inputContent.metadata["snapshot"] = inputContent.deepCopy() as Any
         }
 
         //Get rid of model reasoning to prevent messed up token counts later.
@@ -2746,6 +2755,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 inputContent
             }
 
+            //Bind to prevent nullptr leakage.
+            baseContent.currentPipe = inputContent.currentPipe
+
             /**
              * If enabled, use the model's truncation settings to automatically truncate the context and lorebook to fit
              * the correct token budget. Lorebook key selection is typically done using the user prompt.
@@ -2811,6 +2823,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             }
 
             var processedContent = MultimodalContent(fullPrompt, baseContent.binaryContent.toMutableList(), baseContent.terminatePipeline)
+            processedContent.currentPipe = inputContent.currentPipe //Avoid nullptr leakage.
 
             //Call pre-invoke function to test if we need to optionally skip over this pipe.
             if(preInvokeFunction  != null)
@@ -2892,6 +2905,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
             //Run the llm and await it's output.
             var generatedContent = result.await()
+            generatedContent.currentPipe = inputContent.currentPipe //Prevent nullptr leakage.
 
             /**
              * Some llm's are very stubborn even when ordered to return only json. This will allow us to auto-strip
@@ -2932,6 +2946,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         validatorPipe?.execute(generatedContent) ?: MultimodalContent()
                     }
                     validatorPipeContent = validatorPipeResult.await()
+                    validatorPipeContent.currentPipe = inputContent.currentPipe //Avoid nullptr leakage.
                 } catch (e: Exception) {
                     trace(TraceEventType.PIPE_FAILURE, TracePhase.VALIDATION, generatedContent, error = e)
                     validatorPipeContent = generatedContent
@@ -2969,6 +2984,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                                     transformationPipe?.execute(generatedContent) ?: generatedContent
                                 }
                                 generatedContent = transformPipeResult.await()
+                                generatedContent.currentPipe = inputContent.currentPipe
                             } catch (e: Exception) {
                                 trace(TraceEventType.PIPE_FAILURE, TracePhase.TRANSFORMATION, generatedContent, error = e)
                                 // Continue with original content if transformation pipe fails
@@ -3030,6 +3046,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                                 transformationPipe?.execute(generatedContent) ?: generatedContent
                             }
                             generatedContent = transformPipeResult.await()
+                            generatedContent.currentPipe = inputContent.currentPipe //Prevent nullptr leakage.
                         } catch (e: Exception) {
                             trace(TraceEventType.PIPE_FAILURE, TracePhase.TRANSFORMATION, generatedContent, error = e)
                             // Continue with original content if transformation pipe fails
@@ -3077,6 +3094,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             branchPipe?.execute(generatedContent) ?: generatedContent
                         }
                         val branchResult = branchPipeResult.await()
+                        branchResult.currentPipe = inputContent.currentPipe
                         
                         //If branch pipe allows continuation, continue pipeline.
                         if(!branchResult.shouldTerminate())
@@ -3107,6 +3125,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     }
 
                     var failureResult = branchResult.await()
+                    failureResult.currentPipe = inputContent.currentPipe
                     
                     //If failure function allows continuation, continue pipeline.
                     if(!failureResult.shouldTerminate())
@@ -3125,6 +3144,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             }
 
                             failureResult = transformResult.await()
+                            failureResult.currentPipe = inputContent.currentPipe //Prevent nullptr leakage.
                         }
 
 

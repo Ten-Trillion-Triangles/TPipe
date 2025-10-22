@@ -118,19 +118,16 @@ class TraceVisualizer {
         }
     }
     
-    private fun generateMermaidFlowGraph(trace: List<TraceEvent>): String {
+    private fun generateMermaidFlowGraph(trace: List<TraceEvent>, nodes: List<TraceNode>): String {
         val graph = StringBuilder()
         graph.append("graph TD\n")
         
-        val pipes = trace.map { it.pipeName }.distinct()
-        var nodeId = 0
-        val nodeMap = mutableMapOf<String, String>()
+        val nodeMap = nodes.associate { it.pipeName to it.nodeId }
         
         // Create nodes for each pipe
-        pipes.forEach { pipeName ->
-            val id = "pipe${nodeId++}"
-            nodeMap[pipeName] = id
-            graph.append("    $id[\"$pipeName\"]\n")
+        nodes.forEach { node ->
+            graph.append("    ${node.nodeId}[\"${node.pipeName}\"]\n")
+            graph.append("    click ${node.nodeId} scrollToEvent\n")  // ADD: Click handler
         }
         
         // Add connections and styling based on events
@@ -169,7 +166,7 @@ class TraceVisualizer {
     private fun generateDetailsTable(trace: List<TraceEvent>): String {
         val table = StringBuilder()
         table.append("""
-            <table>
+            <table id="trace-details-table">
                 <tr>
                     <th>⏱️ Time</th>
                     <th>🔧 Pipe</th>
@@ -205,7 +202,7 @@ class TraceVisualizer {
             }
             
             table.append("""
-                <tr>
+                <tr id="${event.id}" class="trace-row" data-pipe="${event.pipeName}">
                     <td>+${elapsed}ms</td>
                     <td>${event.pipeName}</td>
                     <td>${event.eventType}</td>
@@ -285,9 +282,13 @@ class TraceVisualizer {
     /**
      * Generates standard HTML report for non-Manifold traces.
      */
-    private fun generateStandardHtmlReport(trace: List<TraceEvent>): String {
-        val mermaidGraph = generateMermaidFlowGraph(trace)
+    private fun generateStandardHtmlReport(trace: List<TraceEvent>): String 
+    {
+        val nodes = TraceNodeMapper.mapEventsToNodes(trace)
+        val mermaidGraph = generateMermaidFlowGraph(trace, nodes)
         val detailsTable = generateDetailsTable(trace)
+        val javascript = TraceInteractivity.generateJavaScript(nodes)
+        val enhancedCSS = generateEnhancedCSS()
         
         return """
             <!DOCTYPE html>
@@ -295,32 +296,16 @@ class TraceVisualizer {
             <head>
                 <title>TPipe Pipeline Flow Visualization</title>
                 <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
-                <style>
-                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #f5f5f5; }
-                    .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                    h1 { color: #333; text-align: center; margin-bottom: 30px; }
-                    .flow-section { margin-bottom: 40px; }
-                    .details-section { margin-top: 40px; }
-                    .success { color: #28a745; font-weight: bold; }
-                    .failure { color: #dc3545; font-weight: bold; }
-                    .info { color: #007bff; }
-                    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-                    th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-                    th { background-color: #f8f9fa; font-weight: 600; }
-                    tr:nth-child(even) { background-color: #f8f9fa; }
-                    .metadata { font-size: 0.9em; color: #666; max-width: 300px; word-wrap: break-word; }
-                    .mermaid { text-align: center; background: white; padding: 20px; border-radius: 8px; }
-                </style>
+                <style>$enhancedCSS</style>
             </head>
             <body>
                 <div class="container">
                     <h1>🔍 TPipe Pipeline Execution Flow</h1>
                     
                     <div class="flow-section">
-                        <h2>📊 Visual Flow Graph</h2>
-                        <div class="mermaid">
-                            $mermaidGraph
-                        </div>
+                        <h2>📊 Interactive Flow Graph</h2>
+                        <p class="instruction">💡 Click on any node to jump to its events in the table below</p>
+                        <div class="mermaid">$mermaidGraph</div>
                     </div>
                     
                     <div class="details-section">
@@ -329,13 +314,7 @@ class TraceVisualizer {
                     </div>
                 </div>
                 
-                <script>
-                    mermaid.initialize({ 
-                        startOnLoad: true,
-                        theme: 'default',
-                        flowchart: { useMaxWidth: true, htmlLabels: true }
-                    });
-                </script>
+                $javascript
             </body>
             </html>
         """.trimIndent()
@@ -464,5 +443,92 @@ class TraceVisualizer {
         }
         table.append("</table>")
         return table.toString()
+    }
+    
+    private fun addNodeConnections(graph: StringBuilder, nodes: List<TraceNode>, trace: List<TraceEvent>) 
+    {
+        var prevNode: String? = null
+        trace.distinctBy { it.pipeName }.forEach { event ->
+            val currentNode = nodes.find { it.pipeName == event.pipeName }?.nodeId
+            if (prevNode != null && currentNode != null && prevNode != currentNode) {
+                graph.append("    $prevNode --> $currentNode\n")
+            }
+            prevNode = currentNode
+        }
+    }
+    
+    private fun addNodeStyling(graph: StringBuilder, nodes: List<TraceNode>) 
+    {
+        nodes.forEach { node ->
+            val cssClass = when (node.status) {
+                NodeStatus.SUCCESS -> "success"
+                NodeStatus.FAILURE -> "failure"
+                NodeStatus.WARNING -> "warning"
+                NodeStatus.INFO -> "info"
+            }
+            graph.append("    ${node.nodeId}:::$cssClass\n")
+        }
+        
+        graph.append("\n    classDef success fill:#d4edda,stroke:#28a745,stroke-width:2px\n")
+        graph.append("    classDef failure fill:#f8d7da,stroke:#dc3545,stroke-width:2px\n")
+        graph.append("    classDef warning fill:#fff3cd,stroke:#ffc107,stroke-width:2px\n")
+        graph.append("    classDef info fill:#d1ecf1,stroke:#007bff,stroke-width:2px\n")
+    }
+    
+    private fun generateEnhancedCSS(): String 
+    {
+        return """
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #f5f5f5; }
+            .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            h1 { color: #333; text-align: center; margin-bottom: 30px; }
+            .flow-section { margin-bottom: 40px; }
+            .details-section { margin-top: 40px; }
+            .instruction { text-align: center; color: #666; font-style: italic; margin-bottom: 20px; }
+            .success { color: #28a745; font-weight: bold; }
+            .failure { color: #dc3545; font-weight: bold; }
+            .info { color: #007bff; }
+            table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+            th { background-color: #f8f9fa; font-weight: 600; }
+            tr:nth-child(even) { background-color: #f8f9fa; }
+            .metadata { font-size: 0.9em; color: #666; max-width: 300px; word-wrap: break-word; }
+            .mermaid { text-align: center; background: white; padding: 20px; border-radius: 8px; }
+            
+            .trace-row.highlighted {
+                background-color: #fff3cd !important;
+                border-left: 4px solid #ffc107;
+            }
+            
+            .flash-highlight {
+                animation: flashEffect 2s ease-in-out;
+            }
+            
+            @keyframes flashEffect {
+                0%, 100% { background-color: inherit; }
+                50% { background-color: #ffeb3b; }
+            }
+            
+            .trace-row {
+                transition: background-color 0.3s ease;
+                cursor: pointer;
+            }
+            
+            .trace-row:hover {
+                background-color: #f8f9fa;
+            }
+            
+            #trace-details-table {
+                scroll-margin-top: 20px;
+            }
+            
+            .node rect {
+                cursor: pointer;
+                transition: stroke-width 0.2s ease;
+            }
+            
+            .node:hover rect {
+                stroke-width: 3px !important;
+            }
+        """.trimIndent()
     }
 }
