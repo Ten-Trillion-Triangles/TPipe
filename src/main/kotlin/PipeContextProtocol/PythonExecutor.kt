@@ -86,11 +86,13 @@ class PythonExecutor : PcpExecutor
         // Validate Python request through security manager
         val script = request.argumentsOrFunctionParams.joinToString("\n")
         val validation = securityManager.validatePythonRequest(script, mergedOptions)
+        val warnings = validation.warnings.toMutableList()
+
         if (!validation.isValid)
         {
             return PcpRequestResult(
                 success = false,
-                output = "",
+                output = mergeWarningsWithOutput(warnings, ""),
                 executionTimeMs = System.currentTimeMillis() - startTime,
                 transport = Transport.Python,
                 error = "Python security validation failed: ${validation.errors.joinToString("; ")}"
@@ -110,21 +112,21 @@ class PythonExecutor : PcpExecutor
         }
         
         // Validate package imports against context whitelist
-        val importValidation = validatePackageImports(script, context.pythonOptions)
+        val importValidation = validatePackageImports(script, mergedOptions)
         if (!importValidation.isValid)
         {
             return PcpRequestResult(
                 success = false,
-                output = "",
+                output = mergeWarningsWithOutput(warnings, ""),
                 executionTimeMs = System.currentTimeMillis() - startTime,
                 transport = Transport.Python,
                 error = importValidation.error
             )
         }
-        
+
         // Execute with merged options (security enforced)
         val secureRequest = request.copy(pythonContextOptions = mergedOptions)
-        return executeSecure(secureRequest)
+        return executeSecure(secureRequest, warnings)
     }
     
     /**
@@ -176,7 +178,7 @@ class PythonExecutor : PcpExecutor
     /**
      * Execute Python script with merged security options.
      */
-    private suspend fun executeSecure(request: PcPRequest): PcpRequestResult
+    private suspend fun executeSecure(request: PcPRequest, warnings: List<String>): PcpRequestResult
     {
         val startTime = System.currentTimeMillis()
         val options = request.pythonContextOptions
@@ -240,7 +242,7 @@ class PythonExecutor : PcpExecutor
             // Capture output
             val output = process.inputStream.bufferedReader().readText()
             val errorOutput = process.errorStream.bufferedReader().readText()
-            
+
             val finalOutput = if (errorOutput.isNotEmpty())
             {
                 "$output\nSTDERR: $errorOutput"
@@ -249,13 +251,14 @@ class PythonExecutor : PcpExecutor
             {
                 output
             }
+            val outputWithWarnings = mergeWarningsWithOutput(warnings, finalOutput)
             
             // Clean up
             scriptFile.delete()
             
             PcpRequestResult(
                 success = process.exitValue() == 0,
-                output = finalOutput,
+                output = outputWithWarnings,
                 executionTimeMs = System.currentTimeMillis() - startTime,
                 transport = Transport.Python,
                 error = if (process.exitValue() != 0) "Python script failed with exit code: ${process.exitValue()}" else null
@@ -265,7 +268,7 @@ class PythonExecutor : PcpExecutor
         {
             PcpRequestResult(
                 success = false,
-                output = "",
+                output = mergeWarningsWithOutput(warnings, ""),
                 executionTimeMs = System.currentTimeMillis() - startTime,
                 transport = Transport.Python,
                 error = "Python execution failed: ${e.message}"
@@ -392,5 +395,29 @@ class PythonExecutor : PcpExecutor
         val tempFile = java.io.File.createTempFile("tpipe_python_", ".py")
         tempFile.writeText(script, Charsets.UTF_8)
         return tempFile
+    }
+
+    private fun mergeWarningsWithOutput(warnings: List<String>, output: String): String
+    {
+        if (warnings.isEmpty())
+        {
+            return output
+        }
+
+        val warningSection = buildString {
+            append("Warnings:\n")
+            warnings.distinct().forEach { warning ->
+                append("- ").append(warning).append('\n')
+            }
+        }.trimEnd()
+
+        return if (output.isBlank())
+        {
+            warningSection
+        }
+        else
+        {
+            "$warningSection\n\n${output.trimStart()}"
+        }
     }
 }

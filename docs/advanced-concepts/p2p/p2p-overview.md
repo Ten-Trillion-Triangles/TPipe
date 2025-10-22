@@ -42,7 +42,10 @@ class MyPipeline : Pipeline(), P2PInterface {
     
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse {
         // Handle the request
-        return P2PResponse(output = processedResult)
+        val result = MultimodalContent().apply {
+            addText("Processing completed successfully")
+        }
+        return P2PResponse(output = result)
     }
 }
 ```

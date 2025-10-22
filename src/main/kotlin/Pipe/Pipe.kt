@@ -2901,8 +2901,12 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             if(stripNonJson)
             {
                 val jsonObjects = extractAllJsonObjects(generatedContent.text)
-                val newText = jsonObjects.toString()
-                generatedContent.text = newText
+                if(jsonObjects.isNotEmpty())
+                {
+                    val newText = serialize(jsonObjects)
+                    generatedContent.text = newText
+                }
+
             }
 
 
@@ -3207,14 +3211,16 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          * "user". Then we'll work our way forward treating the focus data as "system" and reasoning as
          * "assistant".
          */
-        val usingConverse = converseSchemaRef != null || rounds > 1
+        var usingConverse = converseSchemaRef != null || rounds > 1
+
+
         if(usingConverse)
         {
             /**
              * System prompt must be copied from this pipe to the user prompt we're passing to our target reasoning
              * pipe.
              */
-            val systemConverseData = ConverseData(ConverseRole.developer, MultimodalContent(systemPrompt))
+            val systemConverseData = ConverseData(ConverseRole.developer, MultimodalContent("$rawSystemPrompt ${getMiddlePromptForReasoning()} ${getFooterPromptForReasoning()}"))
 
             //Now we can add the user's original prompt.
             val converseData = ConverseData(ConverseRole.user, content)
@@ -3236,7 +3242,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         else
         {
             val combinedPrompt = """##DEVELOPER PROMPT##
-                |$systemPrompt
+                |$rawSystemPrompt ${getMiddlePromptForReasoning()} ${getFooterPromptForReasoning()}
                 |
                 |##USER PROMPT##
                 |${content.text}
@@ -3355,7 +3361,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              * The assumption is that [ReasoningBuilder.assignDefaults] was correctly invoked. Prior. If not the
              * output of the reasoning pipe will become empty.
              */
-            result.text = extractReasoningContent(pipeMetadata["reasoningMethod"] as? String ?: "", result)
+            result.text = extractReasoningContent(reasoningPipe?.pipeMetadata["reasoningMethod"] as? String ?: "", result)
             contentCopy.modelReasoning += " ${result.text}"
         }
 
@@ -3442,25 +3448,32 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
                 for(jsonObject in jsonObjectsFound)
                 {
-                    val asJsonString = jsonObject.toString()
+                    val asJsonString = serialize(jsonObject)
                     val converseHistory = deserialize<ConverseHistory>(jsonObject.toString())
+                    foundConverse = converseHistory != null
 
-                    val newConverseEntry = ConverseData(
-                        ConverseRole.system,
-                        MultimodalContent("$injectionMessage ${content.modelReasoning}"))
-
-                    //Insert at 0. For some reason kotlin doesn't have an insert function and overloads add().
-                    converseHistory?.history?.add(0, newConverseEntry)
-
-                    /**
-                     *  We need to be very careful and only replace the converse history and not any context or other
-                     *  present context.
-                     */
-                    if(converseHistory != null)
+                    if(foundConverse)
                     {
-                        val newConverseJson = serialize(converseHistory, encodedefault = false)
-                        content.text.replace(asJsonString, newConverseJson)
+                        val newConverseEntry = ConverseData(
+                            ConverseRole.system,
+                            MultimodalContent("$injectionMessage ${content.modelReasoning}"))
+
+                        //Insert at 0. For some reason kotlin doesn't have an insert function and overloads add().
+                        converseHistory?.history?.add(0, newConverseEntry)
+
+                        /**
+                         *  We need to be very careful and only replace the converse history and not any context or other
+                         *  present context.
+                         */
+                        if(converseHistory != null)
+                        {
+                            val newConverseJson = serialize(converseHistory, encodedefault = false)
+                            content.text = newConverseJson
+                            break
+                        }
                     }
+
+
                 }
             }
 
@@ -3484,25 +3497,32 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
                 for(jsonObject in jsonObjectsFound)
                 {
-                    val asJsonString = jsonObject.toString()
+                    val asJsonString = serialize(jsonObject)
                     val converseHistory = deserialize<ConverseHistory>(jsonObject.toString())
+                    foundConverse = converseHistory != null
 
-                    val newConverseEntry = ConverseData(
-                        ConverseRole.system,
-                        MultimodalContent("$injectionMessage ${content.modelReasoning}"))
-
-                    //Insert at 0. For some reason kotlin doesn't have an insert function and overloads add().
-                    converseHistory?.history?.add(newConverseEntry)
-
-                    /**
-                     *  We need to be very careful and only replace the converse history and not any context or other
-                     *  present context.
-                     */
-                    if(converseHistory != null)
+                    if(foundConverse)
                     {
-                        val newConverseJson = serialize(converseHistory, encodedefault = false)
-                        content.text.replace(asJsonString, newConverseJson)
+                        val newConverseEntry = ConverseData(
+                            ConverseRole.system,
+                            MultimodalContent("$injectionMessage ${content.modelReasoning}"))
+
+                        //Insert at 0. For some reason kotlin doesn't have an insert function and overloads add().
+                        converseHistory?.history?.add(newConverseEntry)
+
+                        /**
+                         *  We need to be very careful and only replace the converse history and not any context or other
+                         *  present context.
+                         */
+                        if(converseHistory != null)
+                        {
+                            val newConverseJson = serialize(converseHistory, encodedefault = false)
+                            content.text = newConverseJson
+                            break
+                        }
                     }
+
+
                 }
             }
 
@@ -3597,6 +3617,34 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             pipeId = pipeId,
             currentPipelineId = currentPipelineId
         )
+    }
+
+    /**
+     * Getter function to retrieve the middle prompt instructions from a pipe if the pipe's reasoning settings
+     * were defined. Called on the parent pipe and attempts to poll the reasoning pipe to determine if it has
+     * been set to use the middle prompt or not. If true, this parent pipe's middle prompt will be returned.
+     * Otherwise, returns an empty string.
+     */
+    fun getMiddlePromptForReasoning() : String
+    {
+        if(reasoningPipe == null) return ""
+        val usingMiddlePrompt = reasoningPipe?.pipeMetadata["injectMiddlePrompt"] as Boolean
+        if(!usingMiddlePrompt) return ""
+        return middlePromptInstructions
+    }
+
+    /**
+     * Get and retrive this parent pipe's footer prompt for a reasoning pipe if it has been set to inject
+     * the footer prompt back in. The reasoning pipe of this parent pipe will be checked for, and if it exists
+     * we'll return the footer prompt. Otherwise, if it does not, or it does not have the setting applied to
+     * its pipe metadata, return an empty string instead.
+     */
+    fun getFooterPromptForReasoning() : String
+    {
+        if(reasoningPipe == null) return ""
+        val usingFooterPrompt = reasoningPipe?.pipeMetadata["injectFooterPrompt"] as Boolean
+        if(!usingFooterPrompt) return ""
+        return footerPrompt
     }
 
 //============================================== P2PInterface Implementation ==========================================

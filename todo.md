@@ -1,12 +1,13 @@
 **Bug fixes**
 
 **Enhancements:**
-- Add creator functions to help simplify creating converseHistory adds.
+~~- Add creator functions to help simplify creating converseHistory adds.~~
 - Add human in the loop functions to the advanced container classes.
+- Add link table to trace file system.
 
 **New features:**
 - Add DistributionGrid class that enables "swarm" style agents with TPipe pipelines.
-- Expand tracing system to help trace Splitters, Manifolds, Funnels, and DistributionGrid objects.
+- Expand tracing system to help trace Splitters, Manifolds, Junctions, and DistributionGrid objects.
 - Add support for pulling pipeline context, then merging into global.
 - Create builders for all the containers, and general workflows like chain of thought pipelines
 - Create builders for compression pipelines
@@ -14,8 +15,8 @@
 - Add compression and decompression prompt injection support using semantic compression of human languages to strip out
 all the components that don't convey information while retaining all the ones that do.
 ~~- Add support for advanced token budget controls which will go beyond just max out vs context in.~~
-- Add support for mini bank context in pipelines.
-- Add support for automatic mini bank updates from pipes to pipeline, or global.
+~~- Add support for mini bank context in pipelines.~~
+~~- Add support for automatic mini bank updates from pipes to pipeline, or global.~~
 
 **Down the road:**
 - Create entry and exit points for graalvm native for future non jvm language wrappers.

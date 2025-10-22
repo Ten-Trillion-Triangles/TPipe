@@ -83,7 +83,7 @@ val descriptor = P2PDescriptor(
     requestTemplate = P2PRequest().apply {
         prompt.addText("<system>You are a data processing agent.</system>")
         context = ContextWindow().apply {
-            addContext("processing-rules", "Always validate input before processing")
+            contextElements.add("processing-rules: Always validate input before processing")
         }
     }
 )
@@ -96,9 +96,16 @@ Specify how your agent handles external context:
 ```kotlin
 // PCP tool support
 contextProtocol = ContextProtocol.pcp
-pcpDescriptor = PcpContext(
-    stdioOptions = mutableListOf("file-reader", "data-validator")
-)
+pcpDescriptor = PcpContext().apply {
+    stdioOptions += StdioContextOptions().apply {
+        command = "file-reader"
+        args.add("--input")
+    }
+    stdioOptions += StdioContextOptions().apply {
+        command = "data-validator"
+        args.add("--schema")
+    }
+}
 
 // MCP support  
 contextProtocol = ContextProtocol.mcp

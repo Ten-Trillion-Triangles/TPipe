@@ -2,6 +2,7 @@ package com.TTT.PipeContextProtocol
 
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.*
+import kotlin.reflect.full.isSubclassOf
 import kotlin.reflect.full.valueParameters
 import kotlin.reflect.jvm.javaType
 
@@ -134,23 +135,24 @@ object FunctionRegistry
     private fun createSignatureFromKFunction(name: String, function: KFunction<*>): FunctionSignature 
     {
         val parameters = function.valueParameters.map { param ->
+            val paramType = mapKotlinTypeToParamType(param.type)
             val kotlinType = param.type.toString()
-            val paramType = mapKotlinTypeToParamType(kotlinType)
-            
+            val enumValues = extractEnumValues(param.type)
+
             ParameterInfo(
                 name = param.name ?: "param${param.index}",
                 type = paramType,
                 kotlinType = kotlinType,
                 isOptional = param.isOptional,
                 defaultValue = null, // Kotlin defaults cannot be extracted via reflection
-                enumValues = extractEnumValues(param.type),
+                enumValues = enumValues,
                 description = ""
             )
         }
-        
+
         val returnKotlinType = function.returnType.toString()
         val returnType = ReturnTypeInfo(
-            type = mapKotlinTypeToParamType(returnKotlinType),
+            type = mapKotlinTypeToParamType(function.returnType),
             kotlinType = returnKotlinType,
             isNullable = function.returnType.isMarkedNullable,
             description = ""
@@ -178,17 +180,26 @@ object FunctionRegistry
      * Map Kotlin type strings to PCP ParamType enum values.
      * Provides basic type mapping for automatic signature generation.
      */
-    private fun mapKotlinTypeToParamType(kotlinType: String): ParamType 
+    private fun mapKotlinTypeToParamType(type: KType): ParamType
     {
-        return when 
+        val classifier = type.classifier as? KClass<*> ?: return ParamType.Object
+
+        return when
         {
-            kotlinType.contains("String") -> ParamType.String
-            kotlinType.contains("Int") -> ParamType.Int
-            kotlinType.contains("Boolean") -> ParamType.Bool
-            kotlinType.contains("Float") || kotlinType.contains("Double") -> ParamType.Float
-            kotlinType.contains("List") || kotlinType.contains("Array") -> ParamType.List
-            kotlinType.contains("Map") -> ParamType.Map
-            kotlinType.contains("Enum") -> ParamType.Enum
+            classifier.java.isEnum || classifier.isSubclassOf(Enum::class) -> ParamType.Enum
+            classifier == String::class -> ParamType.String
+            classifier == Int::class || classifier == Long::class ||
+                classifier == Short::class || classifier == Byte::class -> ParamType.Int
+            classifier == Boolean::class -> ParamType.Bool
+            classifier == Float::class || classifier == Double::class -> ParamType.Float
+            classifier == List::class || classifier == MutableList::class -> ParamType.List
+            classifier == Set::class || classifier == MutableSet::class -> ParamType.List
+            classifier == Array::class -> ParamType.List
+            classifier == Map::class || classifier == MutableMap::class -> ParamType.Map
+            classifier == Any::class -> ParamType.Any
+            classifier == Number::class -> ParamType.Float
+            classifier.isSubclassOf(Collection::class) -> ParamType.List
+            classifier.isSubclassOf(Map::class) -> ParamType.Map
             else -> ParamType.Object
         }
     }
