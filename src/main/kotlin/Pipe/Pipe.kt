@@ -2906,6 +2906,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             //Run the llm and await it's output.
             var generatedContent = result.await()
             generatedContent.currentPipe = inputContent.currentPipe //Prevent nullptr leakage.
+            generatedContent.metadata = inputContent.metadata //Copy to prevent leakage after llm call.
 
             /**
              * Some llm's are very stubborn even when ordered to return only json. This will allow us to auto-strip
@@ -2947,6 +2948,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     }
                     validatorPipeContent = validatorPipeResult.await()
                     validatorPipeContent.currentPipe = inputContent.currentPipe //Avoid nullptr leakage.
+                    validatorPipeContent.metadata = generatedContent.metadata //Copy to avoid leakage after llm call.
                 } catch (e: Exception) {
                     trace(TraceEventType.PIPE_FAILURE, TracePhase.VALIDATION, generatedContent, error = e)
                     validatorPipeContent = generatedContent
@@ -2976,15 +2978,21 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.TRANSFORMATION)
                             try {
                                 transformationPipe!!.init()
-                                if (tracingEnabled) {
+                                if (tracingEnabled)
+                                {
                                     transformationPipe!!.enableTracing(traceConfig)
                                     transformationPipe!!.currentPipelineId = currentPipelineId
                                 }
+
                                 val transformPipeResult : Deferred<MultimodalContent> = async {
                                     transformationPipe?.execute(generatedContent) ?: generatedContent
                                 }
+
+                                val metadataBackup = generatedContent.metadata //Required to preserve prior to llm.
                                 generatedContent = transformPipeResult.await()
                                 generatedContent.currentPipe = inputContent.currentPipe
+                                generatedContent.metadata = metadataBackup //Copy over in case the llm stomps this.
+
                             } catch (e: Exception) {
                                 trace(TraceEventType.PIPE_FAILURE, TracePhase.TRANSFORMATION, generatedContent, error = e)
                                 // Continue with original content if transformation pipe fails
@@ -2999,6 +3007,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             trace(TraceEventType.TRANSFORMATION_START, TracePhase.TRANSFORMATION, generatedContent,
                                   metadata = mapOf("inputText" to generatedContent.text))
                             val transformed = transformationFunction?.invoke(generatedContent) ?: generatedContent
+
                             trace(TraceEventType.TRANSFORMATION_SUCCESS, TracePhase.TRANSFORMATION, transformed,
                                   metadata = mapOf("outputText" to transformed.text))
                             transformed
@@ -3045,8 +3054,12 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             val transformPipeResult : Deferred<MultimodalContent> = async {
                                 transformationPipe?.execute(generatedContent) ?: generatedContent
                             }
+
+                            val metadataBackup = generatedContent.metadata //Required to preserve prior to llm.
                             generatedContent = transformPipeResult.await()
                             generatedContent.currentPipe = inputContent.currentPipe //Prevent nullptr leakage.
+                            generatedContent.metadata = metadataBackup
+
                         } catch (e: Exception) {
                             trace(TraceEventType.PIPE_FAILURE, TracePhase.TRANSFORMATION, generatedContent, error = e)
                             // Continue with original content if transformation pipe fails
@@ -3095,6 +3108,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         }
                         val branchResult = branchPipeResult.await()
                         branchResult.currentPipe = inputContent.currentPipe
+                        branchResult.metadata = generatedContent.metadata
                         
                         //If branch pipe allows continuation, continue pipeline.
                         if(!branchResult.shouldTerminate())
@@ -3126,6 +3140,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
                     var failureResult = branchResult.await()
                     failureResult.currentPipe = inputContent.currentPipe
+                    failureResult.metadata = generatedContent.metadata
                     
                     //If failure function allows continuation, continue pipeline.
                     if(!failureResult.shouldTerminate())
