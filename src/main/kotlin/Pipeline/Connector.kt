@@ -126,6 +126,15 @@ class Connector : P2PInterface
     }
 
     /**
+     * Get the trace ID for the last executed pipeline.
+     */
+    fun getTraceId(): String?
+    {
+        val pipeline = branches[lastConnection]
+        return pipeline?.getTraceId()
+    }
+
+    /**
      * Set the lastConnection internal variable. This is useful specifically for p2p request handling where we
      * can't define the path for the connector with the p2p descriptor limitations on serialization.
      */
