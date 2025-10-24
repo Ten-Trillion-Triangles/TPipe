@@ -22,6 +22,10 @@ object TraceStreamMerger
     {
         if (objects.size < 2) return
         
+        // Validate all objects have trace IDs before starting
+        val traceIds = objects.mapNotNull { getTraceId(it) }
+        if (traceIds.size != objects.size) return
+        
         // Bubble from deepest child up to parent
         for (i in objects.size - 1 downTo 1) 
         {
@@ -34,20 +38,13 @@ object TraceStreamMerger
             // Skip if either trace ID is null
             if (childId == null || parentId == null) continue
             
-            // Get traces - if either is empty, skip merge
-            val parentEvents = PipeTracer.getTrace(parentId).toMutableList()
             val childEvents = PipeTracer.getTrace(childId)
             
+            // Get traces - if child is empty, skip merge
             if (childEvents.isEmpty()) continue
             
-            // Merge child into parent
-            parentEvents.addAll(childEvents)
-            parentEvents.sortBy { it.timestamp }
-            
-            // Replace parent trace with merged result
-            PipeTracer.clearTrace(parentId)
-            PipeTracer.startTrace(parentId)
-            parentEvents.forEach { PipeTracer.addEvent(parentId, it) }
+            // FIXED: Use mergeTrace instead of replaceTrace to preserve parent events
+            PipeTracer.mergeTrace(parentId, childEvents)
         }
     }
     
@@ -63,7 +60,7 @@ object TraceStreamMerger
         {
             is Pipeline -> obj.getTraceId()
             is Manifold -> obj.getTraceId()
-            is Connector -> obj.getP2pDescription()?.agentName
+            is Connector -> obj.getTraceId()
             
             else -> null
         }

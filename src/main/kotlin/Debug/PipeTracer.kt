@@ -41,6 +41,22 @@ object PipeTracer {
         traces.remove(pipelineId)
     }
     
+    fun replaceTrace(pipelineId: String, events: List<TraceEvent>) {
+        if (!isEnabled) return
+        traces[pipelineId] = events.toMutableList()
+    }
+    
+    fun mergeTrace(pipelineId: String, newEvents: List<TraceEvent>) {
+        if (!isEnabled) return
+        
+        val existingEvents = traces[pipelineId] ?: mutableListOf()
+        val allEvents = (existingEvents + newEvents)
+            .distinctBy { "${it.timestamp}-${it.pipeId}-${it.eventType}" }
+            .sortedBy { it.timestamp }
+        
+        traces[pipelineId] = allEvents.toMutableList()
+    }
+    
     fun exportTrace(pipelineId: String, format: TraceFormat): String {
         val trace = getTrace(pipelineId)
         val visualizer = TraceVisualizer()

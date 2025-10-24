@@ -21,6 +21,7 @@ import kotlinx.coroutines.Job
  */
 class Connector : P2PInterface
 {
+    private val pipelineId: String = java.util.UUID.randomUUID().toString()
 
 //---------------------------------------------P2P Interface------------------------------------------------------------
 
@@ -108,6 +109,10 @@ class Connector : P2PInterface
 
     fun enableTracing(config: TraceConfig = TraceConfig()) : Connector
     {
+        // Enable tracing for this connector
+        com.TTT.Debug.PipeTracer.startTrace(pipelineId)
+        
+        // Enable tracing for all branches
         branches.forEach {
             it.value.enableTracing(config)
         }
@@ -126,13 +131,9 @@ class Connector : P2PInterface
     }
 
     /**
-     * Get the trace ID for the last executed pipeline.
+     * Get the trace ID for this connector.
      */
-    fun getTraceId(): String?
-    {
-        val pipeline = branches[lastConnection]
-        return pipeline?.getTraceId()
-    }
+    fun getTraceId(): String = pipelineId
 
     /**
      * Set the lastConnection internal variable. This is useful specifically for p2p request handling where we
