@@ -3708,7 +3708,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         containerObject = container
     }
 
-    override fun getPipelinesFromInterface(): List<Pipeline> = listOf()
+    override fun getPipelinesFromInterface(): List<Pipeline> = listOf(pipelineRef!!)
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
         val response = P2PResponse()
