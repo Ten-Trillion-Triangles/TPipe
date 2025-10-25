@@ -37,6 +37,10 @@ object PipeTracer {
         return traces[pipelineId] ?: emptyList()
     }
     
+    fun getAllTraces(): Map<String, List<TraceEvent>> {
+        return traces.toMap()
+    }
+    
     fun clearTrace(pipelineId: String) {
         traces.remove(pipelineId)
     }
