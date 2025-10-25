@@ -13,7 +13,7 @@ object TraceNodeMapper
 {
     fun mapEventsToNodes(trace: List<TraceEvent>): List<TraceNode> 
     {
-        return trace.groupBy { getNodeKey(it) }
+        return trace.groupBy { resolveNodeKey(it) }
             .map { (nodeKey, events) ->
                 TraceNode(
                     nodeId = "node-${kotlin.math.abs(nodeKey.hashCode())}",
@@ -23,13 +23,14 @@ object TraceNodeMapper
                 )
             }
     }
-    
-    private fun getNodeKey(event: TraceEvent): String 
+
+    fun resolveNodeKey(event: TraceEvent): String 
     {
-        // For container events, create separate nodes for different phases/types
         return when {
             event.eventType.name.startsWith("SPLITTER_") -> "${event.pipeName}-${event.eventType.name}"
             event.eventType.name.startsWith("MANIFOLD_") -> "${event.pipeName}-${event.eventType.name}"
+            event.eventType.name.startsWith("MANAGER_") -> "${event.pipeName}-${event.eventType.name}"
+            event.eventType.name.startsWith("AGENT_") -> "${event.pipeName}-${event.eventType.name}-${event.metadata["agentName"] ?: "unknown"}"
             else -> event.pipeName
         }
     }
