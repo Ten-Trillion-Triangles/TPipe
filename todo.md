@@ -3,11 +3,11 @@
 **Enhancements:**
 ~~- Add creator functions to help simplify creating converseHistory adds.~~
 - Add human in the loop functions to the advanced container classes.
-- Add link table to trace file system.
+~~- Add link table to trace file system.~~
 
 **New features:**
 - Add DistributionGrid class that enables "swarm" style agents with TPipe pipelines.
-- Expand tracing system to help trace Splitters, Manifolds, Junctions, and DistributionGrid objects.
+~~- Expand tracing system to help trace Splitters, Manifolds, Junctions, and DistributionGrid objects.~~
 - Add support for pulling pipeline context, then merging into global.
 - Create builders for all the containers, and general workflows like chain of thought pipelines
 - Create builders for compression pipelines
