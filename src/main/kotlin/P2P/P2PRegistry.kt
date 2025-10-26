@@ -179,11 +179,16 @@ object P2PRegistry
     fun listLocalAgents(container: Any) : List<P2PDescriptor>
     {
         val localDescriptors = mutableListOf<P2PDescriptor>()
-        for(it in Agents)
+        for(entry in Agents)
         {
-            if(it.value.container == container && !it.value.requirements.allowExternalConnections)
+            val registeredAgent = entry.value
+            val agentContainer = registeredAgent.container
+            val hostContainer = agentContainer.getContainerObject()
+
+            val isLocal = agentContainer == container || hostContainer == container
+            if(isLocal && !registeredAgent.requirements.allowExternalConnections)
             {
-                localDescriptors.add(it.value.descriptor)
+                localDescriptors.add(registeredAgent.descriptor)
             }
         }
 

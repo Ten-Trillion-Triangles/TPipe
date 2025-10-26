@@ -486,8 +486,9 @@ class Manifold : P2PInterface
          */
         if(descriptor == null || requirements == null)
         {
+            val resolvedAgentName = agentName.ifEmpty { "${pipeline.pipelineName}-Manifold-Worker" }
             val transport = P2PTransport()
-            transport.transportAddress = "${pipeline.pipelineName}" //Standard to use pipeline name as address.
+            transport.transportAddress = resolvedAgentName // Must match agentName for routing.
             transport.transportMethod = Transport.Tpipe
 
             /**
@@ -522,9 +523,6 @@ class Manifold : P2PInterface
                 skills = agentSkills.toMutableList()
             }
 
-            //Define default name if the user does not supply this.
-            val defaultName= let { agentName.ifEmpty { "${pipeline.pipelineName}-Manifold-Worker" } }
-
             //Define default description if not provided.
             var defaultDescription = let { agentDescription.ifEmpty { "Specialized worker pipeline for task execution within Manifold orchestration" } }
 
@@ -533,7 +531,7 @@ class Manifold : P2PInterface
              * but still maintain security boundaries for external access.
              */
             val workerDescriptor = P2PDescriptor(
-                agentName = defaultName,
+                agentName = resolvedAgentName,
                 agentDescription = defaultDescription,
                 transport = transport,
                 requiresAuth = false,
@@ -913,7 +911,16 @@ class Manifold : P2PInterface
              * misbehaving llm might not produce the json as intended, or correctly. And in that case could prevent
              * the manifold from continuing.
              */
-            val agentRequest = extractJson<AgentRequest>(responseText)
+            var agentBatchCount = 0
+            var agentRequest = extractJson<List<AgentRequest>>(responseText)?.let { list ->
+                agentBatchCount = list.size
+                list.firstOrNull()
+            }
+
+            if(agentRequest == null)
+            {
+                agentRequest = extractJson<AgentRequest>(responseText)
+            }
 
             //Kill with an error if we didn't get a valid agent request as the final output.
             if(agentRequest == null)
@@ -942,6 +949,8 @@ class Manifold : P2PInterface
                       metadata = mapOf(
                           "agentName" to agentRequest.agentName,
                           "requestValid" to true,
+                          "requestSource" to if(agentBatchCount > 0) "array" else "object",
+                          "batchSize" to if(agentBatchCount > 0) agentBatchCount else 1,
                           "iteration" to loopIterationCount
                       ))
             }
