@@ -181,7 +181,7 @@ object P2PRegistry
         val localDescriptors = mutableListOf<P2PDescriptor>()
         for(it in Agents)
         {
-            if(it.value.container == container && it.value.requirements.allowExternalConnections)
+            if(it.value.container == container && !it.value.requirements.allowExternalConnections)
             {
                 localDescriptors.add(it.value.descriptor)
             }
