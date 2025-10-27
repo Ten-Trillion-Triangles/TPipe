@@ -2,6 +2,7 @@
 package com.TTT.Util
 
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.json.*
 import kotlinx.serialization.modules.EmptySerializersModule
@@ -56,6 +57,8 @@ class JsonSchemaGenerator(
     
     /** Set of types currently being built to detect and prevent infinite recursion */
     private val building = mutableSetOf<String>()
+    private val enumHints = linkedMapOf<String, List<String>>()
+    private val pathStack = ArrayDeque<String>()
 
     /**
      * Generates a complete JSON Schema from a serializer.
@@ -119,10 +122,76 @@ class JsonSchemaGenerator(
      * @param serializer The KSerializer for the root type
      * @return Example JSON as JsonObject
      */
-    fun <T> generateExample(serializer: KSerializer<T>): JsonObject {
+    /**
+     * Container that holds the generated example JSON along with any enum legend metadata.
+     */
+    data class ExampleGenerationResult(
+        val example: JsonObject,
+        val enumLegend: Map<String, List<String>>
+    )
+
+    /**
+     * Convenience overload that keeps backwards compatibility with existing callers that only need
+     * the JSON example. Use [generateExampleWithLegend] when enum guidance is also required.
+     */
+    fun <T> generateExample(serializer: KSerializer<T>): JsonObject =
+        generateExampleWithLegend(serializer).example
+
+    /**
+     * Generates example JSON and captures the available enum values for every field encountered.
+     */
+    fun <T> generateExampleWithLegend(serializer: KSerializer<T>): ExampleGenerationResult {
         building.clear()
-        return exampleForDescriptor(serializer.descriptor) as JsonObject
+        enumHints.clear()
+        pathStack.clear()
+
+        val exampleJson = exampleForDescriptor(serializer.descriptor) as JsonObject
+        return ExampleGenerationResult(exampleJson, LinkedHashMap(enumHints))
     }
+
+    /**
+     * Renders the example JSON and appends an enum legend two line breaks below the schema when
+     * enum values are present. This format is LLM friendly: the legend clarifies the valid values
+     * without altering the JSON structure itself.
+     */
+    fun formatExampleWithLegend(
+        result: ExampleGenerationResult,
+        prettyPrint: Boolean = true
+    ): String {
+        val jsonFormatter = Json {
+            this.prettyPrint = prettyPrint
+            encodeDefaults = true
+        }
+
+        val exampleString = jsonFormatter.encodeToString(JsonObject.serializer(), result.example)
+
+        if (result.enumLegend.isEmpty()) {
+            return exampleString
+        }
+
+        val legendText = buildString {
+            append("Enum Legend:\n")
+            result.enumLegend.forEach { (path, values) ->
+                append("- ")
+                append(path)
+                append(": ")
+                append(values.joinToString(" | "))
+                append('\n')
+            }
+        }.trimEnd()
+
+        return buildString {
+            append(exampleString.trimEnd())
+            append("\n\n")
+            append(legendText)
+        }
+    }
+
+    /**
+     * Detects whether the supplied serializer's descriptor tree contains any enum values.
+     */
+    fun <T> containsEnums(serializer: KSerializer<T>): Boolean =
+        descriptorContainsEnum(serializer.descriptor, mutableSetOf())
 
     /**
      * Generates example JSON data showing the expected structure.
@@ -140,8 +209,21 @@ class JsonSchemaGenerator(
                 PrimitiveKind.BOOLEAN -> JsonPrimitive(false)
                 else -> JsonPrimitive("example_string")
             }
-            SerialKind.ENUM -> JsonPrimitive("ENUM_VALUE")
-            StructureKind.LIST -> JsonArray(listOf(exampleForDescriptor(desc.getElementDescriptor(0))))
+            SerialKind.ENUM -> {
+                registerEnumHint(currentPath(), desc)
+                val enumValue = if (desc.elementsCount > 0) desc.getElementName(0) else "ENUM_VALUE"
+                JsonPrimitive(enumValue)
+            }
+            StructureKind.LIST -> {
+                val elementDescriptor = desc.getElementDescriptor(0)
+                if (elementDescriptor.kind == SerialKind.ENUM) {
+                    registerEnumHint(listPath(), elementDescriptor)
+                }
+                pathStack.addLast("[]")
+                val elementExample = exampleForDescriptor(elementDescriptor)
+                pathStack.removeLast()
+                JsonArray(listOf(elementExample))
+            }
             StructureKind.MAP -> buildJsonObject {
                 put("example_key", exampleForDescriptor(desc.getElementDescriptor(1)))
             }
@@ -155,13 +237,62 @@ class JsonSchemaGenerator(
                     for (i in 0 until desc.elementsCount) {
                         val propName = desc.getElementName(i)
                         val child = desc.getElementDescriptor(i)
+                        pathStack.addLast(propName)
                         put(propName, exampleForDescriptor(child))
+                        pathStack.removeLast()
                     }
                 }
                 building -= name
                 result
             }
             else -> buildJsonObject {}
+        }
+    }
+
+    private fun currentPath(): String = pathStack.joinToString(".")
+
+    private fun listPath(): String {
+        val base = currentPath()
+        return if (base.isBlank()) "[]" else "$base[]"
+    }
+
+    private fun registerEnumHint(path: String, descriptor: SerialDescriptor) {
+        if (descriptor.kind != SerialKind.ENUM || descriptor.elementsCount == 0) return
+        val normalized = path
+            .replace(".[]", "[]")
+            .ifBlank { "<root>" }
+        enumHints.putIfAbsent(normalized, (0 until descriptor.elementsCount).map { descriptor.getElementName(it) })
+    }
+
+    private fun descriptorContainsEnum(desc: SerialDescriptor, visited: MutableSet<String>): Boolean {
+        if (desc.isNullable) {
+            return descriptorContainsEnum(desc.nonNullOriginal, visited)
+        }
+
+        return when (desc.kind) {
+            SerialKind.ENUM -> true
+            is PrimitiveKind -> false
+            StructureKind.LIST -> descriptorContainsEnum(desc.getElementDescriptor(0), visited)
+            StructureKind.MAP -> descriptorContainsEnum(desc.getElementDescriptor(0), visited) ||
+                descriptorContainsEnum(desc.getElementDescriptor(1), visited)
+            StructureKind.CLASS, StructureKind.OBJECT -> {
+                val name = desc.serialName
+                if (!visited.add(name)) {
+                    false
+                } else {
+                    val contains = (0 until desc.elementsCount).any { index ->
+                        descriptorContainsEnum(desc.getElementDescriptor(index), visited)
+                    }
+                    visited.remove(name)
+                    contains
+                }
+            }
+            is PolymorphicKind.SEALED, is PolymorphicKind.OPEN -> {
+                (0 until desc.elementsCount).any { index ->
+                    descriptorContainsEnum(desc.getElementDescriptor(index), visited)
+                }
+            }
+            else -> false
         }
     }
 
@@ -789,3 +920,28 @@ fun exampleFor(kclass: KClass<*>, module: SerializersModule = EmptySerializersMo
     val ser = module.serializer(kclass, emptyList(), isNullable = false)
     return JsonSchemaGenerator(module).generateExample(ser)
 }
+
+/**
+ * Convenience helpers that mirror [exampleFor] but return a prompt-ready string. If enums are present,
+ * the legend is appended automatically two line breaks below the JSON example.
+ */
+fun <T> examplePromptFor(
+    serializer: KSerializer<T>,
+    module: SerializersModule = EmptySerializersModule()
+): String {
+    val generator = JsonSchemaGenerator(module)
+    val result = generator.generateExampleWithLegend(serializer)
+    return generator.formatExampleWithLegend(result)
+}
+
+fun examplePromptFor(
+    kclass: KClass<*>,
+    module: SerializersModule = EmptySerializersModule()
+): String {
+    val serializer = module.serializer(kclass, emptyList(), isNullable = false)
+    return examplePromptFor(serializer, module)
+}
+
+inline fun <reified T> examplePromptFor(
+    module: SerializersModule = EmptySerializersModule()
+): String = examplePromptFor(T::class, module)
