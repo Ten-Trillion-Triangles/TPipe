@@ -828,13 +828,6 @@ class Manifold : P2PInterface
                 contextTruncationFunction?.invoke(workingContentObject)
             }
 
-            //Throw now before any llm's are ran to avoid any catastrophic outcomes created by user error.
-            else
-            {
-                throw Exception("No method of managing context was found. This means that context can overflow" +
-                        " and bring down the entire Manifold if misconfigured.")
-            }
-
             //Get the result of the manager pipeline's execution and assessment of task status.
             val managerResult = managerPipeline.execute(workingContentObject)
 

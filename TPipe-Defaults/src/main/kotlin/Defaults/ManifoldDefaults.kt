@@ -237,7 +237,7 @@ object ManifoldDefaults
                 | 
             """.trimMargin())
 
-        return Pipeline()
+        return pipeline
 
     }
 }
