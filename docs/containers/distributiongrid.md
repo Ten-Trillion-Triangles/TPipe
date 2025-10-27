@@ -28,7 +28,7 @@ class DistributionGrid : P2PInterface {
     // Only one implemented method:
     fun setEntryPipeline(pipeline: Pipeline) {
         // Validates pipeline has DistributionGridTask JSON schema
-        val requiredJsonOutputSchema = exampleFor(DistributionGridTask::class).toString()
+        val requiredJsonOutputSchema = examplePromptFor(DistributionGridTask::class)
         // ... validation logic
         entryPipeline = pipeline
     }
@@ -86,7 +86,7 @@ The only implemented feature validates pipeline schemas:
 
 ```kotlin
 fun setEntryPipeline(pipeline: Pipeline) {
-    val requiredJsonOutputSchema = exampleFor(DistributionGridTask::class).toString()
+    val requiredJsonOutputSchema = examplePromptFor(DistributionGridTask::class)
     
     var hasSchema = false
     for (pipe in pipeline.getPipes()) {

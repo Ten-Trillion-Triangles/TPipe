@@ -237,8 +237,8 @@ Generates JSON Schema from serializer.
 #### `inlinedSchemaFor<T>(serializer: KSerializer<T>, options: SchemaOptions = SchemaOptions()): JsonObject`
 Generates LLM-friendly inlined schema.
 
-#### `exampleFor<T>(serializer: KSerializer<T>): JsonObject`
-Generates example JSON structure.
+#### `examplePromptFor<T>(serializer: KSerializer<T>): String`
+Generates a prompt-ready JSON example with optional enum legend.
 
 ### Key Features
 

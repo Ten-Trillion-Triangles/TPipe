@@ -5,7 +5,7 @@ import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.Util.deserialize
-import com.TTT.Util.exampleFor
+import com.TTT.Util.examplePromptFor
 
 /**
  * Defines a custom json schema that can be requested to be used by an agent instead of its default one.
@@ -18,7 +18,7 @@ data class CustomJsonSchema(
     
     fun add(pipeName: String, description: String, jsonObject: Any)
     {
-        val schemaExample = exampleFor(jsonObject::class).toString()
+        val schemaExample = examplePromptFor(jsonObject::class)
         val schemaPair = Pair(description, schemaExample)
         schemaContainer[pipeName] = schemaPair
     }
@@ -36,7 +36,7 @@ data class CustomJsonSchema(
         fun newSchema(pipeName: String, description: String, jsonObject: Any) : CustomJsonSchema?
         {
             try{
-                val schemaExample = exampleFor(jsonObject::class).toString()
+                val schemaExample = examplePromptFor(jsonObject::class)
                 val schemaPair = Pair(description, schemaExample)
                 val customJsonSchemaObject = CustomJsonSchema(mutableMapOf(pipeName to schemaPair))
                 return customJsonSchemaObject

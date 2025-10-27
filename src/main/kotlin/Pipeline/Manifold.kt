@@ -23,7 +23,7 @@ import com.TTT.Util.serialize
 import com.TTT.Debug.*
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Pipe.Pipe
-import com.TTT.Util.exampleFor
+import com.TTT.Util.examplePromptFor
 import com.TTT.Util.getLowestContextWindowSize
 import java.util.UUID
 
@@ -336,7 +336,7 @@ class Manifold : P2PInterface
 
         for(pipe in managerPipeline.getPipes())
         {
-            val expectedSchema = exampleFor(AgentRequest::class).toString()
+            val expectedSchema = examplePromptFor(AgentRequest::class)
 
             if(pipe.jsonOutput == expectedSchema)
             {

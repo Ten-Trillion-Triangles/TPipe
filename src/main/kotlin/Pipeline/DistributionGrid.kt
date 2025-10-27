@@ -5,7 +5,7 @@ import com.TTT.P2P.AgentRequest
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.PcPRequest
-import com.TTT.Util.exampleFor
+import com.TTT.Util.examplePromptFor
 
 /**
  * Data class to pass around as each agent works on the task at hand. Allows the agents to see what the last task was
@@ -120,7 +120,7 @@ class DistributionGrid : P2PInterface
          * core task data, and fit the expectations of the DistributionGrid as it works through each agent
          * and manages the task.
          */
-        val requiredJsonOutputSchema = exampleFor(DistributionGridTask::class).toString()
+        val requiredJsonOutputSchema = examplePromptFor(DistributionGridTask::class)
 
         var hasSchema = false
 

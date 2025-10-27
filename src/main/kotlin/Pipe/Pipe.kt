@@ -30,7 +30,7 @@ import com.TTT.Structs.PipeSettings
 import com.TTT.Structs.extractReasoningContent
 import com.TTT.Util.deepCopy
 import com.TTT.Util.deserialize
-import com.TTT.Util.exampleFor
+import com.TTT.Util.examplePromptFor
 import com.TTT.Util.extractAllJsonObjects
 import com.TTT.Util.extractNonJsonText
 import com.TTT.Util.removeFromFirstOccurrence
@@ -786,7 +786,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         if(!pcpContext.tpipeOptions.isEmpty() || !pcpContext.httpOptions.isEmpty() || !pcpContext.stdioOptions.isEmpty() || pcpContext.pythonOptions.availablePackages.isNotEmpty())
         {
             val pcpAsJson = serialize(pcpContext, false)
-            val pcpRequestAsJson = exampleFor(PcPRequest::class)
+            val pcpRequestAsJson = examplePromptFor(PcPRequest::class)
 
             val pcpContextRequirement = """\n\nYou may take actions to carry out your task using the Pipe Context Protocol.
                 |The Pipe Context Protocol is a standardized way to communicate with user's machine. The protocol is as follows:
@@ -946,7 +946,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         if(!pcpContext.tpipeOptions.isEmpty() || !pcpContext.httpOptions.isEmpty() || !pcpContext.stdioOptions.isEmpty() || pcpContext.pythonOptions.availablePackages.isNotEmpty())
         {
             val pcpAsJson = serialize(pcpContext, false)
-            val pcpRequestAsJson = exampleFor(PcPRequest::class)
+            val pcpRequestAsJson = examplePromptFor(PcPRequest::class)
 
             var pcpContextRequirement = """
                 |
@@ -973,7 +973,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         {
             //Available agents to call and schema to use to call them with.
             val agentList = serialize(p2pAgentDescriptors, false)
-            val agentRequestSchema = exampleFor(AgentRequest::class)
+            val agentRequestSchema = examplePromptFor(AgentRequest::class)
 
             var defaultP2PDescription = """\n\nYou may request another agent to help continue your task using the Pipe-to-Pipe Agent Protocol.
                 |The Pipe-to-Pipe Agent Protocol allows you to delegate specific tasks to specialized agents. The available agents are:
@@ -1071,7 +1071,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     inline fun <reified T> setJsonInput(json: T,senddefaults: Boolean = true): Pipe {
 
-        this.jsonInput = exampleFor(T::class).toString()
+        this.jsonInput = examplePromptFor(T::class)
         return this
     }
 
@@ -1110,7 +1110,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     inline fun <reified T> setJsonOutput(json: T): Pipe
     {
-        this.jsonOutput = exampleFor(T::class).toString()
+        this.jsonOutput = examplePromptFor(T::class)
         return this
     }
 
@@ -2143,10 +2143,10 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     {
         if(pageKeyList.isEmpty())
         {
-            return exampleFor(MiniBank::class).toString()
+            return examplePromptFor(MiniBank::class)
         }
 
-        return exampleFor(contextWindow::class).toString()
+        return examplePromptFor(contextWindow::class)
     }
 
     /**
@@ -3727,4 +3727,3 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
 }
-
