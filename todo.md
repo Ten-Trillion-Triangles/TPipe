@@ -4,6 +4,7 @@
 ~~- Add creator functions to help simplify creating converseHistory adds.~~
 - Add human in the loop functions to the advanced container classes.
 ~~- Add link table to trace file system.~~
+- Better flesh out the manifold builder.
 
 **New features:**
 - Add DistributionGrid class that enables "swarm" style agents with TPipe pipelines.
@@ -20,6 +21,7 @@ all the components that don't convey information while retaining all the ones th
 - Add support for persisting lorebook keys that allow a pointer to a file, then load that file when the key is referenced.
 Allow the keys to also be stored as stub files and loaded directly.
 - Add default .tpipe dir support for core config and persistent storage features built into the library.
+- Add support for a todo list style mechanism for storing and tracking progress.
 
 **Down the road:**
 - Create entry and exit points for graalvm native for future non jvm language wrappers.

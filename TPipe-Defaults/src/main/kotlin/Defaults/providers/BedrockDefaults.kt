@@ -1,6 +1,7 @@
 package Defaults.providers
 
 import Defaults.BedrockConfiguration
+import Defaults.ManifoldDefaults
 import com.TTT.Pipeline.Manifold
 import com.TTT.Pipeline.Pipeline
 import bedrockPipe.BedrockMultimodalPipe
@@ -19,7 +20,7 @@ internal object BedrockDefaults
      */
     fun createManifold(config: BedrockConfiguration): Manifold 
     {
-        val managerPipeline = createManagerPipeline(config)
+        val managerPipeline = ManifoldDefaults.buildDefaultManagerPipeline(config)
         
         return Manifold().apply {
             setManagerPipeline(managerPipeline)
@@ -37,12 +38,12 @@ internal object BedrockDefaults
         val pipeline = Pipeline()
         
         //Create the specified number of pipes for the manager pipeline
-        for (i in 2..config.pipeCount)
+        for (i in 1 .. config.pipeCount)
         {
             val pipe = createBedrockPipe(config)
             pipeline.add(pipe)
         }
-        
+
         return pipeline
     }
     
