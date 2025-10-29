@@ -1,9 +1,14 @@
 package com.TTT.Context
 
+import com.TTT.Config.TPipeConfig
+import com.TTT.Util.deleteFile
 import com.TTT.Util.deserialize
+import com.TTT.Util.readStringFromFile
 import com.TTT.Util.serialize
+import com.TTT.Util.writeStringToFile
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.File
 
 
 /**
@@ -76,9 +81,16 @@ object ContextBank
      *
      *
      */
-    fun emplace(key: String, window: ContextWindow)
+    fun emplace(key: String, window: ContextWindow, persistToDisk: Boolean = false)
     {
         bank[key] = window
+        val bankDir = "${TPipeConfig.getLorebookDir()}/${key}.bank"
+
+        if(persistToDisk || File(bankDir).exists())
+        {
+            val value = serialize(window)
+            writeStringToFile(bankDir, value)
+        }
     }
 
 
@@ -86,10 +98,30 @@ object ContextBank
      * Safely emplace a context window back using the mutex. This is the recommended way to emplace when possible.
      * This should always be used over the regular emplace if you are updating the context inside a pipe or pipeline.
      */
-    suspend fun emplaceWithMutex(key: String, window: ContextWindow)
+    suspend fun emplaceWithMutex(key: String, window: ContextWindow, persistToDisk: Boolean = false)
     {
         bankMutex.withLock {
-            bank[key] = window
+            emplace(key, window, persistToDisk)
+        }
+    }
+
+    /**
+     * Delete the key file that is holding a persisting context bank key.
+     */
+    fun deletePersistingBankKey(key: String) : Boolean
+    {
+        val bankDir = "${TPipeConfig.getLorebookDir()}/${key}.bank"
+        return deleteFile(bankDir)
+    }
+
+    /**
+     * Delete the key file that is holding a persisting context bank key, and lock with the bank mutex for thread
+     * safety.
+     */
+    suspend fun deletePersistingBankKeyWithMutex(key: String) : Boolean
+    {
+        bankMutex.withLock {
+            return deletePersistingBankKey(key)
         }
     }
 
@@ -165,7 +197,16 @@ object ContextBank
      */
     fun getContextFromBank(key: String, copy: Boolean = true) : ContextWindow
     {
-        val context = bank[key] ?: ContextWindow()
+        var context = bank[key] ?: ContextWindow()
+
+        //Automatically read from disk if this key is persisted. 
+        val diskPath = "${TPipeConfig.getLorebookDir()}/${key}.bank"
+        if(File(diskPath).exists())
+        {
+            val contextJson = readStringFromFile(diskPath)
+            context = deserialize<ContextWindow>(contextJson) ?: ContextWindow()
+        }
+
         if(copy)
         {
             val json = serialize(context)

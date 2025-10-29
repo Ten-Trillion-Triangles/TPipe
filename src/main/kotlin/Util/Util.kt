@@ -1230,4 +1230,31 @@ fun getAllFilePaths(directoryPath: String): List<String> {
 }
 
 
+/**
+ * Deletes a file given its path.
+ * @param filePath The absolute path to the file to delete.
+ * @return True if the file was successfully deleted, false otherwise.
+ */
+fun deleteFile(filePath: String): Boolean {
+    val file = File(filePath)
+    if (!file.exists()) {
+        println("Error: File not found at $filePath")
+        return false
+    }
+    if (!file.isFile) {
+        println("Error: Path $filePath is not a file.")
+        return false
+    }
+    try {
+        return file.delete()
+    } catch (e: SecurityException) {
+        println("Error deleting file $filePath: Permission denied. ${e.message}")
+        return false
+    } catch (e: Exception) {
+        println("Unexpected error deleting file $filePath: ${e.message}")
+        return false
+    }
+}
+
+
 
