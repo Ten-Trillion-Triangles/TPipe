@@ -1212,3 +1212,22 @@ fun removeFromFirstOccurrence(input: String, target: String): String {
 }
 
 
+/**
+ * Get the paths to all files in a given directory and returns those paths as a list.
+ * @param directoryPath The path to the directory.
+ * @return A list of file paths.
+ */
+fun getAllFilePaths(directoryPath: String): List<String> {
+    val directory = File(directoryPath)
+    if (!directory.exists() || !directory.isDirectory) {
+        return emptyList()
+    }
+
+    return directory.walk()
+        .filter { it.isFile }
+        .map { it.absolutePath }
+        .toList()
+}
+
+
+

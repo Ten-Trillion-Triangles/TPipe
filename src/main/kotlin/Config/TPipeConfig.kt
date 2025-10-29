@@ -1,10 +1,46 @@
 package com.TTT.Config
 
 import com.TTT.Util.getHomeFolder
-import java.util.UUID
 
 object TPipeConfig
 {
     var configDir = "${getHomeFolder()}/.tpipe" //Defines where TPipe looks for persisting lorebooks, and other settings.
-    var instanceID = UUID.randomUUID().toString() //Defines unique name to avoid multiple instances of TPipe crashing.
+    var instanceID = "TPipe-Default" //Defines unique name to avoid multiple instances of TPipe crashing.
+
+    /**
+     * Get the defined config directory for TPipe. Which combines assigned config dir path + the instance id which guards
+     * against multiple instances of a TPipe application running at once from colliding with each other. This acts
+     * as a safe area to support various native persistence features of the TPipe library.
+     */
+    fun getTPipeConfigDir() : String
+    {
+        return "${configDir}/$instanceID"
+    }
+
+    /**
+     * Return the directory where TPipe stores all persisting memory data. This includes lorebook stubs, and todo
+     * lists. However, more persisting storage systems will likely be supported in the future.
+     */
+    fun getMemoryDir() : String
+    {
+        return "${getTPipeConfigDir()}/memory"
+    }
+
+    /**
+     * Return the directory where TPipe stores persisting lorebook
+     */
+    fun getLorebookDir() : String
+    {
+        return "${getMemoryDir()}/lorebook"
+    }
+
+    /**
+     * Get the directory where todo lists are stored.
+     */
+    fun getTodoListDir() : String
+    {
+        return "${getMemoryDir()}/todo"
+    }
+
+
 }
