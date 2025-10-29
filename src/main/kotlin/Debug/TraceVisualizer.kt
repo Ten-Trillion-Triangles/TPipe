@@ -207,7 +207,7 @@ class TraceVisualizer {
             
             val nodeKey = TraceNodeMapper.resolveNodeKey(event)
             table.append("""
-                <tr id="${event.id}" class="trace-row" data-pipe="$nodeKey">
+                <tr id="${event.id}" class="trace-item" data-pipe="$nodeKey">
                     <td>+${elapsed}ms</td>
                     <td>${event.pipeName}</td>
                     <td>${event.eventType}</td>
@@ -239,28 +239,67 @@ class TraceVisualizer {
                 <title>TPipe Manifold Execution Flow</title>
                 <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
                 <style>
-                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #f5f5f5; }
-                    .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                    h1 { color: #333; text-align: center; margin-bottom: 30px; }
-                    .manifold-section { margin: 20px 0; padding: 15px; border-radius: 8px; }
-                    .orchestration { background: #f8f9fa; border-left: 4px solid #007bff; }
-                    .agent-interaction { background: #e8f5e8; border-left: 4px solid #28a745; }
-                    .success { color: #28a745; font-weight: bold; }
-                    .failure { color: #dc3545; font-weight: bold; }
-                    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-                    th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-                    th { background-color: #f8f9fa; font-weight: 600; }
-                    tr:nth-child(even) { background-color: #f8f9fa; }
-                    .mermaid { text-align: center; background: white; padding: 20px; border-radius: 8px; }
-                    .trace-row { transition: background-color 0.3s ease; cursor: pointer; }
-                    .trace-row.highlighted { background-color: #fff3cd !important; border-left: 4px solid #ffc107; }
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 24px; background: #f1f5f9; color: #1e293b; }
+                    .container { max-width: 1200px; margin: 0 auto; background: white; padding: 28px; border-radius: 14px; box-shadow: 0 22px 50px rgba(15,23,42,0.16); }
+                    h1 { color: #0f172a; text-align: center; margin-bottom: 28px; font-size: 2rem; letter-spacing: -0.02em; }
+                    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 18px; margin: 18px 0 34px; }
+                    .summary-card { background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%); border-radius: 14px; padding: 18px 20px; border: 1px solid rgba(99,102,241,0.18); box-shadow: inset 0 1px 0 rgba(255,255,255,0.7); }
+                    .summary-card h3 { margin: 0 0 8px; font-size: 0.8rem; letter-spacing: 0.12em; color: #475569; text-transform: uppercase; }
+                    .summary-card .value { font-size: 1.75rem; font-weight: 600; color: #0f172a; }
+                    .summary-card .subtext { font-size: 0.92rem; color: #64748b; margin-top: 8px; line-height: 1.4; }
+                    .manifold-section { margin: 28px 0; padding: 22px; border-radius: 14px; border: 1px solid rgba(148,163,184,0.22); background: #f8fafc; box-shadow: inset 0 1px 0 rgba(255,255,255,0.9); }
+                    .manifold-section h2 { margin-top: 0; margin-bottom: 18px; font-size: 1.25rem; color: #1e293b; }
+                    .orchestration { border-left: 5px solid #6366f1; }
+                    .agent-interaction { border-left: 5px solid #10b981; }
+                    .mermaid { text-align: center; background: white; padding: 24px; border-radius: 12px; border: 1px solid rgba(148,163,184,0.25); box-shadow: 0 10px 20px rgba(15,23,42,0.08); }
+                    .event-feed { display: flex; flex-direction: column; gap: 18px; }
+                    .event-card { position: relative; padding: 20px 22px; border-radius: 14px; border: 1px solid rgba(148,163,184,0.25); background: white; box-shadow: 0 8px 18px rgba(15,23,42,0.08); transition: transform 0.18s ease, box-shadow 0.18s ease; }
+                    .event-card:hover { transform: translateY(-2px); box-shadow: 0 14px 26px rgba(15,23,42,0.12); }
+                    .event-card.highlighted { border-color: #facc15; box-shadow: 0 0 0 3px rgba(250,204,21,0.35); }
+                    .event-card.success { border-left: 4px solid rgba(16,185,129,0.8); }
+                    .event-card.failure { border-left: 4px solid rgba(239,68,68,0.85); }
+                    .event-card.warning { border-left: 4px solid rgba(251,191,36,0.9); }
+                    .event-card.info { border-left: 4px solid rgba(79,70,229,0.8); }
+                    .event-header { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; margin-bottom: 16px; }
+                    .event-time { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #64748b; padding: 4px 10px; border-radius: 9999px; background: rgba(226,232,240,0.6); border: 1px solid rgba(148,163,184,0.35); }
+                    .event-type-badge { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 9999px; font-weight: 600; font-size: 0.88rem; text-transform: capitalize; }
+                    .event-type-badge.success { background: rgba(220,252,231,0.9); color: #166534; }
+                    .event-type-badge.failure { background: rgba(254,226,226,0.9); color: #991b1b; }
+                    .event-type-badge.warning { background: rgba(254,243,199,0.9); color: #92400e; }
+                    .event-type-badge.info { background: rgba(224,231,255,0.95); color: #3730a3; }
+                    .badge-icon { font-size: 1rem; }
+                    .phase-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 9999px; border: 1px solid rgba(148,163,184,0.35); background: rgba(148,163,184,0.15); font-size: 0.85rem; color: #475569; letter-spacing: 0.02em; }
+                    .node-tag { padding: 6px 11px; border-radius: 999px; background: rgba(59,130,246,0.12); color: #1d4ed8; font-size: 0.88rem; font-weight: 500; }
+                    .event-body { display: grid; gap: 18px; }
+                    .event-section h4 { margin: 0 0 8px; font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #475569; }
+                    .metadata-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+                    .metadata-item { padding: 10px 12px; border-radius: 10px; background: rgba(148,163,184,0.1); border: 1px solid rgba(148,163,184,0.18); }
+                    .metadata-item strong { display: block; font-size: 0.75rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+                    .metadata-item span { color: #0f172a; font-weight: 500; word-break: break-word; font-size: 0.92rem; }
+                    .empty-state { margin: 0; color: #94a3b8; font-size: 0.9rem; font-style: italic; }
+                    details.event-details { border: 1px solid rgba(148,163,184,0.25); border-radius: 10px; background: rgba(248,250,252,0.8); padding: 12px 14px; }
+                    details.event-details summary { cursor: pointer; font-weight: 600; color: #334155; font-size: 0.95rem; list-style: none; display: flex; align-items: center; gap: 8px; }
+                    details.event-details summary::before { content: "⤵"; transition: transform 0.2s ease; font-size: 0.9rem; }
+                    details.event-details[open] summary::before { transform: rotate(-180deg); }
+                    .content-preview { margin: 14px 4px 6px; border-radius: 10px; background: white; border: 1px solid rgba(148,163,184,0.25); padding: 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.6); }
+                    .content-preview pre { margin: 0; font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; font-family: 'JetBrains Mono', 'Fira Code', monospace; color: #1f2937; }
+                    .context-chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; margin: 6px 6px 0 0; border-radius: 999px; background: rgba(59,130,246,0.1); color: #1d4ed8; font-size: 0.85rem; font-weight: 500; }
+                    .error-block { padding: 10px 12px; border-radius: 10px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.3); color: #b91c1c; font-weight: 500; font-size: 0.92rem; }
+                    table { border-collapse: separate; border-spacing: 0; width: 100%; margin-top: 16px; border-radius: 12px; overflow: hidden; }
+                    th { background-color: #0f172a; color: #e2e8f0; padding: 12px 18px; font-weight: 600; font-size: 0.92rem; text-align: left; letter-spacing: 0.04em; }
+                    td { background: white; padding: 14px 18px; border-bottom: 1px solid rgba(148,163,184,0.25); font-size: 0.92rem; vertical-align: top; }
+                    tr:last-child td { border-bottom: none; }
+                    .trace-item { cursor: pointer; }
+                    .trace-item.highlighted { background-color: rgba(250,204,21,0.18) !important; }
                     .flash-highlight { animation: flashEffect 2s ease-in-out; }
-                    @keyframes flashEffect { 0%, 100% { background-color: inherit; } 50% { background-color: #ffeb3b; } }
+                    @keyframes flashEffect { 0%, 100% { background-color: inherit; } 50% { background-color: rgba(250,204,21,0.35); } }
                 </style>
             </head>
             <body>
                 <div class="container">
                     <h1>🎯 TPipe Manifold Execution Analysis</h1>
+
+                    ${buildManifoldSummary(trace)}
                     
                     <div class="manifold-section orchestration">
                         <h2>📊 Orchestration Flow</h2>
@@ -374,29 +413,41 @@ class TraceVisualizer {
      * Generates orchestration timeline table.
      */
     private fun generateOrchestrationTable(trace: List<TraceEvent>): String {
-        val table = StringBuilder()
-        table.append("<table><tr><th>⏱️ Time</th><th>🧵 Node</th><th>📝 Event</th><th>📊 Metadata</th><th>🗒️ Content</th><th>⚠️ Error</th></tr>")
-        
+        val feed = StringBuilder()
+        feed.append("<div class=\"event-feed\">")
+
         val startTime = trace.firstOrNull()?.timestamp ?: 0L
         trace.forEach { event ->
             val elapsed = event.timestamp - startTime
             val pipeName = mapManifoldNodeName(event)
-            val metadata = formatMetadata(event.metadata)
-            val contentSummary = formatContentSummary(event)
-            val errorSummary = formatError(event.error)
-            table.append(
-                "<tr id=\"${event.id}\" class=\"trace-row\" data-pipe=\"${escapeHtml(pipeName)}\">" +
-                        "<td>+${elapsed}ms</td>" +
-                        "<td>${escapeHtml(pipeName)}</td>" +
-                        "<td>${escapeHtml(event.eventType.name)}</td>" +
-                        "<td>$metadata</td>" +
-                        "<td>$contentSummary</td>" +
-                        "<td>$errorSummary</td>" +
-                        "</tr>"
+            val severity = classifyEventSeverity(event)
+            val phaseHtml = formatPhase(event.phase)
+            val eventBadge = formatEventBadge(event, severity)
+            val metadataSection = buildMetadataSection(event)
+            val contentSection = buildContentSection(event)
+            val errorSection = buildErrorSection(event)
+            val elapsedHtml = "<span class=\"event-time\">+${elapsed}ms</span>"
+
+            feed.append(
+                """
+                <article id="${event.id}" class="trace-item event-card ${severity.cssClass}" data-pipe="${escapeHtml(pipeName)}">
+                    <header class="event-header">
+                        $elapsedHtml
+                        $eventBadge
+                        $phaseHtml
+                        <span class="node-tag">Node: ${escapeHtml(pipeName)}</span>
+                    </header>
+                    <div class="event-body">
+                        $metadataSection
+                        $contentSection
+                        $errorSection
+                    </div>
+                </article>
+                """.trimIndent()
             )
         }
-        table.append("</table>")
-        return table.toString()
+        feed.append("</div>")
+        return feed.toString()
     }
     
     /**
@@ -424,7 +475,7 @@ class TraceVisualizer {
             val responses = stats["responses"] ?: 0
             val successRate = if (dispatches > 0) (responses * 100 / dispatches) else 0
             val pipeName = "$AGENT_NODE_PREFIX$agentName"
-            table.append("<tr class=\"trace-row\" data-pipe=\"$pipeName\"><td>$agentName</td><td>$dispatches</td><td>$responses</td><td>$successRate%</td></tr>")
+            table.append("<tr class=\"trace-item agent-row\" data-pipe=\"$pipeName\"><td>$agentName</td><td>$dispatches</td><td>$responses</td><td>$successRate%</td></tr>")
         }
         table.append("</table>")
         return table.toString()
@@ -469,26 +520,60 @@ class TraceVisualizer {
     }
 
     private fun formatMetadata(metadata: Map<String, Any>): String {
-        if (metadata.isEmpty()) return "—"
-        return metadata.entries.joinToString("<br/>") { (key, value) ->
-            "${escapeHtml(key)}: ${escapeHtml(value.toString())}"
+        if (metadata.isEmpty()) return "<p class=\"empty-state\">No metadata recorded for this event.</p>"
+        val items = metadata.entries.joinToString("") { (key, value) ->
+            "<div class=\"metadata-item\"><strong>${escapeHtml(key)}</strong><span>${escapeHtml(value.toString())}</span></div>"
         }
+        return "<div class=\"metadata-grid\">$items</div>"
     }
 
     private fun formatContentSummary(event: TraceEvent): String {
         val parts = mutableListOf<String>()
         event.content?.text?.takeIf { it.isNotBlank() }?.let { text ->
-            val preview = if (text.length > 160) "${text.take(160)}…" else text
-            parts.add("text=\"${escapeHtml(preview)}\"")
+            val preview = if (text.length > 220) "${text.take(220)}…" else text
+            parts.add("<div class=\"content-preview\"><pre>${escapeHtml(preview)}</pre></div>")
         }
         event.contextSnapshot?.let { snapshot ->
-            parts.add("context=${escapeHtml(snapshot.toString())}")
+            parts.add("<span class=\"context-chip\">Context: ${escapeHtml(snapshot.toString())}</span>")
         }
-        return if (parts.isEmpty()) "—" else parts.joinToString("<br/>")
+        if (parts.isEmpty()) return "<p class=\"empty-state\">No content captured for this event.</p>"
+        val inner = parts.joinToString("")
+        return "<details class=\"event-details\"><summary>Content &amp; Context</summary>$inner</details>"
     }
 
-    private fun formatError(error: Throwable?): String {
-        return error?.let { escapeHtml(it.message ?: it.toString()) } ?: "—"
+    private fun buildMetadataSection(event: TraceEvent): String {
+        val body = formatMetadata(event.metadata)
+        return """
+            <section class="event-section">
+                <h4>Metadata</h4>
+                $body
+            </section>
+        """.trimIndent()
+    }
+
+    private fun buildContentSection(event: TraceEvent): String {
+        val body = formatContentSummary(event)
+        return """
+            <section class="event-section">
+                <h4>Content &amp; Context</h4>
+                $body
+            </section>
+        """.trimIndent()
+    }
+
+    private fun buildErrorSection(event: TraceEvent): String {
+        val message = formatError(event.error) ?: return ""
+        return """
+            <section class="event-section">
+                <h4>Error</h4>
+                <div class="error-block">$message</div>
+            </section>
+        """.trimIndent()
+    }
+
+    private fun formatError(error: Throwable?): String? {
+        error ?: return null
+        return escapeHtml(error.message ?: error.toString())
     }
 
     private fun escapeHtml(value: String): String {
@@ -498,6 +583,86 @@ class TraceVisualizer {
             .replace(">", "&gt;")
             .replace("\"", "&quot;")
             .replace("'", "&#39;")
+    }
+
+    private fun formatPhase(phase: TracePhase): String {
+        return "<span class=\"phase-pill\">${escapeHtml(phase.name.lowercase().replaceFirstChar { it.titlecase() })}</span>"
+    }
+
+    private fun formatEventBadge(event: TraceEvent, severity: EventSeverity): String {
+        val icon = severity.icon
+        val css = "event-badge ${severity.cssClass}"
+        return "<span class=\"$css\"><span class=\"badge-icon\">$icon</span>${escapeHtml(event.eventType.name.lowercase().replace('_', ' '))}</span>"
+    }
+
+    private fun classifyEventSeverity(event: TraceEvent): EventSeverity {
+        return when {
+            event.eventType.name.contains("FAILURE", ignoreCase = true) -> EventSeverity.FAILURE
+            event.eventType.name.contains("SUCCESS", ignoreCase = true) -> EventSeverity.SUCCESS
+            event.eventType.name.contains("WARNING", ignoreCase = true) -> EventSeverity.WARNING
+            else -> EventSeverity.INFO
+        }
+    }
+
+    private fun buildManifoldSummary(trace: List<TraceEvent>): String {
+        if (trace.isEmpty()) return ""
+        val totalEvents = trace.size
+        val failureCount = trace.count { classifyEventSeverity(it) == EventSeverity.FAILURE }
+        val successCount = trace.count { classifyEventSeverity(it) == EventSeverity.SUCCESS }
+        val start = trace.first().timestamp
+        val end = trace.last().timestamp
+        val durationMs = (end - start).coerceAtLeast(0L)
+        val loopIterations = trace.count { it.eventType == TraceEventType.MANIFOLD_LOOP_ITERATION }
+        val agentNames = trace.filter { it.eventType in listOf(TraceEventType.AGENT_DISPATCH, TraceEventType.AGENT_RESPONSE) }
+            .mapNotNull { it.metadata["agentName"]?.toString() }
+            .distinct()
+        val duration = formatDuration(durationMs)
+        val agentSummary = if (agentNames.isEmpty()) "No agent interactions" else agentNames.joinToString(", ") { escapeHtml(it) }
+
+        return """
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <h3>Total Events</h3>
+                    <div class="value">$totalEvents</div>
+                    <div class="subtext">Across ${trace.map { it.phase }.distinct().size} phases</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Execution Time</h3>
+                    <div class="value">$duration</div>
+                    <div class="subtext">Loop iterations: $loopIterations</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Outcome</h3>
+                    <div class="value">${successCount} ✓ / $failureCount ✕</div>
+                    <div class="subtext">Success vs failure events</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Agents Touched</h3>
+                    <div class="value">${agentNames.size}</div>
+                    <div class="subtext">$agentSummary</div>
+                </div>
+            </div>
+        """.trimIndent()
+    }
+
+    private fun formatDuration(durationMs: Long): String {
+        if (durationMs <= 0) return "0 ms"
+        val seconds = durationMs / 1000
+        val millis = durationMs % 1000
+        val minutes = seconds / 60
+        val remainingSeconds = seconds % 60
+        return when {
+            minutes > 0 -> String.format("%d:%02d.%03ds", minutes, remainingSeconds, millis)
+            seconds > 0 -> String.format("%d.%03ds", seconds, millis)
+            else -> "$millis ms"
+        }
+    }
+
+    private enum class EventSeverity(val cssClass: String, val icon: String) {
+        SUCCESS("success", "✅"),
+        FAILURE("failure", "❌"),
+        WARNING("warning", "⚠️"),
+        INFO("info", "ℹ️")
     }
 
     /**
@@ -516,7 +681,7 @@ class TraceVisualizer {
                 else -> "ℹ️ INFO"
             }
             val nodeKey = TraceNodeMapper.resolveNodeKey(event)
-            table.append("<tr class=\"trace-row\" data-pipe=\"$nodeKey\"><td>+${elapsed}ms</td><td>${event.pipeName}</td><td>${event.eventType}</td><td>$status</td></tr>")
+            table.append("<tr class=\"trace-item\" data-pipe=\"$nodeKey\"><td>+${elapsed}ms</td><td>${event.pipeName}</td><td>${event.eventType}</td><td>$status</td></tr>")
         }
         table.append("</table>")
         return table.toString()
@@ -600,7 +765,7 @@ class TraceVisualizer {
             .metadata { font-size: 0.9em; color: #666; max-width: 300px; word-wrap: break-word; }
             .mermaid { text-align: center; background: white; padding: 20px; border-radius: 8px; }
             
-            .trace-row.highlighted {
+            .trace-item.highlighted {
                 background-color: #fff3cd !important;
                 border-left: 4px solid #ffc107;
             }
@@ -614,12 +779,12 @@ class TraceVisualizer {
                 50% { background-color: #ffeb3b; }
             }
             
-            .trace-row {
+            .trace-item {
                 transition: background-color 0.3s ease;
                 cursor: pointer;
             }
             
-            .trace-row:hover {
+            .trace-item:hover {
                 background-color: #f8f9fa;
             }
             

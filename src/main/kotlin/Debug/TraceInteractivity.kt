@@ -9,7 +9,8 @@ object TraceInteractivity
                 window.scrollToEvent = function() {
                     const nodeId = arguments[0] || 'unknown';
                     const pipeName = getNodePipeName(nodeId);
-                    const firstEventRow = document.querySelector(`tr[data-pipe="${'$'}{pipeName}"]`);
+                    const firstEventRow = document.querySelector(`.event-card[data-pipe="${'$'}{pipeName}"]`) 
+                        || document.querySelector(`.trace-item[data-pipe="${'$'}{pipeName}"]`);
                     
                     if (firstEventRow) {
                         highlightPipeEvents(pipeName);
@@ -27,12 +28,12 @@ object TraceInteractivity
                 }
                 
                 window.highlightPipeEvents = function(pipeName) {
-                    document.querySelectorAll('.trace-row').forEach(row => {
-                        row.classList.remove('highlighted');
+                    document.querySelectorAll('.trace-item').forEach(element => {
+                        element.classList.remove('highlighted');
                     });
                     
-                    document.querySelectorAll(`tr[data-pipe="${'$'}{pipeName}"]`).forEach(row => {
-                        row.classList.add('highlighted');
+                    document.querySelectorAll(`.trace-item[data-pipe="${'$'}{pipeName}"]`).forEach(element => {
+                        element.classList.add('highlighted');
                     });
                 }
                 
