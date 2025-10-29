@@ -1,4 +1,5 @@
 **Bug fixes**
+- Fix tracing verbosity issue in the manifold class.
 
 **Enhancements:**
 ~~- Add creator functions to help simplify creating converseHistory adds.~~

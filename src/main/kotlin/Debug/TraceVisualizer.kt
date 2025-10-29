@@ -227,7 +227,7 @@ class TraceVisualizer {
      */
     private fun generateManifoldHtmlReport(trace: List<TraceEvent>): String {
         val nodes = buildManifoldNodes(trace)
-        val mermaidGraph = generateManifoldMermaidGraph(nodes)
+        val mermaidGraph = generateManifoldMermaidGraph(nodes, trace)
         val orchestrationTable = generateOrchestrationTable(trace)
         val agentInteractionTable = generateAgentInteractionTable(trace)
         val javascript = TraceInteractivity.generateJavaScript(nodes)
@@ -335,16 +335,14 @@ class TraceVisualizer {
     /**
      * Generates Mermaid flow graph for Manifold orchestration.
      */
-    private fun generateManifoldMermaidGraph(nodes: List<TraceNode>): String {
+    private fun generateManifoldMermaidGraph(nodes: List<TraceNode>, trace: List<TraceEvent>): String {
         val graph = StringBuilder()
         graph.append("graph TD\n")
 
-        val manifoldNode = nodes.find { it.pipeName == MANIFOLD_NODE_NAME }
-        val managerNode = nodes.find { it.pipeName == MANAGER_NODE_NAME }
-        val agentNodes = nodes.filter { it.pipeName.startsWith(AGENT_NODE_PREFIX) }
+        val nodeMap = nodes.associateBy { it.pipeName }
 
-        fun appendNode(node: TraceNode) {
-            graph.append("    ${node.nodeId}[\"${node.pipeName}\"]\n")
+        nodes.forEach { node ->
+            graph.append("    ${node.nodeId}[\"${escapeHtml(node.pipeName)}\"]\n")
             graph.append("    click ${node.nodeId} scrollToEvent\n")
             val styleClass = when (node.status) {
                 NodeStatus.SUCCESS -> "success"
@@ -355,16 +353,14 @@ class TraceVisualizer {
             graph.append("    ${node.nodeId}:::${styleClass}\n")
         }
 
-        manifoldNode?.let { appendNode(it) }
-        managerNode?.let { appendNode(it) }
-        agentNodes.forEach { appendNode(it) }
-
-        if (manifoldNode != null && managerNode != null) {
-            graph.append("    ${manifoldNode.nodeId} --> ${managerNode.nodeId}\n")
-        }
-        if (managerNode != null) {
-            agentNodes.forEach { graph.append("    ${managerNode.nodeId} --> ${it.nodeId}\n") }
-            agentNodes.forEach { graph.append("    ${it.nodeId} --> ${managerNode.nodeId}\n") }
+        var previousNodeId: String? = null
+        trace.forEach { event ->
+            val label = mapManifoldNodeName(event)
+            val node = nodeMap[label] ?: return@forEach
+            if (previousNodeId != null && previousNodeId != node.nodeId) {
+                graph.append("    $previousNodeId --> ${node.nodeId}\n")
+            }
+            previousNodeId = node.nodeId
         }
 
         graph.append("\n    classDef success fill:#d4edda,stroke:#28a745,stroke-width:2px\n")
@@ -378,26 +374,26 @@ class TraceVisualizer {
      * Generates orchestration timeline table.
      */
     private fun generateOrchestrationTable(trace: List<TraceEvent>): String {
-        val events = trace.filter { 
-            it.eventType in listOf(
-                TraceEventType.MANIFOLD_START, TraceEventType.MANAGER_DECISION,
-                TraceEventType.AGENT_DISPATCH, TraceEventType.AGENT_RESPONSE, TraceEventType.MANIFOLD_END
-            )
-        }
-        
         val table = StringBuilder()
-        table.append("<table><tr><th>⏱️ Time</th><th>📝 Event</th><th>📊 Details</th></tr>")
+        table.append("<table><tr><th>⏱️ Time</th><th>🧵 Node</th><th>📝 Event</th><th>📊 Metadata</th><th>🗒️ Content</th><th>⚠️ Error</th></tr>")
         
         val startTime = trace.firstOrNull()?.timestamp ?: 0L
-        events.forEach { event ->
+        trace.forEach { event ->
             val elapsed = event.timestamp - startTime
-            val details = when (event.eventType) {
-                TraceEventType.AGENT_DISPATCH -> "Agent: ${event.metadata["agentName"] ?: "Unknown"}"
-                TraceEventType.AGENT_RESPONSE -> "Response from: ${event.metadata["agentName"] ?: "Unknown"}"
-                else -> event.eventType.name
-            }
-            val pipeName = mapManifoldPipeName(event)
-            table.append("<tr id=\"${event.id}\" class=\"trace-row\" data-pipe=\"$pipeName\"><td>+${elapsed}ms</td><td>${event.eventType}</td><td>$details</td></tr>")
+            val pipeName = mapManifoldNodeName(event)
+            val metadata = formatMetadata(event.metadata)
+            val contentSummary = formatContentSummary(event)
+            val errorSummary = formatError(event.error)
+            table.append(
+                "<tr id=\"${event.id}\" class=\"trace-row\" data-pipe=\"${escapeHtml(pipeName)}\">" +
+                        "<td>+${elapsed}ms</td>" +
+                        "<td>${escapeHtml(pipeName)}</td>" +
+                        "<td>${escapeHtml(event.eventType.name)}</td>" +
+                        "<td>$metadata</td>" +
+                        "<td>$contentSummary</td>" +
+                        "<td>$errorSummary</td>" +
+                        "</tr>"
+            )
         }
         table.append("</table>")
         return table.toString()
@@ -435,18 +431,17 @@ class TraceVisualizer {
     }
 
     private fun buildManifoldNodes(trace: List<TraceEvent>): List<TraceNode> {
-        val nodes = mutableListOf<TraceNode>()
+        val nodeGroups = linkedMapOf<String, MutableList<TraceEvent>>()
 
-        nodes.add(createManifoldNode("node-manifold", MANIFOLD_NODE_NAME, trace.filter { it.eventType.name.startsWith("MANIFOLD_") }))
-        nodes.add(createManifoldNode("node-manager", MANAGER_NODE_NAME, trace.filter { it.eventType.name.startsWith("MANAGER_") }))
+        trace.forEach { event ->
+            val label = mapManifoldNodeName(event)
+            val events = nodeGroups.getOrPut(label) { mutableListOf() }
+            events.add(event)
+        }
 
-        trace.filter { it.eventType in listOf(TraceEventType.AGENT_DISPATCH, TraceEventType.AGENT_RESPONSE) }
-            .groupBy { it.metadata["agentName"] as? String ?: "Unknown" }
-            .forEach { (agentName, events) ->
-                nodes.add(createManifoldNode("node-agent-${sanitizeNodeId(agentName)}", "$AGENT_NODE_PREFIX$agentName", events))
-            }
-
-        return nodes
+        return nodeGroups.entries.mapIndexed { index, (label, events) ->
+            createManifoldNode("node-${sanitizeNodeId(label)}-$index", label, events)
+        }
     }
 
     private fun createManifoldNode(nodeId: String, label: String, events: List<TraceEvent>): TraceNode {
@@ -459,20 +454,52 @@ class TraceVisualizer {
         return TraceNode(nodeId, label, events.map { it.id }, status)
     }
 
-    private fun mapManifoldPipeName(event: TraceEvent): String {
+    private fun mapManifoldNodeName(event: TraceEvent): String {
         return when {
             event.eventType.name.startsWith("MANIFOLD_") -> MANIFOLD_NODE_NAME
             event.eventType.name.startsWith("MANAGER_") -> MANAGER_NODE_NAME
             event.eventType in listOf(TraceEventType.AGENT_DISPATCH, TraceEventType.AGENT_RESPONSE) ->
                 "$AGENT_NODE_PREFIX${event.metadata["agentName"] ?: "Unknown"}"
-            else -> MANIFOLD_NODE_NAME
+            else -> if (event.pipeName.isNotBlank()) event.pipeName else MANIFOLD_NODE_NAME
         }
     }
 
     private fun sanitizeNodeId(name: String): String {
         return name.lowercase().replace("[^a-z0-9]+".toRegex(), "-").trim('-')
     }
-    
+
+    private fun formatMetadata(metadata: Map<String, Any>): String {
+        if (metadata.isEmpty()) return "—"
+        return metadata.entries.joinToString("<br/>") { (key, value) ->
+            "${escapeHtml(key)}: ${escapeHtml(value.toString())}"
+        }
+    }
+
+    private fun formatContentSummary(event: TraceEvent): String {
+        val parts = mutableListOf<String>()
+        event.content?.text?.takeIf { it.isNotBlank() }?.let { text ->
+            val preview = if (text.length > 160) "${text.take(160)}…" else text
+            parts.add("text=\"${escapeHtml(preview)}\"")
+        }
+        event.contextSnapshot?.let { snapshot ->
+            parts.add("context=${escapeHtml(snapshot.toString())}")
+        }
+        return if (parts.isEmpty()) "—" else parts.joinToString("<br/>")
+    }
+
+    private fun formatError(error: Throwable?): String {
+        return error?.let { escapeHtml(it.message ?: it.toString()) } ?: "—"
+    }
+
+    private fun escapeHtml(value: String): String {
+        return value
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&#39;")
+    }
+
     /**
      * Generates basic details table for standard traces.
      */
