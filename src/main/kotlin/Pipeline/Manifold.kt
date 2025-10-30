@@ -14,6 +14,7 @@ import com.TTT.P2P.P2PRegistry
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PResponse
+import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.SupportedContentTypes
@@ -842,6 +843,22 @@ class Manifold : P2PInterface
                       ))
             }
 
+            // NEW: Check if the manager pipeline has indicated task completion
+            // Extract TaskProgress from the ConverseHistory in workingContentObject.text
+            val currentConverseHistory = extractJson<ConverseHistory>(workingContentObject.text)
+            val latestTaskProgressJson = currentConverseHistory?.history?.lastOrNull { it.role == ConverseRole.system }?.content?.text
+            val taskProgress = latestTaskProgressJson?.let { extractJson<TaskProgress>(it) }
+
+            if (taskProgress != null && taskProgress.isTaskComplete) {
+                workingContentObject.passPipeline = true
+                // === TRACING: Manifold completion signaled by manager ===
+                if (tracingEnabled) {
+                    trace(TraceEventType.MANIFOLD_SUCCESS, TracePhase.CLEANUP, managerResult,
+                          metadata = mapOf("reason" to "Manager signaled task completion"))
+                }
+                break // Exit the manifold loop gracefully
+            }
+
             /**
              * Execute validation function if bound. This allows the human to check to see if the llm has broken
              * or otherwise, done something unacceptable. In that case, the issue can be attempted to be repaired,
@@ -900,6 +917,21 @@ class Manifold : P2PInterface
             val responseText = managerResult.text
 
             /**
+             * Determine if our task is finished. If so we need to now exit with the final result of our
+             * working content object.
+             */
+            val taskStatusCheck = extractJson<TaskProgress>(responseText)
+            if(taskStatusCheck != null)
+            {
+                if(taskStatusCheck.isTaskComplete)
+                {
+                    trace(TraceEventType.MANIFOLD_SUCCESS, TracePhase.CLEANUP,
+                        metadata = mapOf("taskStatus" to "task complete"))
+                    return workingContentObject
+                }
+            }
+
+            /**
              * We're expecting that the result should always be an agent request. If it isn't we have to terminate
              * in a broken state and exit. It's not entirely impossible that a poorly formatted system prompt or
              * misbehaving llm might not produce the json as intended, or correctly. And in that case could prevent
@@ -914,6 +946,16 @@ class Manifold : P2PInterface
             if(agentRequest == null)
             {
                 agentRequest = extractJson<AgentRequest>(responseText)
+            }
+
+            // NEW: Strip out pcpRequest if LLM hallucinated it
+            if (agentRequest != null && agentRequest.pcpRequest != PcPRequest()) {
+                agentRequest.pcpRequest = PcPRequest()
+                if (tracingEnabled) {
+                    trace(TraceEventType.AGENT_REQUEST_INVALID, TracePhase.ORCHESTRATION,
+                          metadata = mapOf("reason" to "pcpRequest reset to empty PcPRequest",
+                                           "agentName" to agentRequest.agentName))
+                }
             }
 
             //Kill with an error if we didn't get a valid agent request as the final output.

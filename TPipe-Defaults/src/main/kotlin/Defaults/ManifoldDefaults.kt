@@ -7,6 +7,8 @@ import com.TTT.Pipeline.Pipeline
 import com.TTT.Enums.ProviderName
 import bedrockPipe.BedrockMultimodalPipe
 import com.TTT.Context.ConverseHistory
+import com.TTT.Context.ConverseRole
+import com.TTT.Util.extractJson
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.P2P.AgentRequest
 import com.TTT.Pipe.Pipe
@@ -173,10 +175,40 @@ object ManifoldDefaults
                 |definitively, beyond any shadow of a doubt, solved.
             """.trimMargin())
             .setJsonOutput(TaskProgress())
-            .setFooterPrompt("""You must set the boolean in the above json to true if the task has been completed.
-                |Otherwise, you must fill the json and return it as your output.
-            """.trimMargin())
-            .updatePipelineContextOnExit()
+            .setFooterPrompt("""# Task Completion Instruction
+                |You MUST examine the conversation history and definitively determine if the overall task has been solved.
+                |
+                |If the task is **COMPLETED**:
+                |  - You MUST set the `isTaskComplete` boolean field in the `TaskProgress` JSON to `true`.
+                |  - You MUST provide a concise `taskProgressStatus` summarizing the completion.
+                |  - You MUST leave `nextTaskInstructions` empty.
+                |  - Example of COMPLETED TaskProgress JSON:
+                |    ```json
+                |    {
+                |      "taskDescription": "Original task description",
+                |      "nextTaskInstructions": "",
+                |      "taskProgressStatus": "Task successfully completed with final result: [final answer]",
+                |      "isTaskComplete": true
+                |    }
+                |    ```
+                |
+                |If the task is **NOT YET COMPLETED**:
+                |  - You MUST set the `isTaskComplete` boolean field in the `TaskProgress` JSON to `false`.
+                |  - You MUST provide clear `nextTaskInstructions` for the next step.
+                |  - You MUST provide a concise `taskProgressStatus` reflecting current progress.
+                |  - Example of NOT YET COMPLETED TaskProgress JSON:
+                |    ```json
+                |    {
+                |      "taskDescription": "Original task description",
+                |      "nextTaskInstructions": "Call agent X to perform Y.",
+                |      "taskProgressStatus": "Waiting for agent X to complete Y.",
+                |      "isTaskComplete": false
+                |    }
+                |    ```
+                |
+                |You MUST always return a valid `TaskProgress` JSON object.
+                |CRITICAL: The `isTaskComplete` field is paramount for controlling the Manifold's flow. Ensure its value is correct.
+            """.trimMargin())            .updatePipelineContextOnExit()
             .applySystemPrompt()
 
         /**
@@ -193,6 +225,16 @@ object ManifoldDefaults
             .setContextWindowSettings(ContextWindowSettings.TruncateTop)
             .autoTruncateContext()
             .pullPipelineContext()
+            .setPreInvokeFunction { content ->
+                // Directly extract TaskProgress from the content of the entryPipe
+                val taskProgress = extractJson<TaskProgress>(content.text)
+
+                if (taskProgress != null && taskProgress.isTaskComplete) {
+                    content.passPipeline = true // Signal the pipe to pass through
+                    return@setPreInvokeFunction true // Return true for early exit
+                }
+                false // Continue with normal execution
+            }
             .setSystemPrompt("""You are an AI agent manager. Your job is to determine what AI agent to give the
                 |next steps of a given task to.
             """.trimMargin())
