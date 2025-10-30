@@ -985,7 +985,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 |If you wish to call or use any agents provided to you return an array of the following json for each agent you wish to call:
                 |${agentRequestSchema}
                 |
-                |When returning any json requests for agents. You must always follow the json schema exactly.
+                |When returning any json requests for agents. You must always follow the json schema exactly. You may not issue any
+                |calls to agents that do not exist. You may not change the name of the agent you are calling. You must call the agent
+                |exactly as it is named in the json and fill the json output that is expected EXACTLY.
             """.trimMargin()
 
             //Allow this to also be overridden.

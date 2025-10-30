@@ -224,19 +224,17 @@ object ManifoldDefaults
                 |
             """.trimMargin())
             .setFooterPrompt("""#Important
-                |1. You must only return a Pipe-To-Pipe agent protocol json response. 
+                |1. You must only return a Pipe-To-Pipe agent protocol json response.
                 |2. You must very clearly instruct the agent exactly what you need done. And place these instructions
                 |into the p2p prompt variable.
-                |3. You may request tool calls the agent has in advance if the agent has listed a given tool you are 
-                | trying to request is available.
-                | 
+                |3. The 'pcpRequest' field in the AgentRequest is for informational purposes only, indicating the target agent's *capabilities* to make tool calls. You must NOT generate any data for the 'pcpRequest' field; leave it as its default empty state. The agent you dispatch to will handle its own internal tool calls.
+                |
                 | ##Finally
-                | You are designed to solve any task at hand. You must always find an agent to 
+                | You are designed to solve any task at hand. You must always find an agent to
                 | hand the next part of the task off to. Always pick the available agent that is best suited to the
                 | next steps of finishing the given task.
-                | 
+                |
             """.trimMargin())
-
         return pipeline
 
     }

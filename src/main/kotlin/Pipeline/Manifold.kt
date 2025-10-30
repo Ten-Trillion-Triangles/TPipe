@@ -7,6 +7,7 @@ import com.TTT.Context.Dictionary
 import com.TTT.Enums.ProviderName
 import com.TTT.P2P.AgentDescriptor
 import com.TTT.P2P.AgentRequest
+import com.TTT.P2P.InputSchema
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRegistry
@@ -971,12 +972,12 @@ class Manifold : P2PInterface
                 }
             }
 
-            /**
-             * Try to invoke the agent the manager pipeline is trying to call. If we can, then we can proceed.
-             * Otherwise, we can't continue the Manifold.
-             *
-             * todo: Should we consider a retry option in the event that the llm is misbehaving? Or should we place
-             * the full onus on the coder to ensure the llm actually produces json and they didn't mess up their
+                /**
+                 * Try to invoke the agent the manager pipeline is trying to call. If we can, then we can proceed.
+                 * Otherwise, we can't continue the Manifold.
+                 *
+                 * todo: Should we consider a retry option in the event that the llm is misbehaving? Or should we place
+                 * the full onus on the coder to ensure the llm actually produces json and they didn't mess up their
              * system prompt?
              */
             try{
@@ -998,6 +999,14 @@ class Manifold : P2PInterface
                  * Invoke the agent request system which will route and reach the local agent we have here.
                  * That agent will run through its task set as a pipeline, and return the result.
                  */
+                val workerConverseHistory = extractJson<ConverseHistory>(workingContentObject.text)
+                if (workerConverseHistory != null)
+                {
+                    agentRequest.prompt = serialize(workerConverseHistory, encodedefault = false)
+                    agentRequest.promptSchema = InputSchema.json
+                    agentRequest.content = ""
+                }
+
                 val response = P2PRegistry.sendP2pRequest(agentRequest)
 
                 //In the event a rejection occurs we'll need to exit the manifold.

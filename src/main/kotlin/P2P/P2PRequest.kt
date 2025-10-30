@@ -116,24 +116,29 @@ data class AgentRequest(
     fun buildP2PRequest(template: P2PRequest? = null) : P2PRequest
     {
         val request = template ?: P2PRequest()
-        request.prompt.addText(prompt)
+        if(prompt.isNotEmpty()) {
+            request.prompt.addText(prompt)
+        }
 
         /**
          * Assign prompt data to the correct location of the input based on the output the agent is producing.
          */
-        when(promptSchema)
+        if(content.isNotEmpty())
         {
-            InputSchema.plainText -> request.prompt.addText(content)
-            InputSchema.json -> request.prompt.addText(content)
-            InputSchema.xml -> request.prompt.addText(content)
-            InputSchema.html -> request.prompt.addText(content)
-            InputSchema.csv -> request.prompt.addText(content)
-            InputSchema.tsv -> request.prompt.addText(content)
-            InputSchema.yaml -> request.prompt.addText(content)
-            InputSchema.markdown -> request.prompt.addText(content)
-            InputSchema.bytes -> request.prompt.addBinary(content.toByteArray(), "application/octet-stream")
-            InputSchema.other -> request.prompt.addText(content)
-            InputSchema.none -> {request.prompt.addText(content)}
+            when(promptSchema)
+            {
+                InputSchema.plainText -> request.prompt.addText(content)
+                InputSchema.json -> request.prompt.addText(content)
+                InputSchema.xml -> request.prompt.addText(content)
+                InputSchema.html -> request.prompt.addText(content)
+                InputSchema.csv -> request.prompt.addText(content)
+                InputSchema.tsv -> request.prompt.addText(content)
+                InputSchema.yaml -> request.prompt.addText(content)
+                InputSchema.markdown -> request.prompt.addText(content)
+                InputSchema.bytes -> request.prompt.addBinary(content.toByteArray(), "application/octet-stream")
+                InputSchema.other -> request.prompt.addText(content)
+                InputSchema.none -> {request.prompt.addText(content)}
+            }
         }
 
         request.transport.transportAddress = agentName
