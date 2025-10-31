@@ -199,9 +199,12 @@ object ContextBank
     {
         var context = bank[key] ?: ContextWindow()
 
-        //Automatically read from disk if this key is persisted. 
+        /**
+         * Automatically read from disk if this key is persisted. Triggers if the key is not loaded into memory,
+         * but is found on disk.
+         */
         val diskPath = "${TPipeConfig.getLorebookDir()}/${key}.bank"
-        if(File(diskPath).exists())
+        if(File(diskPath).exists() && !bank.containsKey(key))
         {
             val contextJson = readStringFromFile(diskPath)
             context = deserialize<ContextWindow>(contextJson) ?: ContextWindow()

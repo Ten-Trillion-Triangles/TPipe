@@ -1,5 +1,5 @@
 **Bug fixes**
-- Fix tracing verbosity issue in the manifold class.
+~~- Fix tracing verbosity issue in the manifold class.~~
 
 **Enhancements:**
 ~~- Add creator functions to help simplify creating converseHistory adds.~~
@@ -19,9 +19,9 @@ all the components that don't convey information while retaining all the ones th
 ~~- Add support for advanced token budget controls which will go beyond just max out vs context in.~~
 ~~- Add support for mini bank context in pipelines.~~
 ~~- Add support for automatic mini bank updates from pipes to pipeline, or global.~~
-- Add support for persisting lorebook keys that allow a pointer to a file, then load that file when the key is referenced.
-Allow the keys to also be stored as stub files and loaded directly.
-- Add default .tpipe dir support for core config and persistent storage features built into the library.
+~~- Add support for persisting lorebook keys that allow a pointer to a file, then load that file when the key is referenced.
+Allow the keys to also be stored as stub files and loaded directly.~~
+~~- Add default .tpipe dir support for core config and persistent storage features built into the library.~~
 - Add support for a todo list style mechanism for storing and tracking progress.
 
 **Down the road:**
