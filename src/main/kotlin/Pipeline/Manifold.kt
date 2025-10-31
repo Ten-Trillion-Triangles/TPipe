@@ -458,6 +458,14 @@ class Manifold : P2PInterface
         return managerPipeline
     }
 
+    /**
+     * Getter to read our worker pipelines. Provides access to the list of worker pipelines registered with this Manifold.
+     */
+    fun getWorkerPipelines(): List<Pipeline>
+    {
+        return workerPipelines.toList()
+    }
+
 
     /**
      * Add a worker pipeline to this Manifold. Worker pipelines are specialized agents that perform
