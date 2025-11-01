@@ -60,15 +60,25 @@ Thread-safe update of the currently active banked context window.
 
 ### Bank Management
 
-#### `emplace(key: String, window: ContextWindow)`
+#### `emplace(key: String, window: ContextWindow, persistToDisk: Boolean = false)`
 Stores or replaces a context window in the bank with the specified key.
 
-**Behavior:** Direct map assignment without thread safety. **Warning:** Not safe for concurrent use. Use `emplaceWithMutex()` for thread-safe operations.
+**Parameters:**
+- `key`: The identifier for storing the context window
+- `window`: The ContextWindow to store
+- `persistToDisk`: When true, forces the context window to be saved to disk. When false (default), only saves to disk if a bank file already exists for this key
 
-#### `emplaceWithMutex(key: String, window: ContextWindow)`
+**Behavior:** Direct map assignment without thread safety. Automatically handles disk persistence based on the `persistToDisk` parameter and existing file state. **Warning:** Not safe for concurrent use. Use `emplaceWithMutex()` for thread-safe operations.
+
+#### `emplaceWithMutex(key: String, window: ContextWindow, persistToDisk: Boolean = false)`
 Thread-safe storage or replacement of a context window in the bank.
 
-**Behavior:** Uses `bankMutex` to ensure exclusive access during bank modification. Recommended method for updating bank contents in concurrent environments.
+**Parameters:**
+- `key`: The identifier for storing the context window
+- `window`: The ContextWindow to store
+- `persistToDisk`: When true, forces the context window to be saved to disk. When false (default), only saves to disk if a bank file already exists for this key
+
+**Behavior:** Uses `bankMutex` to ensure exclusive access during bank modification. Automatically handles disk persistence based on the `persistToDisk` parameter and existing file state. Recommended method for updating bank contents in concurrent environments.
 
 #### `getContextFromBank(key: String, copy: Boolean = true): ContextWindow`
 Retrieves a context window from the bank by key.
