@@ -1,83 +1,51 @@
 package com.TTT.Context
 
+import com.TTT.Util.serialize
+
 /**
- * Data class that defines a todo list task that can be assigned by an llm or human. Defines a task, requirements
- * which can be validated by another llm. This is used for task creation or validation.
+ * Single element of a todo list. Defines the task number for order of completion, what the task is, it's requirements
+ * and task completion status.
  */
 @kotlinx.serialization.Serializable
 data class TodoListTask(
-    var stepNumber: Int = 1,
+    var taskNumber: Int = 0,
     var task: String = "",
-    var completionRequirements: String = ""
-)
-
-/**
- * Single entry of an agent todo list. Defines bullet point number, task at hand, and completion status.
- */
-@kotlinx.serialization.Serializable
-data class AgentTodo(
-    var stepNumber: Int = 1,
-    var task: String = "",
+    var completionRequirements: String = "",
     var isComplete: Boolean = false
 )
 
+@kotlinx.serialization.Serializable
+data class TodoTaskArray(
+    var tasks: MutableList<TodoListTask> = mutableListOf()
+)
+
 /**
- * Defines a todo list an agent can examine and track it's progress on a given task or set of tasks. Validation of tasks
- * should be handled by a human or a separate judge llm.
+ * List of TodoListTask elements with a converse history that can be used to show exactly what work on the given task
+ * has been undertaken overtime.
  */
 @kotlinx.serialization.Serializable
-data class AgentTodoList(
-    var todoList: MutableList<AgentTodo> = mutableListOf()
+data class TodoList(
+    var tasks: TodoTaskArray = TodoTaskArray(),
+    var workHistory: ConverseHistory = ConverseHistory()
 )
 {
-    fun findTodo(taskNumber: Int) : AgentTodo?
+    override fun toString(): String {
+        return serialize(tasks)
+    }
+
+    fun isEmpty() : Boolean
     {
-        for(i in todoList)
+        return tasks.tasks.isEmpty()
+    }
+
+
+    fun find(taskNumber: Int) : TodoListTask?
+    {
+        for(task in tasks.tasks)
         {
-            if(i.stepNumber == taskNumber) return i
+            if(task.taskNumber == taskNumber) return task
         }
 
         return null
     }
 }
-
-/**
- * Data class that contains the todolist task, and the history of llm actions to work on that task. Intended to be input
- * for an llm judge to determine if the todo list task has been completed or not.
- */
-@kotlinx.serialization.Serializable
-data class TodoListHistory(
-    var task: TodoListTask = TodoListTask(),
-    var agentTaskHistory: ConverseHistory = ConverseHistory()
-)
-
-/**
- * Data class that maps a todo list task to a boolean to determine if it's completed or not. Acts as a return output
- * by a judge llm to validate each tasks completion.
- */
-@kotlinx.serialization.Serializable
-data class TodoValidationList(
-    var todo: MutableMap<TodoListTask, Boolean> = mutableMapOf()
-)
-{
-    fun updateAgentTodoList(validationList: TodoValidationList, agentList: AgentTodoList)
-    {
-        for(it in validationList.todo)
-        {
-            val task = it.key
-            if(it.value)
-            {
-                val taskNumber = task.stepNumber
-                val task: AgentTodo? = agentList.findTodo(taskNumber)
-
-                if(task != null)
-                {
-                    //Assign by finding the index and then directly overwriting the value of the index's reference.
-                    agentList.todoList[agentList.todoList.indexOf(task)].isComplete = true
-                }
-            }
-        }
-    }
-}
-
-

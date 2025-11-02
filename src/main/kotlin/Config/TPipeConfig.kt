@@ -52,5 +52,10 @@ object TPipeConfig
         return "${getDebugDir()}/trace"
     }
 
+    fun getTodoDir() : String
+    {
+        return "${getMemoryDir()}/todo"
+    }
+
 
 }

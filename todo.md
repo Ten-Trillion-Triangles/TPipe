@@ -27,6 +27,7 @@ Allow the keys to also be stored as stub files and loaded directly.~~
 map using the lorebook system. Which allows an llm expand context in steps rather than pulling it in all at once and 
 enabling more targeted lorebook strategies where memory needs to be retrieved after the user prompt. This is technically
 possible to do now but adding convince systems similar to what TPipe-Defaults does is a good idea.
+- Add automatic wrapping of pipeline inputs and outputs into [ConverseHistory] structure.
 
 **Down the road:**
 - Create entry and exit points for graalvm native for future non jvm language wrappers.
