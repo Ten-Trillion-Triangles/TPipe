@@ -2,6 +2,8 @@ package com.TTT.Pipeline
 
 import com.TTT.Context.ContextBank
 import com.TTT.Context.ContextWindow
+import com.TTT.Context.ConverseHistory
+import com.TTT.Context.ConverseRole
 import com.TTT.Context.MiniBank
 import com.TTT.Debug.*
 import com.TTT.P2P.P2PDescriptor
@@ -17,6 +19,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import java.awt.im.InputContext
 import java.util.UUID
 
 /**
@@ -90,6 +93,33 @@ class Pipeline : P2PInterface {
      * @see getNextPipe
      */
     private var currentPipeIndex = 0
+
+    /**
+     * If true, the input and output of this pipeline will be wrapped into a converse history struct if it has not
+     * been already. This allows you to automate the process of keeping track roles and turns in a seamless way.
+     * Input will be unwrapped from converse if it's supplied as such, and then re-wrapped upon the exit of the pipeline.
+     */
+    private var wrapContentWithConverseHistory = false
+
+    private var wrapPipeContentWithConverseHistory = false
+
+    private var pipelineConverseRole = ConverseRole.assistant
+
+    private var pipeConverseRole = ConverseRole.agent
+
+    private var userConverseRole = ConverseRole.user
+
+    /**
+     * If true only the text output of a pipe will be wrapped into the converse output. Then the final text output of the
+     * pipeline will be returned as converse. If false, the entire content object will be serialized into converse.
+     */
+    private var wrapTextResponseOnly = true
+
+    /**
+     * Internal private var for [ConverseHistory] to enable automatic wrapping of [MultimodalContent] into a converse
+     * history structure. Gets cleared each initial pipeline run and returns out at the end of the run if enabled.
+     */
+    private var internalConverseHistory = ConverseHistory()
 
 //============================================== P2PInterface ==========================================================
 
@@ -272,6 +302,43 @@ class Pipeline : P2PInterface {
     }
 
 //=============================================== Constructor ========================================================//
+
+    /**
+     * Enable wrapping user content into a [com.TTT.Context.ConverseHistory] structure automatically. Allows for
+     * including the content of each pipe in the pipeline, or just the content input, and content output of the pipeline
+     * itself. Allows for only text to be wrapped, or the entire [MultimodalContent] object.
+     *
+     * The wrapped inputs and outputs will be stored in a parallel converse history object. This is useful for judge
+     * agents, tracking progress of multiple pipelines over time, showing the user the the pathway of events etc.
+     *
+     * @param wrapTextResponse True by default. Only wraps the text portion of the content into a converse history output.
+     * The converse history will be serialized into the [MultimodalContent] text variable at the end of the pipeline run.
+     * @param includePipeContent If true, all the outputs the pipes will also be included.
+     * @param pipelineConverseRoleParam Defines the converse role for the pipeline to be listed as.
+     * @param pipeConverseRoleParam Defines the converse role for the pipe to be listed as.
+     * @param userConverseRoleParam Defines the converse role for the user prompt to be listed as.
+     *
+     * Beware that any sub-pipes content will not be visible even if pipe content wrapping has been enabled.
+     * This is because the converse wrapping is happening at the pipeline level rather than inside the pipes.
+     */
+    fun wrapContentWithConverseHistory(
+      historyRef: ConverseHistory,
+      wrapTextResponse: Boolean = true,
+      includePipeContent: Boolean = false,
+      pipelineConverseRoleParam: ConverseRole = pipelineConverseRole,
+      pipeConverseRoleParam: ConverseRole = pipeConverseRole,
+      userConverseRoleParam: ConverseRole = userConverseRole,
+      ) : Pipeline
+    {
+        internalConverseHistory = historyRef
+        wrapContentWithConverseHistory = true
+        pipelineConverseRole = pipelineConverseRoleParam
+        pipeConverseRole = pipeConverseRoleParam
+        userConverseRole = userConverseRoleParam
+        wrapTextResponseOnly = wrapTextResponse
+        wrapPipeContentWithConverseHistory = includePipeContent
+        return this
+    }
 
     /**
      * Weather to automatically update global context with this pipeline's context when it exits. This is useful
@@ -479,6 +546,25 @@ class Pipeline : P2PInterface {
         return "Input tokens: $inputTokensSpent \n Output Tokens: $outputTokensSpent"
     }
 
+    /**
+     * Internal function to append to this pipeline's converse history. This is used to wrap content
+     * with the converse history structure.
+     */
+    private fun appendContentToConverseHistory(content: MultimodalContent, role: ConverseRole)
+    {
+        if(wrapContentWithConverseHistory)
+        {
+            if(wrapTextResponseOnly)
+            {
+                internalConverseHistory.add(role, MultimodalContent(text = content.text))
+            }
+
+            else
+            {
+                internalConverseHistory.add(role, content)
+            }
+        }
+    }
 
     /**
      * Executes the pipeline with the given initial prompt. The pipeline will be executed until completion,
@@ -502,6 +588,8 @@ class Pipeline : P2PInterface {
      * @return The generated multimodal content after all pipes have been executed.
      */
     suspend fun execute(initialContent: MultimodalContent): MultimodalContent = executeMultimodal(initialContent)
+
+
     
     /**
      * Internal multimodal execution logic shared by both execute methods
@@ -514,6 +602,8 @@ class Pipeline : P2PInterface {
         
         var generatedContent = initialContent
         currentPipeIndex = 0
+
+        appendContentToConverseHistory(initialContent, userConverseRole)
         
         while(currentPipeIndex < pipes.size)
         {
@@ -531,6 +621,11 @@ class Pipeline : P2PInterface {
             }
 
             generatedContent = result.await()
+
+            if(wrapContentWithConverseHistory)
+            {
+                appendContentToConverseHistory(generatedContent, pipeConverseRole)
+            }
 
             /**
              * Allow pipes to repeat. This is useful for creating custom reasoning and thinking modes in
@@ -635,6 +730,12 @@ class Pipeline : P2PInterface {
         }
 
         content = generatedContent //Save content to the pipe so that we can read it externally.
+
+        if(!wrapPipeContentWithConverseHistory)
+        {
+            appendContentToConverseHistory(content, pipelineConverseRole)
+        }
+
         return@coroutineScope generatedContent
     }
 }

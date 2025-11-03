@@ -5,6 +5,7 @@
 - [Core Pipeline Concepts](#core-pipeline-concepts)
 - [Basic Pipeline Operations](#basic-pipeline-operations)
 - [Pipeline Configuration](#pipeline-configuration)
+- [Conversation History Tracking](#conversation-history-tracking)
 - [Pipeline Execution Flow](#pipeline-execution-flow)
 - [Practical Pipeline Examples](#practical-pipeline-examples)
 - [Pipeline Benefits](#pipeline-benefits)
@@ -133,6 +134,194 @@ val traceReport = pipeline.getTraceReport(TraceFormat.HTML)
 val failureAnalysis = pipeline.getFailureAnalysis()
 val traceId = pipeline.getTraceId()
 ```
+
+## Conversation History Tracking
+
+### Overview
+
+Pipelines can automatically track conversation history by binding to a shared `ConverseHistory` object. This enables multiple pipelines to maintain a synchronized conversation timeline, useful for judge agents, task progress monitoring, and displaying conversation flows to users.
+
+### Basic Usage
+
+```kotlin
+// Create a shared conversation history
+val sharedHistory = ConverseHistory()
+
+// Bind multiple pipelines to the same history
+val pipeline1 = Pipeline()
+    .add(analysisPipe)
+    .wrapContentWithConverseHistory(sharedHistory)
+
+val pipeline2 = Pipeline()
+    .add(generationPipe)
+    .wrapContentWithConverseHistory(sharedHistory)
+
+// Both pipelines now update the same conversation history
+runBlocking {
+    pipeline1.execute("Analyze this data")
+    pipeline2.execute("Generate a report")
+}
+
+// Access the complete conversation timeline
+println(serialize(sharedHistory))
+```
+
+**What this does**: Each pipeline automatically records user inputs and outputs to the shared history object. Since both pipelines reference the same object, they can see each other's conversation turns.
+
+### Configuration Options
+
+```kotlin
+val history = ConverseHistory()
+
+pipeline.wrapContentWithConverseHistory(
+    historyRef = history,
+    wrapTextResponse = true,              // Only store text (default)
+    includePipeContent = false,           // Track individual pipe outputs
+    pipelineConverseRoleParam = ConverseRole.assistant,
+    pipeConverseRoleParam = ConverseRole.agent,
+    userConverseRoleParam = ConverseRole.user
+)
+```
+
+**Parameters**:
+- **`historyRef`**: The `ConverseHistory` object to bind to (required)
+- **`wrapTextResponse`**: If `true`, only text is stored; if `false`, entire `MultimodalContent` is serialized
+- **`includePipeContent`**: If `true`, each pipe's output is tracked; if `false`, only user input and final pipeline output
+- **`pipelineConverseRoleParam`**: Role assigned to final pipeline output (default: `assistant`)
+- **`pipeConverseRoleParam`**: Role assigned to individual pipe outputs (default: `agent`)
+- **`userConverseRoleParam`**: Role assigned to user input (default: `user`)
+
+### Tracking Individual Pipe Outputs
+
+```kotlin
+val history = ConverseHistory()
+
+val pipeline = Pipeline()
+    .add(preprocessPipe)
+    .add(analysisPipe)
+    .add(generationPipe)
+    .wrapContentWithConverseHistory(
+        historyRef = history,
+        includePipeContent = true  // Track each pipe's output
+    )
+
+runBlocking {
+    pipeline.execute("Process this request")
+}
+
+// History now contains:
+// 1. User input (role: user)
+// 2. preprocessPipe output (role: agent)
+// 3. analysisPipe output (role: agent)
+// 4. generationPipe output (role: agent)
+// 5. Final pipeline output (role: assistant)
+```
+
+### Multi-Pipeline Coordination
+
+```kotlin
+val sharedHistory = ConverseHistory()
+
+// Worker pipeline
+val workerPipeline = Pipeline()
+    .add(taskExecutorPipe)
+    .wrapContentWithConverseHistory(
+        historyRef = sharedHistory,
+        pipelineConverseRoleParam = ConverseRole.agent
+    )
+
+// Judge pipeline monitors the worker's progress
+val judgePipeline = Pipeline()
+    .add(evaluatorPipe)
+    .wrapContentWithConverseHistory(
+        historyRef = sharedHistory,
+        pipelineConverseRoleParam = ConverseRole.assistant
+    )
+
+runBlocking {
+    // Worker executes task
+    workerPipeline.execute("Complete the analysis")
+    
+    // Judge can see worker's output in shared history
+    val evaluation = judgePipeline.execute("Evaluate the analysis quality")
+}
+```
+
+### Use Cases
+
+**1. Judge Agents**
+```kotlin
+val taskHistory = ConverseHistory()
+
+val taskPipeline = Pipeline()
+    .add(taskPipe)
+    .wrapContentWithConverseHistory(taskHistory)
+
+val judgePipeline = Pipeline()
+    .add(judgePipe)
+    .wrapContentWithConverseHistory(taskHistory)
+
+// Judge evaluates task pipeline's work
+runBlocking {
+    taskPipeline.execute("Solve the problem")
+    val judgment = judgePipeline.execute("Rate the solution quality")
+}
+```
+
+**2. Progress Tracking**
+```kotlin
+val progressHistory = ConverseHistory()
+
+val multiStagePipeline = Pipeline()
+    .add(stage1Pipe)
+    .add(stage2Pipe)
+    .add(stage3Pipe)
+    .wrapContentWithConverseHistory(
+        historyRef = progressHistory,
+        includePipeContent = true  // Track each stage
+    )
+
+// Monitor progress through conversation history
+runBlocking {
+    multiStagePipeline.execute("Complex task")
+    
+    // Display progress to user
+    progressHistory.history.forEach { turn ->
+        println("${turn.role}: ${turn.content.text}")
+    }
+}
+```
+
+**3. Multi-Agent Systems**
+```kotlin
+val agentHistory = ConverseHistory()
+
+val researchAgent = Pipeline()
+    .add(researchPipe)
+    .wrapContentWithConverseHistory(agentHistory)
+
+val writingAgent = Pipeline()
+    .add(writingPipe)
+    .wrapContentWithConverseHistory(agentHistory)
+
+val editorAgent = Pipeline()
+    .add(editorPipe)
+    .wrapContentWithConverseHistory(agentHistory)
+
+// Agents coordinate through shared history
+runBlocking {
+    researchAgent.execute("Research topic X")
+    writingAgent.execute("Write article based on research")
+    editorAgent.execute("Edit and refine the article")
+}
+```
+
+### Important Notes
+
+- **Reference Sharing**: All pipelines bound to the same `ConverseHistory` object share the same memory reference. Updates from any pipeline are immediately visible to all others.
+- **UUID Deduplication**: Each conversation turn has a unique UUID to prevent duplicate entries.
+- **Sub-Pipe Visibility**: When `includePipeContent = true`, only direct pipes in the pipeline are tracked. Branch pipes, validator pipes, and transformation pipes within individual pipes are not visible in the history.
+- **Serialization**: The conversation history can be serialized to JSON for storage or display using `serialize(history)`.
 
 ## Pipeline Execution Flow
 
