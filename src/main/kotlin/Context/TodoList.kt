@@ -1,5 +1,6 @@
 package com.TTT.Context
 
+import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.serialize
 
 /**
@@ -47,5 +48,14 @@ data class TodoList(
         }
 
         return null
+    }
+
+    /**
+     * Set the todo task number that the llm should focus on if given a todo list object. This is read when
+     * [com.TTT.Pipe.applySystemPrompt] is called on the pipe class.
+     */
+    fun setTodoTaskNumber(taskNumber: Int, content: MultimodalContent)
+    {
+        content.setTodoTaskNumber(taskNumber)
     }
 }

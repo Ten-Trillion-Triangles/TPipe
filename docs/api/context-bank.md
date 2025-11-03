@@ -9,6 +9,7 @@
   - [Context Swapping](#context-swapping)
   - [Thread-Safe Operations](#thread-safe-operations)
   - [Utilities](#utilities)
+  - [TodoList Integration](#todolist-integration)
 
 ## Overview
 
@@ -130,6 +131,90 @@ All mutex-protected operations follow these patterns:
 Resets the currently active banked context window to empty state.
 
 **Behavior:** Replaces banked context with new empty `ContextWindow()`. Useful for cleanup operations and conditional logic that checks for context presence.
+
+---
+
+### TodoList Integration
+
+ContextBank provides storage and retrieval for TodoList objects, enabling task management across pipes and pipelines.
+
+#### `getPagedTodoList(key: String, copy: Boolean = true): TodoList`
+Retrieves a TodoList from ContextBank storage.
+
+**Parameters:**
+- `key` - The page key identifying the TodoList
+- `copy` - If `true`, returns a deep copy; if `false`, returns direct reference
+
+**Behavior:** 
+1. Checks in-memory storage for the key
+2. If not found in memory and disk persistence is enabled, attempts to load from `~/.tpipe/TPipe-Default/memory/todo/<key>.todo`
+3. Returns the TodoList if found, or an empty TodoList if not found
+4. When `copy = true`, uses serialization for deep copying to ensure thread safety
+
+**Example:**
+```kotlin
+// Get a copy (safe for concurrent use)
+val todoList = ContextBank.getPagedTodoList("my-tasks")
+
+// Get direct reference (faster but not thread-safe)
+val todoListRef = ContextBank.getPagedTodoList("my-tasks", copy = false)
+```
+
+#### `emplaceTodoList(key: String, todoList: TodoList, writeToDisk: Boolean, overwrite: Boolean)`
+Stores a TodoList in ContextBank.
+
+**Parameters:**
+- `key` - Unique identifier for this TodoList
+- `todoList` - The TodoList object to store
+- `writeToDisk` - If `true`, persists to `~/.tpipe/TPipe-Default/memory/todo/<key>.todo`
+- `overwrite` - If `true`, replaces existing TodoList with same key; if `false`, merges with existing
+
+**Behavior:**
+1. Stores TodoList in memory under the specified key
+2. If `writeToDisk = true`, serializes and saves to disk for persistence across runs
+3. If `overwrite = false` and a TodoList exists with this key, merges the new list with the existing one
+4. Creates the todolist directory if it doesn't exist
+
+**Example:**
+```kotlin
+val todoList = TodoList()
+// ... populate tasks ...
+
+ContextBank.emplaceTodoList(
+    key = "code-review",
+    todoList = todoList,
+    writeToDisk = true,
+    overwrite = true
+)
+```
+
+#### `emplaceTodoListWithMutex(key: String, todoList: TodoList, writeToDisk: Boolean, overwrite: Boolean)`
+Thread-safe version of `emplaceTodoList()`.
+
+**Behavior:** Identical to `emplaceTodoList()` but uses mutex locking to ensure thread safety. Use this when multiple coroutines or threads might save TodoLists simultaneously.
+
+**Example:**
+```kotlin
+runBlocking {
+    ContextBank.emplaceTodoListWithMutex(
+        key = "shared-tasks",
+        todoList = todoList,
+        writeToDisk = true,
+        overwrite = true
+    )
+}
+```
+
+**TodoList Storage Location:**
+
+TodoLists are stored in the TPipe configuration directory:
+- **Path**: `~/.tpipe/TPipe-Default/memory/todo/<key>.todo`
+- **Format**: JSON serialization of TodoList object
+- **Persistence**: Survives application restarts when `writeToDisk = true`
+
+See [TodoList API](todolist.md) for complete TodoList documentation and usage examples.
+
+---
 
 ## Key Behaviors
 

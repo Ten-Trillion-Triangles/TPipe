@@ -666,6 +666,23 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     var containerPtr : P2PInterface? = null
 
     /**
+     * Page key to retrieve a todo list from ContextBank. This can be used to inject a todo list as context at runtime.
+     * The todo list will be injected as a mini-bank key, or single context bank key if it's the only key. The contents
+     * of the todo list will be serialized and stored as index 0 of the context elements.
+     */
+    var todoPageKey: String = ""
+
+    /**
+     * Instructions to replace the default explanation for todo list injection.
+     */
+    var todoListInstructions = ""
+
+    /**
+     * Denotes weather to check for todo list injection.
+     */
+    var injectTodoList = false
+
+    /**
      * Allow arbitrary data to be stored on this pipe class. Useful for advanced features such as tracking
      * TPipe internal reasoning, advanced container class management, and other features that are add-ons and
      * extra features rather than core functionality of TPipe and the llm's they abstract.
@@ -888,7 +905,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * Function to apply or re-apply the system prompt and other injections. Allows the user to re-apply after making
      * any out of order changes.
      */
-    fun applySystemPrompt() : Pipe
+    fun applySystemPrompt(content: MultimodalContent? = null) : Pipe
     {
         systemPrompt = rawSystemPrompt //Restore raw system prompt.
 
@@ -1000,6 +1017,36 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         if(autoInjectContext)
         {
             systemPrompt = "$systemPrompt \n\n $contextInstructions \n\n ${selectGlobalContextMode()}"
+        }
+
+        //Inject todo list and focus point if supplied.
+        if(injectTodoList)
+        {
+            val todoListObj = ContextBank.getPagedTodoList(todoPageKey)
+            if(!todoListObj.isEmpty())
+            {
+                val defaultTodoListInstructions = """You will be provided with a todo list that has a list of tasks
+                    |you have been asked to complete. Each element on the list will contain a description of the task,
+                    |the requirements to verify it has been completed, and weather it has been completed or not. The
+                    |todo list is as follows:
+                """.trimMargin()
+
+                val actualTodoListInstructions = todoListInstructions.ifEmpty { defaultTodoListInstructions }
+
+                val todoListInjector = "${actualTodoListInstructions}\n\n${serialize(todoListObj)}"
+                systemPrompt+= "\n\n${todoListInjector}"
+
+                val taskNumber = content?.metadata["todoTaskNumber"] ?: -1
+                if(taskNumber as Int > 0)
+                {
+                    val task = todoListObj.find(taskNumber)
+                    if(task != null)
+                    {
+                        val focusInstructions = """The current task you must focus on from this todo list is:"""
+                        systemPrompt+= "\n\n${focusInstructions}\n\n${serialize(task)}"
+                    }
+                }
+            }
         }
 
         //Bind system prompt footer if valid.
@@ -1137,6 +1184,26 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setJsonOutputInstructions(instructions: String) : Pipe
     {
         this.jsonOutputInstructions = instructions
+        return this
+    }
+
+    /**
+     * Set the page key to pull an active todo list from the Context bank. This will be invoked when [applySystemPrompt]
+     * is called. During pipe runtime, if the content object has an assigned focus point value, extra instructions will
+     * be provided to have the llm focus on that specific task.
+     */
+    fun setTodoListPageKey(key: String) : Pipe
+    {
+        todoPageKey = key
+        return this
+    }
+
+    /**
+     * Override default instructions for todo list injection into the system prompt.
+     */
+    fun setTodoListInstructions(instructions: String) : Pipe
+    {
+        todoListInstructions = instructions
         return this
     }
 
@@ -2590,7 +2657,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          * NOTE: This has been moved here from [init] due to needing to reset each execution step to clean up any
          * injected model reasoning into the system prompt.
          */
-        applySystemPrompt()
+        applySystemPrompt(inputContent)
 
         //Trace the start of this pipe, and print out the value of the output of the previous pipe or initial input.
         trace(TraceEventType.PIPE_START, TracePhase.INITIALIZATION, inputContent)

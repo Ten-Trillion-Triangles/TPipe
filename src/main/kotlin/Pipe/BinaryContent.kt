@@ -3,6 +3,7 @@ package com.TTT.Pipe
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
 import com.TTT.PipeContextProtocol.PcPRequest
+import com.TTT.Util.deepCopy
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import kotlinx.serialization.Serializable
@@ -280,9 +281,7 @@ class MultimodalContent(
      */
     fun copyMultimodal() : MultimodalContent?
     {
-        val json = serialize(this)
-        val newObject = deserialize<MultimodalContent>(json, false)
-        return newObject
+        return this.deepCopy()
     }
 
     /**
@@ -328,6 +327,14 @@ class MultimodalContent(
         }
     }
 
+    /**
+     * Set the todo task number that the llm should focus on if given a todo list object. This is read when
+     * [com.TTT.Pipe.applySystemPrompt] is called on the pipe class.
+     */
+    fun setTodoTaskNumber(taskNumber: Int)
+    {
+        metadata["todoTaskNumber"] = taskNumber
+    }
 
 }
 

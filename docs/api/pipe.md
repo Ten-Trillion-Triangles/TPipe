@@ -10,6 +10,7 @@
   - [Configuration](#configuration-1)
   - [Prompt Management](#prompt-management)
   - [Input/Output](#inputoutput)
+  - [TodoList Integration](#todolist-integration)
   - [Model Parameters](#model-parameters)
   - [Context Management](#context-management)
   - [Token Counting](#token-counting)
@@ -176,6 +177,72 @@ Sets custom instructions for JSON output handling.
 Forces JSON prompt injection for models without native JSON support.
 
 **Behavior:** Sets `supportsNativeJson = false` and optionally `stripNonJson = true`. When enabled, JSON schemas are injected as text instructions rather than using native API features.
+
+---
+
+### TodoList Integration
+
+#### `setTodoListPageKey(key: String): Pipe`
+Links this pipe to a TodoList stored in ContextBank.
+
+**Behavior:** Sets the page key used to retrieve a TodoList from ContextBank. When `applySystemPrompt()` is called, the pipe automatically:
+1. Retrieves the TodoList using this key
+2. Adds instructions explaining the task format
+3. Serializes the TodoList to JSON
+4. Appends it to the system prompt
+
+The AI receives the complete task list and can work on tasks accordingly. If the content object has `metadata["todoTaskNumber"]` set, that specific task is highlighted with additional focus instructions.
+
+**Example:**
+```kotlin
+val pipe = BedrockPipe()
+    .setSystemPrompt("You are a task executor.")
+    .setTodoListPageKey("my-tasks")
+    .applySystemPrompt()  // TodoList injected here
+```
+
+See [TodoList API](todolist.md) for complete TodoList documentation.
+
+#### `setTodoListInstructions(instructions: String): Pipe`
+Overrides the default instructions for TodoList injection.
+
+**Behavior:** Replaces the default explanation of how to interpret the TodoList with custom instructions. Use this to guide the AI's behavior when working with tasks.
+
+**Default instructions:**
+```
+You will be provided with a todo list that has a list of tasks you have been 
+asked to complete. Each element on the list will contain a description of the 
+task, the requirements to verify it has been completed, and whether it has been 
+completed or not.
+```
+
+**Example:**
+```kotlin
+pipe.setTodoListInstructions("""
+    Below is your task checklist. Work through each item in order.
+    For each task, provide detailed findings and mark completion clearly.
+""".trimIndent())
+```
+
+**Properties:**
+
+**`todoPageKey`**
+```kotlin
+var todoPageKey: String = ""
+```
+The ContextBank page key for retrieving the TodoList. Set via `setTodoListPageKey()`.
+
+**`todoListInstructions`**
+```kotlin
+var todoListInstructions: String = ""
+```
+Custom instructions for TodoList interpretation. Set via `setTodoListInstructions()`.
+
+**`injectTodoList`**
+```kotlin
+var injectTodoList: Boolean = false
+```
+Internal flag indicating whether TodoList injection is enabled. Automatically set to `true` when `setTodoListPageKey()` is called.
 
 ---
 

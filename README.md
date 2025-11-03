@@ -94,6 +94,7 @@ Complete API documentation for all TPipe components:
 - [ContextBank API](docs/api/context-bank.md) - Global context management
 - [MiniBank API](docs/api/minibank.md) - Multi-page context handling
 - [ConverseHistory API](docs/api/converse-history.md) - Conversation management
+- [TodoList API](docs/api/todolist.md) - Task management for AI workflows
 - [Dictionary API](docs/api/dictionary.md) - Token counting and truncation
 - [Lorebook API](docs/api/lorebook.md) - Knowledge base management
 
@@ -102,6 +103,7 @@ Complete API documentation for all TPipe components:
 - [P2P Interface API](docs/api/p2p-interface.md) - Agent communication interface
 - [P2P Package API](docs/api/p2p-package.md) - Distributed agent system
 - [PipeContextProtocol API](docs/api/pipe-context-protocol.md) - Tool execution framework
+- [TPipeConfig API](docs/api/tpipe-config.md) - Configuration and directory management
 - [Util Package API](docs/api/util-package.md) - Utility functions and helpers
 
 #### Extension APIs
