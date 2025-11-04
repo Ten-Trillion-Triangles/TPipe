@@ -8,7 +8,7 @@
 - Better flesh out the manifold builder.
 
 **New features:**
-- Add DistributionGrid class that enables "swarm" style agents with TPipe pipelines.
+~~- Add DistributionGrid class that enables "swarm" style agents with TPipe pipelines.~~
 ~~- Expand tracing system to help trace Splitters, Manifolds, Junctions, and DistributionGrid objects.~~
 - Add support for pulling pipeline context, then merging into global.
 - Create builders for all the containers, and general workflows like chain of thought pipelines
