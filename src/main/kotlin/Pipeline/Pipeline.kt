@@ -67,7 +67,7 @@ class Pipeline : P2PInterface {
      * Weather the pipeline should update the global context window system of TPipe which allows multiple pipes,
      * pipelines, and other concurrent tasks to share llm context with each other.
      */
-    private var updateGlobalContext = false
+    var updateGlobalContext = false
 
     /**
      * Page key for the context bank. This is used to emplace the context that's stored in that page. This allows

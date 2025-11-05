@@ -5,14 +5,13 @@
 ~~- Add creator functions to help simplify creating converseHistory adds.~~
 - Add human in the loop functions to the advanced container classes.
 ~~- Add link table to trace file system.~~
-- Better flesh out the manifold builder.
+~~- Better flesh out the manifold builder.~~
 
 **New features:**
 ~~- Add DistributionGrid class that enables "swarm" style agents with TPipe pipelines.~~
 ~~- Expand tracing system to help trace Splitters, Manifolds, Junctions, and DistributionGrid objects.~~
-- Add support for pulling pipeline context, then merging into global.
+~~- Add support for pulling pipeline context, then merging into global.~~
 - Create builders for all the containers, and general workflows like chain of thought pipelines
-- Create builders for compression pipelines
 - Add compression as a function
 - Add compression and decompression prompt injection support using semantic compression of human languages to strip out
 all the components that don't convey information while retaining all the ones that do.
@@ -23,11 +22,10 @@ all the components that don't convey information while retaining all the ones th
 Allow the keys to also be stored as stub files and loaded directly.~~
 ~~- Add default .tpipe dir support for core config and persistent storage features built into the library.~~
 ~~- Add support for a todo list style mechanism for storing and tracking progress.~~
-- Add pipeline plus built-in pcp functions to support breaking down a large level of context into a relationship key
-map using the lorebook system. Which allows an llm expand context in steps rather than pulling it in all at once and 
-enabling more targeted lorebook strategies where memory needs to be retrieved after the user prompt. This is technically
-possible to do now but adding convince systems similar to what TPipe-Defaults does is a good idea.
 ~~- Add automatic wrapping of pipeline inputs and outputs into [ConverseHistory] structure.~~
+- Add support for pipeline reflection allowing agents, containers, and P2PInterface objects to reflect on their
+state, settings, internal pipelines etc. and update and adjust them and their own internal context in real time.
+- Add delegate to report when a pipe has finished it's work in a pipeline. 
 
 **Down the road:**
 - Create entry and exit points for graalvm native for future non jvm language wrappers.
@@ -48,3 +46,9 @@ ContextBank automatically.
 - Compression pipe builder that can build a pipe or pipeline that will handle semantic compression.
 - Add injector for semantic decompression.
 - various manager/judge pipelines for the advanced container classes
+- Add pipeline plus built-in pcp functions to support breaking down a large level of context into a relationship key
+  map using the lorebook system. Which allows an llm expand context in steps rather than pulling it in all at once and
+  enabling more targeted lorebook strategies where memory needs to be retrieved after the user prompt. This is technically
+  possible to do now but adding convince systems similar to what TPipe-Defaults does is a good idea.
+- Add todolist pipeline that can build and save todo lists.
+- Create builders for compression pipelines.
