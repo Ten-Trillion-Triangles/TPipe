@@ -2044,6 +2044,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * Enables tracing for this pipe with the specified configuration.
      * @param config The tracing configuration to use
      * @return This Pipe object for method chaining
+     * @see traceConfig
      */
     fun enableTracing(config: TraceConfig = TraceConfig(enabled = true)): Pipe
     {

@@ -2,5 +2,18 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/TPipe-Bedrock" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/TPipe-Bedrock/src/main" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/TPipe-Bedrock/src/test" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/TPipe-Defaults" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/TPipe-Defaults/src/main" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/TPipe-Defaults/src/test" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/TPipe-MCP" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/TPipe-MCP/src/main" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/TPipe-MCP/src/test" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/TPipe-Ollama" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/TPipe-Ollama/src/main" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/src/main" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/src/test" vcs="Perforce" />
   </component>
 </project>

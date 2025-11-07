@@ -366,6 +366,17 @@ class Pipeline : P2PInterface {
     }
 
     /**
+     * Inserts a pipe into the pipeline at a given index.
+     * @param  pipe The pipe to be inserted.
+     * @param index The index at which the pipe should be inserted.
+     */
+    fun insert(pipe: Pipe, index: Int) : Pipeline
+    {
+        pipes.add(index, pipe)
+        return this
+    }
+
+    /**
      * Adds all pipes in a list to the pipeline. All pipes in the list will be checked against the existing
      * list of pipes in the pipeline, and only if a pipe does not already exist in the list, will it be added.
      * @param pipes The list of pipes to be added to the pipeline.

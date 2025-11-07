@@ -140,7 +140,7 @@ object ManifoldDefaults
 
     fun assignManagerPipelineDefaults(pipeline: Pipeline) : Pipeline
     {
-        //Get the 3 pipes this pipeline is supposed to have by default.
+        //Get the 2 pipes this pipeline is supposed to have by default.
         val allPipes = pipeline.getPipes()
 
         //We can't handle custom user pipelines as this is a default creator. So throw if we don't match.

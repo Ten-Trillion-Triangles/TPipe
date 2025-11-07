@@ -26,6 +26,9 @@ Allow the keys to also be stored as stub files and loaded directly.~~
 - Add support for pipeline reflection allowing agents, containers, and P2PInterface objects to reflect on their
 state, settings, internal pipelines etc. and update and adjust them and their own internal context in real time.
 - Add delegate to report when a pipe has finished it's work in a pipeline. 
+- Add native pcp support functions to allow various runtime support. Examples include querying TPipe memory data at
+runtime, Interacting with TPipe systems and settings, inspecting and registering pcp and p2p systems. This is a great
+compliment to supporting model reflection in TPipe.
 
 **Down the road:**
 - Create entry and exit points for graalvm native for future non jvm language wrappers.
