@@ -27,6 +27,8 @@ import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Pipe.Pipe
 import com.TTT.Util.examplePromptFor
 import com.TTT.Util.getLowestContextWindowSize
+import kotlinx.coroutines.channels.Channel
+import org.slf4j.helpers.NOP_FallbackServiceProvider
 import java.util.UUID
 
 /**
@@ -205,6 +207,19 @@ class Manifold : P2PInterface
     private var currentTaskProgress = TaskProgress()
     private var loopIterationCount = 0
     private val agentInteractionMap = mutableMapOf<String, Int>()
+
+    /**
+     * Used to pause or resume a manifold. When a manifold pauses the loop will freeze and wait until it can resume.
+     * This allows us to stop the progression of the manifold after a worker pipe runs to allow for accepting user input,
+     * Then resume after getting that user input or system input. Unlike regular pipelines which the orchestration is
+     * largely by hand with the programmer, Manifolds are too automated to make interrupting them reasonable. And so we
+     * need this built in pause/resume mechanism in place.
+     */
+    private var isPaused = false
+
+    //Lock mechanism to pause and resume the manifold.
+    private val resumeSignal = Channel<Unit>(Channel.RENDEZVOUS)
+
 
 
 //=============================================Exceptions===============================================================
@@ -1286,6 +1301,26 @@ class Manifold : P2PInterface
         }
 
         return workingContentObject
+    }
+
+    /**
+     * Pause the thread running the manifold to stop it from proceeding forward. This should be used carefully and
+     * called as part of the transformation function of a worker pipe to avoid llm stalls.
+     */
+    suspend fun pause()
+    {
+        isPaused = true
+        resumeSignal.receive()
+        isPaused = false
+    }
+
+    /**
+     * Resumes the manifold. This will cause the while loop to proceed and the manifold manager to worker feedback loop
+     * to fully resume.
+     */
+    suspend fun resume()
+    {
+        resumeSignal.trySend(Unit)
     }
 
 //==============================================Tracing Methods========================================================
