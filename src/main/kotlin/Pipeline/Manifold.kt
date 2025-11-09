@@ -941,7 +941,8 @@ class Manifold : P2PInterface
 
             /**
              * Determine if our task is finished. If so we need to now exit with the final result of our
-             * working content object.
+             * working content object. If the task checker marked this as complete the rest of the pipeline should
+             * have been passed or terminated resulting in only it's output being the last output produced.
              */
             val taskStatusCheck = extractJson<TaskProgress>(responseText)
             if(taskStatusCheck != null)
@@ -960,18 +961,25 @@ class Manifold : P2PInterface
              * misbehaving llm might not produce the json as intended, or correctly. And in that case could prevent
              * the manifold from continuing.
              */
-            var agentBatchCount = 0
+            var agentBatchCount = 0 //Attempt to extract out of an array if an array was returned.
             var agentRequest = extractJson<List<AgentRequest>>(responseText)?.let { list ->
                 agentBatchCount = list.size
                 list.firstOrNull()
             }
 
+            //Otherwise try to grab it from the string as a whole.
             if(agentRequest == null)
             {
                 agentRequest = extractJson<AgentRequest>(responseText)
             }
 
-            // NEW: Strip out pcpRequest if LLM hallucinated it
+            /**
+             * Manager pipelines tend to try to issue pcp requests. However, the manifold manager pipeline is only
+             * allowed to issue p2p requests. So to save tokens we should get rid of any random pcp requests it
+             * tries to make. This behavior happens because we provide pcp data to help guide decision-making for
+             * the manager pipeline to choose the best agent for the next task. Unfortunately we often run into
+             * issues where some llm's don't quite get the memo and produce pcp tool calls anyways.
+             */
             if (agentRequest != null && agentRequest.pcpRequest != PcPRequest()) {
                 agentRequest.pcpRequest = PcPRequest()
                 if (tracingEnabled) {
@@ -995,7 +1003,6 @@ class Manifold : P2PInterface
                               "iteration" to loopIterationCount
                           ))
                 }
-
 
                 workingContentObject.terminatePipeline = true
                 break
@@ -1043,8 +1050,8 @@ class Manifold : P2PInterface
                  *
                  * todo: Should we consider a retry option in the event that the llm is misbehaving? Or should we place
                  * the full onus on the coder to ensure the llm actually produces json and they didn't mess up their
-             * system prompt?
-             */
+                * system prompt?
+                */
             try{
                 // === TRACING: Agent interaction tracking ===
                 agentInteractionMap[agentRequest.agentName] = 
@@ -1062,7 +1069,9 @@ class Manifold : P2PInterface
 
                 /**
                  * Invoke the agent request system which will route and reach the local agent we have here.
-                 * That agent will run through its task set as a pipeline, and return the result.
+                 * That agent will run through its task set as a pipeline, and return the result. Converse gets
+                 * wrapped up here and passed as the input of the worker pipeline, apparently regardless of what it's
+                 * json input is set to.
                  */
                 val workerConverseHistory = extractJson<ConverseHistory>(workingContentObject.text)
                 if (workerConverseHistory != null)

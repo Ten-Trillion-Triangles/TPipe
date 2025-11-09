@@ -2,6 +2,7 @@ package com.TTT.Context
 
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.PcpContext
+import com.TTT.Util.extractJson
 import java.util.UUID
 
 /**
@@ -63,7 +64,22 @@ data class ConverseHistory(
      */
     fun add(role: ConverseRole, content: MultimodalContent)
     {
-        val converseTurn = ConverseData(role = role, content = content)
+        var converseTurn = ConverseData(role = role, content = content)
+
+        /**
+         * There are many wrapping schemes that end up actually already having the content contain the converse history.
+         * This will cause confusing nesting when this occurs. So to avoid it and to remove the onus on all containers,
+         * and higher level classes that are interacting with this class, we'll adress this behavior by correctly appending
+         * as one would expect when you go to add. This allows us to avoid refactors, and any extra steps or confusion
+         * when this edge case occurs.
+         */
+        val contentJson: ConverseHistory? = extractJson<ConverseHistory>(content.text)
+        if(contentJson != null)
+        {
+            history.addAll(contentJson.history)
+            return
+        }
+
         converseTurn.setUUID()
 
         if(history.contains(converseTurn)) return
