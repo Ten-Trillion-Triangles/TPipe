@@ -8,6 +8,7 @@
 - [Key Properties](#key-properties)
 - [Method Chaining](#method-chaining)
 - [System Prompt Processing](#system-prompt-processing)
+- [Conversation History Wrapping](#conversation-history-wrapping)
 - [Best Practices](#best-practices)
 - [Next Steps](#next-steps)
 
@@ -216,6 +217,97 @@ pipe.setSystemPrompt("You are helpful.")
 // Final prompt might be: "You are helpful.\n\n[JSON instructions]\n\n[Context instructions]"
 ```
 
+## Conversation History Wrapping
+
+Individual pipes can automatically wrap their outputs into conversation history format, enabling seamless conversation flow across pipeline chains. This is particularly useful for multi-turn conversations and agent-based systems.
+
+### Basic Usage
+
+```kotlin
+val conversationPipe = BedrockPipe()
+    .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+    .setRegion("us-west-2")
+    .setSystemPrompt("You are a helpful assistant.")
+    .wrapContentWithConverse()  // Enable automatic wrapping
+```
+
+### Specifying Conversation Roles
+
+```kotlin
+// Pipe acts as an assistant
+val assistantPipe = BedrockPipe()
+    .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+    .wrapContentWithConverse(ConverseRole.assistant)
+
+// Pipe acts as an agent
+val agentPipe = BedrockPipe()
+    .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+    .wrapContentWithConverse(ConverseRole.agent)
+
+// Pipe acts as a system component
+val systemPipe = BedrockPipe()
+    .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+    .wrapContentWithConverse(ConverseRole.system)
+```
+
+### How It Works
+
+1. **Input Detection**: When a pipe receives input, it checks if the content is already in `ConverseHistory` format
+2. **History Storage**: If conversation history is detected, it's stored in the pipe's internal metadata
+3. **Output Wrapping**: The pipe's output is automatically wrapped with the specified role and added to the conversation history
+4. **Chain Continuity**: Subsequent pipes in a pipeline can detect and continue building the conversation
+
+### Pipeline Integration
+
+```kotlin
+val conversationPipeline = Pipeline()
+    .add(BedrockPipe()
+        .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+        .setSystemPrompt("You are a research assistant.")
+        .wrapContentWithConverse(ConverseRole.assistant))
+    .add(BedrockPipe()
+        .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+        .setSystemPrompt("You are a fact checker.")
+        .wrapContentWithConverse(ConverseRole.agent))
+    .add(BedrockPipe()
+        .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+        .setSystemPrompt("You are an editor.")
+        .wrapContentWithConverse(ConverseRole.assistant))
+
+// Each pipe automatically builds on the conversation history
+val result = conversationPipeline.execute("Research the history of AI")
+```
+
+### System Prompt to Conversation Conversion
+
+For models that work better with conversation format than system prompts, you can automatically convert system prompts to conversation history:
+
+```kotlin
+val conversationPipe = BedrockPipe()
+    .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+    .setSystemPrompt("You are a helpful assistant.")
+    .copySystemToUserPrompt()  // Convert system prompt to conversation format
+```
+
+This creates a conversation history with:
+1. System role entry containing the system prompt
+2. User role entry containing the user's input
+
+### Important Notes
+
+- **Chain Continuity**: All pipes in a conversation chain should have `wrapContentWithConverse()` enabled
+- **Silent Breaking**: If any pipe in the chain doesn't have wrapping enabled, the conversation chain breaks silently
+- **Role Consistency**: Choose appropriate roles for each pipe's function in the conversation
+- **JSON Agnostic**: Works regardless of the JSON structure the pipe produces
+
+### Available Conversation Roles
+
+- `ConverseRole.user` - User input
+- `ConverseRole.assistant` - AI assistant responses
+- `ConverseRole.agent` - Specialized agent responses
+- `ConverseRole.system` - System messages and instructions
+- `ConverseRole.developer` - Developer/debugging messages
+
 ## Best Practices
 
 ### System Prompt Design
@@ -232,6 +324,12 @@ pipe.setSystemPrompt("You are helpful.")
 ### Pipe Naming
 - Use descriptive names for debugging and tracing
 - Include the purpose or domain (e.g., "medical-qa", "code-review")
+
+### Conversation History
+- Enable `wrapContentWithConverse()` on all pipes in a conversation chain
+- Choose appropriate conversation roles for each pipe's function
+- Use `copySystemToUserPrompt()` for models that prefer conversation format over system prompts
+- Consider using Pipeline-level conversation history for complex multi-agent systems
 
 ## Next Steps
 

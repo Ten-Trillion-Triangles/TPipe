@@ -114,6 +114,11 @@ Sets how prompts are handled by the model.
 
 **Behavior:** Affects context management and prompt construction. `singlePrompt` disables automatic context handling, `chat` relies on provider-side context, `internalContext` enables TPipe's context system.
 
+#### `wrapContentWithConverse(role: ConverseRole = ConverseRole.agent): Pipe`
+Enables automatic conversation history wrapping for pipeline chaining.
+
+**Behavior:** When enabled, the pipe automatically detects if input content is in `ConverseHistory` format and continues building the conversation. The pipe's output is wrapped with the specified role and added to the conversation history. Essential for multi-turn conversations and agent-based systems. All pipes in a conversation chain should have this enabled.
+
 ---
 
 ### Prompt Management
@@ -132,7 +137,7 @@ Sets prompt injected between input and output JSON schemas.
 #### `setFooterPrompt(prompt: String): Pipe`
 Sets prompt added to the end of system prompt.
 
-#### `copySystemPromptToUserPrompt(): Pipe`
+#### `copySystemToUserPrompt(): Pipe`
 Copies system prompt to user prompt for models that handle user prompts better.
 
 **Behavior:** Creates a `ConverseHistory` with system prompt as developer role and user prompt as user role. Useful for models that don't properly respect system prompts.

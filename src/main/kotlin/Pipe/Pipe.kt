@@ -683,6 +683,19 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     var injectTodoList = false
 
     /**
+     * If true, the content will be wrapped into a converse history object if the input content was found to be already
+     * in the form of a converse history object. This is useful for automating multiple pipes inside a pipeline that
+     * need to use converse history objects as input. If a pipe does use converse History as the output the automatic
+     * chaining of this will be broken and the coder will need to manually intervene.
+     */
+    protected var wrapContentWithConverseHistory = false
+
+    /**
+     * Defines the converse role this pipe uses if we're wrapping content automatically.
+     */
+    protected var converseRole: ConverseRole = ConverseRole.agent
+
+    /**
      * Allow arbitrary data to be stored on this pipe class. Useful for advanced features such as tracking
      * TPipe internal reasoning, advanced container class management, and other features that are add-ons and
      * extra features rather than core functionality of TPipe and the llm's they abstract.
@@ -1292,6 +1305,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         return this
     }
 
+
     /**
      * Sets the context window size for the pipe. This is used to control how much of the previous input is passed
      * to the model when generating text. A larger context window will result in more of the previous input
@@ -1462,6 +1476,25 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun updatePipelineContextOnExit() : Pipe
     {
         updatePipelineContextOnExit = true
+        return this
+    }
+
+    /**
+     * Enable automatic converse history wrapping when the prior pipe outputs converse history wrapping. When the pipe
+     * detects it's input is converse history it will store it will continue to build off that output and embed it's
+     * internal output into the converse history data that was inputted into it. This is agnostic of what kind of json
+     * the pipe produces, and allows the coder to automatically handle this wrapping without transformation functions,
+     * fiddling, or needing to intercept and wrap the output through code. It also allows the desired json output to be
+     * retained correctly without needing to worry about it.
+     *
+     * Should a pipe prior to this not return an input as converse, this automatic chaining will be broken silently.
+     * So it's very important to keep this setting toggled on for each pipe in the pipeline, and supply the first pipe
+     * in the pipeline with a converse history input.
+     */
+    fun wrapContentWithConverse(role: ConverseRole = ConverseRole.agent) : Pipe
+    {
+        wrapContentWithConverseHistory = true
+        converseRole = role
         return this
     }
 
@@ -2645,13 +2678,46 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     private suspend fun executeMultimodal(inputContent: MultimodalContent): MultimodalContent = coroutineScope{
 
         /**
+         * Declare local function to adress the multiple times we need to call this internal wrapping.
+         * This is intended to be an internal mechanism of pipe execution so we want to leverage Kotlin's ability
+         * to have true local functions.
+         */
+        fun embedContentIntoInternalConverse(content: MultimodalContent) : MultimodalContent
+        {
+            val existingHistory = pipeMetadata["wrappedConverseHistory"] as? ConverseHistory
+            if(existingHistory != null)
+            {
+                existingHistory.add(converseRole, content)
+                pipeMetadata["wrappedConverseHistory"] = existingHistory
+                return MultimodalContent(text = serialize(existingHistory))
+            }
+
+            return content
+        }
+
+        /**
          * If we're using this pipe a proxy we'll repoint to the proxy container pointer instead, and execute whatever
          * it is. The result will be returned here and then out to the rest of the pipeline. By doing this, we can
          * allow the case of storing a higher level container inside a lower level pipeline.
          */
         if(containerPtr != null)
         {
-            return@coroutineScope containerPtr!!.executeLocal(inputContent)
+            return@coroutineScope embedContentIntoInternalConverse(inputContent).takeIf { wrapContentWithConverseHistory } ?: inputContent
+        }
+
+        /**
+         * Detect if the prior pipe's output was in converse. If it was we'll try to capture it and store it in the
+         * pipe's metadata to reference at the exit of this pipe. We'll then wrap whatever the output of this pipe is
+         * with [ConverseHistory]
+         */
+        if(wrapContentWithConverseHistory)
+        {
+            val converseHistory = deserialize<ConverseHistory>(inputContent.text)
+
+            if(converseHistory != null)
+            {
+                pipeMetadata["wrappedConverseHistory"] = converseHistory
+            }
         }
 
         /**
@@ -2914,7 +2980,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     trace(TraceEventType.PRE_INVOKE, TracePhase.PRE_VALIDATION,
                         metadata = mapOf("exitingInvoke" to preInvokeFunction.toString()))
 
-                    return@coroutineScope inputContent
+                    return@coroutineScope embedContentIntoInternalConverse(inputContent).takeIf { wrapContentWithConverseHistory } ?: inputContent
                 }
 
             }
@@ -3102,7 +3168,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
                         trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, finalResult,
                               metadata = mapOf("outputText" to if (isExecutingAsReasoningPipe) "" else finalResult.text))
-                        return@coroutineScope finalResult
+                        return@coroutineScope embedContentIntoInternalConverse(finalResult).takeIf { wrapContentWithConverseHistory } ?: finalResult
                     }
                     else
                     {
@@ -3158,7 +3224,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
                     trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, finalResult,
                           metadata = mapOf("outputText" to if (isExecutingAsReasoningPipe) "" else finalResult.text))
-                    return@coroutineScope finalResult
+                    return@coroutineScope embedContentIntoInternalConverse(finalResult).takeIf { wrapContentWithConverseHistory } ?: finalResult
                 }
 
                 //Execute branch pipe if provided.
@@ -3190,7 +3256,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             }
 
 
-                            return@coroutineScope branchResult
+                            return@coroutineScope embedContentIntoInternalConverse(branchResult).takeIf { wrapContentWithConverseHistory } ?: branchResult
                         }
                         
                         generatedContent = branchResult
@@ -3242,7 +3308,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         trace(TraceEventType.PIPE_SUCCESS, TracePhase.TRANSFORMATION,
                             metadata = mapOf("output" to "${failureResult.text}"))
 
-                        return@coroutineScope failureResult
+                        return@coroutineScope embedContentIntoInternalConverse(failureResult).takeIf { wrapContentWithConverseHistory } ?: failureResult
                     }
                 }
             }

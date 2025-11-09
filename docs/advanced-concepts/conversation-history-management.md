@@ -4,6 +4,7 @@
 - [Overview](#overview)
 - [Core Types](#core-types)
 - [Building Histories](#building-histories)
+- [Automatic Pipe Wrapping](#automatic-pipe-wrapping)
 - [Integrating with ContextWindow](#integrating-with-contextwindow)
 - [Global Context Bank](#global-context-bank)
 - [Truncation and Token Budgets](#truncation-and-token-budgets)
@@ -82,6 +83,65 @@ fun appendAssistantMessage(history: ConverseHistory, text: String) {
 
 For multimodal messages use `MultimodalContent` helpers (e.g. `addImageFromPath`) before calling
 `add`.
+
+## Automatic Pipe Wrapping
+
+Individual pipes can automatically manage conversation history without manual construction. This is particularly useful for pipeline chains where each pipe contributes to an ongoing conversation.
+
+### Basic Usage
+
+```kotlin
+val conversationPipe = BedrockPipe()
+    .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+    .setSystemPrompt("You are a helpful assistant.")
+    .wrapContentWithConverse()  // Enable automatic wrapping
+```
+
+### Pipeline Integration
+
+When multiple pipes in a pipeline have conversation wrapping enabled, they automatically build on each other's conversation history:
+
+```kotlin
+val conversationPipeline = Pipeline()
+    .add(BedrockPipe()
+        .setSystemPrompt("You are a research assistant.")
+        .wrapContentWithConverse(ConverseRole.assistant))
+    .add(BedrockPipe()
+        .setSystemPrompt("You are a fact checker.")
+        .wrapContentWithConverse(ConverseRole.agent))
+    .add(BedrockPipe()
+        .setSystemPrompt("You are an editor.")
+        .wrapContentWithConverse(ConverseRole.assistant))
+
+// Each pipe automatically builds on the conversation history
+val result = conversationPipeline.execute("Research the history of AI")
+```
+
+### How It Works
+
+1. **Input Detection**: Each pipe checks if its input is already in `ConverseHistory` format
+2. **History Storage**: If detected, the conversation history is stored in the pipe's metadata
+3. **Output Wrapping**: The pipe's output is automatically wrapped with the specified role and added to the conversation
+4. **Chain Continuity**: Subsequent pipes detect and continue building the conversation
+
+### System Prompt Conversion
+
+For models that work better with conversation format than system prompts:
+
+```kotlin
+val conversationPipe = BedrockPipe()
+    .setSystemPrompt("You are a helpful assistant.")
+    .copySystemToUserPrompt()  // Convert to conversation format
+```
+
+This creates a conversation with the system prompt as a developer role entry and the user input as a user role entry.
+
+### Important Considerations
+
+- **Chain Continuity**: All pipes in a conversation chain should have `wrapContentWithConverse()` enabled
+- **Silent Breaking**: If any pipe lacks wrapping, the conversation chain breaks silently
+- **Role Selection**: Choose appropriate roles (`assistant`, `agent`, `system`, etc.) for each pipe's function
+- **JSON Agnostic**: Works regardless of the JSON structure the pipe produces
 
 ## Integrating with ContextWindow
 
