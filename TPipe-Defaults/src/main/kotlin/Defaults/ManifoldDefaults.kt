@@ -183,28 +183,28 @@ object ManifoldDefaults
                 |  - You MUST provide a concise `taskProgressStatus` summarizing the completion.
                 |  - You MUST leave `nextTaskInstructions` empty.
                 |  - Example of COMPLETED TaskProgress JSON:
-                |    ```json
+                |    
                 |    {
                 |      "taskDescription": "Original task description",
                 |      "nextTaskInstructions": "",
                 |      "taskProgressStatus": "Task successfully completed with final result: [final answer]",
                 |      "isTaskComplete": true
                 |    }
-                |    ```
+                |
                 |
                 |If the task is **NOT YET COMPLETED**:
                 |  - You MUST set the `isTaskComplete` boolean field in the `TaskProgress` JSON to `false`.
                 |  - You MUST provide clear `nextTaskInstructions` for the next step.
                 |  - You MUST provide a concise `taskProgressStatus` reflecting current progress.
                 |  - Example of NOT YET COMPLETED TaskProgress JSON:
-                |    ```json
+                |    
                 |    {
                 |      "taskDescription": "Original task description",
                 |      "nextTaskInstructions": "Call agent X to perform Y.",
                 |      "taskProgressStatus": "Waiting for agent X to complete Y.",
                 |      "isTaskComplete": false
                 |    }
-                |    ```
+                |    
                 |
                 |You MUST always return a valid `TaskProgress` JSON object.
                 |CRITICAL: The `isTaskComplete` field is paramount for controlling the Manifold's flow. Ensure its value is correct.
