@@ -103,7 +103,7 @@ import bedrockPipe.BedrockPipe
 import kotlinx.coroutines.runBlocking
 
 fun main() {
-    val pipe = BedrockPipe()
+val pipe = BedrockPipe()
         .setModel("anthropic.claude-3-haiku-20240307-v1:0")
         .setRegion("us-west-2")
         .enableStreaming()
@@ -117,6 +117,30 @@ fun main() {
     }
 }
 ```
+
+### 4. Streaming with reasoning output
+
+```kotlin
+import bedrockPipe.BedrockPipe
+import bedrockPipe.streamOutputToTerminal
+import kotlinx.coroutines.runBlocking
+
+fun main() {
+    val pipe = BedrockPipe()
+        .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+        .setRegion("us-west-2")
+
+    streamOutputToTerminal(pipe)
+
+    runBlocking {
+        pipe.generateText("Explain how streaming output is routed through reasoning pipes.")
+    }
+}
+```
+
+The helper above automatically enables streaming on the supplied [BedrockPipe] and any reasoning pipes it has been configured with, printing chunked tokens for both the primary response and any internal reasoning output.
+
+If you are working with a [`Pipeline`](../core-concepts/pipeline-class.md), use `streamPipelineOutputToTerminal(pipeline)` instead so every pipe already registered on the pipeline participates in streaming output.
 
 ## Running Your Application
 
