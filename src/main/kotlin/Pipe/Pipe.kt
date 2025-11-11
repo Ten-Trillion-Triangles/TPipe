@@ -646,8 +646,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     protected var countOnlyFirstWordFound: Boolean = false
     protected var splitForNonWordChar: Boolean = true
     protected var alwaysSplitIfWholeWordExists: Boolean = false
-    protected var countSubWordsIfSplit: Boolean = false
-    protected var nonWordSplitCount: Int = 4
+    protected var countSubWordsIfSplit: Boolean = true
+    protected var nonWordSplitCount: Int = 2
 
     /**
      * Tracing system properties for debugging and monitoring pipe execution.

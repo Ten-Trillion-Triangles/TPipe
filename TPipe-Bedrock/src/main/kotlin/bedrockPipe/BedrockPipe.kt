@@ -929,7 +929,7 @@ open class BedrockPipe : Pipe() {
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
-                nonWordSplitCount = 4
+                nonWordSplitCount = 2
             }
             modelId.contains("amazon.nova-micro") -> {
                 contextWindowSize = 128
@@ -941,7 +941,7 @@ open class BedrockPipe : Pipe() {
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
-                nonWordSplitCount = 4
+                nonWordSplitCount = 2
             }
             modelId.contains("amazon.nova-lite") || modelId.contains("amazon.nova-pro") -> {
                 contextWindowSize = 300
@@ -953,7 +953,7 @@ open class BedrockPipe : Pipe() {
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
-                nonWordSplitCount = 4
+                nonWordSplitCount = 2
             }
             modelId.contains("amazon.nova-premier") -> {
                 contextWindowSize = 1000
@@ -965,7 +965,7 @@ open class BedrockPipe : Pipe() {
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
-                nonWordSplitCount = 4
+                nonWordSplitCount = 2
             }
             modelId.contains("meta.llama") -> {
                 contextWindowSize = 8
@@ -977,7 +977,7 @@ open class BedrockPipe : Pipe() {
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
-                nonWordSplitCount = 4
+                nonWordSplitCount = 2
             }
             modelId.contains("ai21.jamba") -> {
                 contextWindowSize = 256
@@ -989,7 +989,7 @@ open class BedrockPipe : Pipe() {
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
-                nonWordSplitCount = 4
+                nonWordSplitCount = 2
             }
                 modelId.contains("qwen") -> {
                 contextWindowSize = if (modelId.contains("-0.6b-") || modelId.contains("-1.7b-") || modelId.contains("-4b-")) {
@@ -1016,7 +1016,7 @@ open class BedrockPipe : Pipe() {
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = false
-                nonWordSplitCount = 3
+                nonWordSplitCount = 2
             }
             modelId.contains("writer.palmyra-x4") -> {
                 contextWindowSize = 128
@@ -1028,10 +1028,10 @@ open class BedrockPipe : Pipe() {
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
-                nonWordSplitCount = 4
+                nonWordSplitCount = 2
             }
             modelId.contains("writer.palmyra-x5") -> {
-                contextWindowSize = 1000
+                contextWindowSize = 990
                 multiplyWindowSizeBy = 1000
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
@@ -1040,7 +1040,7 @@ open class BedrockPipe : Pipe() {
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
-                nonWordSplitCount = 4
+                nonWordSplitCount = 2
             }
             modelId.contains("openai.gpt-oss") -> {
                 contextWindowSize = 128
@@ -1052,7 +1052,7 @@ open class BedrockPipe : Pipe() {
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
-                nonWordSplitCount = 4
+                nonWordSplitCount = 2
             }
         }
         
