@@ -19,6 +19,7 @@ import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.toTokenBudgetSettings
 import com.TTT.PipeContextProtocol.Transport
 import com.TTT.Util.extractJson
 import com.TTT.Util.serialize
@@ -827,15 +828,24 @@ class Manifold : P2PInterface
                 val holdingWindow = ContextWindow()
                 holdingWindow.converseHistory = converseHistory
 
+                val multiPageConfigured = pipeTruncationSettings.multiPageBudgetStrategy != null ||
+                        pipeTruncationSettings.pageWeights != null ||
+                        pipeTruncationSettings.fillMode
+                val budgetSettings = if(multiPageConfigured) {
+                    pipeTruncationSettings.toTokenBudgetSettings(contextWindowSize = contextWindowSize)
+                } else null
+
                 val usedTokens = Dictionary.countTokens(converseHistory.toString(), pipeTruncationSettings)
-                if(usedTokens > contextWindowSize)
+                val maxWindowSize = budgetSettings?.contextWindowSize ?: contextWindowSize
+
+                if(usedTokens > maxWindowSize)
                 {
                     /**
                      * Truncate into the given context window size, which is based on which pipe in the pipelines
                      * that are being ran in this manifold has the smallest context window.
                      */
                     holdingWindow.truncateConverseHistoryWithObject(
-                        contextWindowSize,
+                        maxWindowSize,
                         0,
                         truncationMethod,
                         pipeTruncationSettings)

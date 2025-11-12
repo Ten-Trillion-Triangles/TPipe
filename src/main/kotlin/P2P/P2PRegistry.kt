@@ -3,6 +3,8 @@ package com.TTT.P2P
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.Dictionary
+import com.TTT.Pipe.Pipe
+import com.TTT.Pipe.toTruncationSettings
 import com.TTT.Pipe.TruncationSettings
 import com.TTT.Pipe.getMimeType
 import com.TTT.PipeContextProtocol.Transport
@@ -247,15 +249,26 @@ object P2PRegistry
          * Requires max tokens be to be greater than 0 and for some token counting settings to also be present.
          * If both of these aren't present and accounted for this check will be skipped.
          */
-        if(requirements.maxTokens > 0 && requirements.tokenCountingSettings != null)
+        if(requirements.maxTokens > 0 && (requirements.tokenCountingSettings != null || requirements.multiPageBudgetSettings != null))
         {
             try{
-                val tokenCount = Dictionary.countTokens(request.prompt.text, requirements.tokenCountingSettings as TruncationSettings)
-                if(tokenCount > requirements.maxTokens) {
-                    val rejection = P2PRejection()
-                    rejection.reason = "Request exceeds maximum token limit of ${requirements.maxTokens}"
-                    rejection.errorType = P2PError.prompt
-                    return Pair(false, rejection)
+                val countingSettings = when {
+                    requirements.multiPageBudgetSettings != null ->
+                        requirements.multiPageBudgetSettings!!.toTruncationSettings(agent as? Pipe)
+                    requirements.tokenCountingSettings != null ->
+                        requirements.tokenCountingSettings!!
+                    else -> null
+                }
+
+                if(countingSettings != null)
+                {
+                    val tokenCount = Dictionary.countTokens(request.prompt.text, countingSettings)
+                    if(tokenCount > requirements.maxTokens) {
+                        val rejection = P2PRejection()
+                        rejection.reason = "Request exceeds maximum token limit of ${requirements.maxTokens}"
+                        rejection.errorType = P2PError.prompt
+                        return Pair(false, rejection)
+                    }
                 }
             }
             catch (e: Exception)

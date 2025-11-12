@@ -51,7 +51,10 @@ data class TruncationSettings(
          var splitForNonWordChar: Boolean = true,
          var alwaysSplitIfWholeWordExists: Boolean = false,
          var countSubWordsIfSplit: Boolean = false,
-         var nonWordSplitCount: Int = 4)
+         var nonWordSplitCount: Int = 4,
+         var fillMode: Boolean = false,
+         var multiPageBudgetStrategy: MultiPageBudgetStrategy? = null,
+         var pageWeights: Map<String, Double>? = null)
 
 /**
  * Data class that defines how advanced token budgeting is applied. In this scheme the user prompt, and system prompt
@@ -129,6 +132,45 @@ enum class MultiPageBudgetStrategy {
     EQUAL_SPLIT,
     WEIGHTED_SPLIT,
     PRIORITY_FILL
+}
+
+/**
+ * Builds TokenBudgetSettings from TruncationSettings so the budget can inherit the same tokenizer configuration
+ * plus the optional multi-page hints.
+ */
+fun TruncationSettings.toTokenBudgetSettings(
+    contextWindowSize: Int? = null,
+    userPromptSize: Int? = null,
+    maxTokens: Int? = null
+): TokenBudgetSettings
+{
+    return TokenBudgetSettings(
+        contextWindowSize = contextWindowSize,
+        userPromptSize = userPromptSize,
+        maxTokens = maxTokens,
+        truncationMethod = ContextWindowSettings.TruncateTop,
+        multiPageBudgetStrategy = this.multiPageBudgetStrategy ?: MultiPageBudgetStrategy.EQUAL_SPLIT,
+        pageWeights = this.pageWeights
+    )
+}
+
+/**
+ * Converts TokenBudgetSettings into TruncationSettings to reuse tokenizer configuration when only the budget
+ * information is known.
+ */
+fun TokenBudgetSettings.toTruncationSettings(pipe: Pipe? = null): TruncationSettings
+{
+    val settings = pipe?.getTruncationSettings() ?: TruncationSettings()
+    if(this.multiPageBudgetStrategy != null)
+    {
+        settings.multiPageBudgetStrategy = this.multiPageBudgetStrategy
+    }
+    if(this.pageWeights != null)
+    {
+        settings.pageWeights = this.pageWeights
+    }
+
+    return settings
 }
 
 /**
@@ -2291,6 +2333,10 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         returnVar.countSubWordsIfSplit = countSubWordsIfSplit
         returnVar.alwaysSplitIfWholeWordExists = alwaysSplitIfWholeWordExists
         returnVar.countSubWordsInFirstWord = countSubWordsInFirstWord
+
+        returnVar.fillMode = loreBookFillMode
+        returnVar.multiPageBudgetStrategy = tokenBudgetSettings?.multiPageBudgetStrategy
+        returnVar.pageWeights = tokenBudgetSettings?.pageWeights
 
         return returnVar
     }

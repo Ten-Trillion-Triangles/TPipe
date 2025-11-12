@@ -1,5 +1,6 @@
 package com.TTT.PipeContextProtocol
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -15,6 +16,7 @@ class HttpIntegrationTest
     fun testCompleteHttpPipeline()
     {
         runBlocking {
+            delay(5000)
             // Simulate LLM response with HTTP PCP request
             val llmResponse = """
             {
@@ -55,6 +57,7 @@ class HttpIntegrationTest
     fun testHttpSecurityValidation()
     {
         runBlocking {
+            delay(5000)
             // Test SSRF protection
             val ssrfResponse = """
             {
@@ -85,6 +88,7 @@ class HttpIntegrationTest
     fun testHttpAuthentication()
     {
         runBlocking {
+            delay(5000)
             // Test Bearer token authentication
             val authResponse = """
             {
@@ -120,6 +124,7 @@ class HttpIntegrationTest
     fun testHttpPostWithBody()
     {
         runBlocking {
+            delay(5000)
             // Test POST request with JSON body
             val postResponse = """
             {

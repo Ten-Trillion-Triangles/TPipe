@@ -111,6 +111,18 @@ Selects lorebook entries with an additional fill phase to maximize token usage.
 #### `selectLoreBookContextWithSettings(settings: TruncationSettings, text: String, maxTokens: Int): List<String>`
 Alternative selection method using TruncationSettings for token counting.
 
+#### `selectAndFillLoreBookContextWithSettings(settings: TruncationSettings, text: String, maxTokens: Int): List<String>`
+Selects LoreBook entries using the select-and-fill strategy while reusing a settings object.
+
+**Behavior:** Same as `selectAndFillLoreBookContext()` but uses the passed `TruncationSettings` for tokenizer configuration, preserving token counting behavior across helper methods.
+
+**Parameters:**
+- `settings` - TruncationSettings containing tokenization parameters
+- `text` - Input text to scan for matching LoreBook keys
+- `maxTokens` - Maximum tokens to allocate for lorebook selection
+
+**Returns:** Ordered list of LoreBook keys selected via the priority + fill strategy
+
 ---
 
 ### Context Merging
@@ -154,8 +166,12 @@ Combines lorebook values with context elements into single string with truncatio
 
 **Behavior:** Selects lorebook context, combines with context elements, truncates result to fit token budget using tokenizer parameters.
 
-#### `combineAndTruncateAsStringWithSettings(text: String, tokenBudget: Int, settings: TruncationSettings, truncateMethod: ContextWindowSettings, multiplyBy: Int): String`
-Enhanced version with TruncationSettings object and configurable truncation method.
+#### `combineAndTruncateAsStringWithSettings(text: String, tokenBudget: Int, settings: TruncationSettings, truncateMethod: ContextWindowSettings, multiplyBy: Int, fillMode: Boolean = false): String`
+Enhanced version with TruncationSettings object, configurable truncation method, and optional lorebook fill mode.
+
+**Behavior:** When `fillMode = true`, applies `selectAndFillLoreBookContextWithSettings()` before combining lorebook and context strings. After filtering keys based on the fill-mode selection, it concatenates the remaining sections and truncates them down to `tokenBudget`, using the supplied tokenizer parameters.
+
+**Note:** Fill mode only affects which LoreBook entries remain—it does not change how the final string is truncated. This helper therefore preserves the standard string-based truncation semantics while still respecting advanced lorebook selection.
 
 ---
 

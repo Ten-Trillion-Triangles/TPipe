@@ -365,6 +365,16 @@ Enables string-based context truncation.
 
 **Behavior:** Context is converted to a single string before truncation rather than truncating individual entries. More aggressive but can also chop content into a potentially incomplete state.
 
+#### `getTruncationSettings(): TruncationSettings`
+Returns the current truncation settings bundled with any multi-page configuration that has been applied to the pipe.
+
+**Behavior:**
+- Includes all token counting flags (multipliers, split rules, etc.)
+- Mirrors the current `loreBookFillMode` state through the returned `fillMode` flag
+- Surfaces any multi-page budget strategy and page weights pulled from `tokenBudgetSettings`
+
+**Integration:** Useful for passing a single settings object into the new helper functions such as `selectAndFillLoreBookContextWithSettings()` or string-based truncation helpers.
+
 ---
 
 ### LoreBook

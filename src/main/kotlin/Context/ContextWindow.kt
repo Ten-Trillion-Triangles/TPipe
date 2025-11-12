@@ -355,6 +355,29 @@ data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = 
     }
     
     /**
+     * Helper to run the select-and-fill LoreBook strategy using a settings object.
+     *
+     * @param settings TruncationSettings containing tokenization and fillMode configuration
+     * @param text Input text used to match LoreBook keys
+     * @param maxTokens Maximum tokens allocated for selected LoreBook context
+     * @return Ordered list of LoreBook keys selected via the select-and-fill strategy
+     */
+    fun selectAndFillLoreBookContextWithSettings(settings: TruncationSettings, text: String, maxTokens: Int): List<String>
+    {
+        return selectAndFillLoreBookContext(
+            text,
+            maxTokens,
+            settings.countSubWordsInFirstWord,
+            settings.favorWholeWords,
+            settings.countOnlyFirstWordFound,
+            settings.splitForNonWordChar,
+            settings.alwaysSplitIfWholeWordExists,
+            settings.countSubWordsIfSplit,
+            settings.nonWordSplitCount
+        )
+    }
+    
+    /**
      * Convenience function to add a lorebook entry with key, value, and weight
      * @param key The trigger key to match in text
      * @param value The context value to inject when key matches
@@ -849,8 +872,14 @@ data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = 
         tokenBudget: Int = 0,
         settings: TruncationSettings = TruncationSettings(),
         truncateMethod: ContextWindowSettings = ContextWindowSettings.TruncateTop,
-        multiplyBy: Int = 0) : String
+        multiplyBy: Int = 0,
+        fillMode: Boolean = false) : String
     {
+        if(fillMode)
+        {
+            val selectedKeys = selectAndFillLoreBookContextWithSettings(settings, text, tokenBudget)
+            loreBookKeys = loreBookKeys.filterKeys { it in selectedKeys }.toMutableMap()
+        }
        return combineAndTruncateAsString(
             text,
             tokenBudget,
