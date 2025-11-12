@@ -106,8 +106,30 @@ data class TokenBudgetSettings(
     var preserveJsonInUserPrompt: Boolean = true,
     var compressUserPrompt: Boolean = false,
     var truncateContextWindowAsString: Boolean = false,
-    var truncationMethod: ContextWindowSettings = ContextWindowSettings.TruncateTop
+    var truncationMethod: ContextWindowSettings = ContextWindowSettings.TruncateTop,
+    /**
+     * Controls how the per-page budgets for MiniBank truncation are allocated.
+     */
+    var multiPageBudgetStrategy: MultiPageBudgetStrategy = MultiPageBudgetStrategy.EQUAL_SPLIT,
+    /**
+     * Optional page weight overrides for the weighted allocation strategy.
+     */
+    var pageWeights: Map<String, Double>? = null,
+    /**
+     * Determines whether empty pages still reserve a portion of the budget.
+     */
+    var reserveEmptyPageBudget: Boolean = true
 )
+
+/**
+ * Defines the supported multi-page budget allocation strategies.
+ */
+@Serializable
+enum class MultiPageBudgetStrategy {
+    EQUAL_SPLIT,
+    WEIGHTED_SPLIT,
+    PRIORITY_FILL
+}
 
 /**
  * Main class for abstracting an AI pipe in the TPipe pipeline system. Provides interface abstractions for
@@ -1388,6 +1410,40 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
     /**
+     * Sets multi-page budget allocation strategy for MiniBank truncation.
+     * Only affects behavior when multiple page keys are used.
+     *
+     * @param strategy Budget allocation strategy
+     * @return This Pipe object for method chaining
+     */
+    fun setMultiPageBudgetStrategy(strategy: MultiPageBudgetStrategy) : Pipe
+    {
+        if(tokenBudgetSettings == null)
+        {
+            tokenBudgetSettings = TokenBudgetSettings()
+        }
+        tokenBudgetSettings!!.multiPageBudgetStrategy = strategy
+        return this
+    }
+
+    /**
+     * Sets page weights for weighted budget allocation.
+     * Weights are normalized automatically.
+     *
+     * @param weights Map of page key to weight (higher = more budget)
+     * @return This Pipe object for method chaining
+     */
+    fun setPageWeights(weights: Map<String, Double>) : Pipe
+    {
+        if(tokenBudgetSettings == null)
+        {
+            tokenBudgetSettings = TokenBudgetSettings()
+        }
+        tokenBudgetSettings!!.pageWeights = weights.toMap()
+        return this
+    }
+
+    /**
      * Assign the max token budget immediately and auto handle getting the correct token size remaining
      * for the context window size settings. This setter is treated as internal because it's intended to
      * be invoked at the pipe's runtime.
@@ -1473,6 +1529,157 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         contextWindowSize = workingTokenWindowSize
 
         return this
+    }
+
+    /**
+     * Calculates per-page budget allocations based on the configured strategy.
+     */
+    private fun calculatePageBudgets(
+        totalBudget: Int,
+        pageKeys: List<String>,
+        strategy: MultiPageBudgetStrategy,
+        weights: Map<String, Double>?,
+        truncationSettings: TruncationSettings,
+        reserveEmptyPageBudget: Boolean
+    ): Map<String, Int>
+    {
+        if(totalBudget <= 0 || pageKeys.isEmpty())
+        {
+            return pageKeys.associateWith { 0 }
+        }
+
+        val effectiveKeys = if(reserveEmptyPageBudget) {
+            pageKeys
+        } else {
+            pageKeys.filter { key ->
+                val window = miniContextBank.contextMap[key]
+                window != null && !window.isEmpty()
+            }
+        }
+
+        if(effectiveKeys.isEmpty())
+        {
+            return pageKeys.associateWith { 0 }
+        }
+
+        val allocations = when(strategy)
+        {
+            MultiPageBudgetStrategy.EQUAL_SPLIT -> calculateEqualSplitMap(totalBudget, effectiveKeys)
+            MultiPageBudgetStrategy.WEIGHTED_SPLIT ->
+            {
+                if(weights == null) calculateEqualSplitMap(totalBudget, effectiveKeys)
+                else calculateWeightedSplit(totalBudget, effectiveKeys, weights)
+            }
+            MultiPageBudgetStrategy.PRIORITY_FILL -> calculatePriorityFill(totalBudget, effectiveKeys, truncationSettings)
+        }
+
+        return pageKeys.associateWith { allocations[it] ?: 0 }
+    }
+
+    private fun calculateEqualSplitMap(totalBudget: Int, pageKeys: List<String>): Map<String, Int>
+    {
+        if(totalBudget <= 0 || pageKeys.isEmpty())
+        {
+            return pageKeys.associateWith { 0 }
+        }
+
+        val allocations = mutableMapOf<String, Int>()
+        val baseAllocation = totalBudget / pageKeys.size
+        var remainder = totalBudget - (baseAllocation * pageKeys.size)
+
+        for(pageKey in pageKeys)
+        {
+            var share = baseAllocation
+            if(remainder > 0)
+            {
+                share += 1
+                remainder--
+            }
+
+            allocations[pageKey] = share
+        }
+
+        return allocations
+    }
+
+    private fun calculateWeightedSplit(
+        totalBudget: Int,
+        pageKeys: List<String>,
+        weights: Map<String, Double>
+    ): Map<String, Int>
+    {
+        if(totalBudget <= 0 || pageKeys.isEmpty())
+        {
+            return pageKeys.associateWith { 0 }
+        }
+
+        val totalWeight = pageKeys.sumOf { weights[it] ?: 0.0 }
+        if(totalWeight <= 0.0)
+        {
+            return calculateEqualSplitMap(totalBudget, pageKeys)
+        }
+
+        val allocations = mutableMapOf<String, Int>()
+        var distributed = 0
+
+        for(pageKey in pageKeys)
+        {
+            val weight = weights[pageKey] ?: 0.0
+            val proportion = weight / totalWeight
+            val share = (totalBudget * proportion).toInt()
+            allocations[pageKey] = share
+            distributed += share
+        }
+
+        var remaining = totalBudget - distributed
+        for(pageKey in pageKeys)
+        {
+            if(remaining <= 0) break
+            allocations[pageKey] = (allocations[pageKey] ?: 0) + 1
+            remaining--
+        }
+
+        return allocations
+    }
+
+    private fun calculatePriorityFill(
+        totalBudget: Int,
+        pageKeys: List<String>,
+        truncationSettings: TruncationSettings
+    ): Map<String, Int>
+    {
+        if(totalBudget <= 0 || pageKeys.isEmpty())
+        {
+            return pageKeys.associateWith { 0 }
+        }
+
+        val allocations = mutableMapOf<String, Int>()
+        var remainingBudget = totalBudget
+
+        for(pageKey in pageKeys)
+        {
+            if(remainingBudget <= 0) break
+
+            val contextWindow = miniContextBank.contextMap[pageKey]
+            if(contextWindow == null || contextWindow.isEmpty())
+            {
+                allocations[pageKey] = 0
+                continue
+            }
+
+            val requiredTokens = countContextWindowTokens(contextWindow, truncationSettings)
+            if(requiredTokens <= 0)
+            {
+                allocations[pageKey] = 0
+                continue
+            }
+
+            val allocation = minOf(requiredTokens, remainingBudget)
+            allocations[pageKey] = allocation
+            remainingBudget -= allocation
+        }
+
+        return allocations
     }
 
     /**
@@ -2386,6 +2593,15 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         return totalTokens
     }
 
+    /**
+     * Counts tokens inside a ContextWindow snapshot after truncation.
+     */
+    private fun countContextWindowTokens(contextWindow: ContextWindow, truncationSettings: TruncationSettings): Int
+    {
+        val serializedWindow = serialize(contextWindow)
+        return Dictionary.countTokens(serializedWindow, truncationSettings)
+    }
+
 
 
     /**
@@ -2481,15 +2697,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          */
         else
         {
-            for(it in miniContextBank.contextMap)
-            {
-                val bankWindow = it.value
-                bankWindow.selectAndTruncateContext(
-                    content.text,
-                    workingContextWindowSpace,
-                    budget.truncationMethod,
-                    truncationSettings)
-            }
+            truncateMiniBank(content, workingContextWindowSpace, budget, truncationSettings)
         }
 
         /**
@@ -2637,6 +2845,53 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         }
 
         return content
+    }
+
+
+    /**
+     * Apply budget-aware truncation to MiniBank pages.
+     * Each page receives an allocated portion of the total budget.
+     */
+    private fun truncateMiniBank(
+        content: MultimodalContent,
+        totalBudget: Int,
+        budget: TokenBudgetSettings,
+        truncationSettings: TruncationSettings
+    )
+    {
+        val pageKeys = miniContextBank.contextMap.keys.toList()
+        if(pageKeys.isEmpty()) return
+
+        val pageBudgets = calculatePageBudgets(
+            totalBudget,
+            pageKeys,
+            budget.multiPageBudgetStrategy,
+            budget.pageWeights,
+            truncationSettings,
+            budget.reserveEmptyPageBudget
+        )
+
+        var totalUsedBudget = 0
+
+        for((pageKey, contextWindow) in miniContextBank.contextMap)
+        {
+            val allocatedBudget = pageBudgets[pageKey] ?: 0
+            if(allocatedBudget <= 0) continue
+
+            contextWindow.selectAndTruncateContext(
+                content.text,
+                allocatedBudget,
+                budget.truncationMethod,
+                truncationSettings
+            )
+
+            totalUsedBudget += countContextWindowTokens(contextWindow, truncationSettings)
+        }
+
+        if(totalUsedBudget > totalBudget)
+        {
+            throw IllegalStateException("MiniBank truncation exceeded allocated budget: used $totalUsedBudget, allocated $totalBudget")
+        }
     }
 
 
