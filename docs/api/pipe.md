@@ -305,6 +305,11 @@ Enables pulling context from parent pipeline.
 
 **Behavior:** Overrides `pullGlobalContext()` if both are enabled. Context is merged from the parent pipeline's context window.
 
+#### `pullBankedContext(): Pipe`
+Enables pulling banked context regardless of page key configuration.
+
+**Behavior:** Forces the pipe to pull the default banked context from `ContextBank` even when page keys are configured. Useful when you need both the general banked context and specific page-keyed context simultaneously. Sets `pullFromBankedContext = true` internally.
+
 #### `updatePipelineContextOnExit(): Pipe`
 Updates pipeline context when pipe completes.
 

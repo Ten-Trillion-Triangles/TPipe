@@ -35,6 +35,7 @@ import com.TTT.Util.extractAllJsonObjects
 import com.TTT.Util.extractNonJsonText
 import com.TTT.Util.removeFromFirstOccurrence
 import com.TTT.Util.serialize
+import io.netty.channel.DefaultMessageSizeEstimator
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -403,6 +404,12 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     @Serializable
     protected var readFromGlobalContext = false
+
+    /**
+     * If true the banked context will be force pulled even if a page key was assinged.
+     */
+    @Serializable
+    protected var pullFromBankedContext = false
 
     /**
      * Allows for setting advanced token budgeting that supports accounting for system prompt size,
@@ -1346,6 +1353,17 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun pullGlobalContext() : Pipe
     {
         readFromGlobalContext = true
+        return this
+    }
+
+
+    /**
+     * Enables pulling the banked context in [ContextBank] regardless of if a page key was supplied or not. This is
+     * useful when you need to pull the banked context, and one or more page keys.
+     */
+    fun pullBankedContext() : Pipe
+    {
+        pullFromBankedContext = true
         return this
     }
 
@@ -2778,6 +2796,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             val pagedContext = ContextBank.getContextFromBank(page)
                             miniContextBank.contextMap[page] = pagedContext
                         }
+
+                        //Force add the banked context if the user forced it to be pulled even with page keys.
+                        if(pullFromBankedContext)
+                        {
+                            val bankedContext = ContextBank.getBankedContextWindow()
+                            miniContextBank.contextMap["Banked Context"] = bankedContext
+                        }
                     }
 
 
@@ -3820,7 +3845,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
 //============================================== P2PInterface Implementation ==========================================
 
-    override fun setP2pDescription(description: P2PDescriptor) {
+    override fun setP2pDescription(description: P2PDescriptor)
+    {
         p2pDescriptor = description
     }
 
