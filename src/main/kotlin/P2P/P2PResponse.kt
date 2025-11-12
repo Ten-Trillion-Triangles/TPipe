@@ -13,6 +13,8 @@ enum class P2PError
     json,
     content,
     transport,
+    context,
+    configuration,
     none
 }
 

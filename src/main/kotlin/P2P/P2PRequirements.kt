@@ -50,7 +50,7 @@ data class P2PRequirements(
     var maxTokens: Int = 30000,
     var tokenCountingSettings: TruncationSettings? = null,
     var multiPageBudgetSettings: TokenBudgetSettings? = null,
-    var allowMultiPageContext: Boolean = false,
+    var allowMultiPageContext: Boolean = true,
     var maxBinarySize: Int = 20 * 1024, //20MB default.
     var authMechanism: (suspend (authBody: String) -> Boolean)? = null
 )

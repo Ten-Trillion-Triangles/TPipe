@@ -280,6 +280,40 @@ object P2PRegistry
             }
         }
 
+        // Validate multi-page context usage against agent requirements
+        val hasMultiPageContext = detectMultiPageContext(request, agent)
+        if(hasMultiPageContext && !requirements.allowMultiPageContext)
+        {
+            val rejection = P2PRejection()
+            rejection.reason = "Agent does not allow multi-page context but request contains multi-page features"
+            rejection.errorType = P2PError.context
+            return Pair(false, rejection)
+        }
+
+        // Enhanced validation when multi-page budget settings are specified
+        if(requirements.multiPageBudgetSettings != null && hasMultiPageContext)
+        {
+            val pipe = agent as? Pipe
+            if(pipe != null)
+            {
+                try {
+                    val truncationSettings = pipe.getTruncationSettings()
+                    val pipeStrategy = truncationSettings.multiPageBudgetStrategy
+                    val reqStrategy = requirements.multiPageBudgetSettings!!.multiPageBudgetStrategy
+                    
+                    if(pipeStrategy != null && pipeStrategy != reqStrategy)
+                    {
+                        val rejection = P2PRejection()
+                        rejection.reason = "Pipe multi-page strategy ($pipeStrategy) doesn't match requirements ($reqStrategy)"
+                        rejection.errorType = P2PError.configuration
+                        return Pair(false, rejection)
+                    }
+                } catch (e: Exception) {
+                    // If we can't get truncation settings, skip this validation
+                }
+            }
+        }
+
         // Check accepted content types
         if (requirements.acceptedContent != null)
         {
@@ -318,6 +352,37 @@ object P2PRegistry
         }
 
         return Pair(true, null)
+    }
+
+    /**
+     * Detects if a P2P request or agent involves multi-page context features.
+     * Checks both request content and agent configuration for multi-page indicators.
+     *
+     * @param request The P2P request to analyze
+     * @param agent The target agent to check
+     * @return True if multi-page context is detected, false otherwise
+     */
+    private fun detectMultiPageContext(request: P2PRequest, agent: P2PInterface): Boolean
+    {
+        // Check request content for multi-page indicators
+        val hasMultiPageInRequest = request.contextExplanationMessage.contains("pageKey", ignoreCase = true) ||
+                                   request.contextExplanationMessage.contains("MiniBank", ignoreCase = true) ||
+                                   request.contextExplanationMessage.contains("multiPage", ignoreCase = true)
+        
+        // Check agent configuration for multi-page setup using public methods
+        val pipe = agent as? Pipe
+        val agentHasMultiPage = if (pipe != null) {
+            try {
+                val truncationSettings = pipe.getTruncationSettings()
+                truncationSettings.multiPageBudgetStrategy != null || 
+                truncationSettings.pageWeights != null ||
+                truncationSettings.fillMode
+            } catch (e: Exception) {
+                false
+            }
+        } else false
+        
+        return hasMultiPageInRequest || agentHasMultiPage
     }
 
     /**
