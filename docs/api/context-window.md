@@ -99,6 +99,15 @@ Intelligently selects lorebook entries based on text relevance and token budget.
 - Selects entries within token budget using tokenizer configuration parameters
 - Prioritizes higher-weighted and more frequently matched entries
 
+#### `selectAndFillLoreBookContext(text: String, maxTokens: Int, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4): List<String>`
+Selects lorebook entries with an additional fill phase to maximize token usage.
+
+**Behavior:**
+- Reuses the priority selection from `selectLoreBookContext` to gather matching lorebook entries.
+- Computes remaining budget after the priority phase.
+- Iterates through non-matching entries (sorted by weight) and adds them as long as the total token usage stays within `maxTokens` and dependencies are satisfied.
+- Returns an ordered list that can be used to filter `loreBookKeys` before truncating the rest of the context.
+
 #### `selectLoreBookContextWithSettings(settings: TruncationSettings, text: String, maxTokens: Int): List<String>`
 Alternative selection method using TruncationSettings for token counting.
 
@@ -136,6 +145,9 @@ Selects and truncates context with automatic budget allocation.
 - **Conversation + Lorebook**: Conversation first, remainder to lorebook  
 - **All three types**: 1/3 each, with lorebook getting remainder
 - **Returns**: Unit (modifies context in place)
+
+**Additional Parameter:**
+- `fillMode: Boolean = false` — when true, `selectAndTruncateContext` first runs the select-and-fill LoreBook flow (`selectAndFillLoreBookContext`) using the full budget, then splits the remaining tokens between context elements and conversation history.
 
 #### `combineAndTruncateAsString(text: String, totalTokenBudget: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4): String`
 Combines lorebook values with context elements into single string with truncation.

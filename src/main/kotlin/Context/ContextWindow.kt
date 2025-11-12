@@ -240,6 +240,103 @@ data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = 
     }
 
     /**
+     * Selects lorebook entries using priority selection followed by weight-based filling.
+     *
+     * @param text Input text used for matching lorebook keys
+     * @param maxTokens Maximum token budget available for lorebook entries
+     * @param countSubWordsInFirstWord Token counting parameter - count subwords in first word
+     * @param favorWholeWords Token counting parameter - prefer whole words over subwords
+     * @param countOnlyFirstWordFound Token counting parameter - only count first occurrence of each word
+     * @param splitForNonWordChar Token counting parameter - split on non-word characters
+     * @param alwaysSplitIfWholeWordExists Token counting parameter - always split when whole word exists
+     * @param countSubWordsIfSplit Token counting parameter - count subwords after splitting
+     * @param nonWordSplitCount Token counting parameter - token count for non-word characters
+     * @return Ordered list of lorebook keys that fit within the specified budget
+     */
+    fun selectAndFillLoreBookContext(
+        text: String,
+        maxTokens: Int,
+        countSubWordsInFirstWord: Boolean = true,
+        favorWholeWords: Boolean = true,
+        countOnlyFirstWordFound: Boolean = false,
+        splitForNonWordChar: Boolean = true,
+        alwaysSplitIfWholeWordExists: Boolean = false,
+        countSubWordsIfSplit: Boolean = false,
+        nonWordSplitCount: Int = 4
+    ): List<String>
+    {
+        if (maxTokens <= 0) return listOf()
+
+        val priorityKeys = selectLoreBookContext(
+            text,
+            maxTokens,
+            countSubWordsInFirstWord,
+            favorWholeWords,
+            countOnlyFirstWordFound,
+            splitForNonWordChar,
+            alwaysSplitIfWholeWordExists,
+            countSubWordsIfSplit,
+            nonWordSplitCount
+        )
+
+        val selectedKeys = priorityKeys.toMutableList()
+        val selectedSet = selectedKeys.toMutableSet()
+
+        var usedTokens = selectedKeys.sumOf { key ->
+            val loreBook = loreBookKeys[key]
+            if (loreBook == null) return@sumOf 0
+            Dictionary.countTokens(
+                loreBook.value,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount
+            )
+        }
+
+        if (usedTokens >= maxTokens) return selectedKeys
+
+        val fillCandidates = loreBookKeys.keys
+            .filter { it !in selectedSet }
+            .mapNotNull { key -> loreBookKeys[key]?.let { key to it } }
+            .sortedByDescending { (_, loreBook) -> loreBook.weight }
+
+        for ((key, loreBook) in fillCandidates)
+        {
+            val dependencyStatus = checkKeyDependencies(selectedSet)
+            if (dependencyStatus[key] != true) continue
+
+            val tokenCost = Dictionary.countTokens(
+                loreBook.value,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount
+            )
+
+            if (usedTokens + tokenCost <= maxTokens)
+            {
+                selectedKeys.add(key)
+                selectedSet.add(key)
+                usedTokens += tokenCost
+            }
+
+            if (usedTokens >= maxTokens)
+            {
+                break
+            }
+        }
+
+        return selectedKeys
+    }
+    
+    /**
      * Helper function to select a lorebook using settings instead of passing the raw inputs forward.
      */
     fun selectLoreBookContextWithSettings(settings: TruncationSettings, text: String, maxTokens: Int) : List<String>
@@ -433,7 +530,8 @@ data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = 
         text: String,
         totalTokenBudget: Int,
         truncateSettings: com.TTT.Enums.ContextWindowSettings,
-        settings: com.TTT.Pipe.TruncationSettings
+        settings: com.TTT.Pipe.TruncationSettings,
+        fillMode: Boolean = false
     ) {
         selectAndTruncateContext(
             text,
@@ -446,7 +544,8 @@ data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = 
             settings.splitForNonWordChar,
             settings.alwaysSplitIfWholeWordExists,
             settings.countSubWordsIfSplit,
-            settings.nonWordSplitCount
+            settings.nonWordSplitCount,
+            fillMode
         )
     }
 
@@ -477,7 +576,8 @@ data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = 
         splitForNonWordChar: Boolean = true,
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
-        nonWordSplitCount: Int = 4
+        nonWordSplitCount: Int = 4,
+        fillMode: Boolean = false
     ) {
 
         if(totalTokenBudget == 0) return
@@ -488,10 +588,83 @@ data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = 
             multipliedTokenBudget = totalTokenBudget * multiplyWindowSizeBy
         }
 
-        // Determine split strategy based on which components have content
         val hasContextElements = contextElements.isNotEmpty()
         val hasConverseHistory = converseHistory.history.isNotEmpty()
-        
+
+        if(fillMode)
+        {
+            if(multipliedTokenBudget <= 0) return
+
+            val selectedLorebookKeys = selectAndFillLoreBookContext(
+                text,
+                multipliedTokenBudget,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount
+            )
+
+            val lorebookTokensUsed = selectedLorebookKeys.sumOf { key ->
+                val loreBook = loreBookKeys[key]
+                if(loreBook == null) return@sumOf 0
+                Dictionary.countTokens(
+                    loreBook.value,
+                    countSubWordsInFirstWord,
+                    favorWholeWords,
+                    countOnlyFirstWordFound,
+                    splitForNonWordChar,
+                    alwaysSplitIfWholeWordExists,
+                    countSubWordsIfSplit,
+                    nonWordSplitCount
+                )
+            }
+
+            loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
+
+            val remainingBudget = multipliedTokenBudget - lorebookTokensUsed
+            if(remainingBudget <= 0) return
+
+            if(hasContextElements && hasConverseHistory)
+            {
+                val contextBudget = remainingBudget / 2
+                truncateContextElements(
+                    contextBudget, 1, truncateSettings,
+                    countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                )
+
+                val historyBudget = remainingBudget - contextBudget
+                truncateConverseHistory(
+                    historyBudget, 1, truncateSettings,
+                    countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                )
+            }
+
+            else if(hasContextElements)
+            {
+                truncateContextElements(
+                    remainingBudget, 1, truncateSettings,
+                    countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                )
+            }
+
+            else if(hasConverseHistory)
+            {
+                truncateConverseHistory(
+                    remainingBudget, 1, truncateSettings,
+                    countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                )
+            }
+
+            return
+        }
+
         if(!hasContextElements && !hasConverseHistory)
         {
             // Only lorebook - give it full budget
@@ -507,25 +680,25 @@ data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = 
         {
             // Two-way split: lorebook and converseHistory
             val halfBudget = multipliedTokenBudget / 2
-            
+
             truncateConverseHistory(
                 halfBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                 splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
             )
-            
+
             val conversationTokensUsed = countConverseHistoryTokens(
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                 splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
             )
-            
+
             val lorebookBudget = multipliedTokenBudget - conversationTokensUsed
             val selectedLorebookKeys = selectLoreBookContext(
                 text, lorebookBudget,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                 splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
             )
-            
+
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
         }
 
@@ -533,13 +706,13 @@ data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = 
         {
             // Two-way split: lorebook and contextElements
             val halfBudget = multipliedTokenBudget / 2
-            
+
             truncateContextElements(
                 halfBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                 splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
             )
-            
+
             val contextTokensUsed = contextElements.sumOf { element ->
                 Dictionary.countTokens(
                     element, countSubWordsInFirstWord, favorWholeWords,
@@ -547,14 +720,14 @@ data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = 
                     countSubWordsIfSplit, nonWordSplitCount
                 )
             }
-            
+
             val lorebookBudget = multipliedTokenBudget - contextTokensUsed
             val selectedLorebookKeys = selectLoreBookContext(
                 text, lorebookBudget,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                 splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
             )
-            
+
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
         }
 
@@ -562,20 +735,20 @@ data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = 
         {
             // Three-way split: lorebook, contextElements, and converseHistory
             val thirdBudget = multipliedTokenBudget / 3
-            
+
             // Truncate each component to its allocated budget
             truncateContextElements(
                 thirdBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                 splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
             )
-            
+
             truncateConverseHistory(
                 thirdBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                 splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
             )
-            
+
             // Calculate actual tokens used by truncated components
             val contextTokensUsed = contextElements.sumOf { element ->
                 Dictionary.countTokens(
@@ -584,12 +757,12 @@ data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = 
                     countSubWordsIfSplit, nonWordSplitCount
                 )
             }
-            
+
             val conversationTokensUsed = countConverseHistoryTokens(
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                 splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
             )
-            
+
             // Give lorebook remaining budget (third + unused tokens from other components)
             val lorebookBudget = multipliedTokenBudget - contextTokensUsed - conversationTokensUsed
             val selectedLorebookKeys = selectLoreBookContext(
@@ -597,7 +770,7 @@ data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = 
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                 splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
             )
-            
+
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
         }
     }

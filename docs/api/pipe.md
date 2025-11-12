@@ -379,6 +379,11 @@ Enables append-only lorebook updates.
 
 **Behavior:** Sets `appendLoreBook = true`. New information is added to existing lorebook entries rather than replacing them. Can lead to contradictory information but preserves historical data.
 
+#### `enableLoreBookFillMode(): Pipe`
+Enables the select-and-fill strategy for LoreBook selection used during context truncation.
+
+**Behavior:** Sets `loreBookFillMode = true`. When enabled, `selectAndTruncateContext()` first runs `selectAndFillLoreBookContext()` using the full budget, then truncates context elements and conversation history with any remaining tokens, ensuring the lorebook crowding is capped by the requested token allocation.
+
 ---
 
 ### Model Reasoning

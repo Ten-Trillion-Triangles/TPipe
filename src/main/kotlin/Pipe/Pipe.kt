@@ -484,6 +484,12 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     protected var appendLoreBook = false
 
     /**
+     * When true, lorebook selection uses the select-and-fill strategy during context truncation.
+     */
+    @Serializable
+    protected var loreBookFillMode = false
+
+    /**
      * Some models have thinking modes, also known as reasoning. If true TPipe will enable model thinking/reasoning
      * on models where it can be enabled or disabled.
      */
@@ -1786,6 +1792,16 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
     /**
+     * Enables select-and-fill lorebook selection during context truncation.
+     * When active, split budgets are applied after priority lorebook selection has filled with top-weighted entries.
+     */
+    fun enableLoreBookFillMode(): Pipe
+    {
+        loreBookFillMode = true
+        return this
+    }
+
+    /**
      * Sets the page key for context bank operations. Can accept multiple page keys by using the delmiter ", " to
      * pass in many at once.
      * @param key The page key to use for context separation
@@ -2674,7 +2690,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     content.text,
                     workingContextWindowSpace,
                     budget.truncationMethod,
-                    truncationSettings)
+                    truncationSettings,
+                    fillMode = loreBookFillMode)
             }
 
             else
@@ -2882,7 +2899,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 content.text,
                 allocatedBudget,
                 budget.truncationMethod,
-                truncationSettings
+                truncationSettings,
+                fillMode = loreBookFillMode
             )
 
             totalUsedBudget += countContextWindowTokens(contextWindow, truncationSettings)
