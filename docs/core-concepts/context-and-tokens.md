@@ -12,6 +12,25 @@
 
 TPipe provides sophisticated token management to solve the fundamental problem of AI model context limits. These features prevent runtime failures, optimize token usage, and ensure predictable behavior when dealing with large inputs.
 
+## Simple vs Advanced Truncation
+
+**Simple truncation** (`autoTruncateContext()` only):
+```kotlin
+pipe.autoTruncateContext()  // Basic truncation, no multi-page budgeting
+```
+- Uses provider-specific truncation methods
+- Cannot distribute budgets across multiple pages
+- No multi-page budgeting strategies available
+
+**Advanced truncation** (`autoTruncateContext()` + `TokenBudgetSettings`):
+```kotlin
+pipe.setTokenBudget(TokenBudgetSettings())
+    .autoTruncateContext()  // Advanced budgeting with multi-page support
+```
+- Enables multi-page budgeting strategies (DYNAMIC_FILL, EQUAL_SPLIT, etc.)
+- Precise token budget control across system/user/output/reasoning
+- Required for multi-page context optimization
+
 ## Context Window Size - Managing Total Token Capacity
 
 ### The Problem
@@ -48,6 +67,8 @@ val budget = TokenBudgetSettings(
     pageWeights = mapOf("critical" to 2.0, "normal" to 1.0) // Optional page weights
 )
 ```
+
+**Important:** Multi-page budgeting strategies (DYNAMIC_FILL, EQUAL_SPLIT, etc.) **only work with TokenBudgetSettings**. Simple `autoTruncateContext()` without TokenBudgetSettings uses basic truncation and cannot distribute budgets across multiple pages.
 
 **What this does**: 
 - **userPromptSize**: Enforces maximum user input size, throwing errors or truncating when exceeded

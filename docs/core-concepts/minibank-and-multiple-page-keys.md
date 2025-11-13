@@ -217,15 +217,17 @@ val pipe = BedrockPipe()
 
 **How truncation works with MiniBank**:
 - Each context page in MiniBank is truncated separately
-- Token budget is distributed across all pages using configurable strategies
+- Token budget is distributed across all pages using configurable strategies (**requires TokenBudgetSettings**)
 - Each page uses the same truncation settings
 - Pages maintain their separation after truncation
 
-**Multi-page budgeting strategies**:
+**Multi-page budgeting strategies** (only available with `TokenBudgetSettings`):
 - **DYNAMIC_FILL** (default): Redistributes unused tokens from short pages to longer pages
 - **EQUAL_SPLIT**: Divides budget equally across all pages
 - **WEIGHTED_SPLIT**: Allocates budget based on page weights
 - **PRIORITY_FILL**: Fills pages sequentially until budget is exhausted
+
+**Note:** Simple `autoTruncateContext()` without `TokenBudgetSettings` uses basic truncation and cannot optimize across multiple pages.
 
 ### Token Counting with MiniBank
 ```kotlin
