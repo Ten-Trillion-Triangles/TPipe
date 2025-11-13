@@ -43,7 +43,9 @@ val budget = TokenBudgetSettings(
     maxTokens = 20000,                // Output token allocation
     reasoningBudget = 8000,           // Reasoning token allocation
     contextWindowSize = 32000,        // Total token budget
-    allowUserPromptTruncation = true  // Truncation policy
+    allowUserPromptTruncation = true, // Truncation policy
+    multiPageBudgetStrategy = MultiPageBudgetStrategy.DYNAMIC_FILL, // Multi-page allocation strategy
+    pageWeights = mapOf("critical" to 2.0, "normal" to 1.0) // Optional page weights
 )
 ```
 
@@ -51,6 +53,8 @@ val budget = TokenBudgetSettings(
 - **userPromptSize**: Enforces maximum user input size, throwing errors or truncating when exceeded
 - **reasoningBudget**: Reserves tokens for model reasoning, automatically subtracted from maxTokens
 - **allowUserPromptTruncation**: Controls whether oversized inputs are truncated or cause failures
+- **multiPageBudgetStrategy**: Controls how token budget is distributed across multiple context pages
+- **pageWeights**: Optional weights for WEIGHTED_SPLIT strategy (higher = more tokens)
 
 **Token allocation calculation**:
 ```

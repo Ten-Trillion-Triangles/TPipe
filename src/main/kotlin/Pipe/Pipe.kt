@@ -113,7 +113,7 @@ data class TokenBudgetSettings(
     /**
      * Controls how the per-page budgets for MiniBank truncation are allocated.
      */
-    var multiPageBudgetStrategy: MultiPageBudgetStrategy = MultiPageBudgetStrategy.EQUAL_SPLIT,
+    var multiPageBudgetStrategy: MultiPageBudgetStrategy = MultiPageBudgetStrategy.DYNAMIC_FILL,
     /**
      * Optional page weight overrides for the weighted allocation strategy.
      */
@@ -150,7 +150,7 @@ fun TruncationSettings.toTokenBudgetSettings(
         userPromptSize = userPromptSize,
         maxTokens = maxTokens,
         truncationMethod = ContextWindowSettings.TruncateTop,
-        multiPageBudgetStrategy = this.multiPageBudgetStrategy ?: MultiPageBudgetStrategy.EQUAL_SPLIT,
+        multiPageBudgetStrategy = this.multiPageBudgetStrategy ?: MultiPageBudgetStrategy.DYNAMIC_FILL,
         pageWeights = this.pageWeights
     )
 }

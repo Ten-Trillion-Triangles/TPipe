@@ -331,7 +331,7 @@ Sets context bank page key for context isolation.
 **Behavior:** If key contains commas, splits into multiple keys stored in `pageKeyList`. Multiple keys enable pulling context from different domains simultaneously.
 
 #### `enableDynamicFill(): Pipe`
-Enables dynamic budget redistribution for multi-page token budgeting.
+Enables dynamic budget redistribution for multi-page token budgeting. **This is now the default strategy.**
 
 **Behavior:** Uses an iterative redistribution algorithm that:
 1. **Initial Allocation**: Starts with priority fill estimates
@@ -343,6 +343,27 @@ Enables dynamic budget redistribution for multi-page token budgeting.
 - **Eliminates token waste** when some pages cannot fill their allocations
 - **Maximizes context utilization** across all page keys
 - **Adaptive redistribution** based on actual content size
+
+#### `setMultiPageBudgetStrategy(strategy: MultiPageBudgetStrategy): Pipe`
+Sets the multi-page budget allocation strategy for advanced token budgeting.
+
+**Available strategies:**
+- `DYNAMIC_FILL`: Iterative redistribution for optimal token utilization (default)
+- `EQUAL_SPLIT`: Equal budget distribution across all pages
+- `WEIGHTED_SPLIT`: Budget distribution based on page weights
+- `PRIORITY_FILL`: Sequential allocation until pages are full
+
+#### `setPageWeights(weights: Map<String, Double>): Pipe`
+Sets page weight overrides for WEIGHTED_SPLIT strategy.
+
+**Usage:**
+```kotlin
+pipe.setPageWeights(mapOf(
+    "critical" to 2.0,    // Gets 2x normal allocation
+    "normal" to 1.0,      // Gets 1x normal allocation  
+    "background" to 0.5   // Gets 0.5x normal allocation
+))
+```
 
 **Usage Example:**
 ```kotlin
