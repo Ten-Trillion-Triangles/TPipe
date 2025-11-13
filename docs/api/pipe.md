@@ -330,6 +330,34 @@ Sets context bank page key for context isolation.
 
 **Behavior:** If key contains commas, splits into multiple keys stored in `pageKeyList`. Multiple keys enable pulling context from different domains simultaneously.
 
+#### `enableDynamicFill(): Pipe`
+Enables dynamic budget redistribution for multi-page token budgeting.
+
+**Behavior:** Uses an iterative redistribution algorithm that:
+1. **Initial Allocation**: Starts with priority fill estimates
+2. **Usage Simulation**: Predicts actual token usage per page
+3. **Dynamic Redistribution**: Sends unused budget to high-need pages
+4. **Iterative Optimization**: Converges within a few passes
+
+**Benefits:**
+- **Eliminates token waste** when some pages cannot fill their allocations
+- **Maximizes context utilization** across all page keys
+- **Adaptive redistribution** based on actual content size
+
+**Usage Example:**
+```kotlin
+val pipe = BedrockPipe()
+    .setPageKey("critical,normal,background")
+    .enableDynamicFill()
+    .autoTruncateContext()
+```
+
+**Comparison to other strategies:**
+- `EQUAL_SPLIT`: Static equal budget distribution (simple, can waste tokens)
+- `WEIGHTED_SPLIT`: Static weighted distribution (proportionate, no redistribution)
+- `PRIORITY_FILL`: Static priority-based allocation (good, but no reuse)
+- `DYNAMIC_FILL`: Dynamic redistribution (adaptive, maximal utilization)
+
 ---
 
 ### Token Counting

@@ -131,7 +131,8 @@ data class TokenBudgetSettings(
 enum class MultiPageBudgetStrategy {
     EQUAL_SPLIT,
     WEIGHTED_SPLIT,
-    PRIORITY_FILL
+    PRIORITY_FILL,
+    DYNAMIC_FILL
 }
 
 /**
@@ -1492,6 +1493,19 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
     /**
+     * Enables dynamic budget redistribution for optimal token utilization.
+     */
+    fun enableDynamicFill(): Pipe
+    {
+        if(tokenBudgetSettings == null)
+        {
+            tokenBudgetSettings = TokenBudgetSettings()
+        }
+        tokenBudgetSettings!!.multiPageBudgetStrategy = MultiPageBudgetStrategy.DYNAMIC_FILL
+        return this
+    }
+
+    /**
      * Assign the max token budget immediately and auto handle getting the correct token size remaining
      * for the context window size settings. This setter is treated as internal because it's intended to
      * be invoked at the pipe's runtime.
@@ -1619,6 +1633,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 else calculateWeightedSplit(totalBudget, effectiveKeys, weights)
             }
             MultiPageBudgetStrategy.PRIORITY_FILL -> calculatePriorityFill(totalBudget, effectiveKeys, truncationSettings)
+            MultiPageBudgetStrategy.DYNAMIC_FILL -> calculateDynamicFill(totalBudget, effectiveKeys, truncationSettings)
         }
 
         return pageKeys.associateWith { allocations[it] ?: 0 }
@@ -1728,6 +1743,199 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         }
 
         return allocations
+    }
+
+    /**
+     * Calculates dynamic budget allocation with redistribution for optimal token utilization.
+     * Uses multi-pass approach: initial allocation → usage simulation → redistribution.
+     */
+    private fun calculateDynamicFill(
+        totalBudget: Int,
+        pageKeys: List<String>,
+        truncationSettings: TruncationSettings
+    ): Map<String, Int>
+    {
+        if(totalBudget <= 0 || pageKeys.isEmpty())
+        {
+            return pageKeys.associateWith { 0 }
+        }
+
+        val initialAllocations = calculatePriorityFillInternal(totalBudget, pageKeys, truncationSettings)
+        val simulatedUsage = simulateTruncationUsage(initialAllocations, truncationSettings)
+
+        return redistributeBudgetDynamically(initialAllocations, simulatedUsage, totalBudget, truncationSettings)
+    }
+
+    /**
+     * Simulates truncation to predict actual token usage per page.
+     */
+    private fun simulateTruncationUsage(
+        allocations: Map<String, Int>,
+        truncationSettings: TruncationSettings
+    ): Map<String, Int>
+    {
+        val usage = mutableMapOf<String, Int>()
+
+        for((pageKey, allocatedBudget) in allocations)
+        {
+            if(allocatedBudget <= 0)
+            {
+                usage[pageKey] = 0
+                continue
+            }
+
+            val contextWindow = miniContextBank.contextMap[pageKey]
+            if(contextWindow == null || contextWindow.isEmpty())
+            {
+                usage[pageKey] = 0
+                continue
+            }
+
+            val tempWindow = contextWindow.deepCopy()
+            tempWindow.selectAndTruncateContext(
+                "",
+                allocatedBudget,
+                ContextWindowSettings.TruncateTop,
+                truncationSettings
+            )
+
+            usage[pageKey] = countContextWindowTokens(tempWindow, truncationSettings)
+        }
+
+        return usage
+    }
+
+    /**
+     * Redistributes unused budget dynamically to maximize token utilization.
+     */
+    private fun redistributeBudgetDynamically(
+        initialAllocations: Map<String, Int>,
+        simulatedUsage: Map<String, Int>,
+        totalBudget: Int,
+        truncationSettings: TruncationSettings
+    ): Map<String, Int>
+    {
+        val optimizedAllocations = simulatedUsage.toMutableMap()
+        for(pageKey in initialAllocations.keys)
+        {
+            optimizedAllocations.putIfAbsent(pageKey, 0)
+        }
+
+        val totalUsed = simulatedUsage.values.sum()
+        var unusedBudget = totalBudget - totalUsed
+
+        if(unusedBudget <= 0) return optimizedAllocations
+
+        repeat(3)
+        {
+            if(unusedBudget <= 0) return@repeat
+
+            val candidates = findRedistributionCandidates(optimizedAllocations, truncationSettings)
+            if(candidates.isEmpty()) return@repeat
+
+            val redistributed = redistributeToPages(candidates, unusedBudget)
+            if(redistributed.isEmpty()) return@repeat
+
+            for((pageKey, additionalBudget) in redistributed)
+            {
+                optimizedAllocations[pageKey] = (optimizedAllocations[pageKey] ?: 0) + additionalBudget
+                unusedBudget -= additionalBudget
+            }
+        }
+
+        return optimizedAllocations
+    }
+
+    /**
+     * Finds pages that could benefit from additional budget allocation.
+     */
+    private fun findRedistributionCandidates(
+        currentAllocations: Map<String, Int>,
+        truncationSettings: TruncationSettings
+    ): List<Pair<String, Int>>
+    {
+        val candidates = mutableListOf<Pair<String, Int>>()
+
+        for((pageKey, currentBudget) in currentAllocations)
+        {
+            val contextWindow = miniContextBank.contextMap[pageKey] ?: continue
+            if(contextWindow.isEmpty()) continue
+
+            val fullContentTokens = countContextWindowTokens(contextWindow, truncationSettings)
+            val additionalNeed = maxOf(0, fullContentTokens - currentBudget)
+
+            if(additionalNeed > 0)
+            {
+                candidates.add(pageKey to additionalNeed)
+            }
+        }
+
+        return candidates.sortedByDescending { it.second }
+    }
+
+    /**
+     * Redistributes unused budget to candidate pages proportionally.
+     */
+    private fun redistributeToPages(
+        candidates: List<Pair<String, Int>>,
+        unusedBudget: Int
+    ): Map<String, Int>
+    {
+        if(candidates.isEmpty() || unusedBudget <= 0) return emptyMap()
+
+        val totalNeed = candidates.sumOf { it.second }
+        if(totalNeed <= 0) return emptyMap()
+
+        val redistributed = mutableMapOf<String, Int>()
+        var totalAllocated = 0
+
+        for((pageKey, need) in candidates)
+        {
+            if(totalAllocated >= unusedBudget) break
+
+            val allocation = minOf(
+                ((unusedBudget.toDouble() * need) / totalNeed).toInt(),
+                need,
+                unusedBudget - totalAllocated
+            )
+
+            if(allocation > 0)
+            {
+                redistributed[pageKey] = allocation
+                totalAllocated += allocation
+            }
+        }
+
+        var remaining = unusedBudget - totalAllocated
+        var candidateIndex = 0
+        while(remaining > 0 && candidateIndex < candidates.size)
+        {
+            val (pageKey, need) = candidates[candidateIndex]
+            val currentAllocation = redistributed[pageKey] ?: 0
+            if(currentAllocation < need)
+            {
+                redistributed[pageKey] = currentAllocation + 1
+                remaining--
+                totalAllocated++
+                continue
+            }
+
+            candidateIndex++
+        }
+
+        return redistributed
+    }
+
+    /**
+     * Internal priority fill calculation for reuse in dynamic fill.
+     */
+    private fun calculatePriorityFillInternal(
+        totalBudget: Int,
+        pageKeys: List<String>,
+        truncationSettings: TruncationSettings
+    ): Map<String, Int>
+    {
+        return calculatePriorityFill(totalBudget, pageKeys, truncationSettings)
     }
 
     /**
