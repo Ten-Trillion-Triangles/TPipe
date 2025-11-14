@@ -2000,10 +2000,19 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
     /**
      * Enable automatic context and lorebook selection, and truncation when this pipe executes.
+     * @param fillMode If true, enables select-and-fill lorebook selection during context truncation. When active,
+     * split budgets are applied after priority lorebook selection has filled with top-weighted entries.
+     * @return This Pipe object for method chaining
      */
-    fun autoTruncateContext() : Pipe
+    fun autoTruncateContext(fillMode: Boolean = false) : Pipe
     {
         autoTruncateContext = true
+
+        if(fillMode)
+        {
+            enableLoreBookFillMode()
+        }
+
         return this
     }
 

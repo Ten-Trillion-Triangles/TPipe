@@ -17,6 +17,7 @@ TPipe provides sophisticated token management to solve the fundamental problem o
 **Simple truncation** (`autoTruncateContext()` only):
 ```kotlin
 pipe.autoTruncateContext()  // Basic truncation, no multi-page budgeting
+pipe.autoTruncateContext(fillMode = true)  // Basic truncation with select-and-fill mode
 ```
 - Uses provider-specific truncation methods
 - Cannot distribute budgets across multiple pages
@@ -26,6 +27,10 @@ pipe.autoTruncateContext()  // Basic truncation, no multi-page budgeting
 ```kotlin
 pipe.setTokenBudget(TokenBudgetSettings())
     .autoTruncateContext()  // Advanced budgeting with multi-page support
+    
+// Or with fill mode for prioritized lorebook selection
+pipe.setTokenBudget(TokenBudgetSettings())
+    .autoTruncateContext(fillMode = true)
 ```
 - Enables multi-page budgeting strategies (DYNAMIC_FILL, EQUAL_SPLIT, etc.)
 - Precise token budget control across system/user/output/reasoning

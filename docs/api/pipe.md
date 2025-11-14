@@ -320,10 +320,13 @@ Automatically injects context into user prompt.
 
 **Behavior:** Context is injected as text into the user prompt during execution. The instruction parameter explains how to interpret the context.
 
-#### `autoTruncateContext(): Pipe`
-Enables automatic context truncation.
+#### `autoTruncateContext(fillMode: Boolean = false): Pipe`
+Enables automatic context truncation with optional fill mode selection.
 
-**Behavior:** Context is automatically truncated during execution based on `contextWindowSize` and `contextWindowTruncation` settings. Essential for preventing token overflow.
+**Parameters:**
+- `fillMode`: If true, enables select-and-fill lorebook selection during context truncation. When active, split budgets are applied after priority lorebook selection has filled with top-weighted entries.
+
+**Behavior:** Context is automatically truncated during execution based on `contextWindowSize` and `contextWindowTruncation` settings. Essential for preventing token overflow. When `fillMode` is true, lorebook entries are prioritized and filled first before remaining budget is split between other context components.
 
 #### `setPageKey(key: String): Pipe`
 Sets context bank page key for context isolation.
