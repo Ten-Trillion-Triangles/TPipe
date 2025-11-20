@@ -121,6 +121,13 @@ class Pipeline : P2PInterface {
      */
     private var internalConverseHistory = ConverseHistory()
 
+    /**
+     * Optional delegate callback that allows the pipeline to notify anyone listening to the bound function
+     * that a given pipe has been completed. Passes the reference to the pipe, and the content object it generated
+     * forward.
+     */
+    private var pipeCompletionCallback: (suspend(Pipe, MultimodalContent) -> Unit)? = null
+
 //============================================== P2PInterface ==========================================================
 
 //---------------------------------------------- Interface Properties --------------------------------------------------
@@ -446,6 +453,18 @@ class Pipeline : P2PInterface {
     }
 
     /**
+     * Binds a delegate function that will be called everytime a pipe in the pipeline has completed. Passes the reference
+     * to the pipe, and the content object it produced forward.
+     * @param func The delegate function object to bind to this pipeline.
+     * @return This Pipeline object for method chaining
+     */
+    fun setPipeCompletionCallback(func: (suspend (Pipe, MultimodalContent) -> Unit)) : Pipeline
+    {
+        pipeCompletionCallback = func
+        return this
+    }
+
+    /**
      * Initialize the pipeline and pass its reference to each pipe. Can also call the init function for each pipe.
      * if desired.
      *
@@ -688,6 +707,13 @@ class Pipeline : P2PInterface {
 
                 break
             }
+
+            /**
+             * Attempt to invoke the callback if it was bound. This allows external systems to listen to when pipes
+             * complete. This is useful for logging, showing ui updates to users as the process moves about,
+             * and other frontend facing tasks.
+             */
+            pipeCompletionCallback?.invoke(pipe, generatedContent)
             
             currentPipeIndex++
         }
