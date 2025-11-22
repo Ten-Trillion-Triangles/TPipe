@@ -1527,6 +1527,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          */
         var workingTokenWindowSize : Int = budget.contextWindowSize ?: contextWindowSize
 
+        //Override the set context window size if the budget did assign this value.
+        if(budget.contextWindowSize != null) contextWindowSize = budget.contextWindowSize!!
+
         //First subtract the system prompt from our token budget.
         val systemPromptTokens = Dictionary.countTokens(systemPrompt, truncationSettings)
         workingTokenWindowSize -= systemPromptTokens
@@ -1571,7 +1574,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          * @see ConverseHistory
          *
          * If you decide to opt for compression instead, the user prompt will just be compressed not making any
-         * saftey checks for json. So that is very much user beware and up to the user to ensure saftey on that
+         * safety checks for json. So that is very much user beware and up to the user to ensure safety on that
          * front.
          */
         if(budget.userPromptSize != null && budget.userPromptSize!! > workingTokenWindowSize)
@@ -2992,7 +2995,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             //Estimate tokens spent excluding our user prompt.
             val estimatedTokensSpent = calculateTokensSpent(content) - userPromptTokenCost
             val estimatedUserPromptAllowance = originalContextWindowSize - estimatedTokensSpent
-            budget.userPromptSize = estimatedTokensSpent
+            budget.userPromptSize = estimatedUserPromptAllowance
         }
 
         /**
