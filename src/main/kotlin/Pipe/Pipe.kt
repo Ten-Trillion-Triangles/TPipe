@@ -1535,7 +1535,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
         //Subtract against max tokens next assuring that the system prompt, and output expectations won't overflow us.
         var maxTokensFromSettings = budget.maxTokens ?: maxTokens
-        workingTokenWindowSize -= maxTokens
+        workingTokenWindowSize -= maxTokensFromSettings
         if(workingTokenWindowSize <= 0) throw Exception("Max tokens has overflowed the token budget.")
 
         /**
