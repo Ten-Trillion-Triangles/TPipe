@@ -510,6 +510,31 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     protected var autoTruncateContext = false
 
     /**
+     * Empty user prompts can confuse the llm's and cause unexpected and undefined behavior. This behavior is
+     * not seen as a failure, or even able to be seen as a failure by the system, and if allowed through will
+     * likely cause catastrophic behavior derailment, and total pipeline failures that won't come into play until
+     * after the content, or the agentic action has been fully performed. For obvious reasons, this could be extremely
+     * destructive, and entirely unexpected to happen.
+     *
+     * There are several reasons a content object and user prompt can vanish. Many of which can result in budget
+     * configurations, token truncation, or other actions taken. These can happen after standard checks are made
+     * allowing these failures to slip through. So by defaulting this to false we can at least detect and kill the pipeline
+     * and throw an error that can be caught in testing.
+     *
+     * Enabling this will demand the developer is explicitly intending this to be possible, and assures that they are
+     * promising that it, in fact, is ok and won't break the system.
+     */
+    @Serializable
+    protected var allowEmptyUserPrompt = false
+
+    /**
+     * This is an even higher escalation than [allowEmptyUserPrompt]. This allows the entire content object to be blank
+     * and not shut down the pipeline and throw an error.
+     */
+    @Serializable
+    protected var allowEmptyContentObject = false
+
+    /**
      * If true, the merge calls for context window merging will use the emplacement method for updating the lorebook
      * automatically.
      * @see contextWindow
@@ -1413,6 +1438,33 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setContextWindowSettings(windowSettings: ContextWindowSettings): Pipe
     {
         this.contextWindowTruncation = windowSettings
+        return this
+    }
+
+    /**
+     * When enabled, empty user prompts will no longer crash a pipeline. By default, we treat empty prompts, as an
+     * error because in 99% of cases, having an empty user prompt, and empty input in the content object is likely to
+     * confuse the llm and cause subtle but highly destructive bugs in a pipeline that can induce catastrophic damage
+     * down the line. This is basically almost never desirable. So this function acts as a promise that the developer
+     * is assuring that they have handled this, designed the pipe to accept this state, and that it will not invoke
+     * destructive behavior if it happens.
+     */
+    fun allowEmptyUserPrompt() : Pipe
+    {
+        allowEmptyUserPrompt = true
+        return this
+    }
+
+    /**
+     * If true, the programmer is disabling the second level saftey system that shuts down pipelines when a content
+     * object is completely empty. This means no user prompt, no text input prompt. No binary content, and no context
+     * data of any kind is present in the [MultimodalContent] object. This is often just a footgun 99.99% of the time
+     * so we also block this behavior by default. Enabling this is a contractural promise that this issue is safe,
+     * has been handled, and won't wreck total destruction on whatever the pipeline is interacting with.
+     */
+    fun allowEmptyContentObject() : Pipe
+    {
+        allowEmptyContentObject = true
         return this
     }
 
@@ -3233,6 +3285,36 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * Internal multimodal execution logic shared by both execute methods
      */
     private suspend fun executeMultimodal(inputContent: MultimodalContent): MultimodalContent = coroutineScope{
+
+        /**
+         * Footgun. This case needs to be handled, and we need to shut down the pipeline by default when we have
+         * an empty user prompt or empty content object. Typically, this is just a footgun that will go undetected,
+         * and then cause catastrophic damage as the llm gets confused by the empty prompt.
+         *
+         * @see [allowEmptyUserPrompt] [allowEmptyContentObject]
+         */
+        if(inputContent.isEmpty() || userPrompt.isEmpty())
+        {
+            if(userPrompt.isEmpty() && !allowEmptyUserPrompt)
+            {
+                inputContent.terminate()
+                trace(TraceEventType.PIPE_FAILURE, TracePhase.INITIALIZATION,
+                    error = Exception("Empty user prompt, or content object was passed into this pipe."))
+
+                throw Exception("Empty user prompt, or content object was passed into this pipe.")
+            }
+
+            if(inputContent.isEmpty() && !allowEmptyContentObject)
+            {
+                inputContent.terminate()
+                trace(TraceEventType.PIPE_FAILURE, TracePhase.INITIALIZATION,
+                    error = Exception("Empty user prompt, or content object was passed into this pipe."))
+
+                throw Exception("Empty user prompt, or content object was passed into this pipe.")
+            }
+
+            //Both cases were explicitly bypassed by the developer, so we'll proceed despite the empty content object.
+        }
 
         /**
          * Declare local function to adress the multiple times we need to call this internal wrapping.
