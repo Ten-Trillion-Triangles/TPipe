@@ -3295,7 +3295,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          */
         if(inputContent.isEmpty() || userPrompt.isEmpty())
         {
-            if(userPrompt.isEmpty() && !allowEmptyUserPrompt)
+            if(userPrompt.isEmpty() && inputContent.text.isEmpty() && !allowEmptyUserPrompt)
             {
                 inputContent.terminate()
                 trace(TraceEventType.PIPE_FAILURE, TracePhase.INITIALIZATION,
