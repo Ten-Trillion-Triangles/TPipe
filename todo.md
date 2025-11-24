@@ -32,6 +32,8 @@ state, settings, internal pipelines etc. and update and adjust them and their ow
 - Add native pcp support functions to allow various runtime support. Examples include querying TPipe memory data at
 runtime, Interacting with TPipe systems and settings, inspecting and registering pcp and p2p systems. This is a great
 compliment to supporting model reflection in TPipe.
+- Add async container class that produces a result pointer and immediate response that can be then checked on,
+- and automatically propagated to interrupt a manifold class and interject its result.
 
 **Down the road:**
 - Create entry and exit points for graalvm native for future non jvm language wrappers.

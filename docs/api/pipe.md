@@ -119,6 +119,16 @@ Enables automatic conversation history wrapping for pipeline chaining.
 
 **Behavior:** When enabled, the pipe automatically detects if input content is in `ConverseHistory` format and continues building the conversation. The pipe's output is wrapped with the specified role and added to the conversation history. Essential for multi-turn conversations and agent-based systems. All pipes in a conversation chain should have this enabled.
 
+#### `allowEmptyUserPrompt(): Pipe`
+Disables safety guardrail that prevents empty user prompts.
+
+**Behavior:** By default, TPipe blocks empty user prompts as they cause destructive bugs in 99% of cases. This method acts as a contractual promise that you've designed the pipe to handle empty prompts safely and won't cause catastrophic pipeline damage.
+
+#### `allowEmptyContentObject(): Pipe`
+Disables safety guardrail that prevents completely empty content objects.
+
+**Behavior:** By default, TPipe blocks content objects with no user prompt, text input, binary content, or context data as they're footguns 99.99% of the time. This method is a contractual promise that this edge case is safe and has been properly handled.
+
 ---
 
 ### Prompt Management
