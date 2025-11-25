@@ -1,6 +1,6 @@
-# TPipe - Advanced AI Pipeline Framework
+# TPipe - The Agent Operating Environment
 
-TPipe is a sophisticated Kotlin framework for building complex AI processing pipelines with advanced context management, human-in-the-loop capabilities, and multi-provider AI model support.
+TPipe is an Agent Operating Environment designed for engineering robust, deterministic AI systems that can be embedded anywhere. Built on Kotlin and GraalVM, it provides strict resource accounting, secure sandboxing, and structured reasoning for production-grade multi-agent swarms.
 
 ## Documentation
 
