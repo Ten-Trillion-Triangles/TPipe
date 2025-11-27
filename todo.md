@@ -2,6 +2,7 @@
 - ~~Fix tracing verbosity issue in the manifold class.~~
 - Ensure sub pipes token counts track upwards to the parent pipe. And the parent pipe, tracks upwards yet again to
 the pipeline itself.
+- Fix reasoningBudget subtraction in `Pipe.setTokenBudgetInternal` so it adjusts the prompt segment (system or user) where reasoning is injected rather than always shrinking `maxTokens`; preserve `ReasoningInjector`/metadata awareness so multi-round reasoning consumes the correct bucket.
 
 **Enhancements:**
 - ~~Add creator functions to help simplify creating converseHistory adds.~~

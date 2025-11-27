@@ -3317,7 +3317,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         }
 
         /**
-         * Declare local function to adress the multiple times we need to call this internal wrapping.
+         * Declare local function to address the multiple times we need to call this internal wrapping.
          * This is intended to be an internal mechanism of pipe execution so we want to leverage Kotlin's ability
          * to have true local functions.
          */
@@ -3411,7 +3411,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     //Pull multiple pages of global context from the bank if more than one key was provided.
                     if(pageKeyList.isNotEmpty())
                     {
-                        //Populate the mini bank for multi page key setup.
+                        //Populate the mini bank for multi-page key setup.
                         for(page in pageKeyList)
                         {
                             val pagedContext = ContextBank.getContextFromBank(page)
