@@ -4075,7 +4075,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          */
         if(tracingEnabled)
         {
-            reasoningPipe?.enableTracing()
+            reasoningPipe?.enableTracing(traceConfig)
             reasoningPipe?.currentPipelineId = currentPipelineId
         }
 

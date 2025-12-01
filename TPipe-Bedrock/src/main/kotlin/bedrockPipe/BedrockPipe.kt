@@ -387,9 +387,21 @@ open class BedrockPipe : Pipe() {
      * @see setStreamingCallback for handling individual tokens
      * @see executeInvokeStream for streaming implementation
      */
-    fun enableStreaming(): BedrockPipe {
+    fun enableStreaming(callback: (suspend (String) -> Unit)? = null, showReasoning: Boolean = false): BedrockPipe {
         // Enable streaming mode without callback assignment
         this.streamingEnabled = true
+
+        if (callback != null) {
+            this.streamingCallback = callback
+        }
+
+        //Attempt to propagate each reasoning pipe recursively.
+        if(showReasoning)
+        {
+            val abstractPipe = reasoningPipe as? BedrockPipe
+            abstractPipe?.enableStreaming(callback)
+        }
+
         return this
     }
 

@@ -130,7 +130,7 @@ object ReasoningBuilder
          */
         when (settings.reasoningMethod)
         {
-            ReasoningMethod.StructuredCot ->{
+            ReasoningMethod.StructuredCot -> {
                 targetSystemPrompt = chainOfThoughtSystemPrompt(
                     selectDepth(settings.depth),
                     selectDuration(settings.duration),
