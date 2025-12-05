@@ -10,6 +10,7 @@ the pipeline itself.
 - ~~Add link table to trace file system.~~
 - ~~Better flesh out the manifold builder.~~
 - ~~Add support for binding callbacks when each pipe in a pipeline clears.~~
+- Add aws tier support to bedrock pipe to allow for other tiers that now exist on bedrock.
 
 **New features:**
 - ~~Add DistributionGrid class that enables "swarm" style agents with TPipe pipelines.~~

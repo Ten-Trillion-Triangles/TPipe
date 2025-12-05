@@ -40,6 +40,7 @@ nonWordSplitCount
   return this
   }
 - When statements should be formatted like this:
+```
   when(command) {
   "help" -> printHelp() //Prints a list of commands.
   "set-engine" -> setEngine()  //Set the engine configuration. Required to be done in setup for all other commands
@@ -76,6 +77,7 @@ nonWordSplitCount
   "list-run" -> listRun() //Print all saved launch string configurations.
   else -> error = true
   }
+  ```
 
 - These rules should be followed provided the code will compile. Some functions keywords, and other kotlin features
 require the { to be to the right of the symbol and in those cases it must be maintained to ensure the code compiles

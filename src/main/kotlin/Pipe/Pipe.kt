@@ -743,7 +743,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * @see contextWindow
      * @see com.TTT.Context.LoreBook
      */
-    protected var multiplyWindowSizeBy: Int = 1000
+    protected var multiplyWindowSizeBy: Int = 0
     protected var countSubWordsInFirstWord: Boolean = true
     protected var favorWholeWords: Boolean = true
     protected var countOnlyFirstWordFound: Boolean = false
@@ -1507,6 +1507,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     {
         truncateModuleContext() //Call to ensure our settings is bound.
         tokenBudgetSettings = budget
+        setTokenBudgetInternal(budget)
         return this
     }
 

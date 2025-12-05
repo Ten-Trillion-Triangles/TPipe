@@ -399,7 +399,7 @@ open class BedrockPipe : Pipe() {
         if(showReasoning)
         {
             val abstractPipe = reasoningPipe as? BedrockPipe
-            abstractPipe?.enableStreaming(callback)
+            abstractPipe?.enableStreaming(callback, true)
         }
 
         return this
@@ -932,8 +932,6 @@ open class BedrockPipe : Pipe() {
         when
         {
             modelId.contains("anthropic.claude") -> {
-                contextWindowSize = 200
-                multiplyWindowSizeBy = 1000
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -944,8 +942,6 @@ open class BedrockPipe : Pipe() {
                 nonWordSplitCount = 2
             }
             modelId.contains("amazon.nova-micro") -> {
-                contextWindowSize = 128
-                multiplyWindowSizeBy = 1000
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -956,8 +952,6 @@ open class BedrockPipe : Pipe() {
                 nonWordSplitCount = 2
             }
             modelId.contains("amazon.nova-lite") || modelId.contains("amazon.nova-pro") -> {
-                contextWindowSize = 300
-                multiplyWindowSizeBy = 1000
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -968,8 +962,6 @@ open class BedrockPipe : Pipe() {
                 nonWordSplitCount = 2
             }
             modelId.contains("amazon.nova-premier") -> {
-                contextWindowSize = 1000
-                multiplyWindowSizeBy = 1000
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -980,8 +972,6 @@ open class BedrockPipe : Pipe() {
                 nonWordSplitCount = 2
             }
             modelId.contains("meta.llama") -> {
-                contextWindowSize = 8
-                multiplyWindowSizeBy = 1024
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -992,8 +982,6 @@ open class BedrockPipe : Pipe() {
                 nonWordSplitCount = 2
             }
             modelId.contains("ai21.jamba") -> {
-                contextWindowSize = 256
-                multiplyWindowSizeBy = 1000
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1004,12 +992,6 @@ open class BedrockPipe : Pipe() {
                 nonWordSplitCount = 2
             }
                 modelId.contains("qwen") -> {
-                contextWindowSize = if (modelId.contains("-0.6b-") || modelId.contains("-1.7b-") || modelId.contains("-4b-")) {
-                    32  // 32K for small models
-                } else {
-                    128 // 128K for large models and MoE
-                }
-                multiplyWindowSizeBy = 1000
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1020,7 +1002,8 @@ open class BedrockPipe : Pipe() {
                 nonWordSplitCount = 2
             }
             modelId.contains("deepseek") -> {
-                multiplyWindowSizeBy = 1000
+                contextWindowSize = 126000
+                multiplyWindowSizeBy = 0
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1031,8 +1014,8 @@ open class BedrockPipe : Pipe() {
                 nonWordSplitCount = 2
             }
             modelId.contains("writer.palmyra-x4") -> {
-                contextWindowSize = 128
-                multiplyWindowSizeBy = 1024
+                contextWindowSize = 128000
+                multiplyWindowSizeBy = 0
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1043,8 +1026,6 @@ open class BedrockPipe : Pipe() {
                 nonWordSplitCount = 2
             }
             modelId.contains("writer.palmyra-x5") -> {
-                contextWindowSize = 990
-                multiplyWindowSizeBy = 1000
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1055,8 +1036,8 @@ open class BedrockPipe : Pipe() {
                 nonWordSplitCount = 2
             }
             modelId.contains("openai.gpt-oss") -> {
-                contextWindowSize = 128
-                multiplyWindowSizeBy = 1000
+                contextWindowSize = 126000
+                multiplyWindowSizeBy = 0
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
