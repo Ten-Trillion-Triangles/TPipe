@@ -12,6 +12,8 @@ import aws.sdk.kotlin.services.bedrockruntime.model.InferenceConfiguration
 import aws.sdk.kotlin.services.bedrockruntime.model.ConversationRole
 import aws.sdk.kotlin.services.bedrockruntime.model.ResponseStream
 import aws.sdk.kotlin.services.bedrockruntime.model.GuardrailStreamConfiguration
+import aws.sdk.kotlin.services.bedrockruntime.model.ServiceTierType
+import aws.sdk.kotlin.services.bedrockruntime.model.ServiceTier
 import aws.smithy.kotlin.runtime.http.engine.okhttp.OkHttpEngine
 import aws.smithy.kotlin.runtime.content.Document
 import com.TTT.Debug.*
@@ -23,6 +25,19 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.json.*
 import kotlinx.serialization.json.contentOrNull
 import kotlin.time.Duration.Companion.seconds
+
+/**
+ * Defines priority settings to allow the user to control cost optimizations.
+ * @see "https://docs.aws.amazon.com/bedrock/latest/userguide/service-tiers-inference.html"
+ */
+enum class BedrockPriorityTier
+{
+    Reserved,
+    Priority,
+    Standard,
+    Flex
+}
+
 
 /**
  * AWS Bedrock provider implementation for TPipe framework.
@@ -215,6 +230,21 @@ open class BedrockPipe : Pipe() {
     private var cacheControl: String? = null
     
     /**
+     * Service tier for optimizing performance and cost.
+     * 
+     * Controls the priority and cost optimization for model inference:
+     * - Reserved: Prioritized compute capacity with 99.5% uptime target
+     * - Priority: Fastest response times for premium pricing
+     * - Standard: Consistent performance for everyday AI tasks (default)
+     * - Flex: Cost-effective processing with longer processing times
+     * 
+     * @see setServiceTier for configuring the service tier
+     * @see BedrockPriorityTier for available tier options
+     */
+    @kotlinx.serialization.Serializable
+    private var serviceTier: BedrockPriorityTier = BedrockPriorityTier.Standard
+    
+    /**
      * Sets the AWS region for Bedrock API calls.
      * 
      * Configures which AWS region will be used for all Bedrock operations.
@@ -367,6 +397,43 @@ open class BedrockPipe : Pipe() {
         this.enableCaching = true
         this.cacheControl = control
         return this
+    }
+
+    /**
+     * Sets the service tier for optimizing performance and cost.
+     * 
+     * Configures the priority level for model inference requests:
+     * - Reserved: Prioritized compute with 99.5% uptime (requires AWS account team access)
+     * - Priority: Fastest response times at premium pricing
+     * - Standard: Consistent performance for everyday tasks (default)
+     * - Flex: Cost-effective processing with longer processing times
+     * 
+     * Service tier affects request prioritization, response times, and pricing.
+     * On-demand quota is shared across Priority, Standard, and Flex tiers.
+     * 
+     * @param tier The service tier to use for inference requests
+     * @return This pipe instance for method chaining
+     * @see BedrockPriorityTier for available tier options
+     */
+    fun setServiceTier(tier: BedrockPriorityTier): BedrockPipe
+    {
+        this.serviceTier = tier
+        return this
+    }
+
+    /**
+     * Maps BedrockPriorityTier enum to AWS SDK ServiceTierType.
+     * Protected to allow subclasses like BedrockMultimodalPipe to access it.
+     */
+    protected fun mapServiceTier(): ServiceTierType
+    {
+        return when (serviceTier)
+        {
+            BedrockPriorityTier.Reserved -> ServiceTierType.Reserved
+            BedrockPriorityTier.Priority -> ServiceTierType.Priority
+            BedrockPriorityTier.Standard -> ServiceTierType.Default
+            BedrockPriorityTier.Flex -> ServiceTierType.Flex
+        }
     }
 
     /**
@@ -702,6 +769,7 @@ open class BedrockPipe : Pipe() {
                 this.modelId = modelId
                 body = requestJson.toByteArray()
                 contentType = "application/json"
+                serviceTier = mapServiceTier()
             }
 
             // Get the raw JSON response from Bedrock
@@ -871,6 +939,7 @@ open class BedrockPipe : Pipe() {
                 this.modelId = modelId
                 body = requestJson.toByteArray()
                 contentType = "application/json"
+                serviceTier = mapServiceTier()
             }
 
             val response = client.invokeModel(invokeRequest)
@@ -1437,6 +1506,8 @@ put("system", if (enableCaching && cacheControl != null) {
                     // If reflection fails we silently fall back to the JSON payload.
                 }
             }
+            
+            serviceTier = ServiceTier { type = mapServiceTier() }
         }
     }
 
@@ -1536,6 +1607,8 @@ put("system", if (enableCaching && cacheControl != null) {
                 if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
+            
+            serviceTier = ServiceTier { type = mapServiceTier() }
         }
     }
 
@@ -1922,6 +1995,8 @@ put("system", if (enableCaching && cacheControl != null) {
                 if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
+            
+            serviceTier = ServiceTier { type = mapServiceTier() }
         }
     }
 
@@ -1978,6 +2053,8 @@ put("system", if (enableCaching && cacheControl != null) {
                     // Fallback: skip additional fields if reflection fails
                 }
             }
+            
+            serviceTier = ServiceTier { type = mapServiceTier() }
         }
     }
 
@@ -2034,6 +2111,8 @@ put("system", if (enableCaching && cacheControl != null) {
                     // Fallback: skip additional fields if reflection fails
                 }
             }
+            
+            serviceTier = ServiceTier { type = mapServiceTier() }
         }
     }
 
@@ -2085,6 +2164,8 @@ put("system", if (enableCaching && cacheControl != null) {
             } catch (e: Exception) {
                 // Fallback: skip additional fields if reflection fails
             }
+            
+            serviceTier = ServiceTier { type = mapServiceTier() }
         }
     }
 
@@ -2135,6 +2216,8 @@ put("system", if (enableCaching && cacheControl != null) {
             } catch (e: Exception) {
                 // Fallback: skip additional fields if reflection fails
             }
+            
+            serviceTier = ServiceTier { type = mapServiceTier() }
         }
     }
 
@@ -2190,6 +2273,8 @@ put("system", if (enableCaching && cacheControl != null) {
                     // Fallback: skip additional fields if reflection fails
                 }
             }
+            
+            serviceTier = ServiceTier { type = mapServiceTier() }
         }
     }
 
@@ -2244,6 +2329,8 @@ put("system", if (enableCaching && cacheControl != null) {
             } catch (e: Exception) {
                 // Fallback: skip additional fields if reflection fails
             }
+            
+            serviceTier = ServiceTier { type = mapServiceTier() }
         }
     }
 
@@ -2282,6 +2369,8 @@ put("system", if (enableCaching && cacheControl != null) {
                 if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
+            
+            serviceTier = ServiceTier { type = mapServiceTier() }
         }
     }
 
@@ -2358,6 +2447,8 @@ put("system", if (enableCaching && cacheControl != null) {
                     // Fallback: skip additional fields if reflection fails
                 }
             }
+            
+            serviceTier = ServiceTier { type = mapServiceTier() }
         }
     }
 

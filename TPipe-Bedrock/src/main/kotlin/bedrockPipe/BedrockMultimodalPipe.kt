@@ -380,6 +380,7 @@ open class BedrockMultimodalPipe : BedrockPipe() {
             this.modelId = modelId
             body = requestJson.toByteArray()
             contentType = "application/json"
+            serviceTier = mapServiceTier()
         }
 
         // Execute the API call and get raw JSON response

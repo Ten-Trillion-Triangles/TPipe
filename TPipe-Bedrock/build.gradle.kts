@@ -28,8 +28,8 @@ dependencies {
     implementation(project(":"))
     
     // AWS SDK for Bedrock
-    implementation("aws.sdk.kotlin:bedrockruntime:1.5.14")
-    implementation("aws.sdk.kotlin:aws-core:1.5.14")
+    implementation("aws.sdk.kotlin:bedrockruntime:1.5.97")
+    implementation("aws.sdk.kotlin:aws-core:1.5.97")
     implementation("aws.smithy.kotlin:http-client-engine-okhttp:1.5.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
