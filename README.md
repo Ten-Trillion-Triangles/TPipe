@@ -134,6 +134,7 @@ println(result.text)
 - **Multi-provider AI support** (AWS Bedrock, Ollama, extensible architecture)
 - **Comprehensive debugging** with detailed tracing and monitoring
 - **Cross-region inference** with automatic profile binding for AWS Bedrock
+- **Service tier optimization** for AWS Bedrock (Reserved, Priority, Standard, Flex)
 
 ## Requirements
 

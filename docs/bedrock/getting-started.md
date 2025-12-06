@@ -211,6 +211,74 @@ val pipe = BedrockPipe()
 
 ## Advanced Features
 
+### Service Tier Configuration
+
+AWS Bedrock offers four service tiers to optimize performance and cost: Reserved, Priority, Standard, and Flex. TPipe-Bedrock provides full support for service tier selection.
+
+#### Service Tier Options
+
+```kotlin
+import bedrockPipe.BedrockPriorityTier
+
+// Standard tier (default) - Consistent performance for everyday tasks
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setServiceTier(BedrockPriorityTier.Standard)
+
+// Priority tier - Fastest response times for mission-critical applications
+val priorityPipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setServiceTier(BedrockPriorityTier.Priority)
+
+// Flex tier - Cost-effective processing for workloads with flexible timing
+val flexPipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setServiceTier(BedrockPriorityTier.Flex)
+
+// Reserved tier - Prioritized compute with 99.5% uptime (requires AWS account team access)
+val reservedPipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setServiceTier(BedrockPriorityTier.Reserved)
+```
+
+#### When to Use Each Tier
+
+**Standard (Default)**
+- Everyday AI tasks
+- Content generation
+- Text analysis
+- Routine document processing
+
+**Priority**
+- Customer-facing chatbots
+- Real-time language translation
+- Mission-critical applications
+- Time-sensitive workflows
+
+**Flex**
+- Model evaluations
+- Content summarization
+- Agentic workflows
+- Batch processing tasks
+
+**Reserved**
+- 24/7 mission-critical applications
+- Applications that cannot tolerate downtime
+- Predictable workloads requiring guaranteed capacity
+- Requires contacting AWS account team for access
+
+#### Service Tier Notes
+
+- On-demand quota is shared across Priority, Standard, and Flex tiers
+- Reserved tier capacity is separate from on-demand quota
+- Service tier configuration is visible in API responses and CloudTrail events
+- CloudWatch metrics available under ModelId, ServiceTier, and ResolvedServiceTier
+- Not all models support all service tiers - check AWS documentation for availability
+
 ### JSON Schema Support
 ```kotlin
 data class TechnicalAnalysis(
