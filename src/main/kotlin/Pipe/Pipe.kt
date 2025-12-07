@@ -3542,6 +3542,15 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             baseContent.currentPipe = inputContent.currentPipe
 
             /**
+             * Merge userPrompt into baseContent before truncation to ensure accurate token budget calculations
+             * and proper lorebook key selection using the complete prompt.
+             */
+            if(userPrompt.isNotEmpty())
+            {
+                baseContent.text = "${userPrompt}\n\n${baseContent.text}"
+            }
+
+            /**
              * If enabled, use the model's truncation settings to automatically truncate the context and lorebook to fit
              * the correct token budget. Lorebook key selection is typically done using the user prompt.
              * However, each provider module may use different methods for handling automatic truncation.
@@ -3570,7 +3579,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             }
             
             // Build full prompt with correct ordering: userPrompt -> user content -> context
-            var fullPrompt = if(userPrompt.isNotEmpty()) {"${userPrompt}\n\n${baseContent.text}"} else{baseContent.text}
+            // Note: userPrompt already merged into baseContent before truncation
+            var fullPrompt = baseContent.text
             
             /**
              * Context can be auto-injected after user content to maintain proper ordering
