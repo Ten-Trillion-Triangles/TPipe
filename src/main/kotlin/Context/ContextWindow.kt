@@ -8,7 +8,8 @@ import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 
 @kotlinx.serialization.Serializable
-data class ContextWindow(@kotlinx.serialization.Transient val cinit : Boolean = false)
+data class ContextWindow(
+    @kotlinx.serialization.Transient val cinit : Boolean = false)
 {
 
     /**

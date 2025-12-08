@@ -14,6 +14,7 @@ import kotlinx.serialization.serializer
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import kotlin.reflect.KClass
+import kotlin.reflect.KMutableProperty1
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.memberProperties
 import kotlin.reflect.full.primaryConstructor
@@ -521,7 +522,20 @@ fun deepCopyInternal(obj: Any?, kClass: KClass<*>): Any?
                 deepCopyInternal(value, param.type.classifier as? KClass<*> ?: Any::class)
             }
             
-            constructor.callBy(args)
+            val newInstance = constructor.callBy(args)
+            
+            // Copy body properties (mutable properties not in constructor)
+            val constructorParamNames = constructor.parameters.map { it.name }.toSet()
+            kClass.memberProperties
+                .filterIsInstance<KMutableProperty1<Any, Any?>>()
+                .filter { it.name !in constructorParamNames }
+                .forEach { property ->
+                    val value = property.get(obj)
+                    val copiedValue = deepCopyInternal(value, property.returnType.classifier as? KClass<*> ?: Any::class)
+                    property.set(newInstance, copiedValue)
+                }
+            
+            newInstance
         }
         
         // Return as-is for other types

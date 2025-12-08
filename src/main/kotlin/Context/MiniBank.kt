@@ -27,4 +27,9 @@ data class MiniBank(var contextMap: MutableMap<String, ContextWindow> = mutableM
     {
         return contextMap.isEmpty()
     }
+
+    fun clear()
+    {
+        contextMap.clear()
+    }
 }

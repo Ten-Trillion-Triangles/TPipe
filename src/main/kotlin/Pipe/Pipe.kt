@@ -3288,6 +3288,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     private suspend fun executeMultimodal(inputContent: MultimodalContent): MultimodalContent = coroutineScope{
 
         /**
+         * These now need to be mutually exclusive due to the destructive interaction they can have with each other
+         * after enabling token budgeting. In practice, this should be fine since token budgeting does everything
+         * standard auto-truncation does and more. So there would never be a case where the user would want both.
+         */
+        if(tokenBudgetSettings != null) autoTruncateContext = false
+
+        /**
          * Footgun. This case needs to be handled, and we need to shut down the pipeline by default when we have
          * an empty user prompt or empty content object. Typically, this is just a footgun that will go undetected,
          * and then cause catastrophic damage as the llm gets confused by the empty prompt.
@@ -3528,7 +3535,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
             /**
              * Merge input content, or supplied externally set content into all of our data that has come into this
-             * pipe thus far. This is the final step before truncation, and
+             * pipe thus far. This is the final step before truncation, and then execution.
              */
             var baseContent = if (multimodalInput.text.isNotEmpty() || multimodalInput.binaryContent.isNotEmpty()) {
                 val merged = MultimodalContent(multimodalInput.text, multimodalInput.binaryContent.toMutableList(), multimodalInput.terminatePipeline)
@@ -3565,22 +3572,53 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         "contextWindowTruncation" to contextWindowTruncation.name
                     ))
 
-                //Use advanced token budgeting to fit constraints if available.
-                if(tokenBudgetSettings != null)
-                {
-                   baseContent = truncateToFitTokenBudget(baseContent)
-                }
-
-                else
-                {
-                    truncateModuleContext() //Default to basic context truncation instead.
-                }
-
+                truncateModuleContext() //Default to basic context truncation instead.
             }
             
             // Build full prompt with correct ordering: userPrompt -> user content -> context
             // Note: userPrompt already merged into baseContent before truncation
             var fullPrompt = baseContent.text
+
+            /**
+             * NOTE: due to the need to deploy a major bug fix to redress our main issue, this is now decoupled from
+             * [autoInjectContext] As such, it is now mutually exclusive and if this enabled, we will be disabling
+             * autoTruncateContext outright at the start of the execution step.
+             */
+            if(tokenBudgetSettings != null)
+            {
+                //todo: edge case
+                /**
+                 * Possible edge case with memory usage if binary data is in the converse history of a context object
+                 * or in the mini-bank. While this is a very unlikely edge case, standards are very high here, so we
+                 * need to at least make a note of this in the event this becomes obviously visible in performance
+                 * testing.
+                 */
+
+                //Get the correct context data and bring it forward into our base content object.
+                if(miniContextBank.isEmpty())
+                {
+                    /**
+                     * We need to do a deep copy so we can clear out the data here and meet expectations for the code ahead.
+                     */
+                    baseContent.context = contextWindow.deepCopy()
+                }
+
+                else
+                {
+                    baseContent.miniBankContext = miniContextBank.deepCopy()
+                }
+
+                /**
+                 * Now, we can clear the footgun of how this function behaves. Ensuring we truncate and account for everything as expected.
+                 */
+                baseContent = truncateToFitTokenBudget(baseContent)
+                contextWindow = baseContent.context.deepCopy()
+                miniContextBank = baseContent.miniBankContext.deepCopy()
+
+                //Clear both to free up the duplicated memory and ensure our forward merge works correctly after this fix.
+                baseContent.context.clear()
+                baseContent.miniBankContext.clear()
+            }
             
             /**
              * Context can be auto-injected after user content to maintain proper ordering
@@ -3689,7 +3727,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             }
 
             /**
-             * Call generateContent() to invoke the loaded AI api with multimodal support.
+             * Call [generateContent] to invoke the loaded AI api with multimodal support.
              */
             trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION, processedContent)
             val result : Deferred<MultimodalContent> = async {
