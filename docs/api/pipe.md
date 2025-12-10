@@ -305,6 +305,8 @@ Sets advanced token budgeting configuration.
 
 **Behavior:** Enables sophisticated token management with separate budgets for user prompt, system prompt, reasoning, and output. Automatically truncates content to fit within specified limits. Overrides simple `contextWindowSize` when set.
 
+**Tip:** Set `preserveTextMatches = true` inside `TokenBudgetSettings` (or call `enableTextMatchingPreservation()`) to keep context elements and conversation history entries that match the user prompt before the rest of the truncation budget is applied.
+
 #### `pullGlobalContext(): Pipe`
 Enables pulling context from global context bank.
 
@@ -337,6 +339,16 @@ Enables automatic context truncation with optional fill mode selection.
 - `fillMode`: If true, enables select-and-fill lorebook selection during context truncation. When active, split budgets are applied after priority lorebook selection has filled with top-weighted entries.
 
 **Behavior:** Context is automatically truncated during execution based on `contextWindowSize` and `contextWindowTruncation` settings. Essential for preventing token overflow. When `fillMode` is true, lorebook entries are prioritized and filled first before remaining budget is split between other context components.
+
+#### `enableTextMatchingPreservation(): Pipe`
+Ensures context elements and conversation history entries containing words from the latest prompt survive truncation before other content is considered.
+
+**Behavior:** Sets `TokenBudgetSettings.preserveTextMatches = true`. When budgets are tight, text-matching entries get reserved tokens before the remaining content is truncated.
+
+#### `disableTextMatchingPreservation(): Pipe`
+Reverts to standard truncation ordering so every context element and conversation entry competes equally for budget.
+
+**Behavior:** Sets `TokenBudgetSettings.preserveTextMatches = false`.
 
 #### `setPageKey(key: String): Pipe`
 Sets context bank page key for context isolation.

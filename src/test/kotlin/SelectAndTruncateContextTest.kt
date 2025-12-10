@@ -2,7 +2,9 @@ package com.TTT
 
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.Dictionary
+import com.TTT.Enums.ContextWindowSettings
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class SelectAndTruncateContextTest {
@@ -51,5 +53,21 @@ class SelectAndTruncateContextTest {
             Dictionary.countTokens(it) 
         }
         assertTrue(lorebookTokens + contextTokens <= 20)
+    }
+
+    @Test
+    fun preserveMatchingContextElements() {
+        val contextWindow = ContextWindow()
+        contextWindow.contextElements.addAll(listOf("alpha", "beta", "dragon"))
+
+        contextWindow.truncateContextElements(
+            maxTokens = 1,
+            multiplyWindowSizeBy = 0,
+            truncateSettings = ContextWindowSettings.TruncateBottom,
+            inputText = "dragon",
+            preserveTextMatches = true
+        )
+
+        assertEquals(listOf("dragon"), contextWindow.contextElements)
     }
 }

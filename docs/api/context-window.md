@@ -143,12 +143,13 @@ Merges another ContextWindow into this one with configurable strategies.
 
 ### Truncation
 
-#### `truncateContextElements(maxTokens: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4)`
+#### `truncateContextElements(maxTokens: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, inputText: String = "", preserveTextMatches: Boolean = false)`
 Truncates context elements to fit token budget.
 
 **Behavior:** Uses Dictionary truncation with specified method (TruncateTop, TruncateBottom, TruncateMiddle) and tokenizer configuration parameters.
+- When `preserveTextMatches = true`, context elements matching words from `inputText` are kept before the default truncation ordering is applied.
 
-#### `selectAndTruncateContext(text: String, totalTokenBudget: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4)`
+#### `selectAndTruncateContext(text: String, totalTokenBudget: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, fillMode: Boolean = false, preserveTextMatches: Boolean = false)`
 Selects and truncates context with automatic budget allocation.
 
 **Behavior:** Intelligent budget allocation based on available content types:
@@ -158,8 +159,9 @@ Selects and truncates context with automatic budget allocation.
 - **All three types**: 1/3 each, with lorebook getting remainder
 - **Returns**: Unit (modifies context in place)
 
-**Additional Parameter:**
+**Additional Parameters:**
 - `fillMode: Boolean = false` — when true, `selectAndTruncateContext` first runs the select-and-fill LoreBook flow (`selectAndFillLoreBookContext`) using the full budget, then splits the remaining tokens between context elements and conversation history.
+- `preserveTextMatches: Boolean = false` — when true, context elements and conversation history that include words from `text` are preserved before applying the usual truncation ordering.
 
 #### `combineAndTruncateAsString(text: String, totalTokenBudget: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4): String`
 Combines lorebook values with context elements into single string with truncation.
@@ -182,10 +184,11 @@ Selects lorebook context relevant to conversation history.
 
 **Behavior:** Extracts text from conversation history, finds matching lorebook entries using tokenizer parameters, returns list of selected lorebook keys.
 
-#### `truncateConverseHistory(maxTokens: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4)`
+#### `truncateConverseHistory(maxTokens: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, inputText: String = "", preserveTextMatches: Boolean = false)`
 Truncates conversation history to fit token budget.
 
 **Behavior:** Extracts conversation text, truncates using Dictionary methods with tokenizer parameters, reconstructs conversation with truncated content.
+- When `preserveTextMatches = true`, history items containing words from `inputText` are kept before the default truncation ordering runs.
 
 #### `truncateConverseHistoryWithObject(tokenBudget: Int, multiplyBy: Int, truncateMethod: ContextWindowSettings, truncationSettings: TruncationSettings)`
 Truncates conversation using settings object for token counting parameters.

@@ -69,7 +69,8 @@ val budget = TokenBudgetSettings(
     contextWindowSize = 32000,        // Total token budget
     allowUserPromptTruncation = true, // Truncation policy
     multiPageBudgetStrategy = MultiPageBudgetStrategy.DYNAMIC_FILL, // Multi-page allocation strategy
-    pageWeights = mapOf("critical" to 2.0, "normal" to 1.0) // Optional page weights
+    pageWeights = mapOf("critical" to 2.0, "normal" to 1.0), // Optional page weights
+    preserveTextMatches = true // Keep prompt-matching context/history when truncating
 )
 ```
 
@@ -81,6 +82,7 @@ val budget = TokenBudgetSettings(
 - **allowUserPromptTruncation**: Controls whether oversized inputs are truncated or cause failures
 - **multiPageBudgetStrategy**: Controls how token budget is distributed across multiple context pages
 - **pageWeights**: Optional weights for WEIGHTED_SPLIT strategy (higher = more tokens)
+- **preserveTextMatches**: When true, context elements and conversation history entries containing words from the latest prompt are preserved before the usual truncation ordering runs.
 
 **Token allocation calculation**:
 ```

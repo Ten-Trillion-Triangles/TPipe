@@ -6,6 +6,7 @@ import com.TTT.Util.combine
 import com.TTT.Util.deepCopy
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
+import java.util.ArrayDeque
 
 @kotlinx.serialization.Serializable
 data class ContextWindow(
@@ -523,21 +524,102 @@ data class ContextWindow(
         splitForNonWordChar: Boolean = true,
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
-        nonWordSplitCount: Int = 4
+        nonWordSplitCount: Int = 4,
+        inputText: String = "",
+        preserveTextMatches: Boolean = false
     ) {
         if (maxTokens <= 0) return
-        
+
+        if (preserveTextMatches && inputText.isNotBlank()) {
+            val inputWords = inputText.lowercase()
+                .split(Regex("\\W+"))
+                .filter { it.isNotBlank() }
+
+            if (inputWords.isNotEmpty() && contextElements.isNotEmpty()) {
+                val (textMatching, regular) = contextElements.partition { element ->
+                    val lowerElement = element.lowercase()
+                    inputWords.any { word -> lowerElement.contains(word) }
+                }
+
+                val matchingTokens = textMatching.sumOf { element ->
+                    Dictionary.countTokens(
+                        element,
+                        countSubWordsInFirstWord,
+                        favorWholeWords,
+                        countOnlyFirstWordFound,
+                        splitForNonWordChar,
+                        alwaysSplitIfWholeWordExists,
+                        countSubWordsIfSplit,
+                        nonWordSplitCount
+                    )
+                }
+
+                val preservedMatching = if (matchingTokens <= maxTokens) {
+                    textMatching
+                } else {
+                    Dictionary.truncate(
+                        textMatching,
+                        maxTokens,
+                        multiplyWindowSizeBy,
+                        truncateSettings,
+                        countSubWordsInFirstWord,
+                        favorWholeWords,
+                        countOnlyFirstWordFound,
+                        splitForNonWordChar,
+                        alwaysSplitIfWholeWordExists,
+                        countSubWordsIfSplit,
+                        nonWordSplitCount
+                    )
+                }
+
+                val usedTokens = preservedMatching.sumOf { element ->
+                    Dictionary.countTokens(
+                        element,
+                        countSubWordsInFirstWord,
+                        favorWholeWords,
+                        countOnlyFirstWordFound,
+                        splitForNonWordChar,
+                        alwaysSplitIfWholeWordExists,
+                        countSubWordsIfSplit,
+                        nonWordSplitCount
+                    )
+                }
+
+                val remainingBudget = maxTokens - usedTokens
+                val preservedRegular = if (remainingBudget > 0 && regular.isNotEmpty()) {
+                    Dictionary.truncate(
+                        regular,
+                        remainingBudget,
+                        multiplyWindowSizeBy,
+                        truncateSettings,
+                        countSubWordsInFirstWord,
+                        favorWholeWords,
+                        countOnlyFirstWordFound,
+                        splitForNonWordChar,
+                        alwaysSplitIfWholeWordExists,
+                        countSubWordsIfSplit,
+                        nonWordSplitCount
+                    )
+                } else {
+                    emptyList()
+                }
+
+                contextElements = (preservedMatching + preservedRegular).toMutableList()
+                return
+            }
+        }
+
         contextElements = Dictionary.truncate(
-            contextElements, 
+            contextElements,
             maxTokens,
             multiplyWindowSizeBy = multiplyWindowSizeBy,
             truncateSettings,
-            countSubWordsInFirstWord, 
-            favorWholeWords, 
+            countSubWordsInFirstWord,
+            favorWholeWords,
             countOnlyFirstWordFound,
-            splitForNonWordChar, 
-            alwaysSplitIfWholeWordExists, 
-            countSubWordsIfSplit, 
+            splitForNonWordChar,
+            alwaysSplitIfWholeWordExists,
+            countSubWordsIfSplit,
             nonWordSplitCount
         ).toMutableList()
     }
@@ -555,7 +637,8 @@ data class ContextWindow(
         totalTokenBudget: Int,
         truncateSettings: com.TTT.Enums.ContextWindowSettings,
         settings: com.TTT.Pipe.TruncationSettings,
-        fillMode: Boolean = false
+        fillMode: Boolean = false,
+        preserveTextMatches: Boolean = false
     ) {
         selectAndTruncateContext(
             text,
@@ -569,7 +652,8 @@ data class ContextWindow(
             settings.alwaysSplitIfWholeWordExists,
             settings.countSubWordsIfSplit,
             settings.nonWordSplitCount,
-            fillMode
+            fillMode,
+            preserveTextMatches
         )
     }
 
@@ -601,7 +685,8 @@ data class ContextWindow(
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
         nonWordSplitCount: Int = 4,
-        fillMode: Boolean = false
+        fillMode: Boolean = false,
+        preserveTextMatches: Boolean = false
     ) {
 
         if(totalTokenBudget == 0) return
@@ -657,14 +742,18 @@ data class ContextWindow(
                 truncateContextElements(
                     contextBudget, 1, truncateSettings,
                     countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                    inputText = text,
+                    preserveTextMatches = preserveTextMatches
                 )
 
                 val historyBudget = remainingBudget - contextBudget
                 truncateConverseHistory(
                     historyBudget, 1, truncateSettings,
                     countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                    inputText = text,
+                    preserveTextMatches = preserveTextMatches
                 )
             }
 
@@ -673,7 +762,9 @@ data class ContextWindow(
                 truncateContextElements(
                     remainingBudget, 1, truncateSettings,
                     countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                    inputText = text,
+                    preserveTextMatches = preserveTextMatches
                 )
             }
 
@@ -682,7 +773,9 @@ data class ContextWindow(
                 truncateConverseHistory(
                     remainingBudget, 1, truncateSettings,
                     countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                    inputText = text,
+                    preserveTextMatches = preserveTextMatches
                 )
             }
 
@@ -708,7 +801,9 @@ data class ContextWindow(
             truncateConverseHistory(
                 halfBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                inputText = text,
+                preserveTextMatches = preserveTextMatches
             )
 
             val conversationTokensUsed = countConverseHistoryTokens(
@@ -734,7 +829,9 @@ data class ContextWindow(
             truncateContextElements(
                 halfBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                inputText = text,
+                preserveTextMatches = preserveTextMatches
             )
 
             val contextTokensUsed = contextElements.sumOf { element ->
@@ -764,13 +861,17 @@ data class ContextWindow(
             truncateContextElements(
                 thirdBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                inputText = text,
+                preserveTextMatches = preserveTextMatches
             )
 
             truncateConverseHistory(
                 thirdBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                inputText = text,
+                preserveTextMatches = preserveTextMatches
             )
 
             // Calculate actual tokens used by truncated components
@@ -943,6 +1044,26 @@ data class ContextWindow(
         }
     }
 
+    private fun filterConverseEntriesByText(
+        entries: List<ConverseData>,
+        targetTexts: List<String>
+    ): List<ConverseData> {
+        if (entries.isEmpty() || targetTexts.isEmpty()) return emptyList()
+
+        val entryQueues = entries.groupBy { it.content.text }
+            .mapValues { (_, value) -> ArrayDeque(value) }
+
+        val preservedEntries = mutableListOf<ConverseData>()
+        for (text in targetTexts) {
+            val queue = entryQueues[text]
+            if (!queue.isNullOrEmpty()) {
+                preservedEntries.add(queue.removeFirst())
+            }
+        }
+
+        return preservedEntries
+    }
+
     /**
      * Selects lorebook context entries based on converseHistory content and token budget.
      * Uses conversation text to find matching lorebook keys.
@@ -1004,11 +1125,100 @@ data class ContextWindow(
         splitForNonWordChar: Boolean = true,
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
-        nonWordSplitCount: Int = 4
+        nonWordSplitCount: Int = 4,
+        inputText: String = "",
+        preserveTextMatches: Boolean = false
     )
     {
         if (maxTokens <= 0) return
-        
+
+        if (preserveTextMatches && inputText.isNotBlank()) {
+            val inputWords = inputText.lowercase()
+                .split(Regex("\\W+"))
+                .filter { it.isNotBlank() }
+
+            if (inputWords.isNotEmpty() && converseHistory.history.isNotEmpty()) {
+                val textMatchingEntries = converseHistory.history.filter { converseData ->
+                    val lowerContent = converseData.content.text.lowercase()
+                    inputWords.any { word -> lowerContent.contains(word) }
+                }
+
+                val regularEntries = converseHistory.history.filter { it !in textMatchingEntries }
+
+                val matchingTokens = textMatchingEntries.sumOf { converseData ->
+                    Dictionary.countTokens(
+                        converseData.content.text,
+                        countSubWordsInFirstWord,
+                        favorWholeWords,
+                        countOnlyFirstWordFound,
+                        splitForNonWordChar,
+                        alwaysSplitIfWholeWordExists,
+                        countSubWordsIfSplit,
+                        nonWordSplitCount
+                    )
+                }
+
+                val matchingTexts = textMatchingEntries.map { it.content.text }
+                val preservedMatchingTexts = if (matchingTokens <= maxTokens) {
+                    matchingTexts
+                } else {
+                    Dictionary.truncate(
+                        matchingTexts,
+                        maxTokens,
+                        multiplyWindowSizeBy,
+                        truncateSettings,
+                        countSubWordsInFirstWord,
+                        favorWholeWords,
+                        countOnlyFirstWordFound,
+                        splitForNonWordChar,
+                        alwaysSplitIfWholeWordExists,
+                        countSubWordsIfSplit,
+                        nonWordSplitCount
+                    )
+                }
+
+                val usedTokens = preservedMatchingTexts.sumOf { text ->
+                    Dictionary.countTokens(
+                        text,
+                        countSubWordsInFirstWord,
+                        favorWholeWords,
+                        countOnlyFirstWordFound,
+                        splitForNonWordChar,
+                        alwaysSplitIfWholeWordExists,
+                        countSubWordsIfSplit,
+                        nonWordSplitCount
+                    )
+                }
+
+                val remainingBudget = maxTokens - usedTokens
+                val regularTexts = regularEntries.map { it.content.text }
+                val preservedRegularTexts = if (remainingBudget > 0 && regularEntries.isNotEmpty()) {
+                    Dictionary.truncate(
+                        regularTexts,
+                        remainingBudget,
+                        multiplyWindowSizeBy,
+                        truncateSettings,
+                        countSubWordsInFirstWord,
+                        favorWholeWords,
+                        countOnlyFirstWordFound,
+                        splitForNonWordChar,
+                        alwaysSplitIfWholeWordExists,
+                        countSubWordsIfSplit,
+                        nonWordSplitCount
+                    )
+                } else {
+                    emptyList()
+                }
+
+                val preservedMatchingEntries = filterConverseEntriesByText(textMatchingEntries, preservedMatchingTexts)
+                val preservedRegularEntries = filterConverseEntriesByText(regularEntries, preservedRegularTexts)
+
+                converseHistory.history.clear()
+                converseHistory.history.addAll(preservedMatchingEntries + preservedRegularEntries)
+                return
+            }
+        }
+
         val conversationTexts = converseHistory.history.map { it.content.text }
         val truncatedTexts = Dictionary.truncate(
             conversationTexts,
@@ -1023,7 +1233,7 @@ data class ContextWindow(
             countSubWordsIfSplit,
             nonWordSplitCount
         )
-        
+
         // Filter conversation history to keep only entries with text that survived truncation
         converseHistory.history.retainAll { converseData ->
             truncatedTexts.contains(converseData.content.text)

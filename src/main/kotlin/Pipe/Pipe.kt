@@ -109,6 +109,7 @@ data class TokenBudgetSettings(
     var preserveJsonInUserPrompt: Boolean = true,
     var compressUserPrompt: Boolean = false,
     var truncateContextWindowAsString: Boolean = false,
+    var preserveTextMatches: Boolean = false, // Prioritize prompt-matching context/history entries
     var truncationMethod: ContextWindowSettings = ContextWindowSettings.TruncateTop,
     /**
      * Controls how the per-page budgets for MiniBank truncation are allocated.
@@ -1542,6 +1543,29 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             tokenBudgetSettings = TokenBudgetSettings()
         }
         tokenBudgetSettings!!.pageWeights = weights.toMap()
+        return this
+    }
+
+    /**
+     * Enables text-matching preservation for context elements and conversation history during truncation.
+     * When enabled, items containing words from the user prompt are kept before the remaining content is truncated.
+     */
+    fun enableTextMatchingPreservation(): Pipe
+    {
+        if(tokenBudgetSettings == null)
+        {
+            tokenBudgetSettings = TokenBudgetSettings()
+        }
+        tokenBudgetSettings!!.preserveTextMatches = true
+        return this
+    }
+
+    /**
+     * Disables text-matching preservation so truncation reverts to standard ordering.
+     */
+    fun disableTextMatchingPreservation(): Pipe
+    {
+        tokenBudgetSettings?.preserveTextMatches = false
         return this
     }
 
@@ -3010,7 +3034,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     workingContextWindowSpace,
                     budget.truncationMethod,
                     truncationSettings,
-                    fillMode = loreBookFillMode)
+                    fillMode = loreBookFillMode,
+                    preserveTextMatches = budget.preserveTextMatches
+                )
             }
 
             else
@@ -3219,7 +3245,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 allocatedBudget,
                 budget.truncationMethod,
                 truncationSettings,
-                fillMode = loreBookFillMode
+                fillMode = loreBookFillMode,
+                preserveTextMatches = budget.preserveTextMatches
             )
 
             totalUsedBudget += countContextWindowTokens(contextWindow, truncationSettings)
