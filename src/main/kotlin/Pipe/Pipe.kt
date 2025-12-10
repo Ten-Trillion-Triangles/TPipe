@@ -3472,8 +3472,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              */
             else if(readFromPipelineContext)
             {
-                contextWindow = pipelineRef?.context ?: ContextWindow()
-                miniContextBank = pipelineRef?.miniBank ?: miniContextBank
+                contextWindow = pipelineRef?.context?.deepCopy() ?: ContextWindow()
+                miniContextBank = pipelineRef?.miniBank?.deepCopy() ?: miniContextBank
             }
 
             /**

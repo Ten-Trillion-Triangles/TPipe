@@ -409,7 +409,23 @@ val gamePipeline = Pipeline()
 
 ## Best Practices
 
-### 1. Clear Context Updates
+### 1. Setting Pipeline Context
+```kotlin
+val pipeline = Pipeline()
+
+// Set context window
+val contextWindow = ContextWindow()
+contextWindow.addLoreBookEntry("gameState", "Current game status", 10)
+pipeline.setContextWindow(contextWindow)
+
+// Set mini bank for multi-page context
+val miniBank = MiniBank()
+miniBank.contextMap["worldState"] = ContextWindow()
+miniBank.contextMap["playerData"] = ContextWindow()
+pipeline.setMiniBank(miniBank)
+```
+
+### 2. Clear Context Updates
 ```kotlin
 // Good: Descriptive context entries
 .setTransformationFunction { content ->

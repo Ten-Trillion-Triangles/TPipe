@@ -84,6 +84,27 @@ Enables global context sharing with the ContextBank system.
 
 **Behavior:** Sets `updateGlobalContext = true` and optionally specifies a page key for context isolation. When enabled, the pipeline's context is shared globally and can be accessed by other pipelines and pipes.
 
+#### `setContextWindow(contextWindow: ContextWindow): Pipeline`
+Sets the pipeline's context window with safe deep copying.
+
+```kotlin
+val pipeline = Pipeline()
+val contextWindow = ContextWindow()
+contextWindow.addLoreBookEntry("character", "Main protagonist details", 10)
+pipeline.setContextWindow(contextWindow)
+```
+
+#### `setMiniBank(miniBank: MiniBank): Pipeline`
+Sets the pipeline's mini bank with safe deep copying.
+
+```kotlin
+val pipeline = Pipeline()
+val miniBank = MiniBank()
+miniBank.contextMap["worldState"] = ContextWindow()
+miniBank.contextMap["playerData"] = ContextWindow()
+pipeline.setMiniBank(miniBank)
+```
+
 ---
 
 ### Pipe Management

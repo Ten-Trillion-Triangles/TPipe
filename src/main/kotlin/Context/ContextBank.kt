@@ -225,9 +225,7 @@ object ContextBank
 
         if(copy)
         {
-            val json = serialize(context)
-            val copyContext = deserialize<ContextWindow>(json)
-            return copyContext ?: ContextWindow()
+            return context.deepCopy()
         }
 
         return context

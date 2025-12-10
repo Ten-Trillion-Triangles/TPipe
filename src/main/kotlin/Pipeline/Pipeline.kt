@@ -15,6 +15,7 @@ import com.TTT.P2P.P2PTransport
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.copyPipeline
+import com.TTT.Util.deepCopy
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -356,6 +357,29 @@ class Pipeline : P2PInterface {
     {
         updateGlobalContext = true
         pageKey = page
+        return this
+    }
+
+    /**
+     * Safely assign a context window to a pipeline. This performs a deep copy to prevent destruction of the original
+     * value and unexpected memory management bugs.
+     * @param window The context window to be assigned to the pipeline.
+     */
+    fun setContextWindow(window: ContextWindow) : Pipeline
+    {
+        context = window.deepCopy()
+        return this
+    }
+
+    /**
+     * Safely assign a mini-bank to this pipeline without the possibility of pipeline and internal pipe logic destroying
+     * the original mini-bank. This performs a deep copy to prevent destruction of the original value and unexpected
+     * memory management bugs.
+     * @param bank The mini-bank to be assigned to the pipeline.
+     */
+    fun setMiniBank(bank: MiniBank) : Pipeline
+    {
+        miniBank = bank.deepCopy()
         return this
     }
 

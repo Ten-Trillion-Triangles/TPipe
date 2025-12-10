@@ -10,7 +10,10 @@ the pipeline itself.
 - ~~Add link table to trace file system.~~
 - ~~Better flesh out the manifold builder.~~
 - ~~Add support for binding callbacks when each pipe in a pipeline clears.~~
-- Add aws tier support to bedrock pipe to allow for other tiers that now exist on bedrock.
+- ~~Add aws tier support to bedrock pipe to allow for other tiers that now exist on bedrock.~~
+- Add support for keyword matching similar to the lorebook for context elements, and converse history stored in
+a context window object. This would allow them to be hit on selection at higher truncation priority than the rest
+allowing for expanded semantic reach.
 
 **New features:**
 - ~~Add DistributionGrid class that enables "swarm" style agents with TPipe pipelines.~~

@@ -55,7 +55,17 @@ Pipelines pass `MultimodalContent` between pipes:
 ### Context Sharing
 ```kotlin
 val pipeline = Pipeline()
-pipeline.context  // Shared context window across all pipes
+
+// Set pipeline context
+val contextWindow = ContextWindow()
+contextWindow.addLoreBookEntry("setting", "Fantasy world details", 8)
+pipeline.setContextWindow(contextWindow)
+
+// Set multi-page context
+val miniBank = MiniBank()
+miniBank.contextMap["worldState"] = ContextWindow()
+miniBank.contextMap["characters"] = ContextWindow()
+pipeline.setMiniBank(miniBank)
 ```
 
 All pipes in a pipeline can access and modify shared context, enabling:
