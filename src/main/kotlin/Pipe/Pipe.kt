@@ -1508,6 +1508,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     {
         truncateModuleContext() //Call to ensure our settings is bound.
         tokenBudgetSettings = budget
+        setContextWindowSize(budget.contextWindowSize ?: contextWindowSize)
         setTokenBudgetInternal(budget)
         return this
     }
@@ -3206,6 +3207,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             }
         }
 
+        contextWindowSize = originalContextWindowSize //Reset to prevent breakage of model contracts
         return content
     }
 
@@ -4123,6 +4125,25 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             newHistory.add(systemConverseData)
             newHistory.add(converseData)
 
+            /**
+             * Re-apply the system prompt of the reasoning pipe at the very bottom of the user prompt. This helps
+             * to reinforce under very large context situations. Million token model can forget the context and rules
+             * of their own system when overwhelemed by massive and complex context. So adding it a second time should
+             * help boost output quality.
+             */
+            if(reasoningPipe?.pipeMetadata["reinforceSystemPrompt"] is Boolean)
+            {
+                val reinforceSystemPrompt = reasoningPipe?.pipeMetadata["reinforceSystemPrompt"] as Boolean
+
+                if(reinforceSystemPrompt)
+                {
+                    val reasoningPipeSystemPrompt = reasoningPipe?.systemPrompt ?: ""
+                    newHistory.add(ConverseData(ConverseRole.system, MultimodalContent(reasoningPipeSystemPrompt)))
+                }
+            }
+
+
+
             //Force back to the string so we can push this into our copied content object.
             val historyAsJson = serialize(newHistory, encodedefault = false)
             contentCopy.text = historyAsJson
@@ -4134,12 +4155,22 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          */
         else
         {
-            val combinedPrompt = """##DEVELOPER PROMPT##
+            var combinedPrompt = """##DEVELOPER PROMPT##
                 |$rawSystemPrompt ${getMiddlePromptForReasoning()} ${getFooterPromptForReasoning()}
                 |
                 |##USER PROMPT##
                 |${content.text}
             """.trimMargin()
+
+            //Apply the system prompt of the reasoning pipe to the user prompt to reinforce it's output in long context.
+            if(reasoningPipe?.pipeMetadata["reinforceSystemPrompt"] is Boolean)
+            {
+                val reinforceSystemPrompt = reasoningPipe?.pipeMetadata["reinforceSystemPrompt"] as Boolean
+                if(reinforceSystemPrompt)
+                {
+                    combinedPrompt = "$combinedPrompt\n\n##SYSTEM PROMPT##\n${reasoningPipe?.systemPrompt}"
+                }
+            }
 
             contentCopy.text = combinedPrompt
         }
