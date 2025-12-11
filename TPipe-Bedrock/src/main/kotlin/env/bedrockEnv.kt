@@ -150,6 +150,8 @@ object bedrockEnv
             // Writer models
             "writer.palmyra-x4-v1:0",
             "writer.palmyra-x5-v1:0",
+            "moonshot.kimi-k2-thinking",
+            "moonshot.kimi-k2-thinking:0",
             // Inference profile models (us.* prefixed access)
             "us.amazon.nova-lite-v1:0",
             "us.amazon.nova-2-lite-v1:0",

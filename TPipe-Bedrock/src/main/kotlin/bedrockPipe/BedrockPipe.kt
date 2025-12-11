@@ -726,6 +726,8 @@ open class BedrockPipe : Pipe() {
 
                 // Amazon Nova models use Converse-style format with inferenceConfig
                 requestedModelId.contains("amazon.nova") -> buildNovaRequest(fullPrompt)
+                requestedModelId.contains("moonshot.kimi") -> buildKimiRequest(fullPrompt)
+                requestedModelId.contains("moonshot.kimi") -> buildKimiRequest(fullPrompt)
 
                 // Anthropic Claude models use Messages API format with advanced features
                 requestedModelId.contains("anthropic.claude") -> buildClaudeRequest(fullPrompt)
@@ -1077,13 +1079,25 @@ open class BedrockPipe : Pipe() {
                 countSubWordsIfSplit = true
                 nonWordSplitCount = 2
             }
-                modelId.contains("qwen") -> {
+            modelId.contains("qwen") -> {
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
                 countOnlyFirstWordFound = false
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = true
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("moonshot.kimi") -> {
+                contextWindowSize = 256000
+                multiplyWindowSizeBy = 0
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
                 nonWordSplitCount = 2
             }
@@ -2166,6 +2180,180 @@ put("system", if (enableCaching && cacheControl != null) {
     }
 
     /**
+     * Builds request JSON for Moonshot Kimi models.
+     *
+     * Treats Kimi as reasoning-first with tool-awareness. Includes PCP context,
+     * handles reasoningConfig with a configurable token budget, and maps topK
+     * and tool definitions into additionalModelRequestFields.
+     */
+    private fun buildKimiRequest(prompt: String): String {
+        val requestedModelId = getRequestedModelId()
+        val reasoningConfig = buildKimiReasoningConfig(requestedModelId)
+        val toolConfig = buildNovaToolConfig()
+        val additionalFields = buildKimiAdditionalModelRequestFieldsJson(reasoningConfig, toolConfig)
+
+        val messages = mutableListOf<JsonObject>()
+        messages.add(buildJsonObject {
+            put("role", "user")
+            putJsonArray("content") {
+                add(buildJsonObject {
+                    put("text", prompt)
+                    if (enableCaching && cacheControl != null) {
+                        putJsonObject("cache_control") {
+                            put("type", cacheControl)
+                        }
+                    }
+                })
+            }
+        })
+
+        val systemMessages = mutableListOf<JsonObject>()
+        if (systemPrompt.isNotEmpty()) {
+            systemMessages.add(buildJsonObject {
+                put("text", systemPrompt)
+                if (enableCaching && cacheControl != null) {
+                    putJsonObject("cache_control") {
+                        put("type", cacheControl)
+                    }
+                }
+            })
+        }
+
+        if (!pcpContext.tpipeOptions.isEmpty()) {
+            systemMessages.add(buildJsonObject {
+                put("text", "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}")
+            })
+        }
+
+        return buildJsonObject {
+            if (systemMessages.isNotEmpty()) {
+                putJsonArray("system") {
+                    systemMessages.forEach { add(it) }
+                }
+            }
+
+            put("messages", JsonArray(messages))
+
+            putJsonObject("inferenceConfig") {
+                put("maxTokens", maxTokens)
+                if (temperature > 0) put("temperature", temperature)
+                if (topP < 1.0) put("topP", topP)
+                if (stopSequences.isNotEmpty()) {
+                    put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+                }
+            }
+
+            additionalFields?.let { put("additionalModelRequestFields", it) }
+        }.toString()
+    }
+
+    /**
+     * Builds Converse request for Moonshot Kimi models with tool, system, and PCP setup.
+     */
+    private fun buildKimiConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest {
+        val messages = mutableListOf<Message>()
+        messages.add(Message {
+            role = ConversationRole.User
+            content = contentBlocks
+        })
+
+        val systemBlocks = mutableListOf<SystemContentBlock>()
+        if (systemPrompt.isNotEmpty()) {
+            systemBlocks.add(SystemContentBlock.Text(systemPrompt))
+        }
+        if (!pcpContext.tpipeOptions.isEmpty()) {
+            systemBlocks.add(SystemContentBlock.Text(
+                "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
+            ))
+        }
+
+        val requestedModelId = getRequestedModelId()
+        val targetModelId = model.ifEmpty { requestedModelId }
+        val reasoningConfig = buildKimiReasoningConfig(requestedModelId)
+        val toolConfig = buildNovaToolConfig()
+        val additionalFields = buildKimiAdditionalModelRequestFieldsJson(reasoningConfig, toolConfig)
+
+        return ConverseRequest {
+            this.modelId = targetModelId
+            this.messages = messages
+            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+
+            inferenceConfig = InferenceConfiguration {
+                maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+            }
+
+            additionalFields?.let {
+                mapToDocument(jsonObjectToMap(it))?.let { document ->
+                    additionalModelRequestFields = document
+                }
+            }
+
+            serviceTier = ServiceTier { type = mapServiceTier() }
+        }
+    }
+
+    private fun buildKimiConverseRequest(prompt: String): ConverseRequest {
+        return buildKimiConverseRequest(listOf(ContentBlock.Text(prompt)))
+    }
+
+    private fun buildKimiAdditionalModelRequestFieldsJson(
+        reasoningConfig: JsonObject?,
+        toolConfig: JsonObject?
+    ): JsonObject? {
+        val inferenceConfig = buildJsonObject {
+            reasoningConfig?.let { put("reasoningConfig", it) }
+            if (topK > 0) put("topK", topK)
+        }
+
+        if (inferenceConfig.isEmpty() && toolConfig == null) return null
+
+        return buildJsonObject {
+            if (inferenceConfig.isNotEmpty()) put("inferenceConfig", inferenceConfig)
+            toolConfig?.let { put("toolConfig", it) }
+        }
+    }
+
+    private fun buildKimiReasoningConfig(modelId: String): JsonObject? {
+        if (!isKimiModel(modelId) || !useModelReasoning) return null
+        val budgetTokens = modelReasoningSettingsV2.takeIf { it > 0 }?.coerceAtMost(maxTokens) ?: maxTokens
+        return buildJsonObject {
+            put("type", "enabled")
+            put("budget_tokens", budgetTokens)
+        }
+    }
+
+    private fun jsonElementToAny(element: JsonElement): Any? {
+        return when (element) {
+            is JsonObject -> jsonObjectToMap(element)
+            is JsonArray -> element.mapNotNull { jsonElementToAny(it) }
+            is JsonPrimitive -> primitiveToAny(element)
+            else -> null
+        }
+    }
+
+    private fun jsonObjectToMap(jsonObject: JsonObject): Map<String, Any> {
+        val map = mutableMapOf<String, Any>()
+        jsonObject.forEach { (key, value) ->
+            jsonElementToAny(value)?.let { map[key] = it }
+        }
+        return map
+    }
+
+    private fun primitiveToAny(primitive: JsonPrimitive): Any? {
+        primitive.booleanOrNull?.let { return it }
+        primitive.longOrNull?.let { return it }
+        primitive.doubleOrNull?.let { return it }
+        return primitive.content
+    }
+
+    private fun isKimiModel(modelId: String): Boolean {
+        return modelId.contains("moonshot.kimi", ignoreCase = true)
+    }
+
+    /**
      * Builds Converse API request for Titan models.
      * Maps TPipe parameters to Titan's Converse API structure.
      * 
@@ -2576,6 +2764,7 @@ put("system", if (enableCaching && cacheControl != null) {
                 modelId.contains("qwen") -> buildQwenConverseRequest(prompt)
                 modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(prompt)
                 modelId.contains("amazon.nova") -> buildNovaConverseRequest(prompt)
+                modelId.contains("moonshot.kimi") -> buildKimiConverseRequest(prompt)
                 modelId.contains("amazon.titan") -> buildTitanConverseRequest(prompt)
                 modelId.contains("ai21.j2") -> buildAI21ConverseRequest(prompt)
                 modelId.contains("cohere.command") -> buildCohereConverseRequest(prompt)
@@ -3312,6 +3501,20 @@ put("system", if (enableCaching && cacheControl != null) {
                             ?: ""
                     }
                 }
+                modelId.contains("moonshot.kimi") -> {
+                    val message = json["output"]?.jsonObject?.get("message")?.jsonObject
+                    val content = message?.get("content")?.jsonArray
+                    val reasoningBlocks = content?.mapNotNull { contentItem ->
+                        val contentObj = contentItem.jsonObject
+                        when {
+                            contentObj.containsKey("reasoningContent") -> contentObj["reasoningContent"]?.jsonObject?.get("reasoningText")?.jsonPrimitive?.content
+                            contentObj.containsKey("thinking") -> contentObj["thinking"]?.jsonPrimitive?.content
+                            contentObj.containsKey("reasoning") -> contentObj["reasoning"]?.jsonPrimitive?.content
+                            else -> null
+                        }
+                    }?.joinToString("\n")
+                    reasoningBlocks?.takeIf { it.isNotBlank() } ?: json["reasoning"]?.jsonPrimitive?.content ?: json["thinking"]?.jsonPrimitive?.content ?: ""
+                }
                 else -> "" // Unknown model, no reasoning extraction
             }
         } catch (e: Exception) {
@@ -3346,6 +3549,9 @@ put("system", if (enableCaching && cacheControl != null) {
                 }
                 modelId.contains("amazon.nova") -> {
                     // Nova uses nested structure: output.message.content[0].text
+                    json["output"]?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: ""
+                }
+                modelId.contains("moonshot.kimi") -> {
                     json["output"]?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: ""
                 }
                 modelId.contains("anthropic.claude") -> {

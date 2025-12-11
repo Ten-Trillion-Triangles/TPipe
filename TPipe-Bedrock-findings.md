@@ -29,3 +29,11 @@
 - Context window tuning in `truncateModuleContext()` dynamically adjusts truncation strategy/counters based on the current model family (Claude, Nova, Llama, Qwen, DeepSeek, etc.), ensuring tokens are counted with heuristics like favoring whole words or adjusting `contextWindowSize` before invoking Bedrock.
 - Multimodal helper utilities (`convertBinaryToContentBlock`, MIME mapping, PCP serialization) keep AWS-specific payload construction centralized, letting Bedrock-specific models seamlessly accept text, image, and document data.
 - Tracing around every API call captures metadata (prompt length, region/model, streaming flag, service tier, token usage), which assists debugging and auditing the pipe’s orchestration of AWS Bedrock features.
+
+## Moonshot AI Kimi K2 Thinking
+- Amazon Bedrock now exposes the Moonshot AI `moonshot.kimi-k2-thinking` foundation model with 256 k token context, tool-aware reasoning, and multi-region availability, so we can treat it as an official “reasoning-first” provider inside TPipe-Bedrock. citeturn1search7turn0search2
+- Kimi expects reasoning enabled via `reasoningConfig` (with `type: enabled` plus a `budget_tokens` envelope) and prohibits random-sampling params in high-effort mode, so we now align TPipe’s `useModelReasoning`/`modelReasoningSettingsV2` flags with those constraints and surface the configuration through `additionalModelRequestFields`. citeturn2search0
+- Implementation overviews:
+  - Introduced dedicated Kimi builders that inject PCP tool descriptions, capture reasoning budgets, and place `topK`/`toolConfig` inside `additionalModelRequestFields`, while relying on the existing inference-profile binding (`bedrockEnv`) to swap in any ARN at runtime.
+  - Added `moonshot.kimi-k2-thinking` to the default inference map and tuned `truncateModuleContext()` to keep a 256 k window with Nova-style splitting heuristics.
+  - Extended the text/reasoning parsers (`extractTextFromResponse`, `extractReasoningContent`) so we treat Kimi’s `output.message.content` blocks the same way we already do for Nova/DeepSeek, ensuring reasoning traces survive both Invoke and Converse APIs.
