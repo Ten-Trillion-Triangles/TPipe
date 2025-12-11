@@ -64,6 +64,8 @@ object bedrockEnv
             "amazon.nova-pro-v1:0:24k",
             "amazon.nova-pro-v1:0:300k",
             "amazon.nova-sonic-v1:0",
+            "amazon.nova-2-lite-v1:0",
+            "amazon.nova-2-pro-v1:0",
             // Amazon Titan models
             "amazon.titan-text-express-v1",
             "amazon.titan-text-express-v1:0:8k",
@@ -150,9 +152,14 @@ object bedrockEnv
             "writer.palmyra-x5-v1:0",
             // Inference profile models (us.* prefixed access)
             "us.amazon.nova-lite-v1:0",
+            "us.amazon.nova-2-lite-v1:0",
+            "us.amazon.nova-2-pro-v1:0",
             "us.amazon.nova-micro-v1:0",
             "us.amazon.nova-premier-v1:0",
             "us.amazon.nova-pro-v1:0",
+            "eu.amazon.nova-2-lite-v1:0",
+            "apac.amazon.nova-2-lite-v1:0",
+            "global.amazon.nova-2-lite-v1:0",
             "us.anthropic.claude-3-5-haiku-20241022-v1:0",
             "us.anthropic.claude-3-5-sonnet-20240620-v1:0",
             "us.anthropic.claude-3-5-sonnet-20241022-v2:0",

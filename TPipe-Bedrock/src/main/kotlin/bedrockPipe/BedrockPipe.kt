@@ -108,6 +108,13 @@ open class BedrockPipe : Pipe() {
     protected var bedrockClient: BedrockRuntimeClient? = null
 
     /**
+     * Canonical model identifier that the user asked for before inference profiles/ARN binding.
+     * Used to keep the per-family builders and extractors aligned with the requested model.
+     */
+    @kotlinx.serialization.Transient
+    private var requestedModelId: String = ""
+
+    /**
      * Flag to enable Converse API instead of legacy Invoke API.
      * 
      * When true, uses the newer Converse API which provides:
@@ -583,6 +590,9 @@ open class BedrockPipe : Pipe() {
         // This allows mapping model IDs to provisioned throughput ARNs
         bedrockEnv.loadInferenceConfig()
         
+        // Track what the user actually requested so we can keep the family-aware builders working
+        requestedModelId = model
+
         // Resolve model to inference profile if configured
         if (model.isNotEmpty())
         {
@@ -600,7 +610,8 @@ open class BedrockPipe : Pipe() {
         {
             // Set default model if none specified
             // Claude 3 Sonnet provides good balance of capability and speed
-            model = "anthropic.claude-3-sonnet-20240229-v1:0"
+            requestedModelId = "anthropic.claude-3-sonnet-20240229-v1:0"
+            model = requestedModelId
         }
         
         // Validate GPT-OSS region requirement
@@ -686,53 +697,58 @@ open class BedrockPipe : Pipe() {
             
             // Use the prompt as-is (context truncation happens earlier in the pipeline)
             val fullPrompt = promptInjector
-            
-            // Default to Claude Sonnet if no model specified
-            val modelId = model.ifEmpty { "anthropic.claude-3-sonnet-20240229-v1:0" }
+
+            // Track the user-requested model separately from the actual API identifier
+            val requestedModelId = getRequestedModelId()
+            val targetModelId = model.ifEmpty { requestedModelId }
             
             // Use Converse API for all models when enabled
             if (useConverseApi)
             {
-                return generateWithConverseApi(client, modelId, fullPrompt)
+                return generateWithConverseApi(client, requestedModelId, fullPrompt)
             }
             
             // For all other models, use the standard Invoke API approach
             // Each model family has different JSON request/response formats
             trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
-                  metadata = mapOf("step" to "buildRequest", "modelId" to modelId))
+                  metadata = mapOf(
+                      "step" to "buildRequest",
+                      "modelId" to requestedModelId,
+                      "resolvedModelId" to targetModelId
+                  ))
             
             // Build model-specific JSON request based on the model family
             // Each model has different parameter names and structures
             val requestJson = when
             {
                 // OpenAI GPT-OSS models use OpenAI-compatible format with reasoning support
-                modelId.contains("openai.gpt-oss") -> buildGptOssRequest(fullPrompt)
-                
+                requestedModelId.contains("openai.gpt-oss") -> buildGptOssRequest(fullPrompt)
+
                 // Amazon Nova models use Converse-style format with inferenceConfig
-                modelId.contains("amazon.nova") -> buildNovaRequest(fullPrompt)
-                
+                requestedModelId.contains("amazon.nova") -> buildNovaRequest(fullPrompt)
+
                 // Anthropic Claude models use Messages API format with advanced features
-                modelId.contains("anthropic.claude") -> buildClaudeRequest(fullPrompt)
-                
+                requestedModelId.contains("anthropic.claude") -> buildClaudeRequest(fullPrompt)
+
                 // Amazon Titan models use simple inputText + textGenerationConfig format
-                modelId.contains("amazon.titan") -> buildTitanRequest(fullPrompt)
-                
+                requestedModelId.contains("amazon.titan") -> buildTitanRequest(fullPrompt)
+
                 // AI21 Jurassic models use basic prompt + parameters format
-                modelId.contains("ai21.j2") -> buildJurassicRequest(fullPrompt)
-                
+                requestedModelId.contains("ai21.j2") -> buildJurassicRequest(fullPrompt)
+
                 // Cohere Command models use prompt + generation parameters (p/k naming)
-                modelId.contains("cohere.command") -> buildCohereRequest(fullPrompt)
-                
+                requestedModelId.contains("cohere.command") -> buildCohereRequest(fullPrompt)
+
                 // Meta Llama models use prompt + max_gen_len format
-                modelId.contains("meta.llama") -> buildLlamaRequest(fullPrompt)
-                
+                requestedModelId.contains("meta.llama") -> buildLlamaRequest(fullPrompt)
+
                 // Mistral models use prompt + parameters with 'stop' instead of 'stop_sequences'
-                modelId.contains("mistral") -> buildMistralRequest(fullPrompt)
-                
+                requestedModelId.contains("mistral") -> buildMistralRequest(fullPrompt)
+
                 // Qwen3 models support thinking mode and multilingual capabilities  
-                modelId.contains("qwen") -> buildQwenRequest(fullPrompt)
-                
-                modelId.contains("deepseek") -> 
+                requestedModelId.contains("qwen") -> buildQwenRequest(fullPrompt)
+
+                requestedModelId.contains("deepseek") -> 
                 {
                     // DeepSeek has different request formats for Converse vs Invoke API
                     if (useConverseApi)
@@ -752,7 +768,7 @@ open class BedrockPipe : Pipe() {
             // Attempt streaming if enabled and callback is available
             if (streamingEnabled)
             {
-                val streamingResult = executeInvokeStream(client, modelId, requestJson)
+                val streamingResult = executeInvokeStream(client, requestedModelId, requestJson)
                 if (streamingResult != null)
                 {
                     return streamingResult
@@ -766,7 +782,7 @@ open class BedrockPipe : Pipe() {
             
             // Create the InvokeModel request with JSON payload
             val invokeRequest = InvokeModelRequest {
-                this.modelId = modelId
+                this.modelId = targetModelId
                 body = requestJson.toByteArray()
                 contentType = "application/json"
                 serviceTier = mapServiceTier()
@@ -778,7 +794,7 @@ open class BedrockPipe : Pipe() {
             
             // Parse the model-specific JSON response to extract the generated text
             // Each model family returns responses in different JSON structures
-            val extractedText = extractTextFromResponse(responseBody, modelId)
+            val extractedText = extractTextFromResponse(responseBody, requestedModelId)
             
             // Collect comprehensive metadata about the response for tracing
             val responseMetadata = mutableMapOf<String, Any>(
@@ -789,10 +805,10 @@ open class BedrockPipe : Pipe() {
             
             // Extract reasoning content if the model produced any (DeepSeek R1, GPT-OSS)
             // This happens regardless of useModelReasoning flag - we always capture it
-            val reasoningContent = extractReasoningContent(responseBody, modelId)
+            val reasoningContent = extractReasoningContent(responseBody, requestedModelId)
             
             // Extract stop reason to understand why the model stopped generating
-            val stopReason = extractStopReasonFromInvokeResponse(responseBody, modelId)
+            val stopReason = extractStopReasonFromInvokeResponse(responseBody, requestedModelId)
             
             // Add reasoning metadata if reasoning content was found
             if (reasoningContent.isNotEmpty()) {
@@ -841,7 +857,7 @@ open class BedrockPipe : Pipe() {
             }
             
             // Extract token usage information for cost tracking and optimization
-            extractTokenUsageFromInvokeResponse(responseBody, modelId)?.let { usage ->
+            extractTokenUsageFromInvokeResponse(responseBody, requestedModelId)?.let { usage ->
                 responseMetadata.putAll(usage)
             }
             
@@ -896,30 +912,31 @@ open class BedrockPipe : Pipe() {
             }
             
             val fullPrompt = content.text
-            val modelId = model.ifEmpty { "anthropic.claude-3-sonnet-20240229-v1:0" }
+            val requestedModelId = getRequestedModelId()
+            val targetModelId = model.ifEmpty { requestedModelId }
             
             // Use Converse API when enabled (same as generateText)
             if (useConverseApi)
             {
-                val textResult = generateWithConverseApi(client, modelId, fullPrompt)
+                val textResult = generateWithConverseApi(client, requestedModelId, fullPrompt)
                 val result = MultimodalContent(textResult)
-                result.modelReasoning = extractReasoningContent(textResult, modelId)
+                result.modelReasoning = extractReasoningContent(textResult, requestedModelId)
                 return result
             }
             
             // Build model-specific JSON request (same logic as generateText)
             val requestJson = when
             {
-                modelId.contains("openai.gpt-oss") -> buildGptOssRequest(fullPrompt)
-                modelId.contains("amazon.nova") -> buildNovaRequest(fullPrompt)
-                modelId.contains("anthropic.claude") -> buildClaudeRequest(fullPrompt)
-                modelId.contains("amazon.titan") -> buildTitanRequest(fullPrompt)
-                modelId.contains("ai21.j2") -> buildJurassicRequest(fullPrompt)
-                modelId.contains("cohere.command") -> buildCohereRequest(fullPrompt)
-                modelId.contains("meta.llama") -> buildLlamaRequest(fullPrompt)
-                modelId.contains("mistral") -> buildMistralRequest(fullPrompt)
-                modelId.contains("qwen") -> buildQwenRequest(fullPrompt)
-                modelId.contains("deepseek") -> 
+                requestedModelId.contains("openai.gpt-oss") -> buildGptOssRequest(fullPrompt)
+                requestedModelId.contains("amazon.nova") -> buildNovaRequest(fullPrompt)
+                requestedModelId.contains("anthropic.claude") -> buildClaudeRequest(fullPrompt)
+                requestedModelId.contains("amazon.titan") -> buildTitanRequest(fullPrompt)
+                requestedModelId.contains("ai21.j2") -> buildJurassicRequest(fullPrompt)
+                requestedModelId.contains("cohere.command") -> buildCohereRequest(fullPrompt)
+                requestedModelId.contains("meta.llama") -> buildLlamaRequest(fullPrompt)
+                requestedModelId.contains("mistral") -> buildMistralRequest(fullPrompt)
+                requestedModelId.contains("qwen") -> buildQwenRequest(fullPrompt)
+                requestedModelId.contains("deepseek") -> 
                 {
                     if (useConverseApi)
                     {
@@ -936,7 +953,7 @@ open class BedrockPipe : Pipe() {
             
             // Execute the Invoke API call (same logic as generateText)
             val invokeRequest = InvokeModelRequest {
-                this.modelId = modelId
+                this.modelId = targetModelId
                 body = requestJson.toByteArray()
                 contentType = "application/json"
                 serviceTier = mapServiceTier()
@@ -946,8 +963,8 @@ open class BedrockPipe : Pipe() {
             val responseBody = response.body?.let { String(it) } ?: ""
             
             // Extract BOTH text and reasoning content
-            val extractedText = extractTextFromResponse(responseBody, modelId)
-            val reasoningContent = extractReasoningContent(responseBody, modelId)
+            val extractedText = extractTextFromResponse(responseBody, requestedModelId)
+            val reasoningContent = extractReasoningContent(responseBody, requestedModelId)
             
             // Create result with BOTH fields populated
             val result = MultimodalContent(
@@ -1167,6 +1184,10 @@ open class BedrockPipe : Pipe() {
      */
     fun buildNovaRequest(prompt: String): String
     {
+        val requestedModelId = getRequestedModelId()
+        val novaReasoning = buildNovaReasoningConfig(requestedModelId)
+        val highReasoning = shouldSkipNovaMaxTokens(requestedModelId)
+        val toolConfig = buildNovaToolConfig()
         val messages = mutableListOf<JsonObject>()
         
         messages.add(buildJsonObject {
@@ -1201,12 +1222,17 @@ open class BedrockPipe : Pipe() {
             }
             put("messages", JsonArray(messages))
             putJsonObject("inferenceConfig") {
-                put("maxTokens", maxTokens)
-                if (temperature > 0) put("temperature", temperature)
-                if (topP < 1.0) put("topP", topP)
-                if (topK > 0) put("topK", topK)
+                if (!highReasoning)
+                {
+                    put("maxTokens", maxTokens)
+                }
+                if (!highReasoning && temperature > 0) put("temperature", temperature)
+                if (!highReasoning && topP < 1.0) put("topP", topP)
+                if (!highReasoning && topK > 0) put("topK", topK)
                 if (stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+                novaReasoning?.let { put("reasoningConfig", it.json) }
             }
+            toolConfig?.let { put("toolConfig", it) }
         }.toString()
     }
     
@@ -2023,34 +2049,27 @@ put("system", if (enableCaching && cacheControl != null) {
         val systemBlocks = if (systemPrompt.isNotEmpty()) {
             listOf(SystemContentBlock.Text(systemPrompt))
         } else emptyList()
-        
+        val requestedModelId = getRequestedModelId()
+        val targetModelId = model.ifEmpty { requestedModelId }
+        val novaReasoning = buildNovaReasoningConfig(requestedModelId)
+        val highReasoning = shouldSkipNovaMaxTokens(requestedModelId)
+        val additionalFields = buildNovaAdditionalModelRequestFields(requestedModelId, novaReasoning, highReasoning)
+
         return ConverseRequest {
-            this.modelId = model
+            this.modelId = targetModelId
             this.messages = messages
             if (systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                maxTokens = this@BedrockPipe.maxTokens
-                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (!highReasoning) maxTokens = this@BedrockPipe.maxTokens
+                if (!highReasoning && this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if (!highReasoning && this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
-            
-            // Nova-specific additional model fields
-            if (topK > 0) {
-                try {
-                    val documentMap = mutableMapOf<String, Any>()
-                    documentMap["top_k"] = this@BedrockPipe.topK
-                    
-                    val documentClass = Document::class.java
-                    val document = documentClass.getDeclaredConstructor().newInstance()
-                    val mapField = documentClass.getDeclaredField("value")
-                    mapField.isAccessible = true
-                    mapField.set(document, documentMap)
-                    
+
+            additionalFields?.let {
+                mapToDocument(it)?.let { document ->
                     additionalModelRequestFields = document
-                } catch (e: Exception) {
-                    // Fallback: skip additional fields if reflection fails
                 }
             }
             
@@ -2060,6 +2079,90 @@ put("system", if (enableCaching && cacheControl != null) {
 
     private fun buildNovaConverseRequest(prompt: String): ConverseRequest {
         return buildNovaConverseRequest(listOf(ContentBlock.Text(prompt)))
+    }
+
+    private data class NovaReasoningConfig(val json: JsonObject, val map: Map<String, Any>)
+
+    private fun getRequestedModelId(): String {
+        if (requestedModelId.isNotEmpty()) return requestedModelId
+        val fallback = model.ifEmpty { "anthropic.claude-3-sonnet-20240229-v1:0" }
+        requestedModelId = fallback
+        return fallback
+    }
+
+    private fun isNovaAdvancedModel(modelId: String): Boolean {
+        val normalized = modelId.lowercase()
+        return normalized.contains("amazon.nova-2") || normalized.contains("amazon.nova-sonic")
+    }
+
+    private fun getNormalizedNovaReasoningEffort(): String {
+        val effort = modelReasoningSettingsV3.takeIf { it.isNotBlank() }?.lowercase() ?: "medium"
+        return when (effort) {
+            "low", "medium", "high" -> effort
+            else -> "medium"
+        }
+    }
+
+    private fun shouldSkipNovaMaxTokens(modelId: String): Boolean {
+        return isNovaAdvancedModel(modelId) && useModelReasoning && getNormalizedNovaReasoningEffort() == "high"
+    }
+
+    private fun buildNovaReasoningConfig(modelId: String): NovaReasoningConfig? {
+        if (!isNovaAdvancedModel(modelId) || !useModelReasoning) return null
+        val effort = getNormalizedNovaReasoningEffort()
+        val json = buildJsonObject {
+            put("type", "enabled")
+            put("maxReasoningEffort", effort)
+        }
+        val map = mapOf("type" to "enabled", "maxReasoningEffort" to effort)
+        return NovaReasoningConfig(json, map)
+    }
+
+    private fun buildNovaAdditionalModelRequestFields(
+        modelId: String,
+        novaReasoning: NovaReasoningConfig?,
+        highReasoning: Boolean
+    ): Map<String, Any>? {
+        val inferenceConfig = mutableMapOf<String, Any>()
+        if (!highReasoning && topK > 0) {
+            inferenceConfig["topK"] = topK
+        }
+        if (novaReasoning != null) {
+            inferenceConfig["reasoningConfig"] = novaReasoning.map
+        }
+        if (inferenceConfig.isEmpty()) return null
+        return mapOf("inferenceConfig" to inferenceConfig)
+    }
+
+    private fun buildNovaToolConfig(): JsonObject? {
+        if (toolUse.isEmpty() && toolChoice.isNullOrEmpty()) return null
+        return buildJsonObject {
+            if (toolUse.isNotEmpty()) {
+                putJsonArray("tools") {
+                    toolUse.forEach { add(it) }
+                }
+            }
+            if (toolChoice != null) {
+                put("toolChoice", buildJsonObject {
+                    put("type", toolChoice)
+                })
+            }
+        }
+    }
+
+    private fun mapToDocument(fields: Map<String, Any>): Document? {
+        return try {
+            val documentClass = Document::class.java
+            val constructor = documentClass.getDeclaredConstructor()
+            constructor.isAccessible = true
+            val document = constructor.newInstance()
+            val mapField = documentClass.getDeclaredField("value")
+            mapField.isAccessible = true
+            mapField.set(document, fields)
+            document
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /**
