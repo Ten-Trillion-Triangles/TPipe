@@ -8,6 +8,7 @@
 
 ## Model-specific request/response handling
 - Each foundation model family has a dedicated builder that maps TPipe parameters (`maxTokens`, `temperature`, `topP/topK`, `stopSequences`, `systemPrompt`, caching, tools) to the model’s expected JSON or Converse structure: Claude, Nova, Titan, AI21 Jurassic, Cohere Command, Meta Llama, Mistral, Qwen3, DeepSeek R1, GPT-OSS, plus a catch-all generic builder and Converse variants for each.
+- Nova 2’s Converse builder now emits `toolConfig`/`toolChoice` inside `additionalModelRequestFields` so the Amazon-defined tool call modes (`tool`, `any`, `auto`) and tool definitions flow into the model without relying solely on system-prompt coercion, aligning with the canonical Nova request schema and the Bedrock tool-choice guidance. citeturn0search0turn0search1turn0search4
 - GPT-OSS building reuses commodity structures but also injects PCP context, tooling instructions, and `reasoning_effort` inside `additionalModelRequestFields`; the same builder path is used by Converse streaming builders, which also mirror inference config and service tier.
 - Responses are parsed by `extractTextFromResponse`, `extractReasoningContent`, `extractStopReasonFromInvokeResponse`, and `extractTokenUsageFromInvokeResponse` with special-case logic for each family (e.g., `choices.message.content` for GPT-OSS, `output.message.content` for Nova, `content[0].text` for Claude, `results` for Titan), so TPipe consistently returns just the text plus optional reasoning metadata.
 - When streaming, `executeInvokeStream` and `executeConverseStream` collect partial chunks, decode various possible JSON payload shapes, track reasoning deltas and usage/events, and apply `allowMaxTokenOverflow` rules; streaming chunks are emitted through `emitStreamingChunk`, and overflow errors are traced rather than thrown.
@@ -31,9 +32,14 @@
 - Tracing around every API call captures metadata (prompt length, region/model, streaming flag, service tier, token usage), which assists debugging and auditing the pipe’s orchestration of AWS Bedrock features.
 
 ## Moonshot AI Kimi K2 Thinking
-- Amazon Bedrock now exposes the Moonshot AI `moonshot.kimi-k2-thinking` foundation model with 256 k token context, tool-aware reasoning, and multi-region availability, so we can treat it as an official “reasoning-first” provider inside TPipe-Bedrock. citeturn1search7turn0search2
-- Kimi expects reasoning enabled via `reasoningConfig` (with `type: enabled` plus a `budget_tokens` envelope) and prohibits random-sampling params in high-effort mode, so we now align TPipe’s `useModelReasoning`/`modelReasoningSettingsV2` flags with those constraints and surface the configuration through `additionalModelRequestFields`. citeturn2search0
+- Amazon Bedrock now exposes the Moonshot AI `moonshot.kimi-k2-thinking` foundation model with 256 k token context, tool-aware reasoning, and multi-region availability, so we can treat it as an official “reasoning-first” provider inside TPipe-Bedrock. citeturn0search0turn0search6
+- Kimi expects reasoning enabled via `reasoningConfig` (with `type: enabled` plus a `budget_tokens` envelope) and prohibits random-sampling params in high-effort mode, so we now align TPipe’s `useModelReasoning`/`modelReasoningSettingsV2` flags with those constraints and surface the configuration through `additionalModelRequestFields`. citeturn1search4
 - Implementation overviews:
   - Introduced dedicated Kimi builders that inject PCP tool descriptions, capture reasoning budgets, and place `topK`/`toolConfig` inside `additionalModelRequestFields`, while relying on the existing inference-profile binding (`bedrockEnv`) to swap in any ARN at runtime.
-  - Added `moonshot.kimi-k2-thinking` to the default inference map and tuned `truncateModuleContext()` to keep a 256 k window with Nova-style splitting heuristics.
+  - Added `moonshot.kimi-k2-thinking` to the default inference map while leaving `truncateModuleContext()`’s heuristics unchanged so users control context sizing.
   - Extended the text/reasoning parsers (`extractTextFromResponse`, `extractReasoningContent`) so we treat Kimi’s `output.message.content` blocks the same way we already do for Nova/DeepSeek, ensuring reasoning traces survive both Invoke and Converse APIs.
+
+## MiniMax M2
+- Amazon Bedrock exposes `minimax.minimax-m2` across the supported regions with native `<think>`-style reasoning output and tool-aware behavior, so it merits a dedicated path in TPipe-Bedrock’s builders. citeturn0search0turn1search4
+- The new builders reuse the Nova/Kimi Converse-style payloads, include PCP tool prompts, and place `topK`/`toolConfig` in `additionalModelRequestFields`, while the response parser now retains each `<think>` block via `extractReasoningContent` so reasoning content is surfaced consistently. citeturn1search3
+- `bedrockEnv` now lists `minimax.minimax-m2` so users can bind inference-profile ARNs without changing their requests, keeping context-size heuristics untouched by this addition. citeturn0search2

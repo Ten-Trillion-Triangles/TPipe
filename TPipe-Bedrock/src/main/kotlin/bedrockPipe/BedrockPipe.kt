@@ -24,6 +24,7 @@ import env.bedrockEnv
 import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.json.*
 import kotlinx.serialization.json.contentOrNull
+import kotlin.text.RegexOption
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -106,6 +107,12 @@ open class BedrockPipe : Pipe() {
      */
     @kotlinx.serialization.Serializable
     protected var bedrockClient: BedrockRuntimeClient? = null
+
+    /**
+     * Stores the last Converse API response for reasoning content extraction.
+     */
+    @kotlinx.serialization.Transient
+    private var lastConverseResponse: aws.sdk.kotlin.services.bedrockruntime.model.ConverseResponse? = null
 
     /**
      * Canonical model identifier that the user asked for before inference profiles/ARN binding.
@@ -705,7 +712,16 @@ open class BedrockPipe : Pipe() {
             // Use Converse API for all models when enabled
             if (useConverseApi)
             {
-                return generateWithConverseApi(client, requestedModelId, fullPrompt)
+                val textResult = generateWithConverseApi(client, requestedModelId, fullPrompt)
+                
+                // Extract reasoning content properly for Nova models using Converse API
+                val reasoningContent = if (requestedModelId.contains("amazon.nova") && lastConverseResponse != null) {
+                    extractReasoningFromConverseResponse(lastConverseResponse!!)
+                } else {
+                    extractReasoningContent(textResult, requestedModelId)
+                }
+                
+                return textResult
             }
             
             // For all other models, use the standard Invoke API approach
@@ -726,7 +742,7 @@ open class BedrockPipe : Pipe() {
 
                 // Amazon Nova models use Converse-style format with inferenceConfig
                 requestedModelId.contains("amazon.nova") -> buildNovaRequest(fullPrompt)
-                requestedModelId.contains("moonshot.kimi") -> buildKimiRequest(fullPrompt)
+                requestedModelId.contains("minimax") -> buildMiniMaxRequest(fullPrompt)
                 requestedModelId.contains("moonshot.kimi") -> buildKimiRequest(fullPrompt)
 
                 // Anthropic Claude models use Messages API format with advanced features
@@ -922,7 +938,14 @@ open class BedrockPipe : Pipe() {
             {
                 val textResult = generateWithConverseApi(client, requestedModelId, fullPrompt)
                 val result = MultimodalContent(textResult)
-                result.modelReasoning = extractReasoningContent(textResult, requestedModelId)
+                
+                // Extract reasoning content properly for Nova models using Converse API
+                if (requestedModelId.contains("amazon.nova") && lastConverseResponse != null) {
+                    result.modelReasoning = extractReasoningFromConverseResponse(lastConverseResponse!!)
+                } else {
+                    result.modelReasoning = extractReasoningContent(textResult, requestedModelId)
+                }
+                
                 return result
             }
             
@@ -1090,8 +1113,16 @@ open class BedrockPipe : Pipe() {
                 nonWordSplitCount = 2
             }
             modelId.contains("moonshot.kimi") -> {
-                contextWindowSize = 256000
-                multiplyWindowSizeBy = 0
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("minimax") -> {
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1248,6 +1279,88 @@ open class BedrockPipe : Pipe() {
             }
             toolConfig?.let { put("toolConfig", it) }
         }.toString()
+    }
+
+    /**
+     * Builds request JSON for MiniMax M2 models.
+     *
+     * These models are reasoning-first and emit interleaved <think> blocks.
+     * We keep the same Converse-style requests as Nova/Kimi and push reasoning
+     * parameters plus tool configs into `additionalModelRequestFields` so Bedrock
+     * can emit both normal text and reasoning detail payloads.
+     */
+    fun buildMiniMaxRequest(prompt: String): String
+    {
+        val toolConfig = buildNovaToolConfig()
+        val additionalFields = buildMiniMaxAdditionalModelRequestFieldsJson(toolConfig)
+        val messages = mutableListOf<JsonObject>()
+
+        messages.add(buildJsonObject {
+            put("role", "user")
+            putJsonArray("content") {
+                add(buildJsonObject {
+                    put("text", prompt)
+                    if (enableCaching && cacheControl != null)
+                    {
+                        putJsonObject("cache_control") {
+                            put("type", cacheControl)
+                        }
+                    }
+                })
+            }
+        })
+
+        val systemMessages = mutableListOf<JsonObject>()
+        if (systemPrompt.isNotEmpty())
+        {
+            systemMessages.add(buildJsonObject {
+                put("text", systemPrompt)
+                if (enableCaching && cacheControl != null)
+                {
+                    putJsonObject("cache_control") {
+                        put("type", cacheControl)
+                    }
+                }
+            })
+        }
+
+        if (!pcpContext.tpipeOptions.isEmpty())
+        {
+            systemMessages.add(buildJsonObject {
+                put("text", "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}")
+            })
+        }
+
+        return buildJsonObject {
+            if (systemMessages.isNotEmpty())
+            {
+                putJsonArray("system") {
+                    systemMessages.forEach { add(it) }
+                }
+            }
+            put("messages", JsonArray(messages))
+            putJsonObject("inferenceConfig") {
+                put("maxTokens", maxTokens)
+                if (temperature > 0) put("temperature", temperature)
+                if (topP < 1.0) put("topP", topP)
+                if (stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+            }
+            additionalFields?.let { put("additionalModelRequestFields", it) }
+        }.toString()
+    }
+
+    private fun buildMiniMaxAdditionalModelRequestFieldsJson(toolConfig: JsonObject?): JsonObject?
+    {
+        if (topK <= 0 && !useModelReasoning && toolConfig == null)
+        {
+            return null
+        }
+
+        return buildJsonObject {
+            if (topK > 0) put("topK", topK)
+            if (useModelReasoning) put("reasoning_split", JsonPrimitive(true))
+            toolConfig?.let { put("toolConfig", it) }
+        }
     }
     
     /**
@@ -2067,7 +2180,8 @@ put("system", if (enableCaching && cacheControl != null) {
         val targetModelId = model.ifEmpty { requestedModelId }
         val novaReasoning = buildNovaReasoningConfig(requestedModelId)
         val highReasoning = shouldSkipNovaMaxTokens(requestedModelId)
-        val additionalFields = buildNovaAdditionalModelRequestFields(requestedModelId, novaReasoning, highReasoning)
+        val toolConfig = buildNovaToolConfig()
+        val additionalFields = buildNovaAdditionalModelRequestFields(requestedModelId, novaReasoning, highReasoning, toolConfig)
 
         return ConverseRequest {
             this.modelId = targetModelId
@@ -2093,6 +2207,56 @@ put("system", if (enableCaching && cacheControl != null) {
 
     private fun buildNovaConverseRequest(prompt: String): ConverseRequest {
         return buildNovaConverseRequest(listOf(ContentBlock.Text(prompt)))
+    }
+
+    private fun buildMiniMaxConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
+    {
+        val messages = mutableListOf<Message>()
+        
+        messages.add(Message {
+            role = ConversationRole.User
+            content = contentBlocks
+        })
+
+        val systemBlocks = mutableListOf<SystemContentBlock>()
+        if (systemPrompt.isNotEmpty()) {
+            systemBlocks.add(SystemContentBlock.Text(systemPrompt))
+        }
+        if (!pcpContext.tpipeOptions.isEmpty()) {
+            systemBlocks.add(SystemContentBlock.Text(
+                "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
+            ))
+        }
+
+        val requestedModelId = getRequestedModelId()
+        val targetModelId = model.ifEmpty { requestedModelId }
+        val toolConfig = buildNovaToolConfig()
+        val additionalFields = buildMiniMaxAdditionalModelRequestFieldsJson(toolConfig)
+
+        return ConverseRequest {
+            this.modelId = targetModelId
+            this.messages = messages
+            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+
+            inferenceConfig = InferenceConfiguration {
+                maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+            }
+
+            additionalFields?.let {
+                mapToDocument(jsonObjectToMap(it))?.let { document ->
+                    additionalModelRequestFields = document
+                }
+            }
+
+            serviceTier = ServiceTier { type = mapServiceTier() }
+        }
+    }
+
+    private fun buildMiniMaxConverseRequest(prompt: String): ConverseRequest {
+        return buildMiniMaxConverseRequest(listOf(ContentBlock.Text(prompt)))
     }
 
     private data class NovaReasoningConfig(val json: JsonObject, val map: Map<String, Any>)
@@ -2135,7 +2299,8 @@ put("system", if (enableCaching && cacheControl != null) {
     private fun buildNovaAdditionalModelRequestFields(
         modelId: String,
         novaReasoning: NovaReasoningConfig?,
-        highReasoning: Boolean
+        highReasoning: Boolean,
+        toolConfig: JsonObject?
     ): Map<String, Any>? {
         val inferenceConfig = mutableMapOf<String, Any>()
         if (!highReasoning && topK > 0) {
@@ -2144,8 +2309,18 @@ put("system", if (enableCaching && cacheControl != null) {
         if (novaReasoning != null) {
             inferenceConfig["reasoningConfig"] = novaReasoning.map
         }
-        if (inferenceConfig.isEmpty()) return null
-        return mapOf("inferenceConfig" to inferenceConfig)
+        val fields = mutableMapOf<String, Any>()
+        if (inferenceConfig.isNotEmpty()) {
+            fields["inferenceConfig"] = inferenceConfig
+        }
+        toolConfig?.let {
+            val toolMap = jsonObjectToMap(it)
+            if (toolMap.isNotEmpty()) {
+                fields["toolConfig"] = toolMap
+            }
+        }
+        if (fields.isEmpty()) return null
+        return fields
     }
 
     private fun buildNovaToolConfig(): JsonObject? {
@@ -2764,6 +2939,7 @@ put("system", if (enableCaching && cacheControl != null) {
                 modelId.contains("qwen") -> buildQwenConverseRequest(prompt)
                 modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(prompt)
                 modelId.contains("amazon.nova") -> buildNovaConverseRequest(prompt)
+                modelId.contains("minimax") -> buildMiniMaxConverseRequest(prompt)
                 modelId.contains("moonshot.kimi") -> buildKimiConverseRequest(prompt)
                 modelId.contains("amazon.titan") -> buildTitanConverseRequest(prompt)
                 modelId.contains("ai21.j2") -> buildAI21ConverseRequest(prompt)
@@ -2797,6 +2973,9 @@ put("system", if (enableCaching && cacheControl != null) {
                     else -> null
                 }
             }?.joinToString("\\n") ?: ""
+            
+            // Store the full response for reasoning extraction
+            lastConverseResponse = response
             
             // Handle max token overflow for Converse API
             if (isConverseOverflow)
@@ -3515,11 +3694,40 @@ put("system", if (enableCaching && cacheControl != null) {
                     }?.joinToString("\n")
                     reasoningBlocks?.takeIf { it.isNotBlank() } ?: json["reasoning"]?.jsonPrimitive?.content ?: json["thinking"]?.jsonPrimitive?.content ?: ""
                 }
+                modelId.contains("minimax") -> {
+                    val choice = json["choices"]?.jsonArray?.firstOrNull()?.jsonObject
+                    val message = choice?.get("message")?.jsonObject
+                    val reasoningDetails = message?.get("reasoning_details")?.jsonArray
+                    val reasoningParts = mutableListOf<String>()
+
+                    reasoningDetails?.forEach { detail ->
+                        val detailText = detail.jsonObject["text"]?.jsonPrimitive?.content
+                        if (!detailText.isNullOrEmpty()) {
+                            reasoningParts.add(detailText)
+                        }
+                    }
+
+                    if (reasoningParts.isEmpty()) {
+                        val contentText = message?.get("content")?.jsonPrimitive?.content
+                        if (!contentText.isNullOrEmpty()) {
+                            reasoningParts.addAll(extractThinkSegmentsFromContent(contentText))
+                        }
+                    }
+
+                    reasoningParts.joinToString("\n")
+                }
                 else -> "" // Unknown model, no reasoning extraction
             }
         } catch (e: Exception) {
             "" // Fail silently if JSON parsing fails
         }
+    }
+
+    private fun extractThinkSegmentsFromContent(content: String): List<String> {
+        val regex = "<think>(.*?)</think>".toRegex(setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        return regex.findAll(content).mapNotNull { match ->
+            match.groupValues.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() }
+        }.toList()
     }
     
     /**
@@ -3553,6 +3761,16 @@ put("system", if (enableCaching && cacheControl != null) {
                 }
                 modelId.contains("moonshot.kimi") -> {
                     json["output"]?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: ""
+                }
+                modelId.contains("minimax") -> {
+                    val choice = json["choices"]?.jsonArray?.firstOrNull()?.jsonObject
+                    val contentElement = choice?.get("message")?.jsonObject?.get("content")
+                    when (contentElement)
+                    {
+                        is JsonPrimitive -> contentElement.content
+                        is JsonArray -> contentElement.mapNotNull { element: JsonElement -> element.jsonPrimitive?.content }.joinToString("\n")
+                        else -> ""
+                    }
                 }
                 modelId.contains("anthropic.claude") -> {
                     // Claude uses content array: content[0].text
