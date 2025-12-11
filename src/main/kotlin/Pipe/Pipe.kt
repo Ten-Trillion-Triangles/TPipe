@@ -2330,6 +2330,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     fun setReasoning(custom: String): Pipe
     {
+        useModelReasoning = true
         modelReasoningSettingsV3 = custom
         return this
     }

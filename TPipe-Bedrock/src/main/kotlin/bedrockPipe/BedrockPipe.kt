@@ -721,6 +721,25 @@ open class BedrockPipe : Pipe() {
                     extractReasoningContent(textResult, requestedModelId)
                 }
                 
+                // Add reasoning content to trace metadata if found
+                if (reasoningContent.isNotEmpty()) {
+                    trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+                          metadata = mapOf(
+                              "reasoningContent" to reasoningContent,
+                              "modelSupportsReasoning" to true,
+                              "reasoningEnabled" to useModelReasoning,
+                              "responseLength" to textResult.length,
+                              "reasoningLength" to reasoningContent.length,
+                              "hasReasoning" to true
+                          ))
+                } else {
+                    trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+                          metadata = mapOf(
+                              "responseLength" to textResult.length,
+                              "hasReasoning" to false
+                          ))
+                }
+                
                 return textResult
             }
             
@@ -1414,6 +1433,16 @@ put("system", if (enableCaching && cacheControl != null) {
             if (toolChoice != null) put("tool_choice", buildJsonObject {
                 put("type", toolChoice)
             })
+            
+            // Add thinking configuration for Claude extended thinking
+            if (useModelReasoning) {
+                put("thinking", buildJsonObject {
+                    put("type", "enabled")
+                    val budgetTokens = modelReasoningSettingsV2.takeIf { it > 0 }?.coerceAtMost(maxTokens) ?: 4000
+                    put("budget_tokens", budgetTokens)
+                })
+            }
+            
             if (temperature > 0) put("temperature", temperature)
             if (topP < 1.0) put("top_p", topP)
             if (stopSequences.isNotEmpty()) put("stop_sequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
@@ -2087,7 +2116,7 @@ put("system", if (enableCaching && cacheControl != null) {
     protected fun extractReasoningFromConverseResponse(response: aws.sdk.kotlin.services.bedrockruntime.model.ConverseResponse): String
     {
         return try {
-            response.output?.asMessage()?.content?.mapNotNull { contentBlock ->
+            val reasoningContent = response.output?.asMessage()?.content?.mapNotNull { contentBlock ->
                 when (contentBlock) {
                     is ContentBlock.ReasoningContent -> {
                         val reasoningBlock = contentBlock.value
@@ -2112,7 +2141,17 @@ put("system", if (enableCaching && cacheControl != null) {
                     else -> null
                 }
             }?.joinToString("\n") ?: ""
+            
+            // Debug logging to verify reasoning content extraction
+            if (reasoningContent.isNotEmpty()) {
+                println("DEBUG: Nova reasoning content extracted: ${reasoningContent.length} characters")
+            } else {
+                println("DEBUG: No Nova reasoning content found in response")
+            }
+            
+            reasoningContent
         } catch (e: Exception) {
+            println("DEBUG: Error extracting Nova reasoning content: ${e.message}")
             ""
         }
     }
@@ -2147,6 +2186,19 @@ put("system", if (enableCaching && cacheControl != null) {
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
                 if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+            }
+            
+            // Add thinking configuration for Claude extended thinking
+            if (useModelReasoning) {
+                val budgetTokens = modelReasoningSettingsV2.takeIf { it > 0 }?.coerceAtMost(maxTokens) ?: 4000
+                mapToDocument(mapOf(
+                    "thinking" to mapOf(
+                        "type" to "enabled",
+                        "budget_tokens" to budgetTokens
+                    )
+                ))?.let { document ->
+                    additionalModelRequestFields = document
+                }
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
