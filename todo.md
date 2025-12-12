@@ -18,7 +18,7 @@ a context window object. This would allow them to be hit on selection at higher 
 allowing for expanded semantic reach.~~
 - Add support for requirement function in the lorebook in order to allow a key to be loaded even if hit.
 - Add output for just after generation, and prior to transformation function. Name it something easy to search in the 
-trace file since transformation functions can change the output in a way that's invisible to to the developer leading
+trace file since transformation functions can change the output in a way that's invisible to the developer leading
 to confusion when reading a trace file if a transformation function is overwriting the original output to something
 entirely different from what the pipe produced.
 
@@ -55,8 +55,9 @@ lua, GDscript, Rust, Swift, Unreal Engine and Golang.
 - add remote context support
 - add pcp server support 
 - add p2p server support
-- Add support for AWS agent core.
+- ~~Add support for AWS agent core.~~ //Doesn't provide any useful features apparently.
 - Add support for kotlin script in PCP.
+- Add support for aws bedrock guardrails.
 
 **New builders:**
 - ~~Reasoning pipe builder that turns non-reasoning pipes into reasoning pipes by applying some assisting built in
