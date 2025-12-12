@@ -17,6 +17,10 @@ the pipeline itself.
 a context window object. This would allow them to be hit on selection at higher truncation priority than the rest
 allowing for expanded semantic reach.~~
 - Add support for requirement function in the lorebook in order to allow a key to be loaded even if hit.
+- Add output for just after generation, and prior to transformation function. Name it something easy to search in the 
+trace file since transformation functions can change the output in a way that's invisible to to the developer leading
+to confusion when reading a trace file if a transformation function is overwriting the original output to something
+entirely different from what the pipe produced.
 
 **New features:**
 - ~~Add DistributionGrid class that enables "swarm" style agents with TPipe pipelines.~~
