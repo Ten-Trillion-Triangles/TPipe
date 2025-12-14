@@ -2144,9 +2144,9 @@ put("system", if (enableCaching && cacheControl != null) {
             
             // Debug logging to verify reasoning content extraction
             if (reasoningContent.isNotEmpty()) {
-                println("DEBUG: Nova reasoning content extracted: ${reasoningContent.length} characters")
+                //println("DEBUG: Nova reasoning content extracted: ${reasoningContent.length} characters")
             } else {
-                println("DEBUG: No Nova reasoning content found in response")
+                //println("DEBUG: No Nova reasoning content found in response")
             }
             
             reasoningContent
