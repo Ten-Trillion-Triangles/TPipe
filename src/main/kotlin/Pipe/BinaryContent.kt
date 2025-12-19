@@ -285,6 +285,18 @@ class MultimodalContent(
     }
 
     /**
+     * Force save a snapshot of this content object. This is useful for restoring to a prior state in the event of
+     * an llm refusal or other reversal needed in a branch function. This however doubles the memory usage that this
+     * pipe takes so it may be not desirable in cases of larger content such as images, video, or other binary data.
+     *
+     * When called this will override [useSnapshot] if the pipe already auto-saved a snapshot.
+     */
+    fun saveSnapshot()
+    {
+        metadata["snapshot"] = this.deepCopy()
+    }
+
+    /**
      * Get the snapshot if present. This is a helper function to simplify using the multiModalContent's snapshot
      * feature.
      *

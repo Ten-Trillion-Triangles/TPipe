@@ -93,11 +93,23 @@ data class TruncationSettings(
  *@truncate ContextWindowAsString If true, the context window will be truncated to fit into the context window.
  * If false, an error will be thrown if the user prompt exceeds the context window.
  *
+ * @param preserveTextMatches If true, text matches in converse history, and in context elements can be treated as
+ * lowest weight and preserved over text that does not match the selection. Creates a secondary layer of selection
+ * allowing for more preservation of text at the risk of possible truncation when memory pressure is still too
+ * high.
+ *
  * @param truncationMethod Defines the method used to truncate the user prompt if it exceeds the context window.
  * If the user prompt is allowed to be truncated, it will be truncated according to the truncation method.
  * If the user prompt is not allowed to be truncated, an error will be thrown.
  *
  * @param multiPageBudgetStrategy Determines how token budgeting allocates empty space, and leftover reserve area.
+ *
+ * @param pageWeights Optional page weight overrides for the weighted allocation strategy. Required if using any
+ * weighted fill modes.
+ *
+ * @param reserveEmptyPageBudget Determines whether empty pages still reserve a portion of the budget. If true,
+ * the budget will be divided regardless of weather a specified page has content, or how much it has. Will dynamically
+ * fill when set to dynamic fill preventing space wasted.
  *
  * @see ContextWindowSettings
  */
