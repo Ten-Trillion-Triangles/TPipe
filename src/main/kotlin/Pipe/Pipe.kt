@@ -97,6 +97,8 @@ data class TruncationSettings(
  * If the user prompt is allowed to be truncated, it will be truncated according to the truncation method.
  * If the user prompt is not allowed to be truncated, an error will be thrown.
  *
+ * @param multiPageBudgetStrategy Determines how token budgeting allocates empty space, and leftover reserve area.
+ *
  * @see ContextWindowSettings
  */
 @kotlinx.serialization.Serializable
@@ -127,6 +129,13 @@ data class TokenBudgetSettings(
 
 /**
  * Defines the supported multi-page budget allocation strategies.
+ *
+ * @param EQUAL_SPLIT All pages are allocated the same amount of budget.
+ * @param WEIGHTED_SPLIT Gives higher weight pages higher priority when determining which gets space in an equal split.
+ * @param PRIORITY_FILL Walks pages in order and fills each page up to its full token need (based on current content), exhausting the total
+ * budget as it goes.
+ * @param DYNAMIC_FILL Starts with priority fill, simulates actual usage after truncation, then redistributes any unused budget to pages
+ * that still need more, in up to 3 passes.
  */
 @Serializable
 enum class MultiPageBudgetStrategy {
