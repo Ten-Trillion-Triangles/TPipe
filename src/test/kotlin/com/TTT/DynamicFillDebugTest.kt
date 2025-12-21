@@ -6,7 +6,7 @@ import kotlin.test.Test
 class DynamicFillDebugTest
 {
     @Test
-    fun debugDynamicFillValues()
+    fun debugDynamicFillWithRealContent()
     {
         val pipe = DynamicFillTestPipe()
         pipe.addContextWindow("priority", createContextWindowWithWords(220))
@@ -18,28 +18,22 @@ class DynamicFillDebugTest
         val truncationSettings = TruncationSettings()
 
         val priorityAlloc = pipe.invokeCalculatePriorityFill(totalBudget, pageKeys, truncationSettings)
-        val priorityAllocFull = pageKeys.associateWith { priorityAlloc[it] ?: 0 }
         val dynamicAlloc = pipe.invokeCalculateDynamicFill(totalBudget, pageKeys, truncationSettings)
-        val simulatedUsage = pipe.invokeSimulateTruncationUsage(priorityAllocFull, truncationSettings)
+        val dynamicSimulatedUsage = pipe.invokeSimulateTruncationUsage(dynamicAlloc, truncationSettings)
 
+        println("=== DYNAMIC FILL DEBUG ===")
         println("Total Budget: $totalBudget")
-        println("Priority Allocation: $priorityAllocFull")
-        println("Dynamic Allocation: $dynamicAlloc")
-        println("Simulated Usage: $simulatedUsage")
-        println("Dynamic Sum: ${dynamicAlloc.values.sum()}")
-        println("Simulated Sum: ${simulatedUsage.values.sum()}")
+        println("Priority Allocation: $priorityAlloc (total: ${priorityAlloc.values.sum()})")
+        println("Dynamic Allocation: $dynamicAlloc (total: ${dynamicAlloc.values.sum()})")
+        println("Dynamic Simulated Usage: $dynamicSimulatedUsage (total: ${dynamicSimulatedUsage.values.sum()})")
         
-        pageKeys.forEach { pageKey ->
-            val dynamicValue = dynamicAlloc.getOrDefault(pageKey, 0)
-            val simulatedValue = simulatedUsage.getOrDefault(pageKey, 0)
-            println("$pageKey: dynamic=$dynamicValue, simulated=$simulatedValue, dynamic>simulated=${dynamicValue > simulatedValue}")
-        }
+        println("\nAssertion checks:")
+        println("Dynamic total <= Budget: ${dynamicAlloc.values.sum()} <= $totalBudget = ${dynamicAlloc.values.sum() <= totalBudget}")
+        println("Dynamic total >= Simulated: ${dynamicAlloc.values.sum()} >= ${dynamicSimulatedUsage.values.sum()} = ${dynamicAlloc.values.sum() >= dynamicSimulatedUsage.values.sum()}")
         
-        val hasAnyGreater = pageKeys.any { pageKey ->
-            val dynamicValue = dynamicAlloc.getOrDefault(pageKey, 0)
-            val simulatedValue = simulatedUsage.getOrDefault(pageKey, 0)
-            dynamicValue > simulatedValue
+        // This assertion should always pass - allocation should be >= actual usage
+        assert(dynamicAlloc.values.sum() >= dynamicSimulatedUsage.values.sum()) {
+            "Dynamic allocation (${dynamicAlloc.values.sum()}) should be >= simulated usage (${dynamicSimulatedUsage.values.sum()})"
         }
-        println("Any dynamic > simulated: $hasAnyGreater")
     }
 }

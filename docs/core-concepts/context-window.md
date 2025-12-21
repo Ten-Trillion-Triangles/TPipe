@@ -383,6 +383,61 @@ contextWindow.selectAndTruncateContext(
 
 These token selection features enable the ContextWindow to intelligently choose the most relevant contextual information for any given input, ensuring optimal use of available token budgets while maintaining context relevance.
 
+## Context Access Control
+
+### ContextLock Integration
+
+The ContextWindow integrates with TPipe's ContextLock system to provide fine-grained access control over lorebook keys and context selection. This enables secure, conditional access to sensitive context information.
+
+#### Lock-Aware Selection
+When ContextLock is active, all lorebook selection methods automatically respect lock states:
+
+```kotlin
+// Lock sensitive information
+ContextLock.addLock("api_credentials", "", false, true)
+ContextLock.addLock("user_data", "", false, true)
+
+// Selection automatically excludes locked keys
+val selectedKeys = contextWindow.selectLoreBookContext(text, maxTokens)
+// api_credentials and user_data will not appear in results
+```
+
+#### Checking Lock Status
+```kotlin
+// Check if context window is affected by locks
+if (contextWindow.isContextLocked()) {
+    val lockedKeys = contextWindow.getLockedKeys()
+    println("Locked keys: ${lockedKeys.joinToString(", ")}")
+}
+
+// Check individual key accessibility
+if (contextWindow.canSelectLoreBookKey("sensitive_data")) {
+    // Key is available for selection
+} else {
+    // Key is locked or conditionally restricted
+}
+```
+
+#### Conditional Access
+ContextLock supports passthrough functions for dynamic access control:
+
+```kotlin
+// Time-based access control
+ContextLock.addLock("business_hours_data", "", false, true) {
+    val hour = LocalTime.now().hour
+    hour in 9..17  // Only accessible during business hours
+}
+
+// Permission-based access control
+ContextLock.addLock("admin_settings", "", false, true) {
+    currentUser.hasRole("ADMIN")
+}
+```
+
+The ContextWindow seamlessly integrates these access controls into all selection operations, ensuring security policies are automatically enforced without requiring manual checks in application code.
+
+**→ [ContextLock API](../api/context-lock.md)** - Complete ContextLock documentation
+
 ## Next Steps
 
 Now that you understand TPipe's memory system, learn about token management:

@@ -195,6 +195,67 @@ Truncates conversation using settings object for token counting parameters.
 
 ---
 
+### Context Access Control
+
+#### `isContextLocked(): Boolean`
+Checks if this ContextWindow is currently locked by the ContextLock system.
+
+**Behavior:** Returns true if the ContextWindow has been marked as locked via ContextLock metadata (`metaData["isLocked"]`).
+
+**Returns:** Boolean indicating lock status
+
+**Example:**
+```kotlin
+if (contextWindow.isContextLocked()) {
+    println("Context window has active locks")
+}
+```
+
+#### `canSelectLoreBookKey(key: String): Boolean`
+Checks if a specific lorebook key can be selected based on ContextLock state.
+
+**Behavior:** 
+- Returns true immediately if context is not locked
+- Checks for passthrough functions that can bypass locks
+- Handles passthrough function exceptions gracefully
+- Falls back to checking key lock state via ContextLock
+
+**Parameters:**
+- `key` - The lorebook key to check for selection eligibility
+
+**Returns:** Boolean indicating if key can be selected
+
+**Example:**
+```kotlin
+if (contextWindow.canSelectLoreBookKey("sensitive_data")) {
+    // Key is available for selection
+    val value = contextWindow.loreBookKeys["sensitive_data"]?.value
+} else {
+    // Key is locked or conditionally restricted
+    println("Access denied to sensitive_data")
+}
+```
+
+#### `getLockedKeys(): Set<String>`
+Gets list of locked lorebook keys that affect this ContextWindow.
+
+**Behavior:** 
+- Returns empty set if context is not locked
+- Queries ContextLock for keys that would be filtered from selection
+- Only returns lorebook keys (excludes page keys)
+
+**Returns:** Set of locked lorebook key names
+
+**Example:**
+```kotlin
+val lockedKeys = contextWindow.getLockedKeys()
+if (lockedKeys.isNotEmpty()) {
+    println("Locked keys: ${lockedKeys.joinToString(", ")}")
+}
+```
+
+---
+
 ### Utilities
 
 #### `isEmpty(): Boolean`

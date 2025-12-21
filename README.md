@@ -92,6 +92,7 @@ Complete API documentation for all TPipe components:
 #### Context Management APIs
 - [ContextWindow API](docs/api/context-window.md) - Memory and context operations
 - [ContextBank API](docs/api/context-bank.md) - Global context management
+- [ContextLock API](docs/api/context-lock.md) - Context access control and security
 - [MiniBank API](docs/api/minibank.md) - Multi-page context handling
 - [ConverseHistory API](docs/api/converse-history.md) - Conversation management
 - [TodoList API](docs/api/todolist.md) - Task management for AI workflows
@@ -129,6 +130,7 @@ println(result.text)
 
 - **Multi-stage AI workflows** with sophisticated error handling
 - **Global context sharing** across applications via ContextBank
+- **Context access control** with ContextLock enforcement for secure lorebook and page management
 - **Human-in-the-loop integration** with code and AI-powered validation
 - **Chain-of-thought reasoning** with multiple strategies and focus points
 - **Multi-provider AI support** (AWS Bedrock, Ollama, extensible architecture)

@@ -85,10 +85,19 @@ Thread-safe storage or replacement of a context window in the bank.
 Retrieves a context window from the bank by key.
 
 **Behavior:** 
+- **Page Lock Check**: Returns empty `ContextWindow()` if page is locked via ContextLock
 - **With `copy = true` (default)**: Returns deep copy via serialization for thread safety
 - **With `copy = false`**: Returns direct reference for performance but without thread safety
 - **Missing key**: Returns empty `ContextWindow()` if key doesn't exist
 - **Copy failure**: Returns empty `ContextWindow()` if serialization fails
+
+**ContextLock Integration:**
+```kotlin
+// Page locks are automatically enforced
+ContextLock.addLock("classified_page", "", true, true)
+val context = ContextBank.getContextFromBank("classified_page")
+// Returns empty ContextWindow due to page lock
+```
 
 ---
 
