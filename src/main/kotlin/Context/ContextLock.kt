@@ -268,5 +268,66 @@ object ContextLock
         }
     }
 
+    /**
+     * Gets the KeyBundle for a specific key using direct map access.
+     * This method provides external access to lock bundle information
+     * for validation and passthrough function execution.
+     *
+     * @param key The lorebook key or bundle identifier to retrieve
+     * @return KeyBundle if found, null otherwise
+     */
+    fun getKeyBundle(key: String): KeyBundle?
+    {
+        return locks[key.lowercase()]
+    }
+
+    /**
+     * Checks if a specific key is currently locked using direct map access.
+     * This method provides fast lock state checking for lorebook selection logic.
+     *
+     * @param key The lorebook key to check
+     * @return True if the key exists and is locked, false otherwise
+     */
+    fun isKeyLocked(key: String): Boolean
+    {
+        val bundle = locks[key.lowercase()]
+        return bundle?.isLocked ?: false
+    }
+
+    /**
+     * Checks if a specific page key is locked.
+     * This method is used by ContextBank to prevent retrieval of locked pages.
+     *
+     * @param pageKey The page key to check
+     * @return True if the page exists as a locked page key, false otherwise
+     */
+    fun isPageLocked(pageKey: String): Boolean
+    {
+        val bundle = locks[pageKey.lowercase()]
+        return bundle?.isPageKey == true && bundle.isLocked
+    }
+
+    /**
+     * Gets all locked lorebook keys that affect a specific ContextWindow.
+     * This method filters out page keys and returns only lorebook keys that
+     * are currently locked and would impact lorebook selection.
+     *
+     * @param contextWindow The ContextWindow to get locked keys for
+     * @param pageKey Optional page key for page-specific lock filtering
+     * @return Set of locked lorebook key names
+     */
+    fun getLockedKeysForContext(contextWindow: ContextWindow, pageKey: String? = null): Set<String>
+    {
+        return locks.values
+            .filter { bundle ->
+                bundle.isLocked && !bundle.isPageKey && (
+                    bundle.isGlobal || 
+                    (pageKey != null && bundle.pages.contains(pageKey))
+                )
+            }
+            .flatMap { it.keys }
+            .toSet()
+    }
+
     
 }

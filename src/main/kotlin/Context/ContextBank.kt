@@ -210,6 +210,12 @@ object ContextBank
      */
     fun getContextFromBank(key: String, copy: Boolean = true) : ContextWindow
     {
+        // Check if this page is locked
+        if (ContextLock.isPageLocked(key))
+        {
+            return ContextWindow() // Return empty context for locked pages
+        }
+        
         var context = bank[key] ?: ContextWindow()
 
         /**

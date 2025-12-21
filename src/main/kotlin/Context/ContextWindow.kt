@@ -65,14 +65,24 @@ data class ContextWindow(
         
         loreBookKeys.forEach { (key, loreBook) ->
             // Check main key
-            if (lowerText.contains(key.lowercase())) {
-                matchingKeys.add(key)
+            if (lowerText.contains(key.lowercase()))
+            {
+                // Check if key is locked before adding
+                if (canSelectLoreBookKey(key))
+                {
+                    matchingKeys.add(key)
+                }
             }
             
             // Check alias keys
             loreBook.aliasKeys.forEach { alias ->
-                if (lowerText.contains(alias.lowercase())) {
-                    matchingKeys.add(key)
+                if (lowerText.contains(alias.lowercase()))
+                {
+                    // Check if key is locked before adding
+                    if (canSelectLoreBookKey(key))
+                    {
+                        matchingKeys.add(key)
+                    }
                 }
             }
         }
@@ -218,6 +228,8 @@ data class ContextWindow(
             .map { (key, loreBook) -> 
                 Triple(key, loreBook, keyHitCounts[key] ?: 0)
             }
+            // Filter out locked keys
+            .filter { (key, _, _) -> canSelectLoreBookKey(key) }
             // Step 5: Sort by weight (descending) then by hit count (descending)
             // This ensures highest weight entries are selected first, with hit count as tiebreaker
             .sortedWith(compareByDescending<Triple<String, LoreBook, Int>> { it.second.weight }
@@ -310,6 +322,8 @@ data class ContextWindow(
 
         val fillCandidates = loreBookKeys.keys
             .filter { it !in selectedSet }
+            // Filter out locked keys
+            .filter { key -> canSelectLoreBookKey(key) }
             .mapNotNull { key -> loreBookKeys[key]?.let { key to it } }
             .sortedByDescending { (_, loreBook) -> loreBook.weight }
 
@@ -1320,5 +1334,58 @@ data class ContextWindow(
             //Re-add now that we've cleaned up any of the nonsense like banned chars, missing case fixing alias keys etc.
             addLoreBookEntryWithObject(loreBookValue)
         }
+    }
+
+    /**
+     * Checks if this ContextWindow is currently locked by ContextLock system
+     *
+     * @return True if the ContextWindow has been marked as locked via ContextLock metadata
+     */
+    fun isContextLocked(): Boolean
+    {
+        return metaData["isLocked"] as? Boolean ?: false
+    }
+
+    /**
+     * Checks if a specific lorebook key can be selected based on ContextLock state.
+     * This method handles passthrough functions and respects lock states to determine
+     * if a key should be available for selection during lorebook processing.
+     *
+     * @param key The lorebook key to check for selection eligibility
+     * @return True if the key can be selected, false if it's locked and should be excluded
+     */
+    fun canSelectLoreBookKey(key: String): Boolean
+    {
+        if (!isContextLocked()) return true
+        
+        // Check if key has passthrough function that allows bypass
+        val bundle = ContextLock.getKeyBundle(key)
+        if (bundle?.passthroughFunction != null)
+        {
+            try
+            {
+                // Execute passthrough function - if returns true, allow selection
+                return bundle.passthroughFunction?.invoke() ?: false
+            }
+            catch (e: Exception)
+            {
+                // If passthrough function fails, default to lock state
+                return !bundle.isLocked
+            }
+        }
+        
+        return !ContextLock.isKeyLocked(key)
+    }
+
+    /**
+     * Gets list of locked lorebook keys that affect this ContextWindow.
+     * Only returns keys when the ContextWindow is marked as locked.
+     *
+     * @return Set of locked lorebook key names, or empty set if not locked
+     */
+    fun getLockedKeys(): Set<String>
+    {
+        if (!isContextLocked()) return emptySet()
+        return ContextLock.getLockedKeysForContext(this)
     }
 }
