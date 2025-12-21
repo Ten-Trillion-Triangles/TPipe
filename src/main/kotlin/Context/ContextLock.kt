@@ -1,6 +1,7 @@
 package com.TTT.Context
 
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class KeyBundle(
     var keys: MutableList<String> = mutableListOf(),
@@ -28,6 +29,16 @@ object ContextLock
      */
     val lockMutex = Mutex()
 
+    /**
+     * Registers a new lock bundle for the provided key so that all affected context windows are marked with the
+     * requested state.
+     *
+     * @param key The lorebook key or bundle identifier being locked.
+     * @param pageKeys The comma-separated page key list that the lock applies to; empty means global.
+     * @param isPageKey True when the key itself identifies a page rather than a lorebook entry.
+     * @param lockState Whether the bundle should be marked as locked; defaults to true.
+     * @param passthroughFunction Optional async check invoked before bypassing the lock.
+     */
     fun addLock(key: String,
                 pageKeys: String,
                 isPageKey: Boolean,
@@ -108,6 +119,153 @@ object ContextLock
 
         //Finally save our new key bundle to our ContextLock system.
         locks[key.lowercase()] = newKeyBundle
+    }
+
+    /**
+     * Suspend wrapper around [addLock] that acquires the mutex before mutating shared state.
+     */
+    /**
+     * Thread-safe wrapper around [addLock] that acquires [lockMutex].
+     *
+     * @param key The lorebook key or bundle identifier being locked.
+     * @param pageKeys The comma-separated page key list that the lock applies to; empty means global.
+     * @param isPageKey True when the key itself identifies a page rather than a lorebook entry.
+     * @param lockState Whether the bundle should be marked as locked; defaults to true.
+     * @param passthroughFunction Optional async check invoked before bypassing the lock.
+     */
+    suspend fun addLockWithMutex(key: String,
+                                 pageKeys: String,
+                                 isPageKey: Boolean,
+                                 lockState: Boolean = true,
+                                 passthroughFunction: (suspend () -> Boolean)? = null
+                                 )
+    {
+        lockMutex.withLock {
+            addLock(key, pageKeys, isPageKey, lockState, passthroughFunction)
+        }
+    }
+
+    /**
+     * Removes a lock that was previously registered via [addLock] and clears any metadata markers that were
+     * placed on the affected context windows.
+     *
+     * @param key The same identifier that was passed to [addLock].
+     */
+    fun removeLock(key: String)
+    {
+        val normalizedKey = key.lowercase()
+        val bundle = locks.remove(normalizedKey) ?: return
+
+        if(bundle.isPageKey)
+        {
+            return
+        }
+
+        val pagesToClear = when
+        {
+            bundle.pages.isNotEmpty() -> bundle.pages.toSet()
+            bundle.isGlobal -> ContextBank.getPageKeys().toSet()
+            else -> setOf(key)
+        }
+
+        for(page in pagesToClear)
+        {
+            val pageWindow = ContextBank.getContextFromBank(page, false)
+            pageWindow.metaData.remove("isLocked")
+        }
+    }
+
+    /**
+     * Suspend-safe wrapper around [removeLock].
+     */
+    /**
+     * Thread-safe wrapper around [removeLock].
+     *
+     * @param key The same identifier that was passed to [addLock].
+     */
+    suspend fun removeLockWithMutex(key: String)
+    {
+        lockMutex.withLock {
+            removeLock(key)
+        }
+    }
+
+    /**
+     * Locks the bundle identified by [key] so that all associated context windows and metadata markers are
+     * marked as locked.
+     *
+     * @param key The lock bundle identifier to update.
+     */
+    fun lockKeyBundle(key: String)
+    {
+        applyLockState(key, true)
+    }
+
+    /**
+     * Suspend-safe wrapper around [lockKeyBundle].
+     *
+     * @param key The lock bundle identifier to update.
+     */
+    suspend fun lockKeyBundleWithMutex(key: String)
+    {
+        lockMutex.withLock {
+            lockKeyBundle(key)
+        }
+    }
+
+    /**
+     * Unlocks the bundle identified by [key] so that all previously marked context windows clear their locked
+     * metadata flag.
+     *
+     * @param key The lock bundle identifier to update.
+     */
+    fun unlockKeyBundle(key: String)
+    {
+        applyLockState(key, false)
+    }
+
+    /**
+     * Suspend-safe wrapper around [unlockKeyBundle].
+     *
+     * @param key The lock bundle identifier to update.
+     */
+    suspend fun unlockKeyBundleWithMutex(key: String)
+    {
+        lockMutex.withLock {
+            unlockKeyBundle(key)
+        }
+    }
+
+    /**
+     * Updates the stored bundle and every affected context window metadata entry according to [lockState].
+     *
+     * @param key The lock bundle identifier to update.
+     * @param lockState Desired lock state to persist.
+     */
+    private fun applyLockState(key: String, lockState: Boolean)
+    {
+        val normalizedKey = key.lowercase()
+        val bundle = locks[normalizedKey] ?: return
+
+        bundle.isLocked = lockState
+
+        if(bundle.isPageKey)
+        {
+            return
+        }
+
+        val pagesToUpdate = when
+        {
+            bundle.pages.isNotEmpty() -> bundle.pages.toSet()
+            bundle.isGlobal -> ContextBank.getPageKeys().toSet()
+            else -> setOf(key)
+        }
+
+        for(page in pagesToUpdate)
+        {
+            val pageWindow = ContextBank.getContextFromBank(page, false)
+            pageWindow.metaData["isLocked"] = lockState
+        }
     }
 
     
