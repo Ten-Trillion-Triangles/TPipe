@@ -504,6 +504,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * preventing overflow and pipeline crashes due to exceeding max token limits in complex multimodal
      * setups.
      */
+    @Serializable
     protected var tokenBudgetSettings : TokenBudgetSettings? = null
 
     /**
@@ -530,6 +531,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     @Serializable
     protected var autoTruncateContext = false
+
 
     /**
      * Empty user prompts can confuse the llm's and cause unexpected and undefined behavior. This behavior is

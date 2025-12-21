@@ -232,6 +232,14 @@ object ContextBank
     }
 
     /**
+     * Access function to get all the pages that are stored inside the context bank.
+     */
+    fun getPageKeys() : List<String>
+    {
+        return bank.keys.toList()
+    }
+
+    /**
      * Clear all banked context. Useful when some code is checking if this contains data or not and applies logic
      * if it does.
      */

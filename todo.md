@@ -5,6 +5,8 @@ the pipeline itself.
 - Fix reasoningBudget subtraction in `Pipe.setTokenBudgetInternal` so it adjusts the prompt segment (system or user) where reasoning is injected rather than always shrinking `maxTokens`; preserve `ReasoningInjector`/metadata awareness so multi-round reasoning consumes the correct bucket.
 - Fix multi round reasoning issues.
 - Fix janky internal model reasoning where some providers work and others do not.
+- Consider renaming the "problemStatement" var in explicit cot reasoning to avoid it making assumptions in cases
+where assumptions are not desired.
 
 **Enhancements:**
 - ~~Add creator functions to help simplify creating converseHistory adds.~~
@@ -16,11 +18,14 @@ the pipeline itself.
 - ~~Add support for keyword matching similar to the lorebook for context elements, and converse history stored in
 a context window object. This would allow them to be hit on selection at higher truncation priority than the rest
 allowing for expanded semantic reach.~~
-- Add support for requirement function in the lorebook in order to allow a key to be loaded even if hit.
+- Add support for requirement function in the lorebook in order to allow for custom requirements needing to be met 
+in order to accept a key being hit.
+- Add support locking and unlocking lorebook keys, leverage the requirement function system as an addition.
 - Add output for just after generation, and prior to transformation function. Name it something easy to search in the 
-trace file since transformation functions can change the output in a way that's invisible to the developer leading
+trace file, since transformation functions can change the output in a way that's invisible to the developer. This leads
 to confusion when reading a trace file if a transformation function is overwriting the original output to something
 entirely different from what the pipe produced.
+- ~~Consider having jump instructions override terminate instructions.~~
 
 **New features:**
 - ~~Add DistributionGrid class that enables "swarm" style agents with TPipe pipelines.~~
@@ -40,12 +45,12 @@ Allow the keys to also be stored as stub files and loaded directly.~~
 - ~~Add automatic wrapping of pipeline inputs and outputs into [ConverseHistory] structure.~~
 - Add support for pipeline reflection allowing agents, containers, and P2PInterface objects to reflect on their
 state, settings, internal pipelines etc. and update and adjust them and their own internal context in real time.
-- Add delegate to report when a pipe has finished it's work in a pipeline. 
+- ~~Add delegate to report when a pipe has finished it's work in a pipeline.~~ 
 - Add native pcp support functions to allow various runtime support. Examples include querying TPipe memory data at
 runtime, Interacting with TPipe systems and settings, inspecting and registering pcp and p2p systems. This is a great
 compliment to supporting model reflection in TPipe.
-- Add async container class that produces a result pointer and immediate response that can be then checked on,
-- and automatically propagated to interrupt a manifold class and interject its result.
+- Add async container class that produces a result pointer and immediate response that can be then checked on, 
+and automatically propagated to interrupt a manifold class and interject its result.
 
 **Down the road:**
 - Create entry and exit points for graalvm native for future non jvm language wrappers.

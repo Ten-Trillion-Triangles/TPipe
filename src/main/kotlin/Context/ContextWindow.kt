@@ -43,7 +43,14 @@ data class ContextWindow(
     @kotlinx.serialization.Serializable
     var contextSize = 8000
 
-
+    /**
+     * Transient metadata that we can use to store various system settings and metadata. This is commonly used
+     * to store settings, and supply metadata for other features of TPipe so caution should be used by the user
+     * to avoid overlapping with keys reserved by the system. In general users should avoid even touching this
+     * unless they know exactly what they're doing.
+     */
+    @kotlinx.serialization.Transient
+    var metaData = mutableMapOf<Any, Any>()
 
     /**
      * Finds lorebook keys that match any substrings in the input text (case-insensitive)

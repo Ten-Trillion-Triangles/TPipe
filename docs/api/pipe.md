@@ -97,6 +97,11 @@ ID of currently executing pipeline. Used for tracking and coordination.
 
 ### Configuration
 
+#### `init(): Pipe`
+Abstract initialization function that must be implemented by provider-specific pipe classes.
+
+**Behavior:** Called to initialize provider-specific configurations, authentication, and model settings. Each provider implementation (BedrockPipe, OllamaPipe, etc.) must implement this method to set up their specific requirements. Returns the pipe instance for method chaining.
+
 #### `setPipeName(name: String): Pipe`
 Sets the pipe name for debugging and identification.
 
@@ -142,15 +147,19 @@ Sets the system prompt for the AI model.
 Sets the user prompt prefix.
 
 #### `setMiddlePrompt(prompt: String): Pipe`
-Sets prompt injected between input and output JSON schemas.
+Sets prompt injected between input and output JSON schemas in the system prompt.
+
+**Behavior:** The middle prompt is inserted after JSON input schema injection but before JSON output schema injection during `applySystemPrompt()`. Useful for providing context-specific instructions that should appear between the input/output format specifications.
 
 #### `setFooterPrompt(prompt: String): Pipe`
-Sets prompt added to the end of system prompt.
+Sets prompt added to the end of the system prompt after all other injections.
 
-#### `copySystemToUserPrompt(): Pipe`
+**Behavior:** The footer prompt is appended as the final element when `applySystemPrompt()` is called, appearing after JSON schemas, PCP context, P2P agents, and all other automatic injections. Ideal for final instructions or formatting requirements.
+
+#### `copySystemPromptToUserPrompt(): Pipe`
 Copies system prompt to user prompt for models that handle user prompts better.
 
-**Behavior:** Creates a `ConverseHistory` with system prompt as developer role and user prompt as user role. Useful for models that don't properly respect system prompts.
+**Behavior:** Creates a `ConverseHistory` with system prompt as developer role and user prompt as user role. Useful for models that don't properly respect system prompts. The system prompt is cleared after copying to prevent duplication.
 
 #### `applySystemPrompt(): Pipe`
 Rebuilds system prompt with all injections and configurations.
@@ -175,7 +184,9 @@ Sets JSON input schema from Kotlin object.
 **Behavior:** Uses reflection to generate schema. If `senddefaults` is false, optional fields are excluded from the schema.
 
 #### `setJsonInputInstructions(instructions: String): Pipe`
-Sets custom instructions for JSON input handling.
+Sets custom instructions for JSON input handling that override the default input format explanation.
+
+**Behavior:** Replaces the default JSON input instructions that are injected into the system prompt when `applySystemPrompt()` is called. Use this to provide model-specific or domain-specific guidance on how to interpret the JSON input schema. If empty, uses TPipe's default input instructions.
 
 #### `setJsonOutput(json: String): Pipe`
 Sets JSON output schema as string.
@@ -186,7 +197,9 @@ Sets JSON output schema as string.
 Sets JSON output schema from Kotlin object.
 
 #### `setJsonOutputInstructions(instructions: String): Pipe`
-Sets custom instructions for JSON output handling.
+Sets custom instructions for JSON output handling that override the default output format explanation.
+
+**Behavior:** Replaces the default JSON output instructions that are injected into the system prompt when `applySystemPrompt()` is called. Use this to provide specific formatting requirements, validation rules, or output constraints beyond the basic schema. If empty, uses TPipe's default output instructions.
 
 #### `requireJsonPromptInjection(stripExternalText: Boolean = false): Pipe`
 Forces JSON prompt injection for models without native JSON support.
@@ -569,7 +582,9 @@ Sets Pipe Context Protocol configuration.
 **Behavior:** PCP tools are automatically injected into system prompt when `applySystemPrompt()` is called. Tools become available to the AI during execution.
 
 #### `setPcPDescription(description: String): Pipe`
-Sets custom PCP description. Allows for the user to explain pcp to the llm instead of the default TPipe injector.
+Sets custom PCP description that overrides the default tool explanation injected into the system prompt.
+
+**Behavior:** Replaces TPipe's default PCP tool description with custom instructions when `applySystemPrompt()` is called. Use this to provide model-specific guidance on how to use PCP tools or to customize the tool invocation format. If empty, uses TPipe's default PCP instructions.
 
 #### `processPcpResponse(llmResponse: String): PcpExecutionResult`
 Processes PCP requests from LLM response.
@@ -582,7 +597,9 @@ Sets list of available P2P agents.
 **Behavior:** Agent list is automatically injected into system prompt when `applySystemPrompt()` is called. Agents become available for the AI to call during execution.
 
 #### `setP2PDescription(description: String): Pipe`
-Sets custom P2P agent description.
+Sets custom P2P agent description that overrides the default agent explanation injected into the system prompt.
+
+**Behavior:** Replaces TPipe's default P2P agent description with custom instructions when `applySystemPrompt()` is called. Use this to provide model-specific guidance on how to interact with P2P agents or to customize the agent invocation format. If empty, uses TPipe's default P2P instructions.
 
 #### `setContainerPtr(ptr: P2PInterface): Pipe`
 Sets container to execute instead of this pipe.

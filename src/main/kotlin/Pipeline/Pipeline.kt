@@ -388,7 +388,8 @@ class Pipeline : P2PInterface {
      * Adds a pipe to the list of pipes in the pipeline to be executed, only if the pipe does not already exist in the list.
      * @param pipe The pipe to be added.
      */
-    fun add(pipe: Pipe): Pipeline {
+    fun add(pipe: Pipe): Pipeline
+    {
         if (!pipes.contains(pipe)) {
             pipes.add(pipe)
         }
@@ -412,8 +413,10 @@ class Pipeline : P2PInterface {
      * list of pipes in the pipeline, and only if a pipe does not already exist in the list, will it be added.
      * @param pipes The list of pipes to be added to the pipeline.
      */
-    fun addAll(pipes: List<Pipe>): Pipeline {
-        for (pipe in pipes) {
+    fun addAll(pipes: List<Pipe>): Pipeline
+    {
+        for(pipe in pipes)
+        {
             add(pipe)
         }
 
@@ -658,9 +661,13 @@ class Pipeline : P2PInterface {
         currentPipeIndex = 0
 
         appendContentToConverseHistory(initialContent, userConverseRole)
-        
+
+        /**
+         * Find next pipe based on index or pointers -> Run pipe -> Break on terminate or out of bounds -> Repeat
+         */
         while(currentPipeIndex < pipes.size)
         {
+            //Get next pipe based on next index, or jump instruction.
             val pipe = getNextPipe(generatedContent) ?: break
             generatedContent.clearJumpToPipe() //Clear so we don't have unintended behaviors.
             
@@ -729,7 +736,17 @@ class Pipeline : P2PInterface {
                     ))
                 }
 
-                break
+                /**
+                 * Jump instructions now override terminate instructions. Both terminate instructions, and jump
+                 * instructions are commonly manually invoked. And the only exceptions to automatic invocation
+                 * are the original human-in-the-loop functions provided by TPipe and some automatic failsafe
+                 * events.
+                 */
+                if(generatedContent.getJumpToPipe().isEmpty())
+                {
+                    break
+                }
+
             }
 
             /**
