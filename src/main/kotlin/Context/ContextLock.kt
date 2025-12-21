@@ -9,7 +9,7 @@ data class KeyBundle(
     var isGlobal: Boolean = false,
     var isLocked: Boolean = false,
     var isPageKey: Boolean = false,
-    var passthroughFunction: (suspend () -> Boolean)? = null
+    var passthroughFunction: ( () -> Boolean)? = null
 )
 
 /**
@@ -43,7 +43,7 @@ object ContextLock
                 pageKeys: String,
                 isPageKey: Boolean,
                 lockState: Boolean = true,
-                passthroughFunction: (suspend () -> Boolean)? = null
+                passthroughFunction: (() -> Boolean)? = null
                 )
     {
         /**
@@ -137,7 +137,7 @@ object ContextLock
                                  pageKeys: String,
                                  isPageKey: Boolean,
                                  lockState: Boolean = true,
-                                 passthroughFunction: (suspend () -> Boolean)? = null
+                                 passthroughFunction: (() -> Boolean)? = null
                                  )
     {
         lockMutex.withLock {
