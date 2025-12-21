@@ -82,23 +82,23 @@ data class SolutionDecomposition(
 )
 
 @kotlinx.serialization.Serializable
-data class SubProblemSolution(
+data class SubProblemApproach(
     var subProblemName: String = "",
-    var solution: String = ""
+    var recommendedStrategy: String = ""
 )
 
 @kotlinx.serialization.Serializable
 data class SystemicExecution(
-    var subProblemSolutions: List<SubProblemSolution> = listOf(),
+    var subProblemApproaches: List<SubProblemApproach> = listOf(),
     var intermediateSteps: List<String> = listOf(),
     var purposeOfEachStep: List<String> = listOf()
 )
 
 @kotlinx.serialization.Serializable
 data class ProcessFocusedResult(
-    var combinedResult: String = "",
-    var verifyResult: String = "",
-    var finalSummary: String = ""
+    var proposedApproach: String = "",
+    var approachValidation: String = "",
+    var reasoningConclusion: String = ""
 )
 
 //Unravel this back into a string.
@@ -120,17 +120,17 @@ data class StructuredCot(
         append("Dependencies between steps: ${solutionDecomposition.dependenciesBetweenSteps.joinToString(", ")}. ")
         
         append("Now executing systematically: ")
-        systematicExecution.subProblemSolutions.forEach { solution ->
-            append("For ${solution.subProblemName}: ${solution.solution}. ")
+        systematicExecution.subProblemApproaches.forEach { approach ->
+            append("For ${approach.subProblemName}: ${approach.recommendedStrategy}. ")
         }
         systematicExecution.intermediateSteps.forEachIndexed { index, step ->
             val purpose = systematicExecution.purposeOfEachStep.getOrNull(index) ?: ""
             append("$step ($purpose). ")
         }
         
-        append("Combining these results: ${reasoningSynthesis.combinedResult}. ")
-        append("Verification: ${reasoningSynthesis.verifyResult}. ")
-        append(reasoningSynthesis.finalSummary)
+        append("My proposed approach: ${reasoningSynthesis.proposedApproach}. ")
+        append("Approach validation: ${reasoningSynthesis.approachValidation}. ")
+        append(reasoningSynthesis.reasoningConclusion)
     }
 }
 

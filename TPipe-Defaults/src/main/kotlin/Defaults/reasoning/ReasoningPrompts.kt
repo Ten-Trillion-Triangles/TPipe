@@ -61,9 +61,9 @@ object ReasoningPrompts
             - Explain the purpose of each step
             
             [PHASE 4: REASONING SYNTHESIS]
-            - Combine results from all steps
-            - Verify the solution satisfies all requirements
-            - Summarize the logical flow
+            - Propose how to integrate insights from all steps
+            - Validate that the proposed approach addresses all requirements
+            - Conclude with reasoning-based recommendation
             
             Output Requirements:
             - Emit ALL thinking in real-time using the phase structure above
