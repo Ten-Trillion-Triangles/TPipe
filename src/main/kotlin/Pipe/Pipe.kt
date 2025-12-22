@@ -2515,6 +2515,28 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setValidatorPipe(pipe: Pipe): Pipe
     {
         this.validatorPipe = pipe
+        validatorPipe.apply {
+            /**
+             * Auto-save snapshots to adhere to expected developer behavior. Validation functions don't replace the
+             * content object so we would not be expecting the validator pipe to do the same.
+             */
+            setPreInitFunction {
+                it.saveSnapshot()
+            }
+
+            /**
+             * Auto restore the snapshot so that the expected behavior complies. This way the developer can follow
+             * the logical and naturally expected flow of: setup pipe -> program validator function -> fail validator
+             * function if invalid -> parent pipe picks up on this and proceeds to handle it as intended. But if we pass
+             * the validator function: restore snapshot -> exit back -> parent now sees the expected unmodified result
+             * it produced adhering to the behavior of validator functions.
+             */
+            setTransformationFunction {
+                val newSnapshot = it.getSnapshot() ?: return@setTransformationFunction it
+
+                return@setTransformationFunction newSnapshot
+            }
+        }
         return this
     }
 

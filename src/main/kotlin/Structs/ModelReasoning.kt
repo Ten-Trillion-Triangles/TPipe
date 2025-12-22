@@ -11,7 +11,7 @@ import com.TTT.Util.extractJson
  */
 @kotlinx.serialization.Serializable
 data class CoreAnalysis(
-    var problemStatement: String = "",
+    var analysisSubject: String = "",
     var identifiedComponents: List<String> = listOf(),
     var underlyingIssues: List<String> = listOf(),
     var knownFacts: List<String> = listOf()
@@ -46,7 +46,7 @@ data class ExplicitReasoningDetailed(
     var synthesizedConclusion: String = ""
 ) {
     fun unravel(): String = buildString {
-        append("Looking at this problem: ${coreAnalysis.problemStatement}. ")
+        append("Analyzing this subject: ${coreAnalysis.analysisSubject}. ")
         append("I can identify these key components: ${coreAnalysis.identifiedComponents.joinToString(", ")}. ")
         append("The underlying issues are ${coreAnalysis.underlyingIssues.joinToString(", ")}. ")
         append("What I know for certain: ${coreAnalysis.knownFacts.joinToString(", ")}. ")
