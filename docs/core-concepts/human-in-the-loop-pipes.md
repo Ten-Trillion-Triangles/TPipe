@@ -27,6 +27,24 @@ These pipes are invoked automatically when their corresponding functions are not
 ### Purpose
 Uses an AI model to validate the output of the main pipe when validation logic is too complex for code or requires subjective judgment.
 
+### ⚠️ Critical Setup Requirements
+
+**Validator pipes have strict setup requirements that must be followed to prevent undefined behavior:**
+
+1. **ValidatorFunction Required**: You MUST supply a `validatorFunction` when using `setValidatorPipe()`. TPipe will throw an exception during initialization if this is missing.
+
+2. **TransformationFunction Required**: You MUST supply a `transformationFunction` when using validator pipes. TPipe will throw an exception during initialization if this is missing.
+
+3. **Automatic Default Behavior**: TPipe automatically assigns `preInitFunction` and `transformationFunction` ONLY when both are null. If you've set either function, TPipe assumes you want full control and won't auto-assign defaults.
+
+### Why These Requirements Exist
+
+- **ValidatorFunction Required**: The validator pipe generates AI output, but without a `validatorFunction` to evaluate that output, there's no actual validation occurring. The pipe would consume tokens to generate content, then have no way to determine if the original content should pass or fail validation. This creates a broken validation chain where content always appears to "pass" regardless of quality, leading to undefined pipeline behavior.
+
+- **TransformationFunction Required**: Validator pipes return `MultimodalContent` that completely replaces the original generated content. Without a `transformationFunction` to restore the original content when validation passes, the validator pipe's AI-generated output becomes the final result instead of your original content. This destructively overwrites your pipeline's intended output, potentially replacing carefully crafted content with validation messages or analysis text.
+
+- **Conditional Auto-Assignment**: TPipe only auto-assigns the snapshot save/restore functions when BOTH `preInitFunction` AND `transformationFunction` are null. This ensures that if you've customized either function, TPipe respects your implementation completely and doesn't interfere. The auto-assignment provides safe defaults (save snapshot before validation, restore snapshot after validation) only for users who haven't implemented custom behavior.
+
 ### When to Use
 - Complex content quality assessment
 - Subjective validation (tone, style, appropriateness)
@@ -295,7 +313,42 @@ val creativeWritingPipe = BedrockPipe()
 
 ## Best Practices
 
-### 1. Clear Pipe Purposes
+### 1. Validator Pipe Setup
+```kotlin
+// Correct: Always provide both required functions
+val properValidatorPipe = BedrockPipe()
+    .setSystemPrompt("Validate content quality and accuracy.")
+    .setValidatorPipe(validationAI)
+    .setValidatorFunction { content ->
+        // Your validation logic here
+        content.text.contains("VALID")
+    }
+    .setTransformationFunction { content ->
+        // Restore or modify content as needed
+        content
+    }
+
+// Incorrect: Missing required functions - will throw exceptions
+val brokenPipe = BedrockPipe()
+    .setValidatorPipe(validationAI)  // Missing validatorFunction and transformationFunction
+```
+
+### 2. Understanding Auto-Assignment
+```kotlin
+// Auto-assignment occurs: Both functions are null
+val autoAssignedPipe = BedrockPipe()
+    .setValidatorPipe(validationAI)
+    // TPipe automatically assigns snapshot save/restore functions
+
+// No auto-assignment: One or both functions are set
+val customPipe = BedrockPipe()
+    .setValidatorPipe(validationAI)
+    .setValidatorFunction { content -> validateContent(content) }
+    // Must also set transformationFunction manually
+    .setTransformationFunction { content -> content }
+```
+
+### 3. Clear Pipe Purposes
 ```kotlin
 // Good: Specific, focused pipe responsibilities
 val grammarValidator = BedrockPipe()
@@ -309,7 +362,7 @@ val genericPipe = BedrockPipe()
     .setSystemPrompt("Fix everything that's wrong.")
 ```
 
-### 2. Appropriate Model Selection
+### 4. Appropriate Model Selection
 ```kotlin
 // Use appropriate models for different pipe types
 val validatorPipe = BedrockPipe()
@@ -319,7 +372,7 @@ val transformerPipe = BedrockPipe()
     .setModel("claude-3-haiku")  // Fast for simple transformations
 ```
 
-### 3. Error Handling
+### 5. Error Handling
 ```kotlin
 // Always provide fallbacks for HITL pipes
 val robustPipe = BedrockPipe()
@@ -333,7 +386,7 @@ val robustPipe = BedrockPipe()
     }
 ```
 
-### 4. Context Sharing
+### 6. Context Sharing
 ```kotlin
 // Share context between HITL pipes
 val contextAwarePipe = BedrockPipe()

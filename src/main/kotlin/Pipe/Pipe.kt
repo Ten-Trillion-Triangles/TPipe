@@ -2512,30 +2512,46 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * @param pipe The validator pipe to use for validation
      * @return This Pipe object for method chaining
      */
-    fun setValidatorPipe(pipe: Pipe): Pipe
+    fun setValidatorPipe(pipe: Pipe) : Pipe
     {
         this.validatorPipe = pipe
         validatorPipe.apply {
-            /**
-             * Auto-save snapshots to adhere to expected developer behavior. Validation functions don't replace the
-             * content object so we would not be expecting the validator pipe to do the same.
-             */
-            setPreInitFunction {
-                it.saveSnapshot()
+
+            if(preInitFunction == null && transformationFunction == null)
+            {
+                /**
+                 * Auto-save snapshots to adhere to expected developer behavior. Validation functions don't replace the
+                 * content object so we would not be expecting the validator pipe to do the same.
+                 */
+                if(preInitFunction == null)
+                {
+                    setPreInitFunction {
+                        it.saveSnapshot()
+                    }
+                }
+
+
+                /**
+                 * Auto restore the snapshot so that the expected behavior complies. This way the developer can follow
+                 * the logical and naturally expected flow of: setup pipe -> program validator function -> fail validator
+                 * function if invalid -> parent pipe picks up on this and proceeds to handle it as intended. But if we pass
+                 * the validator function: restore snapshot -> exit back -> parent now sees the expected unmodified result
+                 * it produced adhering to the behavior of validator functions.
+                 */
+                if(transformationFunction == null)
+                {
+                    setTransformationFunction {
+                        val newSnapshot = it.getSnapshot() ?: return@setTransformationFunction it
+
+                        return@setTransformationFunction newSnapshot
+                    }
+                }
+
+                //Bind metadata to track this later during init() so that we can throw if there's no validator function.
+                pipeMetadata["isValidatorPipe"] = true
             }
 
-            /**
-             * Auto restore the snapshot so that the expected behavior complies. This way the developer can follow
-             * the logical and naturally expected flow of: setup pipe -> program validator function -> fail validator
-             * function if invalid -> parent pipe picks up on this and proceeds to handle it as intended. But if we pass
-             * the validator function: restore snapshot -> exit back -> parent now sees the expected unmodified result
-             * it produced adhering to the behavior of validator functions.
-             */
-            setTransformationFunction {
-                val newSnapshot = it.getSnapshot() ?: return@setTransformationFunction it
 
-                return@setTransformationFunction newSnapshot
-            }
         }
         return this
     }
@@ -2898,6 +2914,34 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          transformationPipe?.pipelineRef = pipelineRef
          reasoningPipe?.init()
          reasoningPipe?.pipelineRef = pipelineRef
+
+         /**
+          * Undefined behavior will occur if no validator function has been assigned. In that event we need to respond
+          * by throwing. The coder would generally expect that the pipe would validate pass/fail. However, if there is
+          * no validation function, the validator pipe would effectively just waste tokens. Even when configured
+          * correctly to not stomp the original work in progress. As such, throwing here is our best means of
+          * alerting the user to the issue.
+          *
+          * Likewise, a missing transformation function can and will replace the content object causing undefined
+          * behavior and destructive damage to the pipeline. If the coder does not define other validators and safety
+          * checks expecting this to work as advertised, this footgun will also trash their pipeline and cause damage
+          * to their application at large. As such, we need to throw here as well.
+          */
+         val validatorPipeFlag = pipeMetadata["isValidatorPipe"] ?: false
+         if(validatorPipeFlag as Boolean)
+         {
+             if(validatorFunction == null)
+             {
+                 throw Exception("Validator pipes must have a valid validator function. For more details on this error: " +
+                         "Examine human-in-the-loop-pipes.md")
+             }
+
+             if(transformationFunction == null)
+             {
+                 throw Exception("Validator pipes must have a valid transformation function. For more details on this error: " +
+                         "Examine human-in-the-loop-pipes.md")
+             }
+         }
 
          return this
      }
