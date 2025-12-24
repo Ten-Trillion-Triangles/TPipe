@@ -43,7 +43,7 @@ data class PipeSettings(
     var truncateContextAsString: Boolean = false,
     var repetitionPenalty: Double = 0.0,
     var stopSequences: List<String> = listOf(),
-    var multiplyWindowSizeBy: Int = 1000,
+    var multiplyWindowSizeBy: Int = 0,
     var countSubWordsInFirstWord: Boolean = true,
     var favorWholeWords: Boolean = true,
     var countOnlyFirstWordFound: Boolean = false,

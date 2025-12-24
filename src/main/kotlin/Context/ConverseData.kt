@@ -28,7 +28,7 @@ enum class ConverseRole
 data class ConverseData(
     var role: ConverseRole,
     var content: MultimodalContent,
-    private var uuid: String = ""
+    internal var uuid: String = ""
 )
 {
     //Assign uuid which we'll use for the equals operator overload.

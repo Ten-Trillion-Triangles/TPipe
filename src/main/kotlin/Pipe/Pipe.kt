@@ -41,10 +41,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import java.util.UUID
+import kotlin.math.absoluteValue
 
 
 data class TruncationSettings(
-         var multiplyWindowSizeBy: Int = 1000,
+         var multiplyWindowSizeBy: Int = 0,
          var countSubWordsInFirstWord: Boolean = true,
          var favorWholeWords: Boolean = true,
          var countOnlyFirstWordFound: Boolean = false,
@@ -1611,7 +1612,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * for the context window size settings. This setter is treated as internal because it's intended to
      * be invoked at the pipe's runtime.
      */
-    private fun setTokenBudgetInternal(budget: TokenBudgetSettings) : Pipe
+    private fun setTokenBudgetInternal(budget: TokenBudgetSettings, liveContent: MultimodalContent? = null) : Pipe
     {
 
         /**
@@ -1682,13 +1683,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         {
             throw IllegalArgumentException("User prompt size cannot be greater than the token budget. " +
                     "After subtracting the system prompt, and the maxTokens out, the context window size is ${workingTokenWindowSize}. " +
-                    "Your user prompt has been sized to ${budget.userPromptSize}")
+                    "Your user prompt budget has been sized to ${budget.userPromptSize}")
         }
 
         /**
          * Subtract against context window if the user prompt size limit was provided. Otherwise, the size limit
          * will be decided based on full context window size - whatever is leftover when we go to execute
-         * the prompt.
+         * the prompt after accounting for binary data at runtime.
          */
         workingTokenWindowSize -= budget.userPromptSize ?: 0
 
@@ -3067,11 +3068,15 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
         setTokenBudgetInternal(budget)  //Required to get all our internal window sizes to be correct.
 
+        //Scratchpad for allowing us to restore the working context window space if we were to go negative.
+        var tempContextWindowSize = 0
+
         /**
          * Define how much space we actually have to supply external context.
          * External context is anything that's not the system prompt, user prompt, or binary data.
          */
         var workingContextWindowSpace = contextWindowSize
+        tempContextWindowSize = workingContextWindowSpace //Copy in case we need to restore later.
         val truncationSettings = getTruncationSettings()
 
         /**
@@ -3079,7 +3084,49 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          * counting for the user prompt anymore times than need be.
          */
         val userPrompt = content.text
-        val userPromptTokenCost = Dictionary.countTokens(userPrompt, truncationSettings)
+        var userPromptTokenCost = Dictionary.countTokens(userPrompt, truncationSettings)
+
+        /**
+         * Defines if user prompt space is dynamic or not. This is based on if a user prompt max size was ever
+         * assigned. If not, we will need to null back out the user prompt space definition to guard against
+         * unexpected throws and crashes when a second call is invoked. Since the usage of the available space
+         * must be calculated after all other cases are spent, not prior.
+         */
+        val isUserPromptSpaceDynamic = tokenBudgetSettings?.userPromptSize == null
+
+        /**
+         * Try to resolve the user prompt space if we're set to a dynamic state. If we're not this calculation
+         * will have been handled at [setTokenBudgetInternal] prior.
+         */
+        if(isUserPromptSpaceDynamic)
+        {
+            //Define now. Null back out later after we resolve these steps.
+            tokenBudgetSettings?.userPromptSize = userPromptTokenCost
+            workingContextWindowSpace -= userPromptTokenCost //Subtract now to claim this space vs the context.
+
+            /**
+             * We can truncate if we overflowed because we're already set to dynamic for the user prompt.
+             * This is implicitly allowing us to try to fit into the space that's there.
+             */
+            if(workingContextWindowSpace <= 0)
+            {
+                /**
+                 * We need to use this odd internal function to subtract because of kotlin language behavior
+                 * surrounding nullable types.
+                 */
+                tokenBudgetSettings?.userPromptSize = tokenBudgetSettings?.userPromptSize?.minus(
+                    workingContextWindowSpace.absoluteValue
+                )
+
+                //Restore so we have a positive value again.
+                workingContextWindowSpace = tempContextWindowSize
+                userPromptTokenCost = tokenBudgetSettings?.userPromptSize ?: 0 //Reset and try again.
+
+                //Attempt to allocate the space again, after reducing the user prompt size by the overflow.
+                workingContextWindowSpace -= userPromptTokenCost.takeIf { workingContextWindowSpace > userPromptTokenCost } ?: throw Exception("userPromptTokenCost at: $userPromptTokenCost tokens has overflowed the window size of: $workingContextWindowSpace tokens.")
+                tempContextWindowSize = workingContextWindowSpace //Update since we were successful.
+            }
+        }
 
         /**
          * First we need to count up all the tokens and all the binary content stored here is using. This allows us
@@ -3100,7 +3147,29 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          */
         if(workingContextWindowSpace <= 0)
         {
-            throw Exception("Context window size is too small to fit the binary data. Please increase the context window size.")
+            /**
+             * If we allow re-allocation of the user prompt space, then we'll try to reduce the user prompt
+             * by the overflow ratio. We can assume if the user prompt space overflowed prior, because truncation
+             * is allowed, we already reduced the space to fix max window size, so we can eat again here.
+             * In this situation we can expect to have the context data completely chopped away outright.
+             */
+            if(tokenBudgetSettings!!.allowUserPromptTruncation || tokenBudgetSettings!!.compressUserPrompt)
+            {
+                val tempUserPromptCost = userPromptTokenCost //Save so that we can log if we fail.
+
+                //Again, subtract against our user prompt size because of overflow.
+                tokenBudgetSettings?.userPromptSize = userPromptTokenCost - binaryTokenCost
+                userPromptTokenCost = tokenBudgetSettings?.userPromptSize ?: 0
+
+                //If we overflow, and we don't allow for empty prompts or content we need to throw here.
+                if(userPromptTokenCost <= 0 && !allowEmptyUserPrompt && !allowEmptyContentObject)
+                {
+                    throw Exception("Unable to allocate user prompt space of: $tempUserPromptCost due to large binary content allocation of: $binaryTokenCost")
+                }
+            }
+
+            throw Exception("Context window size is too small to fit the binary data. Please increase the context window size. " +
+                    "Context window size: ${tokenBudgetSettings?.contextWindowSize} Binary size: ${binaryTokenCost}")
         }
 
         /**
@@ -3151,21 +3220,6 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         else
         {
             truncateMiniBank(content, workingContextWindowSpace, budget, truncationSettings)
-        }
-
-        /**
-         * Auto-assign the user prompt space if not assigned. Unlike many other settings in the budget that can be
-         * left blank, the pipe class does not have a designated space for user prompt size storage.
-         * So we need to calculate how much space would be allowed for it based on budget constraints if the
-         * user did not supply a specified budget. In this case, the user prompt is now allowed to fill
-         * the remaining space left in the budget for the context window.
-         */
-        if(budget.userPromptSize == null)
-        {
-            //Estimate tokens spent excluding our user prompt.
-            val estimatedTokensSpent = calculateTokensSpent(content) - userPromptTokenCost
-            val estimatedUserPromptAllowance = originalContextWindowSize - estimatedTokensSpent
-            budget.userPromptSize = estimatedUserPromptAllowance
         }
 
         /**
@@ -3296,6 +3350,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 }
             }
         }
+
+        //Null back out to avoid breakage in later runs. Since dynamic space can't be pre-computed.
+        if(isUserPromptSpaceDynamic) tokenBudgetSettings?.userPromptSize = null
 
         contextWindowSize = originalContextWindowSize //Reset to prevent breakage of model contracts
         return content

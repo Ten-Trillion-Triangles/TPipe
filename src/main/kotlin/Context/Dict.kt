@@ -271,7 +271,7 @@ object Dictionary
     fun truncate(
         text: String,
         windowSize: Int,
-        multiplyWindowSizeBy : Int = 1000,
+        multiplyWindowSizeBy : Int = 0,
         truncateSettings: ContextWindowSettings,
         countSubWordsInFirstWord : Boolean = true,
         favorWholeWords : Boolean = true,
@@ -454,7 +454,7 @@ object Dictionary
     fun truncate(
         messages: List<String>,
         windowSize: Int,
-        multiplyWindowSizeBy : Int = 1000,
+        multiplyWindowSizeBy : Int = 0,
         truncateSettings: ContextWindowSettings,
         countSubWordsInFirstWord : Boolean = true,
         favorWholeWords : Boolean = true,
