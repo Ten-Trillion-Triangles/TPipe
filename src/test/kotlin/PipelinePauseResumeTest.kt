@@ -9,27 +9,48 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 
 /**
- * Simple test pipe for testing pause/resume functionality
+ * Simple test pipe for testing pause/resume functionality.
+ * 
+ * @param name The display name for this test pipe instance
  */
-class TestPipe(private val name: String) : Pipe() {
+class TestPipe(private val name: String) : Pipe()
+{
     init {
         pipeName = name
     }
     
-    override fun truncateModuleContext(): Pipe {
+    /**
+     * Returns a copy of this pipe with truncated context.
+     * 
+     * @return This pipe instance (no truncation needed for testing)
+     */
+    override fun truncateModuleContext(): Pipe
+    {
         return this
     }
     
-    override suspend fun generateText(promptInjector: String): String {
+    /**
+     * Generates test text output.
+     * 
+     * @param promptInjector The input prompt to process
+     * @return Simple test output message
+     */
+    override suspend fun generateText(promptInjector: String): String
+    {
         return "Generated text from $name"
     }
 }
 
 /**
- * Test class for Pipeline pause/resume functionality
+ * Test class for Pipeline pause/resume functionality.
+ * Verifies that pause/resume operations work correctly with different configurations.
  */
-class PipelinePauseResumeTest {
+class PipelinePauseResumeTest
+{
     
+    /**
+     * Tests basic pause and resume functionality with a multi-pipe pipeline.
+     */
     @Test
     fun testBasicPauseResume() = runBlocking {
         val pipeline = Pipeline()
@@ -70,8 +91,12 @@ class PipelinePauseResumeTest {
         assertTrue(result.isNotEmpty())
     }
     
+    /**
+     * Verifies that pause points are not enabled by default.
+     */
     @Test
-    fun testPausePointsNotEnabledByDefault() {
+    fun testPausePointsNotEnabledByDefault()
+    {
         val pipeline = Pipeline()
             .add(TestPipe("Pipe1"))
             .setPipelineName("TestPipeline")
@@ -80,6 +105,9 @@ class PipelinePauseResumeTest {
         assertFalse(pipeline.canPause())
     }
     
+    /**
+     * Tests conditional pause functionality based on pipe name matching.
+     */
     @Test
     fun testConditionalPause() = runBlocking {
         var pauseConditionMet = false

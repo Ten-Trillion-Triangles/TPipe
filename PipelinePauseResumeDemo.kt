@@ -7,16 +7,31 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 /**
- * Simple example pipe for demonstrating pause/resume functionality
+ * Simple example pipe for demonstrating pause/resume functionality.
+ * 
+ * @param name The display name for this pipe instance
  */
-class ExamplePipe(private val name: String) : Pipe() {
+class ExamplePipe(private val name: String) : Pipe()
+{
     init {
         pipeName = name
     }
     
+    /**
+     * Returns a copy of this pipe with truncated context.
+     * 
+     * @return This pipe instance (no truncation needed for demo)
+     */
     override fun truncateModuleContext(): Pipe = this
     
-    override suspend fun generateText(promptInjector: String): String {
+    /**
+     * Generates text output for demonstration purposes.
+     * 
+     * @param promptInjector The input prompt to process
+     * @return Simple output message indicating completion
+     */
+    override suspend fun generateText(promptInjector: String): String
+    {
         println("Executing $name...")
         delay(100) // Simulate some processing time
         return "Output from $name"
@@ -24,7 +39,8 @@ class ExamplePipe(private val name: String) : Pipe() {
 }
 
 /**
- * Example demonstrating Pipeline pause/resume functionality
+ * Example demonstrating Pipeline pause/resume functionality.
+ * Creates a pipeline with multiple pipes and demonstrates pause/resume control.
  */
 fun main() = runBlocking {
     println("=== TPipe Pipeline Pause/Resume Demo ===")

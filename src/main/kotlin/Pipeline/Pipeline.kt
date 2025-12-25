@@ -497,59 +497,118 @@ class Pipeline : P2PInterface {
     }
 
     /**
-     * Declarative pause point methods following TPipe's pattern
+     * Enables pause points before pipe execution.
+     * 
+     * @return This pipeline instance for method chaining
      */
-    fun pauseBeforePipes(): Pipeline {
+    fun pauseBeforePipes(): Pipeline
+    {
         pauseBeforePipes = true
         pausingEnabled = true
         return this
     }
 
-    fun pauseAfterPipes(): Pipeline {
+    /**
+     * Enables pause points after pipe execution.
+     * 
+     * @return This pipeline instance for method chaining
+     */
+    fun pauseAfterPipes(): Pipeline
+    {
         pauseAfterPipes = true
         pausingEnabled = true
         return this
     }
 
-    fun pauseBeforeJumps(): Pipeline {
+    /**
+     * Enables pause points before jump operations.
+     * 
+     * @return This pipeline instance for method chaining
+     */
+    fun pauseBeforeJumps(): Pipeline
+    {
         pauseBeforeJumps = true
         pausingEnabled = true
         return this
     }
 
-    fun pauseAfterRepeats(): Pipeline {
+    /**
+     * Enables pause points after repeat operations.
+     * 
+     * @return This pipeline instance for method chaining
+     */
+    fun pauseAfterRepeats(): Pipeline
+    {
         pauseAfterRepeats = true
         pausingEnabled = true
         return this
     }
 
-    fun pauseOnCompletion(): Pipeline {
+    /**
+     * Enables pause points on pipeline completion.
+     * 
+     * @return This pipeline instance for method chaining
+     */
+    fun pauseOnCompletion(): Pipeline
+    {
         pauseOnCompletion = true
         pausingEnabled = true
         return this
     }
 
-    fun enablePausePoints(): Pipeline {
+    /**
+     * Convenience method to enable common pause points.
+     * 
+     * @return This pipeline instance for method chaining
+     */
+    fun enablePausePoints(): Pipeline
+    {
         return pauseBeforePipes().pauseOnCompletion()
     }
 
-    fun pauseWhen(condition: suspend (Pipe, MultimodalContent) -> Boolean): Pipeline {
+    /**
+     * Sets a conditional pause function that determines when to pause.
+     * 
+     * @param condition Function that returns true when pipeline should pause
+     * @return This pipeline instance for method chaining
+     */
+    fun pauseWhen(condition: suspend (Pipe, MultimodalContent) -> Boolean): Pipeline
+    {
         conditionalPauseFunction = condition
         pausingEnabled = true
         return this
     }
 
-    fun onPause(callback: suspend (Pipe?, MultimodalContent) -> Unit): Pipeline {
+    /**
+     * Sets callback function to execute when pipeline pauses.
+     * 
+     * @param callback Function to call when pause occurs
+     * @return This pipeline instance for method chaining
+     */
+    fun onPause(callback: suspend (Pipe?, MultimodalContent) -> Unit): Pipeline
+    {
         pauseCallback = callback
         return this
     }
 
-    fun onResume(callback: suspend (Pipe?, MultimodalContent) -> Unit): Pipeline {
+    /**
+     * Sets callback function to execute when pipeline resumes.
+     * 
+     * @param callback Function to call when resume occurs
+     * @return This pipeline instance for method chaining
+     */
+    fun onResume(callback: suspend (Pipe?, MultimodalContent) -> Unit): Pipeline
+    {
         resumeCallback = callback
         return this
     }
 
-    suspend fun pause() {
+    /**
+     * Pauses the pipeline execution if pausing is enabled.
+     * Uses channel-based synchronization to block until resume is called.
+     */
+    suspend fun pause()
+    {
         if (!pausingEnabled) return  // No-op if no pause points declared
         
         if (tracingEnabled) {
@@ -570,36 +629,70 @@ class Pipeline : P2PInterface {
         resumeCallback?.invoke(getCurrentPipe(), content)
     }
 
-    suspend fun resume() {
+    /**
+     * Resumes the pipeline execution by sending a signal to the pause channel.
+     */
+    suspend fun resume()
+    {
         resumeSignal.trySend(Unit)
     }
 
+    /**
+     * Checks if the pipeline is currently paused.
+     * 
+     * @return True if pipeline is paused, false otherwise
+     */
     fun isPaused(): Boolean = isPaused
 
+    /**
+     * Checks if the pipeline has pause functionality enabled.
+     * 
+     * @return True if pausing is enabled, false otherwise
+     */
     fun canPause(): Boolean = pausingEnabled
 
     /**
      * Helper methods for pause functionality
      */
-    private suspend fun checkPausePoint() {
+    private suspend fun checkPausePoint()
+    {
         if (pausingEnabled && isPaused) {
             resumeSignal.receive()
             isPaused = false
         }
     }
 
-    private fun getCurrentPipe(): Pipe? {
+    /**
+     * Gets the currently executing pipe.
+     * 
+     * @return The current pipe or null if no pipe is executing
+     */
+    private fun getCurrentPipe(): Pipe?
+    {
         return if (currentPipeIndex < pipes.size) pipes[currentPipeIndex] else null
     }
 
-    private suspend fun checkConditionalPause(pipe: Pipe, content: MultimodalContent) {
+    /**
+     * Checks if conditional pause criteria are met and pauses if so.
+     * 
+     * @param pipe The current pipe being executed
+     * @param content The current pipeline content
+     */
+    private suspend fun checkConditionalPause(pipe: Pipe, content: MultimodalContent)
+    {
         if (conditionalPauseFunction?.invoke(pipe, content) == true) {
             pause()
         }
     }
 
     /**
-     * Internal tracing method for Pipeline pause/resume events
+     * Internal tracing method for Pipeline pause/resume events.
+     * 
+     * @param eventType The type of trace event
+     * @param phase The execution phase
+     * @param content Optional content to include in trace
+     * @param metadata Additional metadata for the trace event
+     * @param error Optional error information
      */
     private fun trace(
         eventType: TraceEventType,
@@ -607,7 +700,8 @@ class Pipeline : P2PInterface {
         content: MultimodalContent? = null,
         metadata: Map<String, Any> = emptyMap(),
         error: Throwable? = null
-    ) {
+    )
+    {
         if (!tracingEnabled) return
         
         val event = TraceEvent(
