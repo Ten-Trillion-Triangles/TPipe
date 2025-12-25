@@ -16,6 +16,7 @@ import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.copyPipeline
 import com.TTT.Util.deepCopy
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -76,6 +77,22 @@ class Pipeline : P2PInterface {
      * the banked context that has been swapped in will be written to instead.
      */
     private var pageKey = ""
+
+    /**
+     * Pause/resume functionality using TPipe's declarative approach
+     * Pausing auto-enabled when any pause point is declared
+     */
+    private var isPaused = false
+    private val resumeSignal = Channel<Unit>(Channel.RENDEZVOUS)
+    private var pauseBeforePipes = false
+    private var pauseAfterPipes = false
+    private var pauseBeforeJumps = false
+    private var pauseAfterRepeats = false
+    private var pauseOnCompletion = false
+    private var pausingEnabled = false  // Auto-set when pause points declared
+    private var conditionalPauseFunction: (suspend (Pipe, MultimodalContent) -> Boolean)? = null
+    private var pauseCallback: (suspend (Pipe?, MultimodalContent) -> Unit)? = null
+    private var resumeCallback: (suspend (Pipe?, MultimodalContent) -> Unit)? = null
 
     /**
      * Tracing system properties for debugging and monitoring pipeline execution.
@@ -480,6 +497,135 @@ class Pipeline : P2PInterface {
     }
 
     /**
+     * Declarative pause point methods following TPipe's pattern
+     */
+    fun pauseBeforePipes(): Pipeline {
+        pauseBeforePipes = true
+        pausingEnabled = true
+        return this
+    }
+
+    fun pauseAfterPipes(): Pipeline {
+        pauseAfterPipes = true
+        pausingEnabled = true
+        return this
+    }
+
+    fun pauseBeforeJumps(): Pipeline {
+        pauseBeforeJumps = true
+        pausingEnabled = true
+        return this
+    }
+
+    fun pauseAfterRepeats(): Pipeline {
+        pauseAfterRepeats = true
+        pausingEnabled = true
+        return this
+    }
+
+    fun pauseOnCompletion(): Pipeline {
+        pauseOnCompletion = true
+        pausingEnabled = true
+        return this
+    }
+
+    fun enablePausePoints(): Pipeline {
+        return pauseBeforePipes().pauseOnCompletion()
+    }
+
+    fun pauseWhen(condition: suspend (Pipe, MultimodalContent) -> Boolean): Pipeline {
+        conditionalPauseFunction = condition
+        pausingEnabled = true
+        return this
+    }
+
+    fun onPause(callback: suspend (Pipe?, MultimodalContent) -> Unit): Pipeline {
+        pauseCallback = callback
+        return this
+    }
+
+    fun onResume(callback: suspend (Pipe?, MultimodalContent) -> Unit): Pipeline {
+        resumeCallback = callback
+        return this
+    }
+
+    suspend fun pause() {
+        if (!pausingEnabled) return  // No-op if no pause points declared
+        
+        if (tracingEnabled) {
+            trace(TraceEventType.PIPELINE_PAUSE, TracePhase.ORCHESTRATION,
+                  metadata = mapOf("currentPipeIndex" to currentPipeIndex))
+        }
+        
+        isPaused = true
+        pauseCallback?.invoke(getCurrentPipe(), content)
+        resumeSignal.receive()
+        isPaused = false
+        
+        if (tracingEnabled) {
+            trace(TraceEventType.PIPELINE_RESUME, TracePhase.ORCHESTRATION,
+                  metadata = mapOf("currentPipeIndex" to currentPipeIndex))
+        }
+        
+        resumeCallback?.invoke(getCurrentPipe(), content)
+    }
+
+    suspend fun resume() {
+        resumeSignal.trySend(Unit)
+    }
+
+    fun isPaused(): Boolean = isPaused
+
+    fun canPause(): Boolean = pausingEnabled
+
+    /**
+     * Helper methods for pause functionality
+     */
+    private suspend fun checkPausePoint() {
+        if (pausingEnabled && isPaused) {
+            resumeSignal.receive()
+            isPaused = false
+        }
+    }
+
+    private fun getCurrentPipe(): Pipe? {
+        return if (currentPipeIndex < pipes.size) pipes[currentPipeIndex] else null
+    }
+
+    private suspend fun checkConditionalPause(pipe: Pipe, content: MultimodalContent) {
+        if (conditionalPauseFunction?.invoke(pipe, content) == true) {
+            pause()
+        }
+    }
+
+    /**
+     * Internal tracing method for Pipeline pause/resume events
+     */
+    private fun trace(
+        eventType: TraceEventType,
+        phase: TracePhase,
+        content: MultimodalContent? = null,
+        metadata: Map<String, Any> = emptyMap(),
+        error: Throwable? = null
+    ) {
+        if (!tracingEnabled) return
+        
+        val event = TraceEvent(
+            timestamp = System.currentTimeMillis(),
+            pipeId = pipelineId,
+            pipeName = "Pipeline-$pipelineName",
+            eventType = eventType,
+            phase = phase,
+            content = content,
+            contextSnapshot = null,
+            metadata = metadata,
+            error = error
+        )
+        
+        PipeTracer.addEvent(pipelineId, event)
+    }
+
+    /**
      * Binds a delegate function that will be called everytime a pipe in the pipeline has completed. Passes the reference
      * to the pipe, and the content object it produced forward.
      * @param func The delegate function object to bind to this pipeline.
@@ -667,9 +813,17 @@ class Pipeline : P2PInterface {
          */
         while(currentPipeIndex < pipes.size)
         {
+            // PAUSE POINT 1: Before pipe execution (if declared)
+            if (pauseBeforePipes) {
+                checkPausePoint()
+            }
+
             //Get next pipe based on next index, or jump instruction.
             val pipe = getNextPipe(generatedContent) ?: break
             generatedContent.clearJumpToPipe() //Clear so we don't have unintended behaviors.
+            
+            // Check conditional pause before pipe execution
+            conditionalPauseFunction?.let { checkConditionalPause(pipe, generatedContent) }
             
             if (tracingEnabled)
             {
@@ -682,6 +836,11 @@ class Pipeline : P2PInterface {
             }
 
             generatedContent = result.await()
+
+            // PAUSE POINT 2: After pipe execution (if declared)
+            if (pauseAfterPipes) {
+                checkPausePoint()
+            }
 
             if(wrapContentWithConverseHistory)
             {
@@ -699,6 +858,11 @@ class Pipeline : P2PInterface {
                 }
 
                 generatedContent = repeatPipeResult.await()
+                
+                // PAUSE POINT 3: After repeat pipe (if declared)
+                if (pauseAfterRepeats) {
+                    checkPausePoint()
+                }
             }
 
             if(generatedContent.shouldTerminate())
@@ -749,6 +913,11 @@ class Pipeline : P2PInterface {
 
             }
 
+            // PAUSE POINT 4: Before jump operations (if declared)
+            if (pauseBeforeJumps && !generatedContent.getJumpToPipe().isEmpty()) {
+                checkPausePoint()
+            }
+
             /**
              * Attempt to invoke the callback if it was bound. This allows external systems to listen to when pipes
              * complete. This is useful for logging, showing ui updates to users as the process moves about,
@@ -757,6 +926,11 @@ class Pipeline : P2PInterface {
             pipeCompletionCallback?.invoke(pipe, generatedContent)
             
             currentPipeIndex++
+        }
+
+        // PAUSE POINT 5: On pipeline completion (if declared)
+        if (pauseOnCompletion) {
+            checkPausePoint()
         }
 
         // Update global context if enabled

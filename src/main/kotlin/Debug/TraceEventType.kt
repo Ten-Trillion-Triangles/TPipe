@@ -21,6 +21,11 @@ enum class TraceEventType {
     BRANCH_PIPE_TRIGGERED,
     PIPELINE_TERMINATION,
     
+    // Pipeline Pause/Resume Events
+    PIPELINE_PAUSE,
+    PIPELINE_RESUME,
+    PAUSE_POINT_CHECK,
+    
     // Manifold Orchestration Events
     MANIFOLD_START,
     MANIFOLD_END,
