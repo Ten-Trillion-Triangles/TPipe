@@ -386,6 +386,14 @@ data class MethodActorResponse(
 
 //==========================================Chain of Draft reasoning==================================================
 
+/**
+ * Represents a single step in Chain of Draft reasoning methodology.
+ *
+ * @param stepNumber Sequential number of this reasoning step.
+ * @param draftContent Brief reasoning content with maximum 5-word constraint.
+ * @param operation Mathematical or logical operation being performed.
+ * @param result Intermediate result from this step.
+ */
 @kotlinx.serialization.Serializable
 data class DraftStep(
     var stepNumber: Int = 0,
@@ -394,27 +402,39 @@ data class DraftStep(
     var result: String = ""        // Intermediate result
 )
 
+/**
+ * Response structure for Chain of Draft reasoning methodology with minimal verbosity constraints.
+ *
+ * @param problemAnalysis Brief problem statement with maximum 5-word constraint.
+ * @param draftSteps List of constrained reasoning steps following Chain of Draft methodology.
+ * @param finalCalculation Final operation with maximum 5-word constraint.
+ * @param answer Final answer to the problem.
+ */
 @kotlinx.serialization.Serializable
 data class ChainOfDraftResponse(
     var problemAnalysis: String = "",           // Brief problem statement (5 words max)
     var draftSteps: List<DraftStep> = listOf(), // Constrained reasoning steps
     var finalCalculation: String = "",          // Final operation (5 words max)
     var answer: String = ""                     // Final answer
-) {
+)
+{
     fun unravel(): String = buildString {
         append("Looking at this problem: $problemAnalysis. ")
         
         draftSteps.forEach { step ->
             append("${step.draftContent}. ")
-            if (step.operation.isNotEmpty()) {
+            if(step.operation.isNotEmpty())
+            {
                 append("${step.operation}. ")
             }
-            if (step.result.isNotEmpty()) {
+            if(step.result.isNotEmpty())
+            {
                 append("This gives me: ${step.result}. ")
             }
         }
         
-        if (finalCalculation.isNotEmpty()) {
+        if(finalCalculation.isNotEmpty())
+        {
             append("Final reasoning: $finalCalculation. ")
         }
         
@@ -461,7 +481,8 @@ fun extractReasoningContent(method: String, content: MultimodalContent) : String
             resultJson = asObject.unravel()
         }
 
-        "ChainOfDraft" -> {
+        "ChainOfDraft" ->
+        {
             val asObject = extractJson<ChainOfDraftResponse>(content.text) ?: ChainOfDraftResponse()
             resultJson = asObject.unravel()
         }

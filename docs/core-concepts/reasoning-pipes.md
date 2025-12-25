@@ -235,6 +235,40 @@ val consultantReasoningPipe = reasonWithBedrock(
 
 **Use cases**: Domain expertise simulation, specialized knowledge application, perspective-based analysis
 
+### Chain of Draft Reasoning
+```kotlin
+val chainOfDraftSettings = ReasoningSettings(
+    reasoningMethod = ReasoningMethod.ChainOfDraft,
+    depth = ReasoningDepth.Med,
+    duration = ReasoningDuration.Short,
+    reasoningInjector = ReasoningInjector.SystemPrompt
+)
+
+val chainOfDraftReasoningPipe = reasonWithBedrock(
+    bedrockConfig,
+    chainOfDraftSettings,
+    pipeSettings
+)
+```
+
+**What it does**: Chain of Draft (CoD) is an innovative prompting technique that revolutionizes model reasoning by using concise, high-signal thinking steps rather than verbose explanations. Each reasoning step is limited to **5 words or less**, forcing the model to focus on essential logical components while minimizing unnecessary verbosity. This mirrors how humans solve problems with brief mental notes rather than detailed explanations.
+
+**Key Innovation**: CoD recognizes that most reasoning chains contain high redundancy. By distilling steps to their semantic core, it helps models focus on logical structure rather than language fluency, achieving the same reasoning quality with dramatically fewer tokens.
+
+**Performance Benefits**:
+- Up to **75% reduction in token usage** compared to Chain-of-Thought
+- Over **78% decrease in latency** while maintaining accuracy
+- Cleaner output for downstream parsing and automation
+- Significant cost savings in production environments
+
+**Example Comparison**:
+- **Chain-of-Thought**: "Jason had 20 lollipops. He gave some to Denny and now has 12 left. So he gave away 8."
+- **Chain-of-Draft**: "Start: 20, End: 12, 20 – 12 = 8."
+
+**Best for**: Mathematical calculations, logical puzzles, structured reasoning tasks, cost-sensitive applications, real-time systems where latency matters, scenarios requiring minimal token usage
+
+**When to avoid**: Zero-shot scenarios (works best with few-shot examples), tasks requiring high interpretability (legal/medical), small language models (<3B parameters), creative or open-ended tasks where elaboration adds value
+
 ## Reasoning Injection Methods
 
 Configure how reasoning content is injected into the main pipe:
@@ -533,6 +567,41 @@ val innovationPipe = BedrockPipe()
 val innovation = runBlocking { innovationPipe.execute("Create a new mobile app concept for remote team collaboration") }
 ```
 
+### Mathematical Problem Solving with Chain of Draft
+```kotlin
+val mathReasoningSettings = ReasoningSettings(
+    reasoningMethod = ReasoningMethod.ChainOfDraft,
+    depth = ReasoningDepth.Med,
+    duration = ReasoningDuration.Short,
+    reasoningInjector = ReasoningInjector.SystemPrompt,
+    numberOfRounds = 1
+)
+
+val mathReasoningPipe = reasonWithBedrock(
+    bedrockConfig,
+    mathReasoningSettings,
+    pipeSettings
+)
+
+val mathSolverPipe = BedrockPipe()
+    .setSystemPrompt("Solve mathematical problems with concise, step-by-step reasoning using minimal drafts.")
+    .setReasoningPipe(mathReasoningPipe)
+    .setTokenBudget(TokenBudgetSettings(reasoningBudget = 500)) // Lower budget due to CoD efficiency
+
+// Usage - demonstrates the efficiency gains
+val solution = runBlocking { 
+    mathSolverPipe.execute("Jason had 20 lollipops and gave Denny some lollipops. Now Jason has 12 lollipops. How many lollipops did Jason give to Denny?") 
+}
+
+// Expected CoD reasoning output:
+// "Start: 20 lollipops
+//  End: 12 lollipops  
+//  20 - 12 = 8
+//  Answer: 8 lollipops"
+```
+
+**Why Chain of Draft excels here**: Mathematical problems benefit greatly from CoD's concise approach. Instead of verbose explanations, the model focuses on essential operations and calculations, reducing token usage by up to 75% while maintaining accuracy. This makes it ideal for applications requiring frequent mathematical reasoning at scale.
+
 ## Best Practices
 
 ### 1. Choose Appropriate Reasoning Method
@@ -548,6 +617,9 @@ ReasoningMethod.ComprehensivePlan
 
 // Use RolePlay for domain expertise
 ReasoningMethod.RolePlay
+
+// Use ChainOfDraft for concise mathematical reasoning
+ReasoningMethod.ChainOfDraft
 ```
 
 ### 2. Match Depth and Duration to Problem Complexity

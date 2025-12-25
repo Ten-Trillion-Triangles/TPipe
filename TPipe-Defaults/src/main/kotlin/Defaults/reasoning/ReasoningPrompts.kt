@@ -137,7 +137,8 @@ object ReasoningPrompts
             $duration
         """.trimIndent()
 
-        return when (method) {
+        return when (method)
+        {
             ReasoningMethod.ExplicitCot -> explicitReasoningPrompt
             ReasoningMethod.StructuredCot -> structuredCoTPrompt
             ReasoningMethod.processFocusedCot -> processFocusedPrompt

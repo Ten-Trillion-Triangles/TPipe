@@ -34,6 +34,8 @@ import kotlin.reflect.KClass
  * @param processFocusedCot Ask the llm to focus on methodological justification and adaptive thinking strategies.
  * @param  RolePlay Ask the llm to play as a character, and act as that character trying to reason out whatever
  * the given task is.
+ * @param  ChainOfDraft Use minimal draft-based reasoning with maximum 5-word constraints per step,
+ * focusing on essential calculations and transformations only.
  */
 enum class ReasoningMethod
 {
