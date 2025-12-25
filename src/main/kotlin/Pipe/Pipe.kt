@@ -3255,7 +3255,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              * parts of the conversation that are unable to fit. If you're going to use user prompt truncation
              * it's recommended to store all prompts in a converse history object.
              */
-            else
+            else if(tokenBudgetSettings?.allowUserPromptTruncation == true)
             {
                 /**
                  * First test if the user prompt is stored using converse. If so we want to truncate

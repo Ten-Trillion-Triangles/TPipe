@@ -94,6 +94,134 @@ Total: 32,000 tokens
 = Available for user input: 10,000 tokens
 ```
 
+## Dynamic vs Explicit User Prompt Allocation
+
+### Understanding User Prompt Size Behavior
+
+The `userPromptSize` parameter in `TokenBudgetSettings` controls how TPipe allocates space for user input, and it behaves differently depending on whether you provide an explicit value or leave it as `null`.
+
+### Explicit User Prompt Allocation
+```kotlin
+val budget = TokenBudgetSettings(
+    userPromptSize = 12000,           // Explicit allocation
+    contextWindowSize = 32000,
+    maxTokens = 8000
+)
+```
+
+**How it works:**
+- TPipe reserves exactly 12,000 tokens for user input
+- If user input exceeds this limit, behavior depends on `allowUserPromptTruncation`
+- Context space is calculated as: `contextWindowSize - systemPrompt - userPromptSize - maxTokens`
+- Predictable and deterministic allocation
+
+**Use when:**
+- You need predictable token allocation
+- You want to enforce strict input size limits
+- You're building applications with known input patterns
+- You want to prevent unexpectedly large inputs from consuming context space
+
+### Dynamic User Prompt Allocation
+```kotlin
+val budget = TokenBudgetSettings(
+    userPromptSize = null,            // Dynamic allocation - TPipe calculates automatically
+    contextWindowSize = 32000,
+    maxTokens = 8000
+)
+```
+
+**How it works:**
+1. **Automatic Calculation**: TPipe counts the actual tokens in your user prompt and allocates exactly that amount
+2. **Space Optimization**: Remaining space after system prompt, user prompt, and output allocation goes to context
+3. **Overflow Handling**: If the calculated user prompt size would exceed available space, TPipe automatically reduces it
+4. **Cleanup**: After processing, `userPromptSize` is reset to `null` to prevent issues in subsequent calls
+
+**Detailed Dynamic Allocation Process:**
+```
+1. Calculate actual user prompt tokens: 8,500 tokens
+2. Check available space: 32,000 - 2,000 (system) - 8,000 (output) = 22,000 tokens
+3. Allocate user prompt space: 8,500 tokens
+4. Remaining context space: 22,000 - 8,500 = 13,500 tokens
+
+If user prompt was larger (e.g., 25,000 tokens):
+1. Calculate user prompt tokens: 25,000 tokens  
+2. Available space: 22,000 tokens (insufficient!)
+3. Reduce user prompt allocation: 22,000 tokens (fits available space)
+4. Remaining context space: 0 tokens
+5. User prompt gets truncated to fit the reduced allocation
+```
+
+**Use when:**
+- Input sizes vary significantly between requests
+- You want to maximize context space utilization
+- You prefer automatic space optimization over strict limits
+- You're building flexible applications that handle diverse input types
+
+### Overflow Handling in Dynamic Allocation
+
+When dynamic allocation encounters insufficient space, TPipe implements sophisticated overflow handling:
+
+```kotlin
+val budget = TokenBudgetSettings(
+    userPromptSize = null,                    // Dynamic allocation
+    allowUserPromptTruncation = true,         // Enable overflow handling
+    contextWindowSize = 32000,
+    maxTokens = 8000
+)
+```
+
+**Overflow scenarios:**
+1. **User prompt + system prompt + output > context window**: User prompt size is automatically reduced
+2. **Binary content pushes total over limit**: User prompt space is further reduced to accommodate binary data
+3. **Insufficient space even after reduction**: Exception thrown if `allowUserPromptTruncation` is false
+
+**Example overflow handling:**
+```
+Context window: 32,000 tokens
+System prompt: 2,000 tokens  
+Output budget: 8,000 tokens
+User prompt (actual): 25,000 tokens
+Binary content: 3,000 tokens
+
+Step 1: Available space = 32,000 - 2,000 - 8,000 = 22,000 tokens
+Step 2: User prompt exceeds available space (25,000 > 22,000)
+Step 3: Reduce user prompt to fit: 22,000 tokens
+Step 4: Account for binary content: 22,000 - 3,000 = 19,000 tokens
+Step 5: Final user prompt allocation: 19,000 tokens
+Step 6: User prompt truncated to fit 19,000 token budget
+```
+
+### Choosing Between Dynamic and Explicit Allocation
+
+**Choose Explicit Allocation when:**
+- Building production systems requiring predictable behavior
+- Implementing strict content policies or size limits
+- Working with known, consistent input patterns
+- Need to guarantee minimum context space availability
+
+**Choose Dynamic Allocation when:**
+- Handling variable input sizes (user-generated content, document processing)
+- Want to maximize token utilization efficiency
+- Building flexible, adaptive applications
+- Prefer automatic optimization over manual tuning
+
+**Hybrid approach:**
+```kotlin
+// Start with dynamic allocation for flexibility
+val flexibleBudget = TokenBudgetSettings(
+    userPromptSize = null,                // Dynamic
+    allowUserPromptTruncation = true,     // Handle overflow gracefully
+    contextWindowSize = 32000
+)
+
+// Switch to explicit allocation when patterns emerge
+val optimizedBudget = TokenBudgetSettings(
+    userPromptSize = 15000,               // Based on observed patterns
+    allowUserPromptTruncation = false,    // Strict enforcement
+    contextWindowSize = 32000
+)
+```
+
 ## Truncation - Intelligent Content Reduction
 
 ### The Problem
@@ -205,6 +333,93 @@ val budget = TokenBudgetSettings(
 ```
 
 **Purpose**: Preserves initial instructions and document structure. Large reasoning budget for complex analysis. Strict input preservation.
+
+### Dynamic Allocation for Variable Input Processing
+```kotlin
+// Flexible document processing with dynamic user prompt allocation
+val documentProcessor = BedrockPipe()
+    .setContextWindowSize(128000)
+    .setMaxTokens(8000)
+    .truncateModuleContext()
+
+val dynamicBudget = TokenBudgetSettings(
+    userPromptSize = null,                    // Dynamic allocation based on actual content
+    maxTokens = 8000,
+    reasoningBudget = 4000,
+    allowUserPromptTruncation = true,         // Handle overflow gracefully
+    contextWindowSize = 128000,
+    multiPageBudgetStrategy = MultiPageBudgetStrategy.DYNAMIC_FILL
+)
+
+// Usage with varying input sizes
+val shortQuery = "Summarize this document"           // ~5 tokens -> 5 tokens allocated
+val longQuery = "Analyze this document in detail..." // ~500 tokens -> 500 tokens allocated
+val massiveQuery = "..." // 50,000 tokens -> Automatically reduced to fit available space
+```
+
+**Purpose**: Optimal space utilization for applications with highly variable input sizes. Automatically adapts to content while maximizing context space.
+
+### Explicit Allocation for Predictable Systems
+```kotlin
+// Production system with strict input controls
+val productionPipe = BedrockPipe()
+    .setContextWindowSize(32000)
+    .setMaxTokens(4000)
+    .truncateModuleContext()
+
+val explicitBudget = TokenBudgetSettings(
+    userPromptSize = 8000,                    // Fixed allocation - predictable behavior
+    maxTokens = 4000,
+    reasoningBudget = 2000,
+    allowUserPromptTruncation = false,        // Strict enforcement - fail if exceeded
+    contextWindowSize = 32000,
+    multiPageBudgetStrategy = MultiPageBudgetStrategy.EQUAL_SPLIT
+)
+
+// Guaranteed behavior: exactly 8000 tokens for user input, 18000 for context
+// Throws exception if user input exceeds 8000 tokens
+```
+
+**Purpose**: Predictable, deterministic behavior for production systems. Guarantees minimum context space and enforces input size policies.
+
+### Hybrid Approach - Adaptive Allocation
+```kotlin
+// Start with dynamic allocation, switch to explicit based on patterns
+class AdaptiveTokenManager {
+    private var observedSizes = mutableListOf<Int>()
+    
+    fun createBudget(isProduction: Boolean): TokenBudgetSettings {
+        return if (isProduction && observedSizes.isNotEmpty()) {
+            // Use observed patterns for explicit allocation
+            val averageSize = observedSizes.average().toInt()
+            val maxObserved = observedSizes.maxOrNull() ?: 0
+            val safeAllocation = (maxObserved * 1.2).toInt() // 20% buffer
+            
+            TokenBudgetSettings(
+                userPromptSize = safeAllocation,          // Based on observed patterns
+                allowUserPromptTruncation = false,        // Strict in production
+                contextWindowSize = 32000
+            )
+        } else {
+            // Dynamic allocation for development/learning
+            TokenBudgetSettings(
+                userPromptSize = null,                    // Learn from actual usage
+                allowUserPromptTruncation = true,         // Flexible during learning
+                contextWindowSize = 32000
+            )
+        }
+    }
+    
+    fun recordUsage(actualTokens: Int) {
+        observedSizes.add(actualTokens)
+        if (observedSizes.size > 100) {
+            observedSizes.removeAt(0) // Keep recent history
+        }
+    }
+}
+```
+
+**Purpose**: Combines the flexibility of dynamic allocation during development with the predictability of explicit allocation in production.
 
 ## Error Prevention and Handling
 

@@ -314,9 +314,21 @@ Sets context truncation method.
 **Behavior:** Controls how context is truncated: `TruncateTop` removes oldest entries, `TruncateBottom` removes newest, `TruncateBoth` removes from both ends.
 
 #### `setTokenBudget(budget: TokenBudgetSettings): Pipe`
-Sets advanced token budgeting configuration.
+Sets advanced token budgeting configuration with support for dynamic user prompt allocation.
 
 **Behavior:** Enables sophisticated token management with separate budgets for user prompt, system prompt, reasoning, and output. Automatically truncates content to fit within specified limits. Overrides simple `contextWindowSize` when set.
+
+**Dynamic User Prompt Allocation:** When `TokenBudgetSettings.userPromptSize` is set to `null`, TPipe automatically calculates the required space based on the actual token count of the user prompt. This enables optimal space utilization by allocating exactly what's needed for the user input and maximizing remaining space for context.
+
+**Dynamic Allocation Process:**
+1. **Automatic Sizing**: TPipe counts tokens in the actual user prompt and allocates that exact amount
+2. **Overflow Handling**: If the calculated size exceeds available space, TPipe automatically reduces the allocation and truncates the user prompt to fit (when `allowUserPromptTruncation = true`)
+3. **Space Optimization**: Remaining space after user prompt allocation is available for context data
+4. **Cleanup**: The `userPromptSize` is reset to `null` after processing to prevent issues in subsequent calls
+
+**Explicit vs Dynamic Allocation:**
+- **Explicit** (`userPromptSize = 12000`): Reserves exactly 12,000 tokens for user input, predictable but may waste space
+- **Dynamic** (`userPromptSize = null`): Allocates based on actual content size, optimal space usage but variable allocation
 
 **Tip:** Set `preserveTextMatches = true` inside `TokenBudgetSettings` (or call `enableTextMatchingPreservation()`) to keep context elements and conversation history entries that match the user prompt before the rest of the truncation budget is applied.
 
