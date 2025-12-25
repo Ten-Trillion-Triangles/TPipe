@@ -557,6 +557,18 @@ class Pipeline : P2PInterface {
     }
 
     /**
+     * Enables pause functionality without declaring specific pause points.
+     * Allows manual pause() calls to work even without declarative pause points.
+     * 
+     * @return This pipeline instance for method chaining
+     */
+    fun enablePausing(): Pipeline
+    {
+        pausingEnabled = true
+        return this
+    }
+
+    /**
      * Convenience method to enable common pause points.
      * 
      * @return This pipeline instance for method chaining

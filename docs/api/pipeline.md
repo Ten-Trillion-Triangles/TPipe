@@ -9,6 +9,7 @@
 - [Public Functions](#public-functions)
   - [Configuration](#configuration-1)
   - [Pipe Management](#pipe-management)
+  - [Pause and Resume Control](#pause-and-resume-control)
   - [Tracing](#tracing)
   - [Execution](#execution)
   - [Utilities](#utilities)
@@ -137,6 +138,86 @@ Determines the next pipe to execute based on content state and jump targets.
 - Sequential execution through pipe list
 - Pipeline termination conditions
 - Pipe skipping and branching logic
+
+---
+
+### Pause and Resume Control
+
+#### `pauseBeforePipes(): Pipeline`
+Enables pause points before each pipe execution.
+
+**Behavior:** Automatically sets `pausingEnabled = true`. Pipeline will pause before executing each pipe and wait for manual resume. Useful for step-by-step debugging or human review workflows.
+
+#### `pauseAfterPipes(): Pipeline`
+Enables pause points after each pipe execution.
+
+**Behavior:** Automatically sets `pausingEnabled = true`. Pipeline will pause after each pipe completes and wait for manual resume. Allows inspection of intermediate results.
+
+#### `pauseBeforeJumps(): Pipeline`
+Enables pause points before jump operations.
+
+**Behavior:** Automatically sets `pausingEnabled = true`. Pipeline will pause when a pipe requests a jump to another pipe, allowing review of jump decisions.
+
+#### `pauseAfterRepeats(): Pipeline`
+Enables pause points after repeat operations.
+
+**Behavior:** Automatically sets `pausingEnabled = true`. Pipeline will pause after completing repeat cycles, useful for monitoring iterative processing.
+
+#### `pauseOnCompletion(): Pipeline`
+Enables pause points when pipeline completes.
+
+**Behavior:** Automatically sets `pausingEnabled = true`. Pipeline will pause when all processing is complete but before returning results, allowing final review.
+
+#### `enablePausing(): Pipeline`
+Enables pause functionality without declaring specific pause points.
+
+**Behavior:** Sets `pausingEnabled = true` allowing manual `pause()` calls to work. Useful when you want external control over pausing without predefined pause points.
+
+#### `enablePausePoints(): Pipeline`
+Convenience method to enable common pause points.
+
+**Behavior:** Equivalent to calling `pauseBeforePipes().pauseOnCompletion()`. Enables pausing at pipe boundaries and completion.
+
+#### `pauseWhen(condition: suspend (Pipe, MultimodalContent) -> Boolean): Pipeline`
+Sets conditional pause function for dynamic pause control.
+
+**Behavior:** Automatically sets `pausingEnabled = true`. The condition function is evaluated at each pause point. Pipeline pauses when the function returns `true`. Enables sophisticated conditional pausing based on content analysis or pipe state.
+
+```kotlin
+pipeline.pauseWhen { pipe, content ->
+    pipe.pipeName == "validator" && content.text.contains("error")
+}
+```
+
+#### `onPause(callback: suspend (Pipe?, MultimodalContent) -> Unit): Pipeline`
+Sets callback function executed when pipeline pauses.
+
+**Behavior:** Callback receives the current pipe (or null if paused at completion) and current content. Useful for logging, user notifications, or content inspection during pauses.
+
+#### `onResume(callback: suspend (Pipe?, MultimodalContent) -> Unit): Pipeline`
+Sets callback function executed when pipeline resumes.
+
+**Behavior:** Callback receives the current pipe (or null if resuming from completion) and current content. Useful for logging resume events or updating UI state.
+
+#### `suspend fun pause()`
+Manually pauses pipeline execution.
+
+**Behavior:** If `pausingEnabled = false`, this is a no-op. Otherwise, sets internal pause state and blocks execution using channel-based synchronization until `resume()` is called. Automatically triggers pause callbacks and tracing events.
+
+#### `suspend fun resume()`
+Manually resumes pipeline execution.
+
+**Behavior:** Sends resume signal through internal channel, unblocking paused execution. Automatically triggers resume callbacks and tracing events.
+
+#### `isPaused(): Boolean`
+Checks if pipeline is currently paused.
+
+**Behavior:** Returns `true` if pipeline is currently in paused state, `false` otherwise. Useful for UI state management and status monitoring.
+
+#### `canPause(): Boolean`
+Checks if pipeline has pause functionality enabled.
+
+**Behavior:** Returns `true` if any pause points have been declared (automatically sets `pausingEnabled = true`), `false` otherwise. Indicates whether pause/resume operations are available.
 
 ---
 

@@ -129,6 +129,7 @@ println(result.text)
 ## Key Features
 
 - **Multi-stage AI workflows** with sophisticated error handling
+- **Pipeline pause/resume control** with declarative pause points and human-in-the-loop workflows
 - **Global context sharing** across applications via ContextBank
 - **Context access control** with ContextLock enforcement for secure lorebook and page management
 - **Human-in-the-loop integration** with code and AI-powered validation

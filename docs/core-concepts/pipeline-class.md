@@ -7,6 +7,7 @@
 - [Pipeline Configuration](#pipeline-configuration)
 - [Conversation History Tracking](#conversation-history-tracking)
 - [Pipeline Execution Flow](#pipeline-execution-flow)
+- [Pipeline Pause and Resume](#pipeline-pause-and-resume)
 - [Practical Pipeline Examples](#practical-pipeline-examples)
 - [Pipeline Benefits](#pipeline-benefits)
 - [Best Practices](#best-practices)
@@ -373,6 +374,101 @@ val errorPipe = BedrockPipe()
 
 pipeline.add(mainPipe)
     .add(errorPipe)
+```
+
+### Pipeline Pause and Resume
+
+TPipe provides sophisticated pause/resume functionality for fine-grained execution control. This enables human-in-the-loop workflows, debugging, and interactive pipeline management.
+
+#### Declarative Pause Points
+
+```kotlin
+val pipeline = Pipeline()
+    .add(dataProcessor)
+    .add(analyzer)
+    .add(reporter)
+    .pauseBeforePipes()      // Pause before each pipe execution
+    .pauseAfterPipes()       // Pause after each pipe execution
+    .pauseOnCompletion()     // Pause when pipeline completes
+    .onPause { pipe, content ->
+        println("Pipeline paused at: ${pipe?.pipeName ?: "completion"}")
+    }
+    .onResume { pipe, content ->
+        println("Pipeline resumed from: ${pipe?.pipeName ?: "completion"}")
+    }
+```
+
+**What this does**: Automatically enables pausing when any pause point is declared. The pipeline will pause at the specified points and wait for manual resume.
+
+#### Conditional Pausing
+
+```kotlin
+val pipeline = Pipeline()
+    .add(contentGenerator)
+    .add(qualityChecker)
+    .pauseWhen { pipe, content ->
+        // Pause if quality check fails
+        pipe.pipeName == "qualityChecker" && 
+        content.text.contains("quality_issue")
+    }
+    .onPause { pipe, content ->
+        // Handle pause - could show content to user for review
+        showContentForReview(content)
+    }
+```
+
+#### Manual Pause Control
+
+```kotlin
+// Enable pausing without specific pause points
+val pipeline = Pipeline()
+    .add(processor)
+    .enablePausing()  // Allows manual pause() calls
+
+// Start pipeline in background
+val job = launch {
+    val result = pipeline.execute("Process this data")
+    println("Result: ${result.text}")
+}
+
+// Control execution from external source
+delay(100)
+pipeline.pause()    // Now works because pausing is enabled
+
+delay(1000) 
+pipeline.resume()   // Resume execution
+```
+
+// Check status
+if (pipeline.isPaused()) {
+    println("Pipeline is currently paused")
+}
+
+if (pipeline.canPause()) {
+    println("Pipeline supports pausing")
+}
+```
+
+#### Use Cases
+
+- **Human Review**: Pause for content approval before proceeding
+- **Debugging**: Step through pipeline execution for troubleshooting  
+- **Interactive Workflows**: Allow user input between processing stages
+- **Quality Control**: Pause when validation fails for manual intervention
+- **Resource Management**: Pause during high-load periods
+
+#### Integration with Tracing
+
+Pause/resume events are automatically captured in TPipe's tracing system:
+
+```kotlin
+pipeline.enableTracing()
+    .pauseBeforePipes()
+
+// Trace events include:
+// - PIPELINE_PAUSE: When pipeline pauses
+// - PIPELINE_RESUME: When pipeline resumes  
+// - PAUSE_POINT_CHECK: When pause conditions are evaluated
 ```
 
 ## Practical Pipeline Examples
