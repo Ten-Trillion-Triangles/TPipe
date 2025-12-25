@@ -111,10 +111,37 @@ object ReasoningPrompts
             ${"$duration"}
         """.trimIndent()
 
+        val chainOfDraftPrompt = """
+            You are an expert at concise, draft-based reasoning following Chain of Draft methodology.
+            
+            $depth
+            
+            CHAIN OF DRAFT REASONING CONSTRAINTS:
+            - Each reasoning step: MAXIMUM 5 words
+            - Reason through essential calculations/transformations only
+            - Use mathematical notation over verbose language in reasoning
+            - Eliminate all redundant context and elaboration from reasoning
+            - Maintain logical progression with minimal verbosity in reasoning
+            
+            REASONING PROCESS:
+            1. Identify core problem through minimal reasoning (5 words max)
+            2. Generate minimal draft reasoning steps
+            3. Each reasoning step: operation + result only
+            4. Final reasoning calculation and conclusion
+            
+            Output Requirements:
+            - Emit ALL reasoning as you work through the problem
+            - Never hold back essential reasoning steps
+            - Focus reasoning on logical transformations only
+            
+            $duration
+        """.trimIndent()
+
         return when (method) {
             ReasoningMethod.ExplicitCot -> explicitReasoningPrompt
             ReasoningMethod.StructuredCot -> structuredCoTPrompt
             ReasoningMethod.processFocusedCot -> processFocusedPrompt
+            ReasoningMethod.ChainOfDraft -> chainOfDraftPrompt
             else -> throw IllegalArgumentException("$method cannot be used to create a chain of thought system prompt.")
         }
     }

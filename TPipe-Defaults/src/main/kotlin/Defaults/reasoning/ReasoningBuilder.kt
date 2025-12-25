@@ -14,6 +14,7 @@ import Defaults.reasoning.ReasoningPrompts.selectDuration
 import com.TTT.Context.ConverseHistory
 import com.TTT.Pipe.Pipe
 import com.TTT.Structs.BestIdeaResponse
+import com.TTT.Structs.ChainOfDraftResponse
 import com.TTT.Structs.ExplicitReasoningDetailed
 import com.TTT.Structs.MethodActorResponse
 import com.TTT.Structs.MultiPhasePlan
@@ -41,7 +42,8 @@ enum class ReasoningMethod
     ExplicitCot,
     StructuredCot,
     processFocusedCot,
-    RolePlay
+    RolePlay,
+    ChainOfDraft
 }
 
 /**
@@ -183,6 +185,18 @@ object ReasoningBuilder
                 jsonOutputObject = MultiPhasePlan()
                 jsonOutputClass = MultiPhasePlan::class
             }
+
+            ReasoningMethod.ChainOfDraft ->
+            {
+                targetSystemPrompt = chainOfThoughtSystemPrompt(
+                    selectDepth(settings.depth),
+                    selectDuration(settings.duration),
+                    settings.reasoningMethod
+                )
+
+                jsonOutputObject = ChainOfDraftResponse()
+                jsonOutputClass = ChainOfDraftResponse::class
+            }
         }
 
         //Assign our system prompt to order the pipe to reason/think.
@@ -206,6 +220,7 @@ object ReasoningBuilder
             BestIdeaResponse::class -> targetPipe.setJsonOutput(jsonOutputObject as BestIdeaResponse)
             MethodActorResponse::class -> targetPipe.setJsonOutput(jsonOutputObject as MethodActorResponse)
             MultiPhasePlan::class -> targetPipe.setJsonOutput(jsonOutputObject as MultiPhasePlan)
+            ChainOfDraftResponse::class -> targetPipe.setJsonOutput(jsonOutputObject as ChainOfDraftResponse)
         }
 
         if(settings.numberOfRounds > 1)

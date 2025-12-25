@@ -384,6 +384,44 @@ data class MethodActorResponse(
     }
 }
 
+//==========================================Chain of Draft reasoning==================================================
+
+@kotlinx.serialization.Serializable
+data class DraftStep(
+    var stepNumber: Int = 0,
+    var draftContent: String = "", // Max 5 words constraint
+    var operation: String = "",    // Mathematical/logical operation
+    var result: String = ""        // Intermediate result
+)
+
+@kotlinx.serialization.Serializable
+data class ChainOfDraftResponse(
+    var problemAnalysis: String = "",           // Brief problem statement (5 words max)
+    var draftSteps: List<DraftStep> = listOf(), // Constrained reasoning steps
+    var finalCalculation: String = "",          // Final operation (5 words max)
+    var answer: String = ""                     // Final answer
+) {
+    fun unravel(): String = buildString {
+        append("Looking at this problem: $problemAnalysis. ")
+        
+        draftSteps.forEach { step ->
+            append("${step.draftContent}. ")
+            if (step.operation.isNotEmpty()) {
+                append("${step.operation}. ")
+            }
+            if (step.result.isNotEmpty()) {
+                append("This gives me: ${step.result}. ")
+            }
+        }
+        
+        if (finalCalculation.isNotEmpty()) {
+            append("Final reasoning: $finalCalculation. ")
+        }
+        
+        append("Therefore: $answer")
+    }
+}
+
 /**
  * Extract from the data classes, and fully unravel the content to be usable as model reasoning.
  */
@@ -420,6 +458,11 @@ fun extractReasoningContent(method: String, content: MultimodalContent) : String
 
         "processFocusedCot" -> {
             val asObject = extractJson<ProcessFocused>(content.text) ?: ProcessFocused()
+            resultJson = asObject.unravel()
+        }
+
+        "ChainOfDraft" -> {
+            val asObject = extractJson<ChainOfDraftResponse>(content.text) ?: ChainOfDraftResponse()
             resultJson = asObject.unravel()
         }
 
