@@ -43,7 +43,7 @@ import kotlinx.serialization.Serializable
 import java.util.UUID
 import kotlin.math.absoluteValue
 
-
+//==============================================Data Classes==========================================================//
 data class TruncationSettings(
          var multiplyWindowSizeBy: Int = 0,
          var countSubWordsInFirstWord: Boolean = true,
@@ -196,6 +196,13 @@ fun TokenBudgetSettings.toTruncationSettings(pipe: Pipe? = null): TruncationSett
 
     return settings
 }
+
+//============================================Const Vars================================================================
+
+var IS_VALIDATOR_PIPE = "isValidatorPipe"
+var SAVE_SNAPSHOT_AS_PAGE_KEY = "validatorPipeUserPromptSnapshotTPipe"
+
+//===========================================Main Class=================================================================
 
 /**
  * Main class for abstracting an AI pipe in the TPipe pipeline system. Provides interface abstractions for
@@ -2511,9 +2518,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * of the AI model. Will be invoked if the validator function is not assigned.
      *
      * @param pipe The validator pipe to use for validation
+     * @param saveSnapshotAsPageKey If true, the default snapshot saving to ensure the output survives this pipe,
+     * will instead be saved into context during an overwrite of preValidation.
      * @return This Pipe object for method chaining
      */
-    fun setValidatorPipe(pipe: Pipe) : Pipe
+    fun setValidatorPipe(pipe: Pipe, saveSnapshotAsPageKey: Boolean = false) : Pipe
     {
         this.validatorPipe = pipe
         validatorPipe.apply {
@@ -2542,16 +2551,60 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 if(transformationFunction == null)
                 {
                     setTransformationFunction {
-                        val newSnapshot = it.getSnapshot() ?: return@setTransformationFunction it
+                        var newSnapshot = it.getSnapshot() ?: miniContextBank.contextMap[SAVE_SNAPSHOT_AS_PAGE_KEY] ?: ""
 
-                        return@setTransformationFunction newSnapshot
+                        /**
+                         * If this was found as context we need to turn it back to content, then attempt to rebind it
+                         * to our target return var. If we cannot, but this was a string, we'll need to throw instead.
+                         */
+                        if(newSnapshot is String)
+                        {
+                            val asContent = deserialize<MultimodalContent>(newSnapshot)
+                            newSnapshot = asContent ?: MultimodalContent().apply {
+                                if(isEmpty())
+                                {
+                                    throw Exception("Unable to restore snapshot from validator pipe. " +
+                                            "It was neither stored as snapshot, or context, and we could not " +
+                                            "deserialize it back to content. @$pipeName")
+                                }
+                            }
+                        }
+
+                        /**
+                         * If the if statement is skipped, we pulled correctly. In either case to reach here
+                         * this has to be content so as without ? is safe.
+                         */
+                        return@setTransformationFunction newSnapshot as MultimodalContent
                     }
                 }
 
                 //Bind metadata to track this later during init() so that we can throw if there's no validator function.
-                pipeMetadata["isValidatorPipe"] = true
+                pipeMetadata[IS_VALIDATOR_PIPE] = true
             }
 
+            /**
+             * If true, serialize the snapshot and save it to the internal mini-bank of this pipe.
+             * The default transformation provided allows us to restore the snapshot even if it's in context form.
+             * This also allows us to safely wipe clean the snapshot data to keep memory costs under control.
+             */
+            if(saveSnapshotAsPageKey)
+            {
+                setPreValidationMiniBankFunction { context, content ->
+                    val snapshot = content?.getSnapshot() ?: return@setPreValidationMiniBankFunction context
+                    val userPromptAsString = serialize(content)
+
+                    val newContextWindow = ContextWindow().apply {
+                        contextElements.add(userPromptAsString)
+                    }
+
+                    context.contextMap[SAVE_SNAPSHOT_AS_PAGE_KEY] = newContextWindow
+                    content.deleteSnapshot() //Free up the memory so we haven't tripled the user prompt.
+
+                    //If applied this is automatically also marked as a validatorPipe.
+                   pipeMetadata[IS_VALIDATOR_PIPE] = true
+                   return@setPreValidationMiniBankFunction context
+                }
+            }
 
         }
         return this

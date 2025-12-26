@@ -2,6 +2,7 @@
 
 ## Table of Contents
 - [Overview](#overview)
+- [Constants](#constants)
 - [Public Properties](#public-properties)
   - [Configuration](#configuration)
   - [Function Hooks](#function-hooks)
@@ -30,6 +31,19 @@ The `Pipe` class is the core abstraction for AI model interactions in TPipe.
 ```kotlin
 abstract class Pipe : P2PInterface, ProviderInterface
 ```
+
+## Constants
+
+The Pipe class defines constants for metadata keys to ensure consistent access:
+
+```kotlin
+var IS_VALIDATOR_PIPE = "isValidatorPipe"
+var SAVE_SNAPSHOT_AS_PAGE_KEY = "validatorPipeUserPromptSnapshotTPipe"
+```
+
+**Usage:**
+- `IS_VALIDATOR_PIPE`: Metadata key to identify validator pipes
+- `SAVE_SNAPSHOT_AS_PAGE_KEY`: Context key for memory-efficient snapshot storage in validator pipes
 
 ## Public Properties
 
@@ -564,10 +578,20 @@ Sets string-based failure handler.
 
 ### Pipe Chaining
 
-#### `setValidatorPipe(pipe: Pipe): Pipe`
+#### `setValidatorPipe(pipe: Pipe, saveSnapshotAsPageKey: Boolean = false): Pipe`
 Sets pipe to validate output instead of validator function.
 
+**Parameters:**
+- `pipe`: The validator pipe to use for validation
+- `saveSnapshotAsPageKey`: If true, saves snapshots to MiniBank context instead of memory for better memory management
+
 **Behavior:** Validator pipe is executed with the AI output. If validator pipe's output contains validation failure indicators, triggers failure handling. Takes precedence over `validatorFunction`.
+
+**Memory Management:** When `saveSnapshotAsPageKey = true`, automatically:
+- Sets up `preValidationMiniBankFunction` to serialize and store snapshots in context using key `SAVE_SNAPSHOT_AS_PAGE_KEY`
+- Calls `deleteSnapshot()` to free memory after context storage
+- Enhances transformation function to restore snapshots from either memory or context
+- Provides automatic fallback between snapshot sources for robust restoration
 
 #### `setTransformationPipe(pipe: Pipe): Pipe`
 Sets pipe to transform output instead of transformation function.

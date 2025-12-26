@@ -307,6 +307,14 @@ class MultimodalContent(
     {
         return metadata["snapshot"] as? MultimodalContent
     }
+
+    /**
+     * Delete a snapshot that has been stored. This is useful for memory management.
+     */
+    fun deleteSnapshot()
+    {
+        metadata.remove("snapshot")
+    }
     
     /**
      * Merge another MultimodalContent object into this one, appending B to A.

@@ -105,6 +105,43 @@ val publishingPipe = BedrockPipe()
     }
 ```
 
+### Memory-Efficient Validator Pipes
+
+For memory-intensive applications, validator pipes can store snapshots in context instead of memory:
+
+```kotlin
+val memoryEfficientPipe = BedrockPipe()
+    .setSystemPrompt("Generate content that requires validation.")
+    .setValidatorPipe(
+        validatorPipe = BedrockPipe()
+            .setSystemPrompt("Validate content quality and accuracy."),
+        saveSnapshotAsPageKey = true  // Store snapshots in context, not memory
+    )
+    .setValidatorFunction { content ->
+        // Validation logic here
+        validateContent(content.text)
+    }
+    .setTransformationFunction { content ->
+        // Transformation automatically handles snapshot restoration
+        // from either memory or context storage
+        processContent(content)
+    }
+```
+
+**Memory Management Benefits:**
+- **Reduced Memory Usage**: Snapshots stored in MiniBank context using `SAVE_SNAPSHOT_AS_PAGE_KEY` constant
+- **Automatic Cleanup**: Calls `deleteSnapshot()` after context storage to free memory
+- **Robust Restoration**: Enhanced transformation function tries multiple snapshot sources:
+  1. `getSnapshot()` (memory-based)
+  2. `miniContextBank.contextMap[SAVE_SNAPSHOT_AS_PAGE_KEY]` (context-based)
+- **Error Handling**: Throws descriptive exceptions if snapshot restoration fails
+
+**When to Use:**
+- Large content processing with memory constraints
+- Long-running pipelines that accumulate snapshots
+- Applications requiring memory optimization
+- Validator pipes in resource-limited environments
+
 ## Transformation Pipe
 
 ### Purpose
