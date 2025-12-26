@@ -1,19 +1,19 @@
-# Human-in-the-Loop Functions
+# Developer-in-the-Loop Functions
 
 ## Table of Contents
-- [Overview of HITL Functions](#overview-of-hitl-functions)
+- [Overview of DITL Functions](#overview-of-ditl-functions)
 - [Execution Order](#execution-order)
 - [Pre-Init Function](#pre-init-function)
 - [Pre-Validation Function](#pre-validation-function)
 - [Pre-Invoke Function](#pre-invoke-function)
 - [Validator Function](#validator-function)
 - [On-Failure Function](#on-failure-function)
-- [Transformation Function - The Most Critical HITL Function](#transformation-function---the-most-critical-hitl-function)
+- [Transformation Function - The Most Critical DITL Function](#transformation-function---the-most-critical-ditl-function)
 - [Flow Control Methods](#flow-control-methods)
 
-TPipe provides sophisticated human-in-the-loop (HITL) capabilities through a series of intervention points in the pipe execution lifecycle. These functions allow developers to inject custom logic, validation, and error handling at critical stages of AI processing.
+TPipe provides sophisticated developer-in-the-loop (DITL) capabilities through a series of intervention points in the pipe execution lifecycle. These functions allow developers to inject custom logic, validation, and error handling at critical stages of AI processing.
 
-## Overview of HITL Functions
+## Overview of DITL Functions
 
 TPipe offers six key intervention points during pipe execution:
 
@@ -134,9 +134,9 @@ pipe.setOnFailure { originalContent, processedContent ->
 }
 ```
 
-## Transformation Function - The Most Critical HITL Function
+## Transformation Function - The Most Critical DITL Function
 
-**What it does**: Processes and transforms the raw AI output immediately after generation, before any validation occurs. This is the **most important** HITL function because it's where you convert unstructured AI responses into structured, usable data.
+**What it does**: Processes and transforms the raw AI output immediately after generation, before any validation occurs. This is the **most important** DITL function because it's where you convert unstructured AI responses into structured, usable data.
 
 **When to use**: Always - nearly every production pipe should have a transformation function. Use it for parsing JSON responses, extracting specific data from AI text, converting unstructured text to structured data, adding metadata, and preparing content for pipeline context sharing.
 
@@ -160,7 +160,7 @@ pipe.setTransformationFunction { content ->
 }
 ```
 
-Human-in-the-loop functions provide precise control over AI processing at key intervention points, enabling sophisticated validation, error handling, and adaptive processing logic that goes far beyond simple linear AI model calls.
+Developer-in-the-loop functions provide precise control over AI processing at key intervention points, enabling sophisticated validation, error handling, and adaptive processing logic that goes far beyond simple linear AI model calls.
 
 ## Flow Control Methods
 
@@ -181,6 +181,6 @@ Immediately exits the pipeline and treats it as successful early completion. Cur
 
 ## Next Steps
 
-Now that you understand code-based HITL functions, learn about AI-powered validation:
+Now that you understand code-based DITL functions, learn about AI-powered validation:
 
-**→ [Human-in-the-Loop Pipes](human-in-the-loop-pipes.md)** - AI-powered validation and transformation
+**→ [Developer-in-the-Loop Pipes](developer-in-the-loop-pipes.md)** - AI-powered validation and transformation

@@ -378,7 +378,7 @@ pipeline.add(mainPipe)
 
 ### Pipeline Pause and Resume
 
-TPipe provides sophisticated pause/resume functionality for fine-grained execution control. This enables human-in-the-loop workflows, debugging, and interactive pipeline management.
+TPipe provides sophisticated pause/resume functionality for fine-grained execution control. This enables developer-in-the-loop workflows, debugging, and interactive pipeline management.
 
 #### Declarative Pause Points
 

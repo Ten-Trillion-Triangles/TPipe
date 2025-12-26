@@ -534,9 +534,9 @@ Pipeline context integration enables sophisticated multi-stage processing where 
 
 ## MiniBank Integration with Pipeline Context
 
-When pipes use multiple page keys, they work with MiniBank instead of a single ContextWindow. The MiniBank can be modified through human-in-the-loop functions and automatically updates the pipeline context.
+When pipes use multiple page keys, they work with MiniBank instead of a single ContextWindow. The MiniBank can be modified through developer-in-the-loop functions and automatically updates the pipeline context.
 
-### Accessing MiniBank in HITL Functions
+### Accessing MiniBank in DITL Functions
 ```kotlin
 val pipe = BedrockPipe()
     .pullPipelineContext()
@@ -557,7 +557,7 @@ val pipe = BedrockPipe()
     .updatePipelineContextOnExit()  // MiniBank automatically pushed to pipeline
 ```
 
-### MiniBank vs ContextWindow in HITL Functions
+### MiniBank vs ContextWindow in DITL Functions
 ```kotlin
 // Single context (ContextWindow)
 .setTransformationFunction { content ->
@@ -1129,6 +1129,6 @@ val aiResponsePipeline = Pipeline()
 
 ## Next Steps
 
-Now that you understand context sharing within pipelines, learn about human-in-the-loop processing:
+Now that you understand context sharing within pipelines, learn about developer-in-the-loop processing:
 
-**→ [Human-in-the-Loop Functions](human-in-the-loop.md)** - Code-based validation and transformation
+**→ [Developer-in-the-Loop Functions](developer-in-the-loop.md)** - Code-based validation and transformation

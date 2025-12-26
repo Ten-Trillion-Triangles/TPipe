@@ -32,9 +32,9 @@ Essential TPipe features organized by complexity:
 - [MiniBank and Multiple Page Keys](docs/core-concepts/minibank-and-multiple-page-keys.md) - Multi-context management
 - [Pipeline Context Integration](docs/core-concepts/pipeline-context-integration.md) - Context sharing within pipelines
 
-#### Human-in-the-Loop Processing
-- [Human-in-the-Loop Functions](docs/core-concepts/human-in-the-loop.md) - Code-based validation and transformation
-- [Human-in-the-Loop Pipes](docs/core-concepts/human-in-the-loop-pipes.md) - AI-powered validation and transformation
+#### Developer-in-the-Loop Processing
+- [Developer-in-the-Loop Functions](docs/core-concepts/developer-in-the-loop.md) - Code-based validation and transformation
+- [Developer-in-the-Loop Pipes](docs/core-concepts/developer-in-the-loop-pipes.md) - AI-powered validation and transformation
 
 #### Advanced Features
 - [Reasoning Pipes](docs/core-concepts/reasoning-pipes.md) - Chain-of-thought reasoning capabilities
@@ -129,10 +129,10 @@ println(result.text)
 ## Key Features
 
 - **Multi-stage AI workflows** with sophisticated error handling
-- **Pipeline pause/resume control** with declarative pause points and human-in-the-loop workflows
+- **Pipeline pause/resume control** with declarative pause points and developer-in-the-loop workflows
 - **Global context sharing** across applications via ContextBank
 - **Context access control** with ContextLock enforcement for secure lorebook and page management
-- **Human-in-the-loop integration** with code and AI-powered validation
+- **Developer-in-the-loop integration** with code and AI-powered validation
 - **Chain-of-thought reasoning** with multiple strategies and focus points
 - **Multi-provider AI support** (AWS Bedrock, Ollama, extensible architecture)
 - **Comprehensive debugging** with detailed tracing and monitoring

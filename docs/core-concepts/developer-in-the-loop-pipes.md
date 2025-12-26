@@ -1,20 +1,20 @@
-# Human-in-the-Loop Pipes
+# Developer-in-the-Loop Pipes
 
 ## Table of Contents
-- [What are Human-in-the-Loop Pipes?](#what-are-human-in-the-loop-pipes)
+- [What are Developer-in-the-Loop Pipes?](#what-are-developer-in-the-loop-pipes)
 - [Validator Pipe](#validator-pipe)
 - [Transformation Pipe](#transformation-pipe)
 - [Branch Pipe](#branch-pipe)
 - [Pipe Execution Order](#pipe-execution-order)
-- [Combined HITL Pipes and Functions](#combined-hitl-pipes-and-functions)
+- [Combined DITL Pipes and Functions](#combined-ditl-pipes-and-functions)
 - [Practical Examples](#practical-examples)
 - [Best Practices](#best-practices)
 
-TPipe provides human-in-the-loop pipes that use AI models instead of code functions for validation, transformation, and error handling. These pipes enable AI-powered processing chains where complex logic that's difficult to code can be handled by specialized AI models.
+TPipe provides developer-in-the-loop pipes that use AI models instead of code functions for validation, transformation, and error handling. These pipes enable AI-powered processing chains where complex logic that's difficult to code can be handled by specialized AI models.
 
-## What are Human-in-the-Loop Pipes?
+## What are Developer-in-the-Loop Pipes?
 
-Human-in-the-loop pipes are AI-powered alternatives to code-based HITL functions:
+Developer-in-the-loop pipes are AI-powered alternatives to code-based DITL functions:
 
 - **Validator Pipe**: AI model validates output instead of validator function
 - **Transformation Pipe**: AI model transforms output instead of transformation function  
@@ -216,7 +216,7 @@ val robustPipe = BedrockPipe()
 
 ## Pipe Execution Order
 
-When multiple HITL pipes are configured, they execute in this order:
+When multiple DITL pipes are configured, they execute in this order:
 
 1. **Main Pipe** - Primary AI processing
 2. **Validator Pipe** (if set and no validator function) - AI validation
@@ -226,7 +226,7 @@ When multiple HITL pipes are configured, they execute in this order:
 6. **Branch Pipe** (if validation fails and no onFailure function) - AI error handling
 7. **OnFailure Function** (if validation fails and set) - Code error handling
 
-## Combined HITL Pipes and Functions
+## Combined DITL Pipes and Functions
 
 ### Pipes with Function Fallbacks
 ```kotlin
@@ -247,7 +247,7 @@ val comprehensivePipe = BedrockPipe()
     }
 ```
 
-### Conditional HITL Pipe Usage
+### Conditional DITL Pipe Usage
 ```kotlin
 val adaptivePipe = BedrockPipe()
     .setSystemPrompt("Generate content with adaptive processing.")
@@ -374,7 +374,7 @@ val transformerPipe = BedrockPipe()
 
 ### 5. Error Handling
 ```kotlin
-// Always provide fallbacks for HITL pipes
+// Always provide fallbacks for DITL pipes
 val robustPipe = BedrockPipe()
     .setValidatorPipe(aiValidator)
     .setValidatorFunction { content ->  // Fallback validation
@@ -388,7 +388,7 @@ val robustPipe = BedrockPipe()
 
 ### 6. Context Sharing
 ```kotlin
-// Share context between HITL pipes
+// Share context between DITL pipes
 val contextAwarePipe = BedrockPipe()
     .pullPipelineContext()
     .setValidatorPipe(BedrockPipe()
@@ -405,6 +405,6 @@ Human-in-the-loop pipes enable sophisticated AI-powered processing chains where 
 
 ## Next Steps
 
-Now that you understand AI-powered HITL processing, learn about advanced reasoning capabilities:
+Now that you understand AI-powered DITL processing, learn about advanced reasoning capabilities:
 
 **→ [Reasoning Pipes](reasoning-pipes.md)** - Chain-of-thought reasoning capabilities

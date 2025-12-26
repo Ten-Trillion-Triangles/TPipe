@@ -321,7 +321,7 @@ ContextBank.emplaceWithMutex("companyInfo", context)
 val result = runBlocking { pipe.execute("Tell me about ACME Corp") }
 ```
 
-### Human-in-the-Loop Functions
+### Developer-in-the-Loop Functions
 ```kotlin
 val pipe = BedrockPipe()
     .setRegion("us-east-1")
