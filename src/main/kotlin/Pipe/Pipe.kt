@@ -878,7 +878,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     /**
      * Set the reference to this pipe's parent pipe. Required by DITL pipes.
      */
-    private fun setParentPipe(ref: Pipe) : Pipe {
+    protected fun setParentPipe(ref: Pipe) : Pipe {
         parentPipeRef = ref
         return this
     }
@@ -2547,6 +2547,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setValidatorPipe(pipe: Pipe, saveSnapshotAsPageKey: Boolean = false) : Pipe
     {
         this.validatorPipe = pipe
+        validatorPipe.setParentPipe(this)
         validatorPipe.apply {
 
             if(preInitFunction == null && transformationFunction == null)
@@ -2644,6 +2645,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setTransformationPipe(pipe: Pipe): Pipe
     {
         this.transformationPipe = pipe
+        transformationPipe.setParentPipe(this)
         return this
     }
 
@@ -2659,6 +2661,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setBranchPipe(pipe: Pipe): Pipe
     {
         this.branchPipe = pipe
+        branchPipe.setParentPipe(this)
         return this
     }
 
@@ -2668,6 +2671,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setReasoningPipe(pipe: Pipe): Pipe
     {
         this.reasoningPipe = pipe
+        reasoningPipe.setParentPipe(this)
         return this
     }
 
