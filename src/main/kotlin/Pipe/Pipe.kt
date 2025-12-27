@@ -892,6 +892,22 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
     /**
+     * Get the context window object for this pipe.
+     */
+    fun getContextWindowObject() : ContextWindow
+    {
+        return contextWindow
+    }
+
+    /**
+     * Get the mini bank object for this pipe.
+     */
+    fun getMiniContextBankObject() : MiniBank
+    {
+        return miniContextBank
+    }
+
+    /**
      * Sets the model to be used by this pipe. This is useful for logic that needs to behave differently
      * depending on the model being used. The model variable does not have any internal functionality and is intended
      * to be referenced by validation functions.
@@ -2547,7 +2563,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setValidatorPipe(pipe: Pipe, saveSnapshotAsPageKey: Boolean = false) : Pipe
     {
         this.validatorPipe = pipe
-        validatorPipe.setParentPipe(this)
+        validatorPipe?.setParentPipe(this)
         validatorPipe.apply {
 
             if(preInitFunction == null && transformationFunction == null)
@@ -2645,7 +2661,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setTransformationPipe(pipe: Pipe): Pipe
     {
         this.transformationPipe = pipe
-        transformationPipe.setParentPipe(this)
+        transformationPipe?.setParentPipe(this)
         return this
     }
 
@@ -2661,7 +2677,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setBranchPipe(pipe: Pipe): Pipe
     {
         this.branchPipe = pipe
-        branchPipe.setParentPipe(this)
+        branchPipe?.setParentPipe(this)
         return this
     }
 
@@ -2671,7 +2687,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setReasoningPipe(pipe: Pipe): Pipe
     {
         this.reasoningPipe = pipe
-        reasoningPipe.setParentPipe(this)
+        reasoningPipe?.setParentPipe(this)
         return this
     }
 
