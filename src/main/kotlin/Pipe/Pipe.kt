@@ -254,6 +254,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     protected var pipelineRef: Pipeline? = null
 
     /**
+     * Reference to the parent pipe that owns this pipe. This happens when this pipe is a sub-pipe of a parent
+     * such as developer-in-the-loop pipes.
+     */
+    @kotlinx.serialization.Transient
+    protected var parentPipeRef: Pipe? = null
+
+    /**
      * Model to use for this pipe. Useful for logic that needs to behave differently depending on the model.
      * Does not have any internal functionality and is intended to be referenced by validation functions.
      */
@@ -868,6 +875,21 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         return this
     }
 
+    /**
+     * Set the reference to this pipe's parent pipe. Required by DITL pipes.
+     */
+    private fun setParentPipe(ref: Pipe) : Pipe {
+        parentPipeRef = ref
+        return this
+    }
+
+    /**
+     * Get the pipe that own's this pipe. Common in DITL pipe setups.
+     */
+    fun getParentPipe() : Pipe?
+    {
+        return parentPipeRef
+    }
 
     /**
      * Sets the model to be used by this pipe. This is useful for logic that needs to behave differently
