@@ -141,6 +141,49 @@ data class TokenBudgetSettings(
 )
 
 /**
+ * Comprehensive token usage data for a pipe and any nested pipes it owns.
+ */
+@kotlinx.serialization.Serializable
+data class TokenUsage(
+    var inputTokens: Int = 0,
+    var outputTokens: Int = 0,
+    var childPipeTokens: MutableMap<String, TokenUsage> = mutableMapOf(),
+    var totalInputTokens: Int = 0,
+    var totalOutputTokens: Int = 0
+) {
+    /**
+     * Adds or updates a child pipe entry and recalculates aggregate totals.
+     * This method stores the token usage for a specific child pipe and immediately
+     * recalculates the total token counts to maintain accurate aggregation.
+     *
+     * @param pipeName The unique identifier for the child pipe being tracked
+     * @param usage The TokenUsage object containing the child pipe's token consumption data
+     */
+    fun addChildUsage(pipeName: String, usage: TokenUsage)
+    {
+        //Store the child pipe's token usage in our tracking map.
+        childPipeTokens[pipeName] = usage
+        
+        //Immediately recalculate totals to ensure accuracy.
+        recalculateTotals()
+    }
+
+    /**
+     * Recalculates totals including this pipe and all tracked child pipes.
+     * This method aggregates token counts from this pipe's direct usage plus
+     * the recursive totals from all child pipes to provide comprehensive tracking.
+     */
+    fun recalculateTotals()
+    {
+        //Calculate total input tokens from this pipe plus all child pipe totals.
+        totalInputTokens = inputTokens + childPipeTokens.values.sumOf { it.totalInputTokens }
+        
+        //Calculate total output tokens from this pipe plus all child pipe totals.
+        totalOutputTokens = outputTokens + childPipeTokens.values.sumOf { it.totalOutputTokens }
+    }
+}
+
+/**
  * Defines the supported multi-page budget allocation strategies.
  *
  * @param EQUAL_SPLIT All pages are allocated the same amount of budget.
@@ -802,6 +845,18 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     var currentPipelineId: String? = null
 
     /**
+     * Enables optional comprehensive token usage tracking.
+     */
+    @Serializable
+    protected var comprehensiveTokenTracking = false
+
+    /**
+     * Stores token usage details when comprehensive tracking is enabled.
+     */
+    @kotlinx.serialization.Transient
+    protected var pipeTokenUsage = TokenUsage()
+
+    /**
      * Allows for a complex object or container to be linked to this pipe. If this is not null, when this pipe executes,
      * it will attempt to execute the container via the interface instead. Then return that result forward.
      */
@@ -880,6 +935,43 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     protected fun setParentPipe(ref: Pipe) : Pipe {
         parentPipeRef = ref
+        return this
+    }
+
+    /**
+     * Enables comprehensive token usage tracking for this pipe and its child pipes.
+     * When enabled, this pipe will track detailed token consumption including input tokens,
+     * output tokens, and aggregated usage from all nested child pipes. This provides
+     * comprehensive visibility into token usage across complex pipe hierarchies.
+     *
+     * @return This Pipe object for method chaining.
+     */
+    fun enableComprehensiveTokenTracking(): Pipe
+    {
+        //Enable the comprehensive tracking flag.
+        comprehensiveTokenTracking = true
+        
+        //Initialize a fresh TokenUsage object to start clean tracking.
+        pipeTokenUsage = TokenUsage()
+        
+        return this
+    }
+
+    /**
+     * Disables comprehensive token usage tracking and clears stored usage data.
+     * This method turns off detailed token tracking and resets all stored usage
+     * data to free memory and disable the tracking overhead.
+     *
+     * @return This Pipe object for method chaining.
+     */
+    fun disableComprehensiveTokenTracking(): Pipe
+    {
+        //Disable the comprehensive tracking flag.
+        comprehensiveTokenTracking = false
+        
+        //Clear stored usage data to free memory.
+        pipeTokenUsage = TokenUsage()
+        
         return this
     }
 
@@ -3582,6 +3674,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          */
         if(tokenBudgetSettings != null) autoTruncateContext = false
 
+        //Initialize comprehensive token tracking if enabled.
+        if(comprehensiveTokenTracking)
+        {
+            //Reset token usage tracking for this execution cycle.
+            pipeTokenUsage = TokenUsage()
+        }
+
         /**
          * Footgun. This case needs to be handled, and we need to shut down the pipeline by default when we have
          * an empty user prompt or empty content object. Typically, this is just a footgun that will go undetected,
@@ -3995,10 +4094,25 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 copySystemPrompt(processedContent)
             }
 
+            //Count input tokens for basic tracking.
+            countTokens(true, processedContent)
 
-             //Count input tokens.
-            trace(TraceEventType.PIPE_START, TracePhase.EXECUTION,
-                metadata = mapOf("tokenCount" to countTokens(true, processedContent)))
+            //Perform comprehensive token tracking if enabled.
+            if(comprehensiveTokenTracking)
+            {
+                //Count actual input tokens after all truncation and processing.
+                val actualInputTokens = countActualInputTokens(processedContent)
+                
+                //Store the actual input token count in our usage tracking.
+                pipeTokenUsage.inputTokens = actualInputTokens
+                
+                //Recalculate totals to include any child pipe usage.
+                pipeTokenUsage.recalculateTotals()
+                
+                //Trace the context preparation with actual token counts.
+                trace(TraceEventType.CONTEXT_PREPARED, TracePhase.CONTEXT_PREPARATION, processedContent,
+                    metadata = mapOf("actualInputTokens" to actualInputTokens))
+            }
 
             try{
                 if(reasoningPipe != null)
@@ -4044,9 +4158,33 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             }
 
 
-            //Count tokens the model generated.
-            trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, generatedContent,
-                metadata = mapOf("tokenCount" to countTokens(false, generatedContent)))
+            //Count tokens the model generated for basic tracking.
+            val outputTokens = countTokens(false, generatedContent)
+
+            //Perform comprehensive output token tracking if enabled.
+            if (comprehensiveTokenTracking)
+            {
+                //Store the output token count in our usage tracking.
+                pipeTokenUsage.outputTokens = outputTokens
+                
+                //Recalculate totals to include any child pipe usage.
+                pipeTokenUsage.recalculateTotals()
+
+                //Trace API call success with comprehensive token metadata.
+                trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, generatedContent,
+                    metadata = mapOf(
+                        "outputTokens" to outputTokens,
+                        "totalInputTokens" to pipeTokenUsage.totalInputTokens,
+                        "totalOutputTokens" to pipeTokenUsage.totalOutputTokens
+                    ))
+            }
+            
+            else
+            {
+                //Trace API call success with basic token count for backward compatibility.
+                trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, generatedContent,
+                    metadata = mapOf("tokenCount" to outputTokens))
+            }
 
 
             /**
@@ -4067,6 +4205,14 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     validatorPipeContent = validatorPipeResult.await()
                     validatorPipeContent.currentPipe = inputContent.currentPipe //Avoid nullptr leakage.
                     validatorPipeContent.metadata = generatedContent.metadata //Copy to avoid leakage after llm call.
+                    //Track validator pipe token usage if comprehensive tracking is enabled.
+                    if (comprehensiveTokenTracking)
+                    {
+                        validatorPipe?.let { pipe ->
+                            //Add the validator pipe's token usage to our child pipe tracking.
+                            pipeTokenUsage.addChildUsage("validator-${pipe.pipeName}", pipe.getTokenUsage())
+                        }
+                    }
                 } catch (e: Exception) {
                     trace(TraceEventType.PIPE_FAILURE, TracePhase.VALIDATION, generatedContent, error = e)
                     validatorPipeContent = generatedContent
@@ -4109,6 +4255,14 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                                 generatedContent = transformPipeResult.await()
                                 generatedContent.currentPipe = inputContent.currentPipe
                                 generatedContent.metadata = metadataBackup //Copy over in case the llm stomps this.
+                                //Track transformation pipe token usage if comprehensive tracking is enabled.
+                                if (comprehensiveTokenTracking)
+                                {
+                                    transformationPipe?.let { pipe ->
+                                        //Add the transformation pipe's token usage to our child pipe tracking.
+                                        pipeTokenUsage.addChildUsage("transformation-${pipe.pipeName}", pipe.getTokenUsage())
+                                    }
+                                }
 
                             } catch (e: Exception) {
                                 trace(TraceEventType.PIPE_FAILURE, TracePhase.TRANSFORMATION, generatedContent, error = e)
@@ -4175,6 +4329,14 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             generatedContent = transformPipeResult.await()
                             generatedContent.currentPipe = inputContent.currentPipe //Prevent nullptr leakage.
                             generatedContent.metadata = metadataBackup
+                            //Track transformation pipe token usage if comprehensive tracking is enabled.
+                            if (comprehensiveTokenTracking)
+                            {
+                                transformationPipe?.let { pipe ->
+                                    //Add the transformation pipe's token usage to our child pipe tracking.
+                                    pipeTokenUsage.addChildUsage("transformation-${pipe.pipeName}", pipe.getTokenUsage())
+                                }
+                            }
 
                         } catch (e: Exception) {
                             trace(TraceEventType.PIPE_FAILURE, TracePhase.TRANSFORMATION, generatedContent, error = e)
@@ -4222,6 +4384,14 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             branchPipe?.execute(generatedContent) ?: generatedContent
                         }
                         val branchResult = branchPipeResult.await()
+                        //Track branch pipe token usage if comprehensive tracking is enabled.
+                        if (comprehensiveTokenTracking)
+                        {
+                            branchPipe?.let { pipe ->
+                                //Add the branch pipe's token usage to our child pipe tracking.
+                                pipeTokenUsage.addChildUsage("branch-${pipe.pipeName}", pipe.getTokenUsage())
+                            }
+                        }
                         branchResult.currentPipe = inputContent.currentPipe
                         branchResult.metadata = generatedContent.metadata
                         
@@ -4562,7 +4732,16 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 truncationSettings)
 
             //Copy back now that we've reduced it to fit our budget.
-            contentCopy.modelReasoning = newContextWindow.contextElements.first()
+           contentCopy.modelReasoning = newContextWindow.contextElements.first()
+        }
+
+        //Track reasoning pipe token usage if comprehensive tracking is enabled.
+        if(comprehensiveTokenTracking)
+        {
+            reasoningPipe?.let { pipe ->
+                //Add the reasoning pipe's token usage to our child pipe tracking.
+                pipeTokenUsage.addChildUsage("reasoning-${pipe.pipeName}", pipe.getTokenUsage())
+            }
         }
 
         return contentCopy
@@ -4743,6 +4922,53 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
     /**
+     * Counts the actual tokens consumed by this pipe after all truncation and budgeting is completed.
+     * This method provides accurate post-processing token counts that reflect the actual content
+     * sent to the AI model, including system prompts, user content, context windows, and binary content.
+     * 
+     * @param content The MultimodalContent object containing the processed input data
+     * @return The total number of input tokens actually consumed by this pipe
+     */
+    private fun countActualInputTokens(content: MultimodalContent): Int
+    {
+        //Get the truncation settings for accurate token counting.
+        val truncationSettings = getTruncationSettings()
+        var totalTokens = 0
+
+        //Count tokens from the system prompt.
+        totalTokens += Dictionary.countTokens(systemPrompt, truncationSettings)
+        
+        //Count tokens from the main user content text.
+        totalTokens += Dictionary.countTokens(content.text, truncationSettings)
+
+        //Count context tokens based on whether we're using minibank or regular context.
+        if(miniContextBank.isEmpty())
+        {
+            //Use regular context window for token counting.
+            val contextJson = serialize(contextWindow)
+            totalTokens += Dictionary.countTokens(contextJson, truncationSettings)
+        }
+        
+        else
+        {
+            //Use minibank context for token counting.
+            val miniBankJson = serialize(miniContextBank)
+            totalTokens += Dictionary.countTokens(miniBankJson, truncationSettings)
+        }
+
+        //Count tokens from any binary content (images, files, etc.).
+        totalTokens += countBinaryTokens(content, truncationSettings)
+        
+        //Count tokens from model reasoning content.
+        totalTokens += Dictionary.countTokens(content.modelReasoning, truncationSettings)
+
+        //Update pipeline reference with input token count for backward compatibility.
+        pipelineRef?.inputTokensSpent = totalTokens
+        
+        return totalTokens
+    }
+    
+    /**
      * Constructs a PipeSettings object populated with all current pipe configuration values.
      * @return PipeSettings object containing all current pipe settings
      */
@@ -4797,6 +5023,42 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             tokenBudgetSettings = tokenBudgetSettings
         )
     }
+
+    /**
+     * Returns comprehensive usage data for this pipe and its children.
+     * This method provides access to detailed token usage information when comprehensive
+     * tracking is enabled, or returns an empty TokenUsage object when tracking is disabled.
+     *
+     * @return TokenUsage object containing comprehensive usage data, or empty object if tracking disabled
+     */
+    fun getTokenUsage(): TokenUsage = if (comprehensiveTokenTracking) pipeTokenUsage else TokenUsage()
+
+    /**
+     * Returns total input tokens consumed by this pipe and nested pipes when tracking is enabled.
+     * This includes input tokens from this pipe plus the recursive totals from all child pipes
+     * when comprehensive tracking is active.
+     *
+     * @return Total input token count across this pipe and all nested pipes, or 0 if tracking disabled
+     */
+    fun getTotalInputTokens(): Int = if (comprehensiveTokenTracking) pipeTokenUsage.totalInputTokens else 0
+
+    /**
+     * Returns total output tokens consumed by this pipe and nested pipes when tracking is enabled.
+     * This includes output tokens from this pipe plus the recursive totals from all child pipes
+     * when comprehensive tracking is active.
+     *
+     * @return Total output token count across this pipe and all nested pipes, or 0 if tracking disabled
+     */
+    fun getTotalOutputTokens(): Int = if (comprehensiveTokenTracking) pipeTokenUsage.totalOutputTokens else 0
+
+    /**
+     * Indicates whether comprehensive token tracking is enabled on this pipe.
+     * This method allows external code to check if detailed token usage data is being
+     * collected and is available through the token usage methods.
+     *
+     * @return True if comprehensive token tracking is enabled, false otherwise
+     */
+    fun isComprehensiveTokenTrackingEnabled(): Boolean = comprehensiveTokenTracking
 
     /**
      * Getter function to retrieve the middle prompt instructions from a pipe if the pipe's reasoning settings

@@ -14,6 +14,7 @@ import com.TTT.P2P.P2PResponse
 import com.TTT.P2P.P2PTransport
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.TokenUsage
 import com.TTT.Util.copyPipeline
 import com.TTT.Util.deepCopy
 import kotlinx.coroutines.channels.Channel
@@ -64,6 +65,12 @@ class Pipeline : P2PInterface {
      * be sandboxed to the pipeline as a minibank.
      */
     var miniBank = MiniBank()
+
+    /**
+     * Aggregated token usage across tracked pipes. Reset at the start of each execution.
+     */
+    @kotlinx.serialization.Transient
+    private var pipelineTokenUsage = TokenUsage()
 
     /**
      * Weather the pipeline should update the global context window system of TPipe which allows multiple pipes,
@@ -488,6 +495,34 @@ class Pipeline : P2PInterface {
 
 
     /**
+     * Gets comprehensive token usage for the entire pipeline when tracking is enabled.
+     * This method provides access to aggregated token usage data across all pipes
+     * in the pipeline that have comprehensive tracking enabled.
+     *
+     * @return TokenUsage object containing aggregated pipeline usage data
+     */
+    fun getTokenUsage(): TokenUsage = pipelineTokenUsage
+
+    /**
+     * Returns the aggregated input token count across all pipes when tracking is enabled.
+     * This method sums up input tokens from all pipes in the pipeline that have
+     * comprehensive token tracking enabled during the last execution.
+     *
+     * @return Total input tokens consumed across all tracked pipes in the pipeline
+     */
+    fun getTotalInputTokens(): Int = pipelineTokenUsage.totalInputTokens
+
+    /**
+     * Returns the aggregated output token count across all pipes when tracking is enabled.
+     * This method sums up output tokens from all pipes in the pipeline that have
+     * comprehensive token tracking enabled during the last execution.
+     *
+     * @return Total output tokens consumed across all tracked pipes in the pipeline
+     */
+    fun getTotalOutputTokens(): Int = pipelineTokenUsage.totalOutputTokens
+
+
+    /**
      * Sets the name of the pipeline. This is used for debugging and monitoring purposes.
      */
     fun setPipelineName(name: String): Pipeline
@@ -908,9 +943,13 @@ class Pipeline : P2PInterface {
         {
             PipeTracer.startTrace(pipelineId)
         }
-        
+
+        //Initialize pipeline execution state and token tracking.
         var generatedContent = initialContent
         currentPipeIndex = 0
+        
+        //Reset pipeline token usage tracking for this execution cycle.
+        pipelineTokenUsage = TokenUsage()
 
         appendContentToConverseHistory(initialContent, userConverseRole)
 
@@ -941,7 +980,20 @@ class Pipeline : P2PInterface {
                 pipe.execute(generatedContent)
             }
 
+            //Execute the current pipe and await its result.
             generatedContent = result.await()
+            
+            //Track token usage from pipes that have comprehensive tracking enabled.
+            val pipeIndex = currentPipeIndex
+            if (pipe.isComprehensiveTokenTrackingEnabled())
+            {
+                //Add this pipe's token usage to the pipeline's aggregated tracking.
+                pipelineTokenUsage.addChildUsage("pipe-$pipeIndex-${pipe.pipeName}", pipe.getTokenUsage())
+                
+                //Update pipeline-level token counts for backward compatibility.
+                inputTokensSpent = pipelineTokenUsage.totalInputTokens
+                outputTokensSpent = pipelineTokenUsage.totalOutputTokens
+            }
 
             // PAUSE POINT 2: After pipe execution (if declared)
             if (pauseAfterPipes) {
