@@ -214,6 +214,11 @@ object ReasoningBuilder
             .setMaxTokens(pipeSettings.maxTokens)
             .setContextWindowSize(pipeSettings.contextWindowSize)
             .requireJsonPromptInjection()
+        
+        // Apply token budget settings if provided
+        if (pipeSettings.tokenBudgetSettings != null) {
+            targetPipe.setTokenBudget(pipeSettings.tokenBudgetSettings!!)
+        }
         // Type-safe JSON output using cast
         when (jsonOutputClass) {
             StructuredCot::class -> targetPipe.setJsonOutput(jsonOutputObject as StructuredCot)

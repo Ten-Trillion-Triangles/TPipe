@@ -4781,7 +4781,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             nonWordSplitCount = nonWordSplitCount,
             tracingEnabled = tracingEnabled,
             pipeId = pipeId,
-            currentPipelineId = currentPipelineId
+            currentPipelineId = currentPipelineId,
+            tokenBudgetSettings = tokenBudgetSettings
         )
     }
 
