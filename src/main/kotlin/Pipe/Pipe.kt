@@ -2868,7 +2868,24 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             PipeTracer.addEvent(pipelineId, event)
         }
     }
-    
+
+    /**
+     * Recursively propagates tracing configuration to every child pipe and protects against cycles.
+     */
+    private fun propagateTracingRecursively(visitedPipes: MutableSet<String> = mutableSetOf())
+    {
+        if (pipeId in visitedPipes) return
+        visitedPipes.add(pipeId)
+
+        if (!tracingEnabled) return
+
+        listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { childPipe ->
+            childPipe.enableTracing(traceConfig)
+            childPipe.currentPipelineId = currentPipelineId
+            childPipe.propagateTracingRecursively(visitedPipes)
+        }
+    }
+
     private fun buildMetadataForLevel(
         baseMetadata: Map<String, Any>, 
         detailLevel: TraceDetailLevel, 
@@ -4042,8 +4059,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 try {
                     validatorPipe!!.init()
                     if (tracingEnabled) {
-                        validatorPipe!!.enableTracing(traceConfig)
-                        validatorPipe!!.currentPipelineId = currentPipelineId
+                        propagateTracingRecursively()
                     }
                     val validatorPipeResult : Deferred<MultimodalContent> = async {
                         validatorPipe?.execute(generatedContent) ?: MultimodalContent()
@@ -4082,8 +4098,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                                 transformationPipe!!.init()
                                 if (tracingEnabled)
                                 {
-                                    transformationPipe!!.enableTracing(traceConfig)
-                                    transformationPipe!!.currentPipelineId = currentPipelineId
+                                    propagateTracingRecursively()
                                 }
 
                                 val transformPipeResult : Deferred<MultimodalContent> = async {
@@ -4150,8 +4165,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         try {
                             transformationPipe!!.init()
                             if (tracingEnabled) {
-                                transformationPipe!!.enableTracing(traceConfig)
-                                transformationPipe!!.currentPipelineId = currentPipelineId
+                                propagateTracingRecursively()
                             }
                             val transformPipeResult : Deferred<MultimodalContent> = async {
                                 transformationPipe?.execute(generatedContent) ?: generatedContent
@@ -4201,8 +4215,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         // Initialize and setup branch pipe
                         branchPipe!!.init()
                         if (tracingEnabled) {
-                            branchPipe!!.enableTracing(traceConfig)
-                            branchPipe!!.currentPipelineId = currentPipelineId
+                            propagateTracingRecursively()
                         }
                         
                         val branchPipeResult : Deferred<MultimodalContent> = async {
@@ -4424,8 +4437,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          */
         if(tracingEnabled)
         {
-            reasoningPipe?.enableTracing(traceConfig)
-            reasoningPipe?.currentPipelineId = currentPipelineId
+            propagateTracingRecursively()
         }
 
         /**

@@ -8,6 +8,7 @@
 - [Practical Debugging Examples](#practical-debugging-examples)
 - [Pipeline Tracing](#pipeline-tracing)
 - [Advanced Tracing Patterns](#advanced-tracing-patterns)
+- [Recursive Tracing Propagation](#recursive-tracing-propagation)
 - [Performance Analysis](#performance-analysis)
 - [Best Practices](#best-practices)
 
@@ -463,6 +464,74 @@ val pipe = BedrockPipe()
 ```
 
 TPipe's tracing and debugging capabilities provide comprehensive visibility into AI processing workflows, enabling effective troubleshooting, performance optimization, and system monitoring in agent systems.
+
+## Recursive Tracing Propagation
+
+TPipe automatically propagates tracing configuration through nested child pipes, ensuring complete visibility into complex hierarchical structures.
+
+### How Recursive Propagation Works
+
+When tracing is enabled on a parent pipe, TPipe recursively propagates the tracing configuration to all child pipes:
+
+```kotlin
+// Parent pipe with nested child pipes
+val nestedReasoning = BedrockPipe("Nested-Reasoning")
+val primaryReasoning = BedrockPipe("Primary-Reasoning")
+    .setReasoningPipe(nestedReasoning)  // Nested reasoning pipe
+
+val rootPipe = BedrockPipe("Root")
+    .setReasoningPipe(primaryReasoning)
+    .setValidatorPipe(BedrockPipe("Validator"))
+    .enableTracing()  // Automatically propagates to ALL nested pipes
+
+// All pipes (Root, Primary-Reasoning, Nested-Reasoning, Validator) will trace
+val result = rootPipe.execute("Complex reasoning task")
+```
+
+### Nested Pipe Support
+
+TPipe supports unlimited nesting depth for all child pipe types:
+- **Reasoning pipes** can have their own reasoning pipes
+- **Validator pipes** can have nested child pipes
+- **Transformation pipes** can contain complex hierarchies
+- **Branch pipes** can include nested processing chains
+
+### Cycle Detection
+
+TPipe includes automatic cycle detection to prevent infinite recursion:
+
+```kotlin
+val pipeA = BedrockPipe("Pipe-A")
+val pipeB = BedrockPipe("Pipe-B")
+
+// Create circular reference
+pipeA.setReasoningPipe(pipeB)
+pipeB.setReasoningPipe(pipeA)  // Circular reference
+
+pipeA.enableTracing()  // Safe - cycle detection prevents infinite recursion
+```
+
+### Trace Correlation
+
+All nested pipes share the same pipeline ID, ensuring traces are properly correlated:
+
+```kotlin
+val pipeline = Pipeline()
+    .enableTracing()
+    .add(rootPipeWithNestedChildren)
+
+// All trace events from nested pipes appear in the same trace report
+val traceReport = pipeline.getTraceReport(TraceFormat.HTML)
+// Contains chronologically ordered events from all nesting levels
+```
+
+### Benefits
+
+- **Complete visibility** into nested pipe hierarchies
+- **Automatic propagation** - no manual configuration needed
+- **Chronological ordering** maintained across all nesting levels
+- **Cycle protection** prevents infinite recursion
+- **Unified trace reports** for complex structures
 
 ## Next Steps
 

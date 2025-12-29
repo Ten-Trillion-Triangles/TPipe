@@ -9,6 +9,7 @@
 - [Multi-Round Reasoning with Focus Points](#multi-round-reasoning-with-focus-points)
 - [Cross-Provider Reasoning](#cross-provider-reasoning)
 - [Reasoning Depth and Duration Settings](#reasoning-depth-and-duration-settings)
+- [Nested Reasoning Pipes](#nested-reasoning-pipes)
 - [Practical Examples](#practical-examples)
 - [Best Practices](#best-practices)
 
@@ -601,6 +602,117 @@ val solution = runBlocking {
 ```
 
 **Why Chain of Draft excels here**: Mathematical problems benefit greatly from CoD's concise approach. Instead of verbose explanations, the model focuses on essential operations and calculations, reducing token usage by up to 75% while maintaining accuracy. This makes it ideal for applications requiring frequent mathematical reasoning at scale.
+
+## Nested Reasoning Pipes
+
+TPipe supports unlimited nesting of reasoning pipes, enabling sophisticated multi-layered reasoning architectures for complex problem-solving scenarios.
+
+### Creating Nested Reasoning Structures
+
+```kotlin
+// Level 3: Deep analysis reasoning
+val deepAnalysis = ReasoningBuilder()
+    .setReasoningMethod(ReasoningMethod.StructuredCot)
+    .setReasoningRounds(2)
+    .build()
+
+// Level 2: Strategic reasoning with nested deep analysis
+val strategicReasoning = ReasoningBuilder()
+    .setReasoningMethod(ReasoningMethod.ComprehensivePlan)
+    .setReasoningRounds(3)
+    .build()
+    .setReasoningPipe(deepAnalysis)  // Nested reasoning
+
+// Level 1: Main reasoning with nested strategic layer
+val mainReasoning = ReasoningBuilder()
+    .setReasoningMethod(ReasoningMethod.BestIdea)
+    .setReasoningRounds(2)
+    .build()
+    .setReasoningPipe(strategicReasoning)  // Nested reasoning
+
+// Root pipe with multi-layered reasoning
+val rootPipe = BedrockPipe()
+    .setSystemPrompt("Solve complex problems using layered reasoning.")
+    .setReasoningPipe(mainReasoning)
+    .enableTracing()  // Traces all nested levels automatically
+```
+
+### Nested Reasoning Execution Flow
+
+1. **Root pipe** receives input
+2. **Main reasoning** executes first
+3. **Strategic reasoning** executes within main reasoning
+4. **Deep analysis** executes within strategic reasoning
+5. **Results bubble up** through each layer
+6. **Final output** incorporates all reasoning levels
+
+### Use Cases for Nested Reasoning
+
+#### Complex Problem Decomposition
+```kotlin
+// Research analysis with nested reasoning
+val detailAnalysis = ReasoningBuilder()
+    .setReasoningMethod(ReasoningMethod.StructuredCot)
+    .setReasoningRounds(4)
+    .build()
+
+val researchReasoning = ReasoningBuilder()
+    .setReasoningMethod(ReasoningMethod.ComprehensivePlan)
+    .setReasoningRounds(2)
+    .build()
+    .setReasoningPipe(detailAnalysis)
+
+val researchPipe = BedrockPipe()
+    .setSystemPrompt("Conduct thorough research analysis.")
+    .setReasoningPipe(researchReasoning)
+```
+
+#### Multi-Perspective Analysis
+```kotlin
+// Different reasoning approaches at each level
+val criticalAnalysis = ReasoningBuilder()
+    .setReasoningMethod(ReasoningMethod.StructuredCot)
+    .setReasoningRounds(3)
+    .build()
+
+val creativeThinking = ReasoningBuilder()
+    .setReasoningMethod(ReasoningMethod.BestIdea)
+    .setReasoningRounds(2)
+    .build()
+    .setReasoningPipe(criticalAnalysis)
+
+val balancedReasoning = BedrockPipe()
+    .setSystemPrompt("Provide balanced analysis combining creativity and critical thinking.")
+    .setReasoningPipe(creativeThinking)
+```
+
+### Tracing Nested Reasoning
+
+TPipe automatically propagates tracing through all nested reasoning levels:
+
+```kotlin
+val pipeline = Pipeline()
+    .enableTracing()  // Traces all nested reasoning automatically
+    .add(pipeWithNestedReasoning)
+
+val traceReport = pipeline.getTraceReport(TraceFormat.HTML)
+// Contains chronological events from all reasoning levels
+```
+
+### Performance Considerations
+
+- **Token budgets** apply to each reasoning level independently
+- **Nested depth** should be balanced against performance needs
+- **Reasoning rounds** multiply across nesting levels
+- **Tracing overhead** increases with nesting depth
+
+### Best Practices for Nested Reasoning
+
+1. **Limit nesting depth** to 3-4 levels for optimal performance
+2. **Use different reasoning methods** at each level for diverse perspectives
+3. **Configure appropriate token budgets** for each reasoning layer
+4. **Enable tracing** to monitor nested execution flow
+5. **Test thoroughly** with representative problem complexity
 
 ## Best Practices
 
