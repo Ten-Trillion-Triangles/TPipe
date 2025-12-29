@@ -2910,6 +2910,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
     /**
      * Enables tracing for this pipe with the specified configuration.
+     * Also enables comprehensive token tracking to provide detailed token usage data in traces.
      * @param config The tracing configuration to use
      * @return This Pipe object for method chaining
      * @see traceConfig
@@ -2918,6 +2919,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     {
         this.tracingEnabled = true
         this.traceConfig = config
+        this.comprehensiveTokenTracking = true
+        this.pipeTokenUsage = TokenUsage()
         return this
     }
 

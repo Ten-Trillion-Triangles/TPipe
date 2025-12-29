@@ -447,6 +447,36 @@ val pipe = BedrockPipe()
 
 ### Token Counting
 
+#### `enableComprehensiveTokenTracking(): Pipe`
+Enables comprehensive token usage tracking for this pipe and its child pipes.
+
+**Behavior:** When enabled, tracks detailed token consumption including input tokens, output tokens, and aggregated usage from all nested child pipes (validator, transformation, branch, and reasoning pipes). Provides comprehensive visibility into token usage across complex pipe hierarchies. Automatically initialized when tracing is enabled.
+
+#### `disableComprehensiveTokenTracking(): Pipe`
+Disables comprehensive token usage tracking and clears stored usage data.
+
+**Behavior:** Turns off detailed token tracking and resets all stored usage data to free memory and disable the tracking overhead. Returns to basic token counting only.
+
+#### `getTokenUsage(): TokenUsage`
+Returns comprehensive usage data for this pipe and its children.
+
+**Behavior:** Provides access to detailed token usage information when comprehensive tracking is enabled, or returns an empty TokenUsage object when tracking is disabled. Includes input/output tokens and child pipe usage.
+
+#### `getTotalInputTokens(): Int`
+Returns total input tokens consumed by this pipe and nested pipes when tracking is enabled.
+
+**Behavior:** Includes input tokens from this pipe plus the recursive totals from all child pipes when comprehensive tracking is active. Returns 0 if tracking is disabled.
+
+#### `getTotalOutputTokens(): Int`
+Returns total output tokens consumed by this pipe and nested pipes when tracking is enabled.
+
+**Behavior:** Includes output tokens from this pipe plus the recursive totals from all child pipes when comprehensive tracking is active. Returns 0 if tracking is disabled.
+
+#### `isComprehensiveTokenTrackingEnabled(): Boolean`
+Indicates whether comprehensive token tracking is enabled on this pipe.
+
+**Behavior:** Allows external code to check if detailed token usage data is being collected and is available through the token usage methods.
+
 #### `setMultiplyWindowSizeBy(value: Int): Pipe`
 Sets token counting multiplier.
 
@@ -647,9 +677,9 @@ Sets container to execute instead of this pipe.
 ### Tracing
 
 #### `enableTracing(config: TraceConfig = TraceConfig(enabled = true)): Pipe`
-Enables execution tracing with configuration.
+Enables execution tracing with configuration and comprehensive token tracking.
 
-**Behavior:** Emits trace events throughout pipe execution. Trace detail level affects performance and memory usage. Events are stored globally and can be retrieved for debugging.
+**Behavior:** Emits trace events throughout pipe execution and automatically enables comprehensive token usage tracking to provide detailed token consumption data in traces. Trace detail level affects performance and memory usage. Events are stored globally and can be retrieved for debugging.
 
 #### `disableTracing(): Pipe`
 Disables execution tracing.
