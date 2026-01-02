@@ -97,9 +97,9 @@ class Pipeline : P2PInterface {
     private var pauseAfterRepeats = false
     private var pauseOnCompletion = false
     private var pausingEnabled = false  // Auto-set when pause points declared
-    private var conditionalPauseFunction: (suspend (Pipe, MultimodalContent) -> Boolean)? = null
-    private var pauseCallback: (suspend (Pipe?, MultimodalContent) -> Unit)? = null
-    private var resumeCallback: (suspend (Pipe?, MultimodalContent) -> Unit)? = null
+    var conditionalPauseFunction: (suspend (Pipe, MultimodalContent) -> Boolean)? = null
+    var pauseCallback: (suspend (Pipe?, MultimodalContent) -> Unit)? = null
+    var resumeCallback: (suspend (Pipe?, MultimodalContent) -> Unit)? = null
 
     /**
      * Tracing system properties for debugging and monitoring pipeline execution.
@@ -151,7 +151,15 @@ class Pipeline : P2PInterface {
      * that a given pipe has been completed. Passes the reference to the pipe, and the content object it generated
      * forward.
      */
-    private var pipeCompletionCallback: (suspend(Pipe, MultimodalContent) -> Unit)? = null
+    var pipeCompletionCallback: (suspend(Pipe, MultimodalContent) -> Unit)? = null
+
+    /**
+     * Pre validation function that allows for runtime adjustment of the pipeline's internal data and context
+     * at the start of the execution step.
+     */
+    var preValidationFunction: (suspend (context: ContextWindow, miniBank: MiniBank, content: MultimodalContent) -> Unit)? = null
+
+
 
 //============================================== P2PInterface ==========================================================
 
@@ -404,6 +412,17 @@ class Pipeline : P2PInterface {
     fun setMiniBank(bank: MiniBank) : Pipeline
     {
         miniBank = bank.deepCopy()
+        return this
+    }
+
+    /**
+     * Set the pre-validation function that allows for the data of this pipeline to be modifed at runtime prior
+     * to the execution of the pipeline. This is useful for runtime context gathering and other tasks that
+     * are dynamic and can't be defined at build time.
+     */
+    fun setPreValidationFunction(func:  (suspend (context: ContextWindow, miniBank: MiniBank, content: MultimodalContent) -> Unit)) : Pipeline
+    {
+        preValidationFunction = func
         return this
     }
 
@@ -942,6 +961,29 @@ class Pipeline : P2PInterface {
         if(tracingEnabled)
         {
             PipeTracer.startTrace(pipelineId)
+        }
+
+        //Run pre validation function prior to any execution operations on the content object.
+        preValidationFunction?.let { func ->
+            if (tracingEnabled) {
+                trace(TraceEventType.VALIDATION_START, TracePhase.PRE_VALIDATION, initialContent,
+                    metadata = mapOf("pipelineFunctionType" to "preValidation"))
+            }
+            
+            try {
+                func.invoke(context, miniBank, initialContent)
+                
+                if (tracingEnabled) {
+                    trace(TraceEventType.VALIDATION_SUCCESS, TracePhase.PRE_VALIDATION, initialContent,
+                        metadata = mapOf("pipelineFunctionType" to "preValidation"))
+                }
+            } catch (e: Exception) {
+                if (tracingEnabled) {
+                    trace(TraceEventType.VALIDATION_FAILURE, TracePhase.PRE_VALIDATION, initialContent,
+                        metadata = mapOf("pipelineFunctionType" to "preValidation"), error = e)
+                }
+                throw e
+            }
         }
 
         //Initialize pipeline execution state and token tracking.

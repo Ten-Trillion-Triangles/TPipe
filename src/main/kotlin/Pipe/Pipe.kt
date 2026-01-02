@@ -3796,7 +3796,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         try {
 
             
-            if(readFromGlobalContext && !readFromPipelineContext)
+            if(readFromGlobalContext)
             {
                 //Pull from context bank if no page keys are set.
                 if(pageKey.isEmpty() && pageKeyList.isEmpty())
@@ -3860,10 +3860,10 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              * Otherwise try to pull from the parent pipeline's context if set. This overrides pulling from global
              * context, and also overrides and overwrites any manual context setting if enabled.
              */
-            else if(readFromPipelineContext)
+            if(readFromPipelineContext)
             {
-                contextWindow = pipelineRef?.context?.deepCopy() ?: ContextWindow()
-                miniContextBank = pipelineRef?.miniBank?.deepCopy() ?: miniContextBank
+                contextWindow.merge(pipelineRef?.context?.deepCopy() ?: ContextWindow())
+                miniContextBank.merge(pipelineRef?.miniBank?.deepCopy() ?: miniContextBank)
             }
 
             /**
@@ -4124,6 +4124,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     reasoningResult.modelReasoning = removeFromFirstOccurrence(reasoningResult.modelReasoning, "##Final Answer##")
                     processedContent.modelReasoning = reasoningResult.modelReasoning
                     injectTPipeReasoning(processedContent)
+                    processedContent = truncateToFitTokenBudget(processedContent) //Invoke again to account for injection overflow.
                 }
             }
             catch (e: Exception)
@@ -4894,7 +4895,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 val newContextWindow = ContextWindow()
                 newContextWindow.addLoreBookEntry("reasoning", content.text)
 
-                if(!contextWindow.isEmpty()) contextWindow.merge(newContextWindow)
+                if(!contextWindow.isEmpty()) contextWindow.merge(newContextWindow, emplaceLorebook, appendLoreBook)
                 if(!miniContextBank.isEmpty()) miniContextBank.contextMap["reasoning"] = newContextWindow
             }
         }

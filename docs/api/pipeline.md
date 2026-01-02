@@ -80,6 +80,24 @@ Multi-page context storage for complex scenarios requiring multiple context doma
 #### `setPipelineName(name: String): Pipeline`
 Sets the pipeline name for debugging and identification.
 
+#### `setPreValidationFunction(func: suspend (context: ContextWindow, miniBank: MiniBank, content: MultimodalContent) -> Unit): Pipeline`
+Sets a pre-validation function that executes before any pipes in the pipeline.
+
+**Behavior:** The function is called with the pipeline's context window, mini bank, and initial content before pipe execution begins. Useful for pipeline-level validation, content preprocessing, or dynamic context setup that applies to all pipes. Function execution is traced when tracing is enabled, showing `VALIDATION_START`, `VALIDATION_SUCCESS`, or `VALIDATION_FAILURE` events during the `PRE_VALIDATION` phase.
+
+```kotlin
+val pipeline = Pipeline()
+    .setPreValidationFunction { context, miniBank, content ->
+        // Validate input meets pipeline requirements
+        if (content.text.isEmpty()) {
+            throw IllegalArgumentException("Pipeline requires non-empty input")
+        }
+        
+        // Add dynamic context based on input
+        context.addContextElement("inputType", detectInputType(content.text))
+    }
+```
+
 #### `useGlobalContext(page: String = ""): Pipeline`
 Enables global context sharing with the ContextBank system.
 

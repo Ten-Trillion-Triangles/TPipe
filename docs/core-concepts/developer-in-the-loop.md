@@ -10,6 +10,7 @@
 - [On-Failure Function](#on-failure-function)
 - [Transformation Function - The Most Critical DITL Function](#transformation-function---the-most-critical-ditl-function)
 - [Flow Control Methods](#flow-control-methods)
+- [Pipeline-Level Pre-Validation](#pipeline-level-pre-validation)
 
 TPipe provides sophisticated developer-in-the-loop (DITL) capabilities through a series of intervention points in the pipe execution lifecycle. These functions allow developers to inject custom logic, validation, and error handling at critical stages of AI processing.
 
@@ -178,6 +179,36 @@ Immediately exits the pipeline and treats it as an error/failure. Content is cle
 
 ### content.passPipeline = true
 Immediately exits the pipeline and treats it as successful early completion. Current content is preserved and returned as the final result.
+
+## Pipeline-Level Pre-Validation
+
+In addition to pipe-level DITL functions, TPipe supports pipeline-level pre-validation that executes before any pipes in the pipeline run. This is useful for:
+
+- **Input validation**: Ensure the initial content meets pipeline requirements
+- **Dynamic context setup**: Add context elements based on input analysis
+- **Pipeline routing**: Set up conditional logic that affects all pipes
+- **Resource preparation**: Initialize external resources needed by multiple pipes
+
+```kotlin
+val pipeline = Pipeline()
+    .setPreValidationFunction { context, miniBank, content ->
+        // Validate input requirements
+        if (content.text.length < 10) {
+            throw IllegalArgumentException("Input too short for processing")
+        }
+        
+        // Add dynamic context for all pipes
+        val inputType = analyzeInputType(content.text)
+        context.addContextElement("inputType", inputType)
+        
+        // Set up conditional processing flags
+        if (inputType == "technical") {
+            context.addContextElement("useSpecializedModel", "true")
+        }
+    }
+```
+
+**Tracing**: Pipeline pre-validation is automatically traced when tracing is enabled, showing `VALIDATION_START`, `VALIDATION_SUCCESS`, or `VALIDATION_FAILURE` events during the `PRE_VALIDATION` phase.
 
 ## Next Steps
 
