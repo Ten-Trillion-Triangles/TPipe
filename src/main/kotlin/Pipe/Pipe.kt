@@ -1860,7 +1860,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     /**
      * Calculates per-page budget allocations based on the configured strategy.
      */
-    private fun calculatePageBudgets(
+    internal fun calculatePageBudgets(
         totalBudget: Int,
         pageKeys: List<String>,
         strategy: MultiPageBudgetStrategy,
