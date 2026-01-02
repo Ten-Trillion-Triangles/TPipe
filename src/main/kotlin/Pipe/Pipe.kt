@@ -104,6 +104,9 @@ data class TruncationSettings(
  * If the user prompt is not allowed to be truncated, an error will be thrown.
  *
  * @param multiPageBudgetStrategy Determines how token budgeting allocates empty space, and leftover reserve area.
+ * Options: EQUAL_SPLIT (equal allocation), WEIGHTED_SPLIT (user-defined weights), 
+ * PRIORITY_FILL (key index order), DYNAMIC_FILL (priority + redistribution),
+ * DYNAMIC_SIZE_FILL (size-based priority + redistribution - protects smaller contexts)
  *
  * @param pageWeights Optional page weight overrides for the weighted allocation strategy. Required if using any
  * weighted fill modes.
@@ -198,7 +201,8 @@ enum class MultiPageBudgetStrategy {
     EQUAL_SPLIT,
     WEIGHTED_SPLIT,
     PRIORITY_FILL,
-    DYNAMIC_FILL
+    DYNAMIC_FILL,
+    DYNAMIC_SIZE_FILL
 }
 
 /**
@@ -1692,6 +1696,24 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
     /**
+     * Enable dynamic size-based budget allocation that prioritizes smaller contexts.
+     * Smaller contexts are protected and get full allocation first.
+     * Larger contexts are truncated as needed to fit budget.
+     * Includes intelligent redistribution of unused budget.
+     * 
+     * @return This Pipe object for method chaining
+     */
+    fun enableDynamicSizeFill(): Pipe
+    {
+        if(tokenBudgetSettings == null)
+        {
+            tokenBudgetSettings = TokenBudgetSettings()
+        }
+        tokenBudgetSettings!!.multiPageBudgetStrategy = MultiPageBudgetStrategy.DYNAMIC_SIZE_FILL
+        return this
+    }
+
+    /**
      * Sets page weights for weighted budget allocation.
      * Weights are normalized automatically.
      *
@@ -1876,6 +1898,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             }
             MultiPageBudgetStrategy.PRIORITY_FILL -> calculatePriorityFill(totalBudget, effectiveKeys, truncationSettings)
             MultiPageBudgetStrategy.DYNAMIC_FILL -> calculateDynamicFill(totalBudget, effectiveKeys, truncationSettings)
+            MultiPageBudgetStrategy.DYNAMIC_SIZE_FILL -> calculateDynamicSizeFill(totalBudget, effectiveKeys, truncationSettings)
         }
 
         return pageKeys.associateWith { allocations[it] ?: 0 }
@@ -2006,6 +2029,82 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         val simulatedUsage = simulateTruncationUsage(initialAllocations, truncationSettings)
 
         return redistributeBudgetDynamically(initialAllocations, simulatedUsage, totalBudget, truncationSettings)
+    }
+
+    /**
+     * Calculates size-based dynamic budget allocation with redistribution.
+     * Prioritizes smaller contexts for protection, truncates larger contexts first.
+     * Uses multi-pass approach: size-based allocation → usage simulation → redistribution.
+     */
+    internal fun calculateDynamicSizeFill(
+        totalBudget: Int,
+        pageKeys: List<String>,
+        truncationSettings: TruncationSettings
+    ): Map<String, Int>
+    {
+        if(totalBudget <= 0 || pageKeys.isEmpty())
+        {
+            return pageKeys.associateWith { 0 }
+        }
+
+        val initialAllocations = calculateSizeBasedPriorityFill(totalBudget, pageKeys, truncationSettings)
+        val simulatedUsage = simulateTruncationUsage(initialAllocations, truncationSettings)
+
+        return redistributeBudgetDynamically(initialAllocations, simulatedUsage, totalBudget, truncationSettings)
+    }
+
+    /**
+     * Allocates budget by size priority - smallest contexts get full allocation first.
+     * Larger contexts get remaining budget and may be truncated.
+     */
+    internal fun calculateSizeBasedPriorityFill(
+        totalBudget: Int,
+        pageKeys: List<String>,
+        truncationSettings: TruncationSettings
+    ): Map<String, Int>
+    {
+        if(totalBudget <= 0 || pageKeys.isEmpty())
+        {
+            return pageKeys.associateWith { 0 }
+        }
+
+        // Calculate context sizes and sort by size (smallest first for protection)
+        val contextSizes = mutableMapOf<String, Int>()
+        for(pageKey in pageKeys)
+        {
+            val contextWindow = miniContextBank.contextMap[pageKey]
+            val size = if(contextWindow == null || contextWindow.isEmpty()) 0
+                      else countContextWindowTokens(contextWindow, truncationSettings)
+            contextSizes[pageKey] = size
+        }
+
+        val sortedKeys = pageKeys.sortedBy { contextSizes[it] ?: 0 }
+        
+        // Allocate budget in size order (smallest first gets protected, largest gets truncated)
+        val allocations = mutableMapOf<String, Int>()
+        var remainingBudget = totalBudget
+
+        for(pageKey in sortedKeys)
+        {
+            if(remainingBudget <= 0) 
+            {
+                allocations[pageKey] = 0
+                continue
+            }
+
+            val requiredTokens = contextSizes[pageKey] ?: 0
+            if(requiredTokens <= 0)
+            {
+                allocations[pageKey] = 0
+                continue
+            }
+
+            val allocation = minOf(requiredTokens, remainingBudget)
+            allocations[pageKey] = allocation
+            remainingBudget -= allocation
+        }
+
+        return allocations
     }
 
     /**
@@ -3254,7 +3353,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     /**
      * Counts tokens inside a ContextWindow snapshot after truncation.
      */
-    private fun countContextWindowTokens(contextWindow: ContextWindow, truncationSettings: TruncationSettings): Int
+    internal fun countContextWindowTokens(contextWindow: ContextWindow, truncationSettings: TruncationSettings): Int
     {
         val serializedWindow = serialize(contextWindow)
         return Dictionary.countTokens(serializedWindow, truncationSettings)

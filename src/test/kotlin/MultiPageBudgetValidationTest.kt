@@ -51,11 +51,12 @@ class MultiPageBudgetValidationTest {
         // Verify all budget strategies are available and work correctly
         val strategies = MultiPageBudgetStrategy.values()
         
-        assertEquals(4, strategies.size)
+        assertEquals(5, strategies.size)
         assertTrue(strategies.contains(MultiPageBudgetStrategy.EQUAL_SPLIT))
         assertTrue(strategies.contains(MultiPageBudgetStrategy.WEIGHTED_SPLIT))
         assertTrue(strategies.contains(MultiPageBudgetStrategy.PRIORITY_FILL))
         assertTrue(strategies.contains(MultiPageBudgetStrategy.DYNAMIC_FILL))
+        assertTrue(strategies.contains(MultiPageBudgetStrategy.DYNAMIC_SIZE_FILL))
         
         // Test default strategy
         val defaultSettings = TokenBudgetSettings()
