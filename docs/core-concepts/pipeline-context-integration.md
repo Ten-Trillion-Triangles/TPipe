@@ -2,7 +2,7 @@
 
 ## Table of Contents
 - [What is Pipeline Context?](#what-is-pipeline-context)
-- [Context Priority Order](#context-priority-order)
+- [Context Sources](#context-sources)
 - [Pulling Pipeline Context](#pulling-pipeline-context)
 - [Updating Pipeline Context](#updating-pipeline-context)
 - [Context Flow Patterns](#context-flow-patterns)
@@ -44,20 +44,27 @@ val pipe = BedrockPipe()
 - Accumulates results from previous pipes
 - Good for stage-to-stage data flow
 
-## Context Priority Order
+## Context Sources
 
-When multiple context sources are enabled, TPipe uses this priority:
+TPipe supports multiple context sources that can be used together:
 
-1. **Pipeline context** (highest priority) - `pullPipelineContext()`
-2. **Global context with page keys** - `pullGlobalContext()` + `setPageKey()`
-3. **Default global context** - `pullGlobalContext()` only
-4. **No context** (lowest priority)
+- **Pipeline context** - `pullPipelineContext()` - Shared context within the current pipeline
+- **Global context** - `pullGlobalContext()` - Persistent context from ContextBank
+- **Page-specific context** - `setPageKey()` - Organized global context retrieval
+
+### Non-Exclusive Context Behavior
+
+Both global and pipeline context can be enabled simultaneously. When both are active:
+
+- **Pipeline context** provides the base context from previous pipeline stages
+- **Global context** is merged with pipeline context, adding additional information
+- **Page keys** organize global context into specific sections
 
 ```kotlin
 val pipe = BedrockPipe()
-    .pullGlobalContext()      // This will be ignored
-    .setPageKey("userData")   // This will be ignored  
-    .pullPipelineContext()    // This takes priority
+    .pullGlobalContext()      // Pulls from ContextBank
+    .setPageKey("userData")   // Specific global context page
+    .pullPipelineContext()    // Also pulls pipeline context - both are used together
 ```
 
 ## Pulling Pipeline Context

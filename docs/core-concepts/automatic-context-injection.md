@@ -44,7 +44,7 @@ val pipe = BedrockPipe()
 
 **What this does**:
 - Retrieves context from the parent pipeline's context window
-- Overrides global context if both are enabled
+- Merges with global context if both are enabled
 - Shares context between pipes in the same pipeline
 
 ### Page-Specific Context

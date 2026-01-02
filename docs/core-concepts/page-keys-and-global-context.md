@@ -219,15 +219,15 @@ val pipe = BedrockPipe()
 ### Pipeline Context Override
 ```kotlin
 val pipe = BedrockPipe()
-    .pullGlobalContext()      // This will be ignored
-    .setPageKey("userData")   // This will be ignored
-    .pullPipelineContext()    // This overrides global context
-    .autoInjectContext("Use pipeline context instead of global context.")
+    .pullGlobalContext()      // Pulls from ContextBank
+    .setPageKey("userData")   // Specific global context page
+    .pullPipelineContext()    // Also pulls pipeline context - both are merged together
+    .autoInjectContext("Use both pipeline and global context together.")
 ```
 
-**Priority order**:
-1. **Pipeline context** (highest priority)
-2. **Global context with page keys**
+**Context merging**:
+- **Pipeline context** provides base context from pipeline stages
+- **Global context** is merged with pipeline context for additional information
 3. **Default global context**
 4. **No context** (lowest priority)
 
