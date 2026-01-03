@@ -149,7 +149,18 @@ miniBank.contextMap["gameData"] = ContextBank.getContextFromBank("gameData")
 // Merge MiniBank instances
 val otherMiniBank = MiniBank()
 otherMiniBank.contextMap["additionalData"] = someContextWindow
+
+// Basic merge
 miniBank.merge(otherMiniBank)
+
+// Advanced merge with conversation history support
+miniBank.merge(
+    other = otherMiniBank,
+    emplaceLorebookKeys = true,      // Replace existing lorebook entries
+    appendKeys = false,              // Don't append to existing entries  
+    emplaceConverseHistory = true,   // Enable conversation history merging
+    onlyEmplaceIfNull = true        // Only copy conversation if target is empty
+)
 
 // Check if empty
 if (miniBank.isEmpty()) {

@@ -32,7 +32,7 @@ pipe.setTokenBudget(TokenBudgetSettings())
 pipe.setTokenBudget(TokenBudgetSettings())
     .autoTruncateContext(fillMode = true)
 ```
-- Enables multi-page budgeting strategies (DYNAMIC_FILL, EQUAL_SPLIT, etc.)
+- Enables multi-page budgeting strategies (DYNAMIC_FILL, DYNAMIC_SIZE_FILL, EQUAL_SPLIT, etc.)
 - Precise token budget control across system/user/output/reasoning
 - Required for multi-page context optimization
 
@@ -74,7 +74,7 @@ val budget = TokenBudgetSettings(
 )
 ```
 
-**Important:** Multi-page budgeting strategies (DYNAMIC_FILL, EQUAL_SPLIT, etc.) **only work with TokenBudgetSettings**. Simple `autoTruncateContext()` without TokenBudgetSettings uses basic truncation and cannot distribute budgets across multiple pages.
+**Important:** Multi-page budgeting strategies (DYNAMIC_FILL, DYNAMIC_SIZE_FILL, EQUAL_SPLIT, etc.) **only work with TokenBudgetSettings**. Simple `autoTruncateContext()` without TokenBudgetSettings uses basic truncation and cannot distribute budgets across multiple pages.
 
 **What this does**: 
 - **userPromptSize**: Enforces maximum user input size, throwing errors or truncating when exceeded
@@ -494,6 +494,35 @@ truncationMethod = ContextWindowSettings.TruncateBottom
 val tokenCount = pipe.countAllTokens(content)
 val settings = pipe.getTruncationSettings()
 ```
+
+### Size-Based Priority Allocation - DYNAMIC_SIZE_FILL Strategy
+```kotlin
+// Protect smaller contexts, truncate larger ones first
+val sizePriorityPipe = BedrockPipe()
+    .setPageKey("gameplayData, userPreferences, storyContent")
+    .setTokenBudget(TokenBudgetSettings(
+        contextWindowSize = 32000,
+        maxTokens = 4000,
+        multiPageBudgetStrategy = MultiPageBudgetStrategy.DYNAMIC_SIZE_FILL
+    ))
+    .autoTruncateContext(fillMode = true)
+
+// Alternative method chaining
+pipe.enableDynamicSizeFill()
+```
+
+**How it works:**
+- **Phase 1**: Calculate context sizes and sort by size (smallest first)
+- **Phase 2**: Allocate full budget to smaller contexts before larger ones
+- **Phase 3**: Redistribute unused budget from small contexts to larger ones
+- **Result**: Critical small contexts (gameplay data, user preferences) are preserved intact, while expendable large contexts (story content) are truncated as needed
+
+**Use cases:**
+- Gaming applications where gameplay state must be preserved over story content
+- Applications with critical small configuration data and large reference material
+- Systems where smaller contexts contain essential instructions or state
+
+**Purpose**: Intelligent context prioritization based on size, ensuring critical small data survives memory pressure while allowing large expendable content to be truncated.
 
 ### Intentional Output Constraints
 ```kotlin

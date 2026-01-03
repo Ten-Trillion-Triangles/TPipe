@@ -157,6 +157,35 @@ val selectedContext = contextWindow.selectAndTruncateContext(
 )
 ```
 
+### Merging Context Windows
+```kotlin
+// Basic merge - combines lorebook entries and context elements
+val contextWindow1 = ContextWindow()
+val contextWindow2 = ContextWindow()
+
+contextWindow1.merge(contextWindow2)
+
+// Advanced merge with conversation history
+contextWindow1.merge(
+    other = contextWindow2,
+    emplaceLoreBookKeys = true,      // Replace existing lorebook entries
+    appendKeys = false,              // Don't append to existing entries
+    emplaceConverseHistory = true,   // Enable conversation history merging
+    onlyEmplaceIfNull = true        // Only copy conversation if target is empty
+)
+```
+
+**Merge behavior**:
+- **LoreBook entries**: Three strategies - add new, append existing, or replace existing
+- **Context elements**: Simple append with duplicate prevention
+- **Conversation history**: Optional copying when target is empty or full replacement
+- **Duplicate handling**: Prevents duplicate context elements and lorebook key lists
+
+**Use cases**:
+- Combining context from multiple sources
+- Initializing new contexts with existing conversation state
+- Context migration and branching scenarios
+
 The ContextWindow is the foundation of TPipe's memory system, enabling AI applications to maintain context, learn from interactions, and provide more intelligent, context-aware responses over time.
 
 ## Token Selection and Management
