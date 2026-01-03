@@ -479,8 +479,18 @@ data class ContextWindow(
      * This is useful in cases where you don't want to allow an automatic llm scanner agent to stomp existing values
      * and only add new content to a lorebook key's context. If true, this will ignore emplaceLoreBookKeys normal
      * behavior.
+     * @param emplaceConverseHistory Whether to merge converse history from the source context window. When false,
+     * converse history is not merged at all. When true, behavior depends on onlyEmplaceIfNull parameter.
+     * @param onlyEmplaceIfNull When used with emplaceConverseHistory=true, controls merge behavior. If true,
+     * converse history is only copied when the target context window has empty conversation history. If false,
+     * the entire target conversation history is replaced with the source conversation history. This parameter
+     * is ignored when emplaceConverseHistory=false.
      */
-    fun merge(other: ContextWindow, emplaceLoreBookKeys: Boolean = true, appendKeys : Boolean = false)
+    fun merge(other: ContextWindow,
+              emplaceLoreBookKeys: Boolean = true,
+              appendKeys : Boolean = false,
+              emplaceConverseHistory: Boolean = false,
+              onlyEmplaceIfNull: Boolean = false)
     {
         // Add missing lorebook entries
         other.loreBookKeys.forEach { (key, loreBook) ->
@@ -518,6 +528,22 @@ data class ContextWindow(
         other.contextElements.forEach { element ->
             if (!contextElements.contains(element)) {
                 contextElements.add(element)
+            }
+        }
+        
+        // Handle converse history merging based on parameters
+        if (emplaceConverseHistory)
+        {
+            if (onlyEmplaceIfNull && converseHistory.history.isEmpty())
+            {
+                // Copy converse history only if target is empty
+                converseHistory.history.addAll(other.converseHistory.history)
+            }
+            else if (!onlyEmplaceIfNull)
+            {
+                // Replace entire converse history
+                converseHistory.history.clear()
+                converseHistory.history.addAll(other.converseHistory.history)
             }
         }
     }

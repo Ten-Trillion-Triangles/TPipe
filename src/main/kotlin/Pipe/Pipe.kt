@@ -132,7 +132,7 @@ data class TokenBudgetSettings(
     /**
      * Controls how the per-page budgets for MiniBank truncation are allocated.
      */
-    var multiPageBudgetStrategy: MultiPageBudgetStrategy = MultiPageBudgetStrategy.DYNAMIC_FILL,
+    var multiPageBudgetStrategy: MultiPageBudgetStrategy = MultiPageBudgetStrategy.DYNAMIC_SIZE_FILL,
     /**
      * Optional page weight overrides for the weighted allocation strategy.
      */
@@ -576,6 +576,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     protected var readFromPipelineContext = false
 
     /**
+     * If true, and this pipe has a parent pipe, it will merge any context stored within into its own. This
+     * happens after global, and pipeline pulls.
+     */
+    @Serializable
+    protected var readFromParentPipeContext = false
+
+    /**
      * If true this pipe will automatically update the pipeline's context with its own context by
      * merging the two together.
      */
@@ -642,6 +649,19 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     @Serializable
     protected var loreBookFillMode = false
+
+    /**
+     * If true when merging context windows we will replace the converse history with the incoming converse history.
+     */
+    @Serializable
+    protected var emplaceConverseHistory = false
+
+    /**
+     * If true, overrides the [emplaceConverseHistory] and only allows emplacement if this context window's converse
+     * history is null.
+     */
+    @Serializable
+    protected var emplaceConverseHistoryOnlyIfNull = false
 
     /**
      * Some models have thinking modes, also known as reasoning. If true TPipe will enable model thinking/reasoning
@@ -2290,6 +2310,18 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         return this
     }
 
+    /**
+     * Enables pulling context from a parent pipe if it's not null internally. This is useful for any child pipes
+     * that are part of a pipe.
+     *
+     * NOTE: This will do nothing for reasoning pipes since they have the fully prepared prompt with context
+     * dispatched by the parent pipe automatically.
+     */
+    fun pullParentPipeContext() : Pipe
+    {
+        readFromParentPipeContext = true
+        return this
+    }
 
     /**
      * Enables updating the pipeline's context with this pipe's context when execution completes.
@@ -2336,6 +2368,18 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         autoInjectContext = true
         contextInstructions = instruction
         systemPrompt = "$systemPrompt \n\n $instruction \n\n ${selectGlobalContextMode()}"
+        return this
+    }
+
+    /**
+     * Function to allow us to append more instructions to a built pipe that has enabled [autoInjectContext]
+     * This is useful for any extra .apply { modifications, or other scope function modifications when
+     * building pipes using builder functions and patterns.
+     */
+    fun appendContextInstructions(instruction: String) : Pipe
+    {
+        contextInstructions += instruction
+        autoInjectContext(contextInstructions)
         return this
     }
 
@@ -2398,6 +2442,28 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun enableLoreBookFillMode(): Pipe
     {
         loreBookFillMode = true
+        return this
+    }
+
+    /**
+     * Enables full rewriting and construction of the converse history upon merging into the context window
+     * or mini bank of this pipe. Is mutually exclusive with [emplaceConverseHistoryOnlyIfNull]
+     */
+    fun emplaceConverseHistory() : Pipe
+    {
+        emplaceConverseHistoryOnlyIfNull = false
+        emplaceConverseHistory = true
+        return this
+    }
+
+    /**
+     * Allows for converse history emplacement upon merging context, but only if the target window or mini bank's key
+     * has a null converse history reference. Is mutually exclusive with [emplaceConverseHistoryOnlyIfNull]
+     */
+    fun emplaceConverseHistoryOnlyIfNull() : Pipe
+    {
+        emplaceConverseHistoryOnlyIfNull = true
+        emplaceConverseHistory = true
         return this
     }
 
@@ -3961,8 +4027,14 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              */
             if(readFromPipelineContext)
             {
-                contextWindow.merge(pipelineRef?.context?.deepCopy() ?: ContextWindow())
-                miniContextBank.merge(pipelineRef?.miniBank?.deepCopy() ?: miniContextBank)
+                contextWindow.merge(pipelineRef?.context?.deepCopy() ?: ContextWindow(), emplaceLorebook, appendLoreBook, emplaceConverseHistory, emplaceConverseHistoryOnlyIfNull)
+                miniContextBank.merge(pipelineRef?.miniBank?.deepCopy() ?: miniContextBank, emplaceLorebook, appendLoreBook, emplaceConverseHistory, emplaceConverseHistoryOnlyIfNull)
+            }
+
+            if(readFromParentPipeContext && parentPipeRef != null)
+            {
+                contextWindow.merge(parentPipeRef!!.contextWindow.deepCopy(), emplaceLorebook, appendLoreBook, emplaceConverseHistory, emplaceConverseHistoryOnlyIfNull)
+                miniContextBank.merge(parentPipeRef!!.miniContextBank.deepCopy(), emplaceLorebook, appendLoreBook, emplaceConverseHistory, emplaceConverseHistoryOnlyIfNull)
             }
 
             /**
