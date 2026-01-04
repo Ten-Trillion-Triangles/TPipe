@@ -23,18 +23,18 @@ pipe.autoTruncateContext(fillMode = true)  // Basic truncation with select-and-f
 - Cannot distribute budgets across multiple pages
 - No multi-page budgeting strategies available
 
-**Advanced truncation** (`autoTruncateContext()` + `TokenBudgetSettings`):
+**Advanced truncation** (`TokenBudgetSettings`):
 ```kotlin
-pipe.setTokenBudget(TokenBudgetSettings())
-    .autoTruncateContext()  // Advanced budgeting with multi-page support
+pipe.setTokenBudget(TokenBudgetSettings())  // Automatically enables advanced truncation
     
-// Or with fill mode for prioritized lorebook selection
+// With fill mode for prioritized lorebook selection
 pipe.setTokenBudget(TokenBudgetSettings())
-    .autoTruncateContext(fillMode = true)
+    .enableLoreBookFillMode()  // Optional: enable fill mode separately
 ```
 - Enables multi-page budgeting strategies (DYNAMIC_FILL, DYNAMIC_SIZE_FILL, EQUAL_SPLIT, etc.)
 - Precise token budget control across system/user/output/reasoning
-- Required for multi-page context optimization
+- TokenBudgetSettings automatically handles all truncation internally
+- Use `enableLoreBookFillMode()` separately if you need fill mode with token budgeting
 
 ## Context Window Size - Managing Total Token Capacity
 
@@ -426,7 +426,7 @@ class AdaptiveTokenManager {
 ### Token Budget Validation
 ```kotlin
 try {
-    pipe.setTokenBudgetSettings(budget)
+    pipe.setTokenBudget(budget)
 } catch (e: Exception) {
     // Budget validation failed - constraints impossible to satisfy
 }
@@ -505,7 +505,7 @@ val sizePriorityPipe = BedrockPipe()
         maxTokens = 4000,
         multiPageBudgetStrategy = MultiPageBudgetStrategy.DYNAMIC_SIZE_FILL
     ))
-    .autoTruncateContext(fillMode = true)
+    .enableLoreBookFillMode()  // Optional: enable fill mode for prioritized lorebook selection
 
 // Alternative method chaining
 pipe.enableDynamicSizeFill()

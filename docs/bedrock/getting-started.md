@@ -396,8 +396,7 @@ val result = runBlocking { analysisPipeline.execute("Large document content here
 val pipe = BedrockPipe()
     .setMaxTokens(2000)                    // Reasonable limit
     .setContextWindowSize(100000)          // Match model capacity
-    .autoTruncateContext()                 // Prevent overflow
-    .setTokenBudget(TokenBudgetSettings(
+    .setTokenBudget(TokenBudgetSettings(   // Automatically handles truncation
         maxTokens = 2000,
         contextWindowSize = 100000,
         userPromptSize = 1000
