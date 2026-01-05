@@ -1008,6 +1008,18 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
     /**
+     * Checks if this pipe is configured as a reasoning pipe for its parent.
+     * A reasoning pipe is one that has been assigned to a parent pipe using setReasoningPipe().
+     * 
+     * @return True if this pipe is the reasoning pipe of its parent, false otherwise
+     */
+    fun isReasoningPipe(): Boolean
+    {
+        val parent = getParentPipe()
+        return parent?.reasoningPipe == this
+    }
+
+    /**
      * Get the context window object for this pipe.
      */
     fun getContextWindowObject() : ContextWindow
@@ -3314,6 +3326,12 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                  throw Exception("Validator pipes must have a valid transformation function. For more details on this error: " +
                          "Examine human-in-the-loop-pipes.md")
              }
+         }
+
+         //Force name the pipe for sanity when debugging issues of nested reasoning.
+         if(isReasoningPipe())
+         {
+             if(pipeName.isEmpty()) pipeName = "${getParentPipe()?.pipeName}->reasoning pipe"
          }
 
          return this
