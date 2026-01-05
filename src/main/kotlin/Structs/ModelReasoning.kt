@@ -21,7 +21,7 @@ data class CoreAnalysis(
 data class LogicalStep(
     var stepId: Int = 0,
     var reasoningStep: String = "",
-    var inputData: String = "",
+    var contextualFocus: String = "",
     var considerations: String = "",
     var deductionProcess: String = "",
     var conclusion: String = "",
@@ -55,7 +55,7 @@ data class ExplicitReasoningDetailed(
         
         append("Working through this step by step: ")
         sequentialReasoning.steps.forEach { step ->
-            append("${step.reasoningStep}. Looking at ${step.inputData}, I need to consider ${step.considerations}. ")
+            append("${step.reasoningStep}. Looking at ${step.contextualFocus}, I need to consider ${step.considerations}. ")
             append("${step.deductionProcess} This means: ${step.conclusion}. ")
             append("${step.reasoningExplanation} ")
             if (step.connectionToNext.isNotEmpty()) append("${step.connectionToNext} ")
