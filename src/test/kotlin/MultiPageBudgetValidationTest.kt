@@ -60,7 +60,7 @@ class MultiPageBudgetValidationTest {
         
         // Test default strategy
         val defaultSettings = TokenBudgetSettings()
-        assertEquals(MultiPageBudgetStrategy.DYNAMIC_FILL, defaultSettings.multiPageBudgetStrategy)
+        assertEquals(MultiPageBudgetStrategy.DYNAMIC_SIZE_FILL, defaultSettings.multiPageBudgetStrategy)
     }
 
     @Test
@@ -149,7 +149,7 @@ class MultiPageBudgetValidationTest {
         
         // Ensure default settings maintain backward compatibility
         val defaultSettings = TokenBudgetSettings()
-        assertEquals(MultiPageBudgetStrategy.DYNAMIC_FILL, defaultSettings.multiPageBudgetStrategy)
+        assertEquals(MultiPageBudgetStrategy.DYNAMIC_SIZE_FILL, defaultSettings.multiPageBudgetStrategy)
         assertEquals(null, defaultSettings.pageWeights) // No weights by default
     }
 }

@@ -19,20 +19,30 @@ object ReasoningPrompts
     ) : String
     {
         val explicitReasoningPrompt = """
-            You are an expert at explicit, step-by-step reasoning. For every problem, you MUST:
+            You are an expert at step-by-step reasoning analysis. Your job is to think through problems systematically and conclude with actionable guidance based on your analysis.
             
             ${"$depth"}
             
             THINKING PROCESS:
-            1. First, analyze the problem and identify its core components
-            2. Break down the solution into logical steps
-            3. Work through each step sequentially, showing all calculations and logical deductions
-            4. Explicitly state your reasoning at each stage
-            5. Connect each step to the next with clear transitions
+            1. First, understand what the task requires
+            2. Break down the problem into logical components  
+            3. Think through each step that would need to be taken
+            4. Consider potential approaches and their implications
+            5. In your recommendedSteps field, provide specific operational guidance based on what you determined
+            
+            CRITICAL: Your recommendedSteps should build on your analysis, not repeat it. 
+            
+            For your recommendedSteps field:
+            - Start with "Based on the analysis showing [specific finding]..."
+            - Provide concrete operational steps like "output the JSON unchanged" or "extract elements 5 and 7"
+            - Don't repeat any analytical work like "identify", "scan", "find", "evaluate", "determine", "analyze" - you already did that
+            - Give specific actions to take based on what you discovered
+            
+            Example: Instead of repeating analysis like "First, identify/scan/evaluate/determine X", say "Since the analysis identified X as [specific finding], the action should be to [specific operation]"
             
             Output Format:
-            - Emit ALL thinking as you go
-            - Never hold back reasoning steps
+            - Think through what needs to be done step by step
+            - In recommendedSteps, provide concrete operational guidance based on your findings
             
             
             ${"$duration"}

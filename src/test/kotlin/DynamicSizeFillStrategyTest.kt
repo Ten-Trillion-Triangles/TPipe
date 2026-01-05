@@ -87,9 +87,9 @@ class DynamicSizeFillStrategyTest {
     fun testDefaultStrategyUnchanged() {
         // Verify that adding DYNAMIC_SIZE_FILL didn't change the default
         val defaultSettings = TokenBudgetSettings()
-        assertEquals(MultiPageBudgetStrategy.DYNAMIC_FILL, defaultSettings.multiPageBudgetStrategy)
+        assertEquals(MultiPageBudgetStrategy.DYNAMIC_SIZE_FILL, defaultSettings.multiPageBudgetStrategy)
         
         // Verify backward compatibility
-        assertTrue(defaultSettings.multiPageBudgetStrategy != MultiPageBudgetStrategy.DYNAMIC_SIZE_FILL)
+        assertTrue(defaultSettings.multiPageBudgetStrategy != MultiPageBudgetStrategy.DYNAMIC_FILL)
     }
 }

@@ -20,7 +20,7 @@ data class CoreAnalysis(
 @kotlinx.serialization.Serializable
 data class LogicalStep(
     var stepId: Int = 0,
-    var action: String = "",
+    var reasoningStep: String = "",
     var inputData: String = "",
     var calculations: String = "",
     var deductionProcess: String = "",
@@ -43,25 +43,25 @@ data class ExplicitReasoningDetailed(
     var coreAnalysis: CoreAnalysis = CoreAnalysis(),
     var logicalBreakdown: List<String> = listOf(),
     var sequentialReasoning: StepByStepProcess = StepByStepProcess(),
-    var synthesizedConclusion: String = ""
+    var recommendedSteps: String = ""
 ) {
     fun unravel(): String = buildString {
-        append("Analyzing this subject: ${coreAnalysis.analysisSubject}. ")
-        append("I can identify these key components: ${coreAnalysis.identifiedComponents.joinToString(", ")}. ")
-        append("The underlying issues are ${coreAnalysis.underlyingIssues.joinToString(", ")}. ")
-        append("What I know for certain: ${coreAnalysis.knownFacts.joinToString(", ")}. ")
+        append("Let me think through this: ${coreAnalysis.analysisSubject}. ")
+        append("The key components I need to consider are: ${coreAnalysis.identifiedComponents.joinToString(", ")}. ")
+        append("The main challenges are: ${coreAnalysis.underlyingIssues.joinToString(", ")}. ")
+        append("What I know: ${coreAnalysis.knownFacts.joinToString(", ")}. ")
         
         logicalBreakdown.forEach { append("$it ") }
         
-        append("Let me work through this systematically. ")
+        append("Working through this step by step: ")
         sequentialReasoning.steps.forEach { step ->
-            append("${step.action}. Given ${step.inputData}, I need to ${step.calculations}. ")
-            append("${step.deductionProcess} This leads me to: ${step.result}. ")
+            append("${step.reasoningStep}. Looking at ${step.inputData}, I need to consider ${step.calculations}. ")
+            append("${step.deductionProcess} This means: ${step.result}. ")
             append("${step.reasoningExplanation} ")
             if (step.connectionToNext.isNotEmpty()) append("${step.connectionToNext} ")
         }
         
-        append(synthesizedConclusion)
+        append("Based on this reasoning, the next steps should be: ${recommendedSteps}")
     }
 }
 
