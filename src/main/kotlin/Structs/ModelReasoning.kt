@@ -22,9 +22,9 @@ data class LogicalStep(
     var stepId: Int = 0,
     var reasoningStep: String = "",
     var inputData: String = "",
-    var calculations: String = "",
+    var considerations: String = "",
     var deductionProcess: String = "",
-    var result: String = "",
+    var conclusion: String = "",
     var reasoningExplanation: String = "",
     var connectionToNext: String = ""
 )
@@ -55,8 +55,8 @@ data class ExplicitReasoningDetailed(
         
         append("Working through this step by step: ")
         sequentialReasoning.steps.forEach { step ->
-            append("${step.reasoningStep}. Looking at ${step.inputData}, I need to consider ${step.calculations}. ")
-            append("${step.deductionProcess} This means: ${step.result}. ")
+            append("${step.reasoningStep}. Looking at ${step.inputData}, I need to consider ${step.considerations}. ")
+            append("${step.deductionProcess} This means: ${step.conclusion}. ")
             append("${step.reasoningExplanation} ")
             if (step.connectionToNext.isNotEmpty()) append("${step.connectionToNext} ")
         }
