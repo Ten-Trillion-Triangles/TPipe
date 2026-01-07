@@ -84,6 +84,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                       "errorType" to (e::class.simpleName ?: "Unknown"),
                       "errorMessage" to (e.message ?: "Unknown error")
                   ))
+
+            exceptionFunction?.invoke(content, e)
             MultimodalContent("")
         }
     }

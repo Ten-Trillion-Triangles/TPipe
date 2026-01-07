@@ -73,6 +73,24 @@ var miniBank: MiniBank = MiniBank()
 ```
 Multi-page context storage for complex scenarios requiring multiple context domains.
 
+**`pipeMetaData`**
+```kotlin
+var pipeMetaData: MutableMap<Any, Any> = mutableMapOf()
+```
+Metadata storage for pipeline-level information and state tracking.
+
+**`pipeCompletionCallback`**
+```kotlin
+var pipeCompletionCallback: (suspend (Pipe, MultimodalContent) -> Unit)? = null
+```
+Callback function executed after each individual pipe completes execution.
+
+**`pipelineCompletionCallBack`**
+```kotlin
+var pipelineCompletionCallBack: (suspend (Pipeline, MultimodalContent) -> Unit)? = null
+```
+Callback function executed when the entire pipeline completes execution.
+
 ## Public Functions
 
 ### Configuration
@@ -96,6 +114,23 @@ val pipeline = Pipeline()
         // Add dynamic context based on input
         context.addContextElement("inputType", detectInputType(content.text))
     }
+```
+
+#### `setPipelineCompletionCallback(func: suspend (Pipeline, MultimodalContent) -> Unit): Pipeline`
+Sets callback function executed when the entire pipeline completes execution.
+
+**Parameters:**
+- `func`: Function that receives the pipeline instance and final content when pipeline execution completes
+
+**Behavior:** Called after all pipes have completed execution and the pipeline is about to return its final result. Useful for logging, cleanup operations, or triggering downstream processes. The callback receives both the pipeline instance and the final processed content.
+
+**Usage Example:**
+```kotlin
+pipeline.setPipelineCompletionCallback { pipeline, content ->
+    println("Pipeline '${pipeline.pipelineName}' completed")
+    println("Final content length: ${content.text.length}")
+    // Custom completion logic
+}
 ```
 
 #### `useGlobalContext(page: String = ""): Pipeline`

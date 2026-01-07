@@ -512,6 +512,79 @@ fun testBedrockConnection() {
 }
 ```
 
+## Debugging and Error Handling
+
+TPipe-Bedrock provides comprehensive debugging capabilities to help troubleshoot issues during development and production.
+
+### Exception Handling
+
+Use the `setExceptionFunction()` method to capture and handle exceptions during AI execution:
+
+```kotlin
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setExceptionFunction { content, exception ->
+        println("Exception occurred during AI execution:")
+        println("Content state: ${content.text}")
+        println("Exception: ${exception.message}")
+        
+        // Log to external system
+        logger.error("BedrockPipe exception", exception)
+        
+        // Custom error recovery logic
+        when (exception) {
+            is aws.sdk.kotlin.services.bedrockruntime.model.ThrottlingException -> {
+                println("Rate limited - consider implementing retry logic")
+            }
+            is aws.sdk.kotlin.services.bedrockruntime.model.ValidationException -> {
+                println("Invalid request - check model parameters")
+            }
+        }
+    }
+
+pipe.init()
+val result = pipe.execute("Your prompt here")
+```
+
+### Token Usage Debugging
+
+Monitor token consumption with detailed breakdowns:
+
+```kotlin
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .enableComprehensiveTokenTracking()
+
+pipe.init()
+val result = pipe.execute("Your prompt here")
+
+// Get detailed token usage breakdown
+val usage = pipe.getTokenUsage()
+println(usage.getUsageBreakdown())
+// Output:
+// Parent Pipe: 150 input, 75 output
+// Total: 150 input, 75 output
+```
+
+### Common AWS Bedrock Errors
+
+**Authentication Issues:**
+- Ensure AWS credentials are properly configured
+- Verify IAM permissions include `bedrock:InvokeModel`
+- Check region availability for your selected model
+
+**Model Access Issues:**
+- Request model access in AWS Bedrock console
+- Verify model ID is correct for your region
+- Some models require special access approval
+
+**Rate Limiting:**
+- Implement exponential backoff retry logic
+- Consider using different service tiers (Priority, Standard, Flex)
+- Monitor your account quotas in AWS console
+
 This comprehensive guide covers everything needed to get started with TPipe-Bedrock, from basic setup to advanced features and troubleshooting. The modular approach allows users to start simple and gradually adopt more sophisticated features as their needs grow.
 
 ## Next Steps

@@ -904,6 +904,9 @@ open class BedrockPipe : Pipe() {
         } 
         catch (e: Exception) 
         {
+            // Call exception function if set to allow user handling of API errors
+            exceptionFunction?.invoke(MultimodalContent(promptInjector), e)
+            
             trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
                   error = e,
                   metadata = mapOf(
@@ -1025,6 +1028,9 @@ open class BedrockPipe : Pipe() {
             result
             
         } catch (e: Exception) {
+            // Call exception function if set to allow user handling of API errors
+            exceptionFunction?.invoke(content, e)
+            
             trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, error = e)
             MultimodalContent("")
         }
@@ -1124,12 +1130,12 @@ open class BedrockPipe : Pipe() {
             modelId.contains("qwen") -> {
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
-                favorWholeWords = true
+                favorWholeWords = false
                 countOnlyFirstWordFound = false
                 splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = true
+                alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
-                nonWordSplitCount = 2
+                nonWordSplitCount = 1
             }
             modelId.contains("moonshot.kimi") -> {
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
@@ -3429,6 +3435,7 @@ put("system", if (enableCaching && cacheControl != null) {
                       "modelId" to modelId,
                       "streaming" to true
                   ))
+
             null
         }
     }

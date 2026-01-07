@@ -184,6 +184,29 @@ data class TokenUsage(
         //Calculate total output tokens from this pipe plus all child pipe totals.
         totalOutputTokens = outputTokens + childPipeTokens.values.sumOf { it.totalOutputTokens }
     }
+
+    /**
+     * Returns a formatted breakdown of token usage for debugging purposes.
+     * Shows parent pipe usage, child pipe usage, and totals in a readable format.
+     *
+     * @return Formatted string showing token usage breakdown
+     */
+    fun getUsageBreakdown(): String
+    {
+        val breakdown = StringBuilder()
+        breakdown.append("Parent Pipe: $inputTokens input, $outputTokens output\n")
+        
+        if (childPipeTokens.isNotEmpty())
+        {
+            breakdown.append("Child Pipes:\n")
+            childPipeTokens.forEach { (name, usage) ->
+                breakdown.append("  $name: ${usage.totalInputTokens} input, ${usage.totalOutputTokens} output\n")
+            }
+        }
+        
+        breakdown.append("Total: $totalInputTokens input, $totalOutputTokens output")
+        return breakdown.toString()
+    }
 }
 
 /**
@@ -777,6 +800,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     @kotlinx.serialization.Transient
     var validatorFunction: (suspend (content: MultimodalContent) -> Boolean)? = null
+
+    /**
+     * Optional function to help debug when exceptions get thrown. Includes the exception thrown and the state
+     * of the content object when thrown.
+     */
+    @kotlinx.serialization.Transient
+    var exceptionFunction: (suspend (content: MultimodalContent, exception: Throwable) -> Unit)? = null
 
     /**
      * Optional function to transform the output of the AI model. This can be used to pull apart content that
@@ -2689,6 +2719,21 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         return this
     }
 
+    /**
+     * Set the bound exception function which is called when an exception is thrown during [generateContent]
+     * This is helpful for debugging difficult pipes in which the error state is unclear in the trace file.
+     *
+     * @param func: A higher order function that takes MultimodalContent and Throwable as input and returns Unit.
+     * @param exception The exception that was thrown during [generateContent]
+     *
+     * @return This Pipe object for method chaining.
+     */
+    fun setExceptionFunction(func: suspend (content: MultimodalContent, exception: Throwable) -> Unit) : Pipe
+    {
+        exceptionFunction = func
+        return this
+    }
+
 
     
     /**
@@ -4286,12 +4331,14 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 copySystemPrompt(processedContent)
             }
 
-            //Count input tokens for basic tracking.
-            countTokens(true, processedContent)
+
 
             //Perform comprehensive token tracking if enabled.
             if(comprehensiveTokenTracking)
             {
+                //Count input tokens for basic tracking.
+                countTokens(true, processedContent)
+
                 //Count actual input tokens after all truncation and processing.
                 val actualInputTokens = countActualInputTokens(processedContent)
                 
@@ -4325,12 +4372,24 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              * Call [generateContent] to invoke the loaded AI api with multimodal support.
              */
             trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION, processedContent)
-            val result : Deferred<MultimodalContent> = async {
-                generateContent(processedContent)
+
+            var generatedContent = MultimodalContent()
+
+            /**
+             * Execute api call to run the llm. Capture any exceptions, and return the result after awaiting the
+             * call.
+             */
+            try {
+                val result : Deferred<MultimodalContent> = async {
+                    generateContent(processedContent)
+                }
+
+                //Run the llm and await it's output.
+                generatedContent = result.await()
+            } catch(e: Exception) {
+                exceptionFunction?.invoke(processedContent, e)
             }
 
-            //Run the llm and await it's output.
-            var generatedContent = result.await()
             generatedContent.currentPipe = inputContent.currentPipe //Prevent nullptr leakage.
             generatedContent.metadata = inputContent.metadata //Copy to prevent leakage after llm call.
 
@@ -4711,7 +4770,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          * to test the schema for being set to converse just in case. It's entirely possible the user has assigned
          * the schema to converse directly.
          */
-        val converseSchema = jsonInput
+        val converseSchema = content.text
 
         /**
          * Try to get the ref for this. Because it's in schema form we should in theory be able to get this as
@@ -4724,7 +4783,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          * "user". Then we'll work our way forward treating the focus data as "system" and reasoning as
          * "assistant".
          */
-        var usingConverse = converseSchemaRef != null || rounds > 1
+        var usingConverse = converseSchemaRef?.isEmpty() != true ||  rounds > 1
 
 
         if(usingConverse)

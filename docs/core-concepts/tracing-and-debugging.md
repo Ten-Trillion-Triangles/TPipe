@@ -197,6 +197,48 @@ val result = runBlocking { pipe.execute("Create a user profile for John Doe") }
 // - Detailed error information
 ```
 
+### Debugging Exception Handling
+```kotlin
+val pipe = BedrockPipe()
+    .setSystemPrompt("You are a helpful assistant.")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setExceptionFunction { content, exception ->
+        println("=== Exception Debug Information ===")
+        println("Content state when exception occurred:")
+        println("  Text length: ${content.text.length}")
+        println("  Has binary content: ${content.binaryContent.isNotEmpty()}")
+        println("  Current pipe: ${content.currentPipe?.pipeName ?: "Unknown"}")
+        
+        println("Exception details:")
+        println("  Type: ${exception::class.simpleName}")
+        println("  Message: ${exception.message}")
+        
+        // Log specific AWS Bedrock errors
+        when (exception) {
+            is aws.sdk.kotlin.services.bedrockruntime.model.ThrottlingException -> {
+                println("  → Rate limiting detected - consider retry logic")
+            }
+            is aws.sdk.kotlin.services.bedrockruntime.model.ValidationException -> {
+                println("  → Request validation failed - check parameters")
+            }
+            is aws.sdk.kotlin.services.bedrockruntime.model.ResourceNotFoundException -> {
+                println("  → Model not found - verify model ID and region")
+            }
+        }
+        
+        // Custom recovery logic
+        if (exception.message?.contains("timeout") == true) {
+            println("  → Timeout detected - consider increasing timeout settings")
+        }
+    }
+    .enableTracing()  // Also enable tracing for full debugging context
+
+val result = runBlocking { pipe.execute("Your prompt here") }
+
+// Exception function provides detailed debugging information
+// while tracing shows the execution context when the exception occurred
+```
+
 ### Debugging Performance Issues
 ```kotlin
 val pipe = BedrockPipe()

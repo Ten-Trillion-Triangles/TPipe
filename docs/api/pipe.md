@@ -93,6 +93,12 @@ var preInvokeFunction: (suspend (MultimodalContent) -> Boolean)? = null
 ```
 Determines if pipe should be skipped. Returns `true` to skip, `false` to continue.
 
+**`exceptionFunction`**
+```kotlin
+var exceptionFunction: (suspend (MultimodalContent, Throwable) -> Unit)? = null
+```
+Called when exceptions occur during AI execution. Provides content state and exception for debugging.
+
 ### Integration
 
 **`containerPtr`**
@@ -462,6 +468,23 @@ Returns comprehensive usage data for this pipe and its children.
 
 **Behavior:** Provides access to detailed token usage information when comprehensive tracking is enabled, or returns an empty TokenUsage object when tracking is disabled. Includes input/output tokens and child pipe usage.
 
+**TokenUsage Methods:**
+- `getUsageBreakdown(): String` - Returns formatted breakdown of token usage for debugging purposes, showing parent pipe usage, child pipe usage, and totals in a readable format.
+
+**Usage Example:**
+```kotlin
+pipe.enableComprehensiveTokenTracking()
+val result = pipe.execute("Your prompt")
+val usage = pipe.getTokenUsage()
+println(usage.getUsageBreakdown())
+// Output:
+// Parent Pipe: 150 input, 75 output
+// Child Pipes:
+//   validator: 25 input, 10 output
+//   transformer: 30 input, 15 output
+// Total: 205 input, 100 output
+```
+
 #### `getTotalInputTokens(): Int`
 Returns total input tokens consumed by this pipe and nested pipes when tracking is enabled.
 
@@ -603,6 +626,23 @@ Sets function to handle validation failures.
 
 #### `setStringOnFailure(func: (String, String) -> Boolean): Pipe`
 Sets string-based failure handler.
+
+#### `setExceptionFunction(func: suspend (MultimodalContent, Throwable) -> Unit): Pipe`
+Sets function to handle exceptions during AI execution.
+
+**Parameters:**
+- `func`: Function that receives the content state and exception when errors occur
+
+**Behavior:** Called whenever an exception is thrown during `generateContent()` execution. Provides access to both the content object state and the exception for debugging purposes. Useful for logging, error recovery, or custom error handling logic.
+
+**Usage Example:**
+```kotlin
+pipe.setExceptionFunction { content, exception ->
+    println("Exception in pipe: ${exception.message}")
+    println("Content state: ${content.text}")
+    // Custom error handling logic
+}
+```
 
 ---
 

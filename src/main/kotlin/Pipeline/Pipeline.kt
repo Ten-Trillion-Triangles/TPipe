@@ -72,6 +72,9 @@ class Pipeline : P2PInterface {
     @kotlinx.serialization.Transient
     private var pipelineTokenUsage = TokenUsage()
 
+    @kotlinx.serialization.Transient
+    var pipeMetaData = mutableMapOf<Any, Any>()
+
     /**
      * Weather the pipeline should update the global context window system of TPipe which allows multiple pipes,
      * pipelines, and other concurrent tasks to share llm context with each other.
@@ -152,6 +155,11 @@ class Pipeline : P2PInterface {
      * forward.
      */
     var pipeCompletionCallback: (suspend(Pipe, MultimodalContent) -> Unit)? = null
+
+    /**
+     * callback function when the entire pipeline has been completed.
+     */
+    var pipelineCompletionCallBack: (suspend(Pipeline, MultimodalContent) -> Unit)? = null
 
     /**
      * Pre validation function that allows for runtime adjustment of the pipeline's internal data and context
@@ -798,6 +806,16 @@ class Pipeline : P2PInterface {
     }
 
     /**
+     * Binds a delegate function that will be called at any point in which the pipeline has exited.
+     * This is useful for debugging and monitoring purposes.
+     */
+    fun setPipelineCompletionCallback(func: (suspend (Pipeline, MultimodalContent) -> Unit)) : Pipeline
+    {
+        pipelineCompletionCallBack = func
+        return this
+    }
+
+    /**
      * Initialize the pipeline and pass its reference to each pipe. Can also call the init function for each pipe.
      * if desired.
      *
@@ -982,6 +1000,8 @@ class Pipeline : P2PInterface {
                     trace(TraceEventType.VALIDATION_FAILURE, TracePhase.PRE_VALIDATION, initialContent,
                         metadata = mapOf("pipelineFunctionType" to "preValidation"), error = e)
                 }
+
+                pipelineCompletionCallBack?.invoke(this@Pipeline, MultimodalContent())
                 throw e
             }
         }
@@ -1017,13 +1037,28 @@ class Pipeline : P2PInterface {
                 pipe.enableTracing(traceConfig)
                 pipe.currentPipelineId = pipelineId
             }
-            
-            val result : Deferred<MultimodalContent> = async {
-                pipe.execute(generatedContent)
+
+            try {
+                val result : Deferred<MultimodalContent> = async {
+                    pipe.execute(generatedContent)
+                }
+
+                //Execute the current pipe and await its result.
+                generatedContent = result.await()
             }
 
-            //Execute the current pipe and await its result.
-            generatedContent = result.await()
+            catch(e: Exception) {
+                trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, generatedContent, error = e)
+            }
+
+
+
+            /**
+             * Attempt to invoke the callback if it was bound. This allows external systems to listen to when pipes
+             * complete. This is useful for logging, showing ui updates to users as the process moves about,
+             * and other frontend facing tasks.
+             */
+            pipeCompletionCallback?.invoke(getCurrentPipe()!!, generatedContent)
             
             //Track token usage from pipes that have comprehensive tracking enabled.
             val pipeIndex = currentPipeIndex
@@ -1118,13 +1153,7 @@ class Pipeline : P2PInterface {
                 checkPausePoint()
             }
 
-            /**
-             * Attempt to invoke the callback if it was bound. This allows external systems to listen to when pipes
-             * complete. This is useful for logging, showing ui updates to users as the process moves about,
-             * and other frontend facing tasks.
-             */
-            pipeCompletionCallback?.invoke(pipe, generatedContent)
-            
+
             currentPipeIndex++
         }
 
@@ -1188,6 +1217,7 @@ class Pipeline : P2PInterface {
             appendContentToConverseHistory(content, pipelineConverseRole)
         }
 
+        pipelineCompletionCallBack?.invoke(this@Pipeline, generatedContent)
         return@coroutineScope generatedContent
     }
 }
