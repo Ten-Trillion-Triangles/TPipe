@@ -1805,13 +1805,8 @@ put("system", if (enableCaching && cacheControl != null) {
             if (topP < 1.0) put("top_p", topP)
             if (stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             
-            // Add thinking parameter for DeepSeek V3.1 when reasoning is enabled
-            if (shouldEnableDeepSeekThinking(requestedModelId))
-            {
-                put("thinking", buildJsonObject {
-                    put("type", "enabled")
-                })
-            }
+            // DeepSeek V3.1 and R1 models have reasoning always enabled by default
+            // No thinking parameter needed in request body
         }.toString()
     }
 
@@ -1849,18 +1844,8 @@ put("system", if (enableCaching && cacheControl != null) {
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
-            // Add thinking parameter for DeepSeek V3.1 via additionalModelRequestFields
-            if (shouldEnableDeepSeekThinking(modelId))
-            {
-                val thinkingFields = mapOf(
-                    "thinking" to mapOf(
-                        "type" to "enabled"
-                    )
-                )
-                mapToDocument(thinkingFields)?.let { document ->
-                    additionalModelRequestFields = document
-                }
-            }
+            // DeepSeek V3.1 and R1 models have reasoning always enabled by default
+            // No additionalModelRequestFields needed for thinking mode
             
             serviceTier = ServiceTier { type = mapServiceTier() }
         }
