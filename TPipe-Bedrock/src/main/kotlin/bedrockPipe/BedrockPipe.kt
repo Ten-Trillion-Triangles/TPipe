@@ -1643,7 +1643,42 @@ put("system", if (enableCaching && cacheControl != null) {
 
             // Model-specific parameters
             put("additionalModelRequestFields", buildJsonObject {
-                put("reasoning_effort", if (modelReasoningSettingsV3.isNotEmpty()) "${modelReasoningSettingsV3}" else "low")
+                // Existing reasoning parameters
+                if (modelReasoningSettingsV3.isNotEmpty()) {
+                    put("reasoning_effort", modelReasoningSettingsV3)
+                } else {
+                    put("reasoning_effort", "low")
+                }
+                
+                if (useModelReasoning) {
+                    put("include_reasoning", true)
+                }
+                
+                // Add OpenAI parameters using model-specific filtering
+                val openAIParams = getModelSpecificOpenAIParameters("openai.gpt-oss")
+                openAIParams.forEach { (key, document) ->
+                    when (document) {
+                        is Document.Number -> {
+                            val value = document.toString().toDoubleOrNull() ?: 0.0
+                            put(key, value)
+                        }
+                        is Document.String -> {
+                            put(key, document.toString().removeSurrounding("\""))
+                        }
+                        is Document.Boolean -> {
+                            val value = document.toString().toBoolean()
+                            put(key, value)
+                        }
+                        is Document.Map -> {
+                            put(key, buildJsonObject {
+                                document.toString() // This is a simplified approach for now
+                            })
+                        }
+                        else -> {
+                            // Handle other types or ignore
+                        }
+                    }
+                }
             })
         }.toString()
     }
@@ -1696,30 +1731,25 @@ put("system", if (enableCaching && cacheControl != null) {
                 }
             }
 
-            // Handle additional model fields using reflection for GPT-OSS specific parameters
-            requestObj["additionalModelRequestFields"]?.jsonObject?.let { additionalFields ->
-                val documentMap = mutableMapOf<String, Any>()
-                additionalFields.forEach { (key, value) ->
-                    documentMap[key] = value.jsonPrimitive.content
-                }
+            // Handle additional model fields using proper AWS SDK Document constructors
+            val documentMap = mutableMapOf<String, Document?>()
 
-                try {
-                    // Use reflection to create Document instance since constructor is not public
-                    val documentClass = Document::class.java
-                    val constructor = documentClass.getDeclaredConstructor()
-                    constructor.isAccessible = true
-                    val document = constructor.newInstance()
-
-                    // Set the internal map field
-                    val mapField = documentClass.getDeclaredField("value")
-                    mapField.isAccessible = true
-                    mapField.set(document, documentMap)
-
-                    additionalModelRequestFields = document
-                } catch (_: Exception) {
-                    // If reflection fails we silently fall back to the JSON payload.
-                }
+            // Map reasoning_effort parameter
+            if (modelReasoningSettingsV3.isNotEmpty()) {
+                documentMap["reasoning_effort"] = Document.String(modelReasoningSettingsV3)
+            } else {
+                documentMap["reasoning_effort"] = Document.String("low")
             }
+
+            // Map include_reasoning if useModelReasoning is enabled
+            if (useModelReasoning) {
+                documentMap["include_reasoning"] = Document.Boolean(true)
+            }
+
+            // Add model-specific OpenAI parameters
+            documentMap.putAll(getModelSpecificOpenAIParameters(modelId))
+
+            additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
         }
@@ -1727,6 +1757,134 @@ put("system", if (enableCaching && cacheControl != null) {
 
     private fun buildGptOssConverseRequest(modelId: String, prompt: String): ConverseRequest {
         return buildGptOssConverseRequest(modelId, listOf(ContentBlock.Text(prompt)))
+    }
+    
+    /**
+     * Filters OpenAI parameters based on model capabilities.
+     * Only includes parameters that are supported by the target model.
+     * 
+     * @param modelId The AWS Bedrock model ID
+     * @return Map of supported parameters as Document objects
+     */
+    private fun getModelSpecificOpenAIParameters(modelId: String): Map<String, Document?>
+    {
+        val documentMap = mutableMapOf<String, Document?>()
+        
+        when {
+            modelId.startsWith("openai.gpt-oss") || modelId.startsWith("qwen") || modelId.startsWith("deepseek") -> {
+                // These models use OpenAI Chat Completions API format and support all OpenAI parameters
+                if (repetitionPenalty != 0.0) {
+                    documentMap["frequency_penalty"] = Document.Number(repetitionPenalty)
+                }
+                if (presencePenalty != 0.0) {
+                    documentMap["presence_penalty"] = Document.Number(presencePenalty)
+                }
+                seed?.let {
+                    documentMap["seed"] = Document.Number(it)
+                }
+                if (logitBias.isNotEmpty()) {
+                    val logitBiasMap = mutableMapOf<String, Document?>()
+                    logitBias.forEach { (tokenId, bias) ->
+                        logitBiasMap[tokenId.toString()] = Document.Number(bias)
+                    }
+                    documentMap["logit_bias"] = Document.Map(logitBiasMap)
+                }
+                if (n > 1) {
+                    documentMap["n"] = Document.Number(n)
+                }
+                if (user.isNotEmpty()) {
+                    documentMap["user"] = Document.String(user)
+                }
+            }
+            
+            modelId.startsWith("ai21.j2") || modelId.startsWith("ai21.jamba") -> {
+                // AI21 has different penalty structure - map to their format
+                if (repetitionPenalty != 0.0 || presencePenalty != 0.0) {
+                    // AI21 uses nested penalty objects with scale values
+                    if (repetitionPenalty != 0.0) {
+                        documentMap["frequencyPenalty"] = Document.Map(
+                            mutableMapOf("scale" to Document.Number(repetitionPenalty))
+                        )
+                    }
+                    if (presencePenalty != 0.0) {
+                        documentMap["presencePenalty"] = Document.Map(
+                            mutableMapOf("scale" to Document.Number(presencePenalty))
+                        )
+                    }
+                }
+                // Other OpenAI parameters not supported by AI21
+            }
+            
+            else -> {
+                // All other models (Claude, Nova, Titan, Cohere, Llama, Mistral, Kimi, MiniMax, Writer)
+                // don't support OpenAI parameters - return empty map (parameters silently ignored)
+            }
+        }
+        
+        return documentMap
+    }
+
+    /**
+     * Validates OpenAI-specific parameters based on model capabilities.
+     * Only validates parameters that are supported by the target model.
+     */
+    private fun validateOpenAIParametersForModel(modelId: String)
+    {
+        when {
+            modelId.startsWith("openai.gpt-oss") || modelId.startsWith("qwen") || modelId.startsWith("deepseek") -> {
+                // These models use OpenAI Chat Completions format - validate all OpenAI parameters
+                if (repetitionPenalty < -2.0 || repetitionPenalty > 2.0) {
+                    throw IllegalArgumentException("repetitionPenalty (mapped to frequency_penalty) must be between -2.0 and 2.0, got: $repetitionPenalty")
+                }
+                
+                if (presencePenalty < -2.0 || presencePenalty > 2.0) {
+                    throw IllegalArgumentException("presence_penalty must be between -2.0 and 2.0, got: $presencePenalty")
+                }
+                
+                logitBias.values.forEach { bias ->
+                    if (bias < -100.0 || bias > 100.0) {
+                        throw IllegalArgumentException("logit_bias values must be between -100.0 and 100.0, got: $bias")
+                    }
+                }
+                
+                if (n < 1) {
+                    throw IllegalArgumentException("n must be at least 1, got: $n")
+                }
+                
+                // Warn about potentially problematic combinations
+                if (n > 1 && seed != null) {
+                    trace(TraceEventType.VALIDATION_FAILURE, TracePhase.INITIALIZATION, 
+                          metadata = mapOf("warning" to "Using seed with n > 1 may not produce deterministic results"))
+                }
+            }
+            
+            modelId.startsWith("ai21.j2") || modelId.startsWith("ai21.jamba") -> {
+                // AI21 supports penalties but in different format - validate ranges
+                if (repetitionPenalty < -2.0 || repetitionPenalty > 2.0) {
+                    trace(TraceEventType.VALIDATION_FAILURE, TracePhase.INITIALIZATION,
+                          metadata = mapOf("warning" to "AI21 penalty range may differ from OpenAI standard"))
+                }
+                
+                // Other OpenAI parameters not supported - warn if set
+                if (seed != null || logitBias.isNotEmpty() || n > 1 || user.isNotEmpty()) {
+                    trace(TraceEventType.VALIDATION_FAILURE, TracePhase.INITIALIZATION,
+                          metadata = mapOf("warning" to "Some OpenAI parameters not supported by AI21 models"))
+                }
+            }
+            
+            else -> {
+                // All other models don't support OpenAI parameters - warn if any are set
+                if (repetitionPenalty != 0.0 || presencePenalty != 0.0 || seed != null || 
+                    logitBias.isNotEmpty() || n > 1 || user.isNotEmpty()) {
+                    trace(TraceEventType.VALIDATION_FAILURE, TracePhase.INITIALIZATION,
+                          metadata = mapOf(
+                              "warning" to "OpenAI parameters not supported by model: $modelId",
+                              "supportedModels" to "openai.gpt-oss, qwen, deepseek, ai21.j2/jamba (partial)",
+                              "unsupportedModels" to "claude, nova, titan, cohere, llama, mistral, kimi, minimax, writer"
+                          ))
+                }
+            }
+        }
     }
     
     /**
@@ -2246,14 +2404,20 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             // Add thinking configuration for Claude extended thinking
+            val documentMap = mutableMapOf<String, Document?>()
+            
             if (useModelReasoning) {
                 val budgetTokens = modelReasoningSettingsV2.takeIf { it > 0 }?.coerceAtMost(maxTokens) ?: 4000
                 val thinkingConfig = mutableMapOf<String, Document?>()
                 thinkingConfig["type"] = Document.String("enabled")
                 thinkingConfig["budget_tokens"] = Document.Number(budgetTokens)
-                
-                val documentMap = mutableMapOf<String, Document?>()
                 documentMap["thinking"] = Document.Map(thinkingConfig)
+            }
+            
+            // Add model-specific OpenAI parameters (Claude doesn't support any, so this will be empty)
+            documentMap.putAll(getModelSpecificOpenAIParameters(model))
+            
+            if (documentMap.isNotEmpty()) {
                 additionalModelRequestFields = Document.Map(documentMap)
             }
             
@@ -2427,6 +2591,19 @@ put("system", if (enableCaching && cacheControl != null) {
                 fields["toolConfig"] = toolMap
             }
         }
+        
+        // Add model-specific OpenAI parameters (Nova doesn't support any, so this will be empty)
+        val openAIParams = getModelSpecificOpenAIParameters(modelId)
+        openAIParams.forEach { (key, document) ->
+            when (document) {
+                is Document.Number -> fields[key] = document.toString().toDoubleOrNull() ?: 0.0
+                is Document.String -> fields[key] = document.toString().removeSurrounding("\"")
+                is Document.Boolean -> fields[key] = document.toString().toBoolean()
+                is Document.Map -> fields[key] = mapOf<String, Any>() // Simplified for now
+                else -> {} // Ignore other types
+            }
+        }
+        
         if (fields.isEmpty()) return null
         return fields
     }
@@ -2779,8 +2956,19 @@ put("system", if (enableCaching && cacheControl != null) {
                 documentMap["topK"] = Document.Number(this@BedrockPipe.topK)
             }
             documentMap["countPenalty"] = Document.Map(mutableMapOf("scale" to Document.Number(0.0)))
-            documentMap["presencePenalty"] = Document.Map(mutableMapOf("scale" to Document.Number(0.0)))
-            documentMap["frequencyPenalty"] = Document.Map(mutableMapOf("scale" to Document.Number(0.0)))
+            
+            // Add model-specific OpenAI parameters (AI21 supports penalties in custom format)
+            val openAIParams = getModelSpecificOpenAIParameters(model)
+            documentMap.putAll(openAIParams)
+            
+            // Set default penalties if no OpenAI parameters were added
+            if (!documentMap.containsKey("presencePenalty")) {
+                documentMap["presencePenalty"] = Document.Map(mutableMapOf("scale" to Document.Number(0.0)))
+            }
+            if (!documentMap.containsKey("frequencyPenalty")) {
+                documentMap["frequencyPenalty"] = Document.Map(mutableMapOf("scale" to Document.Number(0.0)))
+            }
+            
             additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }

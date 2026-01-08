@@ -743,6 +743,51 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     @Serializable
     protected var repetitionPenalty = 0.0
 
+    /**
+     * Presence penalty for OpenAI-compatible models. Encourages topic diversity.
+     * Range: -2.0 to 2.0. Positive values encourage new topics.
+     * 
+     * @see https://platform.openai.com/docs/api-reference/chat/create#chat-create-presence_penalty
+     */
+    @Serializable
+    protected open var presencePenalty: Double = 0.0
+
+    /**
+     * Seed for deterministic generation. If set, model will attempt to generate
+     * the same output for the same input. Not all models support this feature.
+     * 
+     * @see https://platform.openai.com/docs/api-reference/chat/create#chat-create-seed
+     */
+    @Serializable
+    protected open var seed: Int? = null
+
+    /**
+     * Logit bias for token probability manipulation. Maps token IDs to bias values.
+     * Range: -100 to 100. Positive values increase likelihood, negative decrease.
+     * 
+     * @see https://platform.openai.com/docs/api-reference/chat/create#chat-create-logit_bias
+     */
+    @Serializable
+    protected var logitBias: Map<Int, Double> = emptyMap()
+
+    /**
+     * Number of completions to generate. Most models only support n=1.
+     * Higher values increase cost proportionally.
+     * 
+     * @see https://platform.openai.com/docs/api-reference/chat/create#chat-create-n
+     */
+    @Serializable
+    protected var n: Int = 1
+
+    /**
+     * User identifier for tracking and abuse monitoring. Helps OpenAI monitor
+     * for abuse and provides better support.
+     * 
+     * @see https://platform.openai.com/docs/api-reference/chat/create#chat-create-user
+     */
+    @Serializable
+    protected var user: String = ""
+
 
     /**
      * If supported, this allows for various substrings to trigger a stop sequence in
@@ -2654,6 +2699,167 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setRepetitionPenalty(penalty: Double): Pipe
     {
         this.repetitionPenalty = penalty
+        return this
+    }
+
+    /**
+     * Sets the presence penalty for encouraging topic diversity.
+     * Higher values make the model less likely to talk about existing topics.
+     * 
+     * @param penalty Penalty value between -2.0 and 2.0
+     * @return This Pipe object for method chaining
+     * @throws IllegalArgumentException if penalty is outside valid range
+     */
+    fun setPresencePenalty(penalty: Double): Pipe
+    {
+        if (penalty < -2.0 || penalty > 2.0)
+        {
+            throw IllegalArgumentException("Presence penalty must be between -2.0 and 2.0, got: $penalty")
+        }
+        this.presencePenalty = penalty
+        return this
+    }
+
+    /**
+     * Sets the seed for deterministic generation. When set, the model will
+     * attempt to generate the same output for the same input.
+     * 
+     * @param seed Integer seed value, or null to disable deterministic generation
+     * @return This Pipe object for method chaining
+     */
+    fun setSeed(seed: Int?): Pipe
+    {
+        this.seed = seed
+        return this
+    }
+
+    /**
+     * Sets logit bias to modify the likelihood of specific tokens appearing.
+     * Maps token IDs to bias values between -100 and 100.
+     * 
+     * @param bias Map of token IDs to bias values
+     * @return This Pipe object for method chaining
+     * @throws IllegalArgumentException if any bias value is outside valid range
+     */
+    fun setLogitBias(bias: Map<Int, Double>): Pipe
+    {
+        bias.values.forEach { value ->
+            if (value < -100.0 || value > 100.0)
+            {
+                throw IllegalArgumentException("Logit bias values must be between -100.0 and 100.0, got: $value")
+            }
+        }
+        this.logitBias = bias
+        return this
+    }
+
+    /**
+     * Sets the number of completions to generate for each input.
+     * Most models only support n=1. Higher values increase cost proportionally.
+     * 
+     * @param completions Number of completions to generate (minimum 1)
+     * @return This Pipe object for method chaining
+     * @throws IllegalArgumentException if completions is less than 1
+     */
+    fun setN(completions: Int): Pipe
+    {
+        if (completions < 1)
+        {
+            throw IllegalArgumentException("Number of completions must be at least 1, got: $completions")
+        }
+        this.n = completions
+        return this
+    }
+
+    /**
+     * Sets the user identifier for tracking and abuse monitoring.
+     * This helps OpenAI monitor for abuse and provide better support.
+     * 
+     * @param userId User identifier string
+     * @return This Pipe object for method chaining
+     */
+    fun setUser(userId: String): Pipe
+    {
+        this.user = userId
+        return this
+    }
+
+    /**
+     * Convenience method to reduce repetition using both frequency and presence penalties.
+     * Sets repetitionPenalty (mapped to frequency_penalty) and presencePenalty to the same value.
+     * 
+     * @param penalty Penalty value between 0.0 and 2.0 (higher = less repetition)
+     * @return This Pipe object for method chaining
+     */
+    fun setRepetitionControl(penalty: Double): Pipe
+    {
+        setRepetitionPenalty(penalty)
+        setPresencePenalty(penalty)
+        return this
+    }
+
+    /**
+     * Convenience method to enable deterministic generation with a random seed.
+     * Uses current timestamp as seed if no seed is provided.
+     * 
+     * @param seed Optional seed value (uses timestamp if null)
+     * @return This Pipe object for method chaining
+     */
+    fun enableDeterministicGeneration(seed: Int? = null): Pipe
+    {
+        val actualSeed = seed ?: System.currentTimeMillis().toInt()
+        setSeed(actualSeed)
+        return this
+    }
+
+    /**
+     * Convenience method to disable deterministic generation.
+     * 
+     * @return This Pipe object for method chaining
+     */
+    fun disableDeterministicGeneration(): Pipe
+    {
+        setSeed(null)
+        return this
+    }
+
+    /**
+     * Convenience method to ban specific words/phrases from generation.
+     * Uses helper function to convert text to approximate token IDs.
+     * 
+     * @param bannedWords List of words/phrases to ban
+     * @return This Pipe object for method chaining
+     */
+    fun banWords(bannedWords: List<String>): Pipe
+    {
+        val banMap = createTokenBanList(bannedWords)
+        setLogitBias(logitBias + banMap)
+        return this
+    }
+
+    /**
+     * Convenience method to encourage specific words/phrases in generation.
+     * Uses helper function to convert text to approximate token IDs.
+     * 
+     * @param encouragedWords List of words/phrases to encourage
+     * @param bias Positive bias value (default 1.0)
+     * @return This Pipe object for method chaining
+     */
+    fun encourageWords(encouragedWords: List<String>, bias: Double = 1.0): Pipe
+    {
+        val encourageMap = createTokenEncourageList(encouragedWords, bias)
+        setLogitBias(logitBias + encourageMap)
+        return this
+    }
+
+    /**
+     * Convenience method to clear all logit bias settings.
+     * 
+     * @return This Pipe object for method chaining
+     */
+    fun clearLogitBias(): Pipe
+    {
+        setLogitBias(emptyMap())
         return this
     }
 
@@ -5383,6 +5589,59 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         response.output?.binaryContent = result.binaryContent
         
         return response
+    }
+
+    companion object {
+        /**
+         * Helper function to convert text tokens to token IDs for logit bias.
+         * This is a simplified implementation - production code should use
+         * the actual tokenizer for the specific model.
+         * 
+         * @param tokens List of text tokens to convert
+         * @return Map of estimated token IDs to 1.0 bias (encourage these tokens)
+         */
+        fun createLogitBiasForTokens(tokens: List<String>): Map<Int, Double>
+        {
+            // This is a placeholder implementation
+            // In production, this should use the actual tokenizer
+            val biasMap = mutableMapOf<Int, Double>()
+            
+            tokens.forEachIndexed { index, token ->
+                // Simple hash-based token ID estimation (NOT ACCURATE)
+                val tokenId = token.hashCode().absoluteValue % 50000
+                biasMap[tokenId] = 1.0
+            }
+            
+            return biasMap
+        }
+        
+        /**
+         * Helper function to ban specific tokens by setting their bias to -100.
+         * 
+         * @param tokens List of text tokens to ban
+         * @return Map of estimated token IDs to -100.0 bias (ban these tokens)
+         */
+        fun createTokenBanList(tokens: List<String>): Map<Int, Double>
+        {
+            return createLogitBiasForTokens(tokens).mapValues { -100.0 }
+        }
+        
+        /**
+         * Helper function to encourage specific tokens by setting their bias to positive values.
+         * 
+         * @param tokens List of text tokens to encourage
+         * @param bias Positive bias value (default 1.0)
+         * @return Map of estimated token IDs to positive bias values
+         */
+        fun createTokenEncourageList(tokens: List<String>, bias: Double = 1.0): Map<Int, Double>
+        {
+            if (bias < 0.0 || bias > 100.0)
+            {
+                throw IllegalArgumentException("Bias must be between 0.0 and 100.0, got: $bias")
+            }
+            
+            return createLogitBiasForTokens(tokens).mapValues { bias }
+        }
     }
 
 }

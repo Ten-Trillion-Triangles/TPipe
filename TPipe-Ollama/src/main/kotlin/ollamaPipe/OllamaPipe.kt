@@ -42,10 +42,10 @@ class OllamaPipe : Pipe() {
     private var numKeep: Int? = null
     
     /**
-     * Random number seed for reproducibility
+     * Random number seed for reproducibility (Ollama-specific Long type)
      */
     @kotlinx.serialization.Serializable
-    private var seed: Long? = null
+    private var ollamaSeed: Long? = null
     
     /**
      * Maximum number of tokens to predict when generating text
@@ -81,10 +81,10 @@ class OllamaPipe : Pipe() {
     private var repeatPenalty: Float? = 1.2f
     
     /**
-     * Penalty for new tokens based on presence in the text so far
+     * Penalty for new tokens based on presence in the text so far (Ollama-specific Float type)
      */
     @kotlinx.serialization.Serializable
-    private var presencePenalty: Float? = 1.5f
+    private var ollamaPresencePenalty: Float? = 1.5f
     
     /**
      * Penalty for new tokens based on their frequency in the text so far
@@ -256,7 +256,7 @@ class OllamaPipe : Pipe() {
      * @return This Pipe object for chaining
      */
     fun setPresencePenalty(penalty: Float): Pipe {
-        this.presencePenalty = penalty
+        this.ollamaPresencePenalty = penalty
         return this
     }
     
@@ -310,7 +310,7 @@ class OllamaPipe : Pipe() {
      * @return This Pipe object for chaining
      */
     fun setSeed(seed: Long): Pipe {
-        this.seed = seed
+        this.ollamaSeed = seed
         return this
     }
     
@@ -483,7 +483,7 @@ class OllamaPipe : Pipe() {
     private fun generateOptions(): OllamaOptions {
         return OllamaOptions(
             numKeep = numKeep,
-            seed = seed,
+            seed = ollamaSeed,
             numPredict = maxTokens.takeIf { it > 0 },
             topK = topK,
             topP = topP,
@@ -492,7 +492,7 @@ class OllamaPipe : Pipe() {
             repeatLastN = repeatLastN,
             temperature = temperature,
             repeatPenalty = repeatPenalty,
-            presencePenalty = presencePenalty,
+            presencePenalty = ollamaPresencePenalty,
             frequencyPenalty = frequencyPenalty,
             mirostat = mirostat,
             mirostatTau = mirostatTau,
