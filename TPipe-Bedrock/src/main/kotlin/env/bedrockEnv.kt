@@ -114,6 +114,7 @@ object bedrockEnv
             "cohere.rerank-v3-5:0",
             // DeepSeek models
             "deepseek.r1-v1:0",
+            "deepseek.v3-v1:0",
             // Luma models
             "luma.ray-v2:0",
             // Meta Llama models

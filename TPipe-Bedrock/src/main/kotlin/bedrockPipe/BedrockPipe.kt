@@ -1158,16 +1158,42 @@ open class BedrockPipe : Pipe() {
                 nonWordSplitCount = 2
             }
             modelId.contains("deepseek") -> {
-                contextWindowSize = 126000
-                multiplyWindowSizeBy = 0
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = false
-                nonWordSplitCount = 2
+                when {
+                    isDeepSeekR1(modelId) -> {
+                        // R1 settings (preserve existing)
+                        contextWindowSize = 126000
+                        multiplyWindowSizeBy = 0
+                        contextWindowTruncation = ContextWindowSettings.TruncateTop
+                        countSubWordsInFirstWord = true
+                        favorWholeWords = true
+                        countOnlyFirstWordFound = false
+                        splitForNonWordChar = true
+                        alwaysSplitIfWholeWordExists = false
+                        countSubWordsIfSplit = false
+                        nonWordSplitCount = 2
+                    }
+                    
+                    isDeepSeekV31(modelId) -> {
+                        // V3.1 settings (larger context window)
+                        contextWindowSize = 128000  // V3.1 has larger context window
+                        multiplyWindowSizeBy = 0
+                        contextWindowTruncation = ContextWindowSettings.TruncateTop
+                        countSubWordsInFirstWord = true
+                        favorWholeWords = true
+                        countOnlyFirstWordFound = false
+                        splitForNonWordChar = true
+                        alwaysSplitIfWholeWordExists = false
+                        countSubWordsIfSplit = false
+                        nonWordSplitCount = 2
+                    }
+                    
+                    else -> {
+                        // Default DeepSeek settings
+                        contextWindowSize = 126000
+                        multiplyWindowSizeBy = 0
+                        contextWindowTruncation = ContextWindowSettings.TruncateTop
+                    }
+                }
             }
             modelId.contains("writer.palmyra-x4") -> {
                 contextWindowSize = 128000
@@ -1742,10 +1768,11 @@ put("system", if (enableCaching && cacheControl != null) {
     }
     
     /**
-     * Builds request JSON for DeepSeek R1 models using Invoke API.
+     * Builds request JSON for DeepSeek models using Invoke API.
      * 
      * Uses DeepSeek's simple prompt format for Invoke API.
      * Maps TPipe parameters to DeepSeek's request structure.
+     * For V3.1 models, adds thinking parameter when useModelReasoning is enabled.
      * 
      * @param prompt The formatted prompt text
      * @return JSON request string for DeepSeek models
@@ -1760,6 +1787,14 @@ put("system", if (enableCaching && cacheControl != null) {
             if (temperature > 0) put("temperature", temperature)
             if (topP < 1.0) put("top_p", topP)
             if (stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+            
+            // Add thinking parameter for DeepSeek V3.1 when reasoning is enabled
+            if (shouldEnableDeepSeekThinking(requestedModelId))
+            {
+                put("thinking", buildJsonObject {
+                    put("type", "enabled")
+                })
+            }
         }.toString()
     }
 
@@ -1768,10 +1803,11 @@ put("system", if (enableCaching && cacheControl != null) {
      * 
      * Creates a properly structured ConverseRequest with messages and system blocks
      * for DeepSeek models using the Converse API. Maps TPipe parameters to
-     * InferenceConfiguration format.
+     * InferenceConfiguration format. For V3.1 models, adds thinking parameter
+     * via additionalModelRequestFields when useModelReasoning is enabled.
      * 
      * @param modelId DeepSeek model identifier
-     * @param prompt User prompt text
+     * @param contentBlocks Content blocks for the user message
      * @return ConverseRequest configured for DeepSeek models
      */
     fun buildDeepSeekConverseRequestObject(modelId: String, contentBlocks: List<ContentBlock>): ConverseRequest {
@@ -1794,6 +1830,19 @@ put("system", if (enableCaching && cacheControl != null) {
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
                 if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+            }
+            
+            // Add thinking parameter for DeepSeek V3.1 via additionalModelRequestFields
+            if (shouldEnableDeepSeekThinking(modelId))
+            {
+                val thinkingFields = mapOf(
+                    "thinking" to mapOf(
+                        "type" to "enabled"
+                    )
+                )
+                mapToDocument(thinkingFields)?.let { document ->
+                    additionalModelRequestFields = document
+                }
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
@@ -2584,6 +2633,45 @@ put("system", if (enableCaching && cacheControl != null) {
 
     private fun isKimiModel(modelId: String): Boolean {
         return modelId.contains("moonshot.kimi", ignoreCase = true)
+    }
+
+    /**
+     * Determines if the model is DeepSeek R1 (built-in reasoning).
+     * R1 models always produce reasoning content automatically.
+     * 
+     * @param modelId The model identifier to check
+     * @return True if the model is DeepSeek R1, false otherwise
+     */
+    private fun isDeepSeekR1(modelId: String): Boolean
+    {
+        return modelId.contains("deepseek.r1", ignoreCase = true) ||
+               modelId.contains("us.deepseek.r1", ignoreCase = true)
+    }
+
+    /**
+     * Determines if the model is DeepSeek V3.1 (hybrid reasoning).
+     * V3.1 models require explicit thinking parameter to enable reasoning.
+     * 
+     * @param modelId The model identifier to check
+     * @return True if the model is DeepSeek V3.1, false otherwise
+     */
+    private fun isDeepSeekV31(modelId: String): Boolean
+    {
+        return modelId.contains("deepseek.v3", ignoreCase = true) ||
+               modelId.contains("us.deepseek.v3", ignoreCase = true)
+    }
+
+    /**
+     * Determines if thinking mode should be enabled for DeepSeek models.
+     * Only applies to V3.1 models when useModelReasoning is true.
+     * R1 models always have reasoning enabled by default.
+     * 
+     * @param modelId The model identifier to check
+     * @return True if thinking parameter should be added, false otherwise
+     */
+    private fun shouldEnableDeepSeekThinking(modelId: String): Boolean
+    {
+        return isDeepSeekV31(modelId) && useModelReasoning
     }
 
     /**
@@ -3714,29 +3802,53 @@ put("system", if (enableCaching && cacheControl != null) {
                     }?.joinToString("\n") ?: ""
                 }
                 modelId.contains("deepseek") -> {
-                    // DeepSeek has different reasoning formats for Converse vs Invoke API
-                    if (useConverseApi) {
-                        // Converse API embeds reasoning in content blocks
-                        val message = json["output"]?.jsonObject?.get("message")?.jsonObject
-                        val content = message?.get("content")?.jsonArray
-                        content?.mapNotNull { contentItem ->
-                            val contentObj = contentItem.jsonObject
-                            when {
-                                contentObj.containsKey("reasoningContent") -> 
-                                    contentObj["reasoningContent"]?.jsonObject?.get("reasoningText")?.jsonPrimitive?.content
-                                contentObj.containsKey("thinking") -> 
-                                    contentObj["thinking"]?.jsonPrimitive?.content
-                                contentObj.containsKey("reasoning") -> 
-                                    contentObj["reasoning"]?.jsonPrimitive?.content
-                                else -> null
+                    when {
+                        isDeepSeekR1(modelId) -> {
+                            // R1 models: Use existing logic (preserve current behavior)
+                            if (useConverseApi) {
+                                val message = json["output"]?.jsonObject?.get("message")?.jsonObject
+                                val content = message?.get("content")?.jsonArray
+                                content?.mapNotNull { contentItem ->
+                                    val contentObj = contentItem.jsonObject
+                                    when {
+                                        contentObj.containsKey("reasoningContent") -> 
+                                            contentObj["reasoningContent"]?.jsonObject?.get("reasoningText")?.jsonPrimitive?.content
+                                        else -> null
+                                    }
+                                }?.joinToString("\n") ?: ""
+                            } else {
+                                json["reasoning"]?.jsonPrimitive?.content ?: ""
                             }
-                        }?.joinToString("\n") ?: ""
-                    } else {
-                        // Invoke API puts reasoning in various top-level or choice-level fields
-                        json["reasoning"]?.jsonPrimitive?.content 
-                            ?: json["thinking"]?.jsonPrimitive?.content 
-                            ?: json["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("reasoning")?.jsonPrimitive?.content 
-                            ?: ""
+                        }
+                        
+                        isDeepSeekV31(modelId) -> {
+                            // V3.1 models: Enhanced reasoning extraction
+                            if (useConverseApi) {
+                                val message = json["output"]?.jsonObject?.get("message")?.jsonObject
+                                val content = message?.get("content")?.jsonArray
+                                content?.mapNotNull { contentItem ->
+                                    val contentObj = contentItem.jsonObject
+                                    when {
+                                        contentObj.containsKey("reasoningContent") -> 
+                                            contentObj["reasoningContent"]?.jsonObject?.get("reasoningText")?.jsonPrimitive?.content
+                                        contentObj.containsKey("thinking") -> 
+                                            contentObj["thinking"]?.jsonPrimitive?.content
+                                        else -> null
+                                    }
+                                }?.joinToString("\n") ?: ""
+                            } else {
+                                // Invoke API: Check multiple possible locations
+                                json["reasoning"]?.jsonPrimitive?.content 
+                                    ?: json["thinking"]?.jsonPrimitive?.content
+                                    ?: json["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("reasoning")?.jsonPrimitive?.content
+                                    ?: ""
+                            }
+                        }
+                        
+                        else -> {
+                            // Fallback for unknown DeepSeek models
+                            json["reasoning"]?.jsonPrimitive?.content ?: ""
+                        }
                     }
                 }
                 modelId.contains("moonshot.kimi") -> {
