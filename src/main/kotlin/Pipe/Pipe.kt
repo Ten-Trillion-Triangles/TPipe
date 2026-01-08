@@ -522,7 +522,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * most likely predictions can be randomly picked. At 10 only the 10 most likley predictions can be picked.
      */
     @Serializable
-    protected var topK = 1000
+    protected var topK = 0
 
     /**
      * Maximum number of tokens allowed to be generated. Not all AI models support this. For models that do not

@@ -1730,15 +1730,21 @@ put("system", if (enableCaching && cacheControl != null) {
     }
     
     /**
-     * Builds request JSON for Qwen3 models.
+     * Builds request JSON for Qwen models using Invoke API.
      * 
      * Qwen3 models support hybrid thinking modes and multilingual capabilities.
-     * Uses OpenAI-compatible format with enable_thinking parameter for reasoning.
+     * Uses OpenAI-compatible format with reasoning mode support.
+     * 
+     * When useModelReasoning is enabled, adds:
+     * - enable_thinking: true
+     * - thinking_budget: Token budget for reasoning (default: maxTokens/4, min 1000)
+     * 
      * Includes PCP context support for tool calling integration.
      * 
      * @param prompt The formatted prompt text
      * @return JSON request string for Qwen3 models
-     * @see useModelReasoning for thinking mode control
+     * @see useModelReasoning for enabling reasoning mode
+     * @see modelReasoningSettingsV2 for custom thinking budget
      */
     fun buildQwenRequest(prompt: String): String
     {
@@ -1763,6 +1769,17 @@ put("system", if (enableCaching && cacheControl != null) {
             if (topP < 1.0) put("top_p", topP)
             if (stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             put("stream", false)
+            
+            if (useModelReasoning) {
+                put("enable_thinking", true)
+                
+                val thinkingBudget = if (modelReasoningSettingsV2 > 0) {
+                    modelReasoningSettingsV2
+                } else {
+                    (maxTokens / 4).coerceAtLeast(1000)
+                }
+                put("thinking_budget", thinkingBudget)
+            }
             
         }.toString()
     }
@@ -2991,11 +3008,19 @@ put("system", if (enableCaching && cacheControl != null) {
     }
 
     /**
-     * Builds Converse API request for Qwen3 models.
-     * Maps TPipe parameters to Qwen3's Converse API structure.
+     * Builds Converse API request for Qwen models.
      * 
-     * @param prompt The formatted prompt text
-     * @return ConverseRequest for Qwen3 models
+     * Maps TPipe parameters to Qwen3's Converse API structure.
+     * Supports reasoning mode via additionalModelRequestFields:
+     * - enable_thinking: Boolean flag to enable reasoning
+     * - thinking_budget: Token budget for reasoning (default: maxTokens/4, min 1000)
+     * - top_k: Top-K sampling parameter
+     * - stop: Stop sequences array
+     * 
+     * @param contentBlocks List of content blocks (text and/or images)
+     * @return ConverseRequest configured for Qwen models
+     * @see useModelReasoning for enabling reasoning mode
+     * @see modelReasoningSettingsV2 for custom thinking budget
      */
     fun buildQwenConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
     {
@@ -3037,27 +3062,23 @@ put("system", if (enableCaching && cacheControl != null) {
             
             // Qwen3-specific additional model fields for reasoning and topK
             if (useModelReasoning || topK > 0 || this@BedrockPipe.stopSequences.isNotEmpty()) {
-                try {
-                    val documentMap = mutableMapOf<String, Any>()
-                    if (this@BedrockPipe.topK > 0) documentMap["top_k"] = this@BedrockPipe.topK
-                    if (this@BedrockPipe.stopSequences.isNotEmpty()) documentMap["stop"] = this@BedrockPipe.stopSequences
-                    if (useModelReasoning) {
-                        documentMap["enable_thinking"] = true
-                        // TODO: If AWS adds thinking budget parameters, add them here
-                    } else {
-                        documentMap["enable_thinking"] = false
-                    }
-                    
-                    val documentClass = Document::class.java
-                    val document = documentClass.getDeclaredConstructor().newInstance()
-                    val mapField = documentClass.getDeclaredField("value")
-                    mapField.isAccessible = true
-                    mapField.set(document, documentMap)
-                    
-                    additionalModelRequestFields = document
-                } catch (e: Exception) {
-                    // Fallback: skip additional fields if reflection fails
+                val documentMap = mutableMapOf<String, Document?>()
+                
+                if (this@BedrockPipe.topK > 0) {
+                    // top_k must be between 0-255 (u8)
+                    val clampedTopK = this@BedrockPipe.topK.coerceIn(1, 255)
+                    documentMap["top_k"] = Document.Number(clampedTopK)
                 }
+                
+                if (this@BedrockPipe.stopSequences.isNotEmpty()) {
+                    documentMap["stop"] = Document.List(this@BedrockPipe.stopSequences.map { Document.String(it) })
+                }
+                
+                if (useModelReasoning) {
+                    documentMap["include_reasoning"] = Document.Boolean(true)
+                }
+                
+                additionalModelRequestFields = Document.Map(documentMap)
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
@@ -3327,8 +3348,16 @@ put("system", if (enableCaching && cacheControl != null) {
         request: ConverseRequest,
         apiLabel: String
     ): String? {
+        // DEBUG: Capture the full request including additionalModelRequestFields
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
-              metadata = mapOf("apiType" to apiLabel, "modelId" to modelId, "streaming" to true))
+              metadata = mapOf(
+                  "apiType" to apiLabel,
+                  "modelId" to modelId,
+                  "streaming" to true,
+                  "requestObject" to request.toString(),
+                  "hasAdditionalFields" to (request.additionalModelRequestFields != null),
+                  "additionalFieldsValue" to (request.additionalModelRequestFields?.toString() ?: "null")
+              ))
 
         // Initialize builders for collecting streaming content
         val textBuilder = StringBuilder()
@@ -3342,6 +3371,7 @@ put("system", if (enableCaching && cacheControl != null) {
             val finalText = client.converseStream(request.toStreamRequest()) { response ->
                 // Process the streaming response events
                 response.stream?.collect { event ->
+                    
                     // Handle content block deltas (text and reasoning chunks)
                     event.asContentBlockDeltaOrNull()?.let { deltaEvent ->
                         // Extract text deltas and emit to callback
@@ -3607,18 +3637,27 @@ put("system", if (enableCaching && cacheControl != null) {
                 }
 
                 // Extract reasoning content from various possible locations
-                var reasoning = obj["reasoning"]?.jsonPrimitive?.contentOrNull ?: ""
+                var reasoning = ""
                 obj["delta"]?.jsonObject?.let { deltaObj ->
+                    reasoning = deltaObj["reasoning_content"]?.jsonPrimitive?.contentOrNull ?: ""
+                    
                     if (reasoning.isEmpty()) {
                         reasoning = deltaObj["reasoning"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
+                    
                     if (reasoning.isEmpty()) {
                         reasoning = deltaObj["reasoningText"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
-                    // Check for reasoning content in nested structure
-                    deltaObj["reasoningContent"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull?.let {
-                        reasoning = it
+                    
+                    if (reasoning.isEmpty()) {
+                        deltaObj["reasoningContent"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull?.let {
+                            reasoning = it
+                        }
                     }
+                }
+                
+                if (reasoning.isEmpty()) {
+                    reasoning = obj["reasoning"]?.jsonPrimitive?.contentOrNull ?: ""
                 }
 
                 // Check for guardrail traces that might contain reasoning
@@ -3762,6 +3801,13 @@ put("system", if (enableCaching && cacheControl != null) {
      * produce reasoning content even when not explicitly requested, and we want to
      * capture this for complete tracing information.
      * 
+     * Qwen models use different field names depending on the model variant:
+     * - Qwen3 Next 80B A3B: Uses `reasoning_content` field
+     * - Qwen3 VL 235B A22B: Uses `thinking` field
+     * - Legacy Qwen models: May use `reasoning` field
+     * 
+     * Priority order: reasoning_content > reasoning > thinking > fallbacks
+     * 
      * @param responseBody Raw JSON response from Bedrock API
      * @param modelId Model identifier to determine response format
      * @return Extracted reasoning content or empty string if not available
@@ -3773,10 +3819,16 @@ put("system", if (enableCaching && cacheControl != null) {
                 modelId.contains("qwen") -> {
                     // Qwen3 supports thinking mode with reasoning content
                     json["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.let { choice ->
-                        choice.get("message")?.jsonObject?.get("thinking")?.jsonPrimitive?.content
+                        choice.get("message")?.jsonObject?.get("reasoning_content")?.jsonPrimitive?.content
+                            ?: choice.get("message")?.jsonObject?.get("reasoning")?.jsonPrimitive?.content
+                            ?: choice.get("message")?.jsonObject?.get("thinking")?.jsonPrimitive?.content
+                            ?: choice.get("reasoning_content")?.jsonPrimitive?.content
                             ?: choice.get("reasoning")?.jsonPrimitive?.content
                             ?: choice.get("thinking")?.jsonPrimitive?.content
-                    } ?: json["thinking"]?.jsonPrimitive?.content ?: ""
+                    } ?: json["reasoning_content"]?.jsonPrimitive?.content 
+                       ?: json["reasoning"]?.jsonPrimitive?.content 
+                       ?: json["thinking"]?.jsonPrimitive?.content 
+                       ?: ""
                 }
                 
                 modelId.contains("openai.gpt-oss") -> {
