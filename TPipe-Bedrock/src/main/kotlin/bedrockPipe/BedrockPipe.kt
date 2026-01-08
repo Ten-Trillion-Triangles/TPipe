@@ -2263,14 +2263,13 @@ put("system", if (enableCaching && cacheControl != null) {
             // Add thinking configuration for Claude extended thinking
             if (useModelReasoning) {
                 val budgetTokens = modelReasoningSettingsV2.takeIf { it > 0 }?.coerceAtMost(maxTokens) ?: 4000
-                mapToDocument(mapOf(
-                    "thinking" to mapOf(
-                        "type" to "enabled",
-                        "budget_tokens" to budgetTokens
-                    )
-                ))?.let { document ->
-                    additionalModelRequestFields = document
-                }
+                val thinkingConfig = mutableMapOf<String, Document?>()
+                thinkingConfig["type"] = Document.String("enabled")
+                thinkingConfig["budget_tokens"] = Document.Number(budgetTokens)
+                
+                val documentMap = mutableMapOf<String, Document?>()
+                documentMap["thinking"] = Document.Map(thinkingConfig)
+                additionalModelRequestFields = Document.Map(documentMap)
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
@@ -2465,16 +2464,41 @@ put("system", if (enableCaching && cacheControl != null) {
 
     private fun mapToDocument(fields: Map<String, Any>): Document? {
         return try {
-            val documentClass = Document::class.java
-            val constructor = documentClass.getDeclaredConstructor()
-            constructor.isAccessible = true
-            val document = constructor.newInstance()
-            val mapField = documentClass.getDeclaredField("value")
-            mapField.isAccessible = true
-            mapField.set(document, fields)
-            document
+            Document.Map(convertMapToDocumentMap(fields))
         } catch (e: Exception) {
             null
+        }
+    }
+    
+    /**
+     * Recursively converts a Map<String, Any> to Map<String, Document?> with proper Document types.
+     * Supports nested maps, lists, and primitive types.
+     */
+    private fun convertMapToDocumentMap(map: Map<String, Any>): Map<String, Document?> {
+        val documentMap = mutableMapOf<String, Document?>()
+        for ((key, value) in map) {
+            documentMap[key] = convertValueToDocument(value)
+        }
+        return documentMap
+    }
+    
+    /**
+     * Converts a value to the appropriate Document type.
+     */
+    private fun convertValueToDocument(value: Any?): Document? {
+        return when (value) {
+            null -> null
+            is String -> Document.String(value)
+            is Number -> Document.Number(value)
+            is Boolean -> Document.Boolean(value)
+            is Map<*, *> -> {
+                @Suppress("UNCHECKED_CAST")
+                Document.Map(convertMapToDocumentMap(value as Map<String, Any>))
+            }
+            is List<*> -> {
+                Document.List(value.mapNotNull { convertValueToDocument(it) })
+            }
+            else -> null
         }
     }
 
@@ -2725,20 +2749,9 @@ put("system", if (enableCaching && cacheControl != null) {
             
             // Titan-specific additional model fields
             if (topK > 0) {
-                try {
-                    val documentMap = mutableMapOf<String, Any>()
-                    documentMap["topK"] = this@BedrockPipe.topK
-                    
-                    val documentClass = Document::class.java
-                    val document = documentClass.getDeclaredConstructor().newInstance()
-                    val mapField = documentClass.getDeclaredField("value")
-                    mapField.isAccessible = true
-                    mapField.set(document, documentMap)
-                    
-                    additionalModelRequestFields = document
-                } catch (e: Exception) {
-                    // Fallback: skip additional fields if reflection fails
-                }
+                val documentMap = mutableMapOf<String, Document?>()
+                documentMap["topK"] = Document.Number(this@BedrockPipe.topK)
+                additionalModelRequestFields = Document.Map(documentMap)
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
@@ -2776,23 +2789,14 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             // AI21-specific additional model fields
-            try {
-                val documentMap = mutableMapOf<String, Any>()
-                if (this@BedrockPipe.topK > 0) documentMap["topK"] = this@BedrockPipe.topK
-                documentMap["countPenalty"] = mapOf("scale" to 0.0)
-                documentMap["presencePenalty"] = mapOf("scale" to 0.0)
-                documentMap["frequencyPenalty"] = mapOf("scale" to 0.0)
-                
-                val documentClass = Document::class.java
-                val document = documentClass.getDeclaredConstructor().newInstance()
-                val mapField = documentClass.getDeclaredField("value")
-                mapField.isAccessible = true
-                mapField.set(document, documentMap)
-                
-                additionalModelRequestFields = document
-            } catch (e: Exception) {
-                // Fallback: skip additional fields if reflection fails
+            val documentMap = mutableMapOf<String, Document?>()
+            if (this@BedrockPipe.topK > 0) {
+                documentMap["topK"] = Document.Number(this@BedrockPipe.topK)
             }
+            documentMap["countPenalty"] = Document.Map(mutableMapOf("scale" to Document.Number(0.0)))
+            documentMap["presencePenalty"] = Document.Map(mutableMapOf("scale" to Document.Number(0.0)))
+            documentMap["frequencyPenalty"] = Document.Map(mutableMapOf("scale" to Document.Number(0.0)))
+            additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
         }
@@ -2829,22 +2833,13 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             // Cohere-specific additional model fields
-            try {
-                val documentMap = mutableMapOf<String, Any>()
-                if (this@BedrockPipe.topK > 0) documentMap["k"] = this@BedrockPipe.topK
-                documentMap["return_likelihoods"] = "NONE"
-                documentMap["truncate"] = "END"
-                
-                val documentClass = Document::class.java
-                val document = documentClass.getDeclaredConstructor().newInstance()
-                val mapField = documentClass.getDeclaredField("value")
-                mapField.isAccessible = true
-                mapField.set(document, documentMap)
-                
-                additionalModelRequestFields = document
-            } catch (e: Exception) {
-                // Fallback: skip additional fields if reflection fails
+            val documentMap = mutableMapOf<String, Document?>()
+            if (this@BedrockPipe.topK > 0) {
+                documentMap["k"] = Document.Number(this@BedrockPipe.topK)
             }
+            documentMap["return_likelihoods"] = Document.String("NONE")
+            documentMap["truncate"] = Document.String("END")
+            additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
         }
@@ -2887,20 +2882,9 @@ put("system", if (enableCaching && cacheControl != null) {
             
             // Llama-specific additional model fields
             if (topK > 0) {
-                try {
-                    val documentMap = mutableMapOf<String, Any>()
-                    documentMap["top_k"] = this@BedrockPipe.topK
-                    
-                    val documentClass = Document::class.java
-                    val document = documentClass.getDeclaredConstructor().newInstance()
-                    val mapField = documentClass.getDeclaredField("value")
-                    mapField.isAccessible = true
-                    mapField.set(document, documentMap)
-                    
-                    additionalModelRequestFields = document
-                } catch (e: Exception) {
-                    // Fallback: skip additional fields if reflection fails
-                }
+                val documentMap = mutableMapOf<String, Document?>()
+                documentMap["top_k"] = Document.Number(this@BedrockPipe.topK)
+                additionalModelRequestFields = Document.Map(documentMap)
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
@@ -2943,21 +2927,12 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             // Mistral-specific additional model fields
-            try {
-                val documentMap = mutableMapOf<String, Any>()
-                if (this@BedrockPipe.topK > 0) documentMap["top_k"] = this@BedrockPipe.topK
-                documentMap["safe_prompt"] = false
-                
-                val documentClass = Document::class.java
-                val document = documentClass.getDeclaredConstructor().newInstance()
-                val mapField = documentClass.getDeclaredField("value")
-                mapField.isAccessible = true
-                mapField.set(document, documentMap)
-                
-                additionalModelRequestFields = document
-            } catch (e: Exception) {
-                // Fallback: skip additional fields if reflection fails
+            val documentMap = mutableMapOf<String, Document?>()
+            if (this@BedrockPipe.topK > 0) {
+                documentMap["top_k"] = Document.Number(this@BedrockPipe.topK)
             }
+            documentMap["safe_prompt"] = Document.Boolean(false)
+            additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
         }
