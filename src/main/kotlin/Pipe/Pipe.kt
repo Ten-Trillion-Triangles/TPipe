@@ -505,7 +505,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * token predictions.
      */
     @Serializable
-    protected var temperature : Double = 1.0
+    protected var temperature : Double = 0.0
 
     /**
      * TopP settings. Most models support adjusting this value. Lowering this value produces more predictable
@@ -514,7 +514,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * at .7 70% of possible tokens are viable. At .1 only the top 10% are selectable by an llm.
      */
     @Serializable
-    protected var topP : Double = 0.7
+    protected var topP : Double = 0.0
 
     /**
      * TopK settings. Only certain models support this. If unsupported, this setting will do nothing.
@@ -529,7 +529,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * support this, this setting will do nothing.
      */
     @Serializable
-    protected var maxTokens = 8000
+    protected var maxTokens = 4000
 
     /**
      * Weather to treat max token overflow as an error or not. If true, when the model exits due to max tokens
@@ -547,7 +547,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * bottom depending on the settings of the child class.
      */
     @Serializable
-    protected var contextWindowSize = 10000
+    protected var contextWindowSize = 8000
 
     /**
      * Context window for inputs. Allows for keyed lorebook style context, or a simple list of strings that

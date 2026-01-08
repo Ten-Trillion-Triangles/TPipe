@@ -1318,12 +1318,12 @@ open class BedrockPipe : Pipe() {
             }
             put("messages", JsonArray(messages))
             putJsonObject("inferenceConfig") {
-                if (!highReasoning)
+                if (!highReasoning && maxTokens > 0)
                 {
-                    put("maxTokens", maxTokens)
+                    if (maxTokens > 0) put("maxTokens", maxTokens)
                 }
                 if (!highReasoning && temperature > 0) put("temperature", temperature)
-                if (!highReasoning && topP < 1.0) put("topP", topP)
+                if (!highReasoning && topP > 0) put("topP", topP)
                 if (!highReasoning && topK > 0) put("topK", topK)
                 if (stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
                 novaReasoning?.let { put("reasoningConfig", it.json) }
@@ -1391,9 +1391,9 @@ open class BedrockPipe : Pipe() {
             }
             put("messages", JsonArray(messages))
             putJsonObject("inferenceConfig") {
-                put("maxTokens", maxTokens)
+                if (maxTokens > 0) put("maxTokens", maxTokens)
                 if (temperature > 0) put("temperature", temperature)
-                if (topP < 1.0) put("topP", topP)
+                if (topP > 0) put("topP", topP)
                 if (stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             }
             additionalFields?.let { put("additionalModelRequestFields", it) }
@@ -1476,7 +1476,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             if (temperature > 0) put("temperature", temperature)
-            if (topP < 1.0) put("top_p", topP)
+            if (topP > 0) put("top_p", topP)
             if (stopSequences.isNotEmpty()) put("stop_sequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
         }.toString()
     }
@@ -1497,7 +1497,7 @@ put("system", if (enableCaching && cacheControl != null) {
             putJsonObject("textGenerationConfig") {
                 put("maxTokenCount", maxTokens)
                 if (temperature > 0) put("temperature", temperature)
-                if (topP < 1.0) put("topP", topP)
+                if (topP > 0) put("topP", topP)
                 if (stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             }
         }.toString()
@@ -1515,9 +1515,9 @@ put("system", if (enableCaching && cacheControl != null) {
     {
         return buildJsonObject {
             put("prompt", prompt)
-            put("maxTokens", maxTokens)
+            if (maxTokens > 0) put("maxTokens", maxTokens)
             if (temperature > 0) put("temperature", temperature)
-            if (topP < 1.0) put("topP", topP)
+            if (topP > 0) put("topP", topP)
             if (stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
         }.toString()
     }
@@ -1537,7 +1537,7 @@ put("system", if (enableCaching && cacheControl != null) {
             put("prompt", prompt)
             put("max_tokens", maxTokens)
             if (temperature > 0) put("temperature", temperature)
-            if (topP < 1.0) put("p", topP)
+            if (topP > 0) put("p", topP)
             if (topK > 0) put("k", topK)
             if (stopSequences.isNotEmpty()) put("stop_sequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
         }.toString()
@@ -1557,7 +1557,7 @@ put("system", if (enableCaching && cacheControl != null) {
             put("prompt", prompt)
             put("max_gen_len", maxTokens)
             if (temperature > 0) put("temperature", temperature)
-            if (topP < 1.0) put("top_p", topP)
+            if (topP > 0) put("top_p", topP)
         }.toString()
     }
     
@@ -1575,7 +1575,7 @@ put("system", if (enableCaching && cacheControl != null) {
             put("prompt", prompt)
             put("max_tokens", maxTokens)
             if (temperature > 0) put("temperature", temperature)
-            if (topP < 1.0) put("top_p", topP)
+            if (topP > 0) put("top_p", topP)
             if (topK > 0) put("top_k", topK)
             if (stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
         }.toString()
@@ -1632,8 +1632,8 @@ put("system", if (enableCaching && cacheControl != null) {
             // Inference configuration
             put("inferenceConfig", buildJsonObject {
                 if (temperature > 0) put("temperature", temperature)
-                if (maxTokens > 0) put("maxTokens", maxTokens)
-                if (topP < 1.0) put("topP", topP)
+                if (maxTokens > 0) if (maxTokens > 0) put("maxTokens", maxTokens)
+                if (topP > 0) put("topP", topP)
                 if (stopSequences.isNotEmpty()) {
                     put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
                 }
@@ -1766,7 +1766,7 @@ put("system", if (enableCaching && cacheControl != null) {
             put("messages", JsonArray(messages))
             put("max_tokens", maxTokens)
             if (temperature > 0) put("temperature", temperature)
-            if (topP < 1.0) put("top_p", topP)
+            if (topP > 0) put("top_p", topP)
             if (stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             put("stream", false)
             
@@ -1802,7 +1802,7 @@ put("system", if (enableCaching && cacheControl != null) {
             put("prompt", fullPrompt)
             put("max_tokens", maxTokens)
             if (temperature > 0) put("temperature", temperature)
-            if (topP < 1.0) put("top_p", topP)
+            if (topP > 0) put("top_p", topP)
             if (stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             
             // DeepSeek V3.1 and R1 models have reasoning always enabled by default
@@ -1838,9 +1838,9 @@ put("system", if (enableCaching && cacheControl != null) {
             this.messages = messages
             if (systemBlocks.isNotEmpty()) this.system = systemBlocks
             inferenceConfig = InferenceConfiguration {
-                maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
@@ -2135,9 +2135,9 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             put("messages", JsonArray(messages))
             putJsonObject("inferenceConfig") {
-                put("maxTokens", maxTokens)
+                if (maxTokens > 0) put("maxTokens", maxTokens)
                 if (temperature > 0) put("temperature", temperature)
-                if (topP < 1.0) put("topP", topP)
+                if (topP > 0) put("topP", topP)
                 if (stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             }
         }.toString()
@@ -2158,7 +2158,7 @@ put("system", if (enableCaching && cacheControl != null) {
             put("prompt", prompt)
             put("max_tokens", maxTokens)
             if (temperature > 0) put("temperature", temperature)
-            if (topP < 1.0) put("top_p", topP)
+            if (topP > 0) put("top_p", topP)
             if (topK > 0) put("top_k", topK)
             if (stopSequences.isNotEmpty()) put("stop_sequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
         }.toString()
@@ -2239,9 +2239,9 @@ put("system", if (enableCaching && cacheControl != null) {
             if (systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
@@ -2297,9 +2297,9 @@ put("system", if (enableCaching && cacheControl != null) {
             if (systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                if (!highReasoning) maxTokens = this@BedrockPipe.maxTokens
+                if (!highReasoning) if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
                 if (!highReasoning && this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (!highReasoning && this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (!highReasoning && this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
 
@@ -2347,9 +2347,9 @@ put("system", if (enableCaching && cacheControl != null) {
             if (systemBlocks.isNotEmpty()) this.system = systemBlocks
 
             inferenceConfig = InferenceConfiguration {
-                maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
 
@@ -2543,9 +2543,9 @@ put("system", if (enableCaching && cacheControl != null) {
             put("messages", JsonArray(messages))
 
             putJsonObject("inferenceConfig") {
-                put("maxTokens", maxTokens)
+                if (maxTokens > 0) put("maxTokens", maxTokens)
                 if (temperature > 0) put("temperature", temperature)
-                if (topP < 1.0) put("topP", topP)
+                if (topP > 0) put("topP", topP)
                 if (stopSequences.isNotEmpty()) {
                     put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
                 }
@@ -2587,9 +2587,9 @@ put("system", if (enableCaching && cacheControl != null) {
             if (systemBlocks.isNotEmpty()) this.system = systemBlocks
 
             inferenceConfig = InferenceConfiguration {
-                maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
 
@@ -2726,9 +2726,9 @@ put("system", if (enableCaching && cacheControl != null) {
             if (systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
@@ -2767,9 +2767,9 @@ put("system", if (enableCaching && cacheControl != null) {
             this.messages = messages
             
             inferenceConfig = InferenceConfiguration {
-                maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
@@ -2811,9 +2811,9 @@ put("system", if (enableCaching && cacheControl != null) {
             this.messages = messages
             
             inferenceConfig = InferenceConfiguration {
-                maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
@@ -2859,9 +2859,9 @@ put("system", if (enableCaching && cacheControl != null) {
             if (systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
@@ -2905,9 +2905,9 @@ put("system", if (enableCaching && cacheControl != null) {
             if (systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
@@ -2953,9 +2953,9 @@ put("system", if (enableCaching && cacheControl != null) {
             if (systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
@@ -3014,9 +3014,9 @@ put("system", if (enableCaching && cacheControl != null) {
             if (systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP < 1.0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
                 // stopSequences handled in additionalModelRequestFields for Qwen models
             }
             
