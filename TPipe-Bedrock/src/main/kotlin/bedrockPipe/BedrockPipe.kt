@@ -1795,6 +1795,21 @@ put("system", if (enableCaching && cacheControl != null) {
                 if (user.isNotEmpty()) {
                     documentMap["user"] = Document.String(user)
                 }
+                
+                // Add thinking mode parameters for Qwen and DeepSeek models
+                if (modelId.startsWith("qwen") && useModelReasoning) {
+                    documentMap["enable_thinking"] = Document.Boolean(true)
+                    val thinkingBudget = if (modelReasoningSettingsV2 > 0) {
+                        modelReasoningSettingsV2
+                    } else {
+                        (maxTokens / 4).coerceAtLeast(1000)
+                    }
+                    documentMap["thinking_budget"] = Document.Number(thinkingBudget)
+                }
+                
+                if (modelId.startsWith("deepseek") && useModelReasoning) {
+                    documentMap["include_reasoning"] = Document.Boolean(true)
+                }
             }
             
             modelId.startsWith("ai21.j2") || modelId.startsWith("ai21.jamba") -> {
@@ -1928,7 +1943,27 @@ put("system", if (enableCaching && cacheControl != null) {
             if (stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             put("stream", false)
             
-            if (useModelReasoning) {
+            // Add OpenAI parameters using model-specific filtering
+            val openAIParams = getModelSpecificOpenAIParameters("qwen")
+            openAIParams.forEach { (key, document) ->
+                when (document) {
+                    is Document.Number -> {
+                        val value = document.toString().toDoubleOrNull() ?: 0.0
+                        put(key, value)
+                    }
+                    is Document.String -> {
+                        put(key, document.toString().removeSurrounding("\""))
+                    }
+                    is Document.Boolean -> {
+                        val value = document.toString().toBoolean()
+                        put(key, value)
+                    }
+                    else -> {} // Handle other types or ignore
+                }
+            }
+            
+            // Legacy thinking mode support (will be overridden by OpenAI parameters if set)
+            if (useModelReasoning && !openAIParams.containsKey("enable_thinking")) {
                 put("enable_thinking", true)
                 
                 val thinkingBudget = if (modelReasoningSettingsV2 > 0) {
@@ -1963,8 +1998,29 @@ put("system", if (enableCaching && cacheControl != null) {
             if (topP > 0) put("top_p", topP)
             if (stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             
-            // DeepSeek V3.1 and R1 models have reasoning always enabled by default
-            // No thinking parameter needed in request body
+            // Add OpenAI parameters using model-specific filtering
+            val openAIParams = getModelSpecificOpenAIParameters("deepseek")
+            openAIParams.forEach { (key, document) ->
+                when (document) {
+                    is Document.Number -> {
+                        val value = document.toString().toDoubleOrNull() ?: 0.0
+                        put(key, value)
+                    }
+                    is Document.String -> {
+                        put(key, document.toString().removeSurrounding("\""))
+                    }
+                    is Document.Boolean -> {
+                        val value = document.toString().toBoolean()
+                        put(key, value)
+                    }
+                    else -> {} // Handle other types or ignore
+                }
+            }
+            
+            // DeepSeek V3.1 and R1 models support thinking mode via include_reasoning parameter
+            if (useModelReasoning && !openAIParams.containsKey("include_reasoning")) {
+                put("include_reasoning", true)
+            }
         }.toString()
     }
 
@@ -2002,8 +2058,19 @@ put("system", if (enableCaching && cacheControl != null) {
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
-            // DeepSeek V3.1 and R1 models have reasoning always enabled by default
-            // No additionalModelRequestFields needed for thinking mode
+            // Add model-specific OpenAI parameters for DeepSeek thinking mode
+            val documentMap = mutableMapOf<String, Document?>()
+            val openAIParams = getModelSpecificOpenAIParameters(modelId)
+            documentMap.putAll(openAIParams)
+            
+            // DeepSeek V3.1 and R1 models support thinking mode via include_reasoning parameter
+            if (useModelReasoning && !documentMap.containsKey("include_reasoning")) {
+                documentMap["include_reasoning"] = Document.Boolean(true)
+            }
+            
+            if (documentMap.isNotEmpty()) {
+                additionalModelRequestFields = Document.Map(documentMap)
+            }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
         }
