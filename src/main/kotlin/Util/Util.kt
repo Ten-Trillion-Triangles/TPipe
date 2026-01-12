@@ -635,6 +635,7 @@ fun <T> constructPipeFromTemplate(
         template.preValidationFunction?.let { newPipe.preValidationFunction = it }
         template.preValidationMiniBankFunction?.let { newPipe.preValidationMiniBankFunction = it }
         template.preInvokeFunction?.let { newPipe.preInvokeFunction = it }
+        template.preInitFunction?.let { newPipe.preInitFunction = it }
         template.onFailure?.let { newPipe.onFailure = it }
     }
 
@@ -651,6 +652,7 @@ fun <T> constructPipeFromTemplate(
         template.validatorPipe?.let { newPipe.validatorPipe = it }
         template.transformationPipe?.let { newPipe.transformationPipe = it }
         template.branchPipe?.let { newPipe.branchPipe = it }
+        template.reasoningPipe?.let { newPipe.reasoningPipe = it }
     }
     
     return newPipe as? T
