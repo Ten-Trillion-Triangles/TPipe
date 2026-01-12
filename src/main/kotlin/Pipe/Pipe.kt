@@ -42,6 +42,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import java.util.UUID
 import kotlin.math.absoluteValue
+import kotlin.reflect.KClass
 
 //==============================================Data Classes==========================================================//
 data class TruncationSettings(
@@ -1514,6 +1515,17 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
     /**
+     * Set json input by providing a KClass directly. Useful for primitives or classes with private constructors.
+     * @param kclass The KClass to generate JSON schema from
+     * @return This Pipe object for method chaining
+     */
+    fun setJsonInput(kclass: KClass<*>): Pipe
+    {
+        this.jsonInput = examplePromptFor(kclass)
+        return this
+    }
+
+    /**
      * Set json input by providing the string directly. This is not recommended, but may be required for
      * languages or frameworks that don't support that are not written in Kotlin.
      * @param json The JSON string to set as input
@@ -1549,6 +1561,17 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     inline fun <reified T> setJsonOutput(json: T): Pipe
     {
         this.jsonOutput = examplePromptFor(T::class)
+        return this
+    }
+
+    /**
+     * Set json output by providing a KClass directly. Useful for primitives or classes with private constructors.
+     * @param kclass The KClass to generate JSON schema from
+     * @return This Pipe object for method chaining
+     */
+    fun setJsonOutput(kclass: KClass<*>): Pipe
+    {
+        this.jsonOutput = examplePromptFor(kclass)
         return this
     }
 
