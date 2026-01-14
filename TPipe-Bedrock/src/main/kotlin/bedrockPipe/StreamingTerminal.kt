@@ -19,42 +19,35 @@ fun streamOutputToTerminal(vararg pipes: Pipe) {
 fun streamOutputToTerminal(pipes: Iterable<Pipe>) {
     val configured = mutableSetOf<Pipe>()
     for (pipe in pipes) {
-        configureStreamingForPipe(pipe, configured, isReasoning = false)
+        configureStreamingForPipe(pipe, configured)
     }
 }
 
 private fun configureStreamingForPipe(
     pipe: Pipe?,
     configured: MutableSet<Pipe>,
-    isReasoning: Boolean
 ) {
     if (pipe == null || !configured.add(pipe)) {
         return
     }
 
-    configureBedrockStreaming(pipe, isReasoning)
-    configureStreamingForPipe(pipe.reasoningPipe, configured, isReasoning = true)
+    configureBedrockStreaming(pipe)
+    configureStreamingForPipe(pipe.reasoningPipe, configured)
 }
 
-private fun configureBedrockStreaming(pipe: Pipe, isReasoning: Boolean) {
+private fun configureBedrockStreaming(pipe: Pipe) {
     if (pipe !is BedrockPipe) {
         return
     }
 
-    val label = buildStreamLabel(pipe, isReasoning)
     pipe.enableStreaming()
         .setStreamingCallback({ chunk: String ->
-            printChunk(label, chunk)
+            printChunk(chunk)
         } as (String) -> Unit)
 }
 
-private fun buildStreamLabel(pipe: Pipe, isReasoning: Boolean): String {
-    val baseLabel = pipe.pipeName.takeIf(String::isNotBlank) ?: pipe::class.simpleName ?: "Pipe"
-    return if (isReasoning) "$baseLabel (reasoning)" else baseLabel
-}
-
-private fun printChunk(label: String, chunk: String) {
-    print("[$label]$chunk")
+private fun printChunk(chunk: String) {
+    print(chunk)
     System.out.flush()
 }
 
