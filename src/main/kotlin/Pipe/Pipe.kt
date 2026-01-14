@@ -2933,6 +2933,21 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
     /**
+     * Function to disable model reasoning. Present to support cases where we need to unset this upon
+     * swapping a model in a pipe suddenly. In families of llm models it's common for the one major api
+     * difference between them to be having a thinking mode. So typically common settings like TopK, and other
+     * settings that are numeric are always shared among that family. However, if reasoning is passed to models
+     * of a family that do not have it, they will often just crash. So this function exists to help remove some
+     * of the pain points of needing to do a model swap due to issues like llm refusals.
+     */
+    fun disableReasoning() : Pipe
+    {
+        useModelReasoning = false
+        modelReasoningSettingsV3 = ""
+        return this
+    }
+
+    /**
      * Sets the validator function for the pipe. This function will be used to validate the multimodal output
      * of the AI model. If the function returns true, the pipeline will continue to the next pipe.
      * If the function returns false, the pipeline will exit here.

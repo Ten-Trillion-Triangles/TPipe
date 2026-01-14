@@ -203,6 +203,11 @@ Sets JSON input schema from Kotlin object.
 
 **Behavior:** Uses reflection to generate schema. If `senddefaults` is false, optional fields are excluded from the schema.
 
+#### `setJsonInput(kclass: KClass<*>): Pipe`
+Sets JSON input schema from KClass directly.
+
+**Behavior:** Useful for primitives (e.g., `String::class`) or classes with private constructors that cannot be instantiated for the generic version.
+
 #### `setJsonInputInstructions(instructions: String): Pipe`
 Sets custom instructions for JSON input handling that override the default input format explanation.
 
@@ -215,6 +220,11 @@ Sets JSON output schema as string.
 
 #### `setJsonOutput<T>(json: T): Pipe`
 Sets JSON output schema from Kotlin object.
+
+#### `setJsonOutput(kclass: KClass<*>): Pipe`
+Sets JSON output schema from KClass directly.
+
+**Behavior:** Useful for primitives (e.g., `String::class`) or classes with private constructors that cannot be instantiated for the generic version.
 
 #### `setJsonOutputInstructions(instructions: String): Pipe`
 Sets custom instructions for JSON output handling that override the default output format explanation.

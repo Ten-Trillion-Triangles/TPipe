@@ -105,6 +105,34 @@ TPipe generates nested schemas automatically, handling:
 - Nested data classes
 - Enums and sealed classes
 
+### Alternative Schema Setting Methods
+
+#### Using KClass for Primitives and Special Cases
+```kotlin
+// For primitive types
+pipe.setJsonInput(String::class)
+    .setJsonOutput(Int::class)
+
+// For classes with private constructors
+pipe.setJsonInput(MyClassWithPrivateConstructor::class)
+    .setJsonOutput(DatabaseEntity::class)
+
+// When you can't instantiate the class
+pipe.setJsonInput(SealedClass::class)
+```
+
+**When to use KClass overloads:**
+- Working with Kotlin primitives (`String::class`, `Int::class`, etc.)
+- Classes with private constructors that prevent instantiation
+- Sealed classes or abstract classes
+- When you only have the KClass reference available
+
+#### Direct String Schema (Not Recommended)
+```kotlin
+pipe.setJsonInput("""{"name": "string", "age": 0}""")
+    .setJsonOutput("""{"result": "string", "success": true}""")
+```
+
 ### Controlling JSON Injection Behavior
 
 #### Strip Non-JSON Text
