@@ -1035,7 +1035,10 @@ class Pipeline : P2PInterface {
             if (tracingEnabled)
             {
                 pipe.enableTracing(traceConfig)
-                pipe.currentPipelineId = pipelineId
+                if(pipelineContainer == null)
+                {
+                    pipe.currentPipelineId = pipelineId
+                }
             }
 
             try {

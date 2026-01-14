@@ -454,6 +454,12 @@ class Splitter: P2PInterface
                     // Set splitter ID as pipeline ID for correlation - this makes all pipe events appear in same trace
                     for (pipe in pipeline.getPipes()) {
                         pipe.currentPipelineId = splitterId
+                        
+                        // Prefix pipe name with pipeline name for clarity in trace visualization
+                        val prefix = if (pipeline.pipelineName.isNotEmpty()) pipeline.pipelineName else it.key.toString()
+                        if (prefix.isNotEmpty() && !pipe.pipeName.startsWith("$prefix:")) {
+                            pipe.pipeName = "$prefix:${pipe.pipeName}"
+                        }
                     }
                 }
                 
