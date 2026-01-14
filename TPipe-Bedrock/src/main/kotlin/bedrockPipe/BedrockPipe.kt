@@ -1324,7 +1324,7 @@ open class BedrockPipe : Pipe() {
                 }
                 if (!highReasoning && temperature > 0) put("temperature", temperature)
                 if (!highReasoning && topP > 0) put("topP", topP)
-                if (!highReasoning && topK > 0) put("topK", topK)
+                if (!highReasoning && topK > 0) put("topK", if (topK > 128) 128 else topK)
                 if (stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
                 novaReasoning?.let { put("reasoningConfig", it.json) }
             }
@@ -2643,7 +2643,7 @@ put("system", if (enableCaching && cacheControl != null) {
     ): Map<String, Any>? {
         val inferenceConfig = mutableMapOf<String, Any>()
         if (!highReasoning && topK > 0) {
-            inferenceConfig["topK"] = topK
+            inferenceConfig["topK"] = if (topK > 128) 128 else topK
         }
         if (novaReasoning != null) {
             inferenceConfig["reasoningConfig"] = novaReasoning.map

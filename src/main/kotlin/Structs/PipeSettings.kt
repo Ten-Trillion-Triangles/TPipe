@@ -23,7 +23,7 @@ data class PipeSettings(
     var supportsNativeJson: Boolean = true,
     var temperature: Double = 1.0,
     var topP: Double = 0.7,
-    var topK: Int = 1000,
+    var topK: Int = 0,
     var maxTokens: Int = 2048,
     var contextWindowSize: Int = 10000,
     var contextWindow: ContextWindow = ContextWindow(),

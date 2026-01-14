@@ -485,7 +485,7 @@ class OllamaPipe : Pipe() {
             numKeep = numKeep,
             seed = ollamaSeed,
             numPredict = maxTokens.takeIf { it > 0 },
-            topK = topK,
+            topK = topK.takeIf { it > 0 },
             topP = topP,
             minP = minP,
             typicalP = typicalP,
