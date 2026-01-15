@@ -3121,8 +3121,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setValidatorPipe(pipe: Pipe, saveSnapshotAsPageKey: Boolean = false) : Pipe
     {
         this.validatorPipe = pipe
-        validatorPipe?.setParentPipe(this)
-        validatorPipe.apply {
+        pipe.setParentPipe(this)
+        pipe.apply {
 
             if(preInitFunction == null && transformationFunction == null)
             {
