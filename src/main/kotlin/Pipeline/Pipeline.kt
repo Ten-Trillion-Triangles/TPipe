@@ -443,6 +443,7 @@ class Pipeline : P2PInterface {
     {
         if (!pipes.contains(pipe)) {
             pipes.add(pipe)
+            pipe.setPipelineRef(this)
         }
 
         return this
@@ -456,6 +457,7 @@ class Pipeline : P2PInterface {
     fun insert(pipe: Pipe, index: Int) : Pipeline
     {
         pipes.add(index, pipe)
+        pipe.setPipelineRef(this)
         return this
     }
 
