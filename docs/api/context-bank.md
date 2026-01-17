@@ -61,43 +61,190 @@ Thread-safe update of the currently active banked context window.
 
 ### Bank Management
 
-#### `emplace(key: String, window: ContextWindow, persistToDisk: Boolean = false)`
-Stores or replaces a context window in the bank with the specified key.
+#### `emplace(key: String, window: ContextWindow, mode: StorageMode)`
+Stores or replaces a context window with explicit storage mode control.
 
 **Parameters:**
 - `key`: The identifier for storing the context window
 - `window`: The ContextWindow to store
-- `persistToDisk`: When true, forces the context window to be saved to disk. When false (default), only saves to disk if a bank file already exists for this key
+- `mode`: Storage mode controlling memory and disk persistence behavior
 
-**Behavior:** Direct map assignment without thread safety. Automatically handles disk persistence based on the `persistToDisk` parameter and existing file state. **Warning:** Not safe for concurrent use. Use `emplaceWithMutex()` for thread-safe operations.
+**Storage Modes:**
+- `StorageMode.MEMORY_ONLY` - Store only in memory, no disk persistence
+- `StorageMode.MEMORY_AND_DISK` - Store in both memory and disk (default behavior)
+- `StorageMode.DISK_ONLY` - Store only on disk, load on-demand without caching
+- `StorageMode.DISK_WITH_CACHE` - Store on disk with LRU memory cache and automatic eviction
+
+**Example:**
+```kotlin
+// Disk-only for large, infrequently accessed contexts
+ContextBank.emplace("large-context", window, StorageMode.DISK_ONLY)
+
+// Cached disk storage with automatic eviction
+ContextBank.emplace("hot-data", window, StorageMode.DISK_WITH_CACHE)
+```
+
+#### `emplace(key: String, window: ContextWindow, persistToDisk: Boolean = false)`
+Backward compatible storage method using boolean flag.
+
+**Parameters:**
+- `key`: The identifier for storing the context window
+- `window`: The ContextWindow to store
+- `persistToDisk`: When true, stores to both memory and disk; when false, memory only
+
+**Behavior:** Maps to storage modes: `persistToDisk=true` → `MEMORY_AND_DISK`, `persistToDisk=false` → `MEMORY_ONLY`. Maintained for backward compatibility with existing code.
+
+#### `emplaceWithMutex(key: String, window: ContextWindow, mode: StorageMode)`
+Thread-safe storage with explicit storage mode control.
+
+**Parameters:**
+- `key`: The identifier for storing the context window
+- `window`: The ContextWindow to store
+- `mode`: Storage mode controlling memory and disk persistence behavior
+
+**Behavior:** Uses `bankMutex` to ensure exclusive access during bank modification. Recommended method for updating bank contents in concurrent environments.
 
 #### `emplaceWithMutex(key: String, window: ContextWindow, persistToDisk: Boolean = false)`
-Thread-safe storage or replacement of a context window in the bank.
+Thread-safe backward compatible storage method.
 
 **Parameters:**
 - `key`: The identifier for storing the context window
 - `window`: The ContextWindow to store
-- `persistToDisk`: When true, forces the context window to be saved to disk. When false (default), only saves to disk if a bank file already exists for this key
+- `persistToDisk`: When true, stores to both memory and disk; when false, memory only
 
-**Behavior:** Uses `bankMutex` to ensure exclusive access during bank modification. Automatically handles disk persistence based on the `persistToDisk` parameter and existing file state. Recommended method for updating bank contents in concurrent environments.
+**Behavior:** Uses `bankMutex` to ensure exclusive access. Maintained for backward compatibility.
 
 #### `getContextFromBank(key: String, copy: Boolean = true): ContextWindow`
-Retrieves a context window from the bank by key.
+Retrieves a context window from the bank by key, respecting storage mode.
 
 **Behavior:** 
 - **Page Lock Check**: Returns empty `ContextWindow()` if page is locked via ContextLock
+- **Storage Mode Aware**: DISK_ONLY loads without caching, DISK_WITH_CACHE caches with eviction
 - **With `copy = true` (default)**: Returns deep copy via serialization for thread safety
 - **With `copy = false`**: Returns direct reference for performance but without thread safety
 - **Missing key**: Returns empty `ContextWindow()` if key doesn't exist
-- **Copy failure**: Returns empty `ContextWindow()` if serialization fails
+- **Automatic Disk Loading**: Loads from disk if file exists but not in memory
 
-**ContextLock Integration:**
+**Example:**
 ```kotlin
-// Page locks are automatically enforced
-ContextLock.addLock("classified_page", "", true, true)
-val context = ContextBank.getContextFromBank("classified_page")
-// Returns empty ContextWindow due to page lock
+// Set disk-only mode
+ContextBank.emplace("data", window, StorageMode.DISK_ONLY)
+
+// Loads from disk without caching in memory
+val loaded = ContextBank.getContextFromBank("data")
 ```
+
+---
+
+### Storage Mode Management
+
+#### `setStorageMode(key: String, mode: StorageMode)`
+Sets the storage mode for a specific key.
+
+**Parameters:**
+- `key`: The context bank key
+- `mode`: The storage mode to apply
+
+**Example:**
+```kotlin
+ContextBank.setStorageMode("my-key", StorageMode.DISK_ONLY)
+```
+
+#### `getStorageMode(key: String): StorageMode`
+Gets the storage mode for a specific key.
+
+**Returns:** The storage mode, or `MEMORY_AND_DISK` if not set (default for backward compatibility)
+
+#### `setStorageModeWithMutex(key: String, mode: StorageMode)`
+Thread-safe version of `setStorageMode()`.
+
+---
+
+### Memory Eviction
+
+#### `evictFromMemory(key: String): Boolean`
+Removes a context window from memory without deleting the disk file.
+
+**Returns:** `true` if the key was in memory and was removed, `false` otherwise
+
+**Example:**
+```kotlin
+// Free memory while keeping disk file
+ContextBank.evictFromMemory("large-context")
+```
+
+#### `evictFromMemoryWithMutex(key: String): Boolean`
+Thread-safe version of `evictFromMemory()`.
+
+#### `evictAllFromMemory()`
+Removes all context windows from memory without deleting disk files.
+
+#### `evictAllFromMemoryWithMutex()`
+Thread-safe version of `evictAllFromMemory()`.
+
+#### `evictTodoListFromMemory(key: String): Boolean`
+Removes a TodoList from memory without deleting the disk file.
+
+#### `evictTodoListFromMemoryWithMutex(key: String): Boolean`
+Thread-safe version of `evictTodoListFromMemory()`.
+
+#### `evictAllTodoListsFromMemory()`
+Removes all TodoLists from memory without deleting disk files.
+
+#### `evictAllTodoListsFromMemoryWithMutex()`
+Thread-safe version of `evictAllTodoListsFromMemory()`.
+
+---
+
+### Cache Configuration
+
+#### `configureCachePolicy(config: CacheConfig)`
+Configures cache behavior for DISK_WITH_CACHE storage mode.
+
+**Parameters:**
+- `config`: Cache configuration with memory limits and eviction policy
+
+**Example:**
+```kotlin
+ContextBank.configureCachePolicy(
+    CacheConfig(
+        maxMemoryBytes = 50 * 1024 * 1024,  // 50MB
+        maxEntries = 100,
+        evictionPolicy = EvictionPolicy.LRU
+    )
+)
+```
+
+**Eviction Policies:**
+- `EvictionPolicy.LRU` - Least Recently Used (default)
+- `EvictionPolicy.LFU` - Least Frequently Used
+- `EvictionPolicy.FIFO` - First In First Out
+- `EvictionPolicy.MANUAL` - No automatic eviction
+
+#### `getCacheStatistics(): CacheStatistics`
+Returns current cache statistics.
+
+**Returns:** `CacheStatistics` with:
+- `memoryEntries`: Number of entries in memory
+- `diskOnlyEntries`: Number of disk-only entries
+- `totalMemoryBytes`: Total memory usage
+- `cacheHitRate`: Cache hit rate (0.0 to 1.0)
+
+**Example:**
+```kotlin
+val stats = ContextBank.getCacheStatistics()
+println("Memory entries: ${stats.memoryEntries}")
+println("Cache hit rate: ${stats.cacheHitRate}")
+```
+
+#### `clearCache()`
+Clears all DISK_WITH_CACHE entries from memory.
+
+**Behavior:** Only removes cached entries, does not affect MEMORY_ONLY or MEMORY_AND_DISK entries.
+
+---
+
+### Bank Management
 
 ---
 
@@ -247,3 +394,50 @@ As a singleton, ContextBank maintains global state across the entire TPipe syste
 - **Cross-Pipeline Context**: Multiple pipelines can share context
 - **Persistent Context**: Context survives individual pipe/pipeline execution
 - **Centralized Management**: Single point of control for all global context
+
+### Storage Mode System
+ContextBank supports four storage modes for fine-grained memory and disk management:
+
+**MEMORY_ONLY:**
+- Fastest access, no disk I/O
+- Data lost on application restart
+- Use for temporary or frequently accessed data
+
+**MEMORY_AND_DISK (Default):**
+- Fast access with persistence
+- Backward compatible with existing code
+- Use for important data needing both speed and durability
+
+**DISK_ONLY:**
+- Most memory efficient
+- Loads from disk on every access without caching
+- Use for large, infrequently accessed contexts
+
+**DISK_WITH_CACHE:**
+- Balanced approach with automatic eviction
+- Configurable cache policies (LRU/LFU/FIFO)
+- Use for large datasets where hot data should be cached
+
+**Example Usage:**
+```kotlin
+// Configure cache for memory-constrained environment
+ContextBank.configureCachePolicy(
+    CacheConfig(
+        maxMemoryBytes = 50 * 1024 * 1024,
+        maxEntries = 100,
+        evictionPolicy = EvictionPolicy.LRU
+    )
+)
+
+// Store large context to disk only
+val largeContext = ContextWindow()
+// ... populate ...
+ContextBank.emplace("large-data", largeContext, StorageMode.DISK_ONLY)
+
+// Access when needed (loads from disk)
+val loaded = ContextBank.getContextFromBank("large-data")
+
+// Monitor cache performance
+val stats = ContextBank.getCacheStatistics()
+println("Cache hit rate: ${stats.cacheHitRate}")
+```
