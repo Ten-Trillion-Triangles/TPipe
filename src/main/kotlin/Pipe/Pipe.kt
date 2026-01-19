@@ -4509,7 +4509,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 }
 
                 //Default to standard context window if multiple keys are not present.
-                if(pageKeyList.isEmpty())
+                if(pageKeyList.isEmpty() && miniContextBank.isEmpty())
                 {
                     fullPrompt = "${fullPrompt}\n\n${serialize(contextWindow)}"
                 }
