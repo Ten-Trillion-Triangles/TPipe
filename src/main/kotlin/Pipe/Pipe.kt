@@ -1630,7 +1630,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun requireJsonPromptInjection(stripExternalText: Boolean = false): Pipe
     {
         this.supportsNativeJson = false
-        stripNonJson = true
+        stripNonJson = stripExternalText
         return this
     }
 
