@@ -110,7 +110,7 @@ sealed class BinaryContent {
  * video, or other binary data.
  */
 @Serializable
-class MultimodalContent(
+data class MultimodalContent(
     var text: String = "",
     var binaryContent: MutableList<BinaryContent> = mutableListOf(),
     var terminatePipeline: Boolean = false,

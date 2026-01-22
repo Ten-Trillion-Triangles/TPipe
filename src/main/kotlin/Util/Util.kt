@@ -18,6 +18,7 @@ import kotlin.reflect.KMutableProperty1
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.memberProperties
 import kotlin.reflect.full.primaryConstructor
+import kotlin.reflect.jvm.isAccessible
 
 enum class LineEnding {
     Unix,
@@ -518,6 +519,7 @@ fun deepCopyInternal(obj: Any?, kClass: KClass<*>): Any?
                 val property = kClass.memberProperties.find { it.name == param.name } as? KProperty1<Any, *>
                     ?: throw IllegalArgumentException("Property ${param.name} not found")
                 
+                property.isAccessible = true
                 val value = property.get(obj)
                 deepCopyInternal(value, param.type.classifier as? KClass<*> ?: Any::class)
             }
@@ -530,6 +532,7 @@ fun deepCopyInternal(obj: Any?, kClass: KClass<*>): Any?
                 .filterIsInstance<KMutableProperty1<Any, Any?>>()
                 .filter { it.name !in constructorParamNames }
                 .forEach { property ->
+                    property.isAccessible = true
                     val value = property.get(obj)
                     val copiedValue = deepCopyInternal(value, property.returnType.classifier as? KClass<*> ?: Any::class)
                     property.set(newInstance, copiedValue)

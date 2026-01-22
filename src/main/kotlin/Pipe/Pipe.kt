@@ -841,6 +841,16 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     var preInvokeFunction: (suspend (content: MultimodalContent) -> Boolean)? = null
 
     /**
+     * Post-generate function that is called exactly after the llm call has ran to generate content.
+     * Allows for immediate action to be taken by the developer prior to the execution of any DITL validator
+     * functions or pipes. This is especially useful for caching output in complex validator pipe/function
+     * setups where the text output may be changed by the validation step before moving forward to any kind
+     * of branch failure states.
+     */
+    @kotlinx.serialization.Transient
+    var postGenerateFunction: (suspend (content: MultimodalContent) -> Unit)? = null
+
+    /**
      * Optional function to validate the output of the AI model. If the function returns true, the pipeline
      * will continue to the next pipe. If the function returns false, the pipeline will exit here.
      */
@@ -3063,7 +3073,15 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         return this
     }
 
-
+    /**
+     * Sets the post generation function that is called immediately after the llm has generated an output.
+     * @see [postGenerateFunction]
+     */
+    fun setPostGenerateFunction(func: suspend (content: MultimodalContent) -> Unit) : Pipe
+    {
+        postGenerateFunction = func
+        return this
+    }
     
     /**
      * Legacy transformation function for backward compatibility with string-based transformation.
@@ -4634,6 +4652,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 exceptionFunction?.invoke(processedContent, e)
             }
 
+
+            //Execute post-generation function if provided to allow us to immediately operate on this before validation.
+            postGenerateFunction?.invoke(generatedContent).also {
+                trace(TraceEventType.POST_GENERATE, TracePhase.VALIDATION,
+                    metadata = mapOf("generatedContent" to generatedContent))
+            }
+
             generatedContent.currentPipe = inputContent.currentPipe //Prevent nullptr leakage.
             generatedContent.metadata = inputContent.metadata //Copy to prevent leakage after llm call.
 
@@ -4692,12 +4717,16 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.VALIDATION)
                 try {
                     validatorPipe!!.init()
-                    if (tracingEnabled) {
+
+                    if (tracingEnabled)
+                    {
                         propagateTracingRecursively()
                     }
+
                     val validatorPipeResult : Deferred<MultimodalContent> = async {
                         validatorPipe?.execute(generatedContent) ?: MultimodalContent()
                     }
+
                     validatorPipeContent = validatorPipeResult.await()
                     validatorPipeContent.currentPipe = inputContent.currentPipe //Avoid nullptr leakage.
                     validatorPipeContent.metadata = generatedContent.metadata //Copy to avoid leakage after llm call.
@@ -4801,11 +4830,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                               metadata = mapOf("outputText" to if (isExecutingAsReasoningPipe) "" else finalResult.text))
                         return@coroutineScope embedContentIntoInternalConverse(finalResult).takeIf { wrapContentWithConverseHistory } ?: finalResult
                     }
+
                     else
                     {
                         trace(TraceEventType.VALIDATION_FAILURE, TracePhase.VALIDATION, generatedContent)
                     }
                 }
+
                 else
                 {
                     // No validation function, continue to transformation
@@ -4814,7 +4845,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.TRANSFORMATION)
                         try {
                             transformationPipe!!.init()
-                            if (tracingEnabled) {
+
+                            if (tracingEnabled)
+                            {
                                 propagateTracingRecursively()
                             }
                             val transformPipeResult : Deferred<MultimodalContent> = async {
@@ -4991,7 +5024,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         val reasoningBudget = tokenBudgetSettings?.reasoningBudget ?: 0 //Declare our budget. 0 is unlimited.
         var budgetPerRound = 0 //Divided by reasoningBudget / number of reasoning rounds.
         var rounds = pipeMetadata["reasoningRounds"] as? Int //Get now. We'll need this many times forward alas.
-        if(rounds == null) rounds = 1 //Define to adress behavior of Any to Any maps in kotlin. We can't be less than 1.
+        if(rounds == null) rounds = 1 //Define to address behavior of Any to Any maps in kotlin. We can't be less than 1.
 
         //Define budget if applicable. Otherwise, set to 0 and treat as unlimited.
         if(reasoningBudget > 0)
@@ -5181,7 +5214,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     //Not using converse. Just append and emplace back.
                     else
                     {
-                        contentCopy.text = "${contentCopy.text} ${focusMessage}"
+                        contentCopy.text = "${contentCopy.text} $focusMessage"
                     }
                 }
             }

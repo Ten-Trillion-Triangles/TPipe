@@ -6,6 +6,7 @@
 - [Pre-Init Function](#pre-init-function)
 - [Pre-Validation Function](#pre-validation-function)
 - [Pre-Invoke Function](#pre-invoke-function)
+- [Post-Generate Function](#post-generate-function)
 - [Validator Function](#validator-function)
 - [On-Failure Function](#on-failure-function)
 - [Transformation Function - The Most Critical DITL Function](#transformation-function---the-most-critical-ditl-function)
@@ -16,19 +17,20 @@ TPipe provides sophisticated developer-in-the-loop (DITL) capabilities through a
 
 ## Overview of DITL Functions
 
-TPipe offers six key intervention points during pipe execution:
+TPipe offers seven key intervention points during pipe execution:
 
 1. **Pre-Init Function**: Execute before any processing begins
 2. **Pre-Validation Function**: Modify context after it's loaded but before AI call
 3. **Pre-Invoke Function**: Final check before making the AI API call
-4. **Transformation Function**: **Most Critical** - Transform AI output after generation
+4. **Post-Generate Function**: Immediate action after AI generates content, before validation
 5. **Validator Function**: Validate AI output and control pipeline flow
-6. **On-Failure Function**: Handle errors and provide recovery logic
+6. **Transformation Function**: **Most Critical** - Transform AI output after validation
+7. **On-Failure Function**: Handle errors and provide recovery logic
 
 ## Execution Order
 
 ```
-Input → Pre-Init → Context Loading → Pre-Validation → Pre-Invoke → AI Call → Transformation → Validator → On-Failure (if needed) → Output
+Input → Pre-Init → Context Loading → Pre-Validation → Pre-Invoke → AI Call → Post-Generate → Validator → Transformation → On-Failure (if needed) → Output
 ```
 
 
@@ -91,6 +93,48 @@ pipe.setPreInvokeFunction { content ->
     }
     
     false  // Continue with AI call
+}
+```
+
+## Post-Generate Function
+
+**What it does**: Executes immediately after the AI generates content, before any validation or transformation occurs. This is your first opportunity to capture or act on the raw AI output before it's processed by validation logic.
+
+**When to use**: Caching raw AI output, logging generated content for debugging, capturing output before validation steps that might modify it, or performing immediate actions based on AI response.
+
+```kotlin
+pipe.setPostGenerateFunction { content ->
+    // Cache the raw AI output before validation modifies it
+    val cacheKey = content.metadata["input_hash"] ?: ""
+    if (cacheKey.isNotEmpty()) {
+        outputCache.put(cacheKey, content.text)
+    }
+    
+    // Log raw output for debugging
+    logger.debug("Raw AI output: ${content.text.take(100)}...")
+    
+    // Track generation metrics
+    content.metadata["generation_timestamp"] = System.currentTimeMillis().toString()
+}
+```
+
+**Advanced usage with complex validation**:
+```kotlin
+pipe.setPostGenerateFunction { content ->
+    // Save original output before validator pipes modify it
+    content.metadata["original_output"] = content.text
+    
+    // Useful when validator pipes transform content and you need
+    // to preserve the original for comparison or fallback
+}
+.setValidatorPipe(complexValidatorPipe)
+.setValidatorFunction { content ->
+    // Can compare modified vs original
+    val original = content.metadata["original_output"] ?: ""
+    val modified = content.text
+    
+    // Validation logic here
+    validateContent(modified)
 }
 ```
 

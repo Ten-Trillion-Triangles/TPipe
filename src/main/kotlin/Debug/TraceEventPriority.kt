@@ -43,6 +43,7 @@ object EventPriorityMapper {
             TraceEventType.SPLITTER_PIPELINE_COMPLETION -> TraceEventPriority.STANDARD
             
             // Existing DETAILED events
+            TraceEventType.POST_GENERATE,
             TraceEventType.VALIDATION_START,
             TraceEventType.VALIDATION_SUCCESS,
             TraceEventType.VALIDATION_FAILURE,

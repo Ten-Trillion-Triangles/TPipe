@@ -93,6 +93,12 @@ var preInvokeFunction: (suspend (MultimodalContent) -> Boolean)? = null
 ```
 Determines if pipe should be skipped. Returns `true` to skip, `false` to continue.
 
+**`postGenerateFunction`**
+```kotlin
+var postGenerateFunction: (suspend (MultimodalContent) -> Unit)? = null
+```
+Called immediately after AI generates content, before validation. Useful for caching or logging raw output.
+
 **`exceptionFunction`**
 ```kotlin
 var exceptionFunction: (suspend (MultimodalContent, Throwable) -> Unit)? = null
@@ -628,6 +634,11 @@ Sets function for MiniBank context adjustment.
 Sets function to determine if pipe should be skipped.
 
 **Behavior:** Called just before AI invocation. If returns true, pipe execution is skipped entirely and content passes through unchanged. Useful for conditional logic.
+
+#### `setPostGenerateFunction(func: suspend (MultimodalContent) -> Unit): Pipe`
+Sets function to execute immediately after AI generates content.
+
+**Behavior:** Called right after AI generation, before any validation or transformation. Useful for caching raw output, logging, or capturing content before validation steps modify it.
 
 #### `setOnFailure(func: suspend (MultimodalContent, MultimodalContent) -> MultimodalContent): Pipe`
 Sets function to handle validation failures.
