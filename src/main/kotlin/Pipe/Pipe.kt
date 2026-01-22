@@ -4652,6 +4652,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 exceptionFunction?.invoke(processedContent, e)
             }
 
+            /**
+             * LLM generated context objects do not contain the pipe bound to it. So unlike the other passees
+             * we need to re-bind it once more.
+             */
+            generatedContent.currentPipe = this@Pipe
 
             //Execute post-generation function if provided to allow us to immediately operate on this before validation.
             postGenerateFunction?.invoke(generatedContent).also {
