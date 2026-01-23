@@ -35,7 +35,6 @@ import com.TTT.Util.extractAllJsonObjects
 import com.TTT.Util.extractNonJsonText
 import com.TTT.Util.removeFromFirstOccurrence
 import com.TTT.Util.serialize
-import io.netty.channel.DefaultMessageSizeEstimator
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -271,7 +270,7 @@ fun TokenBudgetSettings.toTruncationSettings(pipe: Pipe? = null): TruncationSett
 //============================================Const Vars================================================================
 
 var IS_VALIDATOR_PIPE = "isValidatorPipe"
-var SAVE_SNAPSHOT_AS_PAGE_KEY = "validatorPipeUserPromptSnapshotTPipe"
+var USER_PROMPT_SNAPSHOT = "validatorPipeUserPromptSnapshotTPipe"
 
 //===========================================Main Class=================================================================
 
@@ -990,6 +989,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     var injectTodoList = false
 
     /**
+     * If true, automatically cache the input of the pipe upon startup.
+     */
+    var cacheInput = false
+
+    /**
      * If true, the content will be wrapped into a converse history object if the input content was found to be already
      * in the form of a converse history object. This is useful for automating multiple pipes inside a pipeline that
      * need to use converse history objects as input. If a pipe does use converse History as the output the automatic
@@ -1508,6 +1512,42 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setMultimodalInput(content: MultimodalContent): Pipe {
         this.multimodalInput = content
         return this
+    }
+
+    /**
+     * Cache the input of this pipe upon kicking off [executeMultimodal]. The cached data can be then pulled
+     * by calling [getCachedInput].
+     */
+    fun cacheInput() : Pipe
+    {
+        cacheInput = true
+        return this
+    }
+
+    /**
+     * Function to immediately cache and snapshot a content object right now. Can be invoked even at runtime
+     * or prior to execution. Data can then be read from [getCachedInput] at any time after using this or
+     * at runtime if [cacheInput] was set.
+     */
+    fun forceCacheInput(content: MultimodalContent) : Pipe
+    {
+        pipeMetadata[USER_PROMPT_SNAPSHOT] = content.deepCopy()
+        return this
+    }
+
+    /**
+     * Read the cached input of this pipe if stored by automatic caching.
+     */
+    fun getCachedInput() : MultimodalContent
+    {
+        return try {
+            pipeMetadata[USER_PROMPT_SNAPSHOT] as MultimodalContent
+        }
+
+        catch(e: Exception) {
+            MultimodalContent()
+        }
+
     }
 
 
@@ -3140,88 +3180,6 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     {
         this.validatorPipe = pipe
         pipe.setParentPipe(this)
-        pipe.apply {
-
-            if(preInitFunction == null && transformationFunction == null)
-            {
-                /**
-                 * Auto-save snapshots to adhere to expected developer behavior. Validation functions don't replace the
-                 * content object so we would not be expecting the validator pipe to do the same.
-                 */
-                if(preInitFunction == null)
-                {
-                    setPreInitFunction {
-                        it.saveSnapshot()
-                    }
-                }
-
-
-                /**
-                 * Auto restore the snapshot so that the expected behavior complies. This way the developer can follow
-                 * the logical and naturally expected flow of: setup pipe -> program validator function -> fail validator
-                 * function if invalid -> parent pipe picks up on this and proceeds to handle it as intended. But if we pass
-                 * the validator function: restore snapshot -> exit back -> parent now sees the expected unmodified result
-                 * it produced adhering to the behavior of validator functions.
-                 */
-                if(transformationFunction == null)
-                {
-                    setTransformationFunction {
-                        var newSnapshot = it.getSnapshot() ?: miniContextBank.contextMap[SAVE_SNAPSHOT_AS_PAGE_KEY] ?: ""
-
-                        /**
-                         * If this was found as context we need to turn it back to content, then attempt to rebind it
-                         * to our target return var. If we cannot, but this was a string, we'll need to throw instead.
-                         */
-                        if(newSnapshot is String)
-                        {
-                            val asContent = deserialize<MultimodalContent>(newSnapshot)
-                            newSnapshot = asContent ?: MultimodalContent().apply {
-                                if(isEmpty())
-                                {
-                                    throw Exception("Unable to restore snapshot from validator pipe. " +
-                                            "It was neither stored as snapshot, or context, and we could not " +
-                                            "deserialize it back to content. @$pipeName")
-                                }
-                            }
-                        }
-
-                        /**
-                         * If the if statement is skipped, we pulled correctly. In either case to reach here
-                         * this has to be content so as without ? is safe.
-                         */
-                        return@setTransformationFunction newSnapshot as MultimodalContent
-                    }
-                }
-
-                //Bind metadata to track this later during init() so that we can throw if there's no validator function.
-                pipeMetadata[IS_VALIDATOR_PIPE] = true
-            }
-
-            /**
-             * If true, serialize the snapshot and save it to the internal mini-bank of this pipe.
-             * The default transformation provided allows us to restore the snapshot even if it's in context form.
-             * This also allows us to safely wipe clean the snapshot data to keep memory costs under control.
-             */
-            if(saveSnapshotAsPageKey)
-            {
-                setPreValidationMiniBankFunction { context, content ->
-                    val snapshot = content?.getSnapshot() ?: return@setPreValidationMiniBankFunction context
-                    val userPromptAsString = serialize(content)
-
-                    val newContextWindow = ContextWindow().apply {
-                        contextElements.add(userPromptAsString)
-                    }
-
-                    context.contextMap[SAVE_SNAPSHOT_AS_PAGE_KEY] = newContextWindow
-                    content.deleteSnapshot() //Free up the memory so we haven't tripled the user prompt.
-
-                    //If applied this is automatically also marked as a validatorPipe.
-                   pipeMetadata[IS_VALIDATOR_PIPE] = true
-                   return@setPreValidationMiniBankFunction context
-                }
-            }
-
-        }
         return this
     }
 
@@ -3606,34 +3564,6 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          transformationPipe?.pipelineRef = pipelineRef
          reasoningPipe?.init()
          reasoningPipe?.pipelineRef = pipelineRef
-
-         /**
-          * Undefined behavior will occur if no validator function has been assigned. In that event we need to respond
-          * by throwing. The coder would generally expect that the pipe would validate pass/fail. However, if there is
-          * no validation function, the validator pipe would effectively just waste tokens. Even when configured
-          * correctly to not stomp the original work in progress. As such, throwing here is our best means of
-          * alerting the user to the issue.
-          *
-          * Likewise, a missing transformation function can and will replace the content object causing undefined
-          * behavior and destructive damage to the pipeline. If the coder does not define other validators and safety
-          * checks expecting this to work as advertised, this footgun will also trash their pipeline and cause damage
-          * to their application at large. As such, we need to throw here as well.
-          */
-         val validatorPipeFlag = pipeMetadata["isValidatorPipe"] ?: false
-         if(validatorPipeFlag as Boolean)
-         {
-             if(validatorFunction == null)
-             {
-                 throw Exception("Validator pipes must have a valid validator function. For more details on this error: " +
-                         "Examine human-in-the-loop-pipes.md")
-             }
-
-             if(transformationFunction == null)
-             {
-                 throw Exception("Validator pipes must have a valid transformation function. For more details on this error: " +
-                         "Examine human-in-the-loop-pipes.md")
-             }
-         }
 
          //Force name the pipe for sanity when debugging issues of nested reasoning.
          if(isReasoningPipe())
@@ -4267,6 +4197,15 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         if(inputContent.useSnapshot)
         {
             inputContent.metadata["snapshot"] = inputContent.deepCopy() as Any
+        }
+
+        /**
+         * Allows for caching and snapshotting directly to the metadata of this pipe. Which can simplify
+         * retrival of saved user prompts if we want to autosave this data.
+         */
+        if(cacheInput)
+        {
+            pipeMetadata[USER_PROMPT_SNAPSHOT] = inputContent.deepCopy()
         }
 
         //Get rid of model reasoning to prevent messed up token counts later.

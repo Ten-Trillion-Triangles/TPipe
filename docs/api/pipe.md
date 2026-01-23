@@ -38,12 +38,10 @@ The Pipe class defines constants for metadata keys to ensure consistent access:
 
 ```kotlin
 var IS_VALIDATOR_PIPE = "isValidatorPipe"
-var SAVE_SNAPSHOT_AS_PAGE_KEY = "validatorPipeUserPromptSnapshotTPipe"
 ```
 
 **Usage:**
 - `IS_VALIDATOR_PIPE`: Metadata key to identify validator pipes
-- `SAVE_SNAPSHOT_AS_PAGE_KEY`: Context key for memory-efficient snapshot storage in validator pipes
 
 ## Public Properties
 
@@ -669,20 +667,15 @@ pipe.setExceptionFunction { content, exception ->
 
 ### Pipe Chaining
 
-#### `setValidatorPipe(pipe: Pipe, saveSnapshotAsPageKey: Boolean = false): Pipe`
-Sets pipe to validate output instead of validator function.
+#### `setValidatorPipe(pipe: Pipe): Pipe`
+Sets pipe to validate output using AI-based analysis.
 
 **Parameters:**
 - `pipe`: The validator pipe to use for validation
-- `saveSnapshotAsPageKey`: If true, saves snapshots to MiniBank context instead of memory for better memory management
 
-**Behavior:** Validator pipe is executed with the AI output. If validator pipe's output contains validation failure indicators, triggers failure handling. Takes precedence over `validatorFunction`.
+**Behavior:** Validator pipe is executed with the AI-generated output. The validator pipe's output is checked for termination status only - the actual content output is discarded. The original generated content flows to `validatorFunction` and all downstream operations. This allows AI-based validation analysis without modifying the content that continues through the pipeline.
 
-**Memory Management:** When `saveSnapshotAsPageKey = true`, automatically:
-- Sets up `preValidationMiniBankFunction` to serialize and store snapshots in context using key `SAVE_SNAPSHOT_AS_PAGE_KEY`
-- Calls `deleteSnapshot()` to free memory after context storage
-- Enhances transformation function to restore snapshots from either memory or context
-- Provides automatic fallback between snapshot sources for robust restoration
+**Important:** The validator pipe's text output and modifications are not passed forward. Only its termination flag (`shouldTerminate()`) is respected.
 
 #### `setTransformationPipe(pipe: Pipe): Pipe`
 Sets pipe to transform output instead of transformation function.

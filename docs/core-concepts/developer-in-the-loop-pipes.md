@@ -27,26 +27,18 @@ These pipes are invoked automatically when their corresponding functions are not
 ### Purpose
 Uses an AI model to validate the output of the main pipe when validation logic is too complex for code or requires subjective judgment.
 
-### ⚠️ Critical Setup Requirements
+### ⚠️ Important: Validator Pipe Output Behavior
 
-**Validator pipes have strict setup requirements that must be followed to prevent undefined behavior:**
+**Validator pipes generate AI output for validation analysis, but this output is discarded by the parent pipe.** The validator pipe's output is only checked for termination status (`shouldTerminate()`). All subsequent operations (validatorFunction, transformationPipe, branchPipe) receive the original generated content from the main pipe, not the validator pipe's output.
 
-1. **ValidatorFunction Required**: You MUST supply a `validatorFunction` when using `setValidatorPipe()`. TPipe will throw an exception during initialization if this is missing.
-
-2. **TransformationFunction Required**: You MUST supply a `transformationFunction` when using validator pipes. TPipe will throw an exception during initialization if this is missing.
-
-3. **Automatic Default Behavior**: TPipe automatically assigns `preInitFunction` and `transformationFunction` ONLY when both are null. If you've set either function, TPipe assumes you want full control and won't auto-assign defaults.
-
-### Why These Requirements Exist
-
-- **ValidatorFunction Required**: The validator pipe generates AI output, but without a `validatorFunction` to evaluate that output, there's no actual validation occurring. The pipe would consume tokens to generate content, then have no way to determine if the original content should pass or fail validation. This creates a broken validation chain where content always appears to "pass" regardless of quality, leading to undefined pipeline behavior.
-
-- **TransformationFunction Required**: Validator pipes return `MultimodalContent` that completely replaces the original generated content. Without a `transformationFunction` to restore the original content when validation passes, the validator pipe's AI-generated output becomes the final result instead of your original content. This destructively overwrites your pipeline's intended output, potentially replacing carefully crafted content with validation messages or analysis text.
-
-- **Conditional Auto-Assignment**: TPipe only auto-assigns the snapshot save/restore functions when BOTH `preInitFunction` AND `transformationFunction` are null. This ensures that if you've customized either function, TPipe respects your implementation completely and doesn't interfere. The auto-assignment provides safe defaults (save snapshot before validation, restore snapshot after validation) only for users who haven't implemented custom behavior.
+This means:
+- The validator pipe performs AI-based analysis of the content
+- The validator pipe can signal termination if critical issues are found
+- The validator pipe's text output and modifications are not passed forward
+- The original generated content flows to validatorFunction and downstream operations
 
 ### When to Use
-- Complex content quality assessment
+- Complex content quality assessment requiring AI analysis
 - Subjective validation (tone, style, appropriateness)
 - Multi-criteria validation that's hard to code
 - Domain-specific validation requiring expertise
@@ -67,15 +59,21 @@ val validatorPipe = BedrockPipe()
 
 val mainPipe = BedrockPipe()
     .setSystemPrompt("Generate helpful content based on user input.")
-    .setValidatorPipe(validatorPipe)  // AI validates instead of code
+    .setValidatorPipe(validatorPipe)
+    .setValidatorFunction { content ->
+        // Receives ORIGINAL generated content, not validator pipe output
+        // Implement your validation logic here
+        content.text.length > 50
+    }
 ```
 
 **Execution flow**:
 1. Main pipe generates content
-2. Validator pipe receives the generated content
-3. Validator pipe returns validation result
-4. If validation passes, continue pipeline
-5. If validation fails, trigger branch pipe or failure handling
+2. Validator pipe receives and analyzes the generated content
+3. Validator pipe output is checked for termination only
+4. ValidatorFunction receives the ORIGINAL generated content
+5. If validation passes, continue pipeline
+6. If validation fails, trigger branch pipe or failure handling
 
 ### Advanced Validator Pipe
 ```kotlin
@@ -99,48 +97,12 @@ val publishingPipe = BedrockPipe()
     .setSystemPrompt("Create publication-ready content.")
     .setValidatorPipe(contentValidator)
     .setValidatorFunction { content ->
-        // Parse AI validation result
+        // Parse AI validation result from validator pipe
+        // Note: content here is the ORIGINAL generated content
         val validation = Json.decodeFromString<ValidationResult>(content.text)
         validation.valid && validation.score >= 80
     }
 ```
-
-### Memory-Efficient Validator Pipes
-
-For memory-intensive applications, validator pipes can store snapshots in context instead of memory:
-
-```kotlin
-val memoryEfficientPipe = BedrockPipe()
-    .setSystemPrompt("Generate content that requires validation.")
-    .setValidatorPipe(
-        validatorPipe = BedrockPipe()
-            .setSystemPrompt("Validate content quality and accuracy."),
-        saveSnapshotAsPageKey = true  // Store snapshots in context, not memory
-    )
-    .setValidatorFunction { content ->
-        // Validation logic here
-        validateContent(content.text)
-    }
-    .setTransformationFunction { content ->
-        // Transformation automatically handles snapshot restoration
-        // from either memory or context storage
-        processContent(content)
-    }
-```
-
-**Memory Management Benefits:**
-- **Reduced Memory Usage**: Snapshots stored in MiniBank context using `SAVE_SNAPSHOT_AS_PAGE_KEY` constant
-- **Automatic Cleanup**: Calls `deleteSnapshot()` after context storage to free memory
-- **Robust Restoration**: Enhanced transformation function tries multiple snapshot sources:
-  1. `getSnapshot()` (memory-based)
-  2. `miniContextBank.contextMap[SAVE_SNAPSHOT_AS_PAGE_KEY]` (context-based)
-- **Error Handling**: Throws descriptive exceptions if snapshot restoration fails
-
-**When to Use:**
-- Large content processing with memory constraints
-- Long-running pipelines that accumulate snapshots
-- Applications requiring memory optimization
-- Validator pipes in resource-limited environments
 
 ## Transformation Pipe
 
@@ -355,37 +317,24 @@ val creativeWritingPipe = BedrockPipe()
 // Correct: Always provide both required functions
 val properValidatorPipe = BedrockPipe()
     .setSystemPrompt("Validate content quality and accuracy.")
-    .setValidatorPipe(validationAI)
+## Best Practices
+
+### 1. Validator Pipe Usage
+```kotlin
+// Validator pipe for AI-based validation analysis
+val validatorPipe = BedrockPipe()
+    .setSystemPrompt("Validate content quality and accuracy.")
+
+val properPipe = BedrockPipe()
+    .setValidatorPipe(validatorPipe)
     .setValidatorFunction { content ->
-        // Your validation logic here
+        // Receives original generated content
+        // Implement validation logic here
         content.text.contains("VALID")
     }
-    .setTransformationFunction { content ->
-        // Restore or modify content as needed
-        content
-    }
-
-// Incorrect: Missing required functions - will throw exceptions
-val brokenPipe = BedrockPipe()
-    .setValidatorPipe(validationAI)  // Missing validatorFunction and transformationFunction
 ```
 
-### 2. Understanding Auto-Assignment
-```kotlin
-// Auto-assignment occurs: Both functions are null
-val autoAssignedPipe = BedrockPipe()
-    .setValidatorPipe(validationAI)
-    // TPipe automatically assigns snapshot save/restore functions
-
-// No auto-assignment: One or both functions are set
-val customPipe = BedrockPipe()
-    .setValidatorPipe(validationAI)
-    .setValidatorFunction { content -> validateContent(content) }
-    // Must also set transformationFunction manually
-    .setTransformationFunction { content -> content }
-```
-
-### 3. Clear Pipe Purposes
+### 2. Clear Pipe Purposes
 ```kotlin
 // Good: Specific, focused pipe responsibilities
 val grammarValidator = BedrockPipe()
@@ -399,7 +348,7 @@ val genericPipe = BedrockPipe()
     .setSystemPrompt("Fix everything that's wrong.")
 ```
 
-### 4. Appropriate Model Selection
+### 3. Appropriate Model Selection
 ```kotlin
 // Use appropriate models for different pipe types
 val validatorPipe = BedrockPipe()
@@ -409,7 +358,7 @@ val transformerPipe = BedrockPipe()
     .setModel("claude-3-haiku")  // Fast for simple transformations
 ```
 
-### 5. Error Handling
+### 4. Error Handling
 ```kotlin
 // Always provide fallbacks for DITL pipes
 val robustPipe = BedrockPipe()
@@ -423,7 +372,7 @@ val robustPipe = BedrockPipe()
     }
 ```
 
-### 6. Context Sharing
+### 5. Context Sharing
 ```kotlin
 // Share context between DITL pipes
 val contextAwarePipe = BedrockPipe()
