@@ -41,11 +41,11 @@ class SimpleExtractJsonTest {
         assertNotNull(extracted, "extractJson should not return null")
         assertEquals(1, extracted!!.loreBookKeys.size)
         assertEquals("shadow entity", extracted.loreBookKeys["shadow_entity"]?.key)
-        assertEquals(8000, extracted.contextSize)
+
         
         println("✅ SUCCESS: extractJson<ContextWindow> works correctly!")
         println("   - Extracted ${extracted.loreBookKeys.size} lorebook entries")
-        println("   - Context size: ${extracted.contextSize}")
+
         println("   - First key: ${extracted.loreBookKeys.values.first().key}")
     }
     
@@ -54,7 +54,7 @@ class SimpleExtractJsonTest {
         // Test that deserialize creates object with default values when JSON fields don't match
         val result = deserialize<ContextWindow>("""{"userId": 123, "email": "test@example.com", "productId": "abc"}""")
         assertNotNull(result, "Should create ContextWindow with default values even with unrelated JSON")
-        assertEquals(8000, result?.contextSize, "Should use default contextSize when not provided in JSON")
+        //assertEquals(8000, result?.contextSize, "Should use default contextSize when not provided in JSON")
         
         println("✅ SUCCESS: deserialize correctly handles unrelated JSON types with defaults")
     }
@@ -64,7 +64,7 @@ class SimpleExtractJsonTest {
         // Test that deserialize works when JSON has fields that match the target type
         val result = deserialize<ContextWindow>("""{"contextSize": 5000}""")
         assertNotNull(result, "Should create ContextWindow when JSON has matching fields")
-        assertEquals(5000, result?.contextSize)
+        //assertEquals(5000, result?.contextSize)
         
         println("✅ SUCCESS: deserialize works with matching field structures")
     }

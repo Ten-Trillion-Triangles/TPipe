@@ -35,13 +35,7 @@ data class ContextWindow(
     @kotlinx.serialization.Serializable
     var converseHistory = ConverseHistory() //todo: Add lorebook selection support to this asap!
 
-    /**
-     * Max token size of the context window. This default will be overridden by whatever value the Pipe class
-     * or child class of Pipe has set.
-     * @see Pipe
-     */
-    @kotlinx.serialization.Serializable
-    var contextSize = 8000
+
 
     /**
      * Transient metadata that we can use to store various system settings and metadata. This is commonly used

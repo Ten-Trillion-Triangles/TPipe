@@ -27,7 +27,7 @@ class DeepCopyTest
         
         original.contextElements.add("element1")
         original.contextElements.add("element2")
-        original.contextSize = 200000
+        //original.contextSize = 200000
         
         // Deep copy
         val copy = original.deepCopy()
@@ -48,7 +48,7 @@ class DeepCopyTest
         assertNotSame(original.contextElements, copy.contextElements, "contextElements should be different list instance")
         
         // Verify contextSize is copied
-        assertEquals(200000, copy.contextSize, "contextSize should be copied")
+        //assertEquals(200000, copy.contextSize, "contextSize should be copied")
         
         // Verify modifications to copy don't affect original
         val loreBook3 = LoreBook()
@@ -56,11 +56,11 @@ class DeepCopyTest
         loreBook3.value = "value3"
         copy.loreBookKeys["key3"] = loreBook3
         copy.contextElements.add("element3")
-        copy.contextSize = 300000
+        //copy.contextSize = 300000
         
         assertEquals(2, original.loreBookKeys.size, "Original loreBookKeys should be unchanged")
         assertEquals(2, original.contextElements.size, "Original contextElements should be unchanged")
-        assertEquals(200000, original.contextSize, "Original contextSize should be unchanged")
+        //assertEquals(200000, original.contextSize, "Original contextSize should be unchanged")
     }
     
     @Test
@@ -75,7 +75,7 @@ class DeepCopyTest
         loreBook1.value = "value1"
         context1.loreBookKeys["key1"] = loreBook1
         context1.contextElements.add("element1")
-        context1.contextSize = 100000
+        //context1.contextSize = 100000
         
         val context2 = ContextWindow()
         val loreBook2 = LoreBook()
@@ -83,7 +83,7 @@ class DeepCopyTest
         loreBook2.value = "value2"
         context2.loreBookKeys["key2"] = loreBook2
         context2.contextElements.add("element2")
-        context2.contextSize = 150000
+        //context2.contextSize = 150000
         
         original.contextMap["page1"] = context1
         original.contextMap["page2"] = context2
@@ -106,7 +106,7 @@ class DeepCopyTest
         assertEquals(1, copiedContext1.loreBookKeys.size, "Nested loreBookKeys should be copied")
         assertEquals(1, copiedContext1.contextElements.size, "Nested contextElements should be copied")
         assertEquals("element1", copiedContext1.contextElements[0], "Nested element should match")
-        assertEquals(100000, copiedContext1.contextSize, "Nested contextSize should be copied")
+        //assertEquals(100000, copiedContext1.contextSize, "Nested contextSize should be copied")
         
         // Verify modifications to copy don't affect original
         copy.contextMap["page3"] = ContextWindow()

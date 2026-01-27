@@ -45,6 +45,9 @@ Allow the keys to also be stored as stub files and loaded directly.~~
 - ~~Add automatic wrapping of pipeline inputs and outputs into [ConverseHistory] structure.~~
 - Add support for pipeline reflection allowing agents, containers, and P2PInterface objects to reflect on their
 state, settings, internal pipelines etc. and update and adjust them and their own internal context in real time.
+- Add support for Lorebook introspection to allow agents to inspect, parse, and query the lorebook in realtime using
+both standard semantic matching, as well as, advanced PCP tool calls for inspecting the lorebook and searching for
+data contained within it.
 - ~~Add delegate to report when a pipe has finished it's work in a pipeline.~~ 
 - Add native pcp support functions to allow various runtime support. Examples include querying TPipe memory data at
 runtime, Interacting with TPipe systems and settings, inspecting and registering pcp and p2p systems. This is a great
