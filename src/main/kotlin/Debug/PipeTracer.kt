@@ -2,9 +2,11 @@ package com.TTT.Debug
 
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections
 
 object PipeTracer {
-    private val traces = mutableMapOf<String, MutableList<TraceEvent>>()
+    private val traces = ConcurrentHashMap<String, MutableList<TraceEvent>>()
     private var isEnabled = false
     private var maxTraceHistory = 1000
     
@@ -18,27 +20,37 @@ object PipeTracer {
     
     fun startTrace(pipelineId: String) {
         if (!isEnabled) return
-        traces[pipelineId] = mutableListOf()
+        traces[pipelineId] = Collections.synchronizedList(mutableListOf())
     }
     
     fun addEvent(pipelineId: String, event: TraceEvent) {
         if (!isEnabled) return
         
-        val traceList = traces.getOrPut(pipelineId) { mutableListOf() }
-        traceList.add(event)
+        val traceList = traces.getOrPut(pipelineId) { Collections.synchronizedList(mutableListOf()) }
         
-        // Maintain max history limit
-        if (traceList.size > maxTraceHistory) {
-            traceList.removeAt(0)
+        synchronized(traceList) {
+            traceList.add(event)
+            
+            // Maintain max history limit
+            if (traceList.size > maxTraceHistory) {
+                traceList.removeAt(0)
+            }
         }
     }
     
     fun getTrace(pipelineId: String): List<TraceEvent> {
-        return traces[pipelineId] ?: emptyList()
+        val list = traces[pipelineId] ?: return emptyList()
+        synchronized(list) {
+            return list.toList()
+        }
     }
     
     fun getAllTraces(): Map<String, List<TraceEvent>> {
-        return traces.toMap()
+        return traces.mapValues { entry ->
+            synchronized(entry.value) {
+                entry.value.toList()
+            }
+        }
     }
     
     fun clearTrace(pipelineId: String) {
@@ -47,18 +59,22 @@ object PipeTracer {
     
     fun replaceTrace(pipelineId: String, events: List<TraceEvent>) {
         if (!isEnabled) return
-        traces[pipelineId] = events.toMutableList()
+        traces[pipelineId] = Collections.synchronizedList(events.toMutableList())
     }
     
     fun mergeTrace(pipelineId: String, newEvents: List<TraceEvent>) {
         if (!isEnabled) return
         
         val existingEvents = traces[pipelineId] ?: mutableListOf()
-        val allEvents = (existingEvents + newEvents)
-            .distinctBy { "${it.timestamp}-${it.pipeId}-${it.eventType}" }
-            .sortedBy { it.timestamp }
+        val allEvents: List<TraceEvent>
         
-        traces[pipelineId] = allEvents.toMutableList()
+        synchronized(existingEvents) {
+            allEvents = (existingEvents + newEvents)
+                .distinctBy { "${it.timestamp}-${it.pipeId}-${it.eventType}" }
+                .sortedBy { it.timestamp }
+        }
+        
+        traces[pipelineId] = Collections.synchronizedList(allEvents.toMutableList())
     }
     
     fun exportTrace(pipelineId: String, format: TraceFormat): String {
