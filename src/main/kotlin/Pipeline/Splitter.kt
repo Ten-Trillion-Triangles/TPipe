@@ -157,6 +157,31 @@ class Splitter: P2PInterface
     }
 
     /**
+     * Retrieves a list of all child pipelines managed by this splitter.
+     * This aggregates pipelines from all activation keys.
+     *
+     * @return List of all child [Pipeline] objects.
+     */
+    fun getAllChildPipelines(): List<Pipeline> {
+        return activatorKeys.values.flatMap { it.pipelines }
+    }
+
+    /**
+     * Retrieves a map of pipeline names to their trace IDs for all child pipelines.
+     * Useful for retrieving independent traces when [TraceConfig.mergeSplitterTraces] is false.
+     *
+     * @return Map where Key = Pipeline Name, Value = Trace ID
+     */
+    fun getChildTraceIds(): Map<String, String> {
+        return getAllChildPipelines().associate { pipeline ->
+            val name = if (pipeline.pipelineName.isNotEmpty()) pipeline.pipelineName else "UnknownPipeline-${pipeline.hashCode()}"
+            name to pipeline.getTraceId()
+        }
+    }
+
+
+
+    /**
      * Add pipeline to mapped key. Each pipeline can only exist once across all activation keys to prevent
      * duplicate execution. Multiple pipelines can be bound to the same key for parallel execution.
      *
@@ -451,14 +476,17 @@ class Splitter: P2PInterface
                 if(tracingEnabled)
                 {
                     pipeline.enableTracing(traceConfig)
-                    // Set splitter ID as additional trace ID - this makes events appear in BOTH traces
-                    for (pipe in pipeline.getPipes()) {
-                        pipe.addTraceId(splitterId)
-                        
-                        // Prefix pipe name with pipeline name for clarity in trace visualization
-                        val prefix = if (pipeline.pipelineName.isNotEmpty()) pipeline.pipelineName else it.key.toString()
-                        if (prefix.isNotEmpty() && !pipe.pipeName.startsWith("$prefix:")) {
-                            pipe.pipeName = "$prefix:${pipe.pipeName}"
+                    // Merge splitter traces if configured to do so
+                    if (traceConfig.mergeSplitterTraces) {
+                        // Set splitter ID as additional trace ID - this makes events appear in BOTH traces
+                        for (pipe in pipeline.getPipes()) {
+                            pipe.addTraceId(splitterId)
+                            
+                            // Prefix pipe name with pipeline name for clarity in trace visualization
+                            val prefix = if (pipeline.pipelineName.isNotEmpty()) pipeline.pipelineName else it.key.toString()
+                            if (prefix.isNotEmpty() && !pipe.pipeName.startsWith("$prefix:")) {
+                                pipe.pipeName = "$prefix:${pipe.pipeName}"
+                            }
                         }
                     }
                 }

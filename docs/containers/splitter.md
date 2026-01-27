@@ -59,6 +59,17 @@ fun enableTracing(config: TraceConfig = TraceConfig(enabled = true)): Splitter
 
 // Disable tracing
 fun disableTracing(): Splitter
+
+### Independent Tracing
+By default, enabling tracing on a Splitter merges all child pipeline traces into the Splitter's trace stream. You can configure independent tracing to keep child traces separate.
+
+```kotlin
+// Child pipelines will NOT broadcast events to the Splitter trace
+splitter.enableTracing(TraceConfig(
+    enabled = true,
+    mergeSplitterTraces = false 
+))
+```
 ```
 
 ## MultimodalCollection
@@ -141,6 +152,12 @@ override fun getPipelinesFromInterface(): List<Pipeline> {
     // Access through private activatorKeys map
     return activatorKeys.values.flatMap { it.pipelines }
 }
+
+// Helper: Get all child pipelines directly
+val pipelines = splitter.getAllChildPipelines()
+
+// Helper: Get trace IDs of all child pipelines (useful for independent tracing)
+val traceIds = splitter.getChildTraceIds()
 
 override suspend fun executeLocal(content: MultimodalContent): MultimodalContent {
     val jobs = executePipelines()

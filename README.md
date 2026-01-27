@@ -136,6 +136,7 @@ println(result.text)
 - **Chain-of-thought reasoning** with multiple strategies and focus points
 - **Multi-provider AI support** (AWS Bedrock, Ollama, extensible architecture)
 - **Comprehensive debugging** with detailed tracing and monitoring
+- **Multi-Stream and Independent Tracing** for parallel pipelines and complex orchestration
 - **Cross-region inference** with automatic profile binding for AWS Bedrock
 - **Service tier optimization** for AWS Bedrock (Reserved, Priority, Standard, Flex)
 

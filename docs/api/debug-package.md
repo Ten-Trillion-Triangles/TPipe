@@ -30,7 +30,8 @@ data class TraceConfig(
     val autoExport: Boolean = false,
     val exportPath: String = "~/.TPipe-Debug/traces/",
     val includeContext: Boolean = true,
-    val includeMetadata: Boolean = true
+    val includeMetadata: Boolean = true,
+    val mergeSplitterTraces: Boolean = true
 )
 ```
 
@@ -44,6 +45,7 @@ data class TraceConfig(
 **`exportPath`** - Directory path for automatic trace exports
 **`includeContext`** - Include context snapshots in trace events
 **`includeMetadata`** - Include metadata in trace events
+**`mergeSplitterTraces`** - If true, Splitter child pipelines broadcast events to the Splitter's trace. If false, they trace independently.
 
 ---
 

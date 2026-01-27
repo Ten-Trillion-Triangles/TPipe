@@ -740,6 +740,18 @@ Disables execution tracing.
 
 ---
 
+### Multi-Stream Tracing
+
+TPipe supports broadcasting trace events to multiple trace IDs simultaneously. This is useful for complex orchestration (like Splitters) where a pipe's events should appear in both its individual trace and the orchestrator's trace.
+
+#### `addTraceId(id: String)`
+Adds a trace ID to the active set. Events will be broadcast to this ID in addition to the pipe's own ID.
+
+#### `removeTraceId(id: String)`
+Removes a trace ID from the active set. Events will no longer be broadcast to this ID.
+
+---
+
 ### Getters
 
 #### `getProviderEnum(): ProviderName`

@@ -18,6 +18,14 @@ data class TraceConfig(
     val detailLevel: TraceDetailLevel = TraceDetailLevel.NORMAL,
     val autoExport: Boolean = false,
     val exportPath: String = "~/.TPipe-Debug/traces/",
+
     val includeContext: Boolean = true,
-    val includeMetadata: Boolean = true
+    val includeMetadata: Boolean = true,
+    
+    /**
+     * If true, pipelines managed by a Splitter will also broadcast their events to the Splitter's trace stream.
+     * If false, they will only trace to their own individual streams.
+     * Default is true to preserve legacy behavior.
+     */
+    val mergeSplitterTraces: Boolean = true
 )
