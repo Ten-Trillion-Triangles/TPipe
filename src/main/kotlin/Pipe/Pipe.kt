@@ -950,8 +950,26 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     @kotlinx.serialization.Transient
     protected var traceConfig = TraceConfig()
     protected var pipeId = UUID.randomUUID().toString()
+
+    /**
+     * Set of active trace IDs for this pipe. Allows casting trace events to multiple streams.
+     */
     @kotlinx.serialization.Transient
-    var currentPipelineId: String? = null
+    private val activeTraceIds: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /**
+     * Legacy property for backward compatibility.
+     * Use [addTraceId] and [removeTraceId] for multi-stream support.
+     */
+    @kotlinx.serialization.Transient
+    var currentPipelineId: String?
+        get() = activeTraceIds.firstOrNull()
+        set(value) {
+            activeTraceIds.clear()
+            if (value != null) {
+                activeTraceIds.add(value)
+            }
+        }
 
     /**
      * Enables optional comprehensive token usage tracking.
@@ -3401,9 +3419,35 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             error = error
         )
         
-        currentPipelineId?.let { pipelineId ->
+        activeTraceIds.forEach { pipelineId ->
             PipeTracer.addEvent(pipelineId, event)
         }
+    }
+
+    /**
+     * Adds a trace ID to the active set for this pipe. Trace events will be broadcast to this ID.
+     * Thread-safe.
+     * @param id The trace ID to add.
+     */
+    fun addTraceId(id: String) {
+        activeTraceIds.add(id)
+    }
+
+    /**
+     * Removes a trace ID from the active set for this pipe.
+     * Thread-safe.
+     * @param id The trace ID to remove.
+     */
+    fun removeTraceId(id: String) {
+        activeTraceIds.remove(id)
+    }
+
+    /**
+     * Clears all active trace IDs.
+     * Thread-safe.
+     */
+    fun clearTraceIds() {
+        activeTraceIds.clear()
     }
 
     /**

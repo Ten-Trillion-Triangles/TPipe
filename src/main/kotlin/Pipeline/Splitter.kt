@@ -451,9 +451,9 @@ class Splitter: P2PInterface
                 if(tracingEnabled)
                 {
                     pipeline.enableTracing(traceConfig)
-                    // Set splitter ID as pipeline ID for correlation - this makes all pipe events appear in same trace
+                    // Set splitter ID as additional trace ID - this makes events appear in BOTH traces
                     for (pipe in pipeline.getPipes()) {
-                        pipe.currentPipelineId = splitterId
+                        pipe.addTraceId(splitterId)
                         
                         // Prefix pipe name with pipeline name for clarity in trace visualization
                         val prefix = if (pipeline.pipelineName.isNotEmpty()) pipeline.pipelineName else it.key.toString()
