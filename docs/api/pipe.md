@@ -685,7 +685,7 @@ Sets pipe to transform output instead of transformation function.
 #### `infix fun setBranchPipe(pipe: Pipe): Pipe`
 Sets pipe to handle validation failures.
 
-**Behavior:** Executed when validation fails. Takes precedence over `onFailure` function. Branch pipe's output becomes the final result. Can be called using infix notation: `pipe setBranchPipe failurePipe`.
+**Behavior:** Executed when validation fails. Takes precedence over `onFailure` function. Branch pipe's output is passed through transformation pipe and transformation function (if set) before becoming the final result. Can be called using infix notation: `pipe setBranchPipe failurePipe`.
 
 #### `setReasoningPipe(pipe: Pipe): Pipe`
 Sets pipe for chain-of-thought reasoning.

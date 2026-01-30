@@ -4920,7 +4920,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         val branchPipeResult : Deferred<MultimodalContent> = async {
                             branchPipe?.execute(generatedContent) ?: generatedContent
                         }
-                        val branchResult = branchPipeResult.await()
+                        var branchResult = branchPipeResult.await()
+                        
                         //Track branch pipe token usage if comprehensive tracking is enabled.
                         if (comprehensiveTokenTracking)
                         {
@@ -4929,19 +4930,65 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                                 pipeTokenUsage.addChildUsage("branch-${pipe.pipeName}", pipe.getTokenUsage())
                             }
                         }
+                        
                         branchResult.currentPipe = inputContent.currentPipe
                         branchResult.metadata = generatedContent.metadata
                         
                         //If branch pipe allows continuation, continue pipeline.
                         if(!branchResult.shouldTerminate())
                         {
+                            //Apply transformation pipe if set.
+                            if(transformationPipe != null)
+                            {
+                                trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.TRANSFORMATION)
+                                try {
+                                    transformationPipe!!.init()
+                                    if (tracingEnabled)
+                                    {
+                                        propagateTracingRecursively()
+                                    }
+
+                                    val transformPipeResult : Deferred<MultimodalContent> = async {
+                                        transformationPipe?.execute(branchResult) ?: branchResult
+                                    }
+
+                                    val metadataBackup = branchResult.metadata
+                                    branchResult = transformPipeResult.await()
+                                    branchResult.currentPipe = inputContent.currentPipe
+                                    branchResult.metadata = metadataBackup
+                                    
+                                    //Track transformation pipe token usage if comprehensive tracking is enabled.
+                                    if (comprehensiveTokenTracking)
+                                    {
+                                        transformationPipe?.let { pipe ->
+                                            pipeTokenUsage.addChildUsage("transformation-${pipe.pipeName}", pipe.getTokenUsage())
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    trace(TraceEventType.PIPE_FAILURE, TracePhase.TRANSFORMATION, branchResult, error = e)
+                                    // Continue with branch result if transformation pipe fails
+                                }
+                            }
+                            
+                            //Apply transformation function if set.
+                            if(transformationFunction != null)
+                            {
+                                trace(TraceEventType.TRANSFORMATION_START, TracePhase.TRANSFORMATION, branchResult,
+                                      metadata = mapOf("inputText" to branchResult.text))
+                                branchResult = transformationFunction?.invoke(branchResult) ?: branchResult
+                                trace(TraceEventType.TRANSFORMATION_SUCCESS, TracePhase.TRANSFORMATION, branchResult,
+                                      metadata = mapOf("outputText" to branchResult.text))
+                            }
+                            
                             //Merge in context window changes if enabled.
                             if(updatePipelineContextOnExit)
                             {
                                 pipelineRef?.context?.merge(contextWindow, emplaceLorebook, appendLoreBook)
+                                pipelineRef?.miniBank?.merge(miniContextBank, emplaceLorebook, appendLoreBook)
                             }
 
-
+                            trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, branchResult,
+                                  metadata = mapOf("outputText" to branchResult.text))
                             return@coroutineScope embedContentIntoInternalConverse(branchResult).takeIf { wrapContentWithConverseHistory } ?: branchResult
                         }
                         
