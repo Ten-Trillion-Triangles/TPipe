@@ -269,7 +269,6 @@ fun TokenBudgetSettings.toTruncationSettings(pipe: Pipe? = null): TruncationSett
 
 //============================================Const Vars================================================================
 
-var IS_VALIDATOR_PIPE = "isValidatorPipe"
 var USER_PROMPT_SNAPSHOT = "validatorPipeUserPromptSnapshotTPipe"
 
 //===========================================Main Class=================================================================
@@ -1009,7 +1008,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     /**
      * If true, automatically cache the input of the pipe upon startup.
      */
+    @kotlinx.serialization.Transient
     var cacheInput = false
+
+    /**
+     * If true, save to the content's snapshot system upon startup of the pipe.
+     */
+    var saveSnapshot = false
 
     /**
      * If true, the content will be wrapped into a converse history object if the input content was found to be already
@@ -1545,7 +1550,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     /**
      * Function to immediately cache and snapshot a content object right now. Can be invoked even at runtime
      * or prior to execution. Data can then be read from [getCachedInput] at any time after using this or
-     * at runtime if [cacheInput] was set.
+     * at runtime if [\cacheInput] was set.
      */
     fun forceCacheInput(content: MultimodalContent) : Pipe
     {
@@ -1566,6 +1571,16 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             MultimodalContent()
         }
 
+    }
+
+    /**
+     * Forces the pipe to save a snapshot to the content object of the pipe at startup. Useful for when you
+     * aren't sure which object gets passed in or can't turn this on at the content object level.
+     */
+    fun forceSaveSnapshot() : Pipe
+    {
+        saveSnapshot = true
+        return this
     }
 
 
@@ -3025,7 +3040,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      *
      * @return This Pipe object for method chaining.
      */
-    fun setValidatorFunction(func: suspend (content: MultimodalContent) -> Boolean): Pipe
+    infix fun setValidatorFunction(func: suspend (content: MultimodalContent) -> Boolean): Pipe
     {
         this.validatorFunction = func
         return this
@@ -3226,7 +3241,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * @param pipe The branch pipe to use for failure handling
      * @return This Pipe object for method chaining
      */
-    fun setBranchPipe(pipe: Pipe): Pipe
+    infix fun setBranchPipe(pipe: Pipe): Pipe
     {
         this.branchPipe = pipe
         branchPipe?.setParentPipe(this)
@@ -4146,6 +4161,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         {
             //Reset token usage tracking for this execution cycle.
             pipeTokenUsage = TokenUsage()
+        }
+
+        if(saveSnapshot)
+        {
+            inputContent.saveSnapshot()
         }
 
         /**

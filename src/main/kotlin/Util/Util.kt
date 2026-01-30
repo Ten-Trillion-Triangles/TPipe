@@ -640,6 +640,7 @@ fun <T> constructPipeFromTemplate(
         template.preInvokeFunction?.let { newPipe.preInvokeFunction = it }
         template.preInitFunction?.let { newPipe.preInitFunction = it }
         template.onFailure?.let { newPipe.onFailure = it }
+        template.postGenerateFunction?.let { newPipe.postGenerateFunction = it }
     }
 
     if(copyMetadata)

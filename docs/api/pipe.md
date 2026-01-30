@@ -32,17 +32,6 @@ The `Pipe` class is the core abstraction for AI model interactions in TPipe.
 abstract class Pipe : P2PInterface, ProviderInterface
 ```
 
-## Constants
-
-The Pipe class defines constants for metadata keys to ensure consistent access:
-
-```kotlin
-var IS_VALIDATOR_PIPE = "isValidatorPipe"
-```
-
-**Usage:**
-- `IS_VALIDATOR_PIPE`: Metadata key to identify validator pipes
-
 ## Public Properties
 
 ### Configuration
@@ -64,6 +53,12 @@ JSON schema for expected input structure. Used for validation and prompt injecti
 var jsonOutput: String = ""
 ```
 JSON schema for expected output structure. Used for validation and response formatting.
+
+**`saveSnapshot`**
+```kotlin
+var saveSnapshot: Boolean = false
+```
+If true, automatically saves a snapshot to the content object's snapshot system at pipe startup. Useful when you can't control the content object directly or need guaranteed snapshot preservation.
 
 ### Function Hooks
 
@@ -157,6 +152,11 @@ Disables safety guardrail that prevents empty user prompts.
 Disables safety guardrail that prevents completely empty content objects.
 
 **Behavior:** By default, TPipe blocks content objects with no user prompt, text input, binary content, or context data as they're footguns 99.99% of the time. This method is a contractual promise that this edge case is safe and has been properly handled.
+
+#### `forceSaveSnapshot(): Pipe`
+Forces the pipe to save a snapshot to the content object at startup.
+
+**Behavior:** Sets `saveSnapshot = true` to ensure the content object is automatically snapshotted when the pipe begins execution. Useful when you can't control the content object directly or need guaranteed snapshot preservation for branch failure recovery.
 
 ---
 
@@ -597,10 +597,10 @@ Enables reasoning with custom settings.
 
 ### Function Hooks
 
-#### `setValidatorFunction(func: suspend (MultimodalContent) -> Boolean): Pipe`
+#### `infix fun setValidatorFunction(func: suspend (MultimodalContent) -> Boolean): Pipe`
 Sets function to validate AI output.
 
-**Behavior:** Called after AI generation but before transformation. If returns false, triggers failure handling (branch pipe or onFailure function). Validation occurs before any post-processing.
+**Behavior:** Called after AI generation but before transformation. If returns false, triggers failure handling (branch pipe or onFailure function). Validation occurs before any post-processing. Can be called using infix notation: `pipe setValidatorFunction { ... }`.
 
 #### `setStringValidatorFunction(func: (String) -> Boolean): Pipe`
 Sets string-based validator function.
@@ -682,10 +682,10 @@ Sets pipe to transform output instead of transformation function.
 
 **Behavior:** Transformation pipe is executed with the AI output after successful validation. Takes precedence over `transformationFunction`.
 
-#### `setBranchPipe(pipe: Pipe): Pipe`
+#### `infix fun setBranchPipe(pipe: Pipe): Pipe`
 Sets pipe to handle validation failures.
 
-**Behavior:** Executed when validation fails. Takes precedence over `onFailure` function. Branch pipe's output becomes the final result.
+**Behavior:** Executed when validation fails. Takes precedence over `onFailure` function. Branch pipe's output becomes the final result. Can be called using infix notation: `pipe setBranchPipe failurePipe`.
 
 #### `setReasoningPipe(pipe: Pipe): Pipe`
 Sets pipe for chain-of-thought reasoning.

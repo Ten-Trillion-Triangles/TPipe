@@ -104,7 +104,7 @@ Creates new pipes from templates with selective copying.
 
 **Behavior:**
 - Serializes and deserializes pipe for base copy
-- Optionally copies function references, pipe references, metadata
+- Optionally copies function references (including `postGenerateFunction`), pipe references, metadata
 - Returns typed pipe instance or null on failure
 
 #### `copyPipeline(originalPipeline: Pipeline, copyFunctions: Boolean = false, copyPipes: Boolean = false): Pipeline`
