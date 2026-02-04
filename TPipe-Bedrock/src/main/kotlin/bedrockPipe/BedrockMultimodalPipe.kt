@@ -12,6 +12,7 @@ import com.TTT.Pipe.getFilename
  * Enhanced BedrockPipe with multimodal support for images, documents, and other binary content.
  * Extends the base BedrockPipe to handle binary data through AWS Bedrock's ContentBlock system.
  */
+@kotlinx.serialization.Serializable
 open class BedrockMultimodalPipe : BedrockPipe() {
     
     /**

@@ -624,39 +624,42 @@ inline fun <reified T> reflectionBasedReconstruct(malformedJson: String): T?
  * Construct a new pipe using a prior pipe as a template. Allows for any valid pipe class to be passed as the template
  * to return, and returns a new copied pipe cast to that type.
  */
-fun <T> constructPipeFromTemplate(
+inline fun <reified T> constructPipeFromTemplate(
     template : Pipe, copyFunctions: Boolean = false,
     copyPipes: Boolean = false,
     copyMetadata: Boolean = false) : T?
 {
-    val newPipe = deserialize<Pipe>(serialize(template)) ?: return null
+    val newPipe = deserialize<T>(serialize(template as T)) ?: return null
 
-    if(copyFunctions)
+    if(newPipe is Pipe)
     {
-        template.validatorFunction?.let { newPipe.validatorFunction = it }
-        template.transformationFunction?.let { newPipe.transformationFunction = it }
-        template.preValidationFunction?.let { newPipe.preValidationFunction = it }
-        template.preValidationMiniBankFunction?.let { newPipe.preValidationMiniBankFunction = it }
-        template.preInvokeFunction?.let { newPipe.preInvokeFunction = it }
-        template.preInitFunction?.let { newPipe.preInitFunction = it }
-        template.onFailure?.let { newPipe.onFailure = it }
-        template.postGenerateFunction?.let { newPipe.postGenerateFunction = it }
-    }
-
-    if(copyMetadata)
-    {
-        for(it in template.pipeMetadata)
+        if(copyFunctions)
         {
-            newPipe.pipeMetadata[it.key] = it.value
+            template.validatorFunction?.let { newPipe.validatorFunction = it }
+            template.transformationFunction?.let { newPipe.transformationFunction = it }
+            template.preValidationFunction?.let { newPipe.preValidationFunction = it }
+            template.preValidationMiniBankFunction?.let { newPipe.preValidationMiniBankFunction = it }
+            template.preInvokeFunction?.let { newPipe.preInvokeFunction = it }
+            template.preInitFunction?.let { newPipe.preInitFunction = it }
+            template.onFailure?.let { newPipe.onFailure = it }
+            template.postGenerateFunction?.let { newPipe.postGenerateFunction = it }
         }
-    }
-    
-    if(copyPipes)
-    {
-        template.validatorPipe?.let { newPipe.validatorPipe = it }
-        template.transformationPipe?.let { newPipe.transformationPipe = it }
-        template.branchPipe?.let { newPipe.branchPipe = it }
-        template.reasoningPipe?.let { newPipe.reasoningPipe = it }
+
+        if(copyMetadata)
+        {
+            for(it in template.pipeMetadata)
+            {
+                newPipe.pipeMetadata[it.key] = it.value
+            }
+        }
+
+        if(copyPipes)
+        {
+            template.validatorPipe?.let { newPipe.validatorPipe = it }
+            template.transformationPipe?.let { newPipe.transformationPipe = it }
+            template.branchPipe?.let { newPipe.branchPipe = it }
+            template.reasoningPipe?.let { newPipe.reasoningPipe = it }
+        }
     }
     
     return newPipe as? T

@@ -105,7 +105,7 @@ open class BedrockPipe : Pipe() {
      * @see init for client initialization
      * @see generateText for client usage in API calls
      */
-    @kotlinx.serialization.Serializable
+    @kotlinx.serialization.Transient
     protected var bedrockClient: BedrockRuntimeClient? = null
 
     /**

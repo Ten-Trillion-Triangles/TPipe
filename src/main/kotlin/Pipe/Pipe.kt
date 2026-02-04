@@ -39,6 +39,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 import java.util.UUID
 import kotlin.math.absoluteValue
 import kotlin.reflect.KClass
@@ -312,8 +313,10 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     /**
      * Optional name for this pipe. Useful for debugging and tracing pipes and pipelines.
      */
-    @Serializable
+    @SerialName("pipeName")
     var pipeName = ""
+
+
     
     /**
      * Reference to the parent pipeline that this pipe is a part of. Required to communicate with the parent on actions
@@ -639,15 +642,14 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * Enabling this will demand the developer is explicitly intending this to be possible, and assures that they are
      * promising that it, in fact, is ok and won't break the system.
      */
-    @Serializable
     protected var allowEmptyUserPrompt = false
 
     /**
      * This is an even higher escalation than [allowEmptyUserPrompt]. This allows the entire content object to be blank
      * and not shut down the pipeline and throw an error.
      */
-    @Serializable
     protected var allowEmptyContentObject = false
+
 
     /**
      * If true, the merge calls for context window merging will use the emplacement method for updating the lorebook
@@ -4177,7 +4179,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          */
         if(inputContent.isEmpty() || userPrompt.isEmpty())
         {
-            if(userPrompt.isEmpty() && inputContent.text.isEmpty() && !allowEmptyUserPrompt)
+            if(userPrompt.isEmpty() && inputContent.text.isEmpty() && !allowEmptyUserPrompt && !allowEmptyContentObject)
             {
                 inputContent.terminate()
                 trace(TraceEventType.PIPE_FAILURE, TracePhase.INITIALIZATION,
