@@ -20,6 +20,7 @@ import com.TTT.Debug.*
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.StreamingCallbackBuilder
 import env.bedrockEnv
 import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.json.*
@@ -507,6 +508,7 @@ open class BedrockPipe : Pipe() {
         // Disable streaming and clear callback to prevent memory leaks
         this.streamingEnabled = false
         this.streamingCallback = null
+        streamingCallbackManager?.clearCallbacks()
         return this
     }
 
@@ -560,6 +562,35 @@ open class BedrockPipe : Pipe() {
         // Wrap non-suspending callback in suspending lambda
         this.streamingCallback = { chunk -> callback(chunk) }
         this.streamingEnabled = true
+        return this
+    }
+
+    /**
+     * Configures multiple streaming callbacks using builder pattern.
+     * 
+     * Allows registering multiple independent callbacks to receive streaming chunks.
+     * Each callback can perform different operations (UI updates, logging, metrics)
+     * without interfering with each other. Supports configurable execution mode
+     * (sequential or concurrent) and automatic error isolation.
+     *
+     * Example usage:
+     * ```
+     * pipe.streamingCallbacks {
+     *     add { chunk -> print(chunk) }
+     *     add { chunk -> logToFile(chunk) }
+     *     concurrent()
+     * }
+     * ```
+     *
+     * @param builder Lambda that configures the StreamingCallbackBuilder
+     * @return This pipe instance for method chaining
+     */
+    fun streamingCallbacks(builder: StreamingCallbackBuilder.() -> Unit): BedrockPipe
+    {
+        val callbackBuilder = StreamingCallbackBuilder()
+        callbackBuilder.builder()
+        streamingCallbackManager = callbackBuilder.build()
+        streamingEnabled = true
         return this
     }
     
@@ -3782,15 +3813,26 @@ put("system", if (enableCaching && cacheControl != null) {
      * 
      * @param chunk Text chunk to emit to the callback
      */
-    private suspend fun emitStreamingChunk(chunk: String) {
-        val callback = streamingCallback ?: return
-        try {
-            callback(chunk)
-        } catch (e: Exception) {
-            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
-                  error = e,
-                  metadata = mapOf("streamingCallback" to true))
+    override suspend fun emitStreamingChunk(chunk: String)
+    {
+        // Invoke legacy single callback for backward compatibility
+        val callback = streamingCallback
+        if (callback != null)
+        {
+            try
+            {
+                callback(chunk)
+            }
+            catch (e: Exception)
+            {
+                trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                      error = e,
+                      metadata = mapOf("streamingCallback" to true, "legacy" to true))
+            }
         }
+
+        // Invoke all callbacks in the manager
+        streamingCallbackManager?.emitToAll(chunk)
     }
 
     /**

@@ -118,6 +118,8 @@ val pipe = BedrockPipe()
 }
 ```
 
+For advanced streaming features including multiple callbacks, error handling, and concurrent execution, see [Streaming Callbacks](../core-concepts/streaming-callbacks.md).
+
 ### 4. Streaming with reasoning output
 
 ```kotlin

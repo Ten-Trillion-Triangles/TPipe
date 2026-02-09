@@ -17,6 +17,7 @@
   - [Token Counting](#token-counting)
   - [LoreBook](#lorebook)
   - [Model Reasoning](#model-reasoning)
+  - [Streaming](#streaming)
   - [Function Hooks](#function-hooks-1)
   - [Pipe Chaining](#pipe-chaining)
   - [Protocols](#protocols)
@@ -592,6 +593,85 @@ Enables reasoning with token allocation.
 Enables reasoning with custom settings.
 
 **Behavior:** Sets `modelReasoningSettingsV3` for vendor-specific reasoning configuration. Format depends on the AI provider.
+
+---
+
+### Streaming
+
+#### `obtainStreamingCallbackManager(): StreamingCallbackManager`
+Gets or creates the streaming callback manager for this pipe.
+
+**Behavior:** Lazy-initializes the manager on first access. Returns the manager instance for direct callback manipulation. Use this for dynamic callback management (adding/removing callbacks at runtime).
+
+**Example:**
+```kotlin
+val manager = pipe.obtainStreamingCallbackManager()
+manager.addCallback { chunk -> print(chunk) }
+manager.removeCallback(someCallback)
+```
+
+#### `streamingCallbacks(builder: StreamingCallbackBuilder.() -> Unit): Pipe` (BedrockPipe)
+Configures multiple streaming callbacks using builder pattern.
+
+**Behavior:** Registers multiple independent callbacks to receive streaming chunks. Each callback can perform different operations (UI updates, logging, metrics) without interfering with each other. Supports configurable execution mode (sequential or concurrent) and automatic error isolation. Automatically enables streaming mode.
+
+**Example:**
+```kotlin
+pipe.streamingCallbacks {
+    add { chunk -> print(chunk) }
+    add { chunk -> logToFile(chunk) }
+    add { chunk -> updateMetrics(chunk) }
+    concurrent()  // or sequential()
+    onError { e, chunk -> println("Error: ${e.message}") }
+}
+```
+
+**Parameters:**
+- `builder` - Lambda that configures the StreamingCallbackBuilder
+
+**Returns:** This pipe instance for method chaining
+
+**See Also:** [Streaming Callbacks Guide](../core-concepts/streaming-callbacks.md)
+
+#### `enableStreaming(callback: (suspend (String) -> Unit)? = null, showReasoning: Boolean = false): Pipe` (BedrockPipe)
+Enables streaming mode with optional callback.
+
+**Behavior:** Switches to streaming API calls where tokens arrive incrementally. If callback is provided, it's invoked for each chunk. If `showReasoning` is true, propagates streaming to reasoning pipes recursively.
+
+**Example:**
+```kotlin
+pipe.enableStreaming { chunk -> print(chunk) }
+```
+
+#### `setStreamingCallback(callback: suspend (String) -> Unit): Pipe` (BedrockPipe)
+Sets a suspending callback for streaming chunks.
+
+**Behavior:** Registers a single callback that receives each text chunk as it arrives. Automatically enables streaming mode. Use this for async operations within the callback (database writes, network calls, etc.).
+
+**Example:**
+```kotlin
+pipe.setStreamingCallback { chunk ->
+    delay(10)
+    logToDatabase(chunk)
+}
+```
+
+#### `setStreamingCallback(callback: (String) -> Unit): Pipe` (BedrockPipe)
+Sets a non-suspending callback for streaming chunks.
+
+**Behavior:** Convenience overload for simple synchronous callbacks. Automatically wraps the callback in a suspending lambda. Use this for simple operations like printing or basic text accumulation.
+
+**Example:**
+```kotlin
+pipe.setStreamingCallback { chunk -> print(chunk) }
+```
+
+#### `disableStreaming(): Pipe` (BedrockPipe)
+Disables streaming mode and clears all callbacks.
+
+**Behavior:** Switches back to standard (non-streaming) API calls. Clears both legacy single callback and all multi-callback manager callbacks to prevent memory leaks.
+
+**Note:** Provider-specific methods (BedrockPipe) are available in provider implementations. Base Pipe class provides `obtainStreamingCallbackManager()` and `emitStreamingChunk()` for all providers.
 
 ---
 

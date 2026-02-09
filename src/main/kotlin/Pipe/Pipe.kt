@@ -333,6 +333,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     protected var parentPipeRef: Pipe? = null
 
     /**
+     * Manager for multiple streaming callbacks with configurable execution mode.
+     * Allows multiple independent callbacks to receive streaming chunks.
+     */
+    @kotlinx.serialization.Transient
+    protected var streamingCallbackManager: StreamingCallbackManager? = null
+
+    /**
      * Model to use for this pipe. Useful for logic that needs to behave differently depending on the model.
      * Does not have any internal functionality and is intended to be referenced by validation functions.
      */
@@ -1075,6 +1082,33 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     protected fun setParentPipe(ref: Pipe) : Pipe {
         parentPipeRef = ref
         return this
+    }
+
+    /**
+     * Gets or creates the streaming callback manager for this pipe.
+     * Lazy-initializes the manager on first access.
+     *
+     * @return The streaming callback manager instance
+     */
+    fun obtainStreamingCallbackManager(): StreamingCallbackManager
+    {
+        if (streamingCallbackManager == null)
+        {
+            streamingCallbackManager = StreamingCallbackManager()
+        }
+        return streamingCallbackManager!!
+    }
+
+    /**
+     * Emits a streaming chunk to all registered callbacks.
+     * Provides default no-op implementation for providers that don't support streaming.
+     * Subclasses can override to add provider-specific behavior.
+     *
+     * @param chunk The text chunk to emit
+     */
+    protected open suspend fun emitStreamingChunk(chunk: String)
+    {
+        streamingCallbackManager?.emitToAll(chunk)
     }
 
     /**

@@ -38,6 +38,7 @@ Essential TPipe features organized by complexity:
 
 #### Advanced Features
 - [Reasoning Pipes](docs/core-concepts/reasoning-pipes.md) - Chain-of-thought reasoning capabilities
+- [Streaming Callbacks](docs/core-concepts/streaming-callbacks.md) - Real-time token streaming with multiple callbacks
 - [Pipeline Flow Control](docs/core-concepts/pipeline-flow-control.md) - Dynamic routing and conditional execution
 - [Tracing and Debugging](docs/core-concepts/tracing-and-debugging.md) - Monitoring and troubleshooting
 
