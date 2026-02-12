@@ -816,6 +816,9 @@ open class BedrockPipe : Pipe() {
                 // Qwen3 models support thinking mode and multilingual capabilities  
                 requestedModelId.contains("qwen") -> buildQwenRequest(fullPrompt)
 
+                // GLM 4.7 / Flash models use OpenAI-style chat completions with thinking payloads
+                isGlmModel(requestedModelId) -> buildGlmRequest(fullPrompt)
+
                 requestedModelId.contains("deepseek") -> 
                 {
                     // DeepSeek has different request formats for Converse vs Invoke API
@@ -1013,8 +1016,9 @@ open class BedrockPipe : Pipe() {
                 requestedModelId.contains("cohere.command") -> buildCohereRequest(fullPrompt)
                 requestedModelId.contains("meta.llama") -> buildLlamaRequest(fullPrompt)
                 requestedModelId.contains("mistral") -> buildMistralRequest(fullPrompt)
-                requestedModelId.contains("qwen") -> buildQwenRequest(fullPrompt)
-                requestedModelId.contains("deepseek") -> 
+            requestedModelId.contains("qwen") -> buildQwenRequest(fullPrompt)
+            isGlmModel(requestedModelId) -> buildGlmRequest(fullPrompt)
+            requestedModelId.contains("deepseek") -> 
                 {
                     if (useConverseApi)
                     {
@@ -1250,6 +1254,17 @@ open class BedrockPipe : Pipe() {
             }
             modelId.contains("openai.gpt-oss") -> {
                 contextWindowSize = 126000
+                multiplyWindowSizeBy = 0
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            isGlmModel(modelId) -> {
                 multiplyWindowSizeBy = 0
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
@@ -1789,6 +1804,167 @@ put("system", if (enableCaching && cacheControl != null) {
     private fun buildGptOssConverseRequest(modelId: String, prompt: String): ConverseRequest {
         return buildGptOssConverseRequest(modelId, listOf(ContentBlock.Text(prompt)))
     }
+
+    /**
+     * Builds request JSON for GLM 4.7 / Flash models.
+     *
+     * GLM shares the OpenAI-style chat completion surface but exposes a
+     * `thinking` configuration that mirrors Claude-style reasoning. This builder
+     * adds PCP tool hints, OpenAI parameters, and the GLM thinking payload when
+     * `useModelReasoning` is enabled.
+     */
+    fun buildGlmRequest(prompt: String): String {
+        val requestedModelId = getRequestedModelId()
+        val systemBlocks = mutableListOf<JsonObject>()
+        if (systemPrompt.isNotEmpty()) {
+            systemBlocks.add(buildJsonObject {
+                put("text", systemPrompt)
+            })
+        }
+        if (!pcpContext.tpipeOptions.isEmpty()) {
+            systemBlocks.add(buildJsonObject {
+                put("text", "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}")
+            })
+        }
+
+        val messages = mutableListOf<JsonObject>()
+        messages.add(buildJsonObject {
+            put("role", "user")
+            put("content", buildJsonArray {
+                add(buildJsonObject {
+                    put("text", prompt)
+                })
+            })
+        })
+
+        return buildJsonObject {
+            put("modelId", model)
+            if (systemBlocks.isNotEmpty()) {
+                put("system", JsonArray(systemBlocks))
+            }
+            put("messages", JsonArray(messages))
+            put("inferenceConfig", buildJsonObject {
+                if (temperature > 0) put("temperature", temperature)
+                if (maxTokens > 0) put("maxTokens", maxTokens)
+                if (topP > 0) put("topP", topP)
+                if (stopSequences.isNotEmpty()) {
+                    put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+                }
+            })
+
+            buildGlmAdditionalFieldsJson(requestedModelId)?.let {
+                put("additionalModelRequestFields", it)
+            }
+        }.toString()
+    }
+
+    private fun buildGlmAdditionalFieldsJson(modelId: String): JsonObject? {
+        val fields = mutableMapOf<String, JsonElement>()
+
+        buildGlmThinkingJson()?.let { fields["thinking"] = it }
+
+        val openAIParams = getModelSpecificOpenAIParameterValues(modelId)
+        openAIParams.forEach { (key, value) ->
+            anyToJsonElement(value)?.let { fields[key] = it }
+        }
+
+        if (fields.isEmpty()) {
+            return null
+        }
+
+        return buildJsonObject {
+            fields.forEach { (key, element) ->
+                put(key, element)
+            }
+        }
+    }
+
+    private fun buildGlmThinkingJson(): JsonObject? {
+        if (!useModelReasoning) return null
+        return buildJsonObject {
+            put("type", "enabled")
+            put("budget_tokens", computeOpenAIReasoningBudget())
+        }
+    }
+
+    fun buildGlmConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest {
+        val messages = mutableListOf<Message>()
+        messages.add(Message {
+            role = ConversationRole.User
+            content = contentBlocks
+        })
+
+        val systemBlocks = mutableListOf<SystemContentBlock>()
+        if (systemPrompt.isNotEmpty()) {
+            systemBlocks.add(SystemContentBlock.Text(systemPrompt))
+        }
+        if (!pcpContext.tpipeOptions.isEmpty()) {
+            systemBlocks.add(SystemContentBlock.Text(
+                "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
+            ))
+        }
+
+        val requestedModelId = getRequestedModelId()
+
+        return ConverseRequest {
+            this.modelId = model
+            this.messages = messages
+            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+
+            inferenceConfig = InferenceConfiguration {
+                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+            }
+
+            val documentMap = mutableMapOf<String, Document?>()
+            buildGlmThinkingDocumentMap()?.let { documentMap["thinking"] = Document.Map(it) }
+            documentMap.putAll(getModelSpecificOpenAIParameters(requestedModelId))
+
+            if (documentMap.isNotEmpty()) {
+                additionalModelRequestFields = Document.Map(documentMap)
+            }
+
+            serviceTier = ServiceTier { type = mapServiceTier() }
+        }
+    }
+
+    private fun buildGlmConverseRequest(prompt: String): ConverseRequest {
+        return buildGlmConverseRequest(listOf(ContentBlock.Text(prompt)))
+    }
+
+    private fun buildGlmThinkingDocumentMap(): Map<String, Document?>? {
+        if (!useModelReasoning) return null
+        val budget = computeOpenAIReasoningBudget()
+        return mapOf(
+            "type" to Document.String("enabled"),
+            "budget_tokens" to Document.Number(budget)
+        )
+    }
+
+    private fun anyToJsonElement(value: Any?): JsonElement? {
+        return when (value) {
+            null -> null
+            is JsonElement -> value
+            is Number -> JsonPrimitive(value.toDouble())
+            is Boolean -> JsonPrimitive(value)
+            is String -> JsonPrimitive(value)
+            is Map<*, *> -> buildJsonObject {
+                value.forEach { (key, entryValue) ->
+                    if (key is String) {
+                        anyToJsonElement(entryValue)?.let { put(key, it) }
+                    }
+                }
+            }
+            is List<*> -> buildJsonArray {
+                value.forEach { entry ->
+                    anyToJsonElement(entry)?.let { add(it) }
+                }
+            }
+            else -> JsonPrimitive(value.toString())
+        }
+    }
     
     /**
      * Filters OpenAI parameters based on model capabilities.
@@ -1799,75 +1975,69 @@ put("system", if (enableCaching && cacheControl != null) {
      */
     private fun getModelSpecificOpenAIParameters(modelId: String): Map<String, Document?>
     {
+        val values = getModelSpecificOpenAIParameterValues(modelId)
         val documentMap = mutableMapOf<String, Document?>()
-        
+        values.forEach { (key, value) ->
+            convertValueToDocument(value)?.let { documentMap[key] = it }
+        }
+        return documentMap
+    }
+
+    private fun getModelSpecificOpenAIParameterValues(modelId: String): Map<String, Any?>
+    {
+        val parameterValues = mutableMapOf<String, Any?>()
+
         when {
-            modelId.startsWith("openai.gpt-oss") || modelId.startsWith("qwen") || modelId.startsWith("deepseek") -> {
-                // These models use OpenAI Chat Completions API format and support all OpenAI parameters
+            modelId.contains("openai.gpt-oss") ||
+            modelId.contains("qwen") ||
+            modelId.contains("deepseek") ||
+            isGlmModel(modelId) -> {
                 if (repetitionPenalty != 0.0) {
-                    documentMap["frequency_penalty"] = Document.Number(repetitionPenalty)
+                    parameterValues["frequency_penalty"] = repetitionPenalty
                 }
                 if (presencePenalty != 0.0) {
-                    documentMap["presence_penalty"] = Document.Number(presencePenalty)
+                    parameterValues["presence_penalty"] = presencePenalty
                 }
                 seed?.let {
-                    documentMap["seed"] = Document.Number(it)
+                    parameterValues["seed"] = it
                 }
                 if (logitBias.isNotEmpty()) {
-                    val logitBiasMap = mutableMapOf<String, Document?>()
+                    val logitBiasMap = mutableMapOf<String, Any?>()
                     logitBias.forEach { (tokenId, bias) ->
-                        logitBiasMap[tokenId.toString()] = Document.Number(bias)
+                        logitBiasMap[tokenId.toString()] = bias
                     }
-                    documentMap["logit_bias"] = Document.Map(logitBiasMap)
+                    parameterValues["logit_bias"] = logitBiasMap
                 }
                 if (n > 1) {
-                    documentMap["n"] = Document.Number(n)
+                    parameterValues["n"] = n
                 }
                 if (user.isNotEmpty()) {
-                    documentMap["user"] = Document.String(user)
+                    parameterValues["user"] = user
                 }
-                
-                // Add thinking mode parameters for Qwen and DeepSeek models
-                if (modelId.startsWith("qwen") && useModelReasoning) {
-                    documentMap["enable_thinking"] = Document.Boolean(true)
-                    val thinkingBudget = if (modelReasoningSettingsV2 > 0) {
-                        modelReasoningSettingsV2
-                    } else {
-                        (maxTokens / 4).coerceAtLeast(1000)
-                    }
-                    documentMap["thinking_budget"] = Document.Number(thinkingBudget)
+
+                if (modelId.contains("qwen") && useModelReasoning) {
+                    parameterValues["enable_thinking"] = true
+                    parameterValues["thinking_budget"] = computeOpenAIReasoningBudget()
                 }
-                
-                if (modelId.startsWith("deepseek") && useModelReasoning) {
-                    documentMap["include_reasoning"] = Document.Boolean(true)
+
+                if (modelId.contains("deepseek") && useModelReasoning) {
+                    parameterValues["include_reasoning"] = true
                 }
             }
-            
-            modelId.startsWith("ai21.j2") || modelId.startsWith("ai21.jamba") -> {
-                // AI21 has different penalty structure - map to their format
+
+            modelId.contains("ai21.j2") || modelId.contains("ai21.jamba") -> {
                 if (repetitionPenalty != 0.0 || presencePenalty != 0.0) {
-                    // AI21 uses nested penalty objects with scale values
                     if (repetitionPenalty != 0.0) {
-                        documentMap["frequencyPenalty"] = Document.Map(
-                            mutableMapOf("scale" to Document.Number(repetitionPenalty))
-                        )
+                        parameterValues["frequencyPenalty"] = mapOf("scale" to repetitionPenalty)
                     }
                     if (presencePenalty != 0.0) {
-                        documentMap["presencePenalty"] = Document.Map(
-                            mutableMapOf("scale" to Document.Number(presencePenalty))
-                        )
+                        parameterValues["presencePenalty"] = mapOf("scale" to presencePenalty)
                     }
                 }
-                // Other OpenAI parameters not supported by AI21
-            }
-            
-            else -> {
-                // All other models (Claude, Nova, Titan, Cohere, Llama, Mistral, Kimi, MiniMax, Writer)
-                // don't support OpenAI parameters - return empty map (parameters silently ignored)
             }
         }
-        
-        return documentMap
+
+        return parameterValues
     }
 
     /**
@@ -1877,7 +2047,7 @@ put("system", if (enableCaching && cacheControl != null) {
     private fun validateOpenAIParametersForModel(modelId: String)
     {
         when {
-            modelId.startsWith("openai.gpt-oss") || modelId.startsWith("qwen") || modelId.startsWith("deepseek") -> {
+            modelId.contains("openai.gpt-oss") || modelId.contains("qwen") || modelId.contains("deepseek") || isGlmModel(modelId) -> {
                 // These models use OpenAI Chat Completions format - validate all OpenAI parameters
                 if (repetitionPenalty < -2.0 || repetitionPenalty > 2.0) {
                     throw IllegalArgumentException("repetitionPenalty (mapped to frequency_penalty) must be between -2.0 and 2.0, got: $repetitionPenalty")
@@ -1904,7 +2074,7 @@ put("system", if (enableCaching && cacheControl != null) {
                 }
             }
             
-            modelId.startsWith("ai21.j2") || modelId.startsWith("ai21.jamba") -> {
+            modelId.contains("ai21.j2") || modelId.contains("ai21.jamba") -> {
                 // AI21 supports penalties but in different format - validate ranges
                 if (repetitionPenalty < -2.0 || repetitionPenalty > 2.0) {
                     trace(TraceEventType.VALIDATION_FAILURE, TracePhase.INITIALIZATION,
@@ -1996,13 +2166,7 @@ put("system", if (enableCaching && cacheControl != null) {
             // Legacy thinking mode support (will be overridden by OpenAI parameters if set)
             if (useModelReasoning && !openAIParams.containsKey("enable_thinking")) {
                 put("enable_thinking", true)
-                
-                val thinkingBudget = if (modelReasoningSettingsV2 > 0) {
-                    modelReasoningSettingsV2
-                } else {
-                    (maxTokens / 4).coerceAtLeast(1000)
-                }
-                put("thinking_budget", thinkingBudget)
+                put("thinking_budget", computeOpenAIReasoningBudget())
             }
             
         }.toString()
@@ -2975,6 +3139,22 @@ put("system", if (enableCaching && cacheControl != null) {
         return isDeepSeekV31(modelId) && useModelReasoning
     }
 
+    private fun isGlmModel(modelId: String): Boolean
+    {
+        return modelId.contains("glm-4.7", ignoreCase = true)
+    }
+
+    private fun computeOpenAIReasoningBudget(): Int
+    {
+        val configured = modelReasoningSettingsV2.takeIf { it > 0 }
+        if (configured != null)
+        {
+            val maxAllowed = if (maxTokens > 0) maxTokens else configured
+            return configured.coerceAtMost(maxAllowed)
+        }
+        return if (maxTokens > 0) (maxTokens / 4).coerceAtLeast(1000) else 4000
+    }
+
     /**
      * Builds Converse API request for Titan models.
      * Maps TPipe parameters to Titan's Converse API structure.
@@ -3350,6 +3530,7 @@ put("system", if (enableCaching && cacheControl != null) {
             val converseRequest = when
             {
                 modelId.contains("qwen") -> buildQwenConverseRequest(prompt)
+                isGlmModel(modelId) -> buildGlmConverseRequest(prompt)
                 modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(prompt)
                 modelId.contains("amazon.nova") -> buildNovaConverseRequest(prompt)
                 modelId.contains("minimax") -> buildMiniMaxConverseRequest(prompt)
@@ -3434,6 +3615,7 @@ put("system", if (enableCaching && cacheControl != null) {
             modelId.contains("openai.gpt-oss") -> buildGptOssConverseRequest(modelId, prompt)
             modelId.contains("deepseek" ) -> buildDeepSeekConverseRequestObject(modelId, prompt)
             modelId.contains("qwen") -> buildQwenConverseRequest(prompt)
+            isGlmModel(modelId) -> buildGlmConverseRequest(prompt)
             modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(prompt)
             modelId.contains("amazon.nova") -> buildNovaConverseRequest(prompt)
             modelId.contains("amazon.titan") -> buildTitanConverseRequest(prompt)

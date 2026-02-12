@@ -200,6 +200,12 @@ object Dictionary
                             // Skip past non-letter characters to find next letter
                             var i = matchEnd
                             while(i < remainingWord.length && !remainingWord[i].isLetter()) i++
+                            
+                            // FIX: Count the skipped non-word characters
+                            val skippedLength = i - matchEnd
+                            if (skippedLength > 0) {
+                                wordTokens += (skippedLength + nonWordSplitCount - 1) / nonWordSplitCount
+                            }
                             i
                         } 
                         else matchEnd
