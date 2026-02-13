@@ -3948,13 +3948,20 @@ put("system", if (enableCaching && cacheControl != null) {
                     text = obj["outputText"]?.jsonPrimitive?.contentOrNull ?: ""
                 }
                 
+                // Check choices array for delta (OpenAI style)
+                val choicesDelta = obj["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("delta")?.jsonObject
+                
                 // Check delta object for text content
-                obj["delta"]?.jsonObject?.let { deltaObj ->
+                val deltaObj = choicesDelta ?: obj["delta"]?.jsonObject
+                deltaObj?.let { d ->
                     if (text.isEmpty()) {
-                        text = deltaObj["text"]?.jsonPrimitive?.contentOrNull ?: ""
+                        text = d["content"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
                     if (text.isEmpty()) {
-                        text = deltaObj["completion"]?.jsonPrimitive?.contentOrNull ?: ""
+                        text = d["text"]?.jsonPrimitive?.contentOrNull ?: ""
+                    }
+                    if (text.isEmpty()) {
+                        text = d["completion"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
                 }
                 
@@ -3972,19 +3979,19 @@ put("system", if (enableCaching && cacheControl != null) {
 
                 // Extract reasoning content from various possible locations
                 var reasoning = ""
-                obj["delta"]?.jsonObject?.let { deltaObj ->
-                    reasoning = deltaObj["reasoning_content"]?.jsonPrimitive?.contentOrNull ?: ""
+                deltaObj?.let { d ->
+                    reasoning = d["reasoning_content"]?.jsonPrimitive?.contentOrNull ?: ""
                     
                     if (reasoning.isEmpty()) {
-                        reasoning = deltaObj["reasoning"]?.jsonPrimitive?.contentOrNull ?: ""
+                        reasoning = d["reasoning"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
                     
                     if (reasoning.isEmpty()) {
-                        reasoning = deltaObj["reasoningText"]?.jsonPrimitive?.contentOrNull ?: ""
+                        reasoning = d["reasoningText"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
                     
                     if (reasoning.isEmpty()) {
-                        deltaObj["reasoningContent"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull?.let {
+                        d["reasoningContent"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull?.let {
                             reasoning = it
                         }
                     }
@@ -4408,9 +4415,10 @@ put("system", if (enableCaching && cacheControl != null) {
                 
                 isGlmModel(modelId) -> {
                     // GLM 4.7 Flash on Bedrock might use Nova-style or OpenAI-style
-                    json["output"]?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content
-                        ?: json["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.content
+                    json["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.content
+                        ?: json["output"]?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content
                         ?: json["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content
+                        ?: json["generation"]?.jsonPrimitive?.content
                         ?: ""
                 }
 
