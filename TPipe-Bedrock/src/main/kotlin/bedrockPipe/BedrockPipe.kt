@@ -978,7 +978,8 @@ open class BedrockPipe : Pipe() {
         // Trace successful completion with all collected metadata
         trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, metadata = responseMetadata)
         
-        return MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
+        val result = MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
+        return splitInterleavedReasoning(result)
     }
     
     /**
@@ -1755,7 +1756,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
 
             if (useModelReasoning) {
-                put("reasoning_config", getNormalizedGlmReasoningEffort())
+                put("reasoning_config", getNormalizedReasoningEffort())
             }
             
             // Add other OpenAI params if any
@@ -1799,7 +1800,7 @@ put("system", if (enableCaching && cacheControl != null) {
 
             val documentMap = mutableMapOf<String, Document?>()
             if (useModelReasoning) {
-                documentMap["reasoning_config"] = Document.String(getNormalizedGlmReasoningEffort())
+                documentMap["reasoning_config"] = Document.String(getNormalizedReasoningEffort())
             }
             documentMap.putAll(getModelSpecificOpenAIParameters(requestedModelId))
 
@@ -2036,9 +2037,15 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             // Legacy thinking mode support (will be overridden by OpenAI parameters if set)
-            if (useModelReasoning && !openAIParams.containsKey("enable_thinking")) {
-                put("enable_thinking", true)
-                put("thinking_budget", computeOpenAIReasoningBudget())
+            if (useModelReasoning) {
+                if (isQwen3Model(requestedModelId)) {
+                    put("reasoning_config", getNormalizedReasoningEffort())
+                } else if (!openAIParams.containsKey("enable_thinking")) {
+                    put("enable_thinking", true)
+                    put("thinking_budget", computeOpenAIReasoningBudget())
+                } else if (!openAIParams.containsKey("include_reasoning")) {
+                    put("include_reasoning", true)
+                }
             }
             
         }.toString()
@@ -3016,7 +3023,15 @@ put("system", if (enableCaching && cacheControl != null) {
         return modelId.contains("glm-4.7", ignoreCase = true)
     }
 
-    private fun getNormalizedGlmReasoningEffort(): String {
+    private fun isQwen3Model(modelId: String): Boolean
+    {
+        return modelId.contains("qwen3", ignoreCase = true) || 
+               modelId.contains("-a22b", ignoreCase = true) || 
+               modelId.contains("-a3b", ignoreCase = true) ||
+               modelId.contains("-a35b", ignoreCase = true)
+    }
+
+    private fun getNormalizedReasoningEffort(): String {
         val effort = modelReasoningSettingsV3.takeIf { it.isNotBlank() }?.lowercase()
         if (effort != null) {
             return when (effort) {
@@ -3393,7 +3408,11 @@ put("system", if (enableCaching && cacheControl != null) {
                 }
                 
                 if (useModelReasoning) {
-                    documentMap["include_reasoning"] = Document.Boolean(true)
+                    if (isQwen3Model(model)) {
+                        documentMap["reasoning_config"] = Document.String(getNormalizedReasoningEffort())
+                    } else {
+                        documentMap["include_reasoning"] = Document.Boolean(true)
+                    }
                 }
                 
                 additionalModelRequestFields = Document.Map(documentMap)
@@ -3488,7 +3507,8 @@ put("system", if (enableCaching && cacheControl != null) {
                 }
             }
             
-            MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
+            val result = MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
+            return splitInterleavedReasoning(result)
             
         } catch (e: Exception) {
             MultimodalContent("")
@@ -3763,7 +3783,8 @@ put("system", if (enableCaching && cacheControl != null) {
                     allowMaxTokenOverflow && finalText.isNotEmpty() -> {
                         metadata["overflowAllowed"] = true
                         trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, metadata = metadata)
-                        MultimodalContent(text = finalText, modelReasoning = reasoningBuilder.toString())
+                        val result = MultimodalContent(text = finalText, modelReasoning = reasoningBuilder.toString())
+                        splitInterleavedReasoning(result)
                     }
                     !allowMaxTokenOverflow -> {
                         metadata["overflowAllowed"] = false
@@ -3865,7 +3886,8 @@ put("system", if (enableCaching && cacheControl != null) {
 
             // Trace successful streaming completion
             trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, metadata = metadata)
-            MultimodalContent(text = finalText, modelReasoning = reasoningBuilder.toString())
+            val result = MultimodalContent(text = finalText, modelReasoning = reasoningBuilder.toString())
+            return splitInterleavedReasoning(result)
 
         } catch (e: Exception) {
             // Trace streaming failure
@@ -4317,10 +4339,37 @@ put("system", if (enableCaching && cacheControl != null) {
     }
 
     private fun extractThinkSegmentsFromContent(content: String): List<String> {
-        val regex = "<think>(.*?)</think>".toRegex(setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-        return regex.findAll(content).mapNotNull { match ->
-            match.groupValues.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() }
-        }.toList()
+        val segments = mutableListOf<String>()
+        val regex = "<think>(?s:.*?)</think>".toRegex(RegexOption.IGNORE_CASE)
+        segments.addAll(regex.findAll(content).mapNotNull { it.groupValues.getOrNull(1)?.trim() })
+        
+        if (segments.isEmpty() && content.contains("</think>", ignoreCase = true)) {
+             val endTagIndex = content.indexOf("</think>", ignoreCase = true)
+             segments.add(content.substring(0, endTagIndex).trim())
+        }
+        
+        return segments.filter { it.isNotEmpty() }
+    }
+
+    /**
+     * Splits interleaved reasoning from text if present and dedicated reasoning field is empty.
+     * 
+     * @param content The MultimodalContent to process
+     * @return Processed MultimodalContent with reasoning separated if found in tags
+     */
+    private fun splitInterleavedReasoning(content: MultimodalContent): MultimodalContent {
+        if (content.modelReasoning.isNotEmpty()) return content
+        
+        val text = content.text
+        if (text.contains("</think>", ignoreCase = true)) {
+            val thinking = extractThinkSegmentsFromContent(text).joinToString("\n")
+            // Clean up both full tags and the implicit start case
+            var cleanedText = text.replace("(?si)<think>.*?</think>".toRegex(), "")
+            cleanedText = cleanedText.replace("(?si)^.*?</think>".toRegex(), "").trim()
+            
+            return content.copy(text = cleanedText, modelReasoning = thinking)
+        }
+        return content
     }
     
     /**
