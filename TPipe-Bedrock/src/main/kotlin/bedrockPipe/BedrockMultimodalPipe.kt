@@ -140,9 +140,9 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                 val streamingResult = executeConverseStream(client, modelId, converseRequest, "DeepSeek ConverseStream")
                 if (streamingResult != null) {
                     return MultimodalContent(
-                        text = streamingResult,
+                        text = streamingResult.text,
                         binaryContent = content.binaryContent,
-                        modelReasoning = ""
+                        modelReasoning = streamingResult.modelReasoning
                     )
                 }
             }
@@ -221,9 +221,9 @@ open class BedrockMultimodalPipe : BedrockPipe() {
             val streamingResult = executeConverseStream(client, modelId, converseRequest, "ConverseStream")
             if (streamingResult != null) {
                 return MultimodalContent(
-                    text = streamingResult,
+                    text = streamingResult.text,
                     binaryContent = content.binaryContent,
-                    modelReasoning = ""
+                    modelReasoning = streamingResult.modelReasoning
                 )
             }
         }

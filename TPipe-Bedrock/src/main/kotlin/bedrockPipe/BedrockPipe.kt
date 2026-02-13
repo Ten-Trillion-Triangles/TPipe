@@ -726,215 +726,38 @@ open class BedrockPipe : Pipe() {
         return try 
         {
             // Ensure the Bedrock client was properly initialized during init()
-            // If not initialized, fail gracefully rather than throwing exceptions
             val client = bedrockClient ?: run {
                 trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
                       metadata = mapOf("error" to "Client not initialized"))
                 return ""
             }
             
-            // Use the prompt as-is (context truncation happens earlier in the pipeline)
             val fullPrompt = promptInjector
-
-            // Track the user-requested model separately from the actual API identifier
             val requestedModelId = getRequestedModelId()
-            val targetModelId = model.ifEmpty { requestedModelId }
             
-            // Use Converse API for all models when enabled
-            if (useConverseApi)
-            {
-                val textResult = generateWithConverseApi(client, requestedModelId, fullPrompt)
-                
-                // Extract reasoning content properly for Nova and GLM models using Converse API
-                val reasoningContent = if ((requestedModelId.contains("amazon.nova") || isGlmModel(requestedModelId)) && lastConverseResponse != null) {
-                    extractReasoningFromConverseResponse(lastConverseResponse!!)
-                } else {
-                    extractReasoningContent(textResult, requestedModelId)
-                }
-                
-                // Add reasoning content to trace metadata if found
-                if (reasoningContent.isNotEmpty()) {
-                    trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
-                          metadata = mapOf(
-                              "reasoningContent" to reasoningContent,
-                              "modelSupportsReasoning" to true,
-                              "reasoningEnabled" to useModelReasoning,
-                              "responseLength" to textResult.length,
-                              "reasoningLength" to reasoningContent.length,
-                              "hasReasoning" to true
-                          ))
-                } else {
-                    trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
-                          metadata = mapOf(
-                              "responseLength" to textResult.length,
-                              "hasReasoning" to false
-                          ))
-                }
-                
-                return textResult
-            }
+            // Use unified implementation
+            val result = executeBedrockApi(client, requestedModelId, fullPrompt)
             
-            // For all other models, use the standard Invoke API approach
-            // Each model family has different JSON request/response formats
-            trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
-                  metadata = mapOf(
-                      "step" to "buildRequest",
-                      "modelId" to requestedModelId,
-                      "resolvedModelId" to targetModelId
-                  ))
-            
-            // Build model-specific JSON request based on the model family
-            // Each model has different parameter names and structures
-            val requestJson = when
-            {
-                // OpenAI GPT-OSS models use OpenAI-compatible format with reasoning support
-                requestedModelId.contains("openai.gpt-oss") -> buildGptOssRequest(fullPrompt)
-
-                // Amazon Nova models use Converse-style format with inferenceConfig
-                requestedModelId.contains("amazon.nova") -> buildNovaRequest(fullPrompt)
-                requestedModelId.contains("minimax") -> buildMiniMaxRequest(fullPrompt)
-                requestedModelId.contains("moonshot.kimi") -> buildKimiRequest(fullPrompt)
-
-                // Anthropic Claude models use Messages API format with advanced features
-                requestedModelId.contains("anthropic.claude") -> buildClaudeRequest(fullPrompt)
-
-                // Amazon Titan models use simple inputText + textGenerationConfig format
-                requestedModelId.contains("amazon.titan") -> buildTitanRequest(fullPrompt)
-
-                // AI21 Jurassic models use basic prompt + parameters format
-                requestedModelId.contains("ai21.j2") -> buildJurassicRequest(fullPrompt)
-
-                // Cohere Command models use prompt + generation parameters (p/k naming)
-                requestedModelId.contains("cohere.command") -> buildCohereRequest(fullPrompt)
-
-                // Meta Llama models use prompt + max_gen_len format
-                requestedModelId.contains("meta.llama") -> buildLlamaRequest(fullPrompt)
-
-                // Mistral models use prompt + parameters with 'stop' instead of 'stop_sequences'
-                requestedModelId.contains("mistral") -> buildMistralRequest(fullPrompt)
-
-                // Qwen3 models support thinking mode and multilingual capabilities  
-                requestedModelId.contains("qwen") -> buildQwenRequest(fullPrompt)
-
-                // GLM 4.7 / Flash models use OpenAI-style chat completions with thinking payloads
-                isGlmModel(requestedModelId) -> buildGlmRequest(fullPrompt)
-
-                requestedModelId.contains("deepseek") -> 
-                {
-                    // DeepSeek has different request formats for Converse vs Invoke API
-                    if (useConverseApi)
-                    {
-                        buildDeepSeekConverseRequest(fullPrompt)
-                    }
-                    else
-                    {
-                        buildDeepSeekRequest(fullPrompt)
-                    }
-                }
-                
-                // Fallback for unknown models using common parameter names
-                else -> buildGenericRequest(fullPrompt)
-            }
-
-            // Attempt streaming if enabled and callback is available
-            if (streamingEnabled)
-            {
-                val streamingResult = executeInvokeStream(client, requestedModelId, requestJson)
-                if (streamingResult != null)
-                {
-                    return streamingResult
-                }
-            }
-            
-            // Execute the Invoke API call with the model-specific JSON
-            // This is the legacy but stable API that all models support
-            trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
-                  metadata = mapOf("step" to "invokeModel", "requestSize" to requestJson.length))
-            
-            // Create the InvokeModel request with JSON payload
-            val invokeRequest = InvokeModelRequest {
-                this.modelId = targetModelId
-                body = requestJson.toByteArray()
-                contentType = "application/json"
-                serviceTier = mapServiceTier()
-            }
-
-            // Get the raw JSON response from Bedrock
-            val response = client.invokeModel(invokeRequest)
-            val responseBody = response.body?.let { String(it) } ?: ""
-            
-            // Parse the model-specific JSON response to extract the generated text
-            // Each model family returns responses in different JSON structures
-            val extractedText = extractTextFromResponse(responseBody, requestedModelId)
-            
-            // Collect comprehensive metadata about the response for tracing
+            // Add comprehensive tracing with reasoning metadata (preserve generateText's detailed tracing)
             val responseMetadata = mutableMapOf<String, Any>(
-                "responseLength" to extractedText.length,
-                "responseBodySize" to responseBody.length,
+                "responseLength" to result.text.length,
                 "success" to true
             )
             
-            // Extract reasoning content if the model produced any (DeepSeek R1, GPT-OSS)
-            // This happens regardless of useModelReasoning flag - we always capture it
-            val reasoningContent = extractReasoningContent(responseBody, requestedModelId)
-            
-            // Extract stop reason to understand why the model stopped generating
-            val stopReason = extractStopReasonFromInvokeResponse(responseBody, requestedModelId)
-            
-            // Add reasoning metadata if reasoning content was found
-            if (reasoningContent.isNotEmpty()) {
-                responseMetadata["reasoningContent"] = reasoningContent
+            if (result.modelReasoning.isNotEmpty()) {
+                responseMetadata["reasoningContent"] = result.modelReasoning
                 responseMetadata["modelSupportsReasoning"] = true
                 responseMetadata["reasoningEnabled"] = useModelReasoning
+                responseMetadata["reasoningLength"] = result.modelReasoning.length
+                responseMetadata["hasReasoning"] = true
+            } else {
+                responseMetadata["hasReasoning"] = false
             }
             
-            // Add stop reason if available (helps with debugging incomplete responses)
-            if (stopReason.isNotEmpty()) {
-                responseMetadata["stopReason"] = stopReason
-            }
+            trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, 
+                  metadata = responseMetadata)
             
-            // Check for max token overflow condition using our detection function
-            val isMaxTokenOverflow = isMaxTokenStopReason(stopReason)
-            if (isMaxTokenOverflow)
-            {
-                // Mark this response as having encountered max token overflow
-                responseMetadata["maxTokenOverflow"] = true
-                
-                // If allowMaxTokenOverflow is enabled and we have actual content (not just reasoning)
-                if (allowMaxTokenOverflow && extractedText.isNotEmpty())
-                {
-                    // Allow the overflow to pass through with success tracing
-                    trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, 
-                          metadata = responseMetadata + mapOf("overflowAllowed" to true))
-                }
-
-                else if (!allowMaxTokenOverflow)
-                {
-                    // Treat as error if overflow not allowed - this is the default behavior
-                    trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
-                          error = RuntimeException("Max tokens exceeded"),
-                          metadata = responseMetadata + mapOf("overflowAllowed" to false))
-                    return ""
-                }
-
-                else
-                {
-                    // No actual content despite overflow being allowed - still treat as error
-                    trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
-                          error = RuntimeException("Max tokens exceeded with no content output"),
-                          metadata = responseMetadata + mapOf("overflowAllowed" to true, "noContent" to true))
-                    return ""
-                }
-            }
-            
-            // Extract token usage information for cost tracking and optimization
-            extractTokenUsageFromInvokeResponse(responseBody, requestedModelId)?.let { usage ->
-                responseMetadata.putAll(usage)
-            }
-            
-            // Trace successful completion with all collected metadata
-            trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, metadata = responseMetadata)
-            extractedText
+            result.text
         } 
         catch (e: Exception) 
         {
@@ -987,78 +810,15 @@ open class BedrockPipe : Pipe() {
             
             val fullPrompt = content.text
             val requestedModelId = getRequestedModelId()
-            val targetModelId = model.ifEmpty { requestedModelId }
             
-            // Use Converse API when enabled (same as generateText)
-            if (useConverseApi)
-            {
-                val textResult = generateWithConverseApi(client, requestedModelId, fullPrompt)
-                val result = MultimodalContent(textResult)
-                
-                // Extract reasoning content properly for Nova and GLM models using Converse API
-                if ((requestedModelId.contains("amazon.nova") || isGlmModel(requestedModelId)) && lastConverseResponse != null) {
-                    result.modelReasoning = extractReasoningFromConverseResponse(lastConverseResponse!!)
-                } else {
-                    result.modelReasoning = extractReasoningContent(textResult, requestedModelId)
-                }
-                
-                return result
-            }
-            
-            // Build model-specific JSON request (same logic as generateText)
-            val requestJson = when
-            {
-                requestedModelId.contains("openai.gpt-oss") -> buildGptOssRequest(fullPrompt)
-                requestedModelId.contains("amazon.nova") -> buildNovaRequest(fullPrompt)
-                requestedModelId.contains("anthropic.claude") -> buildClaudeRequest(fullPrompt)
-                requestedModelId.contains("amazon.titan") -> buildTitanRequest(fullPrompt)
-                requestedModelId.contains("ai21.j2") -> buildJurassicRequest(fullPrompt)
-                requestedModelId.contains("cohere.command") -> buildCohereRequest(fullPrompt)
-                requestedModelId.contains("meta.llama") -> buildLlamaRequest(fullPrompt)
-                requestedModelId.contains("mistral") -> buildMistralRequest(fullPrompt)
-            requestedModelId.contains("qwen") -> buildQwenRequest(fullPrompt)
-            isGlmModel(requestedModelId) -> buildGlmRequest(fullPrompt)
-            requestedModelId.contains("deepseek") -> 
-                {
-                    if (useConverseApi)
-                    {
-                        buildDeepSeekConverseRequest(fullPrompt)
-                    }
-
-                    else
-                    {
-                        buildDeepSeekRequest(fullPrompt)
-                    }
-                }
-                else -> buildGenericRequest(fullPrompt)
-            }
-            
-            // Execute the Invoke API call (same logic as generateText)
-            val invokeRequest = InvokeModelRequest {
-                this.modelId = targetModelId
-                body = requestJson.toByteArray()
-                contentType = "application/json"
-                serviceTier = mapServiceTier()
-            }
-
-            val response = client.invokeModel(invokeRequest)
-            val responseBody = response.body?.let { String(it) } ?: ""
-            
-            // Extract BOTH text and reasoning content
-            val extractedText = extractTextFromResponse(responseBody, requestedModelId)
-            val reasoningContent = extractReasoningContent(responseBody, requestedModelId)
-            
-            // Create result with BOTH fields populated
-            val result = MultimodalContent(
-                text = extractedText,
-                modelReasoning = reasoningContent
-            )
+            // Use unified implementation
+            val result = executeBedrockApi(client, requestedModelId, fullPrompt)
             
             trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, result,
                   metadata = mapOf(
-                      "responseLength" to extractedText.length,
-                      "reasoningLength" to reasoningContent.length,
-                      "hasReasoning" to reasoningContent.isNotEmpty()
+                      "responseLength" to result.text.length,
+                      "reasoningLength" to result.modelReasoning.length,
+                      "hasReasoning" to result.modelReasoning.isNotEmpty()
                   ))
             result
             
@@ -1069,6 +829,156 @@ open class BedrockPipe : Pipe() {
             trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, error = e)
             MultimodalContent("")
         }
+    }
+    
+    /**
+     * Unified internal method for executing Bedrock API calls.
+     * This method contains all the shared logic for both generateText() and generateContent().
+     * 
+     * @param client The BedrockRuntimeClient instance
+     * @param requestedModelId The model identifier
+     * @param fullPrompt The complete prompt to send to the model
+     * @return MultimodalContent containing both text and reasoning
+     */
+    private suspend fun executeBedrockApi(
+        client: BedrockRuntimeClient,
+        requestedModelId: String,
+        fullPrompt: String
+    ): MultimodalContent
+    {
+        val targetModelId = model.ifEmpty { requestedModelId }
+        
+        // Use Converse API when enabled
+        if (useConverseApi)
+        {
+            return generateWithConverseApi(client, requestedModelId, fullPrompt)
+        }
+        
+        // Build model-specific JSON request based on the model family
+        trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
+              metadata = mapOf(
+                  "step" to "buildRequest",
+                  "modelId" to requestedModelId,
+                  "resolvedModelId" to targetModelId
+              ))
+        
+        val requestJson = when
+        {
+            requestedModelId.contains("openai.gpt-oss") -> buildGptOssRequest(fullPrompt)
+            requestedModelId.contains("amazon.nova") -> buildNovaRequest(fullPrompt)
+            requestedModelId.contains("minimax") -> buildMiniMaxRequest(fullPrompt)
+            requestedModelId.contains("moonshot.kimi") -> buildKimiRequest(fullPrompt)
+            requestedModelId.contains("anthropic.claude") -> buildClaudeRequest(fullPrompt)
+            requestedModelId.contains("amazon.titan") -> buildTitanRequest(fullPrompt)
+            requestedModelId.contains("ai21.j2") -> buildJurassicRequest(fullPrompt)
+            requestedModelId.contains("cohere.command") -> buildCohereRequest(fullPrompt)
+            requestedModelId.contains("meta.llama") -> buildLlamaRequest(fullPrompt)
+            requestedModelId.contains("mistral") -> buildMistralRequest(fullPrompt)
+            requestedModelId.contains("qwen") -> buildQwenRequest(fullPrompt)
+            isGlmModel(requestedModelId) -> buildGlmRequest(fullPrompt)
+            requestedModelId.contains("deepseek") -> 
+            {
+                if (useConverseApi)
+                {
+                    buildDeepSeekConverseRequest(fullPrompt)
+                }
+
+                else
+                {
+                    buildDeepSeekRequest(fullPrompt)
+                }
+            }
+            else -> buildGenericRequest(fullPrompt)
+        }
+        
+        // Attempt streaming if enabled
+        if (streamingEnabled)
+        {
+            val streamingResult = executeInvokeStream(client, requestedModelId, requestJson)
+            if (streamingResult != null)
+            {
+                return streamingResult
+            }
+        }
+        
+        // Execute the Invoke API call
+        trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
+              metadata = mapOf("step" to "invokeModel", "requestSize" to requestJson.length))
+        
+        val invokeRequest = InvokeModelRequest {
+            this.modelId = targetModelId
+            body = requestJson.toByteArray()
+            contentType = "application/json"
+            serviceTier = mapServiceTier()
+        }
+
+        val response = client.invokeModel(invokeRequest)
+        val responseBody = response.body?.let { String(it) } ?: ""
+        
+        // Extract text and reasoning content
+        val extractedText = extractTextFromResponse(responseBody, requestedModelId)
+        val reasoningContent = extractReasoningContent(responseBody, requestedModelId)
+        
+        // Collect comprehensive metadata about the response for tracing
+        val responseMetadata = mutableMapOf<String, Any>(
+            "responseLength" to extractedText.length,
+            "responseBodySize" to responseBody.length,
+            "success" to true
+        )
+        
+        // Add reasoning metadata if reasoning content was found
+        if (reasoningContent.isNotEmpty()) {
+            responseMetadata["reasoningContent"] = reasoningContent
+            responseMetadata["modelSupportsReasoning"] = true
+            responseMetadata["reasoningEnabled"] = useModelReasoning
+        }
+        
+        // Extract stop reason to understand why the model stopped generating
+        val stopReason = extractStopReasonFromInvokeResponse(responseBody, requestedModelId)
+        
+        // Add stop reason if available
+        if (stopReason.isNotEmpty()) {
+            responseMetadata["stopReason"] = stopReason
+        }
+        
+        // Check for max token overflow condition
+        val isMaxTokenOverflow = isMaxTokenStopReason(stopReason)
+        if (isMaxTokenOverflow)
+        {
+            responseMetadata["maxTokenOverflow"] = true
+            
+            if (allowMaxTokenOverflow && extractedText.isNotEmpty())
+            {
+                trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, 
+                      metadata = responseMetadata + mapOf("overflowAllowed" to true))
+            }
+
+            else if (!allowMaxTokenOverflow)
+            {
+                trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                      error = RuntimeException("Max tokens exceeded"),
+                      metadata = responseMetadata + mapOf("overflowAllowed" to false))
+                return MultimodalContent("")
+            }
+
+            else
+            {
+                trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                      error = RuntimeException("Max tokens exceeded with no content output"),
+                      metadata = responseMetadata + mapOf("overflowAllowed" to true, "noContent" to true))
+                return MultimodalContent("")
+            }
+        }
+        
+        // Extract token usage information for cost tracking
+        extractTokenUsageFromInvokeResponse(responseBody, requestedModelId)?.let { usage ->
+            responseMetadata.putAll(usage)
+        }
+        
+        // Trace successful completion with all collected metadata
+        trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, metadata = responseMetadata)
+        
+        return MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
     }
     
     /**
@@ -3506,7 +3416,7 @@ put("system", if (enableCaching && cacheControl != null) {
      * @param prompt The formatted prompt text
      * @return Generated text response
      */
-    private suspend fun generateWithConverseApi(client: BedrockRuntimeClient, modelId: String, prompt: String): String
+    private suspend fun generateWithConverseApi(client: BedrockRuntimeClient, modelId: String, prompt: String): MultimodalContent
     {
         return try {
             val converseRequest = when
@@ -3553,32 +3463,35 @@ put("system", if (enableCaching && cacheControl != null) {
             // Store the full response for reasoning extraction
             lastConverseResponse = response
             
+            // Extract reasoning content from the response
+            val reasoningContent = extractReasoningFromConverseResponse(response)
+            
             // Handle max token overflow for Converse API
             if (isConverseOverflow)
             {
                 if (allowMaxTokenOverflow && extractedText.isNotEmpty())
                 {
                     // Allow overflow with content
-                    return extractedText
+                    return MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
                 }
 
                 else if (!allowMaxTokenOverflow)
                 {
                     // Treat as error - return empty to trigger fallback
-                    return ""
+                    return MultimodalContent("")
                 }
 
                 else
                 {
                     // No content despite overflow being allowed
-                    return ""
+                    return MultimodalContent("")
                 }
             }
             
-            extractedText
+            MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
             
         } catch (e: Exception) {
-            ""
+            MultimodalContent("")
         }
     }
 
@@ -3644,7 +3557,7 @@ put("system", if (enableCaching && cacheControl != null) {
             val streamingRequest = buildGptOssConverseRequest(modelId, prompt)
             val streamingResult = executeConverseStream(client, modelId, streamingRequest, "GPT-OSS ConverseStream")
             if (streamingResult != null) {
-                return streamingResult
+                return streamingResult.text
             }
         }
 
@@ -3678,11 +3591,11 @@ put("system", if (enableCaching && cacheControl != null) {
         if (streamingEnabled) {
             val streamingRequest = buildDeepSeekConverseRequestObject(modelId, prompt)
             val streamingResult = executeConverseStream(client, modelId, streamingRequest, "DeepSeek ConverseStream")
-            if (!streamingResult.isNullOrEmpty() && !streamingResult.contains("SdkUnknown")) {
-                return streamingResult
+            if (streamingResult != null && streamingResult.text.isNotEmpty() && !streamingResult.text.contains("SdkUnknown")) {
+                return streamingResult.text
             }
 
-            if (streamingResult != null && streamingResult.contains("SdkUnknown")) {
+            if (streamingResult != null && streamingResult.text.contains("SdkUnknown")) {
                 trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
                       metadata = mapOf(
                           "apiType" to "DeepSeek ConverseStream",
@@ -3697,7 +3610,7 @@ put("system", if (enableCaching && cacheControl != null) {
               metadata = mapOf("apiType" to "DeepSeek ConverseAPI", "modelId" to modelId, "streaming" to false))
         val converseResult = generateWithConverseApi(client, modelId, prompt)
 
-        if (converseResult.isEmpty() || converseResult.contains("SdkUnknown")) {
+        if (converseResult.text.isEmpty() || converseResult.text.contains("SdkUnknown")) {
             trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
                   metadata = mapOf(
                       "apiType" to "DeepSeek ConverseAPI",
@@ -3714,8 +3627,8 @@ put("system", if (enableCaching && cacheControl != null) {
         }
 
         trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
-              metadata = mapOf("responseLength" to converseResult.length, "modelId" to modelId, "streaming" to false))
-        return converseResult
+              metadata = mapOf("responseLength" to converseResult.text.length, "modelId" to modelId, "streaming" to false))
+        return converseResult.text
     }
 
     /**
@@ -3739,7 +3652,7 @@ put("system", if (enableCaching && cacheControl != null) {
             if (streamingRequest != null) {
                 val streamingResult = executeConverseStream(client, modelId, streamingRequest, "ConverseStream")
                 if (streamingResult != null) {
-                    return streamingResult
+                    return streamingResult.text
                 }
             }
         }
@@ -3748,8 +3661,8 @@ put("system", if (enableCaching && cacheControl != null) {
               metadata = mapOf("apiType" to "ConverseAPI", "modelId" to modelId, "streaming" to false))
         val result = generateWithConverseApi(client, modelId, prompt)
         trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
-              metadata = mapOf("responseLength" to result.length, "modelId" to modelId, "streaming" to false))
-        return result
+              metadata = mapOf("responseLength" to result.text.length, "modelId" to modelId, "streaming" to false))
+        return result.text
     }
 
     protected suspend fun executeConverseStream(
@@ -3757,7 +3670,7 @@ put("system", if (enableCaching && cacheControl != null) {
         modelId: String,
         request: ConverseRequest,
         apiLabel: String
-    ): String? {
+    ): MultimodalContent? {
         // DEBUG: Capture the full request including additionalModelRequestFields
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
               metadata = mapOf(
@@ -3850,7 +3763,7 @@ put("system", if (enableCaching && cacheControl != null) {
                     allowMaxTokenOverflow && finalText.isNotEmpty() -> {
                         metadata["overflowAllowed"] = true
                         trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, metadata = metadata)
-                        finalText
+                        MultimodalContent(text = finalText, modelReasoning = reasoningBuilder.toString())
                     }
                     !allowMaxTokenOverflow -> {
                         metadata["overflowAllowed"] = false
@@ -3868,7 +3781,7 @@ put("system", if (enableCaching && cacheControl != null) {
 
             // Trace successful completion
             trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, metadata = metadata)
-            finalText
+            MultimodalContent(text = finalText, modelReasoning = reasoningBuilder.toString())
 
         } catch (e: Exception) {
             // Trace streaming failure
@@ -3883,7 +3796,7 @@ put("system", if (enableCaching && cacheControl != null) {
         client: BedrockRuntimeClient,
         modelId: String,
         requestJson: String
-    ): String? {
+    ): MultimodalContent? {
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
               metadata = mapOf(
                   "apiType" to "InvokeModelWithResponseStream",
@@ -3952,7 +3865,7 @@ put("system", if (enableCaching && cacheControl != null) {
 
             // Trace successful streaming completion
             trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, metadata = metadata)
-            finalText
+            MultimodalContent(text = finalText, modelReasoning = reasoningBuilder.toString())
 
         } catch (e: Exception) {
             // Trace streaming failure
