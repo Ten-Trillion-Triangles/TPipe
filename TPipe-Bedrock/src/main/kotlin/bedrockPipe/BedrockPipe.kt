@@ -745,8 +745,8 @@ open class BedrockPipe : Pipe() {
             {
                 val textResult = generateWithConverseApi(client, requestedModelId, fullPrompt)
                 
-                // Extract reasoning content properly for Nova models using Converse API
-                val reasoningContent = if (requestedModelId.contains("amazon.nova") && lastConverseResponse != null) {
+                // Extract reasoning content properly for Nova and GLM models using Converse API
+                val reasoningContent = if ((requestedModelId.contains("amazon.nova") || isGlmModel(requestedModelId)) && lastConverseResponse != null) {
                     extractReasoningFromConverseResponse(lastConverseResponse!!)
                 } else {
                     extractReasoningContent(textResult, requestedModelId)
@@ -995,8 +995,8 @@ open class BedrockPipe : Pipe() {
                 val textResult = generateWithConverseApi(client, requestedModelId, fullPrompt)
                 val result = MultimodalContent(textResult)
                 
-                // Extract reasoning content properly for Nova models using Converse API
-                if (requestedModelId.contains("amazon.nova") && lastConverseResponse != null) {
+                // Extract reasoning content properly for Nova and GLM models using Converse API
+                if ((requestedModelId.contains("amazon.nova") || isGlmModel(requestedModelId)) && lastConverseResponse != null) {
                     result.modelReasoning = extractReasoningFromConverseResponse(lastConverseResponse!!)
                 } else {
                     result.modelReasoning = extractReasoningContent(textResult, requestedModelId)
@@ -1815,76 +1815,45 @@ put("system", if (enableCaching && cacheControl != null) {
      */
     fun buildGlmRequest(prompt: String): String {
         val requestedModelId = getRequestedModelId()
-        val systemBlocks = mutableListOf<JsonObject>()
-        if (systemPrompt.isNotEmpty()) {
-            systemBlocks.add(buildJsonObject {
-                put("text", systemPrompt)
-            })
-        }
-        if (!pcpContext.tpipeOptions.isEmpty()) {
-            systemBlocks.add(buildJsonObject {
-                put("text", "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}")
-            })
-        }
-
         val messages = mutableListOf<JsonObject>()
+        
         messages.add(buildJsonObject {
             put("role", "user")
-            put("content", buildJsonArray {
-                add(buildJsonObject {
-                    put("text", prompt)
-                })
-            })
+            put("content", prompt)
         })
 
         return buildJsonObject {
-            put("modelId", model)
-            if (systemBlocks.isNotEmpty()) {
-                put("system", JsonArray(systemBlocks))
+            if (systemPrompt.isNotEmpty()) {
+                put("system", systemPrompt)
             }
-            put("messages", JsonArray(messages))
-            put("inferenceConfig", buildJsonObject {
-                if (temperature > 0) put("temperature", temperature)
-                if (maxTokens > 0) put("maxTokens", maxTokens)
-                if (topP > 0) put("topP", topP)
-                if (stopSequences.isNotEmpty()) {
-                    put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+            if (!pcpContext.tpipeOptions.isEmpty()) {
+                val pcpPrompt = "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
+                if (systemPrompt.isNotEmpty()) {
+                    put("system", systemPrompt + "\n\n" + pcpPrompt)
+                } else {
+                    put("system", pcpPrompt)
                 }
-            })
+            }
 
-            buildGlmAdditionalFieldsJson(requestedModelId)?.let {
-                put("additionalModelRequestFields", it)
+            put("messages", JsonArray(messages))
+            
+            if (temperature > 0) put("temperature", temperature)
+            if (maxTokens > 0) put("max_tokens", maxTokens)
+            if (topP > 0) put("top_p", topP)
+            if (stopSequences.isNotEmpty()) {
+                put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+            }
+
+            if (useModelReasoning) {
+                put("reasoning_config", getNormalizedGlmReasoningEffort())
+            }
+            
+            // Add other OpenAI params if any
+            val openAIParams = getModelSpecificOpenAIParameterValues(requestedModelId)
+            openAIParams.forEach { (key, value) ->
+                anyToJsonElement(value)?.let { put(key, it) }
             }
         }.toString()
-    }
-
-    private fun buildGlmAdditionalFieldsJson(modelId: String): JsonObject? {
-        val fields = mutableMapOf<String, JsonElement>()
-
-        buildGlmThinkingJson()?.let { fields["thinking"] = it }
-
-        val openAIParams = getModelSpecificOpenAIParameterValues(modelId)
-        openAIParams.forEach { (key, value) ->
-            anyToJsonElement(value)?.let { fields[key] = it }
-        }
-
-        if (fields.isEmpty()) {
-            return null
-        }
-
-        return buildJsonObject {
-            fields.forEach { (key, element) ->
-                put(key, element)
-            }
-        }
-    }
-
-    private fun buildGlmThinkingJson(): JsonObject? {
-        if (!useModelReasoning) return null
-        return buildJsonObject {
-            put("type", "enabled")
-            put("budget_tokens", computeOpenAIReasoningBudget())
-        }
     }
 
     fun buildGlmConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest {
@@ -1919,7 +1888,9 @@ put("system", if (enableCaching && cacheControl != null) {
             }
 
             val documentMap = mutableMapOf<String, Document?>()
-            buildGlmThinkingDocumentMap()?.let { documentMap["thinking"] = Document.Map(it) }
+            if (useModelReasoning) {
+                documentMap["reasoning_config"] = Document.String(getNormalizedGlmReasoningEffort())
+            }
             documentMap.putAll(getModelSpecificOpenAIParameters(requestedModelId))
 
             if (documentMap.isNotEmpty()) {
@@ -1932,15 +1903,6 @@ put("system", if (enableCaching && cacheControl != null) {
 
     private fun buildGlmConverseRequest(prompt: String): ConverseRequest {
         return buildGlmConverseRequest(listOf(ContentBlock.Text(prompt)))
-    }
-
-    private fun buildGlmThinkingDocumentMap(): Map<String, Document?>? {
-        if (!useModelReasoning) return null
-        val budget = computeOpenAIReasoningBudget()
-        return mapOf(
-            "type" to Document.String("enabled"),
-            "budget_tokens" to Document.Number(budget)
-        )
     }
 
     private fun anyToJsonElement(value: Any?): JsonElement? {
@@ -3142,6 +3104,26 @@ put("system", if (enableCaching && cacheControl != null) {
     private fun isGlmModel(modelId: String): Boolean
     {
         return modelId.contains("glm-4.7", ignoreCase = true)
+    }
+
+    private fun getNormalizedGlmReasoningEffort(): String {
+        val effort = modelReasoningSettingsV3.takeIf { it.isNotBlank() }?.lowercase()
+        if (effort != null) {
+            return when (effort) {
+                "low", "medium", "high" -> effort
+                else -> "medium"
+            }
+        }
+        
+        if (modelReasoningSettingsV2 > 0) {
+            return when {
+                modelReasoningSettingsV2 >= 2000 -> "high"
+                modelReasoningSettingsV2 >= 1000 -> "medium"
+                else -> "low"
+            }
+        }
+        
+        return "medium"
     }
 
     private fun computeOpenAIReasoningBudget(): Int
@@ -4378,6 +4360,35 @@ put("system", if (enableCaching && cacheControl != null) {
 
                     reasoningParts.joinToString("\n")
                 }
+                
+                isGlmModel(modelId) -> {
+                    // GLM 4.7 Flash on Bedrock might use Nova-style or OpenAI-style
+                    val message = json["output"]?.jsonObject?.get("message")?.jsonObject
+                    val content = message?.get("content")?.jsonArray
+                    val novaStyleReasoning = content?.mapNotNull { contentItem ->
+                        val contentObj = contentItem.jsonObject
+                        when {
+                            contentObj.containsKey("reasoningContent") -> 
+                                contentObj["reasoningContent"]?.jsonObject?.get("reasoningText")?.jsonPrimitive?.content
+                            else -> null
+                        }
+                    }?.joinToString("\n")
+                    
+                    if (!novaStyleReasoning.isNullOrEmpty()) {
+                        novaStyleReasoning
+                    } else {
+                        val choice = json["choices"]?.jsonArray?.firstOrNull()?.jsonObject
+                        val choiceMessage = choice?.get("message")?.jsonObject
+                        
+                        choiceMessage?.get("reasoning_content")?.jsonPrimitive?.content
+                            ?: choiceMessage?.get("thinking")?.jsonPrimitive?.content
+                            ?: choiceMessage?.get("reasoning")?.jsonPrimitive?.content
+                            ?: json["reasoning_content"]?.jsonPrimitive?.content
+                            ?: json["thinking"]?.jsonPrimitive?.content
+                            ?: ""
+                    }
+                }
+
                 else -> "" // Unknown model, no reasoning extraction
             }
         } catch (e: Exception) {
@@ -4480,6 +4491,14 @@ put("system", if (enableCaching && cacheControl != null) {
                         // DeepSeek Invoke API uses choices array: choices[0].text
                         json["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: ""
                     }
+                }
+                
+                isGlmModel(modelId) -> {
+                    // GLM 4.7 Flash on Bedrock might use Nova-style or OpenAI-style
+                    json["output"]?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content
+                        ?: json["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.content
+                        ?: json["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content
+                        ?: ""
                 }
 
                 else -> {
