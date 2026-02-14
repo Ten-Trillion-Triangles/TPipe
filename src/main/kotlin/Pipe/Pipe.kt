@@ -494,6 +494,14 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     protected var pcpDescription = ""
 
     /**
+     * Custom instructions for merged PCP + JSON output mode.
+     * If empty, default merged instructions will be used.
+     * This mode is automatically activated when both PCP tools and JSON output are configured.
+     */
+    @Serializable
+    protected var mergedPcpJsonInstructions = ""
+
+    /**
      * If false the AI model does not support native and forced structured json input and output. In this case,
      * TPipe will use prompt injection to force json input and output. While not 100% guaranteed to work,
      * this method generally does output a functional result.
@@ -1263,7 +1271,47 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         this.systemPrompt = prompt
         rawSystemPrompt = prompt
 
-        if(!pcpContext.tpipeOptions.isEmpty() || !pcpContext.httpOptions.isEmpty() || !pcpContext.stdioOptions.isEmpty() || pcpContext.pythonOptions.availablePackages.isNotEmpty())
+        // Detect merged mode
+        val hasPcpTools = !pcpContext.tpipeOptions.isEmpty() || 
+                          !pcpContext.httpOptions.isEmpty() || 
+                          !pcpContext.stdioOptions.isEmpty() || 
+                          pcpContext.pythonOptions.availablePackages.isNotEmpty()
+
+        val hasJsonOutput = !this.supportsNativeJson && jsonOutput.isNotEmpty()
+        val useMergedMode = hasPcpTools && hasJsonOutput
+
+        /**
+         * MERGED MODE: Both JSON output and PCP tools configured.
+         */
+        if (useMergedMode)
+        {
+            val pcpAsJson = serialize(pcpContext, false)
+            val pcpRequestExample = examplePromptFor(PcPRequest::class)
+            
+            val mergedInstructions = """\n\nYou must return your output in Json format matching this schema:
+                |${jsonOutput}
+                |
+                |All variables in the json output must have valid values that match their declared types. 
+                |Never use null as a value - instead provide appropriate default values: empty strings for text fields, 
+                |empty arrays for lists, empty objects for nested structures, 0 for numbers, and false for booleans.
+                |
+                |You may also take actions using the Pipe Context Protocol if needed.
+                |Available tools:
+                |${pcpAsJson}
+                |
+                |If you wish to call any tools, return an array of the following json:
+                |[${pcpRequestExample}]
+                |
+                |Tool calls are optional - only include them if you need to use a tool.
+            """.trimMargin()
+            
+            systemPrompt = systemPrompt + mergedInstructions
+        }
+
+        /**
+         * PCP-ONLY MODE: Tools configured but no JSON output requirement.
+         */
+        else if (hasPcpTools && !hasJsonOutput)
         {
             val pcpAsJson = serialize(pcpContext, false)
             val pcpRequestAsJson = examplePromptFor(PcPRequest::class)
@@ -1418,17 +1466,59 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
         //todo: Add support for a custom pcp instruction set. Low prio vs other options.
 
+        // Detect prompt injection mode
+        val hasPcpTools = !pcpContext.tpipeOptions.isEmpty() || 
+                          !pcpContext.httpOptions.isEmpty() || 
+                          !pcpContext.stdioOptions.isEmpty() || 
+                          pcpContext.pythonOptions.availablePackages.isNotEmpty()
+
+        val hasJsonOutput = !this.supportsNativeJson && jsonOutput.isNotEmpty()
+        val useMergedMode = hasPcpTools && hasJsonOutput
+
         /**
-         * Bind the pcp context and schema to the system prompt an agent that calls pcp should avoid also having
-         * a second set of returning json. TPipe does support handling multiple, but it's strongly advised to avoid
-         * such a design pattern.
+         * MERGED MODE: Both JSON output and PCP tools configured.
+         * JSON output is REQUIRED, tool calls are OPTIONAL.
+         * This resolves the mutual exclusivity between JSON output and PCP tool requests.
          */
-        if(!pcpContext.tpipeOptions.isEmpty() || !pcpContext.httpOptions.isEmpty() || !pcpContext.stdioOptions.isEmpty() || pcpContext.pythonOptions.availablePackages.isNotEmpty())
+        if (useMergedMode)
+        {
+            val pcpAsJson = serialize(pcpContext, false)
+            val pcpRequestExample = examplePromptFor(PcPRequest::class)
+            
+            val defaultMergedInstructions = """
+                |
+                |You must return your output in Json format matching this schema:
+                |${jsonOutput}
+                |
+                |All variables in the json output must have valid values that match their declared types. 
+                |Never use null as a value - instead provide appropriate default values: empty strings for text fields, 
+                |empty arrays for lists, empty objects for nested structures, 0 for numbers, and false for booleans.
+                |
+                |You may also take actions using the Pipe Context Protocol if needed.
+                |Available tools:
+                |${pcpAsJson}
+                |
+                |If you wish to call any tools, return an array of the following json:
+                |[${pcpRequestExample}]
+                |
+                |Tool calls are optional - only include them if you need to use a tool.
+            """.trimMargin()
+            
+            // Allow custom override
+            val actualMergedInstructions = mergedPcpJsonInstructions.ifEmpty { defaultMergedInstructions }
+            systemPrompt = systemPrompt + actualMergedInstructions
+        }
+
+        /**
+         * PCP-ONLY MODE: Tools configured but no JSON output requirement.
+         * Bind the pcp context and schema to the system prompt.
+         */
+        else if (hasPcpTools && !hasJsonOutput)
         {
             val pcpAsJson = serialize(pcpContext, false)
             val pcpRequestAsJson = examplePromptFor(PcPRequest::class)
 
-            var pcpContextRequirement = """
+            val defaultPcpInstructions = """
                 |
                 |You may take actions to carry out your task using the Pipe Context Protocol.
                 |The Pipe Context Protocol is a standardized way to communicate with user's machine. The protocol is as follows:
@@ -1443,10 +1533,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 |When returning any json requests for tools. You must always follow the json schema exactly.
             """.trimMargin()
 
-            //Allow this to also be overridden.
-            if(pcpDescription.isNotEmpty()) pcpContextRequirement = pcpDescription
-
-            systemPrompt = systemPrompt + pcpContextRequirement
+            // Allow custom override
+            val actualPcpInstructions = pcpDescription.ifEmpty { defaultPcpInstructions }
+            systemPrompt = systemPrompt + actualPcpInstructions
         }
 
         if(!p2pAgentDescriptors.isNullOrEmpty())
@@ -3314,6 +3403,20 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setPcPDescription(description: String) : Pipe
     {
         pcpDescription = description
+        return this
+    }
+
+    /**
+     * Sets custom instructions for merged PCP + JSON output mode.
+     * This overrides the default merged response format instructions.
+     * Merged mode is automatically activated when both PCP tools and JSON output are configured.
+     *
+     * @param instructions Custom instructions for how to format merged responses
+     * @return This Pipe object for method chaining
+     */
+    fun setMergedPcpJsonInstructions(instructions: String): Pipe
+    {
+        mergedPcpJsonInstructions = instructions
         return this
     }
 
