@@ -3355,8 +3355,9 @@ put("system", if (enableCaching && cacheControl != null) {
      * @see useModelReasoning for enabling reasoning mode
      * @see modelReasoningSettingsV2 for custom thinking budget
      */
-    fun buildQwenConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
+    fun buildQwenConverseRequest(contentBlocks: List<ContentBlock>, modelId: String = ""): ConverseRequest
     {
+        val targetModelId = modelId.ifEmpty { model }
         val messages = mutableListOf<Message>()
         
         messages.add(Message {
@@ -3382,7 +3383,7 @@ put("system", if (enableCaching && cacheControl != null) {
         }
         
         return ConverseRequest {
-            this.modelId = model
+            this.modelId = targetModelId
             this.messages = messages
             if (systemBlocks.isNotEmpty()) this.system = systemBlocks
             
@@ -3408,7 +3409,7 @@ put("system", if (enableCaching && cacheControl != null) {
                 }
                 
                 if (useModelReasoning) {
-                    if (isQwen3Model(model)) {
+                    if (isQwen3Model(targetModelId)) {
                         documentMap["reasoning_config"] = Document.String(getNormalizedReasoningEffort())
                     } else {
                         documentMap["include_reasoning"] = Document.Boolean(true)
@@ -3422,8 +3423,8 @@ put("system", if (enableCaching && cacheControl != null) {
         }
     }
 
-    private fun buildQwenConverseRequest(prompt: String): ConverseRequest {
-        return buildQwenConverseRequest(listOf(ContentBlock.Text(prompt)))
+    private fun buildQwenConverseRequest(prompt: String, modelId: String = ""): ConverseRequest {
+        return buildQwenConverseRequest(listOf(ContentBlock.Text(prompt)), modelId)
     }
 
     /**
@@ -3440,7 +3441,7 @@ put("system", if (enableCaching && cacheControl != null) {
         return try {
             val converseRequest = when
             {
-                modelId.contains("qwen") -> buildQwenConverseRequest(prompt)
+                modelId.contains("qwen") -> buildQwenConverseRequest(prompt, modelId)
                 isGlmModel(modelId) -> buildGlmConverseRequest(prompt)
                 modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(prompt)
                 modelId.contains("amazon.nova") -> buildNovaConverseRequest(prompt)
@@ -3529,7 +3530,7 @@ put("system", if (enableCaching && cacheControl != null) {
         return when {
             modelId.contains("openai.gpt-oss") -> buildGptOssConverseRequest(modelId, prompt)
             modelId.contains("deepseek" ) -> buildDeepSeekConverseRequestObject(modelId, prompt)
-            modelId.contains("qwen") -> buildQwenConverseRequest(prompt)
+            modelId.contains("qwen") -> buildQwenConverseRequest(prompt, modelId)
             isGlmModel(modelId) -> buildGlmConverseRequest(prompt)
             modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(prompt)
             modelId.contains("amazon.nova") -> buildNovaConverseRequest(prompt)
