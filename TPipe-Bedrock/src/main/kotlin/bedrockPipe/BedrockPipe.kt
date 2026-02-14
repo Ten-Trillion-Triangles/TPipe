@@ -1083,7 +1083,7 @@ open class BedrockPipe : Pipe() {
                 countSubWordsIfSplit = true
                 nonWordSplitCount = 1
             }
-            modelId.contains("moonshot.kimi") -> {
+            isKimiModel(modelId) -> {
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -2814,9 +2814,8 @@ put("system", if (enableCaching && cacheControl != null) {
      */
     private fun buildKimiRequest(prompt: String): String {
         val requestedModelId = getRequestedModelId()
-        val reasoningConfig = buildKimiReasoningConfig(requestedModelId)
         val toolConfig = buildNovaToolConfig()
-        val additionalFields = buildKimiAdditionalModelRequestFieldsJson(reasoningConfig, toolConfig)
+        val additionalFields = buildKimiAdditionalModelRequestFieldsJson(requestedModelId, toolConfig)
 
         val messages = mutableListOf<JsonObject>()
         messages.add(buildJsonObject {
@@ -2895,9 +2894,8 @@ put("system", if (enableCaching && cacheControl != null) {
 
         val requestedModelId = getRequestedModelId()
         val targetModelId = model.ifEmpty { requestedModelId }
-        val reasoningConfig = buildKimiReasoningConfig(requestedModelId)
         val toolConfig = buildNovaToolConfig()
-        val additionalFields = buildKimiAdditionalModelRequestFieldsJson(reasoningConfig, toolConfig)
+        val additionalFields = buildKimiAdditionalModelRequestFieldsJson(requestedModelId, toolConfig)
 
         return ConverseRequest {
             this.modelId = targetModelId
@@ -2926,9 +2924,24 @@ put("system", if (enableCaching && cacheControl != null) {
     }
 
     private fun buildKimiAdditionalModelRequestFieldsJson(
-        reasoningConfig: JsonObject?,
+        requestedModelId: String,
         toolConfig: JsonObject?
     ): JsonObject? {
+        // Kimi 2.5 uses top-level reasoning_config
+        if (isKimi25Model(requestedModelId)) {
+            if (!useModelReasoning && toolConfig == null && topK <= 0) return null
+            
+            return buildJsonObject {
+                if (useModelReasoning) {
+                    put("reasoning_config", getNormalizedReasoningEffort())
+                }
+                if (topK > 0) put("top_k", topK)
+                toolConfig?.let { put("toolConfig", it) }
+            }
+        }
+
+        // Older/Standard Kimi models use nested inferenceConfig
+        val reasoningConfig = buildKimiReasoningConfig(requestedModelId)
         val inferenceConfig = buildJsonObject {
             reasoningConfig?.let { put("reasoningConfig", it) }
             if (topK > 0) put("topK", topK)
@@ -2943,7 +2956,9 @@ put("system", if (enableCaching && cacheControl != null) {
     }
 
     private fun buildKimiReasoningConfig(modelId: String): JsonObject? {
-        if (!isKimiModel(modelId) || !useModelReasoning) return null
+        // Kimi K2 Thinking and Kimi 2.5 don't use this nested format
+        if (isKimi25Model(modelId) || modelId.contains("-thinking") || !useModelReasoning) return null
+        
         val budgetTokens = modelReasoningSettingsV2.takeIf { it > 0 }?.coerceAtMost(maxTokens) ?: maxTokens
         return buildJsonObject {
             put("type", "enabled")
@@ -2975,9 +2990,25 @@ put("system", if (enableCaching && cacheControl != null) {
         return primitive.content
     }
 
-    private fun isKimiModel(modelId: String): Boolean {
-        return modelId.contains("moonshot.kimi", ignoreCase = true)
-    }
+        private fun isKimiModel(modelId: String): Boolean
+
+        {
+
+            return modelId.contains("kimi", ignoreCase = true)
+
+        }
+
+    
+
+        private fun isKimi25Model(modelId: String): Boolean
+
+        {
+
+            return modelId.contains("kimi-k2.5", ignoreCase = true)
+
+        }
+
+    
 
     /**
      * Determines if the model is DeepSeek R1 (built-in reasoning).
@@ -3446,7 +3477,7 @@ put("system", if (enableCaching && cacheControl != null) {
                 modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(prompt)
                 modelId.contains("amazon.nova") -> buildNovaConverseRequest(prompt)
                 modelId.contains("minimax") -> buildMiniMaxConverseRequest(prompt)
-                modelId.contains("moonshot.kimi") -> buildKimiConverseRequest(prompt)
+                isKimiModel(modelId) -> buildKimiConverseRequest(prompt)
                 modelId.contains("amazon.titan") -> buildTitanConverseRequest(prompt)
                 modelId.contains("ai21.j2") -> buildAI21ConverseRequest(prompt)
                 modelId.contains("cohere.command") -> buildCohereConverseRequest(prompt)
@@ -4267,7 +4298,7 @@ put("system", if (enableCaching && cacheControl != null) {
                         }
                     }
                 }
-                modelId.contains("moonshot.kimi") -> {
+                isKimiModel(modelId) -> {
                     val message = json["output"]?.jsonObject?.get("message")?.jsonObject
                     val content = message?.get("content")?.jsonArray
                     val reasoningBlocks = content?.mapNotNull { contentItem ->
@@ -4402,7 +4433,7 @@ put("system", if (enableCaching && cacheControl != null) {
                     // Nova uses nested structure: output.message.content[0].text
                     json["output"]?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: ""
                 }
-                modelId.contains("moonshot.kimi") -> {
+                isKimiModel(modelId) -> {
                     json["output"]?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: ""
                 }
                 modelId.contains("minimax") -> {
