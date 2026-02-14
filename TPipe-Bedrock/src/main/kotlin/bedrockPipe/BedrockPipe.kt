@@ -1894,7 +1894,7 @@ put("system", if (enableCaching && cacheControl != null) {
                 }
 
                 if (modelId.contains("deepseek") && useModelReasoning) {
-                    parameterValues["include_reasoning"] = true
+                    parameterValues["reasoning_config"] = getNormalizedReasoningEffort()
                 }
             }
 
@@ -2091,9 +2091,9 @@ put("system", if (enableCaching && cacheControl != null) {
                 }
             }
             
-            // DeepSeek V3.1 and R1 models support thinking mode via include_reasoning parameter
-            if (useModelReasoning && !openAIParams.containsKey("include_reasoning")) {
-                put("include_reasoning", true)
+            // DeepSeek V3.1 and R1 models support thinking mode via reasoning_config parameter
+            if (useModelReasoning && !openAIParams.containsKey("reasoning_config")) {
+                put("reasoning_config", getNormalizedReasoningEffort())
             }
         }.toString()
     }
@@ -2137,9 +2137,9 @@ put("system", if (enableCaching && cacheControl != null) {
             val openAIParams = getModelSpecificOpenAIParameters(modelId)
             documentMap.putAll(openAIParams)
             
-            // DeepSeek V3.1 and R1 models support thinking mode via include_reasoning parameter
-            if (useModelReasoning && !documentMap.containsKey("include_reasoning")) {
-                documentMap["include_reasoning"] = Document.Boolean(true)
+            // DeepSeek V3.1 and R1 models support thinking mode via reasoning_config parameter
+            if (useModelReasoning && !documentMap.containsKey("reasoning_config")) {
+                documentMap["reasoning_config"] = Document.String(getNormalizedReasoningEffort())
             }
             
             if (documentMap.isNotEmpty()) {
