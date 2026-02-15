@@ -1,6 +1,7 @@
 package bedrockPipe
 
 import bedrockPipe.BedrockPipe
+import com.TTT.Config.TPipeConfig
 import com.TTT.Enums.ProviderName
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Pipe.MultimodalContent
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Assertions.*
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Pipe.Pipe
+import com.TTT.Util.writeStringToFile
 
 class GlmReasoningTest {
     
@@ -77,7 +79,7 @@ class GlmReasoningTest {
         
         val result = runBlocking {
             glmPipe.setMaxTokens(2000)
-            pipeline.execute(MultimodalContent(text = "Solve this logic puzzle: A man is looking at a photograph. His friend asks, 'Who is it?' The man replies, 'Brothers and sisters I have none, but that man's father is my father's son.' Who is in the photograph?"))
+            pipeline.execute(MultimodalContent(text = "What is 2+2"))
         }
 
         println("Converse Result Text: ${result.text}")
@@ -94,7 +96,7 @@ class GlmReasoningTest {
         
         println("Pipeline Trace Report:")
         val traceReport = pipeline.getTraceReport(com.TTT.Debug.TraceFormat.HTML)
-        java.io.File("glm-converse-reasoning-trace.html").writeText(traceReport)
+        writeStringToFile("${TPipeConfig.getTraceDir()}/Library/glm-test.html", traceReport)
         println("Trace saved to glm-converse-reasoning-trace.html")
     }
 

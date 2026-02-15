@@ -624,45 +624,74 @@ inline fun <reified T> reflectionBasedReconstruct(malformedJson: String): T?
  * Construct a new pipe using a prior pipe as a template. Allows for any valid pipe class to be passed as the template
  * to return, and returns a new copied pipe cast to that type.
  */
-inline fun <reified T> constructPipeFromTemplate(
+inline fun <reified T : Any> constructPipeFromTemplate(
     template : Pipe, copyFunctions: Boolean = false,
     copyPipes: Boolean = false,
     copyMetadata: Boolean = false) : T?
 {
-    val newPipe = deserialize<T>(serialize(template as T)) ?: return null
+    // 1. Create a fresh instance of the target type T using reflection
+    val kClass = T::class
+    val newPipeInstance = try {
+        kClass.java.getDeclaredConstructor().newInstance()
+    } catch (e: Exception) {
+        // Fallback to null if instantiation fails
+        null
+    } ?: return null
 
-    if(newPipe is Pipe)
-    {
-        if(copyFunctions)
-        {
-            template.validatorFunction?.let { newPipe.validatorFunction = it }
-            template.transformationFunction?.let { newPipe.transformationFunction = it }
-            template.preValidationFunction?.let { newPipe.preValidationFunction = it }
-            template.preValidationMiniBankFunction?.let { newPipe.preValidationMiniBankFunction = it }
-            template.preInvokeFunction?.let { newPipe.preInvokeFunction = it }
-            template.preInitFunction?.let { newPipe.preInitFunction = it }
-            template.onFailure?.let { newPipe.onFailure = it }
-            template.postGenerateFunction?.let { newPipe.postGenerateFunction = it }
+    // 2. Copy serializable properties via reflection
+    kClass.memberProperties.forEach { prop ->
+        if (prop is KMutableProperty1<*, *>) {
+            // Check if the property is marked as transient (skip these by default to match serialization behavior)
+            val isTransient = prop.annotations.any { 
+                it.annotationClass.qualifiedName?.contains("Transient") == true 
+            }
+            
+            if (!isTransient) {
+                try {
+                    prop.isAccessible = true
+                    @Suppress("UNCHECKED_CAST")
+                    val value = (prop as KProperty1<Any, Any?>).get(template)
+                    
+                    // Deep copy the value if it's a data class or collection to ensure independence
+                    val copiedValue = value?.deepCopy()
+                    
+                    @Suppress("UNCHECKED_CAST")
+                    (prop as KMutableProperty1<Any, Any?>).set(newPipeInstance, copiedValue)
+                } catch (e: Exception) {
+                    // Skip if property is not accessible or not settable in this context
+                }
+            }
+        }
+    }
+
+    // 3. Re-apply flags logic for non-serializable content (functions, sub-pipes, metadata)
+    if (newPipeInstance is Pipe) {
+        if (copyFunctions) {
+            template.validatorFunction?.let { newPipeInstance.validatorFunction = it }
+            template.transformationFunction?.let { newPipeInstance.transformationFunction = it }
+            template.preValidationFunction?.let { newPipeInstance.preValidationFunction = it }
+            template.preValidationMiniBankFunction?.let { newPipeInstance.preValidationMiniBankFunction = it }
+            template.preInvokeFunction?.let { newPipeInstance.preInvokeFunction = it }
+            template.preInitFunction?.let { newPipeInstance.preInitFunction = it }
+            template.onFailure?.let { newPipeInstance.onFailure = it }
+            template.postGenerateFunction?.let { newPipeInstance.postGenerateFunction = it }
         }
 
-        if(copyMetadata)
-        {
-            for(it in template.pipeMetadata)
-            {
-                newPipe.pipeMetadata[it.key] = it.value
+        if (copyMetadata) {
+            for (it in template.pipeMetadata) {
+                newPipeInstance.pipeMetadata[it.key] = it.value
             }
         }
 
-        if(copyPipes)
-        {
-            template.validatorPipe?.let { newPipe.validatorPipe = it }
-            template.transformationPipe?.let { newPipe.transformationPipe = it }
-            template.branchPipe?.let { newPipe.branchPipe = it }
-            template.reasoningPipe?.let { newPipe.reasoningPipe = it }
+        if (copyPipes) {
+            template.validatorPipe?.let { newPipeInstance.validatorPipe = it }
+            template.transformationPipe?.let { newPipeInstance.transformationPipe = it }
+            template.branchPipe?.let { newPipeInstance.branchPipe = it }
+            template.reasoningPipe?.let { newPipeInstance.reasoningPipe = it }
         }
     }
-    
-    return newPipe as? T
+
+    return newPipeInstance as? T
 }
 
 
