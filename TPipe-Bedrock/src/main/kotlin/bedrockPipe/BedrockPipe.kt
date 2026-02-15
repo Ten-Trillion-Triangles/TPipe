@@ -975,11 +975,16 @@ open class BedrockPipe : Pipe() {
             responseMetadata.putAll(usage)
         }
         
-        // Trace successful completion with all collected metadata
-        trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, metadata = responseMetadata)
+        // Create result with reasoning content
+        var result = MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
         
-        val result = MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
-        return splitInterleavedReasoning(result)
+        // Split interleaved reasoning before tracing to ensure reasoning is captured
+        result = splitInterleavedReasoning(result)
+
+        // Trace successful completion with all collected metadata and result content
+        trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, result, metadata = responseMetadata)
+        
+        return result
     }
     
     /**
@@ -3517,32 +3522,74 @@ put("system", if (enableCaching && cacheControl != null) {
             // Extract reasoning content from the response
             val reasoningContent = extractReasoningFromConverseResponse(response)
             
+            // Collect comprehensive metadata about the response for tracing
+            val responseMetadata = mutableMapOf<String, Any>(
+                "responseLength" to extractedText.length,
+                "success" to true,
+                "apiType" to "ConverseAPI"
+            )
+
+            // Add stop reason if available
+            if (converseStopReason.isNotEmpty()) {
+                responseMetadata["stopReason"] = converseStopReason
+            }
+
+            // Extract token usage if available
+            response.usage?.let { usage ->
+                responseMetadata["inputTokens"] = usage.inputTokens
+                responseMetadata["outputTokens"] = usage.outputTokens
+                responseMetadata["totalTokens"] = usage.totalTokens
+            }
+
+            // Add reasoning metadata if reasoning content was found
+            if (reasoningContent.isNotEmpty()) {
+                responseMetadata["reasoningContent"] = reasoningContent
+                responseMetadata["modelSupportsReasoning"] = true
+                responseMetadata["reasoningEnabled"] = useModelReasoning
+            }
+
             // Handle max token overflow for Converse API
             if (isConverseOverflow)
             {
+                responseMetadata["maxTokenOverflow"] = true
+
                 if (allowMaxTokenOverflow && extractedText.isNotEmpty())
                 {
                     // Allow overflow with content
-                    return MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
+                    val overflowResult = MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
+                    trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, overflowResult, metadata = responseMetadata + mapOf("overflowAllowed" to true))
+                    return overflowResult
                 }
 
                 else if (!allowMaxTokenOverflow)
                 {
-                    // Treat as error - return empty to trigger fallback
+                    // Treat as error
+                    trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, 
+                          error = RuntimeException("Max tokens exceeded"),
+                          metadata = responseMetadata + mapOf("overflowAllowed" to false))
                     return MultimodalContent("")
                 }
 
                 else
                 {
                     // No content despite overflow being allowed
+                    trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                          error = RuntimeException("Max tokens exceeded with no content output"),
+                          metadata = responseMetadata + mapOf("overflowAllowed" to true, "noContent" to true))
                     return MultimodalContent("")
                 }
             }
             
-            val result = MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
-            return splitInterleavedReasoning(result)
+            var result = MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
+            result = splitInterleavedReasoning(result)
+
+            // Trace successful completion
+            trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, result, metadata = responseMetadata)
+
+            return result
             
         } catch (e: Exception) {
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, error = e)
             MultimodalContent("")
         }
     }

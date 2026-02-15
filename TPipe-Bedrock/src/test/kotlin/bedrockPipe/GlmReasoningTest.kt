@@ -77,7 +77,7 @@ class GlmReasoningTest {
         
         val result = runBlocking {
             glmPipe.setMaxTokens(2000)
-            pipeline.execute(MultimodalContent(text = "Solve this logic puzzle: A man is looking at a photograph. His friend asks, 'Who is it?' The man replies, 'Brothers and sisters I have none, but that man's father is my father's son.' Who is in the photograph? Reason step-by-step."))
+            pipeline.execute(MultimodalContent(text = "Solve this logic puzzle: A man is looking at a photograph. His friend asks, 'Who is it?' The man replies, 'Brothers and sisters I have none, but that man's father is my father's son.' Who is in the photograph?"))
         }
 
         println("Converse Result Text: ${result.text}")

@@ -200,7 +200,38 @@ class TraceVisualizer {
             val metadata = if (event.error != null) {
                 "<strong>Error:</strong> ${event.error.message}"
             } else if (event.metadata.isNotEmpty()) {
-                event.metadata.entries.joinToString("<br>") { "<strong>${it.key}:</strong> ${it.value}" }
+                // Separate reasoning content from other metadata for better display
+                val reasoningKeys = listOf("modelReasoning", "reasoningPipeContent", "reasoningContent")
+                val reasoningKey = event.metadata.keys.find { it in reasoningKeys }
+                val otherMetadata = if (reasoningKey != null) {
+                    event.metadata.filterKeys { it != reasoningKey }
+                } else {
+                    event.metadata
+                }
+                
+                val metadataHtml = if (otherMetadata.isNotEmpty()) {
+                    otherMetadata.entries.joinToString("<br>") { "<strong>${it.key}:</strong> ${it.value}" }
+                } else {
+                    ""
+                }
+                
+                // Add reasoning content in an expandable section
+                if (reasoningKey != null) {
+                    val reasoningContent = event.metadata[reasoningKey].toString()
+                    val reasoningLabel = "reasoningContent"
+                    val reasoningHtml = """
+                        <details style="margin-top: 8px;">
+                            <summary style="cursor: pointer; color: #007bff; font-weight: bold;">
+                                🧠 $reasoningLabel 
+                                (${reasoningContent.length} chars)
+                            </summary>
+                            <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 8px; white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${reasoningContent}</pre>
+                        </details>
+                    """.trimIndent()
+                    if (metadataHtml.isNotEmpty()) "$metadataHtml<br>$reasoningHtml" else reasoningHtml
+                } else {
+                    metadataHtml
+                }
             } else {
                 "-"
             }

@@ -12,7 +12,6 @@ import com.TTT.Pipe.getFilename
  * Enhanced BedrockPipe with multimodal support for images, documents, and other binary content.
  * Extends the base BedrockPipe to handle binary data through AWS Bedrock's ContentBlock system.
  */
-@kotlinx.serialization.Serializable
 open class BedrockMultimodalPipe : BedrockPipe() {
     
     /**
@@ -115,8 +114,15 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                 extractReasoningFromConverseResponse(response)
             } else ""
             
+            val result = MultimodalContent(
+                text = textResult, 
+                binaryContent = content.binaryContent,
+                modelReasoning = reasoningContent
+            )
+
             if (reasoningContent.isNotEmpty()) {
                 trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+                      content = result,
                       metadata = mapOf(
                           "reasoningContent" to reasoningContent,
                           "modelSupportsReasoning" to true,
@@ -124,11 +130,7 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                       ))
             }
             
-            return MultimodalContent(
-                text = textResult, 
-                binaryContent = content.binaryContent,
-                modelReasoning = reasoningContent
-            )
+            return result
         }
         
         // DeepSeek models need special handling - get response and extract reasoning
@@ -159,8 +161,15 @@ open class BedrockMultimodalPipe : BedrockPipe() {
             
             // Extract reasoning content
             val reasoningContent = extractReasoningFromConverseResponse(response)
+            val result = MultimodalContent(
+                text = textResult, 
+                binaryContent = content.binaryContent,
+                modelReasoning = reasoningContent
+            )
+
             if (reasoningContent.isNotEmpty()) {
                 trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+                      content = result,
                       metadata = mapOf(
                           "reasoningContent" to reasoningContent,
                           "modelSupportsReasoning" to true,
@@ -168,11 +177,7 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                       ))
             }
             
-            return MultimodalContent(
-                text = textResult, 
-                binaryContent = content.binaryContent,
-                modelReasoning = reasoningContent
-            )
+            return result
         }
         
         // Convert multimodal content to ContentBlocks (STAYS in this class - binary expertise)
@@ -342,9 +347,16 @@ open class BedrockMultimodalPipe : BedrockPipe() {
         
         // Extract reasoning content (existing logic STAYS here)
         val reasoningContent = extractReasoningFromConverseResponse(response)
-        content.modelReasoning = reasoningContent
+        
+        val result = MultimodalContent(
+            text = responseText.joinToString("\n"),
+            binaryContent = responseBinaryContent,
+            modelReasoning = reasoningContent
+        )
+
         if (reasoningContent.isNotEmpty()) {
             trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+                  content = result,
                   metadata = mapOf(
                       "reasoningContent" to reasoningContent,
                       "modelSupportsReasoning" to true,
@@ -352,11 +364,7 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                   ))
         }
         
-        return MultimodalContent(
-            text = responseText.joinToString("\n"),
-            binaryContent = responseBinaryContent,
-            modelReasoning = reasoningContent
-        )
+        return result
     }
     
     /**
@@ -398,8 +406,11 @@ open class BedrockMultimodalPipe : BedrockPipe() {
         // This captures thinking/reasoning from models like DeepSeek R1 and GPT-OSS
         // regardless of the useModelReasoning flag setting
         val reasoningContent = extractReasoningContent(responseBody, modelId)
+        val result = MultimodalContent(text = responseText, modelReasoning = reasoningContent)
+
         if (reasoningContent.isNotEmpty()) {
             trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+                  content = result,
                   metadata = mapOf(
                       "reasoningContent" to reasoningContent,
                       "modelSupportsReasoning" to true,
@@ -407,7 +418,7 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                   ))
         }
         
-        return MultimodalContent(text = responseText)
+        return result
 
     }
     

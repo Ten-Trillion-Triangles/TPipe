@@ -3685,13 +3685,20 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             }
         }
         
-        // Add reasoning pipe metadata only once per execution to avoid duplication
+        // Add model reasoning metadata when available (for models with native reasoning support)
+        if (eventType == TraceEventType.API_CALL_SUCCESS && content != null && content.modelReasoning.isNotEmpty())
+        {
+            metadata["reasoningContent"] = content.modelReasoning
+            metadata["modelSupportsReasoning"] = true
+            metadata["reasoningEnabled"] = useModelReasoning
+            metadata["reasoningLength"] = content.modelReasoning.length
+        }
+        
+        // Add reasoning pipe metadata only once per execution to avoid duplication (for reasoning pipes)
         if (isExecutingAsReasoningPipe && !reasoningContentAlreadyTraced && eventType == TraceEventType.API_CALL_SUCCESS && content != null)
         {
             metadata["reasoningContent"] = content.text
             metadata["isReasoningPipe"] = true
-            metadata["modelSupportsReasoning"] = true
-            metadata["reasoningEnabled"] = true
             reasoningContentAlreadyTraced = true
         }
         
