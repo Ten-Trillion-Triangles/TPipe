@@ -702,16 +702,41 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     @Serializable
     protected var emplaceConverseHistoryOnlyIfNull = false
 
-    /**
-     * Some models have thinking modes, also known as reasoning. If true TPipe will enable model thinking/reasoning
-     * on models where it can be enabled or disabled.
-     */
-    @Serializable
-    protected var useModelReasoning = false
+        /**
 
-    /**
-     * Version of model reasoning that uses a designation of how many tokens to afford to model reasoning.
-     */
+         * Some models have thinking modes, also known as reasoning. If true TPipe will enable model thinking/reasoning
+
+         * on models where it can be enabled or disabled.
+
+         */
+
+        @Serializable
+
+        protected var useModelReasoning = false
+
+    
+
+        /**
+
+         * If true, model reasoning content will be streamed to the registered callbacks
+
+         * during generation. This applies to models that produce reasoning in a separate
+
+         * stream or field from the main response text.
+
+         */
+
+        @Serializable
+
+        protected var streamModelReasoning: Boolean = true
+
+    
+
+        /**
+
+         * Version of model reasoning that uses a designation of how many tokens to afford to model reasoning.
+
+         */
     @Serializable
     protected var modelReasoningSettingsV2 = 5000
 

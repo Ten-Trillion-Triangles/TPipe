@@ -210,6 +210,10 @@ open class BedrockMultimodalPipe : BedrockPipe() {
         // Use parent class builders (ELIMINATES duplicate logic)
         val converseRequest = when {
             modelId.contains("qwen") -> buildQwenConverseRequest(contentBlocks)
+            modelId.contains("deepseek") -> buildDeepSeekConverseRequestObject(modelId, contentBlocks)
+            isGlmModel(modelId) -> buildGlmConverseRequest(contentBlocks)
+            isKimiModel(modelId) -> buildKimiConverseRequest(contentBlocks)
+            modelId.contains("minimax") -> buildMiniMaxConverseRequest(contentBlocks)
             modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(contentBlocks)
             modelId.contains("amazon.nova") -> buildNovaConverseRequest(contentBlocks)
             modelId.contains("amazon.titan") -> buildTitanConverseRequest(contentBlocks)

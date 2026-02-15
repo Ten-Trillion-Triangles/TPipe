@@ -465,13 +465,21 @@ open class BedrockPipe : Pipe() {
      * Without a callback, streaming still improves response timing but tokens
      * are collected internally and returned as a complete string.
      * 
+     * @param callback Optional suspendable function that processes each text chunk
+     * @param showReasoning If true, attempts to propagate streaming settings to CoT reasoning pipes
+     * @param streamReasoning If true, internal model reasoning chunks will also be emitted to callbacks
      * @return This pipe instance for method chaining
      * @see setStreamingCallback for handling individual tokens
      * @see executeInvokeStream for streaming implementation
      */
-    fun enableStreaming(callback: (suspend (String) -> Unit)? = null, showReasoning: Boolean = false): BedrockPipe {
+    fun enableStreaming(
+        callback: (suspend (String) -> Unit)? = null, 
+        showReasoning: Boolean = false,
+        streamReasoning: Boolean = true
+    ): BedrockPipe {
         // Enable streaming mode without callback assignment
         this.streamingEnabled = true
+        this.streamModelReasoning = streamReasoning
 
         if (callback != null) {
             this.streamingCallback = callback
@@ -481,7 +489,7 @@ open class BedrockPipe : Pipe() {
         if(showReasoning)
         {
             val abstractPipe = reasoningPipe as? BedrockPipe
-            abstractPipe?.enableStreaming(callback, true)
+            abstractPipe?.enableStreaming(callback, true, streamReasoning)
         }
 
         return this
@@ -2540,7 +2548,7 @@ put("system", if (enableCaching && cacheControl != null) {
         return buildNovaConverseRequest(listOf(ContentBlock.Text(prompt)))
     }
 
-    private fun buildMiniMaxConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
+    fun buildMiniMaxConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
     {
         val messages = mutableListOf<Message>()
         
@@ -2793,7 +2801,7 @@ put("system", if (enableCaching && cacheControl != null) {
     /**
      * Builds Converse request for Moonshot Kimi models with tool, system, and PCP setup.
      */
-    private fun buildKimiConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest {
+    fun buildKimiConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest {
         val messages = mutableListOf<Message>()
         messages.add(Message {
             role = ConversationRole.User
@@ -2908,25 +2916,15 @@ put("system", if (enableCaching && cacheControl != null) {
         return primitive.content
     }
 
-        private fun isKimiModel(modelId: String): Boolean
+    protected fun isKimiModel(modelId: String): Boolean
+    {
+        return modelId.contains("kimi", ignoreCase = true)
+    }
 
-        {
-
-            return modelId.contains("kimi", ignoreCase = true)
-
-        }
-
-    
-
-        private fun isKimi25Model(modelId: String): Boolean
-
-        {
-
-            return modelId.contains("kimi-k2.5", ignoreCase = true)
-
-        }
-
-    
+    protected fun isKimi25Model(modelId: String): Boolean
+    {
+        return modelId.contains("kimi-k2.5", ignoreCase = true)
+    }
 
     /**
      * Determines if the model is DeepSeek R1 (built-in reasoning).
@@ -2935,7 +2933,7 @@ put("system", if (enableCaching && cacheControl != null) {
      * @param modelId The model identifier to check
      * @return True if the model is DeepSeek R1, false otherwise
      */
-    private fun isDeepSeekR1(modelId: String): Boolean
+    protected fun isDeepSeekR1(modelId: String): Boolean
     {
         return modelId.contains("deepseek.r1", ignoreCase = true) ||
                modelId.contains("us.deepseek.r1", ignoreCase = true)
@@ -2948,7 +2946,7 @@ put("system", if (enableCaching && cacheControl != null) {
      * @param modelId The model identifier to check
      * @return True if the model is DeepSeek V3.1, false otherwise
      */
-    private fun isDeepSeekV31(modelId: String): Boolean
+    protected fun isDeepSeekV31(modelId: String): Boolean
     {
         return modelId.contains("deepseek.v3", ignoreCase = true) ||
                modelId.contains("us.deepseek.v3", ignoreCase = true)
@@ -2962,17 +2960,17 @@ put("system", if (enableCaching && cacheControl != null) {
      * @param modelId The model identifier to check
      * @return True if thinking parameter should be added, false otherwise
      */
-    private fun shouldEnableDeepSeekThinking(modelId: String): Boolean
+    protected fun shouldEnableDeepSeekThinking(modelId: String): Boolean
     {
         return isDeepSeekV31(modelId) && useModelReasoning
     }
 
-    private fun isGlmModel(modelId: String): Boolean
+    protected fun isGlmModel(modelId: String): Boolean
     {
         return modelId.contains("glm-4.7", ignoreCase = true)
     }
 
-    private fun isQwen3Model(modelId: String): Boolean
+    protected fun isQwen3Model(modelId: String): Boolean
     {
         return modelId.contains("qwen3", ignoreCase = true) || 
                modelId.contains("-a22b", ignoreCase = true) || 
@@ -3700,6 +3698,9 @@ put("system", if (enableCaching && cacheControl != null) {
                         // Extract reasoning deltas for models that support it
                         deltaEvent.delta?.asReasoningContentOrNull()?.asTextOrNull()?.let { reasoningDelta ->
                             reasoningBuilder.append(reasoningDelta)
+                            if (streamModelReasoning) {
+                                emitStreamingChunk(reasoningDelta)
+                            }
                         }
                     }
 
@@ -3841,6 +3842,9 @@ put("system", if (enableCaching && cacheControl != null) {
                             // Accumulate reasoning deltas for tracing
                             if (reasoningDelta.isNotEmpty()) {
                                 reasoningBuilder.append(reasoningDelta)
+                                if (streamModelReasoning) {
+                                    emitStreamingChunk(reasoningDelta)
+                                }
                             }
                         }
                     }
