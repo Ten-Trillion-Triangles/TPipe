@@ -1,6 +1,7 @@
 package bedrockPipe
 
 import bedrockPipe.BedrockPipe
+import com.TTT.Config.TPipeConfig
 import com.TTT.Enums.ProviderName
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Pipe.MultimodalContent
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Assertions.*
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Pipe.Pipe
+import com.TTT.Util.writeStringToFile
 
 class QwenReasoningTest {
     
@@ -63,7 +65,7 @@ class QwenReasoningTest {
         
         println("Pipeline Trace Report:")
         val traceReport = pipeline.getTraceReport(com.TTT.Debug.TraceFormat.HTML)
-        java.io.File("qwen-invoke-reasoning-trace.html").writeText(traceReport)
+        writeStringToFile("${TPipeConfig.getTraceDir()}/Library/qwen-invoke-reasoning-trace.html", traceReport)
         println("Trace saved to qwen-invoke-reasoning-trace.html")
         
         assertNotNull(result.text, "Text result should not be null")
@@ -94,7 +96,7 @@ class QwenReasoningTest {
         
         println("Pipeline Trace Report:")
         val traceReport = pipeline.getTraceReport(com.TTT.Debug.TraceFormat.HTML)
-        java.io.File("qwen-converse-reasoning-trace.html").writeText(traceReport)
+        writeStringToFile("${TPipeConfig.getTraceDir()}/Library/qwen-converse-reasoning-trace.html", traceReport)
         println("Trace saved to qwen-converse-reasoning-trace.html")
     }
 

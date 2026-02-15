@@ -848,12 +848,33 @@ open class BedrockPipe : Pipe() {
     {
         val targetModelId = model.ifEmpty { requestedModelId }
         
-        // Use Converse API when enabled
-        if (useConverseApi)
+        // Use unified result object
+        var result = if (useConverseApi)
         {
-            return generateWithConverseApi(client, requestedModelId, fullPrompt)
+            // Converse API path
+            generateWithConverseApi(client, requestedModelId, fullPrompt)
+        }
+        else
+        {
+            // Legacy Invoke API path
+            executeInvokeApi(client, requestedModelId, targetModelId, fullPrompt)
         }
         
+        // Final common processing: ensures reasoning is extracted and traced
+        result = splitInterleavedReasoning(result)
+        
+        return result
+    }
+
+    /**
+     * Internal helper for the Invoke API path of executeBedrockApi.
+     */
+    private suspend fun executeInvokeApi(
+        client: BedrockRuntimeClient,
+        requestedModelId: String,
+        targetModelId: String,
+        fullPrompt: String
+    ): MultimodalContent {
         // Build model-specific JSON request based on the model family
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
               metadata = mapOf(
@@ -878,15 +899,7 @@ open class BedrockPipe : Pipe() {
             isGlmModel(requestedModelId) -> buildGlmRequest(fullPrompt)
             requestedModelId.contains("deepseek") -> 
             {
-                if (useConverseApi)
-                {
-                    buildDeepSeekConverseRequest(fullPrompt)
-                }
-
-                else
-                {
-                    buildDeepSeekRequest(fullPrompt)
-                }
+                buildDeepSeekRequest(fullPrompt)
             }
             else -> buildGenericRequest(fullPrompt)
         }
@@ -923,7 +936,8 @@ open class BedrockPipe : Pipe() {
         val responseMetadata = mutableMapOf<String, Any>(
             "responseLength" to extractedText.length,
             "responseBodySize" to responseBody.length,
-            "success" to true
+            "success" to true,
+            "apiType" to "InvokeAPI"
         )
         
         // Add reasoning metadata if reasoning content was found
@@ -933,15 +947,13 @@ open class BedrockPipe : Pipe() {
             responseMetadata["reasoningEnabled"] = useModelReasoning
         }
         
-        // Extract stop reason to understand why the model stopped generating
+        // Extract stop reason
         val stopReason = extractStopReasonFromInvokeResponse(responseBody, requestedModelId)
-        
-        // Add stop reason if available
         if (stopReason.isNotEmpty()) {
             responseMetadata["stopReason"] = stopReason
         }
         
-        // Check for max token overflow condition
+        // Check for max token overflow
         val isMaxTokenOverflow = isMaxTokenStopReason(stopReason)
         if (isMaxTokenOverflow)
         {
@@ -952,7 +964,6 @@ open class BedrockPipe : Pipe() {
                 trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, 
                       metadata = responseMetadata + mapOf("overflowAllowed" to true))
             }
-
             else if (!allowMaxTokenOverflow)
             {
                 trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
@@ -960,7 +971,6 @@ open class BedrockPipe : Pipe() {
                       metadata = responseMetadata + mapOf("overflowAllowed" to false))
                 return MultimodalContent("")
             }
-
             else
             {
                 trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
@@ -970,18 +980,14 @@ open class BedrockPipe : Pipe() {
             }
         }
         
-        // Extract token usage information for cost tracking
+        // Extract token usage
         extractTokenUsageFromInvokeResponse(responseBody, requestedModelId)?.let { usage ->
             responseMetadata.putAll(usage)
         }
         
-        // Create result with reasoning content
-        var result = MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
+        val result = MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
         
-        // Split interleaved reasoning before tracing to ensure reasoning is captured
-        result = splitInterleavedReasoning(result)
-
-        // Trace successful completion with all collected metadata and result content
+        // Trace successful completion
         trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, result, metadata = responseMetadata)
         
         return result
@@ -1605,41 +1611,10 @@ put("system", if (enableCaching && cacheControl != null) {
 
             // Model-specific parameters
             put("additionalModelRequestFields", buildJsonObject {
-                // Existing reasoning parameters
-                if (modelReasoningSettingsV3.isNotEmpty()) {
-                    put("reasoning_effort", modelReasoningSettingsV3)
-                } else {
-                    put("reasoning_effort", "low")
-                }
-                
-                if (useModelReasoning) {
-                    put("include_reasoning", true)
-                }
-                
-                // Add OpenAI parameters using model-specific filtering
-                val openAIParams = getModelSpecificOpenAIParameters("openai.gpt-oss")
-                openAIParams.forEach { (key, document) ->
-                    when (document) {
-                        is Document.Number -> {
-                            val value = document.toString().toDoubleOrNull() ?: 0.0
-                            put(key, value)
-                        }
-                        is Document.String -> {
-                            put(key, document.toString().removeSurrounding("\""))
-                        }
-                        is Document.Boolean -> {
-                            val value = document.toString().toBoolean()
-                            put(key, value)
-                        }
-                        is Document.Map -> {
-                            put(key, buildJsonObject {
-                                document.toString() // This is a simplified approach for now
-                            })
-                        }
-                        else -> {
-                            // Handle other types or ignore
-                        }
-                    }
+                // Add all model-specific parameters via centralized helper
+                val openAIParams = getModelSpecificOpenAIParameterValues("openai.gpt-oss")
+                openAIParams.forEach { (key, value) ->
+                    anyToJsonElement(value)?.let { put(key, it) }
                 }
             })
         }.toString()
@@ -1693,25 +1668,11 @@ put("system", if (enableCaching && cacheControl != null) {
                 }
             }
 
-            // Handle additional model fields using proper AWS SDK Document constructors
-            val documentMap = mutableMapOf<String, Document?>()
-
-            // Map reasoning_effort parameter
-            if (modelReasoningSettingsV3.isNotEmpty()) {
-                documentMap["reasoning_effort"] = Document.String(modelReasoningSettingsV3)
-            } else {
-                documentMap["reasoning_effort"] = Document.String("low")
+            // Handle additional model fields using centralized helper
+            val documentMap = getModelSpecificOpenAIParameters(modelId)
+            if (documentMap.isNotEmpty()) {
+                additionalModelRequestFields = Document.Map(documentMap)
             }
-
-            // Map include_reasoning if useModelReasoning is enabled
-            if (useModelReasoning) {
-                documentMap["include_reasoning"] = Document.Boolean(true)
-            }
-
-            // Add model-specific OpenAI parameters
-            documentMap.putAll(getModelSpecificOpenAIParameters(modelId))
-
-            additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
         }
@@ -1760,11 +1721,7 @@ put("system", if (enableCaching && cacheControl != null) {
                 put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             }
 
-            if (useModelReasoning) {
-                put("reasoning_config", getNormalizedReasoningEffort())
-            }
-            
-            // Add other OpenAI params if any
+            // Add all model-specific parameters via centralized helper (reasoning, top_k, penalties, etc.)
             val openAIParams = getModelSpecificOpenAIParameterValues(requestedModelId)
             openAIParams.forEach { (key, value) ->
                 anyToJsonElement(value)?.let { put(key, it) }
@@ -1803,12 +1760,8 @@ put("system", if (enableCaching && cacheControl != null) {
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
 
-            val documentMap = mutableMapOf<String, Document?>()
-            if (useModelReasoning) {
-                documentMap["reasoning_config"] = Document.String(getNormalizedReasoningEffort())
-            }
-            documentMap.putAll(getModelSpecificOpenAIParameters(requestedModelId))
-
+            // Apply all model-specific parameters via centralized helper
+            val documentMap = getModelSpecificOpenAIParameters(requestedModelId)
             if (documentMap.isNotEmpty()) {
                 additionalModelRequestFields = Document.Map(documentMap)
             }
@@ -1844,13 +1797,6 @@ put("system", if (enableCaching && cacheControl != null) {
         }
     }
     
-    /**
-     * Filters OpenAI parameters based on model capabilities.
-     * Only includes parameters that are supported by the target model.
-     * 
-     * @param modelId The AWS Bedrock model ID
-     * @return Map of supported parameters as Document objects
-     */
     private fun getModelSpecificOpenAIParameters(modelId: String): Map<String, Document?>
     {
         val values = getModelSpecificOpenAIParameterValues(modelId)
@@ -1870,6 +1816,7 @@ put("system", if (enableCaching && cacheControl != null) {
             modelId.contains("qwen") ||
             modelId.contains("deepseek") ||
             isGlmModel(modelId) -> {
+                // Standard OpenAI parameters
                 if (repetitionPenalty != 0.0) {
                     parameterValues["frequency_penalty"] = repetitionPenalty
                 }
@@ -1892,14 +1839,33 @@ put("system", if (enableCaching && cacheControl != null) {
                 if (user.isNotEmpty()) {
                     parameterValues["user"] = user
                 }
-
-                if (modelId.contains("qwen") && useModelReasoning) {
-                    parameterValues["enable_thinking"] = true
-                    parameterValues["thinking_budget"] = computeOpenAIReasoningBudget()
+                
+                // top_k support (standardized)
+                if (topK > 0) {
+                    // Clamp topK to valid range for most providers (1-255 or 1-100)
+                    val clampedTopK = topK.coerceIn(1, 255)
+                    parameterValues["top_k"] = clampedTopK
                 }
 
-                if (modelId.contains("deepseek") && useModelReasoning) {
-                    parameterValues["reasoning_config"] = getNormalizedReasoningEffort()
+                // Centralized Reasoning Parameters
+                if (useModelReasoning) {
+                    when {
+                        modelId.contains("openai.gpt-oss") -> {
+                            parameterValues["reasoning_effort"] = modelReasoningSettingsV3.ifEmpty { "low" }
+                            parameterValues["include_reasoning"] = true
+                        }
+                        modelId.contains("qwen") -> {
+                            if (isQwen3Model(modelId)) {
+                                parameterValues["reasoning_config"] = getNormalizedReasoningEffort()
+                            } else {
+                                parameterValues["enable_thinking"] = true
+                                parameterValues["thinking_budget"] = computeOpenAIReasoningBudget()
+                            }
+                        }
+                        modelId.contains("deepseek") || isGlmModel(modelId) -> {
+                            parameterValues["reasoning_config"] = getNormalizedReasoningEffort()
+                        }
+                    }
                 }
             }
 
@@ -2020,39 +1986,12 @@ put("system", if (enableCaching && cacheControl != null) {
             if (temperature > 0) put("temperature", temperature)
             if (topP > 0) put("top_p", topP)
             if (stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
-            put("stream", false)
             
-            // Add OpenAI parameters using model-specific filtering
-            val openAIParams = getModelSpecificOpenAIParameters("qwen")
-            openAIParams.forEach { (key, document) ->
-                when (document) {
-                    is Document.Number -> {
-                        val value = document.toString().toDoubleOrNull() ?: 0.0
-                        put(key, value)
-                    }
-                    is Document.String -> {
-                        put(key, document.toString().removeSurrounding("\""))
-                    }
-                    is Document.Boolean -> {
-                        val value = document.toString().toBoolean()
-                        put(key, value)
-                    }
-                    else -> {} // Handle other types or ignore
-                }
+            // Add all model-specific parameters (top_k, reasoning, penalties, etc.)
+            val openAIParams = getModelSpecificOpenAIParameterValues(requestedModelId.ifEmpty { "qwen" })
+            openAIParams.forEach { (key, value) ->
+                anyToJsonElement(value)?.let { put(key, it) }
             }
-            
-            // Legacy thinking mode support (will be overridden by OpenAI parameters if set)
-            if (useModelReasoning) {
-                if (isQwen3Model(requestedModelId)) {
-                    put("reasoning_config", getNormalizedReasoningEffort())
-                } else if (!openAIParams.containsKey("enable_thinking")) {
-                    put("enable_thinking", true)
-                    put("thinking_budget", computeOpenAIReasoningBudget())
-                } else if (!openAIParams.containsKey("include_reasoning")) {
-                    put("include_reasoning", true)
-                }
-            }
-            
         }.toString()
     }
     
@@ -2077,28 +2016,10 @@ put("system", if (enableCaching && cacheControl != null) {
             if (topP > 0) put("top_p", topP)
             if (stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             
-            // Add OpenAI parameters using model-specific filtering
-            val openAIParams = getModelSpecificOpenAIParameters("deepseek")
-            openAIParams.forEach { (key, document) ->
-                when (document) {
-                    is Document.Number -> {
-                        val value = document.toString().toDoubleOrNull() ?: 0.0
-                        put(key, value)
-                    }
-                    is Document.String -> {
-                        put(key, document.toString().removeSurrounding("\""))
-                    }
-                    is Document.Boolean -> {
-                        val value = document.toString().toBoolean()
-                        put(key, value)
-                    }
-                    else -> {} // Handle other types or ignore
-                }
-            }
-            
-            // DeepSeek V3.1 and R1 models support thinking mode via reasoning_config parameter
-            if (useModelReasoning && !openAIParams.containsKey("reasoning_config")) {
-                put("reasoning_config", getNormalizedReasoningEffort())
+            // Add all model-specific parameters (top_k, reasoning, penalties, etc.)
+            val openAIParams = getModelSpecificOpenAIParameterValues("deepseek")
+            openAIParams.forEach { (key, value) ->
+                anyToJsonElement(value)?.let { put(key, it) }
             }
         }.toString()
     }
@@ -2137,16 +2058,8 @@ put("system", if (enableCaching && cacheControl != null) {
                 if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
-            // Add model-specific OpenAI parameters for DeepSeek thinking mode
-            val documentMap = mutableMapOf<String, Document?>()
-            val openAIParams = getModelSpecificOpenAIParameters(modelId)
-            documentMap.putAll(openAIParams)
-            
-            // DeepSeek V3.1 and R1 models support thinking mode via reasoning_config parameter
-            if (useModelReasoning && !documentMap.containsKey("reasoning_config")) {
-                documentMap["reasoning_config"] = Document.String(getNormalizedReasoningEffort())
-            }
-            
+            // Add model-specific parameters via centralized helper
+            val documentMap = getModelSpecificOpenAIParameters(modelId)
             if (documentMap.isNotEmpty()) {
                 additionalModelRequestFields = Document.Map(documentMap)
             }
@@ -3427,31 +3340,11 @@ put("system", if (enableCaching && cacheControl != null) {
                 if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
                 if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
                 if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
-                // stopSequences handled in additionalModelRequestFields for Qwen models
             }
             
-            // Qwen3-specific additional model fields for reasoning and topK
-            if (useModelReasoning || topK > 0 || this@BedrockPipe.stopSequences.isNotEmpty()) {
-                val documentMap = mutableMapOf<String, Document?>()
-                
-                if (this@BedrockPipe.topK > 0) {
-                    // top_k must be between 0-255 (u8)
-                    val clampedTopK = this@BedrockPipe.topK.coerceIn(1, 255)
-                    documentMap["top_k"] = Document.Number(clampedTopK)
-                }
-                
-                if (this@BedrockPipe.stopSequences.isNotEmpty()) {
-                    documentMap["stop"] = Document.List(this@BedrockPipe.stopSequences.map { Document.String(it) })
-                }
-                
-                if (useModelReasoning) {
-                    if (isQwen3Model(targetModelId)) {
-                        documentMap["reasoning_config"] = Document.String(getNormalizedReasoningEffort())
-                    } else {
-                        documentMap["include_reasoning"] = Document.Boolean(true)
-                    }
-                }
-                
+            // Apply all model-specific parameters via centralized helper
+            val documentMap = getModelSpecificOpenAIParameters(targetModelId)
+            if (documentMap.isNotEmpty()) {
                 additionalModelRequestFields = Document.Map(documentMap)
             }
             
@@ -3501,6 +3394,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             val response = client.converse(converseRequest)
+            println("DEBUG: Converse response: $response")
             val outputMessage = response.output?.asMessage()
             val content = outputMessage?.content
             
@@ -3514,7 +3408,7 @@ put("system", if (enableCaching && cacheControl != null) {
                     is ContentBlock.Text -> contentBlock.value
                     else -> null
                 }
-            }?.joinToString("\\n") ?: ""
+            }?.joinToString("\n") ?: ""
             
             // Store the full response for reasoning extraction
             lastConverseResponse = response
@@ -3589,6 +3483,8 @@ put("system", if (enableCaching && cacheControl != null) {
             return result
             
         } catch (e: Exception) {
+            println("DEBUG: generateWithConverseApi failed for model $modelId: ${e.message}")
+            e.printStackTrace()
             trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, error = e)
             MultimodalContent("")
         }
@@ -3880,8 +3776,14 @@ put("system", if (enableCaching && cacheControl != null) {
             }
 
             // Trace successful completion
-            trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, metadata = metadata)
-            MultimodalContent(text = finalText, modelReasoning = reasoningBuilder.toString())
+            val result = MultimodalContent(text = finalText, modelReasoning = reasoningBuilder.toString())
+            
+            // Split interleaved reasoning before tracing/returning to ensure captured from tags
+            val processedResult = splitInterleavedReasoning(result)
+            
+            trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, processedResult, metadata = metadata)
+            
+            return processedResult
 
         } catch (e: Exception) {
             // Trace streaming failure
@@ -4088,6 +3990,14 @@ put("system", if (enableCaching && cacheControl != null) {
                     }
                     
                     if (reasoning.isEmpty()) {
+                        reasoning = d["thinking"]?.jsonPrimitive?.contentOrNull ?: ""
+                    }
+
+                    if (reasoning.isEmpty()) {
+                        reasoning = d["reasoning_delta"]?.jsonPrimitive?.contentOrNull ?: ""
+                    }
+                    
+                    if (reasoning.isEmpty()) {
                         reasoning = d["reasoningText"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
                     
@@ -4100,6 +4010,10 @@ put("system", if (enableCaching && cacheControl != null) {
                 
                 if (reasoning.isEmpty()) {
                     reasoning = obj["reasoning"]?.jsonPrimitive?.contentOrNull ?: ""
+                }
+
+                if (reasoning.isEmpty()) {
+                    reasoning = obj["thinking"]?.jsonPrimitive?.contentOrNull ?: ""
                 }
 
                 // Check for guardrail traces that might contain reasoning

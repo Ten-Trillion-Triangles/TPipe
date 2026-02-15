@@ -65,7 +65,7 @@ class GlmReasoningTest {
         
         println("Pipeline Trace Report:")
         val traceReport = pipeline.getTraceReport(com.TTT.Debug.TraceFormat.HTML)
-        java.io.File("glm-invoke-reasoning-trace.html").writeText(traceReport)
+        writeStringToFile("${TPipeConfig.getTraceDir()}/Library/glm-invoke-reasoning-trace.html", traceReport)
         println("Trace saved to glm-invoke-reasoning-trace.html")
         
         assertNotNull(result.text, "Text result should not be null")
@@ -96,7 +96,7 @@ class GlmReasoningTest {
         
         println("Pipeline Trace Report:")
         val traceReport = pipeline.getTraceReport(com.TTT.Debug.TraceFormat.HTML)
-        writeStringToFile("${TPipeConfig.getTraceDir()}/Library/glm-test.html", traceReport)
+        writeStringToFile("${TPipeConfig.getTraceDir()}/Library/glm-converse-reasoning-trace.html", traceReport)
         println("Trace saved to glm-converse-reasoning-trace.html")
     }
 

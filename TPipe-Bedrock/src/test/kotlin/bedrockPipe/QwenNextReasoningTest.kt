@@ -1,6 +1,7 @@
 package bedrockPipe
 
 import bedrockPipe.BedrockPipe
+import com.TTT.Config.TPipeConfig
 import com.TTT.Enums.ProviderName
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Pipe.MultimodalContent
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Assertions.*
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Pipe.Pipe
+import com.TTT.Util.writeStringToFile
 
 class QwenNextReasoningTest {
     
@@ -66,7 +68,7 @@ class QwenNextReasoningTest {
         
         println("Pipeline Trace Report:")
         val traceReport = pipeline.getTraceReport(com.TTT.Debug.TraceFormat.HTML)
-        java.io.File("qwen-next-invoke-reasoning-trace.html").writeText(traceReport)
+        writeStringToFile("${TPipeConfig.getTraceDir()}/Library/qwen-next-invoke-reasoning-trace.html", traceReport)
         
         assertNotNull(result.text, "Text result should not be null")
         assertTrue(result.text.isNotEmpty(), "Text result should not be empty")
@@ -87,7 +89,7 @@ class QwenNextReasoningTest {
         
         println("Pipeline Trace Report:")
         val traceReport = pipeline.getTraceReport(com.TTT.Debug.TraceFormat.HTML)
-        java.io.File("qwen-next-converse-reasoning-trace.html").writeText(traceReport)
+        writeStringToFile("${TPipeConfig.getTraceDir()}/Library/qwen-next-converse-reasoning-trace.html", traceReport)
         
         assertNotNull(result.text, "Text result should not be null")
         assertTrue(result.text.isNotEmpty(), "Text result should not be empty")

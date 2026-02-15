@@ -1,6 +1,7 @@
 package bedrockPipe
 
 import bedrockPipe.BedrockPipe
+import com.TTT.Config.TPipeConfig
 import com.TTT.Enums.ProviderName
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Pipe.MultimodalContent
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Assertions.*
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Pipe.Pipe
+import com.TTT.Util.writeStringToFile
 
 class KimiReasoningTest {
     
@@ -60,7 +62,7 @@ class KimiReasoningTest {
         println("Result Reasoning: ${result.modelReasoning}")
         
         val traceReport = pipeline.getTraceReport(com.TTT.Debug.TraceFormat.HTML)
-        java.io.File(traceFileName).writeText(traceReport)
+        writeStringToFile("${TPipeConfig.getTraceDir()}/Library/$traceFileName", traceReport)
         println("Trace saved to $traceFileName")
         
         assertNotNull(result.text, "Text result should not be null")

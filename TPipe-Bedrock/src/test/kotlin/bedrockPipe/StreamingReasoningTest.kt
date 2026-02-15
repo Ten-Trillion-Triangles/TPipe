@@ -5,6 +5,7 @@ import com.TTT.Config.TPipeConfig
 import com.TTT.Enums.ProviderName
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Util.writeStringToFile
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.BeforeEach
@@ -13,9 +14,8 @@ import org.junit.jupiter.api.Assertions.*
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Pipe.Pipe
-import com.TTT.Util.writeStringToFile
 
-class DeepSeekReasoningTest {
+class StreamingReasoningTest {
     
     @BeforeEach
     fun setup() {
@@ -23,28 +23,35 @@ class DeepSeekReasoningTest {
     }
     
     @Test
-    fun testDeepSeekV31Reasoning() {
-        println("Testing DeepSeek V3.1 Reasoning Extraction")
-        runReasoningTest("deepseek.v3-v1:0", "deepseek-v31-trace.html")
+    fun testDeepSeekStreamingReasoning() {
+        println("Testing DeepSeek Streaming Reasoning Extraction")
+        runStreamingReasoningTest("deepseek.v3-v1:0", "deepseek-streaming-reasoning-trace.html")
     }
 
     @Test
-    fun testDeepSeekV32Reasoning() {
-        println("Testing DeepSeek V3.2 Reasoning Extraction")
-        runReasoningTest("deepseek.v3.2", "deepseek-v32-trace.html")
+    fun testQwenStreamingReasoning() {
+        println("Testing Qwen Streaming Reasoning Extraction")
+        runStreamingReasoningTest("qwen.qwen3-vl-235b-a22b", "qwen-streaming-reasoning-trace.html")
     }
 
-    private fun runReasoningTest(modelId: String, traceFileName: String) {
+    private fun runStreamingReasoningTest(modelId: String, traceFileName: String, region: String = "us-west-2") {
         val pipe = BedrockPipe()
             .setProvider(ProviderName.Aws)
             .setModel(modelId)
-        (pipe as BedrockPipe).setRegion("us-west-2")
+        (pipe as BedrockPipe).setRegion(region)
         pipe.useConverseApi()
         
-        // Use official TPipe reasoning setter
+        // Enable reasoning
         pipe.setReasoning("high")
-        pipe.enableStreaming({ _ -> })
+        
+        val capturedChunks = mutableListOf<String>()
+        pipe.enableStreaming({ chunk -> 
+            capturedChunks.add(chunk)
+            print(chunk) // Live output for visibility during test
+        })
+        
         pipe.enableMaxTokenOverflow()
+        pipe.setReadTimeout(300)
         
         val pipeline = Pipeline()
         pipeline.add(pipe)
@@ -56,9 +63,10 @@ class DeepSeekReasoningTest {
             pipeline.execute(MultimodalContent(text = "What is 2+2? Reason step-by-step."))
         }
         
-        println("Model: $modelId")
+        println("\nModel: $modelId")
         println("Result Text: ${result.text}")
         println("Result Reasoning: ${result.modelReasoning}")
+        println("Captured Chunks: ${capturedChunks.size}")
         
         val traceReport = pipeline.getTraceReport(com.TTT.Debug.TraceFormat.HTML)
         writeStringToFile("${TPipeConfig.getTraceDir()}/Library/$traceFileName", traceReport)
@@ -66,11 +74,15 @@ class DeepSeekReasoningTest {
         
         assertNotNull(result.text, "Text result should not be null")
         assertTrue(result.text.isNotEmpty(), "Text result should not be empty")
+        assertTrue(capturedChunks.isNotEmpty(), "Should have captured streaming chunks")
         
         if (result.modelReasoning.isNotEmpty()) {
-            println("Successfully extracted reasoning content")
+            println("Successfully extracted reasoning content from stream")
         } else {
-            println("Warning: No reasoning content returned (model may have skipped it or API mismatch)")
+            println("Warning: No reasoning content returned from stream")
         }
+        
+        // Verify reasoning is in trace metadata
+        assertTrue(traceReport.contains("reasoningContent"), "Trace report should contain reasoningContent metadata")
     }
 }
