@@ -42,8 +42,8 @@ fun main() {
     println("✓ ReasoningSettings with ChainOfDraft: ${codSettings.reasoningMethod}")
     
     // Test 4: Verify depth and duration selectors work
-    val depthText = ReasoningPrompts.selectDepth(ReasoningDepth.Med)
-    val durationText = ReasoningPrompts.selectDuration(ReasoningDuration.Short)
+    val depthText = ReasoningPrompts.selectDepth(ReasoningDepth.Med, ReasoningMethod.ChainOfDraft)
+    val durationText = ReasoningPrompts.selectDuration(ReasoningDuration.Short, ReasoningMethod.ChainOfDraft)
     println("✓ Depth selector: $depthText")
     println("✓ Duration selector: $durationText")
     

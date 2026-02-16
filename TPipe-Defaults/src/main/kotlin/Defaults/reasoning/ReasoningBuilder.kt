@@ -139,8 +139,8 @@ object ReasoningBuilder
         {
             ReasoningMethod.StructuredCot -> {
                 targetSystemPrompt = chainOfThoughtSystemPrompt(
-                    selectDepth(settings.depth),
-                    selectDuration(settings.duration),
+                    settings.depth,
+                    settings.duration,
                     settings.reasoningMethod)
 
                 jsonOutputObject = StructuredCot()
@@ -149,8 +149,8 @@ object ReasoningBuilder
 
             ReasoningMethod.processFocusedCot -> {
                 targetSystemPrompt = chainOfThoughtSystemPrompt(
-                    selectDepth(settings.depth),
-                    selectDuration(settings.duration),
+                    settings.depth,
+                    settings.duration,
                     settings.reasoningMethod
                 )
 
@@ -160,8 +160,8 @@ object ReasoningBuilder
 
             ReasoningMethod.ExplicitCot -> {
                 targetSystemPrompt = chainOfThoughtSystemPrompt(
-                    selectDepth(settings.depth),
-                    selectDuration(settings.duration),
+                    settings.depth,
+                    settings.duration,
                     settings.reasoningMethod
                 )
 
@@ -170,20 +170,20 @@ object ReasoningBuilder
             }
 
             ReasoningMethod.BestIdea -> {
-                targetSystemPrompt = bestIdeaPrompt()
+                targetSystemPrompt = bestIdeaPrompt(settings.depth, settings.duration)
                 jsonOutputObject = BestIdeaResponse()
                 jsonOutputClass = BestIdeaResponse::class
             }
 
             ReasoningMethod.RolePlay -> {
-                targetSystemPrompt = rolePlayPrompt(settings.roleCharacter)
+                targetSystemPrompt = rolePlayPrompt(settings.roleCharacter, settings.depth, settings.duration)
                 jsonOutputObject = MethodActorResponse()
                 jsonOutputClass = MethodActorResponse::class
                 targetSystemPrompt += """ROLE PLAY AS THE FOLLOWING CHARACTER: ${settings.roleCharacter}"""
             }
 
             ReasoningMethod.ComprehensivePlan -> {
-                targetSystemPrompt = comprehensivePlanPrompt()
+                targetSystemPrompt = comprehensivePlanPrompt(settings.depth, settings.duration)
                 jsonOutputObject = MultiPhasePlan()
                 jsonOutputClass = MultiPhasePlan::class
             }
@@ -191,8 +191,8 @@ object ReasoningBuilder
             ReasoningMethod.ChainOfDraft ->
             {
                 targetSystemPrompt = chainOfThoughtSystemPrompt(
-                    selectDepth(settings.depth),
-                    selectDuration(settings.duration),
+                    settings.depth,
+                    settings.duration,
                     settings.reasoningMethod
                 )
 
