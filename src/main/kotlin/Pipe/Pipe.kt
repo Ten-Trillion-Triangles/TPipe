@@ -3786,12 +3786,22 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
      open suspend fun init() : Pipe
      {
+         // Name children FIRST, before they initialize their own children
+         if(validatorPipe?.pipeName?.isEmpty() == true) validatorPipe?.pipeName = "$pipeName->validator pipe"
+         if(branchPipe?.pipeName?.isEmpty() == true) branchPipe?.pipeName = "$pipeName->branch pipe"
+         if(transformationPipe?.pipeName?.isEmpty() == true) transformationPipe?.pipeName = "$pipeName->transformation pipe"
+         if(reasoningPipe?.pipeName?.isEmpty() == true) reasoningPipe?.pipeName = "$pipeName->reasoning pipe"
+         
+         // THEN initialize them
          validatorPipe?.init()
          validatorPipe?.pipelineRef = pipelineRef
+         
          branchPipe?.init()
          branchPipe?.pipelineRef = pipelineRef
+         
          transformationPipe?.init()
          transformationPipe?.pipelineRef = pipelineRef
+         
          reasoningPipe?.init()
          reasoningPipe?.pipelineRef = pipelineRef
 
@@ -4895,11 +4905,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             {
                 trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.VALIDATION)
                 try {
-                    validatorPipe!!.init()
-
                     if (tracingEnabled)
                     {
-                        propagateTracingRecursively()
+                        validatorPipe!!.propagateTracingRecursively()
                     }
 
                     val validatorPipeResult : Deferred<MultimodalContent> = async {
@@ -4945,10 +4953,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         {
                             trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.TRANSFORMATION)
                             try {
-                                transformationPipe!!.init()
                                 if (tracingEnabled)
                                 {
-                                    propagateTracingRecursively()
+                                    transformationPipe!!.propagateTracingRecursively()
                                 }
 
                                 val transformPipeResult : Deferred<MultimodalContent> = async {
@@ -5012,7 +5019,12 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
                     else
                     {
-                        trace(TraceEventType.VALIDATION_FAILURE, TracePhase.VALIDATION, generatedContent)
+                        trace(TraceEventType.VALIDATION_FAILURE, TracePhase.VALIDATION, generatedContent,
+                              metadata = mapOf(
+                                  "validationResult" to "false",
+                                  "inputText" to generatedContent.text,
+                                  "reason" to "Validation function returned false"
+                              ))
                     }
                 }
 
@@ -5023,12 +5035,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     {
                         trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.TRANSFORMATION)
                         try {
-                            transformationPipe!!.init()
-
                             if (tracingEnabled)
                             {
-                                propagateTracingRecursively()
+                                transformationPipe!!.propagateTracingRecursively()
                             }
+
                             val transformPipeResult : Deferred<MultimodalContent> = async {
                                 transformationPipe?.execute(generatedContent) ?: generatedContent
                             }
@@ -5076,18 +5087,27 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                           metadata = mapOf("outputText" to if (isExecutingAsReasoningPipe) "" else finalResult.text))
                     return@coroutineScope embedContentIntoInternalConverse(finalResult).takeIf { wrapContentWithConverseHistory } ?: finalResult
                 }
+            }
+            else
+            {
+                // Validator pipe requested termination
+                trace(TraceEventType.VALIDATION_FAILURE, TracePhase.VALIDATION, validatorPipeContent,
+                      metadata = mapOf(
+                          "reason" to "Validator pipe returned content with terminate flag",
+                          "validatorPipeOutput" to validatorPipeContent.text
+                      ))
+            }
 
-                //Execute branch pipe if provided.
-                if (branchPipe != null)
-                {
+            //Execute branch pipe if provided.
+            if (branchPipe != null)
+            {
                     trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.POST_PROCESSING)
                     try {
                         // Initialize and setup branch pipe
-                        branchPipe!!.init()
                         if (tracingEnabled) {
-                            propagateTracingRecursively()
+                            branchPipe!!.propagateTracingRecursively()
                         }
-                        
+
                         val branchPipeResult : Deferred<MultimodalContent> = async {
                             branchPipe?.execute(generatedContent) ?: generatedContent
                         }
@@ -5113,10 +5133,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             {
                                 trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.TRANSFORMATION)
                                 try {
-                                    transformationPipe!!.init()
                                     if (tracingEnabled)
                                     {
-                                        propagateTracingRecursively()
+                                        transformationPipe!!.propagateTracingRecursively()
                                     }
 
                                     val transformPipeResult : Deferred<MultimodalContent> = async {
@@ -5215,7 +5234,6 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         return@coroutineScope embedContentIntoInternalConverse(failureResult).takeIf { wrapContentWithConverseHistory } ?: failureResult
                     }
                 }
-            }
 
             /**
              * Pipeline termination - return terminated content to signal pipeline failure.
@@ -5451,6 +5469,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              * step of the reasoning process.
              */
             val result = reasoningPipe?.let { pipe ->
+                if (tracingEnabled) {
+                    pipe.propagateTracingRecursively()
+                }
                 pipe.isExecutingAsReasoningPipe = true
                 pipe.reasoningContentAlreadyTraced = false
                 val pipeResult = pipe.executeMultimodal(contentCopy)

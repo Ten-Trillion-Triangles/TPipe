@@ -71,6 +71,18 @@ enum class ReasoningInjector
     AsContext
 }
 
+/**
+ * Defines the logical complexity and depth of analysis for the reasoning process.
+ * Higher depth levels force the model to perform more rigorous logical checks, explore
+ * more alternatives, and increase the total number of reasoning steps.
+ *
+ * This setting interacts with [ReasoningPrompts.selectDepth] to inject specific
+ * mandatory instructions into the system prompt.
+ *
+ * @param Low Minimal analysis focusing only on the core problem. typically 3-5 reasoning steps.
+ * @param Med Balanced analysis considering 2-3 potential approaches. Typically 6-10 reasoning steps.
+ * @param High Exhaustive analysis exploring multiple approaches, implications, and edge cases. Typically 10+ reasoning steps.
+ */
 enum class ReasoningDepth
 {
     Low,
@@ -78,6 +90,18 @@ enum class ReasoningDepth
     High
 }
 
+/**
+ * Defines the verbosity and linguistic length of the reasoning output.
+ * Unlike [ReasoningDepth], which affects logical complexity, duration affects how
+ * much detail and justification is provided for each logical inference.
+ *
+ * This setting interacts with [ReasoningPrompts.selectDuration] to inject specific
+ * verbosity constraints into the system prompt.
+ *
+ * @param Short Concise output (40-60% of normal length) using abbreviated explanations and skipping obvious inferences.
+ * @param Med Standard output (90-110% of normal length) with balanced detail and justification for key decisions.
+ * @param Long Verbose output (150-200% of normal length) providing detailed explanations and justifying every inference or assumption.
+ */
 enum class ReasoningDuration
 {
     Short,
@@ -87,8 +111,12 @@ enum class ReasoningDuration
 
 /**
  * Data class to encompass the settings required to build a reasoning pipe.
- * @param reasoningMethod [ReasoningMethod]
- * @param reasoningInjector [reasoningInjector]
+ *
+ * @param reasoningMethod The strategy used to structure the model's thinking process via [ReasoningMethod].
+ * @param depth The level of logical complexity and analysis depth via [ReasoningDepth].
+ * @param duration The linguistic verbosity and length of the reasoning output via [ReasoningDuration].
+ * @param roleCharacter The persona instructions used when [ReasoningMethod.RolePlay] is selected.
+ * @param reasoningInjector Determines where the reasoning content is injected into the final prompt via [ReasoningInjector].
  * @param numberOfRounds Defines a set of rounds or steps that the reasoning occurs in. Each round will divide
  * into the assigned number of tokens allotted for model reasoning. Reasoning rounds allows for the strategy and the
  * focus to be changed each round.
@@ -98,7 +126,7 @@ enum class ReasoningDuration
  * @param injectMiddlePrompt If true, the middle prompt of the system prompt will be visible to the reasoning pipe.
  * @param injectFooterPrompt If true, the footer prompt of the system prompt will be visible to the reasoning pipe.
  * @param reinforceSystemPrompt If true, the system prompt will be placed again at the end of the reasoning generation
- * in order to
+ * in order to reinforce compliance with instructions in large context windows.
  */
 data class ReasoningSettings(
     var reasoningMethod: ReasoningMethod = ReasoningMethod.StructuredCot,
