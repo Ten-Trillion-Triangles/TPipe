@@ -268,9 +268,34 @@ fun TokenBudgetSettings.toTruncationSettings(pipe: Pipe? = null): TruncationSett
     return settings
 }
 
+//============================================Enum classes==============================================================
+
+/**
+ * Enum class that defines how pipe timeouts should be handled. Automatic failures, retries,
+ * or to use a custom bound function to try to handle the case. This enum is used internally
+ * in the pipe timeout system but not externally beyond the pipe class.
+ */
+enum class PipeTimeoutStrategy
+{
+    Fail,
+    Retry,
+    CustomLogic
+}
+
 //============================================Const Vars================================================================
 
 var USER_PROMPT_SNAPSHOT = "validatorPipeUserPromptSnapshotTPipe"
+
+//============================================Companion Objects=========================================================
+
+/**
+ * Global object for managing and tracking pipe timeouts. Handles coroutines, running timers, and
+ * triggering interrupts when an llm on a pipe has become stuck.
+ */
+object PipeTimeoutManager
+{
+    
+}
 
 //===========================================Main Class=================================================================
 
@@ -316,6 +341,44 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     @SerialName("pipeName")
     var pipeName = ""
 
+    /**
+     * Timeout value for the pipe class. Defaults to 5 mins. When timeouts are enabled, the pipe
+     * will be cut off if it has not exited by that point. The result can be handled by an automatic
+     * retry, failure, or custom handler.
+     */
+    var pipeTimeout: Long = 300000L
+
+    /**
+     * Toggles weather to activate the pipe timeout system or not.
+     */
+    var enablePipeTimeout = false
+
+    /**
+     * Propagates pipe timeouts to all child pipes recursively.
+     */
+    var applyTimeoutRecursively = true
+
+    /**
+     * Defines the type of responce that should occur when a pipe timeout occurs. Failure, retry,
+     * or bound custom logic.
+     */
+    var timeoutStrategy: PipeTimeoutStrategy = PipeTimeoutStrategy.Fail
+
+    /**
+     * Defines the maximum number of retry attempts to allow when activating automatic retry for
+     * pipe timeouts.
+     */
+    var maxRetryAttempts: Int = 5
+
+    /**
+     * Bindable function for handling logic surrounding pipe timeouts. Allows the developer to
+     * decide how to handle data management and how to kick off any other repair methods needed.
+     *
+     * @param pipe Reference to the pipe that timed out.
+     * @param content Current multimodal content object that was running when the pipe timed out.
+     * This will be in the exact state it was in prior to the llm hang.
+     */
+    protected var pipeRetryFunction: (suspend (pipe: Pipe, content: MultimodalContent) -> Boolean)? = null
 
     
     /**
@@ -3177,6 +3240,55 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     {
         useModelReasoning = false
         modelReasoningSettingsV3 = ""
+        return this
+    }
+
+    /**
+     * Activate pipe timeout system. This allows for a pipe to be stopped in the event the llm
+     * hangs, the provider hangs, or another system failure occurs that prevents the framework
+     * from detecting a dropped connection, or if the connection gets stuck and never drops.
+     *
+     * @param applyRecursively If true, all child pipes attached to this pipe, and all pipes attached
+     * to those child pipes will inherit the timeout.
+     * @param duration Timeout duration to wait. Defaults to 5 mins before shutting a pipe down.
+     * @param autoRetry If true, the content object will be snapshot upon pipe start, and restored
+     * when we hit the timeout, the pipeline will then capture this failure state, and issue an automatic
+     * jump back into this pipe to try again. This will repeat until the llm actually
+     * completes the task.
+     * @param retryLimit: Defines the maximum number of attempts to allow a retry on a pipe before
+     * failing it and giving up.
+     * @param customLogic Allows for a bindable custom function to be set to enable the developer
+     * to attempt to handle the case as they see fit. Returns a boolean that can trip an automatic
+     * retry if they want to try again, otherwise fails the pipe.
+     *
+     */
+    fun enablePipeTimeout(
+        applyRecursively: Boolean = true,
+        duration: Long = 300000,
+        autoRetry: Boolean = false,
+        retryLimit: Int = 5,
+        customLogic: (suspend(pipe: Pipe, content: MultimodalContent) -> Boolean)? = null) : Pipe
+    {
+        pipeTimeout = duration //Bind duration. Defaults to 5 mins.
+        maxRetryAttempts = retryLimit
+
+        //Activate auto retry mode. This is exclusive with any custom logic systems.
+        if(autoRetry)
+        {
+            timeoutStrategy = PipeTimeoutStrategy.Retry
+            return this
+        }
+
+        //Allow the developer to drive custom logic to handle retries and repairs. Exclusive with auto retry.
+        else if(customLogic != null)
+        {
+            pipeRetryFunction = customLogic
+            return this
+        }
+
+        //Default if retry is not on, or a custom handler is not provided.
+        timeoutStrategy = PipeTimeoutStrategy.Fail
+
         return this
     }
 

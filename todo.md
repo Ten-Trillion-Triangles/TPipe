@@ -4,7 +4,7 @@
 the pipeline itself.~~
 - Fix reasoningBudget subtraction in `Pipe.setTokenBudgetInternal` so it adjusts the prompt segment (system or user) where reasoning is injected rather than always shrinking `maxTokens`; preserve `ReasoningInjector`/metadata awareness so multi-round reasoning consumes the correct bucket.
 - Fix multi round reasoning issues.
-- Fix janky internal model reasoning where some providers work and others do not.
+- ~~Fix janky internal model reasoning where some providers work and others do not.~~
 - ~~Consider renaming the "problemStatement" var in explicit cot reasoning to avoid it making assumptions in cases
 where assumptions are not desired.~~
 
@@ -27,6 +27,7 @@ to confusion when reading a trace file if a transformation function is overwriti
 entirely different from what the pipe produced.~~
 - ~~Consider having jump instructions override terminate instructions.~~
 - Add json rpc support to pcp and the mpc bridge. Add grpc support to pcp and the mcp bridge.
+- Investigate if any other protocols need to be supported like acp, or any other "standards"
 
 **New features:**
 - ~~Add DistributionGrid class that enables "swarm" style agents with TPipe pipelines.~~
