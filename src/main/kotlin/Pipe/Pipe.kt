@@ -288,6 +288,11 @@ var USER_PROMPT_SNAPSHOT = "validatorPipeUserPromptSnapshotTPipe"
 
 //============================================Companion Objects=========================================================
 
+data class TimeoutBundle(
+    var contentCopy: MultimodalContent,
+    var isPipeRunning: Boolean
+)
+
 /**
  * Global object for managing and tracking pipe timeouts. Handles coroutines, running timers, and
  * triggering interrupts when an llm on a pipe has become stuck.
@@ -332,6 +337,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     
     @kotlinx.serialization.Transient
     private var containerObject: Any? = null
+
+    /**
+     * Tracks the active execution job for this pipe. Allows for manual or timeout-driven
+     * hardware/api cancellation.
+     */
+    @kotlinx.serialization.Transient
+    private var activeJob: kotlinx.coroutines.Job? = null
 
 //============================================= properties ===========================================================//
 
@@ -4438,9 +4450,20 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     suspend fun execute(content: MultimodalContent): MultimodalContent = executeMultimodal(content)
     
     /**
+     * Attempts to abort the current LLM call by cancelling the active execution job.
+     * Child classes can override this to perform additional provider-specific cleanup.
+     */
+    open suspend fun abort() {
+        activeJob?.cancel()
+        activeJob = null
+    }
+
+    /**
      * Internal multimodal execution logic shared by both execute methods
      */
     private suspend fun executeMultimodal(inputContent: MultimodalContent): MultimodalContent = coroutineScope{
+        activeJob = coroutineContext[kotlinx.coroutines.Job]
+        try {
 
         /**
          * These now need to be mutually exclusive due to the destructive interaction they can have with each other
@@ -4579,9 +4602,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             preInitFunction?.invoke(inputContent)
         }
 
-        try {
 
-            
+        
             if(readFromGlobalContext)
             {
                 //Pull from context bank if no page keys are set.
@@ -5356,9 +5378,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         } catch (e: Exception) {
             trace(TraceEventType.PIPE_FAILURE, TracePhase.CLEANUP, inputContent, error = e)
             return@coroutineScope MultimodalContent("")
+        } finally {
+            activeJob = null
         }
-
     }
+
 
     /**
      * Executes TPipe model reasoning step by step. Reasoning is broken down into rounds in which the user can

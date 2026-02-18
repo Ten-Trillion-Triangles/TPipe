@@ -461,6 +461,16 @@ class OllamaPipe : Pipe() {
         return this
     }
 
+    /**
+     * Aborts the current Ollama API call. Since Ktor respects coroutine
+     * cancellation, super.abort() will handle the primary cancellation.
+     */
+    override suspend fun abort() {
+        trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, 
+              metadata = mapOf("action" to "abort", "provider" to "Ollama"))
+        super.abort()
+    }
+
 
     /**
      * Shell function to start the Ollama server in the event it has not been started already.

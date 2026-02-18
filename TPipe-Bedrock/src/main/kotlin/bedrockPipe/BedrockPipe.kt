@@ -1002,6 +1002,16 @@ open class BedrockPipe : Pipe() {
     }
     
     /**
+     * Aborts the current Bedrock API call. Since the AWS SDK respects coroutine
+     * cancellation, super.abort() will handle the primary cancellation.
+     */
+    override suspend fun abort() {
+        trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, 
+              metadata = mapOf("action" to "abort", "provider" to "Bedrock"))
+        super.abort()
+    }
+
+    /**
      * Configures context window truncation settings based on the current model's capabilities.
      * 
      * Sets model-specific context window sizes and truncation strategies to maximize

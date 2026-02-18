@@ -40,7 +40,7 @@ class ExampleForDeserializationTest {
         // Verify it's a proper JsonObject with expected structure
         assertTrue(exampleJson.containsKey("loreBookKeys"), "Should contain loreBookKeys field")
         assertTrue(exampleJson.containsKey("contextElements"), "Should contain contextElements field")
-        assertTrue(exampleJson.containsKey("contextSize"), "Should contain contextSize field")
+        assertTrue(exampleJson.containsKey("converseHistory"), "Should contain converseHistory field")
     }
 
     private fun extractJsonSection(examplePrompt: String): String {
