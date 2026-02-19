@@ -61,6 +61,36 @@ var saveSnapshot: Boolean = false
 ```
 If true, automatically saves a snapshot to the content object's snapshot system at pipe startup. Useful when you can't control the content object directly or need guaranteed snapshot preservation.
 
+**`enablePipeTimeout`**
+```kotlin
+var enablePipeTimeout: Boolean = false
+```
+Enables timeout tracking for this pipe. When true, pipe execution is monitored and can be aborted if duration exceeds `pipeTimeout`.
+
+**`pipeTimeout`**
+```kotlin
+var pipeTimeout: Long = 300000L
+```
+Timeout duration in milliseconds (default 5 minutes). Pipe aborts if execution exceeds this duration.
+
+**`timeoutStrategy`**
+```kotlin
+var timeoutStrategy: PipeTimeoutStrategy = PipeTimeoutStrategy.Fail
+```
+Strategy for handling timeouts: `Fail` (terminate), `Retry` (automatic retry with snapshot), or `CustomLogic` (developer-defined).
+
+**`maxRetryAttempts`**
+```kotlin
+var maxRetryAttempts: Int = 5
+```
+Maximum number of retry attempts when `timeoutStrategy = Retry`. Pipe fails after exhausting attempts.
+
+**`applyTimeoutRecursively`**
+```kotlin
+var applyTimeoutRecursively: Boolean = true
+```
+If true, timeout and retry settings propagate to child pipes (validator, branch, transformation, reasoning).
+
 ### Function Hooks
 
 **`preInitFunction`**
@@ -158,6 +188,31 @@ Disables safety guardrail that prevents completely empty content objects.
 Forces the pipe to save a snapshot to the content object at startup.
 
 **Behavior:** Sets `saveSnapshot = true` to ensure the content object is automatically snapshotted when the pipe begins execution. Useful when you can't control the content object directly or need guaranteed snapshot preservation for branch failure recovery.
+
+#### `enablePipeTimeout(applyRecursively: Boolean = true, duration: Long = 300000, autoRetry: Boolean = false, retryLimit: Int = 5, customLogic: (suspend(pipe: Pipe, content: MultimodalContent) -> Boolean)? = null): Pipe`
+Enables timeout tracking and configures retry behavior for this pipe.
+
+**Parameters:**
+- `applyRecursively` - If true, propagates settings to child pipes (validator, branch, transformation, reasoning)
+- `duration` - Timeout duration in milliseconds (default 300000 = 5 minutes)
+- `autoRetry` - If true, sets `timeoutStrategy = Retry` for automatic retry
+- `retryLimit` - Maximum retry attempts (default 5)
+- `customLogic` - Optional custom retry function for `CustomLogic` strategy
+
+**Behavior:** Starts timeout tracking when pipe executes. On timeout, behavior depends on strategy:
+- `Fail`: Terminates immediately (default if `autoRetry = false` and `customLogic = null`)
+- `Retry`: Automatically restores snapshot and retries up to `retryLimit` times
+- `CustomLogic`: Invokes `customLogic` function to determine retry action
+
+**Warning:** Retry re-executes ALL pre-execution DITL functions (`preInitFunction`, `preValidationFunction`, etc.). These functions MUST be read-only. Writing to ContextBank or program memory will cause duplicate writes on retry. See [Timeout and Retry](../core-concepts/timeout-and-retry.md) for details.
+
+#### `setRetryFunction(func: (suspend (pipe: Pipe, content: MultimodalContent) -> Boolean)?): Pipe`
+Sets custom retry logic function for `CustomLogic` timeout strategy.
+
+**Parameters:**
+- `func` - Function receiving pipe reference and content, returns true to retry
+
+**Behavior:** Called when timeout occurs and `timeoutStrategy = CustomLogic`. Function can analyze failure, repair content, or make external checks before deciding to retry. Return `true` to retry, `false` to fail.
 
 ---
 

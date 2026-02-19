@@ -130,6 +130,7 @@ println(result.text)
 ## Key Features
 
 - **Multi-stage AI workflows** with sophisticated error handling
+- **Timeout and retry system** with automatic recovery from transient failures and hanging LLM calls
 - **Pipeline pause/resume control** with declarative pause points and developer-in-the-loop workflows
 - **Global context sharing** across applications via ContextBank
 - **Context access control** with ContextLock enforcement for secure lorebook and page management

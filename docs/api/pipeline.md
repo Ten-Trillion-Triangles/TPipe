@@ -159,6 +159,37 @@ miniBank.contextMap["playerData"] = ContextWindow()
 pipeline.setMiniBank(miniBank)
 ```
 
+#### `enablePipeTimeout(applyRecursively: Boolean = true, duration: Long = 300000, autoRetry: Boolean = false, retryLimit: Int = 5, customLogic: (suspend(pipe: Pipe, content: MultimodalContent) -> Boolean)? = null): Pipeline`
+Enables timeout tracking and retry behavior for all pipes in this pipeline.
+
+**Parameters:**
+- `applyRecursively` - If true, propagates settings to child pipes within each pipe
+- `duration` - Timeout duration in milliseconds (default 300000 = 5 minutes)
+- `autoRetry` - If true, enables automatic retry on timeout
+- `retryLimit` - Maximum retry attempts per pipe (default 5)
+- `customLogic` - Optional custom retry function for all pipes
+
+**Behavior:** Configures timeout and retry settings that are applied to all pipes during `init()`. Each pipe receives:
+- `enablePipeTimeout = true`
+- `pipeTimeout = duration`
+- `maxRetryAttempts = retryLimit`
+- `timeoutStrategy` based on `autoRetry` and `customLogic` parameters
+- `pipeRetryFunction = customLogic` if provided
+
+If `applyRecursively = true`, settings also propagate to child pipes (validator, branch, transformation, reasoning pipes).
+
+**Example:**
+```kotlin
+pipeline.enablePipeTimeout(
+    applyRecursively = true,
+    duration = 120000,  // 2 minutes
+    autoRetry = true,
+    retryLimit = 3
+)
+```
+
+**Warning:** Retry re-executes pre-execution DITL functions. Ensure these functions are read-only and don't write to ContextBank or program memory. See [Timeout and Retry](../core-concepts/timeout-and-retry.md) for details.
+
 ---
 
 ### Pipe Management
