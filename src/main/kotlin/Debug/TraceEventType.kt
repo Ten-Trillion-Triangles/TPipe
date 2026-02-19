@@ -6,6 +6,8 @@ enum class TraceEventType {
     PIPE_END,
     PIPE_SUCCESS,
     PIPE_FAILURE,
+    PIPE_TIMEOUT,
+    PIPE_RETRY,
     CONTEXT_PULL,
     CONTEXT_TRUNCATE,
     CONTEXT_PREPARED,

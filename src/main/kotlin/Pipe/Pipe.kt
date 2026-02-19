@@ -35,9 +35,8 @@ import com.TTT.Util.extractAllJsonObjects
 import com.TTT.Util.extractNonJsonText
 import com.TTT.Util.removeFromFirstOccurrence
 import com.TTT.Util.serialize
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 import java.util.UUID
@@ -299,7 +298,109 @@ data class TimeoutBundle(
  */
 object PipeTimeoutManager
 {
-    
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val timers = java.util.concurrent.ConcurrentHashMap<Pipe, Job>()
+    private val timedOutPipes = java.util.Collections.synchronizedSet(mutableSetOf<Pipe>())
+    private val retryAttempts = java.util.concurrent.ConcurrentHashMap<Pipe, Int>()
+
+    /**
+     * Starts a timer for the given pipe. If the timer expires, the pipe's abort() method
+     * is called, and the pipe is marked as timed out.
+     */
+    fun startTracking(pipe: Pipe, timeoutMs: Long)
+    {
+        timedOutPipes.remove(pipe)
+        timers[pipe]?.cancel()
+        timers[pipe] = scope.launch {
+            delay(timeoutMs)
+            timedOutPipes.add(pipe)
+            pipe.abort()
+        }
+    }
+
+    /**
+     * Stops and removes the timer for a pipe. Should be called when the pipe completes
+     * its execution successfully or fails due to other reasons.
+     */
+    fun stopTracking(pipe: Pipe)
+    {
+        timers.remove(pipe)?.cancel()
+    }
+
+    /**
+     * Checks if a pipe has timed out.
+     */
+    fun isTimeout(pipe: Pipe): Boolean = timedOutPipes.contains(pipe)
+
+    /**
+     * Resets the timeout flag for a pipe.
+     */
+    fun clearTimeout(pipe: Pipe)
+    {
+        timedOutPipes.remove(pipe)
+    }
+
+    /**
+     * Gets the current retry count for a pipe.
+     */
+    fun getRetryCount(pipe: Pipe): Int = retryAttempts.getOrDefault(pipe, 0)
+
+    /**
+     * Increments the retry count for a pipe.
+     */
+    fun incrementRetryCount(pipe: Pipe)
+    {
+        retryAttempts[pipe] = getRetryCount(pipe) + 1
+    }
+
+    /**
+     * Resets the retry count for a pipe.
+     */
+    fun clearRetryCount(pipe: Pipe)
+    {
+        retryAttempts.remove(pipe)
+    }
+
+    /**
+     * Determines the next action for a pipe that has timed out.
+     */
+    fun handleTimeoutSignal(pipe: Pipe, content: MultimodalContent): MultimodalContent
+    {
+        val attempts = getRetryCount(pipe)
+        
+        return if (attempts < pipe.maxRetryAttempts && pipe.timeoutStrategy == PipeTimeoutStrategy.Retry) 
+        {
+            incrementRetryCount(pipe)
+            pipe.timeoutTrace(TraceEventType.PIPE_RETRY, TracePhase.EXECUTION, metadata = mapOf("attempt" to getRetryCount(pipe)))
+            
+            val snapshot = content.getSnapshot()
+            if (snapshot != null) 
+            {
+                snapshot.repeatPipe = true
+                snapshot
+            } 
+            else 
+            {
+                // If no snapshot, we can't safely retry, so we fail.
+                pipe.timeoutTrace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, error = Exception("Timeout retry failed: No snapshot available to restore state."))
+                content.terminate()
+                content
+            }
+        } 
+        else if (pipe.timeoutStrategy == PipeTimeoutStrategy.CustomLogic)
+        {
+            // Custom logic is handled by the pipe's own retry function if set.
+            // We'll return the content as is and let the catch block handle the invocation if needed,
+            // or we could potentially invoke it here.
+            content
+        }
+        else 
+        {
+            pipe.timeoutTrace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, error = Exception("Pipe timed out after ${attempts} retries."))
+            content.terminate()
+            content
+        }
+    }
 }
 
 //===========================================Main Class=================================================================
@@ -3283,6 +3384,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     {
         pipeTimeout = duration //Bind duration. Defaults to 5 mins.
         maxRetryAttempts = retryLimit
+        this.enablePipeTimeout = true
 
         //Activate auto retry mode. This is exclusive with any custom logic systems.
         if(autoRetry)
@@ -3728,6 +3830,15 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
     /**
+     * Internal wrapper for the timeout system to allow it to perform tracing on pipe objects without
+     * requiring public visibility for the main trace function.
+     */
+    internal fun timeoutTrace(eventType: TraceEventType, phase: TracePhase, content: MultimodalContent? = null, metadata: Map<String, Any> = emptyMap(), error: Throwable? = null)
+    {
+        trace(eventType, phase, content, metadata, error)
+    }
+
+    /**
      * Adds a trace ID to the active set for this pipe. Trace events will be broadcast to this ID.
      * Thread-safe.
      * @param id The trace ID to add.
@@ -3910,6 +4021,19 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
      open suspend fun init() : Pipe
      {
+         // Propagate timeout settings recursively if enabled
+         if(enablePipeTimeout && applyTimeoutRecursively)
+         {
+             listOfNotNull(validatorPipe, branchPipe, transformationPipe, reasoningPipe).forEach { child ->
+                 child.enablePipeTimeout = true
+                 child.pipeTimeout = pipeTimeout
+                 child.timeoutStrategy = timeoutStrategy
+                 child.maxRetryAttempts = maxRetryAttempts
+                 child.pipeRetryFunction = pipeRetryFunction
+                 child.applyTimeoutRecursively = true
+             }
+         }
+
          // Name children FIRST, before they initialize their own children
          if(validatorPipe?.pipeName?.isEmpty() == true) validatorPipe?.pipeName = "$pipeName->validator pipe"
          if(branchPipe?.pipeName?.isEmpty() == true) branchPipe?.pipeName = "$pipeName->branch pipe"
@@ -4436,7 +4560,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     suspend fun execute(promptResult : String = "") : String = coroutineScope{
         val content = MultimodalContent(text = promptResult)
-        val result = executeMultimodal(content)
+        val result = execute(content)
         result.text
     }
     
@@ -4447,7 +4571,14 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * @param content Multimodal content containing text and/or binary data
      * @return The multimodal result of the AI api call
      */
-    suspend fun execute(content: MultimodalContent): MultimodalContent = executeMultimodal(content)
+    suspend fun execute(content: MultimodalContent): MultimodalContent = coroutineScope {
+        var result = executeMultimodal(content)
+        while (result.repeatPipe) 
+        {
+            result = executeMultimodal(result)
+        }
+        return@coroutineScope result
+    }
     
     /**
      * Attempts to abort the current LLM call by cancelling the active execution job.
@@ -4462,7 +4593,16 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * Internal multimodal execution logic shared by both execute methods
      */
     private suspend fun executeMultimodal(inputContent: MultimodalContent): MultimodalContent = coroutineScope{
-        activeJob = coroutineContext[kotlinx.coroutines.Job]
+        if (enablePipeTimeout) 
+        {
+            PipeTimeoutManager.startTracking(this@Pipe, pipeTimeout)
+            // If we're set to retry, we MUST have a snapshot.
+            if (timeoutStrategy == PipeTimeoutStrategy.Retry && maxRetryAttempts > 0) 
+            {
+                inputContent.saveSnapshot()
+            }
+        }
+
         try {
 
         /**
@@ -4964,9 +5104,30 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     generateContent(processedContent)
                 }
 
-                //Run the llm and await it's output.
-                generatedContent = result.await()
+                activeJob = result
+                try {
+                    //Run the llm and await it's output.
+                    generatedContent = result.await()
+                } finally {
+                    activeJob = null
+                }
             } catch(e: Exception) {
+                if (e is CancellationException && PipeTimeoutManager.isTimeout(this@Pipe)) 
+                {
+                    val result = PipeTimeoutManager.handleTimeoutSignal(this@Pipe, inputContent)
+                    
+                    if (timeoutStrategy == PipeTimeoutStrategy.CustomLogic) 
+                    {
+                        pipeRetryFunction?.invoke(this@Pipe, inputContent)
+                    }
+
+                    if (result.repeatPipe || result.terminatePipeline) 
+                    {
+                        // Return a copy with empty text if we are terminating to avoid returning input text
+                        if (result.terminatePipeline) return@coroutineScope result.apply { text = "" }
+                        return@coroutineScope result
+                    }
+                }
                 exceptionFunction?.invoke(processedContent, e)
             }
 
@@ -5313,6 +5474,12 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
                             trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, branchResult,
                                   metadata = mapOf("outputText" to branchResult.text))
+                            
+                            if (!branchResult.repeatPipe) 
+                            {
+                                PipeTimeoutManager.clearRetryCount(this@Pipe)
+                            }
+
                             return@coroutineScope embedContentIntoInternalConverse(branchResult).takeIf { wrapContentWithConverseHistory } ?: branchResult
                         }
                         
@@ -5365,6 +5532,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         trace(TraceEventType.PIPE_SUCCESS, TracePhase.TRANSFORMATION,
                             metadata = mapOf("output" to "${failureResult.text}"))
 
+                        if (!failureResult.repeatPipe) 
+                        {
+                            PipeTimeoutManager.clearRetryCount(this@Pipe)
+                        }
+
                         return@coroutineScope embedContentIntoInternalConverse(failureResult).takeIf { wrapContentWithConverseHistory } ?: failureResult
                     }
                 }
@@ -5379,6 +5551,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             trace(TraceEventType.PIPE_FAILURE, TracePhase.CLEANUP, inputContent, error = e)
             return@coroutineScope MultimodalContent("")
         } finally {
+            PipeTimeoutManager.stopTracking(this@Pipe)
             activeJob = null
         }
     }
