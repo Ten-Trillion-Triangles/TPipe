@@ -15,6 +15,7 @@ import com.TTT.P2P.P2PTransport
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenUsage
+import com.TTT.Pipe.PipeTimeoutStrategy
 import com.TTT.Util.copyPipeline
 import com.TTT.Util.deepCopy
 import kotlinx.coroutines.channels.Channel
@@ -166,6 +167,14 @@ class Pipeline : P2PInterface {
      * at the start of the execution step.
      */
     var preValidationFunction: (suspend (context: ContextWindow, miniBank: MiniBank, content: MultimodalContent) -> Unit)? = null
+    
+    // Timeout Configuration Properties
+    private var enablePipeTimeout = false
+    private var pipeTimeout = 300000L
+    private var timeoutStrategy = PipeTimeoutStrategy.Fail
+    private var maxRetryAttempts = 5
+    private var pipeRetryFunction: (suspend (pipe: Pipe, content: MultimodalContent) -> Boolean)? = null
+    private var applyTimeoutRecursively = true
 
 
 
@@ -431,6 +440,40 @@ class Pipeline : P2PInterface {
     fun setPreValidationFunction(func:  (suspend (context: ContextWindow, miniBank: MiniBank, content: MultimodalContent) -> Unit)) : Pipeline
     {
         preValidationFunction = func
+        return this
+    }
+
+    /**
+     * Enables timeout for all pipes in this pipeline.
+     * Settings will be applied to all pipes when [init] is called.
+     *
+     * @param applyRecursively If true, settings will propagate to child pipes (e.g. branch pipes)
+     * @param duration Timeout duration in milliseconds
+     * @param autoRetry If true, sets strategy to [PipeTimeoutStrategy.Retry]
+     * @param retryLimit Maximum number of retry attempts
+     * @param customLogic Optional custom retry logic function
+     */
+    fun enablePipeTimeout(
+        applyRecursively: Boolean = true,
+        duration: Long = 300000,
+        autoRetry: Boolean = false,
+        retryLimit: Int = 5,
+        customLogic: (suspend(pipe: Pipe, content: MultimodalContent) -> Boolean)? = null) : Pipeline
+    {
+        this.enablePipeTimeout = true
+        this.applyTimeoutRecursively = applyRecursively
+        this.pipeTimeout = duration
+        this.maxRetryAttempts = retryLimit
+        
+        if(autoRetry) {
+             this.timeoutStrategy = PipeTimeoutStrategy.Retry
+        } else if(customLogic != null) {
+             this.timeoutStrategy = PipeTimeoutStrategy.CustomLogic
+             this.pipeRetryFunction = customLogic
+        } else {
+             this.timeoutStrategy = PipeTimeoutStrategy.Fail
+        }
+        
         return this
     }
 
@@ -830,6 +873,21 @@ class Pipeline : P2PInterface {
         for(pipe in pipes)
         {
             pipe.setPipelineRef(this)
+            
+            // Apply pipeline-level timeout settings if enabled
+            if(enablePipeTimeout) 
+            {
+                pipe.enablePipeTimeout(
+                    applyRecursively = applyTimeoutRecursively,
+                    duration = pipeTimeout,
+                    retryLimit = maxRetryAttempts
+                )
+                // Manually set other properties that might not be fully covered by the builder or need explicit setting
+                pipe.enablePipeTimeout = true
+                pipe.timeoutStrategy = timeoutStrategy
+                pipe.setRetryFunction(pipeRetryFunction)
+            }
+            
             if(initPipes)
             {
                 //Exercise safety when using init(). It will block whatever thread is calling it.

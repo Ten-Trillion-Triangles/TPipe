@@ -108,4 +108,34 @@ class PipeTimeoutTest {
         assertEquals(3, child.maxRetryAttempts, "Child should inherit retry limit")
         assertEquals(true, child.applyTimeoutRecursively, "Child should have recursion enabled")
     }
+
+    @Test
+    fun testPipelineTimeoutConfiguration() = runBlocking {
+        val pipeline = com.TTT.Pipeline.Pipeline()
+        val pipe1 = TimeoutTestPipe()
+        val pipe2 = TimeoutTestPipe()
+        
+        pipeline.add(pipe1)
+        pipeline.add(pipe2)
+        
+        // Configure pipeline timeout
+        pipeline.enablePipeTimeout(
+            applyRecursively = true,
+            duration = 2000,
+            retryLimit = 2
+        )
+        
+        // Initialize pipeline (should apply settings to pipes)
+        pipeline.init()
+        
+        // Verify pipe1 settings
+        assertTrue(pipe1.enablePipeTimeout, "Pipe1 should have timeout enabled")
+        assertEquals(2000L, pipe1.pipeTimeout, "Pipe1 should inherit timeout duration")
+        assertEquals(2, pipe1.maxRetryAttempts, "Pipe1 should inherit retry limit")
+        
+        // Verify pipe2 settings
+        assertTrue(pipe2.enablePipeTimeout, "Pipe2 should have timeout enabled")
+        assertEquals(2000L, pipe2.pipeTimeout, "Pipe2 should inherit timeout duration")
+        assertEquals(2, pipe2.maxRetryAttempts, "Pipe2 should inherit retry limit")
+    }
 }

@@ -492,6 +492,14 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * This will be in the exact state it was in prior to the llm hang.
      */
     protected var pipeRetryFunction: (suspend (pipe: Pipe, content: MultimodalContent) -> Boolean)? = null
+    
+    /**
+     * Sets the custom retry function for this pipe.
+     */
+    fun setRetryFunction(func: (suspend (pipe: Pipe, content: MultimodalContent) -> Boolean)?)
+    {
+        this.pipeRetryFunction = func
+    }
 
     
     /**
