@@ -28,6 +28,9 @@ entirely different from what the pipe produced.~~
 - ~~Consider having jump instructions override terminate instructions.~~
 - Add json rpc support to pcp and the mpc bridge. Add grpc support to pcp and the mcp bridge.
 - Investigate if any other protocols need to be supported like acp, or any other "standards"
+- Add drop down toggle for json output and input that shows it neatly formatted as json similar to how
+TPipe-Reasoning displays this data in the trace files. Do the same for json input, and context data too. This way
+we can make tracing inputs, user prompts, context, and json much easier to do at a glance.
 
 **New features:**
 - ~~Add DistributionGrid class that enables "swarm" style agents with TPipe pipelines.~~
