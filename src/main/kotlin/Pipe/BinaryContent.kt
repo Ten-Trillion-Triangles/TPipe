@@ -118,7 +118,8 @@ data class MultimodalContent(
     var miniBankContext: MiniBank = MiniBank(),
     var tools: PcPRequest = PcPRequest(),
     @kotlinx.serialization.Transient var modelReasoning: String = "",
-    var useSnapshot: Boolean = false
+    var useSnapshot: Boolean = false,
+    @kotlinx.serialization.Transient var pipeError: PipeError? = null
 ) {
 
 //---------------------------------------Internal vars------------------------------------------------------------------
@@ -377,3 +378,10 @@ fun BinaryContent.getFilename(): String? = when (this) {
     is BinaryContent.CloudReference -> filename
     is BinaryContent.TextDocument -> filename
 }
+
+
+/**
+ * Extension function to check if MultimodalContent has an error.
+ * @return true if pipeError is present, false otherwise
+ */
+fun MultimodalContent.hasError(): Boolean = pipeError != null

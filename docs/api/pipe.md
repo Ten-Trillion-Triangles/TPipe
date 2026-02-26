@@ -920,6 +920,43 @@ Converts pipe configuration to PipeSettings object.
 
 ---
 
+### Error Handling
+
+#### `hasError(): Boolean`
+Checks if pipe has captured an error during execution.
+
+**Returns:** `true` if an error is stored, `false` otherwise.
+
+**Example:**
+```kotlin
+val result = pipe.execute("input")
+if (pipe.hasError()) {
+    println("Pipe failed: ${pipe.getErrorMessage()}")
+}
+```
+
+#### `getErrorMessage(): String`
+Gets the error message from the last captured error.
+
+**Returns:** Error message string, or empty string if no error.
+
+#### `getErrorType(): TraceEventType?`
+Gets the type of error that occurred.
+
+**Returns:** `TraceEventType` (PIPE_FAILURE, API_CALL_FAILURE, VALIDATION_FAILURE, TRANSFORMATION_FAILURE), or `null` if no error.
+
+#### `clearError()`
+Clears the stored error information.
+
+**Usage:** Call before reusing a pipe to reset error state.
+
+#### `lastError: PipeError?`
+Direct access to the complete error object containing exception, event type, phase, pipe name, pipe ID, and timestamp.
+
+**Note:** Errors are automatically captured when trace events with failure types are logged. The error persists until explicitly cleared or the pipe executes successfully.
+
+---
+
 ### Execution
 
 #### `execute(promptResult: String = ""): String`
@@ -931,3 +968,5 @@ Executes pipe with string input, returns string output.
 Executes pipe with multimodal content, returns multimodal result.
 
 **Behavior:** Main execution method. Follows complete execution pipeline: pre-init → context loading → pre-validation → pre-invoke check → reasoning → AI generation → validation → transformation → branch handling. Execution can be short-circuited at multiple points based on configuration and validation results.
+
+**Error Handling:** On failure, returns empty `MultimodalContent` with `pipeError` field populated. Check `pipe.hasError()` or `result.hasError()` to detect failures.

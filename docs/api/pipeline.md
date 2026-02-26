@@ -327,6 +327,57 @@ Returns the unique trace identifier for this pipeline.
 
 ---
 
+### Error Handling
+
+#### `hasError(): Boolean`
+Checks if any pipe in the pipeline failed during execution.
+
+**Returns:** `true` if a pipe failure was captured, `false` otherwise.
+
+**Example:**
+```kotlin
+pipeline.execute("input")
+if (pipeline.hasError()) {
+    println("Pipeline failed at: ${pipeline.getFailedPipeName()}")
+    println("Error: ${pipeline.getErrorMessage()}")
+}
+```
+
+#### `getErrorMessage(): String`
+Gets the error message from the failed pipe.
+
+**Returns:** Error message string, or empty string if no error.
+
+#### `getFailedPipeName(): String`
+Gets the name of the pipe that caused the pipeline to fail.
+
+**Returns:** Pipe name string, or empty string if no failure.
+
+#### `getFullErrorContext(): String`
+Gets formatted error information including pipe name, execution phase, and error message.
+
+**Returns:** Formatted string like: "Pipe 'PipeName' failed in EXECUTION phase: Error message"
+
+#### `wasTerminatedByError(): Boolean`
+Checks if the pipeline ended due to an error rather than normal completion.
+
+**Returns:** `true` if pipeline was terminated by error, `false` otherwise.
+
+#### `clearErrors()`
+Clears all error information from the pipeline.
+
+**Usage:** Call before reusing a pipeline to reset error state.
+
+#### `lastFailedPipe: Pipe?`
+Direct access to the pipe instance that failed.
+
+#### `lastError: PipeError?`
+Direct access to the complete error object from the failed pipe.
+
+**Note:** Pipeline automatically captures errors from pipes during execution. Errors persist until explicitly cleared or the pipeline executes successfully.
+
+---
+
 ### Execution
 
 #### `init(initPipes: Boolean = false): Pipeline`
@@ -339,6 +390,8 @@ Executes the pipeline with string input, returns string output.
 
 **Behavior:** Legacy method that wraps input in `MultimodalContent` and extracts text from the result. Provided for backward compatibility.
 
+**Error Handling:** On failure, returns empty string. Check `pipeline.hasError()` for error details.
+
 #### `execute(initialContent: MultimodalContent): MultimodalContent`
 Executes the pipeline with multimodal content.
 
@@ -350,6 +403,9 @@ Executes the pipeline with multimodal content.
 - Handles pipeline termination conditions
 - Supports retry logic for failed pipes
 - Manages global context updates
+- **Captures pipe failures** and stores in `lastFailedPipe` and `lastError`
+
+**Error Handling:** On pipe failure, captures error information and continues or terminates based on pipe configuration. Check `pipeline.hasError()` after execution.
 
 ---
 

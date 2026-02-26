@@ -1209,6 +1209,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     protected var pipeTokenUsage = TokenUsage()
 
     /**
+     * Stores the most recent error that occurred during pipe execution.
+     * This allows programmatic access to failure information.
+     */
+    @kotlinx.serialization.Transient
+    var lastError: PipeError? = null
+
+    /**
      * Allows for a complex object or container to be linked to this pipe. If this is not null, when this pipe executes,
      * it will attempt to execute the container via the interface instead. Then return that result forward.
      */
@@ -3812,6 +3819,25 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     protected fun trace(eventType: TraceEventType, phase: TracePhase, content: MultimodalContent? = null, metadata: Map<String, Any> = emptyMap(), error: Throwable? = null)
     {
+        // Auto-capture errors for failure event types
+        // Only capture if no error exists yet, or if this error has an exception (more specific)
+        if (eventType == TraceEventType.PIPE_FAILURE || 
+            eventType == TraceEventType.API_CALL_FAILURE || 
+            eventType == TraceEventType.VALIDATION_FAILURE || 
+            eventType == TraceEventType.TRANSFORMATION_FAILURE)
+        {
+            if (lastError == null || (error != null && lastError?.exception == null))
+            {
+                lastError = PipeError(
+                    exception = error,
+                    eventType = eventType,
+                    phase = phase,
+                    pipeName = if (pipeName.isNotEmpty()) pipeName else (this::class.simpleName ?: "UnknownPipe"),
+                    pipeId = pipeId
+                )
+            }
+        }
+        
         if (!tracingEnabled) return
         
         // Check if this event should be traced based on detail level
@@ -3871,6 +3897,32 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun clearTraceIds() {
         activeTraceIds.clear()
     }
+
+    /**
+     * Clears the last error stored in this pipe.
+     */
+    fun clearError()
+    {
+        lastError = null
+    }
+
+    /**
+     * Checks if this pipe has an error stored.
+     * @return true if an error is present, false otherwise
+     */
+    fun hasError(): Boolean = lastError != null
+
+    /**
+     * Gets the error message from the last error, or empty string if no error.
+     * @return The error message or empty string
+     */
+    fun getErrorMessage(): String = lastError?.message ?: ""
+
+    /**
+     * Gets the error type from the last error, or null if no error.
+     * @return The TraceEventType of the error or null
+     */
+    fun getErrorType(): TraceEventType? = lastError?.eventType
 
     /**
      * Recursively propagates tracing configuration to every child pipe and protects against cycles.
@@ -5136,6 +5188,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         return@coroutineScope result
                     }
                 }
+                
+                // Trace API call failure to capture error
+                trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, processedContent, error = e)
                 exceptionFunction?.invoke(processedContent, e)
             }
 
@@ -5553,11 +5608,15 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              * Pipeline termination - return terminated content to signal pipeline failure.
              */
             trace(TraceEventType.PIPE_FAILURE, TracePhase.CLEANUP, inputContent)
-            return@coroutineScope MultimodalContent()
+            val failedContent = MultimodalContent()
+            failedContent.pipeError = lastError
+            return@coroutineScope failedContent
             
         } catch (e: Exception) {
             trace(TraceEventType.PIPE_FAILURE, TracePhase.CLEANUP, inputContent, error = e)
-            return@coroutineScope MultimodalContent("")
+            val failedContent = MultimodalContent("")
+            failedContent.pipeError = lastError
+            return@coroutineScope failedContent
         } finally {
             PipeTimeoutManager.stopTracking(this@Pipe)
             activeJob = null

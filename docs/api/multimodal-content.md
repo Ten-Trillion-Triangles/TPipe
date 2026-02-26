@@ -102,6 +102,12 @@ var useSnapshot: Boolean = false
 ```
 If true, creates a copy in metadata before LLM processing for state restoration. Doubles memory usage.
 
+**`pipeError`**
+```kotlin
+@Transient var pipeError: PipeError? = null
+```
+Error information from a failed pipe. Automatically populated when a pipe fails during execution. Contains exception, event type, phase, pipe name, pipe ID, and timestamp.
+
 **`metadata`**
 ```kotlin
 @Transient var metadata: MutableMap<Any, Any> = mutableMapOf()
@@ -130,6 +136,19 @@ Adds binary content from byte array.
 
 #### `addBinary(content: BinaryContent)`
 Adds pre-constructed binary content.
+
+#### `hasError(): Boolean`
+Extension function to check if content has an error.
+
+**Returns:** `true` if `pipeError` is not null, `false` otherwise.
+
+**Example:**
+```kotlin
+val result = pipe.execute(content)
+if (result.hasError()) {
+    println("Pipe failed: ${result.pipeError?.message}")
+}
+```
 
 #### `merge(other: MultimodalContent)`
 Merges another MultimodalContent object into this one.

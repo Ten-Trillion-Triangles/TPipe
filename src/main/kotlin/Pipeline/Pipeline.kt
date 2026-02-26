@@ -13,6 +13,7 @@ import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PResponse
 import com.TTT.P2P.P2PTransport
 import com.TTT.Pipe.Pipe
+import com.TTT.Pipe.PipeError
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenUsage
 import com.TTT.Pipe.PipeTimeoutStrategy
@@ -75,6 +76,18 @@ class Pipeline : P2PInterface {
 
     @kotlinx.serialization.Transient
     var pipeMetaData = mutableMapOf<Any, Any>()
+
+    /**
+     * Stores the pipe that caused the pipeline to fail, if any.
+     */
+    @kotlinx.serialization.Transient
+    var lastFailedPipe: Pipe? = null
+
+    /**
+     * Stores the most recent error that occurred during pipeline execution.
+     */
+    @kotlinx.serialization.Transient
+    var lastError: PipeError? = null
 
     /**
      * Weather the pipeline should update the global context window system of TPipe which allows multiple pipes,
@@ -526,6 +539,49 @@ class Pipeline : P2PInterface {
     {
         return pipes
     }
+
+    /**
+     * Checks if this pipeline has an error stored.
+     * @return true if an error is present, false otherwise
+     */
+    fun hasError(): Boolean = lastError != null
+
+    /**
+     * Gets the error message from the last error, or empty string if no error.
+     * @return The error message or empty string
+     */
+    fun getErrorMessage(): String = lastError?.message ?: ""
+
+    /**
+     * Gets the name of the pipe that failed, or empty string if no failure.
+     * @return The failed pipe name or empty string
+     */
+    fun getFailedPipeName(): String = lastFailedPipe?.pipeName ?: ""
+
+    /**
+     * Clears all error information from this pipeline.
+     */
+    fun clearErrors()
+    {
+        lastFailedPipe = null
+        lastError = null
+    }
+
+    /**
+     * Gets full error context including pipe name, phase, and message.
+     * @return Formatted error context string or empty string if no error
+     */
+    fun getFullErrorContext(): String
+    {
+        val error = lastError ?: return ""
+        return "Pipe '${error.pipeName}' failed in ${error.phase} phase: ${error.message}"
+    }
+
+    /**
+     * Checks if the pipeline was terminated due to an error.
+     * @return true if pipeline ended with an error, false otherwise
+     */
+    fun wasTerminatedByError(): Boolean = lastError != null
 
     /**
      * Enables tracing for this pipeline with the specified configuration.
@@ -1105,10 +1161,31 @@ class Pipeline : P2PInterface {
 
                 //Execute the current pipe and await its result.
                 generatedContent = result.await()
+                
+                // Capture pipe errors after execution
+                if (pipe.hasError())
+                {
+                    lastFailedPipe = pipe
+                    lastError = pipe.lastError
+                }
+                
+                // Also check if error was propagated through content
+                if (generatedContent.pipeError != null && lastError == null)
+                {
+                    lastFailedPipe = pipe
+                    lastError = generatedContent.pipeError
+                }
             }
 
             catch(e: Exception) {
                 trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, generatedContent, error = e)
+                
+                // Capture exception-based failures
+                if (pipe.hasError())
+                {
+                    lastFailedPipe = pipe
+                    lastError = pipe.lastError
+                }
             }
 
 
