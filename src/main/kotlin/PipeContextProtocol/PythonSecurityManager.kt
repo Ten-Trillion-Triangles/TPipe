@@ -1,6 +1,20 @@
 package com.TTT.PipeContextProtocol
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.concurrent.TimeUnit
 
 /**
  * Python security levels for different use cases.
@@ -106,6 +120,10 @@ class PythonSecurityManager(
     private var securityConfig: PythonSecurityConfig = PythonSecurityConfig()
 )
 {
+    private val platformManager = PythonPlatformManager()
+    private val json = Json { ignoreUnknownKeys = true }
+    private var cachedValidatorFile: File? = null
+
     // Compile regex patterns once for efficiency
     private val compiledPatterns = mutableMapOf<String, Regex>()
     
@@ -140,7 +158,7 @@ class PythonSecurityManager(
      * Performs comprehensive security validation including script content analysis,
      * resource limit checking, and permission validation based on detected operations.
      */
-    fun validatePythonRequest(script: String, context: PythonContext): PythonValidationResult
+    suspend fun validatePythonRequest(script: String, context: PythonContext): PythonValidationResult
     {
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()
@@ -172,7 +190,7 @@ class PythonSecurityManager(
         }
         
         // Validate script content for dangerous operations
-        val scriptValidation = validateScriptContent(script)
+        val scriptValidation = validateScriptContent(script, context)
         errors.addAll(scriptValidation.errors)
         warnings.addAll(scriptValidation.warnings)
         
@@ -189,11 +207,18 @@ class PythonSecurityManager(
      * Analyzes script text for potentially dangerous imports, function calls,
      * and patterns while respecting developer overrides for legitimate use cases.
      */
-    private fun validateScriptContent(script: String): PythonValidationResult
+    private suspend fun validateScriptContent(script: String, context: PythonContext): PythonValidationResult
     {
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()
         
+        // 1. Perform AST-based validation (Robust)
+        val astValidation = performAstValidation(script, context)
+        errors.addAll(astValidation.errors)
+        warnings.addAll(astValidation.warnings)
+
+        // 2. Perform Regex-based validation (Defense-in-depth and legacy)
+
         // Check blocked imports with better pattern matching
         val blockedImports = getBlockedImports() - securityConfig.allowedImports
         blockedImports.forEach { blockedImport ->
@@ -206,7 +231,7 @@ class PythonSecurityManager(
             importPatterns.forEach { pattern ->
                 if (getCompiledRegex(pattern).containsMatchIn(script))
                 {
-                    errors.add("Import '$blockedImport' is not allowed at current security level")
+                    errors.add("Import '$blockedImport' is not allowed at current security level (Regex match)")
                     return@forEach // Break inner loop once found
                 }
             }
@@ -221,7 +246,7 @@ class PythonSecurityManager(
 
             if (importPatterns.any { pattern -> getCompiledRegex(pattern).containsMatchIn(script) })
             {
-                warnings.add("Import '$allowedImport' allowed via security override")
+                warnings.add("Import '$allowedImport' allowed via security override (Regex match)")
             }
         }
         
@@ -236,7 +261,7 @@ class PythonSecurityManager(
             functionPatterns.forEach { pattern ->
                 if (getCompiledRegex(pattern).containsMatchIn(script))
                 {
-                    errors.add("Function '$blockedFunction' is not allowed at current security level")
+                    errors.add("Function '$blockedFunction' is not allowed at current security level (Regex match)")
                     return@forEach // Break inner loop once found
                 }
             }
@@ -250,7 +275,7 @@ class PythonSecurityManager(
 
             if (functionPatterns.any { pattern -> getCompiledRegex(pattern).containsMatchIn(script) })
             {
-                warnings.add("Function '$allowedFunction' allowed via security override")
+                warnings.add("Function '$allowedFunction' allowed via security override (Regex match)")
             }
         }
         
@@ -275,6 +300,71 @@ class PythonSecurityManager(
             errors = errors,
             warnings = warnings
         )
+    }
+
+    private suspend fun performAstValidation(script: String, context: PythonContext): PythonValidationResult = withContext(Dispatchers.IO)
+    {
+        var tempValidatorFile: File? = null
+        try
+        {
+            val pythonExecutable = if (context.pythonPath.isNotEmpty()) context.pythonPath else {
+                platformManager.detectPythonInstallations().defaultInstallation?.executable ?: "python3"
+            }
+
+            // Get or create cached validator file
+            val validatorFile = cachedValidatorFile?.takeIf { it.exists() } ?: run {
+                val validatorStream = javaClass.classLoader.getResourceAsStream("ast_validator.py")
+                    ?: File("src/main/resources/ast_validator.py").inputStream()
+
+                val validatorCode = validatorStream.bufferedReader().use { it.readText() }
+                val newFile = File.createTempFile("ast_validator_", ".py").apply {
+                    writeText(validatorCode)
+                    deleteOnExit()
+                }
+                cachedValidatorFile = newFile
+                newFile
+            }
+
+            val blockedImports = getBlockedImports() - securityConfig.allowedImports
+            val blockedFunctions = getBlockedFunctions() - securityConfig.allowedFunctions
+
+            val inputJson = buildJsonObject {
+                put("script", script)
+                put("blocked_imports", buildJsonArray { blockedImports.forEach { add(it) } })
+                put("blocked_functions", buildJsonArray { blockedFunctions.forEach { add(it) } })
+            }.toString()
+
+            val process = ProcessBuilder(pythonExecutable, validatorFile.absolutePath, "validate")
+                .redirectErrorStream(true)
+                .start()
+
+            process.outputStream.bufferedWriter().use { it.write(inputJson) }
+
+            val completed = process.waitFor(10, TimeUnit.SECONDS)
+            if (!completed)
+            {
+                process.destroyForcibly()
+                return@withContext PythonValidationResult(false, listOf("AST Validation timed out"))
+            }
+
+            val output = process.inputStream.bufferedReader().readText()
+
+            if (process.exitValue() != 0)
+            {
+                return@withContext PythonValidationResult(false, listOf("AST Validator failed: $output"))
+            }
+
+            val resultJson = json.parseToJsonElement(output).jsonObject
+            val isValid = resultJson["isValid"]?.jsonPrimitive?.boolean ?: false
+            val errors = resultJson["errors"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
+            val warnings = resultJson["warnings"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
+
+            PythonValidationResult(isValid, errors, warnings)
+        }
+        catch (e: Exception)
+        {
+            PythonValidationResult(false, listOf("AST Validation error: ${e.message}"))
+        }
     }
     
     /**
