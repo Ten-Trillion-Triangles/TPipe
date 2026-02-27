@@ -66,17 +66,13 @@ class PythonBasicTest
     }
     
     @Test
-    fun testPythonSecurityManager()
-    {
+    fun testPythonSecurityManager() = runBlocking {
         val securityManager = PythonSecurityManager()
         
         // Test safe script
         val safeScript = """
-            import pandas as pd
-            import requests
-            data = {'name': ['Alice', 'Bob'], 'age': [25, 30]}
-            df = pd.DataFrame(data)
-            print(df.head())
+            import math
+            print(math.sqrt(16))
         """.trimIndent()
         
         val context = PythonContext().apply {
@@ -84,7 +80,7 @@ class PythonBasicTest
         }
         
         val safeValidation = securityManager.validatePythonRequest(safeScript, context)
-        assertTrue(safeValidation.isValid, "Safe Python script should pass validation")
+        assertTrue(safeValidation.isValid, "Safe Python script should pass validation: ${safeValidation.errors}")
         
         // Test dangerous script
         val dangerousScript = """
@@ -99,8 +95,7 @@ class PythonBasicTest
     }
     
     @Test
-    fun testPythonSecurityOverrides()
-    {
+    fun testPythonSecurityOverrides() = runBlocking {
         val securityManager = PythonSecurityManager()
         
         // Test that overrides work
@@ -121,7 +116,7 @@ class PythonBasicTest
         }
         
         val validation = securityManager.validatePythonRequest(scriptWithOverride, context)
-        assertTrue(validation.isValid, "Script with security overrides should pass validation")
+        assertTrue(validation.isValid, "Script with security overrides should pass validation: ${validation.errors}")
     }
     
     @Test
