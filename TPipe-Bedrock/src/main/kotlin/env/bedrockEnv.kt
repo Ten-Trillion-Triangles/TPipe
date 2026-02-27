@@ -1,6 +1,7 @@
 package env
 
 import java.io.File
+import java.security.PublicKey
 
 /**
  * Environment configuration object for managing AWS Bedrock model to inference profile mappings.
@@ -16,6 +17,33 @@ object bedrockEnv
     private val modelToInferenceMap = mutableMapOf<String, String>()
     
     private var configLoaded = false
+
+    /**
+     * Internal stores for aws public and secret keys. This allows for programmatic key retrieval instead
+     * of depending on env vars, or the credential file. [bedrockPipe.BedrockPipe.init] will check for this
+     * data first and attempt to set the keys using this if the public key is not empty.
+     */
+    private var publicKey = ""
+    private var secretKey = ""
+
+    /**
+     * Programmatic setter for defining aws security credentials needed to access AWS bedrock
+     * services.
+     */
+    fun setKeys(public: String, secret: String)
+    {
+        publicKey = public
+        secretKey = secret
+    }
+
+    /**
+     * Programmatic getter for reading the stored keys. Returns both as a pair.
+     * A is the public key. B is the secret key.
+     */
+    fun getKeys() : Pair<String, String>
+    {
+        return Pair<String, String>(publicKey, secretKey)
+    }
     
     /**
      * Loads inference configuration from ~/.aws/inference.txt file.

@@ -5363,6 +5363,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             contextWindow = finalResult.context
                         }
 
+                        if(!finalResult.miniBankContext.isEmpty())
+                        {
+                            miniContextBank = finalResult.miniBankContext
+                        }
+
                         //Merge in context window changes if enabled.
                         if(updatePipelineContextOnExit)
                         {
@@ -5434,6 +5439,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     if(!finalResult.context.isEmpty())
                     {
                         contextWindow = finalResult.context
+                    }
+
+                    if(!finalResult.miniBankContext.isEmpty())
+                    {
+                        miniContextBank = finalResult.miniBankContext
                     }
 
                     if(updatePipelineContextOnExit)

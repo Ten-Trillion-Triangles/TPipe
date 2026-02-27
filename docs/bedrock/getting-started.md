@@ -57,7 +57,29 @@ dependencies {
 
 ## AWS Configuration
 
-### Method 1: AWS Credentials File
+### Method 1: Programmatic Credentials (Recommended for Desktop/Electron Apps)
+Set credentials programmatically, ideal for applications that fetch credentials from remote servers:
+
+```kotlin
+import env.bedrockEnv
+import bedrockPipe.BedrockPipe
+
+// Set credentials before creating pipe
+bedrockEnv.setKeys(
+    public = "AKIAIOSFODNN7EXAMPLE",
+    secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+)
+
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+
+pipe.init() // Uses credentials from bedrockEnv
+```
+
+**Use Case:** Electron apps, desktop applications, or any scenario where credentials need to be fetched at runtime from a secure remote source.
+
+### Method 2: AWS Credentials File
 Create `~/.aws/credentials`:
 ```ini
 [default]
@@ -66,18 +88,24 @@ aws_secret_access_key = YOUR_SECRET_KEY
 region = us-east-1
 ```
 
-### Method 2: Environment Variables
+### Method 3: Environment Variables
 ```bash
 export AWS_ACCESS_KEY_ID=your_access_key
 export AWS_SECRET_ACCESS_KEY=your_secret_key
 export AWS_DEFAULT_REGION=us-east-1
 ```
 
-### Method 3: IAM Roles (Recommended for Production)
+### Method 4: IAM Roles (Recommended for Production)
 Use IAM roles when running on AWS infrastructure:
 - EC2 instance roles
 - ECS task roles
 - Lambda execution roles
+
+**Credential Priority:** TPipe-Bedrock checks credentials in this order:
+1. `bedrockEnv.setKeys()` (if set and not empty)
+2. Environment variables
+3. AWS credentials file
+4. IAM roles
 
 ### Required IAM Permissions
 ```json

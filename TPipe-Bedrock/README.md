@@ -75,9 +75,31 @@ val result = pipe.execute("Explain quantum computing")
 
 ## Configuration
 
-Ensure AWS credentials are configured via:
+### AWS Credentials
+
+TPipe-Bedrock supports multiple methods for providing AWS credentials:
+
+#### 1. Programmatic Credentials (Recommended for Electron/Desktop Apps)
+```kotlin
+import env.bedrockEnv
+
+// Set credentials programmatically (e.g., fetched from remote server)
+bedrockEnv.setKeys(
+    public = "AKIAIOSFODNN7EXAMPLE",
+    secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+)
+
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+
+pipe.init() // Uses credentials from bedrockEnv
+```
+
+#### 2. Default AWS Credential Chain (Fallback)
+If no credentials are set via `bedrockEnv.setKeys()`, the SDK automatically uses:
 - Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
-- AWS credentials file
+- AWS credentials file (~/.aws/credentials)
 - IAM roles (for EC2/Lambda)
 
 Required permissions:

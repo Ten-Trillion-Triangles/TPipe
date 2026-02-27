@@ -14,6 +14,8 @@ import aws.sdk.kotlin.services.bedrockruntime.model.ResponseStream
 import aws.sdk.kotlin.services.bedrockruntime.model.GuardrailStreamConfiguration
 import aws.sdk.kotlin.services.bedrockruntime.model.ServiceTierType
 import aws.sdk.kotlin.services.bedrockruntime.model.ServiceTier
+import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
+import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import aws.smithy.kotlin.runtime.http.engine.okhttp.OkHttpEngine
 import aws.smithy.kotlin.runtime.content.Document
 import com.TTT.Debug.*
@@ -674,6 +676,16 @@ open class BedrockPipe : Pipe() {
         bedrockClient = BedrockRuntimeClient {
             // Set the AWS region for all API calls
             region = this@BedrockPipe.region
+            
+            // Check bedrockEnv for programmatically set credentials
+            val (accessKey, secretKey) = bedrockEnv.getKeys()
+            if (accessKey.isNotEmpty() && secretKey.isNotEmpty())
+            {
+                credentialsProvider = StaticCredentialsProvider(
+                    Credentials(accessKey, secretKey)
+                )
+            }
+            // Otherwise uses default credential chain automatically
             
             // Configure HTTP client with extended timeouts for slow models
             httpClient(OkHttpEngine) {
