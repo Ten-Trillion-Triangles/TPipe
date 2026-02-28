@@ -85,4 +85,33 @@ class P2PTransportImplementationTest {
             scriptFile.delete()
         }
     }
+
+    @Test
+    fun testP2PStdioHostRunOnce() {
+        val request = P2PRequest().apply {
+            transport = P2PTransport(Transport.Tpipe, "test_agent")
+            prompt.addText("ping")
+        }
+        val requestJson = serialize(request)
+
+        val inputStream = requestJson.byteInputStream()
+        val outputStream = java.io.ByteArrayOutputStream()
+
+        val oldIn = System.`in`
+        val oldOut = System.out
+
+        try {
+            System.setIn(inputStream)
+            System.setOut(java.io.PrintStream(outputStream))
+
+            // This will likely return an "agent not found" response which is a valid P2PResponse
+            P2PStdioHost.runOnce()
+
+            val output = outputStream.toString().trim()
+            assertTrue(output.startsWith("{") && output.endsWith("}"))
+        } finally {
+            System.setIn(oldIn)
+            System.setOut(oldOut)
+        }
+    }
 }
