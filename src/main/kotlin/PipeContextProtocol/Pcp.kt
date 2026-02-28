@@ -412,11 +412,11 @@ data class PcpContext(@kotlinx.serialization.Transient val cinit : Boolean = fal
  * for prompt injection only.
  */
 @kotlinx.serialization.Serializable
-data class PcPRequest(val stdioContextOptions: StdioContextOptions = StdioContextOptions(),
-                      val tPipeContextOptions: TPipeContextOptions = TPipeContextOptions(),
-                      val httpContextOptions: HttpContextOptions = HttpContextOptions(),
-                      val pythonContextOptions: PythonContext = PythonContext(),
-                      val argumentsOrFunctionParams : List<String> = mutableListOf<String>()
+data class PcPRequest(var stdioContextOptions: StdioContextOptions = StdioContextOptions(),
+                      var tPipeContextOptions: TPipeContextOptions = TPipeContextOptions(),
+                      var httpContextOptions: HttpContextOptions = HttpContextOptions(),
+                      var pythonContextOptions: PythonContext = PythonContext(),
+                      var argumentsOrFunctionParams : List<String> = mutableListOf<String>()
                     )
 
 

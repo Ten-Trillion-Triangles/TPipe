@@ -166,14 +166,17 @@ class PcpResponseParser
      */
     fun determineTransport(request: PcPRequest): Transport
     {
-        return when
+        val transport = when
         {
             request.tPipeContextOptions.functionName.isNotEmpty() -> Transport.Tpipe
             request.stdioContextOptions.command.isNotEmpty() -> Transport.Stdio
             request.httpContextOptions.baseUrl.isNotEmpty() -> Transport.Http
-            request.pythonContextOptions.pythonPath.isNotEmpty() || 
-            request.argumentsOrFunctionParams.isNotEmpty() -> Transport.Python
+            request.pythonContextOptions.pythonPath.isNotEmpty() -> Transport.Python
+            // Fallback for Python scripts passed in argumentsOrFunctionParams without explicit pythonPath
+            request.argumentsOrFunctionParams.isNotEmpty() && request.argumentsOrFunctionParams.first().contains("import ") -> Transport.Python
             else -> Transport.Unknown
         }
+
+        return transport
     }
 }
