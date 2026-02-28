@@ -686,6 +686,76 @@ object P2PRegistry
                 {
                     return P2PResponse().apply {
                         rejection = P2PRejection(P2PError.transport, "Session communication error: ${sessionResponse.error}")
+            Transport.Http -> {
+                val jsonRequest = serialize(request)
+                val headers = mutableMapOf("Content-Type" to "application/json")
+                if (request.transport.transportAuthBody.isNotEmpty()) {
+                    headers["Authorization"] = request.transport.transportAuthBody
+                }
+
+                val responseData = httpRequest(
+                    url = request.transport.transportAddress,
+                    method = "POST",
+                    body = jsonRequest,
+                    headers = headers
+                )
+
+                if (responseData.success) {
+                    return deserialize<P2PResponse>(responseData.body) ?: P2PResponse().apply {
+                        rejection = P2PRejection(P2PError.transport, "Failed to deserialize P2PResponse from external host")
+                    }
+                } else {
+                    return P2PResponse().apply {
+                        rejection = P2PRejection(P2PError.transport, "HTTP request failed with status ${responseData.statusCode}: ${responseData.statusMessage}")
+                    }
+                }
+            }
+            Transport.Stdio -> {
+                val executionMode = request.pcpRequest?.stdioContextOptions?.executionMode ?: StdioExecutionMode.ONE_SHOT
+                val jsonRequest = serialize(request)
+
+                val response = try {
+                    when (executionMode) {
+                        StdioExecutionMode.ONE_SHOT -> {
+                            val command = splitProgramString(request.transport.transportAddress)
+                            val session = StdioSessionManager.createSession(
+                                command = command[0],
+                                args = command.drop(1),
+                                ownerId = "p2p_caller"
+                            )
+                            try {
+                                StdioSessionManager.sendInput(session.sessionId, jsonRequest)
+                            } finally {
+                                StdioSessionManager.closeSession(session.sessionId)
+                            }
+                        }
+                        StdioExecutionMode.INTERACTIVE -> {
+                            val command = splitProgramString(request.transport.transportAddress)
+                            val session = StdioSessionManager.createSession(
+                                command = command[0],
+                                args = command.drop(1),
+                                ownerId = "p2p_caller"
+                            )
+                            StdioSessionManager.sendInput(session.sessionId, jsonRequest)
+                        }
+                        StdioExecutionMode.CONNECT -> {
+                            val sessionId = request.pcpRequest?.stdioContextOptions?.sessionId
+                                ?: throw IllegalArgumentException("Session ID required for CONNECT mode")
+                            StdioSessionManager.sendInput(sessionId, jsonRequest)
+                        }
+                        else -> throw IllegalArgumentException("Unsupported stdio execution mode: $executionMode")
+                    }
+                } catch (e: Exception) {
+                    SessionResponse("", "Stdio execution failed: ${e.message}", false)
+                }
+
+                if (response.error.isEmpty()) {
+                    return deserialize<P2PResponse>(response.output) ?: P2PResponse().apply {
+                        rejection = P2PRejection(P2PError.transport, "Failed to deserialize P2PResponse from session output")
+                    }
+                } else {
+                    return P2PResponse().apply {
+                        rejection = P2PRejection(P2PError.transport, "Session communication error: ${response.error}")
                     }
                 }
             }

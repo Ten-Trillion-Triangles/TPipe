@@ -214,11 +214,30 @@ class HttpExecutor : PcpExecutor
         }
 
         val trimmedEndpoint = options.endpoint.trim()
+
+        // SSRF PROTECTION: Use validated IP address for the request to prevent DNS rebinding
+        val originalUrl = try { URL(options.baseUrl) } catch (e: Exception) { null }
+        val requestUrl = if (validation.validatedIp != null && originalUrl != null)
+        {
+            // Reconstruct URL with IP address but keep original port/path/query/fragment
+            val protocol = originalUrl.protocol
+            val port = if (originalUrl.port != -1) ":${originalUrl.port}" else ""
+            val ipAddress = if (validation.validatedIp!!.contains(":")) "[${validation.validatedIp}]" else validation.validatedIp
+            val path = originalUrl.path
+            val query = if (originalUrl.query != null) "?${originalUrl.query}" else ""
+            val fragment = if (originalUrl.ref != null) "#${originalUrl.ref}" else ""
+            "$protocol://$ipAddress$port$path$query$fragment"
+        }
+        else
+        {
+            options.baseUrl
+        }
+
         val fullUrl = buildString {
-            append(options.baseUrl)
+            append(requestUrl)
             if (trimmedEndpoint.isNotEmpty())
             {
-                if (!options.baseUrl.endsWith("/") && !trimmedEndpoint.startsWith("/"))
+                if (!requestUrl.endsWith("/") && !trimmedEndpoint.startsWith("/"))
                 {
                     append('/')
                 }
@@ -232,6 +251,12 @@ class HttpExecutor : PcpExecutor
         val headers = mutableMapOf<String, String>()
         options.headers.forEach { (key, value) ->
             headers[key] = value
+        }
+
+        // SSRF PROTECTION: Manually set Host header to original hostname
+        if (validation.validatedIp != null && originalUrl != null)
+        {
+            headers["Host"] = originalUrl.host
         }
 
         val authType = options.authType.uppercase()

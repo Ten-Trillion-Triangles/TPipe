@@ -16,7 +16,7 @@ class TraceStreamMergerTest {
     }
     
     @Test
-    fun `bubbleMerge FAILS - loses parent events due to clearTrace bug`() {
+    fun `bubbleMerge should preserve parent events when merging child trace`() {
         // Setup parent trace with events
         PipeTracer.startTrace("parent")
         PipeTracer.addEvent("parent", createTraceEvent("parent", "PARENT_START", 1000))
@@ -54,7 +54,7 @@ class TraceStreamMergerTest {
         // Execute bubbleMerge
         TraceStreamMerger.bubbleMerge(parent, child)
         
-        // THE BUG: Parent trace gets cleared and loses its original events!
+        // Parent trace should NOT be cleared and should contain all events
         val mergedTrace = PipeTracer.getTrace("parent")
         
         println("\n=== AFTER MERGE ===")
@@ -65,15 +65,12 @@ class TraceStreamMergerTest {
             println("  - ${event.pipeId}: ${event.pipeName} at ${event.timestamp}")
         }
         
-        // This assertion will FAIL, proving the bug
-        if (mergedTrace.size != 4) {
-            println("\n🚨 BUG CONFIRMED: bubbleMerge() lost events!")
-            println("Expected 4 events, got ${mergedTrace.size}")
-            println("The clearTrace() call destroys the merged data!")
-        }
+        // Verify we have all 4 events
+        assertEquals(4, mergedTrace.size, "bubbleMerge should have 4 events but has ${mergedTrace.size}")
         
-        // Show the bug in action
-        assertTrue(mergedTrace.size < 4, "BUG: bubbleMerge should have 4 events but has ${mergedTrace.size}")
+        // Verify chronological order
+        val timestamps = mergedTrace.map { it.timestamp }
+        assertEquals(listOf(1000L, 2000L, 3000L, 4000L), timestamps, "Events should be sorted chronologically")
     }
     
     private fun createTraceEvent(pipeId: String, eventName: String, timestamp: Long): TraceEvent {
