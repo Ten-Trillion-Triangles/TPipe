@@ -65,16 +65,16 @@ object PipeTracer {
     fun mergeTrace(pipelineId: String, newEvents: List<TraceEvent>) {
         if (!isEnabled) return
         
-        val existingEvents = traces[pipelineId] ?: mutableListOf()
-        val allEvents: List<TraceEvent>
+        val traceList = traces.getOrPut(pipelineId) { Collections.synchronizedList(mutableListOf()) }
         
-        synchronized(existingEvents) {
-            allEvents = (existingEvents + newEvents)
+        synchronized(traceList) {
+            val allEvents = (traceList + newEvents)
                 .distinctBy { "${it.timestamp}-${it.pipeId}-${it.eventType}" }
                 .sortedBy { it.timestamp }
+
+            traceList.clear()
+            traceList.addAll(allEvents)
         }
-        
-        traces[pipelineId] = Collections.synchronizedList(allEvents.toMutableList())
     }
     
     fun exportTrace(pipelineId: String, format: TraceFormat): String {
