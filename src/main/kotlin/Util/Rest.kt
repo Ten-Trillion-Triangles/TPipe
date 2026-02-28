@@ -59,6 +59,16 @@ suspend fun httpRequest(
             requestTimeoutMillis = timeoutMs
         }
         this.followRedirects = followRedirects
+
+        engine {
+            https {
+                // If we have a Host header, use it for SNI even if we connect to an IP
+                val hostHeader = headers.entries.find { it.key.equals("Host", ignoreCase = true) }?.value
+                if (hostHeader != null) {
+                    serverName = hostHeader.substringBefore(':')
+                }
+            }
+        }
     }
     
     val startTime = System.currentTimeMillis()

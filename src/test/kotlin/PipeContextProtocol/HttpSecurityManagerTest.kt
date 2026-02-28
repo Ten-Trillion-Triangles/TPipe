@@ -9,12 +9,12 @@ class HttpSecurityManagerTest
     private fun baseOptions(): HttpContextOptions
     {
         return HttpContextOptions().apply {
-            baseUrl = "https://api.example.com"
-            endpoint = "/resource"
+            baseUrl = "https://httpbin.org"
+            endpoint = "/get"
             method = "GET"
             permissions.add(Permissions.Read)
             allowedMethods.add("GET")
-            allowedHosts.add("api.example.com")
+            allowedHosts.add("httpbin.org")
         }
     }
 

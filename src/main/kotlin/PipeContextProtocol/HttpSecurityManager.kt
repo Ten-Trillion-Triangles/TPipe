@@ -89,7 +89,8 @@ data class HttpSecurityConfig(
 data class HttpValidationResult(
     val isValid: Boolean,
     val errors: List<String>,
-    val warnings: List<String> = emptyList()
+    val warnings: List<String> = emptyList(),
+    val validatedIp: String? = null
 )
 
 /**
@@ -182,6 +183,7 @@ class HttpSecurityManager(
     {
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()
+        var validatedIp: String? = null
         
         // Validate required fields
         if (options.baseUrl.isEmpty())
@@ -296,6 +298,7 @@ class HttpSecurityManager(
             errors.addAll(urlValidation.errors)
         }
         warnings.addAll(urlValidation.warnings)
+        validatedIp = urlValidation.validatedIp
         
         // HEADER SECURITY VALIDATION - Detect potentially dangerous headers
         val headerValidation = validateHeaders(options.headers)
@@ -315,7 +318,8 @@ class HttpSecurityManager(
         return HttpValidationResult(
             isValid = errors.isEmpty(),
             errors = errors,
-            warnings = warnings
+            warnings = warnings,
+            validatedIp = validatedIp
         )
     }
     
@@ -326,6 +330,7 @@ class HttpSecurityManager(
     {
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()
+        var validatedIp: String? = null
         
         try
         {
@@ -343,9 +348,14 @@ class HttpSecurityManager(
             // - http://192.168.1.1/config (access internal network devices)  
             // - http://169.254.169.254/metadata (access cloud metadata services)
             // Can be disabled for local development by setting allowPrivateNetworks = true
-            if (!securityConfig.allowPrivateNetworks && checkSsrfProtection(url))
+            if (!securityConfig.allowPrivateNetworks)
             {
-                errors.add("Access to private networks is not allowed (SSRF protection)")
+                val result = checkSsrfProtection(url)
+                if (result.isPrivate)
+                {
+                    errors.add("Access to private networks is not allowed (SSRF protection)")
+                }
+                validatedIp = result.resolvedIp
             }
             
             // Check allowed hosts if specified
@@ -394,36 +404,49 @@ class HttpSecurityManager(
         return HttpValidationResult(
             isValid = errors.isEmpty(),
             errors = errors,
-            warnings = warnings
+            warnings = warnings,
+            validatedIp = validatedIp
         )
     }
+
+    /**
+     * Result of SSRF protection check.
+     */
+    data class SsrfCheckResult(
+        val isPrivate: Boolean,
+        val resolvedIp: String? = null
+    )
     
     /**
      * Check if URL targets private networks (SSRF protection).
+     * Now returns the resolved IP to prevent DNS rebinding attacks.
      */
-    fun checkSsrfProtection(url: String): Boolean
+    fun checkSsrfProtection(url: String): SsrfCheckResult
     {
         try
         {
             val urlObj = URL(url)
             val host = urlObj.host
             
-            // Check for localhost variations
+            // Check for localhost variations first to avoid DNS lookup if possible
             if (host.lowercase() in listOf("localhost", "127.0.0.1", "::1", "0.0.0.0"))
             {
-                return true
+                return SsrfCheckResult(true, host)
             }
             
             // Resolve hostname to IP and check against private ranges
+            // This is done once here and the IP must be used for the actual request
             val address = InetAddress.getByName(host)
             val ip = address.hostAddress
             
-            return isPrivateNetwork(ip)
+            return SsrfCheckResult(isPrivateNetwork(ip), ip)
         }
         catch (e: Exception)
         {
-            // If we can't resolve, assume it's safe but log warning
-            return false
+            // If we can't resolve, we MUST assume it's unsafe (fail-closed)
+            // because an attacker might use a non-resolvable host that resolves
+            // to a private IP during the actual request window.
+            return SsrfCheckResult(true, null)
         }
     }
     
@@ -663,27 +686,58 @@ class HttpSecurityManager(
      */
     private fun isPrivateNetwork(ip: String): Boolean
     {
-        // Simple check for common private ranges
-        return when
+        // Check if it's a localhost variation
+        if (ip.lowercase() in listOf("localhost", "127.0.0.1", "::1", "0.0.0.0")) return true
+
+        try
         {
-            ip.startsWith("127.") -> true
-            ip.startsWith("10.") -> true
-            ip.startsWith("192.168.") -> true
-            ip.startsWith("172.") -> 
+            val address = InetAddress.getByName(ip)
+
+            // Use built-in InetAddress checks
+            if (address.isLoopbackAddress || address.isSiteLocalAddress || address.isLinkLocalAddress || address.isAnyLocalAddress)
             {
-                val parts = ip.split(".")
-                if (parts.size >= 2)
-                {
-                    val second = parts[1].toIntOrNull() ?: 0
-                    second in 16..31
-                }
-                else false
+                return true
             }
-            ip == "::1" -> true
-            ip.startsWith("fc") || ip.startsWith("fd") -> true // IPv6 private
-            ip.startsWith("fe80") -> true // IPv6 link-local
-            else -> false
+
+            // Manual range checks for more comprehensive coverage
+            val bytes = address.address
+
+            // IPv4 Checks
+            if (bytes.size == 4)
+            {
+                val b1 = bytes[0].toInt() and 0xFF
+                val b2 = bytes[1].toInt() and 0xFF
+
+                return when
+                {
+                    b1 == 10 -> true // 10.0.0.0/8
+                    b1 == 172 && b2 in 16..31 -> true // 172.16.0.0/12
+                    b1 == 192 && b2 == 168 -> true // 192.168.0.0/16
+                    b1 == 169 && b2 == 254 -> true // 169.254.0.0/16 (Link-local)
+                    b1 == 127 -> true // 127.0.0.0/8 (Loopback)
+                    b1 == 0 -> true // 0.0.0.0/8
+                    else -> false
+                }
+            }
+            // IPv6 Checks
+            else if (bytes.size == 16)
+            {
+                val b1 = bytes[0].toInt() and 0xFF
+
+                return when
+                {
+                    b1 == 0xFC || b1 == 0xFD -> true // fc00::/7 (Unique Local Address)
+                    b1 == 0xFE && (bytes[1].toInt() and 0xC0) == 0x80 -> true // fe80::/10 (Link-Local)
+                    else -> false
+                }
+            }
         }
+        catch (e: Exception)
+        {
+            return true // Fail-closed on parse error
+        }
+
+        return false
     }
     
     /**
