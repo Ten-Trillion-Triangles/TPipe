@@ -3,6 +3,7 @@ package com.TTT
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import com.TTT.P2P.P2PStdioHost
+import com.TTT.PipeContextProtocol.PcpStdioHost
 import io.ktor.server.netty.*
 
 /**
@@ -25,6 +26,14 @@ fun main(args: Array<String>)
     else if(args.contains("--stdio-loop"))
     {
         P2PStdioHost.runLoop()
+    }
+    else if(args.contains("--pcp-stdio-once"))
+    {
+        PcpStdioHost.runOnce()
+    }
+    else if(args.contains("--pcp-stdio-loop"))
+    {
+        PcpStdioHost.runLoop()
     }
 }
 
