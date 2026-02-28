@@ -7,8 +7,11 @@ import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.toTruncationSettings
 import com.TTT.Pipe.TruncationSettings
 import com.TTT.Pipe.getMimeType
+import com.TTT.PipeContextProtocol.SessionResponse
+import com.TTT.PipeContextProtocol.StdioExecutionMode
+import com.TTT.PipeContextProtocol.StdioSessionManager
 import com.TTT.PipeContextProtocol.Transport
-import com.TTT.Util.extractJson
+import com.TTT.Util.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 
@@ -64,6 +67,12 @@ object P2PRegistry
      * @see com.TTT.P2P.AgentRequest.buildRequestFromRegistry
      */
     var requestTemplates = mutableMapOf<Any, P2PRequest>()
+
+    /**
+     * Global authentication mechanism for external P2P calls arriving via HTTP or Stdio.
+     * Allows developers to hook into their own authentication systems.
+     */
+    var globalAuthMechanism: (suspend (authBody: String) -> Boolean)? = null
 
 //-----------------------------------------------Constructor------------------------------------------------------------
 
@@ -580,15 +589,106 @@ object P2PRegistry
 
     /**
      * External caller to make a remote P2P agent call outside TPipe to some external system.
-     * todo: This isn't implemented fully yet as TPipe is only supported currently.
+     * @param request The P2PRequest object containing all necessary details for the call.
+     * @return The P2PResponse object containing the output or rejection details.
      */
     suspend fun externalP2PCall(request: P2PRequest) : P2PResponse
     {
 
-        when (request.transport.transportMethod)
+        when(request.transport.transportMethod)
         {
-            Transport.Http -> throw IllegalArgumentException("http is not supported yet.")
-            Transport.Stdio -> throw IllegalArgumentException("stdio is not supported yet.")
+            Transport.Http ->
+            {
+                val jsonPayload = serialize(request)
+                val requestHeaders = mutableMapOf("Content-Type" to "application/json")
+                if(request.transport.transportAuthBody.isNotEmpty())
+                {
+                    requestHeaders["Authorization"] = request.transport.transportAuthBody
+                }
+
+                val httpResponseData = httpRequest(
+                    url = request.transport.transportAddress,
+                    method = "POST",
+                    body = jsonPayload,
+                    headers = requestHeaders
+                )
+
+                if(httpResponseData.success)
+                {
+                    return deserialize<P2PResponse>(httpResponseData.body) ?: P2PResponse().apply {
+                        rejection = P2PRejection(P2PError.transport, "Failed to deserialize P2PResponse from external host")
+                    }
+                }
+                else
+                {
+                    return P2PResponse().apply {
+                        rejection = P2PRejection(P2PError.transport, "HTTP request failed with status ${httpResponseData.statusCode}: ${httpResponseData.statusMessage}")
+                    }
+                }
+            }
+            Transport.Stdio ->
+            {
+                val executionMode = request.pcpRequest?.stdioContextOptions?.executionMode ?: StdioExecutionMode.ONE_SHOT
+                val jsonPayload = serialize(request)
+
+                val sessionResponse = try
+                {
+                    when(executionMode)
+                    {
+                        StdioExecutionMode.ONE_SHOT ->
+                        {
+                            val commandList = splitProgramString(request.transport.transportAddress)
+                            val session = StdioSessionManager.createSession(
+                                command = commandList[0],
+                                args = commandList.drop(1),
+                                ownerId = "p2p_caller"
+                            )
+                            try
+                            {
+                                StdioSessionManager.sendInput(session.sessionId, jsonPayload)
+                            }
+                            finally
+                            {
+                                StdioSessionManager.closeSession(session.sessionId)
+                            }
+                        }
+                        StdioExecutionMode.INTERACTIVE ->
+                        {
+                            val commandList = splitProgramString(request.transport.transportAddress)
+                            val session = StdioSessionManager.createSession(
+                                command = commandList[0],
+                                args = commandList.drop(1),
+                                ownerId = "p2p_caller"
+                            )
+                            StdioSessionManager.sendInput(session.sessionId, jsonPayload)
+                        }
+                        StdioExecutionMode.CONNECT ->
+                        {
+                            val existingSessionId = request.pcpRequest?.stdioContextOptions?.sessionId
+                                ?: throw IllegalArgumentException("Session ID required for CONNECT mode")
+                            StdioSessionManager.sendInput(existingSessionId, jsonPayload)
+                        }
+                        else -> throw IllegalArgumentException("Unsupported stdio execution mode: $executionMode")
+                    }
+                }
+                catch(e: Exception)
+                {
+                    SessionResponse("", "Stdio execution failed: ${e.message}", false)
+                }
+
+                if(sessionResponse.error.isEmpty())
+                {
+                    return deserialize<P2PResponse>(sessionResponse.output) ?: P2PResponse().apply {
+                        rejection = P2PRejection(P2PError.transport, "Failed to deserialize P2PResponse from session output")
+                    }
+                }
+                else
+                {
+                    return P2PResponse().apply {
+                        rejection = P2PRejection(P2PError.transport, "Session communication error: ${sessionResponse.error}")
+                    }
+                }
+            }
             Transport.Tpipe -> return executeP2pRequest(request)
             Transport.Python -> throw IllegalArgumentException("python is not supported in p2p.")
             Transport.Unknown -> throw IllegalArgumentException("unknown transport type.")

@@ -6,13 +6,19 @@ import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 
-fun Application.configureSerialization() {
-    install(ContentNegotiation) {
+/**
+ * Configures JSON serialization for the TPipe Ktor application.
+ */
+fun Application.configureSerialization()
+{
+    install(ContentNegotiation)
+    {
         json()
     }
     routing {
-        get("/json/kotlinx-serialization") {
-                call.respond(mapOf("hello" to "world"))
-            }
+        get("/json/kotlinx-serialization")
+        {
+            call.respond(mapOf("hello" to "world"))
+        }
     }
 }
