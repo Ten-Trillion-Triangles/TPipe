@@ -148,6 +148,22 @@ class PcpResponseParser
                     errors.add("Python script is required for Python transport")
                 }
             }
+
+            Transport.Kotlin ->
+            {
+                if (request.argumentsOrFunctionParams.isEmpty())
+                {
+                    errors.add("Kotlin script is required for Kotlin transport")
+                }
+            }
+
+            Transport.JavaScript ->
+            {
+                if (request.argumentsOrFunctionParams.isEmpty())
+                {
+                    errors.add("JavaScript script is required for JavaScript transport")
+                }
+            }
             
             else -> {}
         }
@@ -172,8 +188,28 @@ class PcpResponseParser
             request.stdioContextOptions.command.isNotEmpty() -> Transport.Stdio
             request.httpContextOptions.baseUrl.isNotEmpty() -> Transport.Http
             request.pythonContextOptions.pythonPath.isNotEmpty() -> Transport.Python
-            // Fallback for Python scripts passed in argumentsOrFunctionParams without explicit pythonPath
-            request.argumentsOrFunctionParams.isNotEmpty() && request.argumentsOrFunctionParams.first().contains("import ") -> Transport.Python
+            request.kotlinContextOptions.cinit -> Transport.Kotlin
+            request.javascriptContextOptions.cinit -> Transport.JavaScript
+
+            // Fallback heuristics based on argumentsOrFunctionParams if no explicit context is set
+            request.argumentsOrFunctionParams.isNotEmpty() -> {
+                val script = request.argumentsOrFunctionParams.first()
+                when {
+                    // Check for Python specific patterns (Try first as it's the most common)
+                    (Regex("(?m)^\\s*(import|from|def|class)\\s+").containsMatchIn(script) ||
+                    script.contains("print(")) -> Transport.Python
+
+                    // Check for Kotlin specific patterns (more likely to be at start or start of line)
+                    (Regex("(?m)^\\s*(import|val|var|fun|package)\\s+").containsMatchIn(script) ||
+                    script.contains("println(")) -> Transport.Kotlin
+
+                    // Check for JavaScript specific patterns
+                    (Regex("(?m)^\\s*(const|let|var|function|import|require)\\s+").containsMatchIn(script) ||
+                    script.contains("console.log(")) -> Transport.JavaScript
+
+                    else -> Transport.Unknown
+                }
+            }
             else -> Transport.Unknown
         }
 
