@@ -35,6 +35,12 @@ data class ContextWindow(
     @kotlinx.serialization.Serializable
     var converseHistory = ConverseHistory() //todo: Add lorebook selection support to this asap!
 
+    /**
+     * Version of the context window to manage remote synchronization.
+     */
+    @kotlinx.serialization.Serializable
+    var version: Long = 0
+
 
 
     /**

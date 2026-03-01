@@ -15,17 +15,17 @@ plugins {
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(24))   // compileJava → 24
+        languageVersion.set(JavaLanguageVersion.of(21))   // compileJava → 24
     }
 }
 
 kotlin {
     // Pick a JDK 24 toolchain for kotlinc itself
-    jvmToolchain(24)
+    jvmToolchain(21)
 
     // Emit 24-bytecode
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_24)                   // compileKotlin → 24
+        jvmTarget.set(JvmTarget.JVM_21)                   // compileKotlin → 24
     }
 }
 

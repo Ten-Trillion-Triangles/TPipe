@@ -27,7 +27,8 @@ data class TodoTaskArray(
 @kotlinx.serialization.Serializable
 data class TodoList(
     var tasks: TodoTaskArray = TodoTaskArray(),
-    var workHistory: ConverseHistory = ConverseHistory()
+    var workHistory: ConverseHistory = ConverseHistory(),
+    var version: Long = 0
 )
 {
     override fun toString(): String {

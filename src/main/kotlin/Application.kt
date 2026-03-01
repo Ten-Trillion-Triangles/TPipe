@@ -4,6 +4,7 @@ import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import com.TTT.P2P.P2PStdioHost
 import com.TTT.PipeContextProtocol.PcpStdioHost
+import com.TTT.Config.TPipeConfig
 import io.ktor.server.netty.*
 
 /**
@@ -13,7 +14,12 @@ import io.ktor.server.netty.*
  */
 fun main(args: Array<String>)
 {
-    if(args.isEmpty() || args.contains("--http"))
+    if (args.contains("--remote-memory"))
+    {
+        TPipeConfig.remoteMemoryEnabled = true
+    }
+
+    if(args.isEmpty() || args.contains("--http") || args.contains("--remote-memory"))
     {
         // Start HTTP host (Ktor)
         embeddedServer(Netty, port = 8080, host = "0.0.0.0", module = Application::module)
@@ -42,6 +48,14 @@ fun main(args: Array<String>)
  */
 fun Application.module()
 {
+    configureSerialization()
+    configureRouting()
+}
+
+/**
+ * Global application module configuration helper.
+ */
+fun module() : Application.() -> Unit = {
     configureSerialization()
     configureRouting()
 }
