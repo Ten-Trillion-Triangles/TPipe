@@ -7,6 +7,7 @@ import com.TTT.P2P.P2PRejection
 import com.TTT.P2P.P2PRegistry
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PResponse
+import com.TTT.Context.MemoryServer
 import com.TTT.PipeContextProtocol.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.request.*
@@ -19,6 +20,8 @@ import io.ktor.server.routing.*
 fun Application.configureRouting()
 {
     routing {
+        MemoryServer.configureMemoryRouting(this)
+
         get("/")
         {
             call.respondText("Hello World!")

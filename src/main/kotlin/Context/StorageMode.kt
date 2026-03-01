@@ -35,5 +35,12 @@ enum class StorageMode
      * Balanced approach providing persistence with cached access for frequently used data.
      * Use for large datasets where hot data should be cached but memory is constrained.
      */
-    DISK_WITH_CACHE
+    DISK_WITH_CACHE,
+
+    /**
+     * Store context data on a remote server.
+     * Requires TPipeConfig.remoteMemoryEnabled to be true and a valid remoteMemoryUrl.
+     * This mode allows multiple TPipe instances to share context in real-time.
+     */
+    REMOTE
 }

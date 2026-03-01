@@ -1,6 +1,7 @@
 package com.TTT.Config
 
 import com.TTT.Util.getHomeFolder
+import java.io.File
 
 object TPipeConfig
 {
@@ -57,5 +58,12 @@ object TPipeConfig
         return "${getMemoryDir()}/todo"
     }
 
-
+    /**
+     * Settings for remote memory hosting and access.
+     */
+    var remoteMemoryEnabled = false
+    var remoteMemoryUrl = "http://localhost:8080"
+    var remoteMemoryAuthToken = ""
+    var useRemoteMemoryGlobally = false
+    var enforceMemoryVersioning = false
 }

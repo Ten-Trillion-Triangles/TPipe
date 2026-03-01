@@ -47,7 +47,8 @@ data class StorageMetadata(
     val storageMode: StorageMode,
     val lastAccessed: Long = System.currentTimeMillis(),
     val accessCount: Int = 0,
-    val sizeBytes: Long = 0
+    val sizeBytes: Long = 0,
+    var version: Long = 0
 )
 
 /**

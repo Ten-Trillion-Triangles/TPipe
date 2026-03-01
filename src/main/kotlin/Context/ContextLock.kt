@@ -1,5 +1,7 @@
 package com.TTT.Context
 
+import com.TTT.Config.TPipeConfig
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -38,14 +40,24 @@ object ContextLock
      * @param isPageKey True when the key itself identifies a page rather than a lorebook entry.
      * @param lockState Whether the bundle should be marked as locked; defaults to true.
      * @param passthroughFunction Optional async check invoked before bypassing the lock.
+     * @param skipRemote If true, skip remote delegation even if configured.
      */
     fun addLock(key: String,
                 pageKeys: String,
                 isPageKey: Boolean,
                 lockState: Boolean = true,
-                passthroughFunction: (() -> Boolean)? = null
+                passthroughFunction: (() -> Boolean)? = null,
+                skipRemote: Boolean = false
                 )
     {
+        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        {
+            runBlocking {
+                MemoryClient.addLock(LockRequest(key, pageKeys, isPageKey, lockState))
+            }
+            return
+        }
+
         /**
          * Declare new key bundle, then scope into it because fuck boilerplate.
          */
@@ -53,6 +65,7 @@ object ContextLock
             //If global, we need to search every window in the context bank.
             val isGlobal = pageKeys.isEmpty() //Reach out into the main function scope and grab our param.
             this.isGlobal = isGlobal //Set isGlobal in the scoped data class to the above local val.
+            this.isLocked = lockState
             this.passthroughFunction = passthroughFunction
             /**
              * If isPageKey the function param is true, then isPageKey the class var of KeyBundle becomes true.
@@ -73,7 +86,7 @@ object ContextLock
                 for(page in ContextBank.getPageKeys())
                 {
                     //Get as a reference to avoid pointless copies when we're only doing a read to locate keys.
-                    val pagedWindow = ContextBank.getContextFromBank(page, false)
+                    val pagedWindow = ContextBank.getContextFromBank(page, false, skipRemote = true)
                     val lorebook = pagedWindow.findLoreBookEntry(key)
 
                     if(lorebook != null)
@@ -83,7 +96,6 @@ object ContextLock
 
                     /**Bind that we're locked or not so we can read this later
                      * during [ContextWindow.selectAndTruncateContext] calls.*/
-                    val isGlobalMetadataForWindow = true
                     pagedWindow.metaData["isLocked"] = lockState
 
                     this.pages.add(page)
@@ -99,7 +111,7 @@ object ContextLock
              */
             else
             {
-                val pagedWindow = ContextBank.getContextFromBank(key, false)
+                val pagedWindow = ContextBank.getContextFromBank(key, false, skipRemote = true)
                 val lorebook = pagedWindow.findLoreBookEntry(key)
                 if(lorebook != null)
                 {
@@ -122,9 +134,6 @@ object ContextLock
     }
 
     /**
-     * Suspend wrapper around [addLock] that acquires the mutex before mutating shared state.
-     */
-    /**
      * Thread-safe wrapper around [addLock] that acquires [lockMutex].
      *
      * @param key The lorebook key or bundle identifier being locked.
@@ -132,16 +141,18 @@ object ContextLock
      * @param isPageKey True when the key itself identifies a page rather than a lorebook entry.
      * @param lockState Whether the bundle should be marked as locked; defaults to true.
      * @param passthroughFunction Optional async check invoked before bypassing the lock.
+     * @param skipRemote If true, skip remote delegation even if configured.
      */
     suspend fun addLockWithMutex(key: String,
                                  pageKeys: String,
                                  isPageKey: Boolean,
                                  lockState: Boolean = true,
-                                 passthroughFunction: (() -> Boolean)? = null
+                                 passthroughFunction: (() -> Boolean)? = null,
+                                 skipRemote: Boolean = false
                                  )
     {
         lockMutex.withLock {
-            addLock(key, pageKeys, isPageKey, lockState, passthroughFunction)
+            addLock(key, pageKeys, isPageKey, lockState, passthroughFunction, skipRemote)
         }
     }
 
@@ -150,9 +161,18 @@ object ContextLock
      * placed on the affected context windows.
      *
      * @param key The same identifier that was passed to [addLock].
+     * @param skipRemote If true, skip remote delegation even if configured.
      */
-    fun removeLock(key: String)
+    fun removeLock(key: String, skipRemote: Boolean = false)
     {
+        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        {
+            runBlocking {
+                MemoryClient.removeLock(key)
+            }
+            return
+        }
+
         val normalizedKey = key.lowercase()
         val bundle = locks.remove(normalizedKey) ?: return
 
@@ -164,29 +184,27 @@ object ContextLock
         val pagesToClear = when
         {
             bundle.pages.isNotEmpty() -> bundle.pages.toSet()
-            bundle.isGlobal -> ContextBank.getPageKeys().toSet()
+            bundle.isGlobal -> ContextBank.getPageKeys(skipRemote = true).toSet()
             else -> setOf(key)
         }
 
         for(page in pagesToClear)
         {
-            val pageWindow = ContextBank.getContextFromBank(page, false)
+            val pageWindow = ContextBank.getContextFromBank(page, false, skipRemote = true)
             pageWindow.metaData.remove("isLocked")
         }
     }
 
     /**
-     * Suspend-safe wrapper around [removeLock].
-     */
-    /**
      * Thread-safe wrapper around [removeLock].
      *
      * @param key The same identifier that was passed to [addLock].
+     * @param skipRemote If true, skip remote delegation even if configured.
      */
-    suspend fun removeLockWithMutex(key: String)
+    suspend fun removeLockWithMutex(key: String, skipRemote: Boolean = false)
     {
         lockMutex.withLock {
-            removeLock(key)
+            removeLock(key, skipRemote)
         }
     }
 
@@ -195,21 +213,23 @@ object ContextLock
      * marked as locked.
      *
      * @param key The lock bundle identifier to update.
+     * @param skipRemote If true, skip remote delegation even if configured.
      */
-    fun lockKeyBundle(key: String)
+    fun lockKeyBundle(key: String, skipRemote: Boolean = false)
     {
-        applyLockState(key, true)
+        applyLockState(key, true, skipRemote)
     }
 
     /**
      * Suspend-safe wrapper around [lockKeyBundle].
      *
      * @param key The lock bundle identifier to update.
+     * @param skipRemote If true, skip remote delegation even if configured.
      */
-    suspend fun lockKeyBundleWithMutex(key: String)
+    suspend fun lockKeyBundleWithMutex(key: String, skipRemote: Boolean = false)
     {
         lockMutex.withLock {
-            lockKeyBundle(key)
+            lockKeyBundle(key, skipRemote)
         }
     }
 
@@ -218,21 +238,23 @@ object ContextLock
      * metadata flag.
      *
      * @param key The lock bundle identifier to update.
+     * @param skipRemote If true, skip remote delegation even if configured.
      */
-    fun unlockKeyBundle(key: String)
+    fun unlockKeyBundle(key: String, skipRemote: Boolean = false)
     {
-        applyLockState(key, false)
+        applyLockState(key, false, skipRemote)
     }
 
     /**
      * Suspend-safe wrapper around [unlockKeyBundle].
      *
      * @param key The lock bundle identifier to update.
+     * @param skipRemote If true, skip remote delegation even if configured.
      */
-    suspend fun unlockKeyBundleWithMutex(key: String)
+    suspend fun unlockKeyBundleWithMutex(key: String, skipRemote: Boolean = false)
     {
         lockMutex.withLock {
-            unlockKeyBundle(key)
+            unlockKeyBundle(key, skipRemote)
         }
     }
 
@@ -241,9 +263,18 @@ object ContextLock
      *
      * @param key The lock bundle identifier to update.
      * @param lockState Desired lock state to persist.
+     * @param skipRemote If true, skip remote delegation even if configured.
      */
-    private fun applyLockState(key: String, lockState: Boolean)
+    private fun applyLockState(key: String, lockState: Boolean, skipRemote: Boolean = false)
     {
+        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        {
+            runBlocking {
+                MemoryClient.updateLockState(key, lockState)
+            }
+            return
+        }
+
         val normalizedKey = key.lowercase()
         val bundle = locks[normalizedKey] ?: return
 
@@ -257,13 +288,13 @@ object ContextLock
         val pagesToUpdate = when
         {
             bundle.pages.isNotEmpty() -> bundle.pages.toSet()
-            bundle.isGlobal -> ContextBank.getPageKeys().toSet()
+            bundle.isGlobal -> ContextBank.getPageKeys(skipRemote = true).toSet()
             else -> setOf(key)
         }
 
         for(page in pagesToUpdate)
         {
-            val pageWindow = ContextBank.getContextFromBank(page, false)
+            val pageWindow = ContextBank.getContextFromBank(page, false, skipRemote = true)
             pageWindow.metaData["isLocked"] = lockState
         }
     }
@@ -282,14 +313,20 @@ object ContextLock
     }
 
     /**
-     * Checks if a specific key is currently locked using direct map access.
-     * This method provides fast lock state checking for lorebook selection logic.
+     * Checks if a specific key is currently locked.
      *
      * @param key The lorebook key to check
+     * @param skipRemote If true, skip remote check even if configured.
      * @return True if the key exists and is locked, false otherwise
      */
-    fun isKeyLocked(key: String): Boolean
+    fun isKeyLocked(key: String, skipRemote: Boolean = false): Boolean
     {
+        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        {
+            return runBlocking {
+                MemoryClient.isKeyLocked(key)
+            }
+        }
         val bundle = locks[key.lowercase()]
         return bundle?.isLocked ?: false
     }
@@ -299,10 +336,17 @@ object ContextLock
      * This method is used by ContextBank to prevent retrieval of locked pages.
      *
      * @param pageKey The page key to check
+     * @param skipRemote If true, skip remote check even if configured.
      * @return True if the page exists as a locked page key, false otherwise
      */
-    fun isPageLocked(pageKey: String): Boolean
+    fun isPageLocked(pageKey: String, skipRemote: Boolean = false): Boolean
     {
+        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        {
+            return runBlocking {
+                MemoryClient.isPageLocked(pageKey)
+            }
+        }
         val bundle = locks[pageKey.lowercase()]
         return bundle?.isPageKey == true && bundle.isLocked
     }
@@ -314,10 +358,18 @@ object ContextLock
      *
      * @param contextWindow The ContextWindow to get locked keys for
      * @param pageKey Optional page key for page-specific lock filtering
+     * @param skipRemote If true, skip remote check even if configured.
      * @return Set of locked lorebook key names
      */
-    fun getLockedKeysForContext(contextWindow: ContextWindow, pageKey: String? = null): Set<String>
+    fun getLockedKeysForContext(contextWindow: ContextWindow, pageKey: String? = null, skipRemote: Boolean = false): Set<String>
     {
+        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        {
+            return runBlocking {
+                MemoryClient.getLockKeys()
+            }
+        }
+
         return locks.values
             .filter { bundle ->
                 bundle.isLocked && !bundle.isPageKey && (
@@ -327,6 +379,23 @@ object ContextLock
             }
             .flatMap { it.keys }
             .toSet()
+    }
+
+    /**
+     * Get all lock keys currently tracked locally.
+     * @param skipRemote Ignored for local retrieval but kept for API consistency.
+     */
+    fun getLockKeys(skipRemote: Boolean = true): Set<String>
+    {
+        return locks.keys.toSet()
+    }
+
+    /**
+     * Enable or disable remote locking operations.
+     */
+    fun enableRemoteLocking(enabled: Boolean)
+    {
+        TPipeConfig.remoteMemoryEnabled = enabled
     }
 
     
