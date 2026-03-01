@@ -691,6 +691,8 @@ object P2PRegistry
             }
             Transport.Tpipe -> return executeP2pRequest(request)
             Transport.Python -> throw IllegalArgumentException("python is not supported in p2p.")
+            Transport.Kotlin -> throw IllegalArgumentException("kotlin is not supported in p2p.")
+            Transport.JavaScript -> throw IllegalArgumentException("javascript is not supported in p2p.")
             Transport.Unknown -> throw IllegalArgumentException("unknown transport type.")
             Transport.Auto -> throw IllegalArgumentException("auto transport not supported in p2p.")
         }

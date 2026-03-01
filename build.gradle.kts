@@ -54,6 +54,10 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:${libs.versions.ktor.version.get()}")
     implementation("io.ktor:ktor-client-content-negotiation:${libs.versions.ktor.version.get()}")
     
+    // Scripting
+    implementation(kotlin("scripting-jsr223"))
+    implementation(kotlin("scripting-jvm-host"))
+
     // Logging
     implementation(libs.logback.classic)
     

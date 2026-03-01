@@ -44,6 +44,8 @@ class PcpExecutionDispatcher
     private val stdioExecutor = StdioExecutor()
     private val httpExecutor = HttpExecutor()
     private val pythonExecutor = PythonExecutor()
+    private val kotlinExecutor = KotlinExecutor()
+    private val javaScriptExecutor = JavaScriptExecutor()
     private val responseParser = PcpResponseParser()
     
     /**
@@ -57,6 +59,8 @@ class PcpExecutionDispatcher
             Transport.Stdio -> stdioExecutor
             Transport.Http -> httpExecutor
             Transport.Python -> pythonExecutor
+            Transport.Kotlin -> kotlinExecutor
+            Transport.JavaScript -> javaScriptExecutor
             else -> throw IllegalArgumentException("Unsupported transport type: $transport")
         }
     }

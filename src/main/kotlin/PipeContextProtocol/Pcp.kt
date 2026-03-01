@@ -11,6 +11,8 @@ enum class Transport
     Tpipe,
     Http,
     Python,
+    Kotlin,
+    JavaScript,
     Unknown
 }
 
@@ -308,6 +310,74 @@ data class PythonContext(@kotlinx.serialization.Transient val cinit : Boolean = 
     var permissions = mutableListOf<Permissions>()
 }
 
+@kotlinx.serialization.Serializable
+data class KotlinContext(val cinit : Boolean = false)
+{
+    /**
+     * List of allowed imports for the Kotlin script.
+     */
+    @kotlinx.serialization.Serializable
+    var allowedImports = mutableListOf<String>()
+
+    /**
+     * Maximum execution time in milliseconds
+     */
+    @kotlinx.serialization.Serializable
+    var timeoutMs = 30000
+
+    /**
+     * Whether to allow introspection of TPipe internal objects.
+     */
+    @kotlinx.serialization.Serializable
+    var allowIntrospection = true
+
+    /**
+     * Permissions for Kotlin operations
+     */
+    @kotlinx.serialization.Serializable
+    var permissions = mutableListOf<Permissions>()
+}
+
+@kotlinx.serialization.Serializable
+data class JavaScriptContext(val cinit : Boolean = false)
+{
+    /**
+     * List of allowed npm packages/modules.
+     */
+    @kotlinx.serialization.Serializable
+    var allowedModules = mutableListOf<String>()
+
+    /**
+     * Path to Node.js executable.
+     */
+    @kotlinx.serialization.Serializable
+    var nodePath = ""
+
+    /**
+     * Working directory for execution.
+     */
+    @kotlinx.serialization.Serializable
+    var workingDirectory = ""
+
+    /**
+     * Environment variables.
+     */
+    @kotlinx.serialization.Serializable
+    var environmentVariables = mutableMapOf<String, String>()
+
+    /**
+     * Maximum execution time in milliseconds.
+     */
+    @kotlinx.serialization.Serializable
+    var timeoutMs = 30000
+
+    /**
+     * Permissions for JavaScript operations.
+     */
+    @kotlinx.serialization.Serializable
+    var permissions = mutableListOf<Permissions>()
+}
+
 
 @kotlinx.serialization.Serializable
 data class PcpContext(@kotlinx.serialization.Transient val cinit : Boolean = false)
@@ -340,6 +410,16 @@ data class PcpContext(@kotlinx.serialization.Transient val cinit : Boolean = fal
      * List of available actions in python that can be taken.
      */
     var pythonOptions = PythonContext()
+
+    /**
+     * Options for Kotlin script execution.
+     */
+    var kotlinOptions = KotlinContext()
+
+    /**
+     * Options for JavaScript execution.
+     */
+    var javascriptOptions = JavaScriptContext()
 
     /**
      * Defines allowed folders that can be read or written into. All folders are allowed if this is empty.
@@ -416,6 +496,8 @@ data class PcPRequest(var stdioContextOptions: StdioContextOptions = StdioContex
                       var tPipeContextOptions: TPipeContextOptions = TPipeContextOptions(),
                       var httpContextOptions: HttpContextOptions = HttpContextOptions(),
                       var pythonContextOptions: PythonContext = PythonContext(),
+                      var kotlinContextOptions: KotlinContext = KotlinContext(),
+                      var javascriptContextOptions: JavaScriptContext = JavaScriptContext(),
                       var argumentsOrFunctionParams : List<String> = mutableListOf<String>()
                     )
 
