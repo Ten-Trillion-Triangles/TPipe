@@ -804,6 +804,13 @@ object ContextBank
             StorageMode.MEMORY_ONLY ->
             {
                 ContextBank.todoList[key] = todoListToEmplace
+
+                // Maintain backward compatibility: persist if file already exists
+                if (File(fullFilePath).exists())
+                {
+                    val todoAsString = serialize(todoListToEmplace)
+                    writeStringToFile(fullFilePath, todoAsString)
+                }
             }
 
             StorageMode.MEMORY_AND_DISK ->
