@@ -11,20 +11,21 @@ class KotlinExecutor : PcpExecutor
 {
     private val securityManager = KotlinSecurityManager()
     private val engineManager = ScriptEngineManager()
+    private val customBindings = mutableMapOf<String, Any>()
 
-    /**
-     * Execute Kotlin script with context validation.
-     */
+    fun registerBinding(name: String, obj: Any, description: String = "")
+    {
+        customBindings[name] = obj
+    }
+
     override suspend fun execute(request: PcPRequest, context: PcpContext): PcpRequestResult
     {
         val startTime = System.currentTimeMillis()
         val script = request.argumentsOrFunctionParams.joinToString("\n")
 
-        // Merge context options
         val mergedOptions = mergeContextOptions(request.kotlinContextOptions, context.kotlinOptions)
 
-        // Security validation
-        val validation = securityManager.validateKotlinRequest(script, mergedOptions)
+        val validation = securityManager.validateKotlinRequest(script, mergedOptions, context)
         if (!validation.isValid)
         {
             return PcpRequestResult(
@@ -48,21 +49,24 @@ class KotlinExecutor : PcpExecutor
 
             val bindings = scriptContext.getBindings(javax.script.ScriptContext.ENGINE_SCOPE)
 
-            // Expose introspection objects if allowed
-            if (mergedOptions.allowIntrospection)
+            if (mergedOptions.allowTpipeIntrospection)
             {
                 bindings["PcpRegistry"] = PcpRegistry
                 bindings["PcpContext"] = context
             }
 
-            // For JSR-223 Kotlin, we may need to inject bindings into the engine context as well
-            // or use a specific way to handle println
+            if (mergedOptions.allowHostApplicationAccess)
+            {
+                mergedOptions.exposedBindings.keys.forEach { bindingName ->
+                    customBindings[bindingName]?.let { obj ->
+                        bindings[bindingName] = obj
+                    }
+                }
+            }
+
             val result = try {
-                // Ensure the script can see the bindings by injecting them into the script text if needed
-                // or trusting the engine implementation of SimpleScriptContext.
                 engine.eval(script, scriptContext)
             } catch (e: Exception) {
-                // If eval fails, check if we captured any output before throwing
                 val captured = writer.toString().trim()
                 if (captured.isNotEmpty()) {
                     throw Exception("Execution failed but captured output: $captured. Error: ${e.message}", e)
@@ -101,17 +105,25 @@ class KotlinExecutor : PcpExecutor
 
     private fun mergeContextOptions(requestOptions: KotlinContext, contextOptions: KotlinContext): KotlinContext
     {
-        return KotlinContext().apply {
-            allowedImports.addAll(requestOptions.allowedImports)
-            allowedImports.addAll(contextOptions.allowedImports)
-
-            timeoutMs = if (contextOptions.timeoutMs > 0) contextOptions.timeoutMs else requestOptions.timeoutMs
-
-            // Security override: context can disable introspection even if request wants it
-            allowIntrospection = contextOptions.allowIntrospection && requestOptions.allowIntrospection
-
-            permissions.addAll(contextOptions.permissions)
-            if (permissions.isEmpty()) permissions.addAll(requestOptions.permissions)
-        }
+        return KotlinContext(
+            allowedImports = (contextOptions.allowedImports + requestOptions.allowedImports).toMutableList(),
+            blockedImports = (contextOptions.blockedImports + requestOptions.blockedImports).toMutableList(),
+            allowedPackages = (contextOptions.allowedPackages + requestOptions.allowedPackages).toMutableList(),
+            blockedPackages = (contextOptions.blockedPackages + requestOptions.blockedPackages).toMutableList(),
+            allowTpipeIntrospection = contextOptions.allowTpipeIntrospection && requestOptions.allowTpipeIntrospection,
+            allowHostApplicationAccess = contextOptions.allowHostApplicationAccess || requestOptions.allowHostApplicationAccess,
+            exposedBindings = (contextOptions.exposedBindings + requestOptions.exposedBindings).toMutableMap(),
+            allowReflection = contextOptions.allowReflection || requestOptions.allowReflection,
+            allowClassLoaderAccess = contextOptions.allowClassLoaderAccess || requestOptions.allowClassLoaderAccess,
+            workingDirectory = if (contextOptions.workingDirectory.isNotEmpty()) contextOptions.workingDirectory else requestOptions.workingDirectory,
+            allowFileRead = contextOptions.allowFileRead || requestOptions.allowFileRead,
+            allowFileWrite = contextOptions.allowFileWrite || requestOptions.allowFileWrite,
+            allowFileDelete = contextOptions.allowFileDelete || requestOptions.allowFileDelete,
+            timeoutMs = if (contextOptions.timeoutMs > 0) contextOptions.timeoutMs else requestOptions.timeoutMs,
+            permissions = (contextOptions.permissions + requestOptions.permissions).toMutableList(),
+            environmentVariables = (contextOptions.environmentVariables + requestOptions.environmentVariables).toMutableMap(),
+            allowNetworkAccess = contextOptions.allowNetworkAccess || requestOptions.allowNetworkAccess,
+            allowProcessExecution = contextOptions.allowProcessExecution || requestOptions.allowProcessExecution
+        )
     }
 }

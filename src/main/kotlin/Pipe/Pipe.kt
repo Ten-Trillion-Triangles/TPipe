@@ -16,6 +16,7 @@ import com.TTT.P2P.AgentDescriptor
 import com.TTT.PipeContextProtocol.PcpExecutionDispatcher
 import com.TTT.PipeContextProtocol.PcpExecutionResult
 import com.TTT.PipeContextProtocol.PcpResponseParser
+import com.TTT.PipeContextProtocol.PcpInstructionGenerator
 import com.TTT.P2P.AgentRequest
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PDescriptor
@@ -1752,6 +1753,46 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             // Allow custom override
             val actualPcpInstructions = pcpDescription.ifEmpty { defaultPcpInstructions }
             systemPrompt = systemPrompt + actualPcpInstructions
+            
+            // Add Kotlin-specific security boundaries if Kotlin is configured
+            if (pcpContext.kotlinOptions.allowTpipeIntrospection || 
+                pcpContext.kotlinOptions.allowHostApplicationAccess ||
+                pcpContext.kotlinOptions.allowedImports.isNotEmpty() ||
+                pcpContext.kotlinOptions.blockedImports.isNotEmpty())
+            {
+                val kotlinInstructions = PcpInstructionGenerator.generateKotlinInstructions(
+                    pcpContext.kotlinOptions, 
+                    pcpContext
+                )
+                val kotlinGuide = PcpInstructionGenerator.generateCodeExecutionGuide(pcpContext.kotlinOptions)
+                systemPrompt = systemPrompt + "\n\n" + kotlinInstructions + "\n\n" + kotlinGuide
+            }
+            
+            // Add Python-specific security boundaries if Python is configured
+            if (pcpContext.pythonOptions.availablePackages.isNotEmpty() ||
+                pcpContext.pythonOptions.workingDirectory.isNotEmpty() ||
+                pcpContext.pythonOptions.permissions.isNotEmpty())
+            {
+                val pythonInstructions = PcpInstructionGenerator.generatePythonInstructions(
+                    pcpContext.pythonOptions,
+                    pcpContext
+                )
+                val pythonGuide = PcpInstructionGenerator.generatePythonCodeExecutionGuide()
+                systemPrompt = systemPrompt + "\n\n" + pythonInstructions + "\n\n" + pythonGuide
+            }
+            
+            // Add JavaScript-specific security boundaries if JavaScript is configured
+            if (pcpContext.javascriptOptions.allowedModules.isNotEmpty() ||
+                pcpContext.javascriptOptions.workingDirectory.isNotEmpty() ||
+                pcpContext.javascriptOptions.permissions.isNotEmpty())
+            {
+                val javascriptInstructions = PcpInstructionGenerator.generateJavaScriptInstructions(
+                    pcpContext.javascriptOptions,
+                    pcpContext
+                )
+                val javascriptGuide = PcpInstructionGenerator.generateJavaScriptCodeExecutionGuide()
+                systemPrompt = systemPrompt + "\n\n" + javascriptInstructions + "\n\n" + javascriptGuide
+            }
         }
 
         if(!p2pAgentDescriptors.isNullOrEmpty())

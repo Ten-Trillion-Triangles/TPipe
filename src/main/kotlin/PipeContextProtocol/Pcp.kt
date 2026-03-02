@@ -311,32 +311,27 @@ data class PythonContext(@kotlinx.serialization.Transient val cinit : Boolean = 
 }
 
 @kotlinx.serialization.Serializable
-data class KotlinContext(val cinit : Boolean = false)
-{
-    /**
-     * List of allowed imports for the Kotlin script.
-     */
-    @kotlinx.serialization.Serializable
-    var allowedImports = mutableListOf<String>()
-
-    /**
-     * Maximum execution time in milliseconds
-     */
-    @kotlinx.serialization.Serializable
-    var timeoutMs = 30000
-
-    /**
-     * Whether to allow introspection of TPipe internal objects.
-     */
-    @kotlinx.serialization.Serializable
-    var allowIntrospection = true
-
-    /**
-     * Permissions for Kotlin operations
-     */
-    @kotlinx.serialization.Serializable
-    var permissions = mutableListOf<Permissions>()
-}
+data class KotlinContext(
+    @kotlinx.serialization.Transient val cinit : Boolean = false,
+    var allowedImports: MutableList<String> = mutableListOf(),
+    var blockedImports: MutableList<String> = mutableListOf(),
+    var allowedPackages: MutableList<String> = mutableListOf(),
+    var blockedPackages: MutableList<String> = mutableListOf(),
+    var allowTpipeIntrospection: Boolean = true,
+    var allowHostApplicationAccess: Boolean = false,
+    var exposedBindings: MutableMap<String, String> = mutableMapOf(),
+    var allowReflection: Boolean = false,
+    var allowClassLoaderAccess: Boolean = false,
+    var workingDirectory: String = "",
+    var allowFileRead: Boolean = false,
+    var allowFileWrite: Boolean = false,
+    var allowFileDelete: Boolean = false,
+    var timeoutMs: Int = 30000,
+    var permissions: MutableList<Permissions> = mutableListOf(),
+    var environmentVariables: MutableMap<String, String> = mutableMapOf(),
+    var allowNetworkAccess: Boolean = false,
+    var allowProcessExecution: Boolean = false
+)
 
 @kotlinx.serialization.Serializable
 data class JavaScriptContext(val cinit : Boolean = false)
