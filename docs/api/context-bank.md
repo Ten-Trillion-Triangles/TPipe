@@ -1,94 +1,168 @@
-# ContextBank API Reference
+# ContextBank Object API
 
-The `ContextBank` is the central clearinghouse for all global state in TPipe. It manages the "notebooks" (`ContextWindow`) and "todo lists" (`TodoList`) that your agents share.
+## Table of Contents
+- [Overview](#overview)
+- [Public Properties](#public-properties)
+- [Public Functions](#public-functions)
+  - [Current Context Access](#current-context-access)
+  - [Bank Management](#bank-management)
+  - [Remote Memory Integration](#remote-memory-integration)
+  - [Context Swapping](#context-swapping)
+  - [Memory Eviction](#memory-eviction)
+  - [Cache Configuration](#cache-configuration)
+  - [TodoList Integration](#todolist-integration)
+- [Key Behaviors](#key-behaviors)
 
----
+## Overview
 
-## Shared Access (Mutexes)
-
-Because TPipe is built for highly concurrent, multi-agent systems, thread safety is paramount. ContextBank provides three primary mutexes to ensure your data stays consistent even when dozens of agents are reading and writing simultaneously.
-
-| Mutex | Purpose |
-|-------|---------|
-| `bankMutex` | Protects the main storage of `ContextWindow` pages. |
-| `swapMutex` | Ensures only one agent can change the "active" banked window at a time. |
-| `todoMutex` | Protects the shared `TodoList` registry. |
-
-> **Pro Tip**: When writing code inside a Pipe's transformation or validation function, always use the `WithMutex` variants of the functions below.
-
----
-
-## Core Operations
-
-### Storing Data (`emplace`)
-Adds or updates a page in the bank.
+The `ContextBank` is a singleton object that manages TPipe's global context window system, enabling context sharing between pipes, pipelines, and parallel operations through a keyed banking system.
 
 ```kotlin
-suspend fun emplaceWithMutex(
-    key: String,
-    window: ContextWindow,
-    mode: StorageMode = StorageMode.MEMORY_AND_DISK,
-    skipRemote: Boolean = false
-)
+object ContextBank
 ```
-- **`key`**: The unique name for this page (e.g., "user_preferences").
-- **`window`**: The data object to store.
-- **`mode`**: Controls whether the data stays in RAM, goes to disk, or is sent to a remote server. See [Storage Modes](#storage-modes).
-- **`skipRemote`**: If true, forces the data to be stored locally even if remote memory is configured globally.
 
-### Retrieving Data (`getContextFromBank`)
-Pulls a page from the bank.
+## Public Properties
 
+**`swapMutex`**
 ```kotlin
-fun getContextFromBank(
-    key: String,
-    copy: Boolean = true,
-    skipRemote: Boolean = false
-): ContextWindow
+val swapMutex: Mutex = Mutex()
 ```
-- **`copy`**: If `true` (default), returns a deep copy to prevent your agent from accidentally modifying the master copy in the bank. Set to `false` for high-performance, read-only access.
+Mutex for managing context window swapping operations. Ensures thread-safe access when changing the active banked context window.
 
-### Changing the Active View (`swapBank`)
-Sets the singleton `bankedContextWindow` to a specific page. This is used when you want a pipe to automatically "see" a specific set of banked data without manually loading it.
-
+**`bankMutex`**
 ```kotlin
-suspend fun swapBankWithMutex(key: String, copy: Boolean = true)
+val bankMutex: Mutex = Mutex()
 ```
+Mutex for managing bank access operations. Ensures thread-safe access when reading from or writing to the context bank storage.
+
+**`todoMutex`**
+```kotlin
+val todoMutex: Mutex = Mutex()
+```
+Mutex for accessing the todo list system in this context bank.
 
 ---
 
-## Remote Memory & Versioning
+## Public Functions
 
-These functions power TPipe's distributed swarm capabilities.
+### Current Context Access
 
-### `enableRemoteHosting(port: Int)`
-Turns this TPipe instance into a **Memory Server**. Other instances can then connect to this machine to share data.
+#### `getBankedContextWindow(): ContextWindow`
+Retrieves direct reference to the currently active banked context window.
+**Warning:** Not safe for use in coroutines. Use `copyBankedContextWindow()` for concurrent access.
 
-### `connectToRemoteMemory(url: String, token: String, useGlobally: Boolean)`
-Points this agent at an external Memory Server. If `useGlobally` is true, your agent will no longer save data to its own disk; it will send everything to the server instead.
+#### `copyBankedContextWindow(): ContextWindow?`
+Creates a deep copy of the currently active banked context window via serialization.
 
-### `fetchMergeSaveRemoteContext(key: String, localWindow: ContextWindow)`
-The standard pattern for safe collaboration. It fetches the latest remote data, merges your local changes into it, and saves it back—all while respecting the server's versioning to prevent data loss.
+#### `updateBankedContext(newContext: ContextWindow)`
+Updates the currently active banked context window directly.
+
+#### `updateBankedContextWithMutex(newContext: ContextWindow)`
+Thread-safe update of the currently active banked context window using `bankMutex`.
 
 ---
 
-## Cache & Memory Management
+### Bank Management
 
-TPipe allows you to handle massive amounts of data by automatically moving "cold" pages to disk.
+#### `emplace(key: String, window: ContextWindow, mode: StorageMode, skipRemote: Boolean = false)`
+Stores or replaces a context window with explicit storage mode control.
+- `key`: Identifier for the window.
+- `window`: The `ContextWindow` to store.
+- `mode`: Controls persistence (MEMORY_ONLY, MEMORY_AND_DISK, DISK_ONLY, DISK_WITH_CACHE, REMOTE).
+- `skipRemote`: If true, bypasses remote delegation even if configured.
 
-### `configureCachePolicy(config: CacheConfig)`
-Sets the global rules for RAM usage.
+#### `emplaceWithMutex(key: String, window: ContextWindow, mode: StorageMode, skipRemote: Boolean = false)`
+Thread-safe version of `emplace`. Recommended for updates inside pipes.
+
+#### `getContextFromBank(key: String, copy: Boolean = true, skipRemote: Boolean = false): ContextWindow`
+Retrieves a context window by key. respect storage mode and remote delegation.
+- `copy`: Returns a deep copy if true (default).
+- `skipRemote`: Bypasses remote server if true.
+
+#### `getPageKeys(skipRemote: Boolean = false): List<String>`
+Returns all stored page keys, merging local and remote keys if applicable.
+
+#### `deletePersistingBankKeyWithMutex(key: String, skipRemote: Boolean = false): Boolean`
+Thread-safe deletion of a banked context and its associated disk file.
+
+---
+
+### Remote Memory Integration
+
+#### `enableRemoteHosting(port: Int = 8080)`
+Starts a Netty server on the specified port to host this instance's memory for remote access.
+
+#### `connectToRemoteMemory(url: String, token: String = "", useGlobally: Boolean = false)`
+Configures the instance to delegate memory operations to a remote server.
+
+#### `fetchMergeSaveRemoteContext(key: String, localWindow: ContextWindow): Boolean`
+Performs a fetch-merge-save operation on a remote window. Resolves conflicts by pulling the latest remote version, merging local changes, and pushing back with an incremented version.
+
+---
+
+### Context Swapping
+
+#### `swapBank(key: String, copy: Boolean = true)`
+Swaps the active `bankedContextWindow` with one from the bank. **Warning:** Not safe for concurrent use.
+
+#### `swapBankWithMutex(key: String, copy: Boolean = true)`
+Thread-safe bank swap using both `bankMutex` and `swapMutex`.
+
+---
+
+### Memory Eviction
+
+#### `evictFromMemory(key: String): Boolean`
+Removes a context window from memory without deleting the disk file.
+
+#### `evictAllFromMemory()`
+Removes all context windows from memory (RAM only).
+
+#### `evictTodoListFromMemory(key: String): Boolean`
+Removes a TodoList from memory without deleting its `.todo` file.
+
+---
+
+### Cache Configuration
+
+#### `configureCachePolicy(config: CacheConfig)`
+Configures LRU/LFU/FIFO limits for `DISK_WITH_CACHE` storage mode.
 ```kotlin
-val config = CacheConfig(
-    maxEntries = 100,                   // Keep at most 100 pages in RAM
-    maxMemoryBytes = 100 * 1024 * 1024, // Keep RAM usage under 100MB
-    evictionPolicy = EvictionPolicy.LRU // Discard oldest accessed items first
-)
-ContextBank.configureCachePolicy(config)
+ContextBank.configureCachePolicy(CacheConfig(maxMemoryBytes = 50 * 1024 * 1024))
 ```
 
+#### `getCacheStatistics(): CacheStatistics`
+Returns current hit rates and memory usage statistics.
+
+#### `clearCache()`
+Clears all DISK_WITH_CACHE entries from memory.
+
 ---
 
-## See Also
-- [Conceptual Guide: Managing Global Context](../core-concepts/context-bank-integration.md)
-- [Conceptual Guide: Remote Memory System](../advanced-concepts/remote-memory.md)
+### TodoList Integration
+
+#### `getPagedTodoList(key: String, copy: Boolean = true, skipRemote: Boolean = false): TodoList`
+Retrieves a TodoList by key, respecting storage modes.
+
+#### `emplaceTodoList(key: String, todoList: TodoList, mode: StorageMode, allowUpdatesOnly: Boolean, allowCompletionsOnly: Boolean, skipRemote: Boolean)`
+Stores a TodoList with optional write protections.
+
+#### `getTodoListKeys(skipRemote: Boolean = false): List<String>`
+Returns all todo list keys in the bank.
+
+---
+
+## Key Behaviors
+
+### Storage Modes
+- **MEMORY_ONLY**: Fast, ephemeral.
+- **MEMORY_AND_DISK**: Default, persists to `.bank` file.
+- **DISK_ONLY**: Loads from disk on demand, no RAM caching.
+- **DISK_WITH_CACHE**: Manages RAM usage via `CacheConfig` policies.
+- **REMOTE**: Delegates to a `MemoryServer` via HTTP.
+
+### Thread Safety
+Always use `WithMutex` methods inside coroutines. Mutexes are acquired in a consistent order (`bankMutex` -> `swapMutex`) to prevent deadlocks.
+
+### Distributed Versioning
+Remote operations use version-based conflict resolution. Server rejects writes with outdated versions, requiring a `fetchMergeSave` cycle.

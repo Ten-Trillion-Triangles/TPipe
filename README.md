@@ -31,7 +31,6 @@ Transform your agents from "chatbots" into autonomous "doers."
 
 - **[The Tool Belt (PCP)](docs/advanced-concepts/pipe-context-protocol.md)**: Letting agents use terminal commands, web APIs, and Python.
 - **[Collaborative Office (P2P)](docs/advanced-concepts/p2p/p2p-overview.md)**: Building specialized agents that call each other.
-- **[Safety Rails](docs/advanced-concepts/pipe-context-protocol.md#safety-rails-protecting-your-system)**: Deep dive into SSRF protection and Python AST validation.
 
 ---
 

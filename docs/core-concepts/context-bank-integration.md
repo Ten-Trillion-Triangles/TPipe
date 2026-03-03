@@ -90,4 +90,4 @@ ContextBank.swapBankWithMutex("user_${userId}")
 ## Next Steps
 
 - Learn about **[Remote Memory](../advanced-concepts/remote-memory.md)** to share your library across servers.
-- Dive into **[Page Keys and Global Context](page-keys-and-global-context.md)** for advanced organization.
+- Dive into the **[ContextBank API Reference](../api/context-bank.md)** for detailed technical signatures.
