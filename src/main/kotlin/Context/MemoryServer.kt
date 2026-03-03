@@ -91,6 +91,47 @@ object MemoryServer
                     call.respond(window)
                 }
 
+                get("/{key}/query")
+                {
+                    val key = call.parameters["key"] ?: return@get call.respond(P2PResponse().apply {
+                        rejection = P2PRejection(P2PError.transport, "Missing context key")
+                    })
+
+                    val query = call.request.queryParameters["query"] ?: ""
+                    val minWeight = call.request.queryParameters["minWeight"]?.toIntOrNull() ?: Int.MIN_VALUE
+                    val extractRegex = call.request.queryParameters["extractRegex"] ?: ""
+                    val requiredKeys = call.request.queryParameters["requiredKeys"]?.split(",")?.filter { it.isNotEmpty() } ?: emptyList()
+                    val aliasKeys = call.request.queryParameters["aliasKeys"]?.split(",")?.filter { it.isNotEmpty() } ?: emptyList()
+
+                    // Server-side, we permit all introspection because transport-level auth is already handled
+                    val results = MemoryIntrospection.withScope(MemoryIntrospectionConfig(allowedPageKeys = mutableSetOf("*"), allowRead = true))
+                    {
+                        runBlocking {
+                            MemoryIntrospectionTools.queryLorebook(
+                                key, query, minWeight, requiredKeys, aliasKeys, extractRegex
+                            )
+                        }
+                    }
+                    call.respond(results)
+                }
+
+                get("/{key}/simulate")
+                {
+                    val key = call.parameters["key"] ?: return@get call.respond(P2PResponse().apply {
+                        rejection = P2PRejection(P2PError.transport, "Missing context key")
+                    })
+
+                    val text = call.request.queryParameters["text"] ?: ""
+
+                    val results = MemoryIntrospection.withScope(MemoryIntrospectionConfig(allowedPageKeys = mutableSetOf("*"), allowRead = true))
+                    {
+                        runBlocking {
+                            MemoryIntrospectionTools.simulateLorebookTrigger(key, text)
+                        }
+                    }
+                    call.respond(results)
+                }
+
                 delete("/{key}")
                 {
                     val key = call.parameters["key"] ?: return@delete call.respond(P2PResponse().apply {

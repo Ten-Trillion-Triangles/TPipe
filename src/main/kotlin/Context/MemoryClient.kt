@@ -78,6 +78,37 @@ object MemoryClient
     }
 
     /**
+     * Remotely query the lorebook of a context window.
+     */
+    suspend fun queryLorebook(
+        key: String,
+        query: String = "",
+        minWeight: Int = Int.MIN_VALUE,
+        requiredKeys: List<String> = emptyList(),
+        aliasKeys: List<String> = emptyList(),
+        extractRegex: String = ""
+    ): List<LoreBookQueryResult>
+    {
+        val required = requiredKeys.joinToString(",")
+        val aliases = aliasKeys.joinToString(",")
+        val url = "${getBaseUrl()}/context/bank/$key/query?query=$query&minWeight=$minWeight&extractRegex=$extractRegex&requiredKeys=$required&aliasKeys=$aliases"
+        val response = withRetry { httpGet(url, authToken = getAuthToken()) } ?: return emptyList()
+        if (response.startsWith("Error:")) return emptyList()
+        return deserialize<List<LoreBookQueryResult>>(response) ?: emptyList()
+    }
+
+    /**
+     * Remotely simulate lorebook triggers for a given text.
+     */
+    suspend fun simulateLorebookTrigger(key: String, text: String): List<String>
+    {
+        val url = "${getBaseUrl()}/context/bank/$key/simulate?text=$text"
+        val response = withRetry { httpGet(url, authToken = getAuthToken()) } ?: return emptyList()
+        if (response.startsWith("Error:")) return emptyList()
+        return deserialize<List<String>>(response) ?: emptyList()
+    }
+
+    /**
      * Delete a context window from the remote server.
      */
     suspend fun deleteContextWindow(key: String): Boolean
