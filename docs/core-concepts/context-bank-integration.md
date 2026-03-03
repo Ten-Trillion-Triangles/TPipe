@@ -4,6 +4,7 @@
 - [What is ContextBank?](#what-is-contextbank)
 - [Core ContextBank Operations](#core-contextbank-operations)
 - [Storage Modes](#storage-modes)
+- [Cache and Eviction Management](#cache-and-eviction-management)
 - [Remote Memory Integration](#remote-memory-integration)
 - [Common Usage Patterns](#common-usage-patterns)
 - [Integration with Pipes](#integration-with-pipes)
@@ -62,8 +63,34 @@ ContextBank supports five storage modes to control memory and persistence behavi
 | `MEMORY_ONLY` | Store only in memory. | Temporary data, high-frequency access. |
 | `MEMORY_AND_DISK` | Store in memory and persist to disk (Default). | Standard application state. |
 | `DISK_ONLY` | Store on disk, load on-demand without caching. | Large, infrequently accessed contexts. |
-| `DISK_WITH_CACHE` | Store on disk with LRU memory cache. | Large datasets with "hot" entries. |
+| `DISK_WITH_CACHE` | Store on disk with memory cache and automatic eviction. | Large datasets with "hot" entries. |
 | `REMOTE` | Delegate storage to a remote memory server. | Shared state between multiple agents. |
+
+## Cache and Eviction Management
+
+When your application handles a large number of context pages, you can use `DISK_WITH_CACHE` mode to keep memory usage under control.
+
+### Configuring the Global Cache
+TPipe allows you to define a global policy for how much memory context pages should consume.
+
+```kotlin
+ContextBank.configureCachePolicy(
+    CacheConfig(
+        maxMemoryBytes = 100 * 1024 * 1024, // 100MB limit
+        maxEntries = 500,                   // Up to 500 items in RAM
+        evictionPolicy = EvictionPolicy.LRU // Remove least recently used first
+    )
+)
+```
+
+### Monitoring Cache Performance
+You can monitor the efficiency of your cache settings using `getCacheStatistics`.
+
+```kotlin
+val stats = ContextBank.getCacheStatistics()
+println("Cache Hit Rate: ${stats.cacheHitRate * 100}%")
+println("Total RAM Usage: ${stats.totalMemoryBytes / 1024 / 1024} MB")
+```
 
 ## Remote Memory Integration
 
