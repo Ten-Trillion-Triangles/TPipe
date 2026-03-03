@@ -104,13 +104,11 @@ object MemoryServer
                     val aliasKeys = call.request.queryParameters["aliasKeys"]?.split(",")?.filter { it.isNotEmpty() } ?: emptyList()
 
                     // Server-side, we permit all introspection because transport-level auth is already handled
-                    val results = MemoryIntrospection.withScope(MemoryIntrospectionConfig(allowedPageKeys = mutableSetOf("*"), allowRead = true))
+                    val results = MemoryIntrospection.withCoroutineScope(MemoryIntrospectionConfig(allowedPageKeys = mutableSetOf("*"), allowRead = true))
                     {
-                        runBlocking {
-                            MemoryIntrospectionTools.queryLorebook(
-                                key, query, minWeight, requiredKeys, aliasKeys, extractRegex
-                            )
-                        }
+                        MemoryIntrospectionTools.queryLorebook(
+                            key, query, minWeight, requiredKeys, aliasKeys, extractRegex
+                        )
                     }
                     call.respond(results)
                 }
@@ -123,11 +121,9 @@ object MemoryServer
 
                     val text = call.request.queryParameters["text"] ?: ""
 
-                    val results = MemoryIntrospection.withScope(MemoryIntrospectionConfig(allowedPageKeys = mutableSetOf("*"), allowRead = true))
+                    val results = MemoryIntrospection.withCoroutineScope(MemoryIntrospectionConfig(allowedPageKeys = mutableSetOf("*"), allowRead = true))
                     {
-                        runBlocking {
-                            MemoryIntrospectionTools.simulateLorebookTrigger(key, text)
-                        }
+                        MemoryIntrospectionTools.simulateLorebookTrigger(key, text)
                     }
                     call.respond(results)
                 }
