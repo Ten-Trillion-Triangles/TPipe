@@ -10,6 +10,7 @@ Start here for installation and your first TPipe application:
 
 - [Installation and Setup](docs/getting-started/installation-and-setup.md) - Requirements, installation, and environment setup
 - [First Steps](docs/getting-started/first-steps.md) - Your first pipe and pipeline
+- [Command-Line Reference](docs/getting-started/cli-reference.md) - Standalone hosting and CLI flags
 
 ### 🧠 Core Concepts
 
@@ -28,6 +29,7 @@ Essential TPipe features organized by complexity:
 
 #### Global Context Management
 - [ContextBank - Global Context Integration](docs/core-concepts/context-bank-integration.md) - Global context repository
+- [Remote Memory System](docs/advanced-concepts/remote-memory.md) - Distributed memory across TPipe instances
 - [Page Keys and Global Context](docs/core-concepts/page-keys-and-global-context.md) - Organized context retrieval
 - [MiniBank and Multiple Page Keys](docs/core-concepts/minibank-and-multiple-page-keys.md) - Multi-context management
 - [Pipeline Context Integration](docs/core-concepts/pipeline-context-integration.md) - Context sharing within pipelines
@@ -133,7 +135,7 @@ println(result.text)
 - **Multi-stage AI workflows** with sophisticated error handling
 - **Timeout and retry system** with automatic recovery from transient failures and hanging LLM calls
 - **Pipeline pause/resume control** with declarative pause points and developer-in-the-loop workflows
-- **Global context sharing** across applications via ContextBank
+- **Global context sharing** across applications via ContextBank and Remote Memory
 - **Context access control** with ContextLock enforcement for secure lorebook and page management
 - **Developer-in-the-loop integration** with code and AI-powered validation
 - **Chain-of-thought reasoning** with multiple strategies and focus points
@@ -142,6 +144,7 @@ println(result.text)
 - **Multi-Stream and Independent Tracing** for parallel pipelines and complex orchestration
 - **Cross-region inference** with automatic profile binding for AWS Bedrock
 - **Service tier optimization** for AWS Bedrock (Reserved, Priority, Standard, Flex)
+- **Secure sandboxing** for PCP tools with AST-based Python validation and SSRF protection
 
 ## Requirements
 

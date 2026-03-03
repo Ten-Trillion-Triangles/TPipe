@@ -88,6 +88,13 @@ val tokenCount = Dictionary.countTokens(
 )
 ```
 
+### Non-Word Character Handling
+TPipe uses a ceiling division formula to count sequences of non-word characters (punctuation, symbols, whitespace) that are skipped during dictionary matching:
+
+**Formula**: `(skippedLength + nonWordSplitCount - 1) / nonWordSplitCount`
+
+This ensures that even short sequences of symbols are accounted for as at least one token, providing a more conservative (safer) estimate for LLM context windows.
+
 ## Truncation Methods
 
 ### String Truncation

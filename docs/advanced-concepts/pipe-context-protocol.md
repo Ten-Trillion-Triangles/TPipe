@@ -7,6 +7,7 @@
 - [Context Option Reference](#context-option-reference)
 - [Applying PCP to a Pipe](#applying-pcp-to-a-pipe)
 - [PCP Requests and Responses](#pcp-requests-and-responses)
+- [Standalone Hosting](#standalone-hosting)
 - [Security Layers](#security-layers)
 - [Next Steps](#next-steps)
 
@@ -199,18 +200,44 @@ Use `PcpResponseParser` when you need to extract PCP payloads from an LLM respon
 parser repairs common JSON issues and validates that each request contains the minimum context
 needed for the chosen transport.
 
+## Standalone Hosting
+
+TPipe can host PCP execution as a standalone service, allowing external agents or processes to send `PcPRequest` JSON objects and receive `PcpExecutionResult` responses.
+
+### HTTP Hosting
+Run TPipe with the `--http` flag (default). Send POST requests to `/pcp` with the serialized `PcPRequest`.
+
+### Stdio Hosting
+Run TPipe with `--pcp-stdio-loop`. The host will read single-line JSON requests from `stdin` and print results to `stdout`.
+
+```bash
+java -jar tpipe.jar --pcp-stdio-loop
+```
+
 ## Security Layers
 
 Each executor applies dedicated safeguards on top of the base context:
 
-- **CommandSecurityManager** enforces command classification, validates arguments, screens
-  filesystem access against `PcpContext` allow/deny lists, and detects injection patterns.
-- **HttpSecurityManager** checks permissions, required host/method allowlists, request sizes,
-  and blocks requests to private network destinations by default.
-- **PythonSecurityManager** enforces security levels, script-size limits, package whitelists, and
-  blocks dangerous imports/functions unless specifically allowed.
-- **ReturnValueHandler** and `FunctionInvoker` ensure native function parameters and return values
-  are converted safely between PCP wire types and Kotlin types.
+### Command Security
+`CommandSecurityManager` enforces command classification, validates arguments, screens
+filesystem access against `PcpContext` allow/deny lists, and detects injection patterns.
+
+### HTTP Security (SSRF Protection)
+`HttpSecurityManager` provides defense against Server-Side Request Forgery (SSRF):
+- **DNS Rebinding Protection**: Hostnames are resolved once during validation, and the resulting IP address is used for the actual connection.
+- **Private Network Blocking**: Requests to local/private IP ranges (e.g., `127.0.0.1`, `192.168.x.x`, cloud metadata IPs) are blocked by default.
+- **Explicit Allowlists**: Enforces required host and method allowlists based on the `HttpSecurityLevel`.
+
+### Python Security (AST Validation)
+`PythonSecurityManager` uses an AST (Abstract Syntax Tree) based approach to validate Python scripts before execution:
+- **import validation**: Blocks dangerous imports (like `os`, `subprocess`, `sys`) unless explicitly allowed.
+- **Function validation**: Blocks dangerous built-ins (like `eval`, `exec`, `open`).
+- **Package Whitelisting**: Restricts script access to a predefined set of available packages.
+- **Security Levels**: Choose between `STRICT`, `BALANCED`, `PERMISSIVE`, or `DISABLED` levels in `PythonSecurityConfig`.
+
+### Kotlin/JS Security
+- **Kotlin**: Uses regex-based validation with word boundaries to block dangerous imports and system calls.
+- **JavaScript**: Executes in a Node.js process with concurrent stream reading to prevent pipe deadlocks and regex-based security scanning.
 
 ## Next Steps
 

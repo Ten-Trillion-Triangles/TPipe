@@ -32,7 +32,10 @@ val descriptor = P2PDescriptor(
 
 ## Transport Configuration
 
-### In-Process (Current)
+TPipe supports several transport methods for communicating between agents.
+
+### In-Process (`Transport.Tpipe`)
+Default for agents running in the same JVM.
 ```kotlin
 P2PTransport(
     transportMethod = Transport.Tpipe,
@@ -41,16 +44,19 @@ P2PTransport(
 )
 ```
 
-### Future Remote Transports
+### Remote HTTP (`Transport.Http`)
+Used for calls to agents on other servers.
 ```kotlin
-// HTTP (not yet implemented)
 P2PTransport(
     transportMethod = Transport.Http,
-    transportAddress = "https://api.example.com/agents/my-agent",
+    transportAddress = "https://api.example.com/p2p",
     transportAuthBody = "Bearer token123"
 )
+```
 
-// STDIO (not yet implemented)  
+### Stdio (`Transport.Stdio`)
+Used for calls to agents running as standalone binaries.
+```kotlin
 P2PTransport(
     transportMethod = Transport.Stdio,
     transportAddress = "/path/to/agent/binary",
