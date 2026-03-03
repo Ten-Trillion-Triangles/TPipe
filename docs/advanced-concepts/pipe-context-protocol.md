@@ -1,248 +1,87 @@
-# Pipe Context Protocol (PCP)
+# Teaching Your Agent to Use Tools (PCP)
 
-## Table of Contents
-- [Overview](#overview)
-- [Transports and Executors](#transports-and-executors)
-- [Building a PCP Context](#building-a-pcp-context)
-- [Context Option Reference](#context-option-reference)
-- [Applying PCP to a Pipe](#applying-pcp-to-a-pipe)
-- [PCP Requests and Responses](#pcp-requests-and-responses)
-- [Standalone Hosting](#standalone-hosting)
-- [Security Layers](#security-layers)
-- [Next Steps](#next-steps)
+Pipes are great at processing text, but on their own, they're trapped inside their own code. They can't read your files, check the weather, or run a database query. **Pipe Context Protocol (PCP)** is how you give your agents "hands"—allowing them to call external tools and functions securely.
 
-## Overview
+---
 
-Pipe Context Protocol (PCP) is TPipe's unified function-calling system. It lets an LLM invoke
-approved tools—shell commands, HTTP calls, Python scripts, or native Kotlin functions—through a
-single, validated interface. Every tool the model can reach is declared in a `PcpContext`, which is
-then attached to a pipe before generation.
+## Tools vs. Skills
 
-Key traits:
-- **Declarative**: you describe the allowed actions once; the runtime enforces them everywhere.
-- **Transport-agnostic**: irrespective of tool type, requests flow through a single dispatcher.
-- **Guarded**: all executors share common validation and per-transport security layers.
+In TPipe, there's a distinction between what an agent *is* and what an agent can *do*:
+- **PCP (Tools)**: These are low-level actions. Running a shell command, fetching a URL, or calling a specific Kotlin function.
+- **P2P (Collaboration)**: This is calling *another agent*. We'll cover that in the **[P2P Overview](p2p/p2p-overview.md)**.
 
-## Transports and Executors
+---
 
-Each transport is backed by an executor that implements the `PcpExecutor` interface.
+## How it Works: The Tool Belt
 
-| Transport   | Executor class             | Typical usage                               |
-|-------------|----------------------------|----------------------------------------------|
-| `Stdio`     | `StdioExecutor`            | Shell commands, CLIs, interactive sessions   |
-| `Http`      | `HttpExecutor`             | REST APIs, webhooks, internal services       |
-| `Python`    | `PythonExecutor`           | Ad-hoc scripts, analysis, automation         |
-| `Tpipe`     | `PcpFunctionHandler`       | Registered Kotlin functions and lambdas      |
+When you attach a `PcpContext` to a pipe, you're giving the agent a "tool belt." Each tool has:
+1. **A Name**: How the LLM identifies it (e.g., `list_files`).
+2. **A Description**: How the LLM knows *when* to use it.
+3. **Parameters**: What the tool needs to work (e.g., `directory_path`).
 
-`PcpExecutionDispatcher` chooses the executor based on the populated portion of the
-`PcPRequest`. The dispatcher also aggregates results when a response contains multiple requests.
+---
 
-## Building a PCP Context
+## Building a Tool Belt
 
-`PcpContext` collects the transports you want to expose and optional filesystem restrictions.
+Here's how you define some common tools:
 
 ```kotlin
-import com.TTT.PipeContextProtocol.PcpContext
-import com.TTT.PipeContextProtocol.StdioContextOptions
-import com.TTT.PipeContextProtocol.HttpContextOptions
-import com.TTT.PipeContextProtocol.PythonContext
-import com.TTT.PipeContextProtocol.Permissions
-
-fun buildContext(): PcpContext {
-    val context = PcpContext()
-
-    // Shell access: read-only `ls`
-    val ls = StdioContextOptions().apply {
+val myTools = PcpContext().apply {
+    // 1. Give it a shell tool
+    addStdioOption(StdioContextOptions().apply {
         command = "ls"
+        description = "List files in a directory"
         permissions.add(Permissions.Read)
-        description = "List directory contents"
-        timeoutMs = 5_000
-    }
-    context.addStdioOption(ls)
+    })
 
-    // HTTP access: GitHub API
-    val github = HttpContextOptions().apply {
-        baseUrl = "https://api.github.com"
-        endpoint = "/repos/owner/repo"
-        method = "GET"
-        allowedMethods.add("GET")
-        allowedHosts.add("api.github.com")
+    // 2. Give it a web-fetching tool
+    addHttpOption(HttpContextOptions().apply {
+        baseUrl = "https://api.weather.com"
+        description = "Check the local weather"
+        allowedHosts.add("api.weather.com")
         permissions.add(Permissions.Read)
-        description = "Fetch repository metadata"
-    }
-    context.addHttpOption(github)
-
-    // Python execution sandbox
-    context.pythonOptions = PythonContext().apply {
-        pythonPath = "/usr/bin/python3"
-        workingDirectory = "/home/app/analysis"
-        availablePackages.addAll(listOf("json", "statistics"))
-        permissions.addAll(listOf(Permissions.Read, Permissions.Execute))
-        timeoutMs = 30_000
-    }
-
-    // Restrict filesystem scope when commands reference paths
-    context.allowedDirectoryPaths.addAll(listOf(
-        "/home/app",
-        "/tmp"
-    ))
-    context.forbiddenDirectoryPaths.add("/home/app/secrets")
-
-    return context
+    })
 }
+
+// Hand the tool belt to your pipe
+pipe.setPcPContext(myTools)
 ```
 
-## Context Option Reference
+---
 
-### `StdioContextOptions`
+## Running PCP as a Standalone Service
 
-| Field                   | Purpose                                                            |
-|-------------------------|--------------------------------------------------------------------|
-| `command`               | Binary or script to run.                                           |
-| `args`                  | Default arguments (overridden by request arguments if provided).   |
-| `permissions`           | Allowed actions (`Read`, `Write`, `Execute`, `Delete`).            |
-| `description`           | Natural-language instruction for the model.                        |
-| `executionMode`         | `ONE_SHOT`, `INTERACTIVE`, `CONNECT`, or `BUFFER_REPLAY`.          |
-| `sessionId`/`bufferId`  | Routing for `CONNECT` or `BUFFER_REPLAY` modes.                    |
-| `workingDirectory`      | Execution directory.                                               |
-| `environmentVariables`  | Key/value pairs injected into the process.                         |
-| `timeoutMs`             | Millisecond timeout for the operation.                             |
-| `keepSessionAlive`      | Leave the process running after command completion.                |
-| `bufferPersistence`     | Persist interactive IO to buffers managed by `StdioBufferManager`. |
-| `maxBufferSize`         | Maximum bytes captured from stdout/stderr per execution.           |
+Sometimes you want your tools to be available to agents written in other languages, or running in separate containers. TPipe can host its tool dispatcher as a standalone service.
 
-### `TPipeContextOptions`
-
-| Field          | Purpose                                              |
-|----------------|------------------------------------------------------|
-| `functionName` | Registry key returned by `FunctionRegistry`.         |
-| `description`  | Prompting hint for the LLM.                          |
-| `params`       | Map of parameter metadata (`ParamType`, description, enum values).
-
-Populate this via `TPipeContextOptions.fromFunctionSignature` or `PcpContext.bindFunction` to
-ensure parameter metadata stays in sync with registered functions.
-
-### `HttpContextOptions`
-
-| Field             | Purpose                                                                      |
-|-------------------|------------------------------------------------------------------------------|
-| `baseUrl`         | Scheme and host portion of the URL.                                          |
-| `endpoint`        | Path/query segment appended to `baseUrl`.                                    |
-| `method`          | HTTP method (e.g. `GET`, `POST`).                                            |
-| `requestBody`     | Default body payload.                                                        |
-| `allowedMethods`  | Optional allowlist enforced by `HttpSecurityManager`.                        |
-| `headers`         | Default headers.                                                             |
-| `authType`        | `""`, `"BASIC"`, `"BEARER"`, or `"APIKEY"`.                               |
-| `authCredentials` | Credential map keyed by type (e.g. `token`, `username`, `password`).         |
-| `allowedHosts`    | Host allowlist for SSRF protection.                                          |
-| `followRedirects` | Whether redirects are permitted.                                             |
-| `timeoutMs`       | Request timeout in milliseconds.                                             |
-| `permissions`     | Required permission set (typically `Read` / `Write`).                        |
-| `description`     | LLM-facing explanation of the endpoint.                                      |
-
-### `PythonContext`
-
-| Field                  | Purpose                                                          |
-|------------------------|------------------------------------------------------------------|
-| `availablePackages`    | Whitelist of importable top-level packages.                     |
-| `pythonVersion`        | Optional version hint (`major.minor` prefix).                    |
-| `pythonPath`           | Interpreter path.                                                |
-| `workingDirectory`     | Directory resolved before script execution.                      |
-| `environmentVariables` | Environment injected into the interpreter process.               |
-| `timeoutMs`            | Maximum runtime.                                                 |
-| `captureOutput`        | Whether stdout/stderr should be returned.                        |
-| `permissions`          | Required permissions (e.g. `Read`, `Execute`).                   |
-
-## Applying PCP to a Pipe
-
-Attach the context to a pipe so the dispatcher can evaluate model tool calls.
-
-```kotlin
-import com.TTT.PipeContextProtocol.PcpContext
-import com.TTT.Pipe.Pipe
-
-fun configurePipe(pipe: Pipe) {
-    val context = buildContext()
-    pipe.setPcPContext(context)
-}
-```
-
-When you subsequently call `pipe.generateText()` or `pipe.execute()`, the runtime serialises the context into the
-system prompt. Any PCP requests produced by the LLM will be validated against the same context.
-To process PCP replies, call `Pipe.processPcpResponse(llmResponse)` after getting the LLM response.
-
-## PCP Requests and Responses
-
-### Request structure
-
-`PcPRequest` contains four context option blocks plus an optional positional-argument list:
-
-```json
-{
-  "stdioContextOptions": {
-    "command": "ls",
-    "executionMode": "ONE_SHOT"
-  },
-  "argumentsOrFunctionParams": ["-la"],
-  "httpContextOptions": {},
-  "tPipeContextOptions": {},
-  "pythonContextOptions": {}
-}
-```
-
-`PcpExecutionDispatcher.executeRequests` takes a list of requests and returns a
-`PcpExecutionResult` comprised of individual `PcpRequestResult` entries. Each result records
-success, output, elapsed time, transport, and an optional error message.
-
-### Request parsing
-
-Use `PcpResponseParser` when you need to extract PCP payloads from an LLM response directly. The
-parser repairs common JSON issues and validates that each request contains the minimum context
-needed for the chosen transport.
-
-## Standalone Hosting
-
-TPipe can host PCP execution as a standalone service, allowing external agents or processes to send `PcPRequest` JSON objects and receive `PcpExecutionResult` responses.
-
-### HTTP Hosting
-Run TPipe with the `--http` flag (default). Send POST requests to `/pcp` with the serialized `PcPRequest`.
-
-### Stdio Hosting
-Run TPipe with `--pcp-stdio-loop`. The host will read single-line JSON requests from `stdin` and print results to `stdout`.
-
+### The Stdio "Loop" Mode
+You can start TPipe and have it wait for tool requests on `stdin`:
 ```bash
 java -jar tpipe.jar --pcp-stdio-loop
 ```
+*Your agent sends a JSON request, and TPipe instantly prints the result.*
 
-## Security Layers
+### The HTTP Mode
+Launch the host with `--http` and send POST requests to `/pcp`. This is perfect for building a centralized "Tool Server" for your entire infrastructure.
 
-Each executor applies dedicated safeguards on top of the base context:
+---
 
-### Command Security
-`CommandSecurityManager` enforces command classification, validates arguments, screens
-filesystem access against `PcpContext` allow/deny lists, and detects injection patterns.
+## Safety Rails: Protecting Your System
 
-### HTTP Security (SSRF Protection)
-`HttpSecurityManager` provides defense against Server-Side Request Forgery (SSRF):
-- **DNS Rebinding Protection**: Hostnames are resolved once during validation, and the resulting IP address is used for the actual connection.
-- **Private Network Blocking**: Requests to local/private IP ranges (e.g., `127.0.0.1`, `192.168.x.x`, cloud metadata IPs) are blocked by default.
-- **Explicit Allowlists**: Enforces required host and method allowlists based on the `HttpSecurityLevel`.
+Giving an LLM access to your shell or network is powerful, but dangerous. TPipe includes several "Safety Rails" to keep you in control:
 
-### Python Security (AST Validation)
-`PythonSecurityManager` uses an AST (Abstract Syntax Tree) based approach to validate Python scripts before execution:
-- **import validation**: Blocks dangerous imports (like `os`, `subprocess`, `sys`) unless explicitly allowed.
-- **Function validation**: Blocks dangerous built-ins (like `eval`, `exec`, `open`).
-- **Package Whitelisting**: Restricts script access to a predefined set of available packages.
-- **Security Levels**: Choose between `STRICT`, `BALANCED`, `PERMISSIVE`, or `DISABLED` levels in `PythonSecurityConfig`.
+### 1. The "Sandbox" (Python AST Validation)
+When an agent writes a Python script to solve a problem, TPipe doesn't just run it blindly. The **PythonSecurityManager** analyzes the script's structure (its AST) to block dangerous imports (like `os` or `subprocess`) and functions (like `eval`) before they ever touch your CPU.
 
-### Kotlin/JS Security
-- **Kotlin**: Uses regex-based validation with word boundaries to block dangerous imports and system calls.
-- **JavaScript**: Executes in a Node.js process with concurrent stream reading to prevent pipe deadlocks and regex-based security scanning.
+### 2. The "Firewall" (SSRF Protection)
+If your agent tries to fetch a URL, the **HttpSecurityManager** steps in.
+- It blocks requests to internal IP addresses (like `127.0.0.1` or `192.168.1.1`).
+- It prevents **DNS Rebinding** by resolving the hostname once and using that exact IP for the request, ensuring the target doesn't change mid-validation.
 
-## Next Steps
+### 3. Permissions
+Every tool in TPipe requires explicit permissions (`Read`, `Write`, `Execute`, `Delete`). If a tool is marked as `Read` and the agent tries to use it to delete a file, the request is rejected immediately.
 
-- [Basic PCP Usage](basic-pcp-usage.md) for focused shell and HTTP examples.
-- [Intermediate PCP Features](intermediate-pcp-features.md) for Python execution, native function
-  binding, and advanced security configuration.
-- [Advanced Session Management](advanced-session-management.md) to learn how interactive stdio
-  sessions and buffers work.
+---
+
+## Summary
+
+PCP turns your LLM from a talker into a **doer**. By defining clear tool sets and robust security policies, you can build agents that interact with the real world without compromising your system's integrity.

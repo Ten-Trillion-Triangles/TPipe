@@ -1,112 +1,92 @@
-# P2P Overview
+# Collaborative Agents with P2P
 
-P2P (Pipe-to-Pipe) enables TPipe agents to call each other through a registry system without exposing internal implementation details to LLMs. It supports both in-process calls and cross-process communication via HTTP or Stdio.
+In a simple application, one agent does everything. But in complex systems, you need specialists. You might have one agent that's an expert at **data analysis**, another that's a **UI designer**, and a third that's a **project manager**.
 
-## Core Components
+**P2P (Pipe-to-Pipe)** is TPipe's agent-to-agent communication protocol. It allows agents to discover and call each other as if they were simple functions, without needing to know the internal code of the agent they are talking to.
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| `P2PInterface` | `P2PInterface.kt` | Contract for pipelines to participate in P2P calls |
-| `P2PDescriptor` | `P2PDescriptor.kt` | Agent capability description |
-| `P2PRequirements` | `P2PRequirements.kt` | Runtime validation rules |
-| `P2PRequest/Response` | `P2PRequest.kt`, `P2PResponse.kt` | Request/response payloads |
-| `P2PRegistry` | `P2PRegistry.kt` | Agent registry and dispatcher |
-| `P2PHost` | `P2PHost.kt` | Standalone P2P server for Stdio/HTTP |
+---
 
-## Basic Usage
+## Tools vs. Collaborators
 
-### 1. Implement P2PInterface
+- **PCP (Tools)**: An agent using a hammer. (e.g., "Run this command").
+- **P2P (Collaborators)**: An agent asking a coworker for help. (e.g., "Hey AnalysisAgent, can you summarize this CSV for me?").
 
+---
+
+## How it Works: The Registry
+
+Every agent in a TPipe system registers itself with a **P2PDescriptor**. This is the agent's "business card"—it tells everyone else who they are and what they can do.
+
+### 1. Registering your Agent
 ```kotlin
-class MyPipeline : Pipeline(), P2PInterface {
+class AnalystAgent : Pipeline(), P2PInterface {
     init {
         setP2pDescription(P2PDescriptor(
-            agentName = "my-agent",
-            agentDescription = "Does X, Y, Z",
-            transport = P2PTransport(Transport.Tpipe, "my-agent"),
-            requiresAuth = false,
-            usesConverse = true,
-            allowsAgentDuplication = false,
-            allowsCustomContext = false,
-            allowsCustomAgentJson = false,
-            recordsInteractionContext = false,
-            recordsPromptContent = false,
-            allowsExternalContext = false,
-            contextProtocol = ContextProtocol.none
-        ))
-        
-        setP2pRequirements(P2PRequirements(
-            maxTokens = 8192,
-            allowExternalConnections = true
+            agentName = "data-analyst",
+            agentDescription = "I analyze CSV files and provide statistical summaries.",
+            transport = P2PTransport(Transport.Tpipe, "data-analyst") // Reach me locally
         ))
     }
-    
+
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse {
-        // Handle the request
-        val result = MultimodalContent().apply {
-            addText("Processing completed successfully")
-        }
-        return P2PResponse(output = result)
+        // Your analysis logic here
     }
 }
+
+// Add the agent to the office
+P2PRegistry.register(AnalystAgent())
 ```
 
-### 2. Register Agent
-
-```kotlin
-val agent = MyPipeline()
-P2PRegistry.register(agent)
-```
-
-### 3. Call Agent
+### 2. Calling an Agent
+When an LLM needs help, it produces an `AgentRequest`. TPipe's registry then figures out where that agent lives and how to talk to them.
 
 ```kotlin
 val request = AgentRequest(
-    agentName = "my-agent",
-    prompt = "Process this data",
-    content = inputData
+    agentName = "data-analyst",
+    prompt = "Please summarize this sales data."
 )
 
 val response = P2PRegistry.sendP2pRequest(request)
 ```
 
-## Transport Support
+---
 
-TPipe supports multiple transport methods for P2P communication:
+## Cross-Process Communication (Transports)
 
-- **`Transport.Tpipe`**: In-process calls between agents in the same JVM.
-- **`Transport.Http`**: Cross-process calls over a network. Used by the `P2PRegistry` to delegate requests to remote TPipe instances.
-- **`Transport.Stdio`**: Communication via standard input/output. Useful for calling TPipe agents from other languages or command-line tools.
+Collaborators don't have to live in the same app. TPipe supports three main "Transports" for P2P:
 
-## Standalone P2P Hosting
+| Transport | Usage |
+|-----------|-------|
+| **`Tpipe`** | **Local**. The agent is in the same JVM. Fast and simple. |
+| **`Http`** | **Remote**. The agent is on another server. Used for distributed swarms. |
+| **`Stdio`**| **Inter-Language**. The agent is a standalone process (could be written in Python or Rust). |
 
-TPipe can be hosted as a standalone P2P service to receive requests from external processes.
+---
 
-### HTTP Hosting
-Run TPipe with the `--http` flag. External agents can then send `P2PRequest` JSON to the `/p2p` endpoint.
+## Standalone Agent Hosting
 
-### Stdio Hosting
-TPipe provides `P2PStdioHost` for handling requests over standard streams.
-- **One-Shot Mode**: Processes a single JSON request from `stdin` and exits. Run with `--stdio-once`.
-- **Loop Mode**: Processes multiple JSON requests in a loop until "exit" is received. Run with `--stdio-loop`.
+You can turn any TPipe instance into a dedicated agent host.
 
-## Security
+### The Agent Server (HTTP)
+Run your app with the `--http` flag. Any agents you've registered locally are now available to the network via the `/p2p` endpoint.
 
-For remote P2P calls, you can configure a global authentication mechanism in the `P2PRegistry`:
-
-```kotlin
-P2PRegistry.globalAuthMechanism = { authBody ->
-    // Validate the transportAuthBody from the P2PRequest
-    authBody == "secret-token-123"
-}
+### The Agent Script (Stdio)
+Perfect for calling TPipe agents from a shell script or a different language:
+```bash
+echo '{...JSON P2PRequest...}' | java -jar tpipe.jar --stdio-once
 ```
 
-This mechanism is used by both the HTTP and Stdio hosts to validate incoming requests before execution.
+---
 
-## When to Use P2P
+## Safeguarding the Team
 
-- **Agent orchestration**: Multiple agents need to call each other
-- **Team boundaries**: Different teams expose discoverable pipelines  
-- **Remote hosting**: Distribute agents across different servers or containers.
+When agents talk to each other over a network, security is critical.
 
-For simple tool calls within a single agent, use PCP instead. For full pipeline-as-tool scenarios, use P2P.
+- **Requirements**: Every agent can define `P2PRequirements` (e.g., "I only accept requests with less than 8,000 tokens" or "I only accept encrypted connections").
+- **Global Auth**: Use `P2PRegistry.globalAuthMechanism` to set a password for your entire agent network.
+
+---
+
+## Summary
+
+P2P allows you to build **modular AI systems**. Instead of one giant, fragile prompt, you build a team of focused agents that work together, share data securely, and can be scaled independently across your infrastructure.

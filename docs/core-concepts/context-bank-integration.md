@@ -1,272 +1,93 @@
-# ContextBank - Global Context Integration
+# Managing Global Context with ContextBank
 
-## Table of Contents
-- [What is ContextBank?](#what-is-contextbank)
-- [Core ContextBank Operations](#core-contextbank-operations)
-- [Storage Modes](#storage-modes)
-- [Cache and Eviction Management](#cache-and-eviction-management)
-- [Remote Memory Integration](#remote-memory-integration)
-- [Common Usage Patterns](#common-usage-patterns)
-- [Integration with Pipes](#integration-with-pipes)
-- [Advanced Usage Patterns](#advanced-usage-patterns)
-- [Best Practices](#best-practices)
+In a standard AI application, "memory" is often just a list of previous chat messages. But for complex, multi-agent systems, that's not enough. You need a way for different parts of your application to share knowledge, maintain long-term goals, and coordinate actions without losing track of what's important.
 
-ContextBank is TPipe's global context management system that enables context sharing across pipes, pipelines, and even separate applications. It acts as a centralized repository where context can be stored, retrieved, and shared between different processing stages.
+**ContextBank** is TPipe's centralized knowledge repository. It allows your agents to "drop off" information into named pages and "pick up" that information later, even in a different pipeline or a different session.
 
-## What is ContextBank?
+---
 
-ContextBank is a singleton object that provides:
-- **Global context storage**: Share context across multiple pipes and pipelines
-- **Named context pages**: Store different contexts with unique keys
-- **Thread-safe operations**: Mutex-protected operations for concurrent access
-- **Context persistence**: Maintain context across processing sessions
-- **Remote delegation**: Share context between different TPipe instances
+## The Mental Model: The Central Library
+
+Think of your TPipe application as a research team:
+- **Pipes** are individual researchers.
+- **ContextWindows** are the specific notebooks they carry into a meeting.
+- **ContextBank** is the **Central Library**.
+
+Researchers can check books out of the library (load a page), add new findings to the library (save a page), or even reserve certain sections of the library so they don't get interrupted (locking).
+
+---
+
+## Organizing Knowledge into Pages
+
+Everything in the `ContextBank` is organized by a **Page Key** (a simple string). This allows you to sandbox different types of data:
+
+- `user_profile`: Facts about the person the agent is talking to.
+- `current_tasks`: A shared `TodoList` for the swarm.
+- `system_knowledge`: A `LoreBook` containing technical manuals.
+- `temp_scratchpad`: Short-term observations from a specific pipeline run.
+
+---
+
+## Where does the data live? (Storage Modes)
+
+Not all data is created equal. Some things need to be lightning-fast, while others need to survive a computer crash. You control this using **Storage Modes**:
+
+| Mode | Where is it stored? | Why use it? |
+|------|--------------------|-------------|
+| **`MEMORY_ONLY`** | RAM | For high-speed, temporary data that you don't mind losing on restart. |
+| **`MEMORY_AND_DISK`** | RAM + File | **Default**. Best for important data that needs to be fast and persistent. |
+| **`DISK_ONLY`** | File Only | For massive archives that you rarely access. Saves your RAM. |
+| **`DISK_WITH_CACHE`**| File + Small RAM Cache | The sweet spot for large datasets where you only need a few pages at a time. |
+| **`REMOTE`** | Remote Server | For sharing data between multiple instances of TPipe. |
+
+---
+
+## Practical Scenarios
+
+### Scenario 1: Collaborative Research
+You have two agents: a **SearchAgent** and a **WriteAgent**.
+1. **SearchAgent** finds facts on the web and saves them to a page called `research_facts`.
+2. **WriteAgent** later starts its work, pulls the `research_facts` page, and uses that data to write a report.
 
 ```kotlin
-object ContextBank {
-    // Global context storage with named keys
-    private var bank = mutableMapOf<String, ContextWindow>()
-    
-    // Currently active context window
-    private var bankedContextWindow = ContextWindow()
-}
+// In the SearchAgent transformation function:
+val searchResults = ContextWindow()
+searchResults.addLoreBookEntry("Fact_1", "The sky is blue.")
+ContextBank.emplaceWithMutex("research_facts", searchResults, mode = StorageMode.MEMORY_ONLY)
+
+// In the WriteAgent pre-validation function:
+val facts = ContextBank.getContextFromBank("research_facts")
+contextWindow.merge(facts) // Bring the facts into the current generation
 ```
 
-## Core ContextBank Operations
-
-### Storing Context
-```kotlin
-// Store context with a specific key
-val contextWindow = ContextWindow()
-contextWindow.contextElements.add("Important information to share")
-
-// Thread-safe storage (recommended for pipes)
-ContextBank.emplaceWithMutex("sessionData", contextWindow, mode = StorageMode.MEMORY_AND_DISK)
-```
-
-### Retrieving Context
-```kotlin
-// Get context by key (returns copy by default for safety)
-val retrievedContext = ContextBank.getContextFromBank("sessionData")
-
-// Get the currently active banked context
-val activeContext = ContextBank.getBankedContextWindow()
-val safeCopy = ContextBank.copyBankedContextWindow()
-```
-
-## Storage Modes
-
-ContextBank supports five storage modes to control memory and persistence behavior:
-
-| Mode | Behavior | Use Case |
-|------|----------|----------|
-| `MEMORY_ONLY` | Store only in memory. | Temporary data, high-frequency access. |
-| `MEMORY_AND_DISK` | Store in memory and persist to disk (Default). | Standard application state. |
-| `DISK_ONLY` | Store on disk, load on-demand without caching. | Large, infrequently accessed contexts. |
-| `DISK_WITH_CACHE` | Store on disk with memory cache and automatic eviction. | Large datasets with "hot" entries. |
-| `REMOTE` | Delegate storage to a remote memory server. | Shared state between multiple agents. |
-
-## Cache and Eviction Management
-
-When your application handles a large number of context pages, you can use `DISK_WITH_CACHE` mode to keep memory usage under control.
-
-### Configuring the Global Cache
-TPipe allows you to define a global policy for how much memory context pages should consume.
+### Scenario 2: Preventing "Brain Fog" (Scalability)
+If you have thousands of users, you can't keep every user's profile in RAM at once. Use `DISK_WITH_CACHE` to let TPipe manage memory for you:
 
 ```kotlin
+// Set up a global "manager" for the library
 ContextBank.configureCachePolicy(
     CacheConfig(
-        maxMemoryBytes = 100 * 1024 * 1024, // 100MB limit
-        maxEntries = 500,                   // Up to 500 items in RAM
-        evictionPolicy = EvictionPolicy.LRU // Remove least recently used first
+        maxMemoryBytes = 500 * 1024 * 1024, // Keep library size under 500MB
+        evictionPolicy = EvictionPolicy.LRU // Put away the books that haven't been touched in a while
     )
 )
+
+// When a user logs in, TPipe pulls their notebook from the "shelf" (disk)
+// and keeps it on the "table" (RAM) only while it's being used.
+ContextBank.swapBankWithMutex("user_${userId}")
 ```
 
-### Monitoring Cache Performance
-You can monitor the efficiency of your cache settings using `getCacheStatistics`.
+---
 
-```kotlin
-val stats = ContextBank.getCacheStatistics()
-println("Cache Hit Rate: ${stats.cacheHitRate * 100}%")
-println("Total RAM Usage: ${stats.totalMemoryBytes / 1024 / 1024} MB")
-```
+## Best Practices for a Healthy Library
 
-## Remote Memory Integration
+1. **Use Mutexes**: Always use `emplaceWithMutex` or `swapBankWithMutex` inside pipes. This ensures that if two things try to update the library at once, they wait their turn instead of causing a mess.
+2. **Keep it Clean**: If a piece of data is only useful for one specific run, use `MEMORY_ONLY`. Don't clutter your disk with temporary logs.
+3. **Be Specific with Keys**: Instead of a page named `data`, use `session_123_intent_analysis`. This makes debugging and inspection much easier.
 
-ContextBank can be configured to delegate its operations to a remote TPipe server, enabling distributed agent coordination.
-
-```kotlin
-// Connect to a remote memory host
-ContextBank.connectToRemoteMemory(
-    url = "https://memory.example.com",
-    token = "secure-token",
-    useGlobally = true
-)
-```
-
-For more details, see the **[Remote Memory System](../advanced-concepts/remote-memory.md)** guide.
-
-## Common Usage Patterns
-
-### Pattern 1: Temporary Context Storage
-```kotlin
-// Store intermediate results for later use
-suspend fun storeChapterContent(content: MultimodalContent): MultimodalContent {
-    val chapterWindow = ContextWindow()
-    chapterWindow.contextElements.add(content.text)
-    
-    // Store for use by other pipes in the pipeline
-    ContextBank.emplaceWithMutex("prevChapter", chapterWindow, mode = StorageMode.MEMORY_ONLY)
-    return content
-}
-```
-
-### Pattern 2: Context Retrieval and Processing
-```kotlin
-// Retrieve stored context for validation or processing
-suspend fun validateWithStoredContext(content: MultimodalContent): Boolean {
-    val prevChapter = ContextBank.getContextFromBank("prevChapter")
-    
-    // Use stored context for validation logic
-    if (prevChapter.contextElements.isNotEmpty()) {
-        val previousContent = prevChapter.contextElements[0]
-        return validateConsistency(content.text, previousContent)
-    }
-    
-    return true
-}
-```
-
-### Pattern 3: Context Merging and Updates
-```kotlin
-// Merge contexts and update global state
-suspend fun mergeAndUpdateContext(content: MultimodalContent): MultimodalContent {
-    val prevChapter = ContextBank.getContextFromBank("prevChapter")
-    val mainBank = ContextBank.getContextFromBank("main")
-
-    // Merge previous chapter into main context
-    mainBank.merge(prevChapter)
-    ContextBank.emplaceWithMutex("main", mainBank, mode = StorageMode.MEMORY_AND_DISK)
-
-    return content
-}
-```
-
-## Integration with Pipes
-
-### Transformation Functions
-```kotlin
-val pipe = BedrockPipe()
-    .setTransformationFunction { content ->
-        // Store results in global context for other pipes
-        val resultWindow = ContextWindow()
-        resultWindow.contextElements.add(content.text)
-
-        runBlocking {
-            ContextBank.emplaceWithMutex("analysisResults", resultWindow, mode = StorageMode.MEMORY_ONLY)
-        }
-        content
-    }
-```
-
-### Pipeline Context Sharing
-```kotlin
-// Pipeline 1: Analysis pipeline
-val analysisPipeline = Pipeline()
-    .add(BedrockPipe()
-        .setTransformationFunction { content ->
-            val analysisWindow = ContextWindow()
-            analysisWindow.addLoreBookEntry("analysis", content.text, weight = 10)
-
-            runBlocking {
-                ContextBank.emplaceWithMutex("analysisData", analysisWindow, mode = StorageMode.MEMORY_AND_DISK)
-            }
-            content
-        }
-    )
-
-// Pipeline 2: Generation pipeline
-val generationPipeline = Pipeline()
-    .add(BedrockPipe()
-        .setPreValidationFunction { contextWindow, content ->
-            // Retrieve analysis results from global context
-            val analysisData = ContextBank.getContextFromBank("analysisData")
-
-            // Merge analysis context into current context
-            contextWindow.merge(analysisData)
-            contextWindow
-        }
-    )
-```
-
-## Advanced Usage Patterns
-
-### Multi-Stage Processing
-```kotlin
-// Stage 1: Initial processing
-suspend fun initialProcessing(content: MultimodalContent): MultimodalContent {
-    val processedWindow = ContextWindow()
-    processedWindow.contextElements.add("Stage 1: ${content.text}")
-    ContextBank.emplaceWithMutex("stage1Results", processedWindow, StorageMode.MEMORY_ONLY)
-    return content
-}
-
-// Stage 2: Enhanced processing using Stage 1 results
-suspend fun enhancedProcessing(content: MultimodalContent): MultimodalContent {
-    val stage1Results = ContextBank.getContextFromBank("stage1Results")
-    val enhancedWindow = ContextWindow()
-
-    enhancedWindow.contextElements.addAll(stage1Results.contextElements)
-    enhancedWindow.contextElements.add("Stage 2: ${content.text}")
-
-    ContextBank.emplaceWithMutex("finalResults", enhancedWindow, StorageMode.MEMORY_AND_DISK)
-    return content
-}
-```
-
-### Error Recovery with Context
-```kotlin
-suspend fun processWithRecovery(content: MultimodalContent): MultimodalContent {
-    try {
-        // Store original content for recovery
-        val backupWindow = ContextWindow()
-        backupWindow.contextElements.add(content.text)
-        ContextBank.emplaceWithMutex("backup", backupWindow, StorageMode.MEMORY_ONLY)
-
-        return processContent(content)
-    } catch (e: Exception) {
-        // Recover from backup if processing fails
-        val backup = ContextBank.getContextFromBank("backup")
-        return MultimodalContent(text = backup.contextElements.firstOrNull() ?: "Recovery failed")
-    }
-}
-```
-
-## Best Practices
-
-### 1. Always Use Mutex Operations in Pipes
-```kotlin
-// Good: Thread-safe operations
-ContextBank.emplaceWithMutex("key", contextWindow, mode = StorageMode.MEMORY_AND_DISK)
-ContextBank.swapBankWithMutex("key")
-```
-
-### 2. Choose the Right Storage Mode
-Use `DISK_WITH_CACHE` for large knowledge bases and `MEMORY_ONLY` for transient session state to optimize performance and resource usage.
-
-### 3. Handle Missing Context Gracefully
-```kotlin
-val context = ContextBank.getContextFromBank("optionalData")
-if (context.isEmpty()) {
-    initializeDefaultContext()
-} else {
-    processWithContext(context)
-}
-```
+---
 
 ## Next Steps
 
-Now that you understand global context management, learn about remote coordination:
-
-**→ [Remote Memory System](../advanced-concepts/remote-memory.md)** - Distributed memory
+- Learn about **[Remote Memory](../advanced-concepts/remote-memory.md)** to share your library across servers.
+- Dive into **[Page Keys and Global Context](page-keys-and-global-context.md)** for advanced organization.

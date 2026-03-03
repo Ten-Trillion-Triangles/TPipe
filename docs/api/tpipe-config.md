@@ -1,117 +1,47 @@
-# TPipeConfig Object API
+# TPipeConfig API Reference
 
-## Table of Contents
-- [Overview](#overview)
-- [Public Properties](#public-properties)
-- [Remote Memory Settings](#remote-memory-settings)
-- [Public Functions](#public-functions)
-- [Usage Examples](#usage-examples)
-- [Integration Points](#integration-points)
-- [Best Practices](#best-practices)
+`TPipeConfig` is the global control panel for your TPipe environment. It defines where your data is stored on disk, how your memory cluster is configured, and how individual instances of TPipe identify themselves.
 
-## Overview
+---
 
-`TPipeConfig` is a singleton object that manages TPipe's file system configuration, directory structure, and remote memory settings. It provides centralized control over where TPipe stores persistent data and enables instance isolation to prevent conflicts when running multiple TPipe applications.
-
-```kotlin
-object TPipeConfig
-```
-
-**Key responsibilities:**
-- Define the base configuration directory (default: `~/.tpipe`)
-- Provide instance isolation through unique instance IDs
-- Generate paths for different storage types (lorebooks, todo lists, traces)
-- Configure remote memory hosting and access
-- Control memory versioning and security policies
-
-## Public Properties
-
-### `configDir`
-```kotlin
-var configDir: String = "${getHomeFolder()}/.tpipe"
-```
-The base directory where TPipe stores all persistent data.
+## Filesystem & Instance Control
 
 ### `instanceID`
-```kotlin
-var instanceID: String = "TPipe-Default"
-```
-Unique identifier for this TPipe instance, used as a subdirectory under `configDir`. Prevents multiple TPipe applications from interfering with each other's stored data.
+A string that uniquely identifies this TPipe application.
+- **Why it matters**: If you run two different TPipe apps on the same machine, they will overwrite each other's data unless they have different `instanceID`s.
+- **Default**: `"TPipe-Default"`
 
-## Remote Memory Settings
+### `configDir`
+The root directory for all TPipe data.
+- **Default**: `~/.tpipe`
 
-These properties control how TPipe interacts with remote memory servers and handles distributed state.
+---
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `remoteMemoryEnabled` | `Boolean` | `false` | Enables remote memory delegation logic. |
-| `remoteMemoryUrl` | `String` | `"http://localhost:8080"` | Base URL of the remote memory server. |
-| `remoteMemoryAuthToken` | `String` | `""` | Token sent in the `Authorization` header for remote requests. |
-| `useRemoteMemoryGlobally` | `Boolean` | `false` | If true, all memory operations delegate to remote by default. |
-| `enforceMemoryVersioning` | `Boolean` | `false` | If true, the server rejects writes with outdated versions. |
+## Distributed Memory Cluster Settings
 
-## Public Functions
+These properties control how your agent interacts with a **[Remote Memory System](../advanced-concepts/remote-memory.md)**.
 
-### `getTPipeConfigDir(): String`
-Returns the complete configuration directory path including instance ID.
-**Example:** `~/.tpipe/TPipe-Default`
+| Property | Default | Purpose |
+|----------|---------|---------|
+| `remoteMemoryEnabled` | `false` | Set to `true` to enable the networking code for memory sharing. |
+| `remoteMemoryUrl` | `localhost:8080` | The location of your **Source of Truth** server. |
+| `remoteMemoryAuthToken` | `""` | The shared secret used to keep your data private. |
+| `useRemoteMemoryGlobally` | `false` | If true, your agent becomes "stateless"—it will never save to local disk, only to the server. |
+| `enforceMemoryVersioning` | `false` | If true, the server will reject updates from agents who are working with outdated data. |
 
-### `getMemoryDir(): String`
-Returns the directory where TPipe stores persistent memory data.
+---
 
-### `getLorebookDir(): String`
-Returns the directory where lorebook data (`.bank` files) is persisted.
+## Directory Path Helpers
 
-### `getTodoListDir(): String`
-Returns the directory where todo lists (`.todo` files) are persisted.
+While you can set these manually, TPipe provides helpers to ensure consistent file organization:
 
-### `getDebugDir(): String`
-Returns the directory where debug data is stored.
+- `getMemoryDir()`: Base path for all context and tasks.
+- `getLorebookDir()`: Where `.bank` files are saved.
+- `getTodoListDir()`: Where `.todo` files are saved.
+- `getTraceDir()`: Where execution logs and HTML traces are generated.
 
-### `getTraceDir(): String`
-Returns the directory where execution traces are stored.
+---
 
-## Usage Examples
-
-### Custom Configuration Directory
-Change where TPipe stores all data:
-```kotlin
-TPipeConfig.configDir = "/opt/myapp/tpipe-data"
-```
-
-### Instance Isolation
-Run multiple TPipe applications simultaneously:
-```kotlin
-// Application 1
-TPipeConfig.instanceID = "WebService-API"
-
-// Application 2 (different process)
-TPipeConfig.instanceID = "BackgroundWorker"
-```
-
-### Remote Memory Setup
-```kotlin
-TPipeConfig.remoteMemoryEnabled = true
-TPipeConfig.remoteMemoryUrl = "https://memory-cluster.internal"
-TPipeConfig.remoteMemoryAuthToken = "secret-token-xyz"
-TPipeConfig.useRemoteMemoryGlobally = true
-```
-
-## Integration Points
-
-### ContextBank
-ContextBank uses `TPipeConfig` for all disk persistence and remote delegation. All lorebook and todo list paths are generated via this singleton.
-
-### Debug and Tracing
-Trace output uses `TPipeConfig` for file locations, typically storing them under `~/.tpipe/debug/trace`.
-
-## Best Practices
-
-### Set Configuration Early
-Configure `TPipeConfig` before using any persistence features or starting pipes.
-
-### Use Meaningful Instance IDs
-Choose descriptive instance IDs (e.g., `Prod-Agent-01`) to make disk-based troubleshooting easier.
-
-### Validate Custom Paths
-Ensure custom directories are writable by the application process to avoid runtime exceptions during memory persistence.
+## See Also
+- [Conceptual Guide: Command-Line Reference](../getting-started/cli-reference.md)
+- [Conceptual Guide: Remote Memory System](../advanced-concepts/remote-memory.md)

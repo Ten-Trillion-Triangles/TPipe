@@ -1,112 +1,112 @@
-# Remote Memory System
+# Sharing State with Remote Memory
 
-The Remote Memory system allows multiple TPipe instances to share context windows, todo lists, and locks in real-time. This enables distributed agent architectures where separate processes can coordinate through a centralized memory state.
+When you're building a single agent, keeping track of what's happened is easy—it all lives in one process. But what happens when you have a swarm of agents, or a complex pipeline distributed across multiple servers? How do they share their "thoughts," "lessons learned," and "todo lists" without constantly passing massive JSON objects back and forth?
 
-## Overview
+TPipe's **Remote Memory System** is the solution. It turns your local `ContextBank` into a distributed data store, allowing independent TPipe instances to read and write to a shared state in real-time.
 
-Remote Memory works via a client-server architecture:
-- **Memory Server**: A TPipe instance acting as a host, exposing REST endpoints for memory operations.
-- **Memory Client**: TPipe instances configured to delegate their memory operations to a remote server.
+---
 
-## Hosting a Memory Server
+## The Mental Model: Shared Notebooks
 
-You can start a TPipe instance as a memory server using either the command line or the API.
+Imagine each of your agents has a notebook (a `ContextWindow`).
+- **Without Remote Memory**: Each agent has its own private notebook. If Agent A learns something, Agent B has no way of knowing unless Agent A specifically tells them.
+- **With Remote Memory**: All agents are working out of a shared filing cabinet. When Agent A writes a new page, Agent B can pull that same page a millisecond later, even if they're running on a completely different machine.
 
-### Via Command Line
-Start the application with the `--remote-memory` or `--http` flag:
+---
+
+## Setting Up Your Shared Filing Cabinet (The Server)
+
+To start sharing memory, one TPipe instance needs to act as the "Source of Truth" (the Memory Server).
+
+### 1. Launch from the CLI
+The easiest way to start a server is using a simple flag. This is great for Docker containers or quick local testing.
 ```bash
 java -jar tpipe.jar --remote-memory
 ```
-By default, this starts a Netty server on port 8080.
+*This starts a server on port 8080 by default.*
 
-### Via API
-Call `enableRemoteHosting` on the `ContextBank`:
+### 2. Launch from your Code
+If you want to integrate the server into your existing application:
 ```kotlin
-// Starts a memory server on port 8080
+// Start the memory server on a specific port
 ContextBank.enableRemoteHosting(port = 8080)
 ```
 
-## Connecting to a Remote Server
+---
 
-To use a remote memory server, you must configure your TPipe instance to point to the host.
+## Connecting Your Agents (The Clients)
 
-### Configuration Settings
-Update `TPipeConfig` to match your server's details:
+Once your server is running, your agents need to know where to find it. You can configure this globally so that every memory operation automatically goes to the server.
 
-| Property | Default | Description |
-|----------|---------|-------------|
-| `remoteMemoryEnabled` | `false` | Must be `true` to enable remote delegation. |
-| `remoteMemoryUrl` | `http://localhost:8080` | The base URL of the memory server. |
-| `remoteMemoryAuthToken` | `""` | Optional token for authentication. |
-| `useRemoteMemoryGlobally` | `false` | If true, ALL memory operations delegate to remote. |
-| `enforceMemoryVersioning` | `false` | Enables version-based conflict resolution. |
-
-### Connection Helper
-Use the `connectToRemoteMemory` helper for quick setup:
+### The "Set and Forget" Method
+Use this helper to quickly point your agent at the shared server:
 ```kotlin
 ContextBank.connectToRemoteMemory(
-    url = "https://memory.example.com",
-    token = "your-secret-token",
-    useGlobally = true
+    url = "https://memory.agent-swarm.local",
+    token = "your-secure-auth-token",
+    useGlobally = true // Every emplace/get will now use the server
 )
 ```
 
-## Using Remote Storage
-
-Remote storage can be applied globally or on a per-key basis.
-
-### Global Delegation
-When `TPipeConfig.useRemoteMemoryGlobally` is set to `true`, every call to `ContextBank` or `ContextLock` will automatically use the `MemoryClient` to talk to the remote server.
-
-### Per-Key Delegation
-You can specify `StorageMode.REMOTE` when emplacing data to force it onto the remote server even if global delegation is disabled:
+### The "Hybrid" Method
+Sometimes you want some memory to be local (fast, private) and some to be remote (shared). You can do this by setting the **Storage Mode** on a per-key basis:
 
 ```kotlin
-val sharedWindow = ContextWindow()
-sharedWindow.addLoreBookEntry("shared_fact", "This is visible to all agents.")
+// This context stays on this machine only
+ContextBank.emplace("my_private_thoughts", localWindow, mode = StorageMode.MEMORY_ONLY)
 
-// This specific key will be stored remotely
-ContextBank.emplace("global_state", sharedWindow, mode = StorageMode.REMOTE)
+// This context is instantly visible to the whole swarm
+ContextBank.emplace("global_knowledge", sharedWindow, mode = StorageMode.REMOTE)
 ```
 
-## Memory Versioning and Conflict Resolution
+---
 
-When multiple agents modify the same remote context window simultaneously, race conditions can occur. TPipe uses a versioning system to prevent accidental overwrites.
+## Safe Collaborations: Versioning & Conflicts
 
-### How it Works
-1. Each `ContextWindow` and `TodoList` has a `version` field (Long).
-2. When `enforceMemoryVersioning` is enabled, the server rejects POST requests where the incoming version is lower than the server's version.
-3. On successful writes, the server increments the version.
+When two agents try to write to the same shared page at the exact same time, there's a risk that one will overwrite the other's work. TPipe handles this using **Versioned Memory**.
 
-### The Fetch-Merge-Save Pattern
-To resolve versioning conflicts, use the `fetchMergeSaveRemoteContext` helper. It pulls the latest state, merges it with your local changes, and attempts the save again.
+### The "Fetch-Merge-Save" Pattern
+TPipe provides a built-in pattern to ensure you never lose data. Instead of blindly overwriting a page, your agent should:
+1. **Fetch** the latest version from the server.
+2. **Merge** their new information into it.
+3. **Save** it back.
+
+The `fetchMergeSaveRemoteContext` helper does all of this for you in one safe operation:
 
 ```kotlin
-val myUpdates = ContextWindow()
-myUpdates.contextElements.add("New observation")
+val newObservation = ContextWindow()
+newObservation.contextElements.add("I noticed the user is interested in sports.")
 
-// Safely update the remote key "agent_log"
-val success = ContextBank.fetchMergeSaveRemoteContext("agent_log", myUpdates)
+// This safely updates the 'user_profile' page on the server,
+// ensuring any changes made by other agents are preserved.
+ContextBank.fetchMergeSaveRemoteContext("user_profile", newObservation)
 ```
 
-## Security and Authentication
+---
 
-### Transport Authentication
-The memory server uses the same `globalAuthMechanism` as the P2P system. You can define a custom lambda to validate the `Authorization` header:
+## Security: Protecting Your Swarm's Thoughts
 
-```kotlin
-P2PRegistry.globalAuthMechanism = { authToken ->
-    // Validate the token against your database or environment
-    authToken == System.getenv("TPIPE_SECRET")
-}
-```
+Sharing memory over a network requires safety. TPipe uses a **Global Authentication Mechanism** to protect your data.
 
-### Client Credentials
-Clients must provide the matching token in `TPipeConfig.remoteMemoryAuthToken`. This token is sent in the `Authorization` header of every REST request.
+1. **On the Server**: Define how to validate incoming requests.
+   ```kotlin
+   P2PRegistry.globalAuthMechanism = { token ->
+       token == "super-secret-swarm-key"
+   }
+   ```
 
-## Supported Memory Features
+2. **On the Client**: Provide that key in your config.
+   ```kotlin
+   TPipeConfig.remoteMemoryAuthToken = "super-secret-swarm-key"
+   ```
 
-The following systems are fully supported over remote memory:
-- **ContextBank**: Store and retrieve named `ContextWindow` objects.
-- **TodoList**: Share task lists and track completions across agents.
-- **ContextLock**: Distributed locking to prevent multiple agents from accessing specific context pages or keys simultaneously.
+Now, any request without the correct token will be rejected, keeping your agent's internal state safe from unauthorized access.
+
+---
+
+## Summary: When to use Remote Memory?
+
+- ✅ **Multi-Agent Systems**: When agents need to coordinate on a single task.
+- ✅ **Stateless Containers**: When your agents run in ephemeral environments (like AWS Lambda or Kubernetes) and need to persist their state somewhere else.
+- ✅ **Real-time Collaboration**: When one agent provides tools (PCP) that update state for another agent.
+- ❌ **Single-Process Apps**: If everything is in one JVM, standard local memory is faster and simpler.
