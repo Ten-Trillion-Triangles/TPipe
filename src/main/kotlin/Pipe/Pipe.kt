@@ -6,6 +6,9 @@ import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ConverseRole
 import com.TTT.Context.Dictionary
+import com.TTT.Context.MemoryIntrospection
+import com.TTT.Context.MemoryIntrospectionConfig
+import com.TTT.Context.MemoryIntrospectionTools
 import com.TTT.Context.MiniBank
 import com.TTT.Debug.*
 import com.TTT.Debug.EventPriorityMapper
@@ -1175,6 +1178,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     @kotlinx.serialization.Transient
     protected var traceConfig = TraceConfig()
     protected var pipeId = UUID.randomUUID().toString()
+
+    /**
+     * Configuration for memory introspection tools. If non-null, introspection tools
+     * will be enabled and restricted by this config.
+     */
+    @kotlinx.serialization.Transient
+    protected var memoryIntrospectionConfig: MemoryIntrospectionConfig? = null
 
     /**
      * Set of active trace IDs for this pipe. Allows casting trace events to multiple streams.
@@ -3664,6 +3674,19 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
     /**
+     * Enables memory introspection tools for this pipe with the specified configuration.
+     * These tools allow agents to query and manage the lorebook and memory system.
+     *
+     * @param config The security "leash" configuration for introspection
+     * @return This Pipe object for method chaining
+     */
+    fun enableMemoryIntrospection(config: MemoryIntrospectionConfig = MemoryIntrospectionConfig()): Pipe
+    {
+        memoryIntrospectionConfig = config
+        return this
+    }
+
+    /**
      * Sets the pcp description which can be used to override the default description.
      */
     fun setPcPDescription(description: String) : Pipe
@@ -3711,8 +3734,19 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             )
         }
         
-        // Execute with actual pipe context (fixes dispatcher wiring issue)
-        return pcpDispatcher.executeRequests(parseResult.requests, pcpContext)
+        // Execute with actual pipe context and apply introspection leash if enabled
+        val config = memoryIntrospectionConfig
+        return if (config != null)
+        {
+            MemoryIntrospection.withCoroutineScope(config)
+            {
+                pcpDispatcher.executeRequests(parseResult.requests, pcpContext)
+            }
+        }
+        else
+        {
+            pcpDispatcher.executeRequests(parseResult.requests, pcpContext)
+        }
     }
 
     /**
@@ -4112,6 +4146,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          
          reasoningPipe?.init()
          reasoningPipe?.pipelineRef = pipelineRef
+
+         // Enable memory introspection tools if configured
+         memoryIntrospectionConfig?.let {
+             MemoryIntrospectionTools.registerAndEnable(pcpContext)
+         }
 
          //Force name the pipe for sanity when debugging issues of nested reasoning.
          if(isReasoningPipe())
