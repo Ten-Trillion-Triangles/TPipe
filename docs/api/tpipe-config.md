@@ -8,7 +8,7 @@
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `configDir` | String | `~/.tpipe` | Base directory for all persistent TPipe data. |
+| `configDir` | String | `~/.tpipe` | Base path for all persistent TPipe data. |
 | `instanceID`| String | `TPipe-Default` | Subdirectory identifier for instance isolation. |
 | `remoteMemoryEnabled` | Boolean | `false` | Enables remote delegation features in ContextBank. |
 | `remoteMemoryUrl` | String | `localhost:8080`| URL of the centralized Memory Server. |
@@ -22,11 +22,11 @@
 
 These functions return absolute paths based on the current `configDir` and `instanceID`.
 
-- **`getTPipeConfigDir()`**: Root for this instance.
-- **`getMemoryDir()`**: Base for all shared state.
+- **`getTPipeConfigDir()`**: Root directory for this specific instance.
+- **`getMemoryDir()`**: Base path for all shared state (lorebooks, tasks).
 - **`getLorebookDir()`**: Directory for `.bank` files.
 - **`getTodoListDir()`**: Directory for `.todo` files.
-- **`getTraceDir()`**: Where execution traces are generated.
+- **`getTraceDir()`**: Where HTML execution traces are generated.
 
 ---
 

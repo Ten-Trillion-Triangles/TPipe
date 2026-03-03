@@ -144,7 +144,7 @@ println(result.text)
 - **Multi-Stream and Independent Tracing** for parallel pipelines and complex orchestration
 - **Cross-region inference** with automatic profile binding for AWS Bedrock
 - **Service tier optimization** for AWS Bedrock (Reserved, Priority, Standard, Flex)
-- **Secure Sandboxing** with AST-based Python validation and SSRF/DNS-rebinding protection
+- **Secure sandboxing** for tools with AST-based Python validation and SSRF protection
 
 ## Requirements
 
