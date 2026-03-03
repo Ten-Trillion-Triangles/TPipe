@@ -8,6 +8,8 @@
 - [P2PRequirements](#p2prequirements)
 - [P2PRegistry](#p2pregistry)
 - [P2PHost](#p2phost)
+- [Supporting Classes](#supporting-classes)
+- [Enums](#enums)
 
 ## Overview
 
@@ -43,31 +45,60 @@ data class P2PDescriptor(
 )
 ```
 
+### Key Properties
+- `agentName` - Unique agent identifier.
+- `agentDescription` - Human-readable capability description.
+- `transport` - P2PTransport defining connection method and address.
+- `contextProtocol` - Supported protocol (pcp, mcp, provider, none).
+- `supportedContentTypes` - Accepted MIME types (text, image, etc.).
+
 ### P2PTransport
 Defines how to reach an agent.
 - `transportMethod`: `Transport.Tpipe`, `Transport.Http`, or `Transport.Stdio`.
 - `transportAddress`: The identifier, URL, or executable path.
-- `transportAuthBody`: Credentials for this specific transport.
+- `transportAuthBody`: Credentials for this specific transport (e.g., Bearer token).
 
 ---
 
 ## P2PRequest
 
 Request object for agent communication.
-- `transport`: Target agent address.
-- `returnAddress`: Response routing information.
-- `prompt`: `MultimodalContent` request data.
-- `context`: Optional `ContextWindow` injection.
+
+```kotlin
+@Serializable
+data class P2PRequest(
+    var transport: P2PTransport = P2PTransport(),
+    var returnAddress: P2PTransport = P2PTransport(),
+    var prompt: MultimodalContent = MultimodalContent(),
+    var authBody: String = "",
+    var contextExplanationMessage: String = "",
+    var context: ContextWindow? = null,
+    var customContextDescriptions: MutableMap<String, String>? = null,
+    var pcpRequest: PcPRequest? = null,
+    var inputSchema: CustomJsonSchema? = null,
+    var outputSchema: CustomJsonSchema? = null
+)
+```
+
+### Properties
+- `prompt`: The multimodal content of the request.
+- `context`: Optional `ContextWindow` injection for external knowledge.
 - `authBody`: Authentication credentials.
-- `pcpRequest`: Optional `PcPRequest` for tool execution.
+- `pcpRequest`: Optional `PcPRequest` for PCP tool calls.
 
 ---
 
 ## P2PResponse
 
 Response object containing execution results or rejection information.
-- `output`: Successful execution result as `MultimodalContent`.
-- `rejection`: `P2PRejection` if the request failed validation or execution.
+
+```kotlin
+@Serializable
+data class P2PResponse(
+    var output: MultimodalContent? = null,
+    var rejection: P2PRejection? = null
+)
+```
 
 ### P2PRejection
 - `errorType`: `auth`, `prompt`, `json`, `content`, `transport`, or `none`.
@@ -108,8 +139,8 @@ Singleton registry managing agent registration and request routing.
 
 ### Public Functions
 - `register(agent: P2PInterface)`: Registers a local agent.
-- `executeP2pRequest(request: P2PRequest)`: Processes an incoming request.
-- `sendP2pRequest(request: AgentRequest)`: Dispatches a request to a local or remote agent based on the registry.
+- `executeP2pRequest(request: P2PRequest)`: Processes an incoming request with full validation and routing.
+- `sendP2pRequest(request: AgentRequest)`: Dispatches a request based on simplified LLM-generated input.
 
 ---
 
@@ -119,8 +150,26 @@ Hosts for standalone P2P execution.
 
 ### `P2PStdioHost` (Object)
 Handles P2P requests over standard streams.
-- `runOnce()`: Processes one request and exits.
-- `runLoop()`: Processes requests in a loop until "exit".
+- `runOnce()`: Processes one `P2PRequest` JSON from `stdin` and exits.
+- `runLoop()`: Processes multiple requests in a loop until "exit".
 
 ### HTTP Hosting
-Handled via the Ktor module in `Application.kt`. Responds to `POST /p2p` with a `P2PRequest` body.
+Accessible via `POST /p2p` when the TPipe host is running in HTTP mode (using `--http`).
+
+---
+
+## Supporting Classes
+
+### CustomJsonSchema
+Dynamic JSON schema container for request/output customization.
+
+### AgentRequest
+Simplified request format for LLM-generated agent calls.
+
+## Enums
+
+### ContextProtocol
+`pcp`, `mcp`, `provider`, `none`.
+
+### SupportedContentTypes
+`text`, `image`, `video`, `audio`, `application`, `other`, `none`.

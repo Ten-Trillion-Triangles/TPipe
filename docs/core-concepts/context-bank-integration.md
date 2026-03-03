@@ -111,6 +111,111 @@ suspend fun validateWithStoredContext(content: MultimodalContent): Boolean {
 }
 ```
 
+### Pattern 3: Context Merging and Updates
+```kotlin
+// Merge contexts and update global state
+suspend fun mergeAndUpdateContext(content: MultimodalContent): MultimodalContent {
+    val prevChapter = ContextBank.getContextFromBank("prevChapter")
+    val mainBank = ContextBank.getContextFromBank("main")
+
+    // Merge previous chapter into main context
+    mainBank.merge(prevChapter)
+    ContextBank.emplaceWithMutex("main", mainBank, mode = StorageMode.MEMORY_AND_DISK)
+
+    return content
+}
+```
+
+## Integration with Pipes
+
+### Transformation Functions
+```kotlin
+val pipe = BedrockPipe()
+    .setTransformationFunction { content ->
+        // Store results in global context for other pipes
+        val resultWindow = ContextWindow()
+        resultWindow.contextElements.add(content.text)
+
+        runBlocking {
+            ContextBank.emplaceWithMutex("analysisResults", resultWindow, mode = StorageMode.MEMORY_ONLY)
+        }
+        content
+    }
+```
+
+### Pipeline Context Sharing
+```kotlin
+// Pipeline 1: Analysis pipeline
+val analysisPipeline = Pipeline()
+    .add(BedrockPipe()
+        .setTransformationFunction { content ->
+            val analysisWindow = ContextWindow()
+            analysisWindow.addLoreBookEntry("analysis", content.text, weight = 10)
+
+            runBlocking {
+                ContextBank.emplaceWithMutex("analysisData", analysisWindow, mode = StorageMode.MEMORY_AND_DISK)
+            }
+            content
+        }
+    )
+
+// Pipeline 2: Generation pipeline
+val generationPipeline = Pipeline()
+    .add(BedrockPipe()
+        .setPreValidationFunction { contextWindow, content ->
+            // Retrieve analysis results from global context
+            val analysisData = ContextBank.getContextFromBank("analysisData")
+
+            // Merge analysis context into current context
+            contextWindow.merge(analysisData)
+            contextWindow
+        }
+    )
+```
+
+## Advanced Usage Patterns
+
+### Multi-Stage Processing
+```kotlin
+// Stage 1: Initial processing
+suspend fun initialProcessing(content: MultimodalContent): MultimodalContent {
+    val processedWindow = ContextWindow()
+    processedWindow.contextElements.add("Stage 1: ${content.text}")
+    ContextBank.emplaceWithMutex("stage1Results", processedWindow, StorageMode.MEMORY_ONLY)
+    return content
+}
+
+// Stage 2: Enhanced processing using Stage 1 results
+suspend fun enhancedProcessing(content: MultimodalContent): MultimodalContent {
+    val stage1Results = ContextBank.getContextFromBank("stage1Results")
+    val enhancedWindow = ContextWindow()
+
+    enhancedWindow.contextElements.addAll(stage1Results.contextElements)
+    enhancedWindow.contextElements.add("Stage 2: ${content.text}")
+
+    ContextBank.emplaceWithMutex("finalResults", enhancedWindow, StorageMode.MEMORY_AND_DISK)
+    return content
+}
+```
+
+### Error Recovery with Context
+```kotlin
+suspend fun processWithRecovery(content: MultimodalContent): MultimodalContent {
+    try {
+        // Store original content for recovery
+        val backupWindow = ContextWindow()
+        backupWindow.contextElements.add(content.text)
+        ContextBank.emplaceWithMutex("backup", backupWindow, StorageMode.MEMORY_ONLY)
+
+        return processContent(content)
+    } catch (e: Exception) {
+        // Recover from backup if processing fails
+        val backup = ContextBank.getContextFromBank("backup")
+        return MultimodalContent(text = backup.contextElements.firstOrNull() ?: "Recovery failed")
+    }
+}
+```
+
 ## Best Practices
 
 ### 1. Always Use Mutex Operations in Pipes
@@ -123,8 +228,15 @@ ContextBank.swapBankWithMutex("key")
 ### 2. Choose the Right Storage Mode
 Use `DISK_WITH_CACHE` for large knowledge bases and `MEMORY_ONLY` for transient session state to optimize performance and resource usage.
 
-### 3. Use Remote Memory for Distributed Swarms
-If you are running multiple independent TPipe processes that need to coordinate, use `StorageMode.REMOTE` or enable global remote memory.
+### 3. Handle Missing Context Gracefully
+```kotlin
+val context = ContextBank.getContextFromBank("optionalData")
+if (context.isEmpty()) {
+    initializeDefaultContext()
+} else {
+    processWithContext(context)
+}
+```
 
 ## Next Steps
 

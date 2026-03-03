@@ -7,6 +7,7 @@
 - [Public Functions](#public-functions)
 - [Usage Examples](#usage-examples)
 - [Integration Points](#integration-points)
+- [Best Practices](#best-practices)
 
 ## Overview
 
@@ -35,7 +36,7 @@ The base directory where TPipe stores all persistent data.
 ```kotlin
 var instanceID: String = "TPipe-Default"
 ```
-Unique identifier for this TPipe instance, used as a subdirectory under `configDir`.
+Unique identifier for this TPipe instance, used as a subdirectory under `configDir`. Prevents multiple TPipe applications from interfering with each other's stored data.
 
 ## Remote Memory Settings
 
@@ -53,6 +54,7 @@ These properties control how TPipe interacts with remote memory servers and hand
 
 ### `getTPipeConfigDir(): String`
 Returns the complete configuration directory path including instance ID.
+**Example:** `~/.tpipe/TPipe-Default`
 
 ### `getMemoryDir(): String`
 Returns the directory where TPipe stores persistent memory data.
@@ -71,10 +73,20 @@ Returns the directory where execution traces are stored.
 
 ## Usage Examples
 
-### Basic Configuration
+### Custom Configuration Directory
+Change where TPipe stores all data:
 ```kotlin
-TPipeConfig.configDir = "/opt/tpipe"
-TPipeConfig.instanceID = "production-agent-1"
+TPipeConfig.configDir = "/opt/myapp/tpipe-data"
+```
+
+### Instance Isolation
+Run multiple TPipe applications simultaneously:
+```kotlin
+// Application 1
+TPipeConfig.instanceID = "WebService-API"
+
+// Application 2 (different process)
+TPipeConfig.instanceID = "BackgroundWorker"
 ```
 
 ### Remote Memory Setup
@@ -88,18 +100,18 @@ TPipeConfig.useRemoteMemoryGlobally = true
 ## Integration Points
 
 ### ContextBank
-ContextBank uses `TPipeConfig` for all disk persistence and remote delegation. See [ContextBank API](context-bank.md).
+ContextBank uses `TPipeConfig` for all disk persistence and remote delegation. All lorebook and todo list paths are generated via this singleton.
 
 ### Debug and Tracing
-Trace output uses `TPipeConfig` for file locations. See [Debug Package API](debug-package.md).
+Trace output uses `TPipeConfig` for file locations, typically storing them under `~/.tpipe/debug/trace`.
 
-## Directory Structure
-```
-~/.tpipe/
-├── TPipe-Default/              # Instance directory
-│   └── memory/                 # Persistent memory storage
-│       ├── lorebook/           # Lorebook persistence (.bank)
-│       └── todo/               # TodoList persistence (.todo)
-└── debug/                      # Debug output (shared)
-    └── trace/                  # Execution traces
-```
+## Best Practices
+
+### Set Configuration Early
+Configure `TPipeConfig` before using any persistence features or starting pipes.
+
+### Use Meaningful Instance IDs
+Choose descriptive instance IDs (e.g., `Prod-Agent-01`) to make disk-based troubleshooting easier.
+
+### Validate Custom Paths
+Ensure custom directories are writable by the application process to avoid runtime exceptions during memory persistence.
