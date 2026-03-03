@@ -1,239 +1,354 @@
 package ollamaPipe
 
 import com.TTT.Debug.*
-import com.TTT.Debug.EventPriorityMapper
 import com.TTT.Enums.ProviderName
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.BinaryContent
+import com.TTT.Pipe.StreamingCallbackBuilder
+import com.TTT.PipeContextProtocol.*
 import com.TTT.Util.*
-import env.Endpoints
-import env.InputParams
-import env.Model
-import env.OllamaOptions
-import env.versionResponce
+import env.*
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import io.ktor.utils.io.*
 import kotlinx.coroutines.*
-
+import kotlinx.serialization.json.*
 
 /**
  * TPipe abstraction for Ollama. Provides access to the Ollama api and TPipe system.
+ *
+ * This implementation supports both /api/generate and /api/chat endpoints,
+ * defaulting to the modern /api/chat API for better structured conversation
+ * and tool calling support.
  */
 @kotlinx.serialization.Serializable
-class OllamaPipe : Pipe() {
+class OllamaPipe : Pipe()
+{
 //================================================ Properties ========================================================//
 
     /**
-     * IP address where Ollama server is running. Commonly this is the hardware that TPipe is running on.
-     * However, it may not be and may need to be changed.
+     * IP address where Ollama server is running.
      */
     @kotlinx.serialization.Serializable
-    private var ip = "127.0.0.1"
+    private var ip: String = "127.0.0.1"
 
     /**
      * Port number where Ollama server is running.
      */
     @kotlinx.serialization.Serializable
-    private var port = 11434
+    private var port: Int = 11434
+
+    /**
+     * Whether to use the modern /api/chat endpoint (true) or legacy /api/generate (false).
+     */
+    @kotlinx.serialization.Serializable
+    private var useChatApi: Boolean = true
+
+    /**
+     * Whether to use streaming for responses.
+     */
+    @kotlinx.serialization.Serializable
+    private var streamingEnabled: Boolean = false
+
+    /**
+     * How long to keep the model loaded in memory after the request.
+     * Default is "5m". Set to "0" to unload immediately, or "-1" to keep indefinitely.
+     */
+    @kotlinx.serialization.Serializable
+    private var keepAlive: String = "5m"
+
+    /**
+     * Whether to enable model thinking/reasoning.
+     */
+    @kotlinx.serialization.Serializable
+    private var think: Boolean = false
     
     /**
-     * Number of tokens to keep from the initial prompt
+     * Number of tokens to keep from the initial prompt.
      */
     @kotlinx.serialization.Serializable
     private var numKeep: Int? = null
     
     /**
-     * Random number seed for reproducibility (Ollama-specific Long type)
+     * Minimum probability for a token to be considered.
      */
     @kotlinx.serialization.Serializable
-    private var ollamaSeed: Long? = null
+    private var minP: Float? = null
     
     /**
-     * Maximum number of tokens to predict when generating text
+     * Typical probability for sampling.
      */
     @kotlinx.serialization.Serializable
-    private var numPredict: Int? = null
-    
-
+    private var typicalP: Float? = null
     
     /**
-     * Minimum probability for a token to be considered
+     * Number of tokens to consider for the repeat penalty.
      */
     @kotlinx.serialization.Serializable
-    private var minP: Float? = 0.05f
-    
-    /**
-     * Typical probability for sampling
-     */
-    @kotlinx.serialization.Serializable
-    private var typicalP: Float? = 1.0f
-    
-    /**
-     * Number of tokens to consider for the repeat penalty
-     */
-    @kotlinx.serialization.Serializable
-    private var repeatLastN: Int? = 64
-    
+    private var repeatLastN: Int? = null
 
     /**
-     * Penalty for repeated tokens
+     * Penalty for new tokens based on their frequency in the text so far.
      */
     @kotlinx.serialization.Serializable
-    private var repeatPenalty: Float? = 1.2f
+    private var frequencyPenalty: Float? = null
     
     /**
-     * Penalty for new tokens based on presence in the text so far (Ollama-specific Float type)
+     * Controls the algorithm used for text generation (0=disabled, 1=Mirostat, 2=Mirostat 2.0).
      */
     @kotlinx.serialization.Serializable
-    private var ollamaPresencePenalty: Float? = 1.5f
+    private var mirostat: Int? = null
     
     /**
-     * Penalty for new tokens based on their frequency in the text so far
+     * Target entropy for Mirostat algorithm.
      */
     @kotlinx.serialization.Serializable
-    private var frequencyPenalty: Float? = 1.0f
+    private var mirostatTau: Float? = null
     
     /**
-     * Controls the algorithm used for text generation (0=disabled, 1=Mirostat, 2=Mirostat 2.0)
+     * Learning rate for Mirostat algorithm.
      */
     @kotlinx.serialization.Serializable
-    private var mirostat: Int? = 1
+    private var mirostatEta: Float? = null
     
     /**
-     * Target entropy for Mirostat algorithm
+     * Whether to penalize newline tokens.
      */
     @kotlinx.serialization.Serializable
-    private var mirostatTau: Float? = 0.8f
+    private var penalizeNewline: Boolean? = null
     
     /**
-     * Learning rate for Mirostat algorithm
+     * Whether to use NUMA optimization.
      */
     @kotlinx.serialization.Serializable
-    private var mirostatEta: Float? = 0.6f
+    private var numa: Boolean? = null
     
     /**
-     * Whether to penalize newline tokens
+     * Context window size in tokens.
      */
     @kotlinx.serialization.Serializable
-    private var penalizeNewline: Boolean? = true
+    private var numCtx: Int? = null
     
     /**
-     * Whether to use NUMA optimization
+     * Batch size for prompt processing.
      */
     @kotlinx.serialization.Serializable
-    private var numa: Boolean? = false
+    private var numBatch: Int? = null
     
     /**
-     * Context window size in tokens
+     * Number of GPU layers to offload to.
      */
     @kotlinx.serialization.Serializable
-    private var numCtx: Int? = 1024
+    private var numGpu: Int? = null
     
     /**
-     * Batch size for prompt processing
+     * Main GPU to use.
      */
     @kotlinx.serialization.Serializable
-    private var numBatch: Int? = 2
+    private var mainGpu: Int? = null
     
     /**
-     * Number of GPUs to use
-     */
-    private var numGpu: Int? = 1
-    
-    /**
-     * Main GPU to use
+     * Whether to use low VRAM mode.
      */
     @kotlinx.serialization.Serializable
-    private var mainGpu: Int? = 0
+    private var lowVram: Boolean? = null
     
     /**
-     * Whether to use low VRAM mode
+     * Whether to only load the vocabulary (no weights).
      */
     @kotlinx.serialization.Serializable
-    private var lowVram: Boolean? = false
+    private var vocabOnly: Boolean? = null
     
     /**
-     * Whether to only load the vocabulary (no weights)
+     * Whether to use memory-mapped files.
      */
     @kotlinx.serialization.Serializable
-    private var vocabOnly: Boolean? = false
+    private var useMmap: Boolean? = null
     
     /**
-     * Whether to use memory-mapped files
+     * Whether to lock the model in memory.
      */
     @kotlinx.serialization.Serializable
-    private var useMmap: Boolean? = true
+    private var useMlock: Boolean? = null
     
     /**
-     * Whether to lock the model in memory
+     * Number of threads to use for generation.
      */
     @kotlinx.serialization.Serializable
-    private var useMlock: Boolean? = false
-    
-    /**
-     * Number of threads to use for generation
-     */
-    @kotlinx.serialization.Serializable
-    private var numThread: Int? = 8
+    private var numThread: Int? = null
 
 //================================================ Builder ===========================================================//
 
-
     /**
-     * Set the IP address of the Ollama server. This is the IP of the machine
-     * that the Ollama server is running on. If this is not specified, it will
-     * default to the IP of the machine that TPipe is running on.
-     *
-     * @param ip The IP address of the Ollama server.
-     * @return This Pipe object for chaining.
+     * Set the IP address of the Ollama server.
+     * @param ip The IP address to set.
+     * @return This pipe instance.
      */
-    fun setIP(ip: String): Pipe {
+    fun setIP(ip: String): OllamaPipe
+    {
         this.ip = ip
+        Endpoints.init(this.ip, this.port)
         return this
     }
 
     /**
-     * Set the port number that the Ollama server is listening on. This is the
-     * port number that the Ollama server is listening on for incoming requests.
-     * If this is not specified, it will default to 11434.
-     *
-     * @param port The port number that the Ollama server is listening on.
-     * @return This Pipe object for chaining.
+     * Set the port number that the Ollama server is listening on.
+     * @param port The port number to set.
+     * @return This pipe instance.
      */
-    fun setPort(port: Int): Pipe {
+    fun setPort(port: Int): OllamaPipe
+    {
         this.port = port
+        Endpoints.init(this.ip, this.port)
+        return this
+    }
+
+    /**
+     * Switches to the legacy /api/generate endpoint.
+     * @return This pipe instance.
+     */
+    fun useLegacyApi(): OllamaPipe
+    {
+        this.useChatApi = false
+        return this
+    }
+
+    /**
+     * Switches to the modern /api/chat endpoint.
+     * @return This pipe instance.
+     */
+    fun useChatApi(): OllamaPipe
+    {
+        this.useChatApi = true
+        return this
+    }
+
+    /**
+     * Enables streaming mode for responses.
+     * @param callback Optional callback for received chunks.
+     * @param showReasoning Whether to enable streaming for reasoning pipes.
+     * @param streamReasoning Whether to emit reasoning chunks to callbacks.
+     * @return This pipe instance.
+     */
+    fun enableStreaming(
+        callback: (suspend (String) -> Unit)? = null,
+        showReasoning: Boolean = false,
+        streamReasoning: Boolean = true
+    ): OllamaPipe
+    {
+        this.streamingEnabled = true
+        this.streamModelReasoning = streamReasoning
+
+        if(callback != null)
+        {
+            setStreamingCallback(callback)
+        }
+
+        if(showReasoning)
+        {
+            val abstractPipe = reasoningPipe as? OllamaPipe
+            abstractPipe?.enableStreaming(callback, true, streamReasoning)
+        }
+
+        return this
+    }
+
+    /**
+     * Disables streaming mode.
+     * @return This pipe instance.
+     */
+    fun disableStreaming(): OllamaPipe
+    {
+        this.streamingEnabled = false
+        streamingCallbackManager?.clearCallbacks()
+        return this
+    }
+
+    /**
+     * Registers a suspendable callback for streaming chunks.
+     * @param callback The callback function.
+     * @return This pipe instance.
+     */
+    fun setStreamingCallback(callback: suspend (String) -> Unit): OllamaPipe
+    {
+        this.streamingEnabled = true
+        obtainStreamingCallbackManager().addCallback(callback)
+        return this
+    }
+
+    /**
+     * Configures multiple streaming callbacks using a builder.
+     * @param builder The configuration builder.
+     * @return This pipe instance.
+     */
+    fun streamingCallbacks(builder: StreamingCallbackBuilder.() -> Unit): OllamaPipe
+    {
+        val callbackBuilder = StreamingCallbackBuilder()
+        callbackBuilder.builder()
+        streamingCallbackManager = callbackBuilder.build()
+        streamingEnabled = true
+        return this
+    }
+
+    /**
+     * Sets how long to keep the model loaded in memory.
+     * @param duration Duration string (e.g., "5m", "1h", "0", "-1").
+     * @return This pipe instance.
+     */
+    fun setKeepAlive(duration: String): OllamaPipe
+    {
+        this.keepAlive = duration
+        return this
+    }
+
+    /**
+     * Enables model thinking/reasoning.
+     * @return This pipe instance.
+     */
+    fun enableThink(): OllamaPipe
+    {
+        this.think = true
+        this.useModelReasoning = true
         return this
     }
     
     /**
      * Sets the minimum probability for token consideration during sampling.
-     * @param minP Minimum probability value (0.0 to 1.0)
-     * @return This Pipe object for chaining
+     * @param minP The minimum probability.
+     * @return This pipe instance.
      */
-    fun setMinP(minP: Float): Pipe {
+    fun setMinP(minP: Float): OllamaPipe
+    {
         this.minP = minP
         return this
     }
     
     /**
      * Sets the typical probability for token sampling.
-     * @param typicalP Typical probability value (0.0 to 1.0)
-     * @return This Pipe object for chaining
+     * @param typicalP The typical probability.
+     * @return This pipe instance.
      */
-    fun setTypicalP(typicalP: Float): Pipe {
+    fun setTypicalP(typicalP: Float): OllamaPipe
+    {
         this.typicalP = typicalP
         return this
     }
     
-
-    
     /**
      * Enables and configures Mirostat sampling.
-     * @param mode 0 = disabled, 1 = Mirostat, 2 = Mirostat 2.0
-     * @param eta Learning rate for Mirostat
-     * @param tau Controls balance between coherence and diversity
-     * @return This Pipe object for chaining
+     * @param mode 0 (disabled), 1 (Mirostat), 2 (Mirostat 2.0).
+     * @param eta Learning rate.
+     * @param tau Target entropy.
+     * @return This pipe instance.
      */
-    fun setMirostat(mode: Int, eta: Float? = null, tau: Float? = null): Pipe {
+    fun setMirostat(mode: Int, eta: Float? = null, tau: Float? = null): OllamaPipe
+    {
         this.mirostat = mode
         eta?.let { this.mirostatEta = it }
         tau?.let { this.mirostatTau = it }
@@ -242,41 +357,45 @@ class OllamaPipe : Pipe() {
     
     /**
      * Sets the number of tokens to consider for repeat penalty.
-     * @param n Number of tokens to consider
-     * @return This Pipe object for chaining
+     * @param n Number of tokens.
+     * @return This pipe instance.
      */
-    fun setRepeatLastN(n: Int): Pipe {
+    fun setRepeatLastN(n: Int): OllamaPipe
+    {
         this.repeatLastN = n
         return this
     }
     
     /**
      * Sets the presence penalty for new tokens.
-     * @param penalty Presence penalty value (0.0 to 2.0)
-     * @return This Pipe object for chaining
+     * @param penalty The penalty value.
+     * @return This pipe instance.
      */
-    fun setPresencePenalty(penalty: Float): Pipe {
-        this.ollamaPresencePenalty = penalty
+    fun setPresencePenalty(penalty: Float): OllamaPipe
+    {
+        this.presencePenalty = penalty.toDouble()
         return this
     }
     
     /**
      * Sets the frequency penalty for new tokens.
-     * @param penalty Frequency penalty value (0.0 to 2.0)
-     * @return This Pipe object for chaining
+     * @param penalty The penalty value.
+     * @return This pipe instance.
      */
-    fun setFrequencyPenalty(penalty: Float): Pipe {
+    fun setFrequencyPenalty(penalty: Float): OllamaPipe
+    {
         this.frequencyPenalty = penalty
         return this
     }
     
     /**
      * Configures GPU settings for model execution.
-     * @param numGpu Number of GPU layers to use (-1 for all)
-     * @param mainGpu Main GPU device to use
-     * @return This Pipe object for chaining
+     * @param numGpu Number of GPU layers to offload to.
+     * @param mainGpu Main GPU to use.
+     * @return This pipe instance.
      */
-    fun setGpuSettings(numGpu: Int, mainGpu: Int? = null): Pipe {
+    fun setGpuSettings(numGpu: Int, mainGpu: Int? = null): OllamaPipe
+    {
         this.numGpu = numGpu
         mainGpu?.let { this.mainGpu = it }
         return this
@@ -284,233 +403,270 @@ class OllamaPipe : Pipe() {
     
     /**
      * Sets the number of threads for generation.
-     * @param numThread Number of threads to use
-     * @return This Pipe object for chaining
+     * @param numThread Number of threads.
+     * @return This pipe instance.
      */
-    fun setNumThread(numThread: Int): Pipe {
+    fun setNumThread(numThread: Int): OllamaPipe
+    {
         this.numThread = numThread
         return this
     }
     
     /**
      * Sets the batch size for prompt processing.
-     * @param batchSize Batch size to use
-     * @return This Pipe object for chaining
+     * @param batchSize The batch size.
+     * @return This pipe instance.
      */
-    fun setBatchSize(batchSize: Int): Pipe {
+    fun setBatchSize(batchSize: Int): OllamaPipe
+    {
         this.numBatch = batchSize
-        return this
-    }
-    
-
-    
-    /**
-     * Sets the random number seed for reproducibility.
-     * @param seed The random seed value
-     * @return This Pipe object for chaining
-     */
-    fun setSeed(seed: Long): Pipe {
-        this.ollamaSeed = seed
-        return this
-    }
-    
-    /**
-     * Sets the maximum number of tokens to predict when generating text.
-     * @param numPredict Maximum number of tokens to generate
-     * @return This Pipe object for chaining
-     */
-    fun setNumPredict(numPredict: Int): Pipe {
-        this.numPredict = numPredict
-        return this
-    }
-
-
-    /**
-     * Configures the repeat penalty for tokens.
-     * @param penalty The repeat penalty value
-     * @return This Pipe object for chaining
-     */
-    fun setRepeatPenalty(penalty: Float): Pipe {
-        this.repeatPenalty = penalty
         return this
     }
     
     /**
      * Configures whether to use NUMA optimization.
-     * @param useNuma Whether to enable NUMA optimization
-     * @return This Pipe object for chaining
+     * @param useNuma Whether to enable NUMA.
+     * @return This pipe instance.
      */
-    fun setNuma(useNuma: Boolean): Pipe {
+    fun setNuma(useNuma: Boolean): OllamaPipe
+    {
         this.numa = useNuma
         return this
     }
     
     /**
      * Configures the context window size in tokens.
-     * @param numCtx Context window size
-     * @return This Pipe object for chaining
+     * @param numCtx The context size.
+     * @return This pipe instance.
      */
-    fun setNumCtx(numCtx: Int): Pipe {
+    fun setNumCtx(numCtx: Int): OllamaPipe
+    {
         this.numCtx = numCtx
         return this
     }
     
     /**
      * Configures whether to use low VRAM mode.
-     * @param lowVram Whether to enable low VRAM mode
-     * @return This Pipe object for chaining
+     * @param lowVram Whether to enable low VRAM.
+     * @return This pipe instance.
      */
-    fun setLowVram(lowVram: Boolean): Pipe {
+    fun setLowVram(lowVram: Boolean): OllamaPipe
+    {
         this.lowVram = lowVram
         return this
     }
     
     /**
      * Configures whether to only load the vocabulary.
-     * @param vocabOnly Whether to only load vocabulary
-     * @return This Pipe object for chaining
+     * @param vocabOnly Whether to enable vocab only.
+     * @return This pipe instance.
      */
-    fun setVocabOnly(vocabOnly: Boolean): Pipe {
+    fun setVocabOnly(vocabOnly: Boolean): OllamaPipe
+    {
         this.vocabOnly = vocabOnly
         return this
     }
     
     /**
      * Configures whether to use memory-mapped files.
-     * @param useMmap Whether to use memory-mapped files
-     * @return This Pipe object for chaining
+     * @param useMmap Whether to use mmap.
+     * @return This pipe instance.
      */
-    fun setUseMmap(useMmap: Boolean): Pipe {
+    fun setUseMmap(useMmap: Boolean): OllamaPipe
+    {
         this.useMmap = useMmap
         return this
     }
     
     /**
      * Configures whether to lock the model in memory.
-     * @param useMlock Whether to lock the model in memory
-     * @return This Pipe object for chaining
+     * @param useMlock Whether to use mlock.
+     * @return This pipe instance.
      */
-    fun setUseMlock(useMlock: Boolean): Pipe {
+    fun setUseMlock(useMlock: Boolean): OllamaPipe
+    {
         this.useMlock = useMlock
         return this
     }
     
     /**
      * Configures whether to penalize newline tokens during generation.
-     * @param penalize Whether to penalize newlines
-     * @return This Pipe object for chaining
+     * @param penalize Whether to penalize newlines.
+     * @return This pipe instance.
      */
-    fun setPenalizeNewline(penalize: Boolean): Pipe {
+    fun setPenalizeNewline(penalize: Boolean): OllamaPipe
+    {
         this.penalizeNewline = penalize
         return this
     }
 
-
 //================================================ Ollama Functions ==================================================//
 
     /**
-     * Assings pipe provider to Ollama, then activates the ollama server if it is not already running.
-     * @return This Pipe object
+     * Initializes the Ollama pipe, checking if the server is running.
+     * @return This pipe instance.
      */
     override suspend fun init(): Pipe
     {
+        Endpoints.init(this.ip, this.port)
+
         trace(TraceEventType.PIPE_START, TracePhase.INITIALIZATION,
               metadata = mapOf(
                   "provider" to "Ollama",
                   "ip" to ip,
                   "port" to port,
-                  "model" to model
+                  "model" to model,
+                  "useChatApi" to useChatApi
               ))
         
-        try {
+        try
+        {
             provider = ProviderName.Ollama
 
-            trace(TraceEventType.API_CALL_START, TracePhase.INITIALIZATION,
-                  metadata = mapOf("step" to "checkServerStatus"))
-            
             // Check if the Ollama server is running.
-            val isRunning = coroutineScope {
-                return@coroutineScope async {
-                    return@async getVersion()
+            val versionInfo = withContext(Dispatchers.IO)
+            {
+                try
+                {
+                    getVersion()
+                }
+                catch(e: Exception)
+                {
+                    null
                 }
             }
 
-            val serverOnline = isRunning.await()
-
-            // If the Ollama server is not running, start it.
-            if(serverOnline == null || serverOnline?.version == "")
+            // If the Ollama server is not running, attempt to start it.
+            if(versionInfo == null || versionInfo.version.isNullOrEmpty())
             {
                 trace(TraceEventType.API_CALL_START, TracePhase.INITIALIZATION,
                       metadata = mapOf("step" to "startOllamaServer"))
                 serve()
+
+                // Wait a bit for server to start
+                delay(2000)
             }
             
             trace(TraceEventType.PIPE_SUCCESS, TracePhase.INITIALIZATION,
-                  metadata = mapOf("serverVersion" to (serverOnline?.version ?: "unknown") as Any))
+                  metadata = mapOf("serverVersion" to (versionInfo?.version ?: "unknown") as Any))
             
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             trace(TraceEventType.PIPE_FAILURE, TracePhase.INITIALIZATION, error = e)
         }
 
         return this
     }
 
+    /**
+     * Truncates context according to model family settings.
+     * @return This pipe instance.
+     */
+    override fun truncateModuleContext(): Pipe
+    {
+        // Configure truncation settings based on model family if known
+        when
+        {
+            model.contains("llama") ->
+            {
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                splitForNonWordChar = true
+                nonWordSplitCount = 2
+            }
+            model.contains("deepseek") ->
+            {
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                splitForNonWordChar = true
+                nonWordSplitCount = 2
+            }
+        }
 
-    override fun truncateModuleContext(): Pipe {
-        TODO("Not yet implemented")
+        if(truncateContextAsString)
+        {
+            contextWindow.combineAndTruncateAsString(
+                userPrompt,
+                contextWindowSize,
+                multiplyWindowSizeBy,
+                contextWindowTruncation,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount
+            )
+        }
+        else
+        {
+            contextWindow.selectAndTruncateContext(
+                userPrompt,
+                contextWindowSize,
+                multiplyWindowSizeBy,
+                contextWindowTruncation,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount
+            )
+        }
+
         return this
     }
 
     /**
-     * Aborts the current Ollama API call. Since Ktor respects coroutine
-     * cancellation, super.abort() will handle the primary cancellation.
+     * Aborts the active generation job.
      */
-    override suspend fun abort() {
+    override suspend fun abort()
+    {
         trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, 
               metadata = mapOf("action" to "abort", "provider" to "Ollama"))
         super.abort()
     }
 
-
     /**
-     * Shell function to start the Ollama server in the event it has not been started already.
-     * This function will start the Ollama server in the background.
+     * Starts the Ollama server in the background.
      */
     fun serve()
     {
-        executeBashCommand("ollama serve")
+        // Run in background to not block
+        CoroutineScope(Dispatchers.IO).launch {
+            executeBashCommand("ollama serve")
+        }
     }
 
-
-
     /**
-     * Generate an [OllamaOptions] object based on the current properties of this Pipe.
-     * This method is used to convert the properties of this Pipe to an object
-     * that can be passed to the Ollama server.
-     *
-     * @return An [OllamaOptions] object that can be passed to the Ollama server.
+     * Generates Ollama options from Pipe properties.
+     * @return Populated OllamaOptions.
      */
-    private fun generateOptions(): OllamaOptions {
+    private fun generateOptions(): OllamaOptions
+    {
         return OllamaOptions(
             numKeep = numKeep,
-            seed = ollamaSeed,
-            numPredict = maxTokens.takeIf { it > 0 },
-            topK = topK.takeIf { it > 0 },
-            topP = topP,
+            seed = seed?.toLong(),
+            numPredict = if(maxTokens > 0) maxTokens else null,
+            topK = if(topK > 0) topK else null,
+            topP = if(topP > 0.0) topP else null,
             minP = minP,
             typicalP = typicalP,
             repeatLastN = repeatLastN,
-            temperature = temperature,
-            repeatPenalty = repeatPenalty,
-            presencePenalty = ollamaPresencePenalty,
+            temperature = if(temperature > 0.0) temperature else null,
+            repeatPenalty = if(repetitionPenalty > 0.0) repetitionPenalty.toFloat() else null,
+            presencePenalty = if(presencePenalty != 0.0) presencePenalty.toFloat() else null,
             frequencyPenalty = frequencyPenalty,
             mirostat = mirostat,
             mirostatTau = mirostatTau,
             mirostatEta = mirostatEta,
             penalizeNewline = penalizeNewline,
-            stop = stopSequences.ifEmpty { null },
+            stop = stopSequences.takeIf { it.isNotEmpty() },
             numa = numa,
-            numCtx = numCtx,
+            numCtx = if(numCtx != null) numCtx else (if(contextWindowSize > 0) contextWindowSize else null),
             numBatch = numBatch,
             numGpu = numGpu,
             mainGpu = mainGpu,
@@ -522,187 +678,22 @@ class OllamaPipe : Pipe() {
         )
     }
 
-    suspend fun generate(inputs: InputParams){
-        var json:String = setJsonInput(inputs, false).jsonInput
-        var post = httpPost(Endpoints.generateEndpoint, json)
-    }
-
-    
-    suspend fun generateChat(inputs: InputParams){
-        var json:String = setJsonInput(inputs, false).jsonInput
-        var post = httpPost(Endpoints.chatEndpoint, json)
-    }
-
-
-    suspend fun createModel(model: Model){
-        var json:String = setJsonInput(model, false).jsonInput
-        var post = httpPost(Endpoints.createEndpoint, json)
-    }
-
-
-    suspend fun deleteModel(model: Model){
-        var json:String = setJsonInput(model, false).jsonInput
-        var post = httpDelete(Endpoints.deleteEndpoint, json)
-    }
-
-
-    suspend fun listModels(){
-        var post = httpGet(Endpoints.listEndpoint)
-    }
-
-
-    suspend fun showModel(modelname: String, verbose: Boolean = false){
-        var model = Model(modelname)
-        model.verbose = verbose
-        var json:String = setJsonInput(model, false).jsonInput
-        var post = httpPost(Endpoints.showEndpoint, json)
-    }
-
-
-    suspend fun copyModel(source: String, destination: String){
-        var model = Model(source)
-        model.destination = destination
-        var json:String = setJsonInput(model, false).jsonInput
-        json.replace("\"model\"", "\"source\"")
-        var post = httpPost(Endpoints.copyEndpoint, json)
-    }
-
-
-    suspend fun pullModel(modelname: String, insecure: Boolean = false, stream: Boolean = false){
-        var model = Model(modelname)
-        model.insecure = insecure
-        model.stream = stream
-        var json:String = setJsonInput(model, false).jsonInput
-        var post = httpPost(Endpoints.pullEndpoint, json)
-    }
-
-
-    suspend fun pushModel(modelname: String, insecure: Boolean = false, stream: Boolean = false){
-        var model = Model(modelname)
-        model.insecure = insecure
-        model.stream = stream
-        var json:String = setJsonInput(model, false).jsonInput
-        var post = httpPost(Endpoints.pushEndpoint, json)
-    }
-
-
-    //CHECK THIS ONE
-    //will setting defaults to the same value cause serialization?
-    //I'm not sure what's going on with Ollama options in this case. does it need default values?
-    //check inside InputParams
-    suspend fun generateEmbed(modelname: String, inputs: List<String>, truncate: Boolean = false,
-                              options: OllamaOptions? = null, KeepAlive: Int = 300){
-        var obj = InputParams(model)
-        obj.truncate = truncate
-        obj.options = options
-        obj.keep_alive = KeepAlive
-        var json:String = setJsonInput(inputs, false).jsonInput
-        var post = httpPost(Endpoints.embeddingsEndpoint, json)
-    }
-
-
     /**
-     * Checks the version of the Ollama server
-     *
-     * @return Return the version of the Ollama server
+     * Generates text using the configured model.
+     * @param promptInjector Text to append/inject into the prompt.
+     * @return Generated response text.
      */
-    suspend fun getVersion() : versionResponce?
+    override suspend fun generateText(promptInjector: String): String
     {
-        var post = httpGet(Endpoints.versionEndpoint)
-        var version = deserialize<versionResponce>(post)
-        return version
+        val content = MultimodalContent(text = promptInjector)
+        val result = generateContent(content)
+        return result.text
     }
 
     /**
-     * Queries the Ollama server for the currently running models.
-     *
-     * @return a [Model] object representing the currently running model, or null if no models are running.
-     */
-    suspend fun getRunningModels() : Model?
-    {
-        var post = httpGet(Endpoints.runningEndpoint)
-        var running = deserialize<Model>(post)
-        return running
-    }
-
-
-    override suspend fun generateText(promptInjector: String): String {
-        trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
-              metadata = mapOf(
-                  "method" to "generateText",
-                  "model" to model,
-                  "endpoint" to "$ip:$port",
-                  "promptLength" to promptInjector.length
-              ))
-        
-        return try {
-            val options = generateOptions()
-            
-            trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
-                  metadata = mapOf(
-                      "step" to "buildRequest",
-                      "temperature" to temperature,
-                      "maxTokens" to maxTokens,
-                      "topP" to topP
-                  ))
-            
-            val inputs = InputParams(model).apply {
-                prompt = promptInjector
-                this.options = options
-                stream = false
-            }
-            
-            val json = setJsonInput(inputs, false).jsonInput
-            
-            trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
-                  metadata = mapOf("step" to "httpPost", "requestSize" to json.length))
-            
-            val response = httpPost(Endpoints.generateEndpoint, json)
-            
-            // Parse response and extract text
-            val result = parseOllamaResponse(response)
-            
-            // Always extract reasoning content if present, regardless of useModelReasoning flag
-            val reasoningContent = extractOllamaReasoning(response, model)
-            if (reasoningContent.isNotEmpty()) {
-                // Store reasoning in jsonOutput for accessibility
-                jsonOutput = "{\"reasoning\": \"${reasoningContent.replace("\"", "\\\"")}\", \"response\": \"${result.replace("\"", "\\\"")}\"}" 
-                
-                if (tracingEnabled && traceConfig.detailLevel == TraceDetailLevel.DEBUG) {
-                    trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
-                          metadata = mapOf(
-                              "reasoningContent" to reasoningContent,
-                              "modelSupportsReasoning" to modelSupportsReasoning(model),
-                              "reasoningEnabled" to useModelReasoning
-                          ))
-                }
-            }
-            
-            trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
-                  metadata = mapOf(
-                      "responseLength" to result.length,
-                      "success" to true
-                  ))
-            
-            result
-            
-        } catch (e: Exception) {
-            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
-                  error = e,
-                  metadata = mapOf(
-                      "errorType" to (e::class.simpleName ?: "Unknown"),
-                      "endpoint" to "$ip:$port"
-                  ))
-            ""
-        }
-    }
-
-    /**
-     * Generates multimodal content using Ollama.
-     * Note: Ollama has limited multimodal support compared to other providers.
-     * 
-     * @param content Multimodal content containing text and/or binary data
-     * @return Generated multimodal content from the model
+     * Generates content including multimodal support and reasoning extraction.
+     * @param content Input content with text and binary data.
+     * @return Generated multimodal content.
      */
     override suspend fun generateContent(content: MultimodalContent): MultimodalContent
     {
@@ -710,84 +701,505 @@ class OllamaPipe : Pipe() {
               content = content,
               metadata = mapOf(
                   "method" to "generateContent",
-                  "hasText" to content.text.isNotEmpty(),
-                  "hasBinaryContent" to content.binaryContent.isNotEmpty(),
-                  "note" to "Ollama has limited multimodal support"
+                  "model" to model,
+                  "useChatApi" to useChatApi,
+                  "streaming" to streamingEnabled
               ))
         
-        return try {
-            // For now, Ollama primarily supports text generation
-            // Binary content support would need to be implemented based on specific model capabilities
-            val textResult = generateText(content.text)
-            val result = MultimodalContent(text = textResult)
+        return try
+        {
+            val options = generateOptions()
+            var result = if(useChatApi)
+            {
+                executeChatApi(content, options)
+            }
+            else
+            {
+                executeGenerateApi(content, options)
+            }
+
+            // Extract reasoning content from tags if present (e.g. <think> for DeepSeek R1)
+            result = splitInterleavedReasoning(result)
             
-            trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, result)
+            val responseMetadata = mutableMapOf<String, Any>(
+                "responseLength" to result.text.length,
+                "success" to true
+            )
+            
+            if(result.modelReasoning.isNotEmpty())
+            {
+                responseMetadata["reasoningContent"] = result.modelReasoning
+                responseMetadata["modelSupportsReasoning"] = true
+                responseMetadata["hasReasoning"] = true
+            }
+            
+            trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, result, metadata = responseMetadata)
             result
             
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, error = e)
             MultimodalContent("")
         }
     }
-    
+
     /**
-     * Parses Ollama response to extract generated text.
-     * 
-     * @param response Raw response from Ollama API
-     * @return Extracted text content
+     * Internal execution of the chat API.
+     * @param content Input content.
+     * @param options Inference options.
+     * @return Result content.
      */
-    protected fun parseOllamaResponse(response: String): String {
-        return try {
-            // Parse Ollama response format - implementation depends on actual response structure
-            val json = kotlinx.serialization.json.Json.parseToJsonElement(response)
-            if (json is kotlinx.serialization.json.JsonObject) {
-                json["response"]?.let { element ->
-                    if (element is kotlinx.serialization.json.JsonPrimitive) {
-                        element.content
-                    } else null
-                } ?: response
-            } else response
-        } catch (e: Exception) {
-            response // Return raw response if parsing fails
+    private suspend fun executeChatApi(content: MultimodalContent, options: OllamaOptions): MultimodalContent
+    {
+        val messages = mutableListOf<OllamaMessage>()
+
+        // Handle system prompt
+        if(systemPrompt.isNotEmpty())
+        {
+            messages.add(OllamaMessage(role = "system", content = systemPrompt))
         }
-    }
-    
-    /**
-     * Extracts reasoning content from Ollama response for DEBUG level tracing.
-     * 
-     * @param response Raw response from Ollama API
-     * @param modelName Name of the model being used
-     * @return Extracted reasoning content or empty string if not available
-     */
-    protected fun extractOllamaReasoning(response: String, modelName: String): String {
-        return try {
-            val json = kotlinx.serialization.json.Json.parseToJsonElement(response)
-            if (json is kotlinx.serialization.json.JsonObject) {
-                // Extract reasoning/thinking content if present in Ollama response
-                json["reasoning"]?.let { element ->
-                    if (element is kotlinx.serialization.json.JsonPrimitive) element.content else null
-                } ?: json["thinking"]?.let { element ->
-                    if (element is kotlinx.serialization.json.JsonPrimitive) element.content else null
-                } ?: json["chain_of_thought"]?.let { element ->
-                    if (element is kotlinx.serialization.json.JsonPrimitive) element.content else null
-                } ?: ""
-            } else ""
-        } catch (e: Exception) {
-            ""
+
+        // Convert all binary content to base64 for Ollama
+        val base64Images = extractBase64Images(content)
+
+        // Attempt to parse text as conversation history if it looks like JSON
+        val history = deserialize<com.TTT.Context.ConverseHistory>(content.text, useRepair = false)
+        if(history != null && history.history.isNotEmpty())
+        {
+            history.history.forEachIndexed { index, entry ->
+                val entryImages = if(index == history.history.size - 1) base64Images else null
+                messages.add(OllamaMessage(
+                    role = entry.role.name,
+                    content = entry.content.text,
+                    images = entryImages
+                ))
+            }
         }
-    }
-    
-    /**
-     * Checks if the model supports reasoning/thinking modes.
-     * 
-     * @param modelName Name of the model to check
-     * @return True if the model supports reasoning, false otherwise
-     */
-    protected fun modelSupportsReasoning(modelName: String): Boolean {
-        return modelName.lowercase().contains("reasoning") || 
-               modelName.lowercase().contains("cot") ||
-               modelName.lowercase().contains("think")
+        else
+        {
+            // Default to single user message
+            messages.add(OllamaMessage(
+                role = "user",
+                content = content.text,
+                images = base64Images
+            ))
+        }
+
+        val ollamaTools = buildOllamaTools()
+        val format = if(!supportsNativeJson && jsonOutput.isNotEmpty())
+        {
+            try {
+                Json.parseToJsonElement(jsonOutput)
+            } catch (e: Exception) {
+                JsonPrimitive("json")
+            }
+        } else null
+
+        val request = ChatRequest(
+            model = model,
+            messages = messages,
+            options = options,
+            stream = streamingEnabled,
+            keepAlive = keepAlive,
+            format = format,
+            tools = ollamaTools
+        )
+
+        return if(streamingEnabled)
+        {
+            executeChatStream(request)
+        }
+        else
+        {
+            val jsonRequest = serialize(request)
+
+            val client = HttpClient(CIO) {
+                install(HttpTimeout) {
+                    requestTimeoutMillis = 600000 // 10 minutes
+                    connectTimeoutMillis = 30000
+                    socketTimeoutMillis = 600000
+                }
+            }
+            
+            val responseText = try {
+                val response: HttpResponse = client.post(Endpoints.chatEndpoint) {
+                    contentType(ContentType.Application.Json)
+                    setBody(jsonRequest)
+                }
+                response.bodyAsText()
+            } finally {
+                client.close()
+            }
+            
+            val response = deserialize<ChatResponse>(responseText) ?: throw Exception("Failed to deserialize Ollama chat response: $responseText")
+
+            var resultText = response.message?.content ?: ""
+            
+            if(response.message?.toolCalls != null && response.message.toolCalls.isNotEmpty())
+            {
+                val pcpRequests = response.message.toolCalls.map { call -> mapOllamaToolCallToPcp(call) }
+                val toolCallJson = serialize(pcpRequests)
+                resultText = if(resultText.isEmpty()) toolCallJson else "$resultText\n\n$toolCallJson"
+            }
+
+            MultimodalContent(text = resultText)
+        }
     }
 
-   
+    /**
+     * Executes a streaming chat request.
+     * @param request The chat request.
+     * @return Accumulated multimodal content.
+     */
+    private suspend fun executeChatStream(request: ChatRequest): MultimodalContent
+    {
+        val client = HttpClient(CIO)
+        {
+            install(HttpTimeout)
+            {
+                requestTimeoutMillis = 300000 // 5 minutes
+            }
+        }
+
+        val textBuilder = StringBuilder()
+        val toolCalls = mutableListOf<OllamaToolCall>()
+
+        return try
+        {
+            client.preparePost(Endpoints.chatEndpoint)
+            {
+                contentType(ContentType.Application.Json)
+                setBody(serialize(request))
+            }.execute { response ->
+                val channel = response.bodyAsChannel()
+                while(!channel.isClosedForRead)
+                {
+                    val line = channel.readUTF8Line() ?: break
+                    if(line.isEmpty()) continue
+
+                    val chunk = deserialize<ChatResponse>(line) ?: continue
+                    val contentDelta = chunk.message?.content ?: ""
+
+                    if(contentDelta.isNotEmpty())
+                    {
+                        textBuilder.append(contentDelta)
+                        emitStreamingChunk(contentDelta)
+                    }
+
+                    chunk.message?.toolCalls?.let { calls ->
+                        toolCalls.addAll(calls)
+                    }
+
+                    if(chunk.done) break
+                }
+            }
+            
+            var resultText = textBuilder.toString()
+            if(toolCalls.isNotEmpty())
+            {
+                val pcpRequests = toolCalls.map { call -> mapOllamaToolCallToPcp(call) }
+                val toolCallJson = serialize(pcpRequests)
+                resultText = if(resultText.isEmpty()) toolCallJson else "$resultText\n\n$toolCallJson"
+            }
+            
+            MultimodalContent(text = resultText)
+        }
+        finally
+        {
+            client.close()
+        }
+    }
+
+    /**
+     * Internal execution of the generate API.
+     * @param content Input content.
+     * @param options Inference options.
+     * @return Result content.
+     */
+    private suspend fun executeGenerateApi(content: MultimodalContent, options: OllamaOptions): MultimodalContent
+    {
+        val base64Images = extractBase64Images(content)
+        val format = if(!supportsNativeJson && jsonOutput.isNotEmpty())
+        {
+            try {
+                Json.parseToJsonElement(jsonOutput)
+            } catch (e: Exception) {
+                JsonPrimitive("json")
+            }
+        } else null
+
+        val request = GeneratedRequest(
+            model = model,
+            prompt = content.text,
+            system = systemPrompt.takeIf { it.isNotEmpty() },
+            options = options,
+            stream = streamingEnabled,
+            keepAlive = keepAlive,
+            images = base64Images,
+            format = format
+        )
+
+        return if(streamingEnabled)
+        {
+            executeGenerateStream(request)
+        }
+        else
+        {
+            val jsonRequest = serialize(request)
+            
+            val client = HttpClient(CIO) {
+                install(HttpTimeout) {
+                    requestTimeoutMillis = 600000 // 10 minutes
+                    connectTimeoutMillis = 30000
+                    socketTimeoutMillis = 600000
+                }
+            }
+
+            val responseText = try {
+                val response: HttpResponse = client.post(Endpoints.generateEndpoint) {
+                    contentType(ContentType.Application.Json)
+                    setBody(jsonRequest)
+                }
+                response.bodyAsText()
+            } finally {
+                client.close()
+            }
+
+            val response = deserialize<GeneratedResponse>(responseText) ?: throw Exception("Failed to deserialize Ollama generate response: $responseText")
+            MultimodalContent(text = response.response ?: "")
+        }
+    }
+
+    /**
+     * Executes a streaming generate request.
+     * @param request The generate request.
+     * @return Accumulated multimodal content.
+     */
+    private suspend fun executeGenerateStream(request: GeneratedRequest): MultimodalContent
+    {
+        val client = HttpClient(CIO)
+        {
+            install(HttpTimeout)
+            {
+                requestTimeoutMillis = 300000
+            }
+        }
+        
+        val textBuilder = StringBuilder()
+
+        return try
+        {
+            client.preparePost(Endpoints.generateEndpoint)
+            {
+                contentType(ContentType.Application.Json)
+                setBody(serialize(request))
+            }.execute { response ->
+                val channel = response.bodyAsChannel()
+                while(!channel.isClosedForRead)
+                {
+                    val line = channel.readUTF8Line() ?: break
+                    if(line.isEmpty()) continue
+
+                    val chunk = deserialize<GeneratedResponse>(line) ?: continue
+                    val contentDelta = chunk.response ?: ""
+
+                    if(contentDelta.isNotEmpty())
+                    {
+                        textBuilder.append(contentDelta)
+                        emitStreamingChunk(contentDelta)
+                    }
+
+                    if(chunk.done) break
+                }
+            }
+            
+            MultimodalContent(text = textBuilder.toString())
+        }
+        finally
+        {
+            client.close()
+        }
+    }
+
+    /**
+     * Maps PCP and P2P tools to Ollama native tools.
+     * @return List of OllamaTool or null.
+     */
+    private fun buildOllamaTools(): List<OllamaTool>?
+    {
+        val tools = mutableListOf<OllamaTool>()
+
+        // Map PCP tools
+        pcpContext.tpipeOptions.forEach { option ->
+            val properties = mutableMapOf<String, JsonElement>()
+            val required = mutableListOf<String>()
+            
+            option.params.forEach { (name, triple) ->
+                val (type, description, _) = triple
+                properties[name] = buildJsonObject {
+                    put("type", mapPcpTypeToOllamaType(type))
+                    put("description", description)
+                }
+                required.add(name)
+            }
+
+            val parameters = buildJsonObject {
+                put("type", "object")
+                put("properties", JsonObject(properties))
+                put("required", JsonArray(required.map { JsonPrimitive(it) }))
+            }
+
+            tools.add(OllamaTool(
+                function = OllamaFunctionDefinition(
+                    name = option.functionName,
+                    description = option.description,
+                    parameters = parameters
+                )
+            ))
+        }
+
+        // Map P2P agents
+        p2pAgentDescriptors?.forEach { agent ->
+            tools.add(OllamaTool(
+                function = OllamaFunctionDefinition(
+                    name = "call_agent_${agent.agentName}",
+                    description = agent.description,
+                    parameters = buildJsonObject {
+                        put("type", "object")
+                        put("properties", buildJsonObject {
+                            put("prompt", buildJsonObject {
+                                put("type", "string")
+                                put("description", "The prompt to send to the agent")
+                            })
+                        })
+                        put("required", buildJsonArray { add("prompt") })
+                    }
+                )
+            ))
+        }
+
+        return if(tools.isNotEmpty()) tools else null
+    }
+
+    /**
+     * Maps TPipe parameter types to JSON schema types.
+     * @param type The TPipe param type.
+     * @return The JSON schema type string.
+     */
+    private fun mapPcpTypeToOllamaType(type: com.TTT.PipeContextProtocol.ParamType): String
+    {
+        return when(type)
+        {
+            com.TTT.PipeContextProtocol.ParamType.String -> "string"
+            com.TTT.PipeContextProtocol.ParamType.Int -> "integer"
+            com.TTT.PipeContextProtocol.ParamType.Bool -> "boolean"
+            com.TTT.PipeContextProtocol.ParamType.Float -> "number"
+            com.TTT.PipeContextProtocol.ParamType.List -> "array"
+            com.TTT.PipeContextProtocol.ParamType.Map, com.TTT.PipeContextProtocol.ParamType.Object -> "object"
+            else -> "string"
+        }
+    }
+
+    /**
+     * Maps an Ollama tool call back to a PcPRequest.
+     * @param call The Ollama tool call.
+     * @return The populated PcPRequest.
+     */
+    private fun mapOllamaToolCallToPcp(call: OllamaToolCall): com.TTT.PipeContextProtocol.PcPRequest
+    {
+        val request = com.TTT.PipeContextProtocol.PcPRequest()
+        val functionName = call.function.name
+
+        if(functionName.startsWith("call_agent_"))
+        {
+            val agentName = functionName.removePrefix("call_agent_")
+            val prompt = call.function.arguments["prompt"]?.jsonPrimitive?.content ?: ""
+            request.argumentsOrFunctionParams = listOf(agentName, prompt)
+        }
+        else
+        {
+            request.tPipeContextOptions.functionName = functionName
+            request.argumentsOrFunctionParams = call.function.arguments.values.map {
+                if(it is JsonPrimitive) it.content else it.toString()
+            }
+        }
+
+        return request
+    }
+
+    /**
+     * Extracts base64 image data from multimodal content.
+     * @param content Input multimodal content.
+     * @return List of base64 strings or null.
+     */
+    private fun extractBase64Images(content: MultimodalContent): List<String>?
+    {
+        val images = mutableListOf<String>()
+        for(binary in content.binaryContent)
+        {
+            when(binary)
+            {
+                is BinaryContent.Base64String -> images.add(binary.data)
+                is BinaryContent.Bytes -> images.add(binary.toBase64().data)
+                else -> {}
+            }
+        }
+        return if(images.isNotEmpty()) images else null
+    }
+
+    /**
+     * Splits interleaved reasoning from text if present (e.g. <think> tags).
+     * @param content The content to process.
+     * @return Updated multimodal content.
+     */
+    private fun splitInterleavedReasoning(content: MultimodalContent): MultimodalContent
+    {
+        if(content.modelReasoning.isNotEmpty()) return content
+
+        val text = content.text
+        if(text.contains("</think>", ignoreCase = true))
+        {
+            val thinkRegex = "<think>(?s:.*?)</think>".toRegex(RegexOption.IGNORE_CASE)
+            val segments = thinkRegex.findAll(text).map { it.value.removeSurrounding("<think>", "</think>").trim() }.toList()
+            val thinking = segments.joinToString("\n")
+
+            var cleanedText = text.replace("(?si)<think>.*?</think>".toRegex(), "")
+            cleanedText = cleanedText.replace("(?si)^.*?</think>".toRegex(), "").trim()
+
+            content.text = cleanedText
+            content.modelReasoning = thinking
+        }
+        return content
+    }
+
+    /**
+     * Checks the version of the Ollama server.
+     * @return versionResponce or null.
+     */
+    suspend fun getVersion(): versionResponce?
+    {
+        val response = httpGet(Endpoints.versionEndpoint)
+        return deserialize<versionResponce>(response)
+    }
+
+    /**
+     * Queries the Ollama server for the currently running models.
+     * @return List of models as JsonElement or null.
+     */
+    suspend fun getRunningModels(): JsonElement?
+    {
+        val response = httpGet(Endpoints.runningEndpoint)
+        return deserialize<JsonElement>(response)
+    }
+
+    /**
+     * Lists all models available on the Ollama server.
+     * @return List of models as JsonElement or null.
+     */
+    suspend fun listModels(): JsonElement?
+    {
+        val response = httpGet(Endpoints.listEndpoint)
+        return deserialize<JsonElement>(response)
+    }
 }

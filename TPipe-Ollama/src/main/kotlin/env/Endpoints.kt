@@ -9,18 +9,18 @@ object Endpoints
     private var ip = "127.0.0.1"
     private var port = 11434
 
-    val generateEndpoint = "http://$ip:$port/api/generate"
-    val chatEndpoint = "http://$ip:$port/api/chat"
-    val pullEndpoint = "http://$ip:$port/api/pull"
-    val pushEndpoint = "http://$ip:$port/api/push"
-    val createEndpoint = "http://$ip:$port/api/create"
-    val deleteEndpoint = "http://$ip:$port/api/delete"
-    val copyEndpoint = "http://$ip:$port/api/copy"
-    val listEndpoint = "http://$ip:$port/api/tags"
-    val runningEndpoint = "http://$ip:$port/api/ps"
-    val showEndpoint = "http://$ip:$port/api/show"
-    val embeddingsEndpoint = "http://$ip:$port/api/embeddings"
-    val versionEndpoint = "http://$ip:$port/api/version"
+    val generateEndpoint get() = "http://$ip:$port/api/generate"
+    val chatEndpoint get() = "http://$ip:$port/api/chat"
+    val pullEndpoint get() = "http://$ip:$port/api/pull"
+    val pushEndpoint get() = "http://$ip:$port/api/push"
+    val createEndpoint get() = "http://$ip:$port/api/create"
+    val deleteEndpoint get() = "http://$ip:$port/api/delete"
+    val copyEndpoint get() = "http://$ip:$port/api/copy"
+    val listEndpoint get() = "http://$ip:$port/api/tags"
+    val runningEndpoint get() = "http://$ip:$port/api/ps"
+    val showEndpoint get() = "http://$ip:$port/api/show"
+    val embeddingsEndpoint get() = "http://$ip:$port/api/embeddings"
+    val versionEndpoint get() = "http://$ip:$port/api/version"
 
     /**
      * Required if the Ollama server is not running on the same machine as TPipe.
