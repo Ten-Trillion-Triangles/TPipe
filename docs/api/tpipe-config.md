@@ -1,6 +1,6 @@
 # TPipeConfig API Reference
 
-`TPipeConfig` is the global configuration singleton for the TPipe environment.
+`TPipeConfig` is the global configuration singleton managing the TPipe environment's filesystem structure and networking behavior.
 
 ---
 
@@ -8,35 +8,35 @@
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `configDir` | String | `~/.tpipe` | Root directory for all persistent data. |
-| `instanceID`| String | `TPipe-Default` | Unique subdirectory for instance isolation. |
-| `remoteMemoryEnabled` | Boolean | `false` | Enables networking code for Remote Memory. |
-| `remoteMemoryUrl` | String | `localhost:8080` | URL of the Memory Server. |
-| `remoteMemoryAuthToken`| String | `""` | Key for `globalAuthMechanism` on remote servers. |
-| `useRemoteMemoryGlobally`| Boolean| `false` | Forces all memory ops to delegate to remote server. |
-| `enforceMemoryVersioning`| Boolean| `false` | Enables conflict resolution for concurrent writes. |
+| `configDir` | String | `~/.tpipe` | Base directory for all persistent TPipe data. |
+| `instanceID`| String | `TPipe-Default` | Subdirectory identifier for instance isolation. |
+| `remoteMemoryEnabled` | Boolean | `false` | Enables remote delegation features in ContextBank. |
+| `remoteMemoryUrl` | String | `localhost:8080`| URL of the centralized Memory Server. |
+| `remoteMemoryAuthToken`| String | `""` | Secret sent in headers for remote memory auth. |
+| `useRemoteMemoryGlobally`| Boolean| `false` | If true, all memory operations bypass local disk. |
+| `enforceMemoryVersioning`| Boolean| `false` | Enables version-based conflict resolution. |
 
 ---
 
 ## Directory Helpers
 
-Use these to ensure your app follows the standard TPipe directory structure:
+These functions return absolute paths based on the current `configDir` and `instanceID`.
 
-- `getTPipeConfigDir()`: Returns `configDir/instanceID`.
-- `getMemoryDir()`: Base path for context and tasks.
-- `getLorebookDir()`: Where `.bank` files are stored.
-- `getTodoListDir()`: Where `.todo` files are stored.
-- `getTraceDir()`: Where HTML execution traces are saved.
+- **`getTPipeConfigDir()`**: Root for this instance.
+- **`getMemoryDir()`**: Base for all shared state.
+- **`getLorebookDir()`**: Directory for `.bank` files.
+- **`getTodoListDir()`**: Directory for `.todo` files.
+- **`getTraceDir()`**: Where execution traces are generated.
 
 ---
 
 ## Best Practices
 
-### Multi-Instance Apps
-When running multiple TPipe instances on the same machine, **always** set a unique `instanceID`:
+### Instance Isolation
+Always set a unique `instanceID` when running multiple agents on the same host to prevent data corruption.
 ```kotlin
-TPipeConfig.instanceID = "WebAgent-01"
+TPipeConfig.instanceID = "AnalysisAgent-04"
 ```
 
-### Remote Hosting
-If your agent runs in a serverless function (like AWS Lambda), set `useRemoteMemoryGlobally = true` so that state is persisted to a central cluster instead of local ephemeral storage.
+### Shared Clusters
+In cloud environments, point multiple instances to the same `remoteMemoryUrl` and enable `enforceMemoryVersioning` to create a robust shared-state swarm.
