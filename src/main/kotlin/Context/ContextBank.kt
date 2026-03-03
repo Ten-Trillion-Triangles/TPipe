@@ -12,7 +12,16 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Type definition for a retrieval function that can be bound to a context bank key.
+ * This allows for custom logic to fetch context from external sources like databases or APIs.
+ *
+ * @param key The context bank key being requested.
+ * @return A [ContextWindow] if retrieval was successful, or null if it failed.
+ */
+typealias RetrievalFunction = suspend (String) -> ContextWindow?
 
 /**
  * Singleton that holds TPipe's global context window system. Each pipe has its own context window object which
@@ -76,6 +85,13 @@ object ContextBank
      */
     @Volatile
     private var cacheConfig = CacheConfig()
+
+    /**
+     * Map of retrieval functions bound to specific context bank keys.
+     * When a key with a bound function is requested, the function is executed to fetch the data.
+     * Uses ConcurrentHashMap for thread-safe access.
+     */
+    private val retrievalFunctions = ConcurrentHashMap<String, RetrievalFunction>()
 
     /**
      * Update or create storage metadata for a key.
@@ -562,6 +578,17 @@ object ContextBank
      */
     fun getContextFromBank(key: String, copy: Boolean = true, skipRemote: Boolean = false) : ContextWindow
     {
+        // Retrieval functions always take priority over all other storage modes.
+        if (retrievalFunctions.containsKey(key))
+        {
+            val function = retrievalFunctions[key]!!
+            val context = runBlocking {
+                function(key)
+            } ?: throw IllegalStateException("Retrieval function for key '$key' failed to return a context window.")
+
+            return if (copy) context.deepCopy() else context
+        }
+
         val mode = getStorageMode(key)
         if (!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
         {
@@ -622,7 +649,7 @@ object ContextBank
      */
     fun getPageKeys(skipRemote: Boolean = false) : List<String>
     {
-        val localKeys = bank.keys.toList()
+        val localKeys = (bank.keys + retrievalFunctions.keys).distinct()
         if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
             val remoteKeys = runBlocking {
@@ -1020,6 +1047,37 @@ object ContextBank
         TPipeConfig.remoteMemoryUrl = url
         TPipeConfig.remoteMemoryAuthToken = token
         TPipeConfig.useRemoteMemoryGlobally = useGlobally
+    }
+
+    /**
+     * Register a retrieval function for a specific context bank key.
+     * When this key is requested, the retrieval function will be executed to fetch the context window.
+     * retrieval function always wins and overrides local and disk data.
+     *
+     * @param key The context bank key to bind the function to.
+     * @param function The [RetrievalFunction] to execute for this key.
+     */
+    fun registerRetrievalFunction(key: String, function: RetrievalFunction)
+    {
+        retrievalFunctions[key] = function
+    }
+
+    /**
+     * Remove a registered retrieval function for a specific key.
+     *
+     * @param key The context bank key to remove the retrieval function from.
+     */
+    fun removeRetrievalFunction(key: String)
+    {
+        retrievalFunctions.remove(key)
+    }
+
+    /**
+     * Clear all registered retrieval functions.
+     */
+    fun clearRetrievalFunctions()
+    {
+        retrievalFunctions.clear()
     }
 
     /**

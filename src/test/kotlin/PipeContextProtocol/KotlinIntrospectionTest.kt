@@ -32,7 +32,7 @@ class KotlinIntrospectionTest
         val executor = KotlinExecutor()
         val request = PcPRequest(
             argumentsOrFunctionParams = listOf("\"Global transport: \${com.TTT.PipeContextProtocol.PcpRegistry.globalContext.transport}\""),
-            kotlinContextOptions = KotlinContext(cinit = true).apply { allowIntrospection = true }
+            kotlinContextOptions = KotlinContext(cinit = true).apply { allowTpipeIntrospection = true }
         )
         val context = PcpContext()
 

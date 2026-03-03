@@ -14,7 +14,7 @@ class PcpIntegrationTest
         // Test Kotlin routing
         val kotlinRequest = PcPRequest(
             argumentsOrFunctionParams = listOf("println(\"Routing to Kotlin\")"),
-            kotlinContextOptions = KotlinContext(cinit = true).apply { allowIntrospection = true }
+            kotlinContextOptions = KotlinContext(cinit = true).apply { allowTpipeIntrospection = true }
         )
         val kotlinResult = dispatcher.executeRequest(kotlinRequest, context)
         assertEquals(Transport.Kotlin, kotlinResult.transport)

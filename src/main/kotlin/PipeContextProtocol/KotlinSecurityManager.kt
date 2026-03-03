@@ -38,7 +38,7 @@ class KotlinSecurityManager
 
     private fun validateImports(script: String, context: KotlinContext, errors: MutableList<String>)
     {
-        val importPattern = Regex("import\\s+([\\w.]+)")
+        val importPattern = Regex("import\\s+([\\w.*]+)")
         val imports = importPattern.findAll(script).map { it.groupValues[1] }.toList()
 
         if (context.allowedImports.isNotEmpty())
@@ -49,7 +49,7 @@ class KotlinSecurityManager
                 }
                 if (!isAllowed)
                 {
-                    errors.add("Import '$import' is not in allowlist")
+                    errors.add("Import '$import' is not allowed")
                 }
             }
         }
@@ -66,7 +66,7 @@ class KotlinSecurityManager
                 }
                 if (isBlocked)
                 {
-                    errors.add("Import '$import' is blocked")
+                    errors.add("Import '$import' is not allowed")
                 }
             }
         }
