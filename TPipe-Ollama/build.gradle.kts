@@ -1,23 +1,20 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    kotlin("jvm") version "2.2.0"
+    kotlin("jvm")
     kotlin("plugin.serialization")
 }
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(24))   // compileJava → 24
+        languageVersion.set(JavaLanguageVersion.of(24))
     }
 }
 
 kotlin {
-    // Pick a JDK 24 toolchain for kotlinc itself
     jvmToolchain(24)
-
-    // Emit 24-bytecode
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_24)                   // compileKotlin → 24
+        jvmTarget.set(JvmTarget.JVM_24)
     }
 }
 
@@ -32,15 +29,21 @@ dependencies {
     testImplementation(kotlin("test"))
     implementation(project(":"))
     
-    // Kotlinx Serialization
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.6.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
+
+    implementation("io.ktor:ktor-client-core:3.1.3")
+    implementation("io.ktor:ktor-client-cio:3.1.3")
+    implementation("io.ktor:ktor-client-content-negotiation:3.1.3")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.1.3")
 }
 
 tasks.test {
     useJUnitPlatform()
-}
-kotlin {
-    jvmToolchain(24)
+    testLogging {
+        events("passed", "skipped", "failed", "standardOut", "standardError")
+        showStandardStreams = true
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
 }
