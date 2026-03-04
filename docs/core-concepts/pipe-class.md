@@ -339,3 +339,8 @@ This creates a conversation history with:
 Now that you understand the Pipe class fundamentals, learn about orchestrating multiple pipes:
 
 **→ [Pipeline Class - Orchestrating Multiple Pipes](pipeline-class.md)** - Chaining pipes together
+
+
+## Next Steps
+
+**→ [Pipeline Class](pipeline-class.md)** - Learn how to chain multiple Pipes together into complex networks.

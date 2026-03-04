@@ -580,3 +580,8 @@ val traceReport = pipeline.getTraceReport(TraceFormat.HTML)
 Now that you understand monitoring and troubleshooting, explore AWS Bedrock integration:
 
 **→ [Getting Started with TPipe-Bedrock](../bedrock/getting-started.md)** - Setup, configuration, and first steps
+
+
+## Next Steps
+
+**→ [Debug Package API](../../api/debug-package.md)** - Deep dive into the TraceNode and PipeTracer architecture.

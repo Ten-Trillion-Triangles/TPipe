@@ -654,3 +654,8 @@ Pipelines enable sophisticated AI workflows that exceed the capabilities of indi
 Now that you understand pipeline orchestration, learn about structured AI interactions:
 
 **→ [JSON Schema and System Prompts](json-and-system-prompts.md)** - Structured AI interactions
+
+
+## Next Steps
+
+**→ [Pipeline Flow Control](pipeline-flow-control.md)** - Learn how to build complex branching logic within your pipelines.

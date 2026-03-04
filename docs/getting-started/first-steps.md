@@ -1,6 +1,6 @@
 # First Steps - Hello World with TPipe
 
-> 💡 **Tip:** > 💡 **Tip:** This guide walks you through creating your first TPipe application. Think of your first `Pipe` as connecting your main water line—once it's flowing, you can route it anywhere. Think of your first `Pipe` as connecting your main water line—once it's flowing, you can route it anywhere.
+> 💡 **Tip:** This guide walks you through creating your first TPipe application. Think of your first `Pipe` as connecting your main water line—once it's flowing, you can route it anywhere.
 
 ## Prerequisites
 
@@ -63,11 +63,14 @@ fun main() {
         .setRegion("us-west-2")
     
     runBlocking {
+        pipe.init()
         val response = pipe.generateText("Hello, world!")
         println(response)
     }
 }
 ```
+
+> ℹ️ **Note:** The `pipe.init()` function is required for most provider integrations (like AWS Bedrock or Ollama) before executing. It asynchronously loads necessary background SDK clients, fetches required models, and sets up tracing hooks and flow control systems. Always ensure you call `.init()` before your first `.execute()` or `.generateText()` call.
 
 ### 2. Cross-Region Model with ARN Binding
 
@@ -90,6 +93,7 @@ fun main() {
         .setRegion("us-east-1")
     
     runBlocking {
+        pipe.init()
         val response = pipe.generateText("Hello from cross-region model!")
         println(response)
     }
@@ -112,6 +116,7 @@ val pipe = BedrockPipe()
         }
     
     runBlocking {
+        pipe.init()
         pipe.generateText("Tell me a short story.")
         println("\nDone!")
     }
@@ -135,6 +140,7 @@ fun main() {
     streamOutputToTerminal(pipe)
 
     runBlocking {
+        pipe.init()
         pipe.generateText("Explain how streaming output is routed through reasoning pipes.")
     }
 }
