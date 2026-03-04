@@ -205,8 +205,10 @@ class TraceVisualizer {
                 val reasoningKey = event.metadata.keys.find { it in reasoningKeys }
                 val inputKey = event.metadata.keys.find { it == "inputText" }
                 val outputKey = event.metadata.keys.find { it == "outputText" }
+                val requestObjectKey = event.metadata.keys.find { it == "requestObject" }
+                val generatedContentKey = event.metadata.keys.find { it == "generatedContent" }
 
-                val keysToExtract = setOfNotNull(reasoningKey, inputKey, outputKey)
+                val keysToExtract = setOfNotNull(reasoningKey, inputKey, outputKey, requestObjectKey, generatedContentKey)
                 val otherMetadata = event.metadata.filterKeys { it !in keysToExtract }
                 
                 val metadataHtml = if (otherMetadata.isNotEmpty()) {
@@ -252,6 +254,18 @@ class TraceVisualizer {
 
                 if (!outputText.isNullOrBlank() && outputText != "N/A" && outputText != "null") {
                     sections.add(createExpandableSection("Output Content", outputText, "📤", "#17a2b8"))
+                }
+
+                // Add requestObject
+                val requestObject = requestObjectKey?.let { event.metadata[it]?.toString() }
+                if (!requestObject.isNullOrBlank() && requestObject != "N/A" && requestObject != "null") {
+                    sections.add(createExpandableSection("Request Object", requestObject, "📦", "#6c757d"))
+                }
+
+                // Add generatedContent
+                val generatedContent = generatedContentKey?.let { event.metadata[it]?.toString() }
+                if (!generatedContent.isNullOrBlank() && generatedContent != "N/A" && generatedContent != "null") {
+                    sections.add(createExpandableSection("Generated Content", generatedContent, "✨", "#fd7e14"))
                 }
 
                 // Add reasoning content in an expandable section

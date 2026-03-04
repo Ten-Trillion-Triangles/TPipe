@@ -18,6 +18,9 @@ class TraceVisualizationTest {
         // Verify it contains the expandable details for Input and Output
         assertTrue(htmlReport.contains("Input Content"), "HTML did not contain Input Content")
         assertTrue(htmlReport.contains("Output Content"), "HTML did not contain Output Content")
+        assertTrue(htmlReport.contains("Request Object"), "HTML did not contain Request Object")
+        assertTrue(htmlReport.contains("Generated Content"), "HTML did not contain Generated Content")
+        assertTrue(htmlReport.contains("{ &quot;type&quot;: &quot;test_request&quot; }"), "HTML did not contain test request block")
         assertTrue(htmlReport.contains("Test input"), "HTML did not contain Test input")
         assertTrue(htmlReport.contains("API response"), "HTML did not contain API response")
     }
@@ -64,7 +67,7 @@ class TraceVisualizationTest {
         return listOf(
             TraceEvent(timestamp = baseTime, pipeId = "pipe-001", pipeName = "BedrockPipe-Claude", eventType = TraceEventType.PIPE_START, phase = TracePhase.INITIALIZATION, content = MultimodalContent("Test input"), contextSnapshot = null, metadata = mapOf("model" to "claude-3-sonnet")),
             TraceEvent(timestamp = baseTime + 200, pipeId = "pipe-001", pipeName = "BedrockPipe-Claude", eventType = TraceEventType.API_CALL_START, phase = TracePhase.EXECUTION, content = MultimodalContent("API input"), contextSnapshot = null, metadata = mapOf("endpoint" to "bedrock.invoke")),
-            TraceEvent(timestamp = baseTime + 1500, pipeId = "pipe-001", pipeName = "BedrockPipe-Claude", eventType = TraceEventType.API_CALL_SUCCESS, phase = TracePhase.EXECUTION, content = MultimodalContent("API response"), contextSnapshot = null, metadata = mapOf("responseTokens" to 300)),
+            TraceEvent(timestamp = baseTime + 1500, pipeId = "pipe-001", pipeName = "BedrockPipe-Claude", eventType = TraceEventType.API_CALL_SUCCESS, phase = TracePhase.EXECUTION, content = MultimodalContent("API response"), contextSnapshot = null, metadata = mapOf("responseTokens" to 300, "requestObject" to "{ \"type\": \"test_request\" }", "generatedContent" to "Some generated content block")),
             TraceEvent(timestamp = baseTime + 1700, pipeId = "pipe-001", pipeName = "BedrockPipe-Claude", eventType = TraceEventType.PIPE_SUCCESS, phase = TracePhase.CLEANUP, content = MultimodalContent("Final output"), contextSnapshot = null, metadata = mapOf("success" to true))
         )
     }
