@@ -207,8 +207,13 @@ class TraceVisualizer {
                 val outputKey = event.metadata.keys.find { it == "outputText" }
                 val requestObjectKey = event.metadata.keys.find { it == "requestObject" }
                 val generatedContentKey = event.metadata.keys.find { it == "generatedContent" }
+                val fullPromptKey = event.metadata.keys.find { it == "fullPrompt" }
+                val contentTextKey = event.metadata.keys.find { it == "contentText" }
+                val pageKeyKey = event.metadata.keys.find { it == "pageKey" }
+                val contextWindowKey = event.metadata.keys.find { it == "contextWindow" }
+                val miniBankKey = event.metadata.keys.find { it == "miniBank" }
 
-                val keysToExtract = setOfNotNull(reasoningKey, inputKey, outputKey, requestObjectKey, generatedContentKey)
+                val keysToExtract = setOfNotNull(reasoningKey, inputKey, outputKey, requestObjectKey, generatedContentKey, fullPromptKey, contentTextKey, pageKeyKey, contextWindowKey, miniBankKey)
                 val otherMetadata = event.metadata.filterKeys { it !in keysToExtract }
                 
                 val metadataHtml = if (otherMetadata.isNotEmpty()) {
@@ -266,6 +271,36 @@ class TraceVisualizer {
                 val generatedContent = generatedContentKey?.let { event.metadata[it]?.toString() }
                 if (!generatedContent.isNullOrBlank() && generatedContent != "N/A" && generatedContent != "null") {
                     sections.add(createExpandableSection("Generated Content", generatedContent, "✨", "#fd7e14"))
+                }
+
+                // Add fullPrompt
+                val fullPrompt = fullPromptKey?.let { event.metadata[it]?.toString() }
+                if (!fullPrompt.isNullOrBlank() && fullPrompt != "N/A" && fullPrompt != "null") {
+                    sections.add(createExpandableSection("Full Prompt", fullPrompt, "📝", "#000000"))
+                }
+
+                // Add contentText
+                val contentText = contentTextKey?.let { event.metadata[it]?.toString() }
+                if (!contentText.isNullOrBlank() && contentText != "N/A" && contentText != "null") {
+                    sections.add(createExpandableSection("Content Text", contentText, "📄", "#000000"))
+                }
+
+                // Add pageKey
+                val pageKey = pageKeyKey?.let { event.metadata[it]?.toString() }
+                if (!pageKey.isNullOrBlank() && pageKey != "N/A" && pageKey != "null") {
+                    sections.add(createExpandableSection("Page Key", pageKey, "🔑", "#ffc107"))
+                }
+
+                // Add contextWindow
+                val contextWindow = contextWindowKey?.let { event.metadata[it]?.toString() }
+                if (!contextWindow.isNullOrBlank() && contextWindow != "N/A" && contextWindow != "null") {
+                    sections.add(createExpandableSection("Context Window", contextWindow, "🪟", "#6f42c1"))
+                }
+
+                // Add miniBank
+                val miniBank = miniBankKey?.let { event.metadata[it]?.toString() }
+                if (!miniBank.isNullOrBlank() && miniBank != "N/A" && miniBank != "null") {
+                    sections.add(createExpandableSection("Mini Bank", miniBank, "🏦", "#e83e8c"))
                 }
 
                 // Add reasoning content in an expandable section
