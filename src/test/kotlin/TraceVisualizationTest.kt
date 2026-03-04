@@ -8,6 +8,20 @@ import kotlin.test.assertTrue
 import java.io.File
 
 class TraceVisualizationTest {
+
+    @Test
+    fun generateInputOutputHtmlTrace() {
+        val trace = generateMockPipelineTrace()
+        val visualizer = TraceVisualizer()
+        val htmlReport = visualizer.generateHtmlReport(trace)
+
+        // Verify it contains the expandable details for Input and Output
+        assertTrue(htmlReport.contains("Input Content"), "HTML did not contain Input Content")
+        assertTrue(htmlReport.contains("Output Content"), "HTML did not contain Output Content")
+        assertTrue(htmlReport.contains("Test input"), "HTML did not contain Test input")
+        assertTrue(htmlReport.contains("API response"), "HTML did not contain API response")
+    }
+
     
     @Test
     fun generateStandardPipelineHtmlTrace() {
