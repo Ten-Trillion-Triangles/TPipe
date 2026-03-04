@@ -1,242 +1,94 @@
-# Conversation History Management
+# Conversation History Management - The Stream Record
+
+TPipe provides a high-reliability framework for managing multi-turn conversations. By using structured data types that mirror the chat paradigms of modern LLM APIs, TPipe ensures that user, assistant, and system roles are preserved accurately across your entire infrastructure. These utilities allow you to capture multimodal payloads (text and images) and feed them back into your agents through the **ContextWindow** reservoir.
 
 ## Table of Contents
-- [Overview](#overview)
 - [Core Types](#core-types)
-- [Building Histories](#building-histories)
 - [Automatic Pipe Wrapping](#automatic-pipe-wrapping)
-- [Integrating with ContextWindow](#integrating-with-contextwindow)
-- [Global Context Bank](#global-context-bank)
-- [Truncation and Token Budgets](#truncation-and-token-budgets)
-- [Serialization](#serialization)
-- [Best Practices](#best-practices)
-- [Next Steps](#next-steps)
+- [Mainline Integration](#mainline-integration)
+- [Truncation and Volume Control](#truncation-and-volume-control)
+- [Key Operational Behaviors](#key-operational-behaviors)
 
-## Overview
-
-TPipe stores multi-turn conversations in lightweight data structures that mirror the chat paradigms
-of modern LLM APIs. These utilities let you preserve user/assistant/system roles, capture
-multimodal payloads, and feed the accumulated dialogue back into the next request through
-`ContextWindow`.
+---
 
 ## Core Types
 
-### `ConverseRole`
+### 1. ConverseRole
+Defines exactly who produced a specific Drop in the conversation stream.
+- **`developer`**: System-level instructions that should have high adherence.
+- **`system`**: General behavioral rules for the model.
+- **`user`**: The human operator or external trigger.
+- **`agent`**: A specialized sub-agent within the infrastructure.
+- **`assistant`**: The primary model's previous response.
 
-Defined in `Context/ConverseData.kt`, the role enum differentiates who produced a message:
+### 2. ConverseData: The Cargo Unit
+Represents a single turn. Every instance contains a role, a `MultimodalContent` payload, and a **UUID**. TPipe uses this UUID to perform aggressive deduplication, ensuring that if multiple pipes attempt to merge their local histories, no turn is recorded twice.
 
+### 3. ConverseHistory: The Ordered Stream
+An ordered list of `ConverseData` entries. Adding an item that already exists (same UUID) is a silent no-op, keeping the stream clean and coherent.
+
+---
+
+## Automatic Pipe Wrapping: Seamless History
+
+Manually constructing conversation history for every interaction is tedious and error-prone. TPipe allows individual valves to manage this automatically.
+
+### Basic Implementation
 ```kotlin
-enum class ConverseRole {
-    developer,
-    system,
-    user,
-    agent,
-    assistant
-}
+val agent = BedrockPipe()
+    .setModel("anthropic.claude-3-5-sonnet-20241022-v2:0")
+    .wrapContentWithConverse(ConverseRole.assistant) // Automatically identifies as the assistant
 ```
 
-### `ConverseData`
+### The Mainline Pattern
+When you enable wrapping on multiple pipes in a pipeline, they automatically build on each other's work.
+1.  **Valve 1** finishes its work and wraps its output as an `assistant` message.
+2.  **Valve 2** detects that the input is already a conversation. It continues the stream, adding its own output as an `agent` message.
+3.  **Result**: The final output is a complete, multi-turn history of the entire mainline's Thoughts and "Actions."
 
-Represents a single turn of conversation. Each instance stores a role, a `MultimodalContent`
-payload, and a UUID used for deduplication.
+---
 
-```kotlin
-val turn = ConverseData(
-    role = ConverseRole.user,
-    content = MultimodalContent().apply { text = "Can you review my code?" }
-).also {
-    it.setUUID()
-}
-```
+## Mainline Integration: The Reservoirs
 
-`setUUID()` assigns a random identifier so repeated insertions can be ignored.
+### ContextWindow
+Every `ContextWindow` reservoir has a dedicated `converseHistory` slot. When a Pipe executes, TPipe automatically merges this history with your LoreBooks and raw context elements to build the final compound prompt.
 
-### `ConverseHistory`
+### ContextBank
+The global `ContextBank` allows you to persist these conversation streams across restarts. You can pull a history from the bank, add new turns, and push it back to the central reservoir to maintain a "Long-Term Memory" for your agents.
 
-Ordered list of `ConverseData` entries. Adding an item that already exists (same UUID) is a no-op.
+---
 
-```kotlin
-val history = ConverseHistory()
-history.add(ConverseRole.system, MultimodalContent("You are a helpful assistant."))
-history.add(turn)
-```
+## Truncation and Volume Control
 
-## Building Histories
+Conversation histories can grow massive, potentially bursting your model's context window. TPipe provides specialized truncation logic for these streams.
 
-Construct histories incrementally as the dialogue progresses:
-
-```kotlin
-fun appendUserMessage(history: ConverseHistory, text: String) {
-    history.add(
-        ConverseRole.user,
-        MultimodalContent().apply { this.text = text }
-    )
-}
-
-fun appendAssistantMessage(history: ConverseHistory, text: String) {
-    history.add(
-        ConverseRole.assistant,
-        MultimodalContent().apply { this.text = text }
-    )
-}
-```
-
-For multimodal messages use `MultimodalContent` helpers (e.g. `addImageFromPath`) before calling
-`add`.
-
-## Automatic Pipe Wrapping
-
-Individual pipes can automatically manage conversation history without manual construction. This is particularly useful for pipeline chains where each pipe contributes to an ongoing conversation.
-
-### Basic Usage
-
-```kotlin
-val conversationPipe = BedrockPipe()
-    .setModel("anthropic.claude-3-haiku-20240307-v1:0")
-    .setSystemPrompt("You are a helpful assistant.")
-    .wrapContentWithConverse()  // Enable automatic wrapping
-```
-
-### Pipeline Integration
-
-When multiple pipes in a pipeline have conversation wrapping enabled, they automatically build on each other's conversation history:
-
-```kotlin
-val conversationPipeline = Pipeline()
-    .add(BedrockPipe()
-        .setSystemPrompt("You are a research assistant.")
-        .wrapContentWithConverse(ConverseRole.assistant))
-    .add(BedrockPipe()
-        .setSystemPrompt("You are a fact checker.")
-        .wrapContentWithConverse(ConverseRole.agent))
-    .add(BedrockPipe()
-        .setSystemPrompt("You are an editor.")
-        .wrapContentWithConverse(ConverseRole.assistant))
-
-// Each pipe automatically builds on the conversation history
-val result = conversationPipeline.execute("Research the history of AI")
-```
-
-### How It Works
-
-1. **Input Detection**: Each pipe checks if its input is already in `ConverseHistory` format
-2. **History Storage**: If detected, the conversation history is stored in the pipe's metadata
-3. **Output Wrapping**: The pipe's output is automatically wrapped with the specified role and added to the conversation
-4. **Chain Continuity**: Subsequent pipes detect and continue building the conversation
-
-### System Prompt Conversion
-
-For models that work better with conversation format than system prompts:
-
-```kotlin
-val conversationPipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
-    .copySystemToUserPrompt()  // Convert to conversation format
-```
-
-This creates a conversation with the system prompt as a developer role entry and the user input as a user role entry.
-
-### Important Considerations
-
-- **Chain Continuity**: All pipes in a conversation chain should have `wrapContentWithConverse()` enabled
-- **Silent Breaking**: If any pipe lacks wrapping, the conversation chain breaks silently
-- **Role Selection**: Choose appropriate roles (`assistant`, `agent`, `system`, etc.) for each pipe's function
-- **JSON Agnostic**: Works regardless of the JSON structure the pipe produces
-
-## Integrating with ContextWindow
-
-`ContextWindow` contains a `ConverseHistory` instance that is automatically included when TPipe
-builds prompts. To load historic messages:
-
-```kotlin
-val contextWindow = ContextWindow()
-contextWindow.converseHistory = history
-```
-
-Whenever you send a request through a pipe, the engine merges conversation content with other
-context window elements (lorebooks, additional context strings, etc.).
-
-## Global Context Bank
-
-`ContextBank` persists context windows across pipelines or requests. Use it when multiple pipes need
-shared conversation state.
-
-```kotlin
-ContextBank.updateBankedContext(contextWindow)
-
-val copy = ContextBank.copyBankedContextWindow()
-copy?.let {
-    it.converseHistory.add(
-        ConverseRole.agent,
-        MultimodalContent("Forwarding to review agent")
-    )
-    ContextBank.updateBankedContext(it)
-}
-```
-
-When concurrency matters, call `updateBankedContextWithMutex` or `swapBankWithMutex` to avoid race
-conditions.
-
-## Truncation and Token Budgets
-
-`TokenBudgetSettings` controls how much of the conversation survives when space is limited. Assign
-it via `Pipe.setTokenBudget`:
+### Automated Budgeting
+Use `TokenBudgetSettings` to define exactly how much of the conversation should be preserved.
+- **`TruncateTop`**: The industrial standard for chat. It drops the oldest messages first, ensuring the agent always remembers the most recent instructions and data.
 
 ```kotlin
 val budget = TokenBudgetSettings(
-    userPromptSize = 2_000,
-    contextWindowSize = 16_000,
-    allowUserPromptTruncation = true,
+    contextWindowSize = 32000,
     truncationMethod = ContextWindowSettings.TruncateTop
 )
 pipe.setTokenBudget(budget)
 ```
 
-To manually trim a history using the same logic as the pipeline, call
-`ContextWindow.truncateConverseHistoryWithObject`:
+---
 
-```kotlin
-val truncationSettings = TruncationSettings()
-contextWindow.truncateConverseHistoryWithObject(
-    tokenBudget = 1_500,
-    multiplyBy = 0,
-    truncateMethod = ContextWindowSettings.TruncateTop,
-    truncationSettings = truncationSettings
-)
-```
+## Key Operational Behaviors
 
-The helper calculates token usage using the dictionary tokenizer and removes older entries until the
-budget is satisfied.
+### 1. Multi-Step Continuity
+Because TPipe uses UUID-based tracking, you can safely run loops or complex branches without fear of duplicating history. If an agent repeats a task (e.g., in a refinement loop), TPipe ensures the history remains a linear, logical record.
 
-## Serialization
+### 2. High Portability
+All conversation types are `@Serializable`. This means you can easily "Pipe" a conversation over a network to a remote `MemoryServer` or save it to disk as a project audit trail.
 
-Persist histories alongside other context data by using the shared `serialize` helpers:
-
-```kotlin
-import com.TTT.Util.serialize
-import com.TTT.Util.deserialize
-
-val json = serialize(history)
-val restored = deserialize<ConverseHistory>(json)
-```
-
-This is the same mechanism `ContextBank` uses internally when returning copies of the banked
-context window.
-
-## Best Practices
-
-- **Assign roles consistently**: stick to `user`/`assistant` alternation for clarity and add
-  `system` or `developer` messages only when instructions change.
-- **Deduplicate aggressively**: call `setUUID()` on incoming messages before adding them; the
-  `ConverseHistory.add` overload already handles UUID generation when omitted.
-- **Monitor growth**: large histories impact token budgets quickly. Combine truncation with summary
-  messages to keep context compact.
-- **Multimodal payloads**: populate `MultimodalContent` fully; downstream pipes will render whatever
-  text or binary content you include.
+### 3. Role-Specific Logic
+Modern models (like Claude 3.5 or GPT-4o) treat different roles with different levels of attention. By using the structured `ConverseRole` enum, you are ensuring that your instructions are placed in the specific Logical Compartments where the model expects them.
 
 ## Next Steps
 
-- Use conversation histories alongside PCP tools by pairing this guide with
-  [Basic PCP Usage](basic-pcp-usage.md) and [Intermediate PCP Features](intermediate-pcp-features.md).
-- Explore [Context and Tokens](../core-concepts/context-and-tokens.md) for deeper token-management strategies.
-- Enable tracing via [Tracing and Debugging](../core-concepts/tracing-and-debugging.md) to audit how conversation history is fed into provider prompts.
+Now that you can manage conversation streams, learn about how to equip your agents with tools.
+
+**→ [Basic PCP Usage](basic-pcp-usage.md)** - Getting started with shell and HTTP patterns.

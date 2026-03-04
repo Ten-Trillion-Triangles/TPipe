@@ -1,23 +1,24 @@
 # ContextBank Object API
 
-## Table of Contents
-- [Overview](#overview)
-- [Public Properties](#public-properties)
-- [Public Functions](#public-functions)
-  - [Current Context Access](#current-context-access)
-  - [Bank Management](#bank-management)
-  - [Context Swapping](#context-swapping)
-  - [Thread-Safe Operations](#thread-safe-operations)
-  - [Utilities](#utilities)
-  - [TodoList Integration](#todolist-integration)
+In a massive agentic infrastructure, you don't just need local storage; you need a **Central Reservoir**. `ContextBank` is the global repository for TPipe, allowing you to share, persist, and synchronize context across multiple applications, sessions, or even distributed agents.
 
-## Overview
-
-The `ContextBank` is a singleton object that manages TPipe's global context window system, enabling context sharing between pipes, pipelines, and parallel operations through a keyed banking system.
+While a `ContextWindow` is your local "tank" for a single conversation, `ContextBank` is the municipal water tower that serves the entire city.
 
 ```kotlin
 object ContextBank
 ```
+
+## Table of Contents
+- [Public Properties](#public-properties)
+- [Public Functions](#public-functions)
+  - [Current Context Access](#current-context-access)
+  - [Bank Management](#bank-management)
+  - [Storage Mode Management](#storage-mode-management)
+  - [Memory Eviction](#memory-eviction)
+  - [Cache Configuration](#cache-configuration)
+  - [Context Swapping](#context-swapping)
+  - [TodoList Integration](#todolist-integration)
+- [Key Behaviors](#key-behaviors)
 
 ## Public Properties
 
@@ -25,419 +26,93 @@ object ContextBank
 ```kotlin
 val swapMutex: Mutex = Mutex()
 ```
-Mutex for managing context window swapping operations. Ensures thread-safe access when changing the active banked context window.
+The Switching Gear mutex. Ensures thread-safe access when changing which reservoir (context window) is currently active.
 
 **`bankMutex`**
 ```kotlin
 val bankMutex: Mutex = Mutex()
 ```
-Mutex for managing bank access operations. Ensures thread-safe access when reading from or writing to the context bank storage.
+The Vault Door mutex. Ensures thread-safe access when reading from or writing to the global bank storage.
 
 ## Public Functions
 
-### Current Context Access
+### Current Context Access: Drawing from the Reservoir
 
 #### `getBankedContextWindow(): ContextWindow`
-Retrieves direct reference to the currently active banked context window.
+Retrieves a direct reference to the currently active banked context.
 
-**Behavior:** Returns the actual object reference without copying. **Warning:** Not safe for use in coroutines or multi-threaded environments due to potential race conditions. Use `copyBankedContextWindow()` for concurrent access.
+> [!CAUTION]
+> **Not Thread-Safe**: This returns the actual object reference. Use `copyBankedContextWindow()` if you are working with multiple coroutines.
 
 #### `copyBankedContextWindow(): ContextWindow?`
-Creates a deep copy of the currently active banked context window.
-
-**Behavior:** Uses serialization/deserialization for deep copying to ensure thread safety. Returns null if serialization fails. Recommended for use within coroutines and concurrent operations.
-
-#### `updateBankedContext(newContext: ContextWindow)`
-Updates the currently active banked context window.
-
-**Behavior:** Direct assignment without thread safety. **Warning:** Not safe for concurrent use. Use `updateBankedContextWithMutex()` for thread-safe updates.
+Creates a deep, thread-safe copy of the active banked context. This is the recommended way to draw data for concurrent operations.
 
 #### `updateBankedContextWithMutex(newContext: ContextWindow)`
-Thread-safe update of the currently active banked context window.
-
-**Behavior:** Uses `bankMutex` to ensure exclusive access during update. Recommended method for updating banked context in concurrent environments.
+Thread-safely replaces the currently active banked context with a new reservoir.
 
 ---
 
-### Bank Management
+### Bank Management: The Vault Operations
 
 #### `emplace(key: String, window: ContextWindow, mode: StorageMode)`
-Stores or replaces a context window with explicit storage mode control.
+Stores a context window in the bank. You can choose how it's stored using `StorageMode`:
 
-**Parameters:**
-- `key`: The identifier for storing the context window
-- `window`: The ContextWindow to store
-- `mode`: Storage mode controlling memory and disk persistence behavior
-
-**Storage Modes:**
-- `StorageMode.MEMORY_ONLY` - Store only in memory, no disk persistence
-- `StorageMode.MEMORY_AND_DISK` - Store in both memory and disk (default behavior)
-- `StorageMode.DISK_ONLY` - Store only on disk, load on-demand without caching
-- `StorageMode.DISK_WITH_CACHE` - Store on disk with LRU memory cache and automatic eviction
-
-**Example:**
-```kotlin
-// Disk-only for large, infrequently accessed contexts
-ContextBank.emplace("large-context", window, StorageMode.DISK_ONLY)
-
-// Cached disk storage with automatic eviction
-ContextBank.emplace("hot-data", window, StorageMode.DISK_WITH_CACHE)
-```
-
-#### `emplace(key: String, window: ContextWindow, persistToDisk: Boolean = false)`
-Backward compatible storage method using boolean flag.
-
-**Parameters:**
-- `key`: The identifier for storing the context window
-- `window`: The ContextWindow to store
-- `persistToDisk`: When true, stores to both memory and disk; when false, memory only
-
-**Behavior:** Maps to storage modes: `persistToDisk=true` → `MEMORY_AND_DISK`, `persistToDisk=false` → `MEMORY_ONLY`. Maintained for backward compatibility with existing code.
-
-#### `emplaceWithMutex(key: String, window: ContextWindow, mode: StorageMode)`
-Thread-safe storage with explicit storage mode control.
-
-**Parameters:**
-- `key`: The identifier for storing the context window
-- `window`: The ContextWindow to store
-- `mode`: Storage mode controlling memory and disk persistence behavior
-
-**Behavior:** Uses `bankMutex` to ensure exclusive access during bank modification. Recommended method for updating bank contents in concurrent environments.
-
-#### `emplaceWithMutex(key: String, window: ContextWindow, persistToDisk: Boolean = false)`
-Thread-safe backward compatible storage method.
-
-**Parameters:**
-- `key`: The identifier for storing the context window
-- `window`: The ContextWindow to store
-- `persistToDisk`: When true, stores to both memory and disk; when false, memory only
-
-**Behavior:** Uses `bankMutex` to ensure exclusive access. Maintained for backward compatibility.
+*   **`MEMORY_ONLY`**: Fast but lost on restart.
+*   **`MEMORY_AND_DISK`**: The standard (default). Fast and persistent.
+*   **`DISK_ONLY`**: Memory-efficient. Loads from disk only when requested.
+*   **`DISK_WITH_CACHE`**: Automatically caches "hot" data and evicts the rest.
 
 #### `getContextFromBank(key: String, copy: Boolean = true): ContextWindow`
-Retrieves a context window from the bank by key, respecting storage mode.
-
-**Behavior:** 
-- **Page Lock Check**: Returns empty `ContextWindow()` if page is locked via ContextLock
-- **Storage Mode Aware**: DISK_ONLY loads without caching, DISK_WITH_CACHE caches with eviction
-- **With `copy = true` (default)**: Returns deep copy via serialization for thread safety
-- **With `copy = false`**: Returns direct reference for performance but without thread safety
-- **Missing key**: Returns empty `ContextWindow()` if key doesn't exist
-- **Automatic Disk Loading**: Loads from disk if file exists but not in memory
-
-**Example:**
-```kotlin
-// Set disk-only mode
-ContextBank.emplace("data", window, StorageMode.DISK_ONLY)
-
-// Loads from disk without caching in memory
-val loaded = ContextBank.getContextFromBank("data")
-```
+Retrieves a specific "Page" (reservoir) from the bank by its key. Respects all security locks and storage modes.
 
 ---
 
-### Storage Mode Management
-
-#### `setStorageMode(key: String, mode: StorageMode)`
-Sets the storage mode for a specific key.
-
-**Parameters:**
-- `key`: The context bank key
-- `mode`: The storage mode to apply
-
-**Example:**
-```kotlin
-ContextBank.setStorageMode("my-key", StorageMode.DISK_ONLY)
-```
-
-#### `getStorageMode(key: String): StorageMode`
-Gets the storage mode for a specific key.
-
-**Returns:** The storage mode, or `MEMORY_AND_DISK` if not set (default for backward compatibility)
-
-#### `setStorageModeWithMutex(key: String, mode: StorageMode)`
-Thread-safe version of `setStorageMode()`.
-
----
-
-### Memory Eviction
+### Memory Eviction: Managing the Load
 
 #### `evictFromMemory(key: String): Boolean`
-Removes a context window from memory without deleting the disk file.
-
-**Returns:** `true` if the key was in memory and was removed, `false` otherwise
-
-**Example:**
-```kotlin
-// Free memory while keeping disk file
-ContextBank.evictFromMemory("large-context")
-```
-
-#### `evictFromMemoryWithMutex(key: String): Boolean`
-Thread-safe version of `evictFromMemory()`.
+Flushes a specific context from memory without deleting its disk file. Use this to keep your "Control Room" lean.
 
 #### `evictAllFromMemory()`
-Removes all context windows from memory without deleting disk files.
-
-#### `evictAllFromMemoryWithMutex()`
-Thread-safe version of `evictAllFromMemory()`.
-
-#### `evictTodoListFromMemory(key: String): Boolean`
-Removes a TodoList from memory without deleting the disk file.
-
-#### `evictTodoListFromMemoryWithMutex(key: String): Boolean`
-Thread-safe version of `evictTodoListFromMemory()`.
-
-#### `evictAllTodoListsFromMemory()`
-Removes all TodoLists from memory without deleting disk files.
-
-#### `evictAllTodoListsFromMemoryWithMutex()`
-Thread-safe version of `evictAllTodoListsFromMemory()`.
+Clears all context windows from memory, forcing them to be re-loaded from disk on next access.
 
 ---
 
-### Cache Configuration
+### Cache Configuration: The Filtration System
 
 #### `configureCachePolicy(config: CacheConfig)`
-Configures cache behavior for DISK_WITH_CACHE storage mode.
-
-**Parameters:**
-- `config`: Cache configuration with memory limits and eviction policy
-
-**Example:**
-```kotlin
-ContextBank.configureCachePolicy(
-    CacheConfig(
-        maxMemoryBytes = 50 * 1024 * 1024,  // 50MB
-        maxEntries = 100,
-        evictionPolicy = EvictionPolicy.LRU
-    )
-)
-```
-
-**Eviction Policies:**
-- `EvictionPolicy.LRU` - Least Recently Used (default)
-- `EvictionPolicy.LFU` - Least Frequently Used
-- `EvictionPolicy.FIFO` - First In First Out
-- `EvictionPolicy.MANUAL` - No automatic eviction
+Sets the rules for the `DISK_WITH_CACHE` storage mode. You can define memory limits and eviction policies like **LRU** (Least Recently Used) or **LFU** (Least Frequently Used).
 
 #### `getCacheStatistics(): CacheStatistics`
-Returns current cache statistics.
-
-**Returns:** `CacheStatistics` with:
-- `memoryEntries`: Number of entries in memory
-- `diskOnlyEntries`: Number of disk-only entries
-- `totalMemoryBytes`: Total memory usage
-- `cacheHitRate`: Cache hit rate (0.0 to 1.0)
-
-**Example:**
-```kotlin
-val stats = ContextBank.getCacheStatistics()
-println("Memory entries: ${stats.memoryEntries}")
-println("Cache hit rate: ${stats.cacheHitRate}")
-```
-
-#### `clearCache()`
-Clears all DISK_WITH_CACHE entries from memory.
-
-**Behavior:** Only removes cached entries, does not affect MEMORY_ONLY or MEMORY_AND_DISK entries.
+Returns a status report on your cache: memory usage, entry counts, and hit rates.
 
 ---
 
-### Bank Management
-
----
-
-### Context Swapping
-
-#### `swapBank(key: String, copy: Boolean = true)`
-Swaps the active banked context window with one from the bank.
-
-**Behavior:**
-- **With `copy = true` (default)**: Creates deep copy of banked context for safety
-- **With `copy = false`**: Uses direct reference for performance
-- **Missing key**: Uses empty `ContextWindow()` if key doesn't exist
-- **Thread safety**: **Warning:** Not safe for concurrent use, use `swapBankWithMutex()` instead
+### Context Swapping: Changing the Mainline
 
 #### `swapBankWithMutex(key: String)`
-Thread-safe context window swapping operation.
-
-**Behavior:** Uses both `bankMutex` and `swapMutex` for comprehensive thread safety. Always performs copying for safety. Recommended method for context swapping in concurrent environments.
+Thread-safely swaps the currently active context with another one from the vault. This is the industrial-standard way to switch between different "Mindsets" or "Sessions" in a single pipeline.
 
 ---
 
-### Thread-Safe Operations
+### TodoList Integration: Task Management
 
-All mutex-protected operations follow these patterns:
-
-**Single Mutex Operations:**
-- `emplaceWithMutex()` - Uses `bankMutex` for bank modifications
-- `updateBankedContextWithMutex()` - Uses `bankMutex` for banked context updates
-
-**Dual Mutex Operations:**
-- `swapBankWithMutex()` - Uses both `bankMutex` and `swapMutex` for comprehensive safety during context swapping
-
-**Mutex Ordering:** When multiple mutexes are required, they are acquired in consistent order (`bankMutex` then `swapMutex`) to prevent deadlocks.
-
----
-
-### Utilities
-
-#### `clearBankedContext()`
-Resets the currently active banked context window to empty state.
-
-**Behavior:** Replaces banked context with new empty `ContextWindow()`. Useful for cleanup operations and conditional logic that checks for context presence.
-
----
-
-### TodoList Integration
-
-ContextBank provides storage and retrieval for TodoList objects, enabling task management across pipes and pipelines.
+The Bank also serves as the storage for **TodoLists**, enabling task tracking that survives restarts.
 
 #### `getPagedTodoList(key: String, copy: Boolean = true): TodoList`
-Retrieves a TodoList from ContextBank storage.
-
-**Parameters:**
-- `key` - The page key identifying the TodoList
-- `copy` - If `true`, returns a deep copy; if `false`, returns direct reference
-
-**Behavior:** 
-1. Checks in-memory storage for the key
-2. If not found in memory and disk persistence is enabled, attempts to load from `~/.tpipe/TPipe-Default/memory/todo/<key>.todo`
-3. Returns the TodoList if found, or an empty TodoList if not found
-4. When `copy = true`, uses serialization for deep copying to ensure thread safety
-
-**Example:**
-```kotlin
-// Get a copy (safe for concurrent use)
-val todoList = ContextBank.getPagedTodoList("my-tasks")
-
-// Get direct reference (faster but not thread-safe)
-val todoListRef = ContextBank.getPagedTodoList("my-tasks", copy = false)
-```
+Retrieves a task list from the bank's specialized Todo storage.
 
 #### `emplaceTodoList(key: String, todoList: TodoList, writeToDisk: Boolean, overwrite: Boolean)`
-Stores a TodoList in ContextBank.
-
-**Parameters:**
-- `key` - Unique identifier for this TodoList
-- `todoList` - The TodoList object to store
-- `writeToDisk` - If `true`, persists to `~/.tpipe/TPipe-Default/memory/todo/<key>.todo`
-- `overwrite` - If `true`, replaces existing TodoList with same key; if `false`, merges with existing
-
-**Behavior:**
-1. Stores TodoList in memory under the specified key
-2. If `writeToDisk = true`, serializes and saves to disk for persistence across runs
-3. If `overwrite = false` and a TodoList exists with this key, merges the new list with the existing one
-4. Creates the todolist directory if it doesn't exist
-
-**Example:**
-```kotlin
-val todoList = TodoList()
-// ... populate tasks ...
-
-ContextBank.emplaceTodoList(
-    key = "code-review",
-    todoList = todoList,
-    writeToDisk = true,
-    overwrite = true
-)
-```
-
-#### `emplaceTodoListWithMutex(key: String, todoList: TodoList, writeToDisk: Boolean, overwrite: Boolean)`
-Thread-safe version of `emplaceTodoList()`.
-
-**Behavior:** Identical to `emplaceTodoList()` but uses mutex locking to ensure thread safety. Use this when multiple coroutines or threads might save TodoLists simultaneously.
-
-**Example:**
-```kotlin
-runBlocking {
-    ContextBank.emplaceTodoListWithMutex(
-        key = "shared-tasks",
-        todoList = todoList,
-        writeToDisk = true,
-        overwrite = true
-    )
-}
-```
-
-**TodoList Storage Location:**
-
-TodoLists are stored in the TPipe configuration directory:
-- **Path**: `~/.tpipe/TPipe-Default/memory/todo/<key>.todo`
-- **Format**: JSON serialization of TodoList object
-- **Persistence**: Survives application restarts when `writeToDisk = true`
-
-See [TodoList API](todolist.md) for complete TodoList documentation and usage examples.
+Stores a task list in the bank. If `writeToDisk` is true, the tasks are saved to `~/.tpipe/TPipe-Default/memory/todo/<key>.todo`.
 
 ---
 
 ## Key Behaviors
 
 ### Thread Safety Model
-ContextBank provides both thread-safe and non-thread-safe variants of operations. Non-mutex methods offer better performance but require careful usage in single-threaded contexts. Mutex methods ensure safety in concurrent environments at the cost of synchronization overhead.
+ContextBank provides both "Fast" (non-mutex) and "Safe" (mutex) methods. In production agent swarms, always use the `WithMutex` variants to prevent data corruption during simultaneous "pumping" operations.
 
-### Copy vs Reference Strategy
-Most operations offer choice between copying (safe but slower) and direct references (fast but potentially unsafe). Copying uses serialization for deep copying, ensuring complete isolation between contexts.
-
-### Page-Based Organization
-The banking system uses string keys as "pages" to organize different context domains. This enables:
-- **Context Isolation**: Different pipelines can use separate pages
-- **Context Sharing**: Multiple operations can access the same page
-- **Context Switching**: Active context can be swapped between pages
+### Copy vs. Reference
+Drawing a **Copy** (via serialization) ensures that modifications in one pipe won't accidentally leak into other parallel pipes. Drawing a **Reference** is faster but should only be used in single-threaded, isolated logic.
 
 ### Fallback Behavior
-Operations gracefully handle missing keys by returning empty `ContextWindow()` objects rather than throwing exceptions. This ensures robust operation even with invalid page keys.
-
-### Global State Management
-As a singleton, ContextBank maintains global state across the entire TPipe system. This enables:
-- **Cross-Pipeline Context**: Multiple pipelines can share context
-- **Persistent Context**: Context survives individual pipe/pipeline execution
-- **Centralized Management**: Single point of control for all global context
-
-### Storage Mode System
-ContextBank supports four storage modes for fine-grained memory and disk management:
-
-**MEMORY_ONLY:**
-- Fastest access, no disk I/O
-- Data lost on application restart
-- Use for temporary or frequently accessed data
-
-**MEMORY_AND_DISK (Default):**
-- Fast access with persistence
-- Backward compatible with existing code
-- Use for important data needing both speed and durability
-
-**DISK_ONLY:**
-- Most memory efficient
-- Loads from disk on every access without caching
-- Use for large, infrequently accessed contexts
-
-**DISK_WITH_CACHE:**
-- Balanced approach with automatic eviction
-- Configurable cache policies (LRU/LFU/FIFO)
-- Use for large datasets where hot data should be cached
-
-**Example Usage:**
-```kotlin
-// Configure cache for memory-constrained environment
-ContextBank.configureCachePolicy(
-    CacheConfig(
-        maxMemoryBytes = 50 * 1024 * 1024,
-        maxEntries = 100,
-        evictionPolicy = EvictionPolicy.LRU
-    )
-)
-
-// Store large context to disk only
-val largeContext = ContextWindow()
-// ... populate ...
-ContextBank.emplace("large-data", largeContext, StorageMode.DISK_ONLY)
-
-// Access when needed (loads from disk)
-val loaded = ContextBank.getContextFromBank("large-data")
-
-// Monitor cache performance
-val stats = ContextBank.getCacheStatistics()
-println("Cache hit rate: ${stats.cacheHitRate}")
-```
+The Bank is designed for reliability. If you request a key that doesn't exist, it returns an empty `ContextWindow()` rather than "bursting" (throwing an error).

@@ -1,247 +1,67 @@
-# Junction
+# Junction - Democratic Discussion and Consensus
 
-## Table of Contents
-- [Current Status](#current-status)
-- [Intended Design](#intended-design)
-- [Planned Discussion Strategies](#planned-discussion-strategies)
-- [Expected Data Structures](#expected-data-structures)
-- [Planned Features](#planned-features)
-- [Implementation Requirements](#implementation-requirements)
-- [Planned Usage Example](#planned-usage-example)
-- [Development Priority](#development-priority)
-- [Contributing](#contributing)
+In a complex municipal infrastructure, critical decisions shouldn't always be made by a single agent. Sometimes you need a **Council of Experts**—a forum where specialists can debate different perspectives, refine a solution through multiple rounds, and reach a consensus through structured voting. **Junction** is the orchestration container designed for these collaborative decision-making patterns.
 
-Junction is a planned container for democratic discussion and voting patterns between multiple specialist agents. Currently stubbed, it will enable collaborative decision-making through structured debate rounds.
+Think of Junction as the **Strategic Boardroom** where the Security Expert, the Performance Engineer, and the Business Analyst come together to approve a major infrastructure change.
 
-## Current Status
+> [!WARNING]
+> **Experimental Status**: The `Junction` is currently a **Stub Implementation**. The structural blueprint and intended strategies are defined, but the collaborative discussion engine is not yet functional.
 
-⚠️ **Junction is currently a stub implementation** - only the class structure exists. This documentation describes the intended design and planned features.
+## Intended Design: The Collaborative Yard
 
-```kotlin
-class Junction {
-    // Currently empty - implementation pending
-}
-```
+When complete, Junction will orchestrate democratic discussions between multiple specialized mainlines:
 
-## Intended Design
+### 1. The Moderator
+A high-priority pipeline that controls the flow of the discussion. It evaluates the current state of consensus and makes the final decision call when the debate is finished.
 
-### Core Concept
-Junction will orchestrate democratic discussions where multiple specialist agents:
-- Present their perspectives on a problem
-- Debate and refine solutions through multiple rounds
-- Reach consensus through voting or moderator intervention
+### 2. The Participants
+A collection of specialist agents (Registered in the **P2PRegistry**) with distinct viewpoints (e.g., "Security," "Usability," "Cost").
 
-### Planned Components
+### 3. Consensus Strategies
+Junction is designed to support several Discussion Blueprints:
+*   **SIMULTANEOUS**: All experts give their opinion at once, then respond to each other in a second round before voting.
+*   **CONVERSATIONAL**: Agents dynamically choose who they want to engage with in each turn, moderated by the central controller.
+*   **ROUND_ROBIN**: A structured, turn-taking debate where each expert speaks in order.
 
-#### Moderator Pipeline
-Controls discussion flow and makes final decisions:
-```kotlin
-// Planned API
-val moderator = Pipeline()
-    .addPipe(discussionModerationPipe)
-    .addPipe(consensusEvaluatorPipe)
-    .addPipe(finalDecisionPipe)
+---
 
-junction.setModerator(moderator)
-```
+## Planned Data Structures: The Discussion Ledger
 
-#### Participant Agents
-Specialist agents with distinct viewpoints:
-```kotlin
-// Planned API
-junction
-    .addParticipant("security-expert", securityPipeline)
-    .addParticipant("performance-expert", performancePipeline)
-    .addParticipant("usability-expert", usabilityPipeline)
-    .addParticipant("cost-analyst", costPipeline)
-```
-
-## Planned Discussion Strategies
-
-### Simultaneous Opinion Strategy
-All agents present views simultaneously, then iterate:
+The Junction will maintain a `DiscussionState` to track the "Mainline of Thought."
 
 ```kotlin
-// Planned implementation
-junction.setStrategy(DiscussionStrategy.SIMULTANEOUS)
-    .setRounds(3)
-    .setVotingThreshold(0.75)
-
-// Round 1: All agents give initial opinions
-// Round 2: Agents respond to others' opinions  
-// Round 3: Final positions and voting
-```
-
-### Conversational Strategy
-Agents choose who to engage with each round:
-
-```kotlin
-// Planned implementation
-junction.setStrategy(DiscussionStrategy.CONVERSATIONAL)
-    .setMaxRounds(5)
-    .setModeratorIntervention(true)
-
-// Agents select discussion partners dynamically
-// Moderator intervenes when progress stalls
-```
-
-### Round-Robin Strategy
-Structured turn-taking discussion:
-
-```kotlin
-// Planned implementation
-junction.setStrategy(DiscussionStrategy.ROUND_ROBIN)
-    .setTurnsPerRound(2)
-    .setRounds(4)
-
-// Each agent speaks in order for set number of turns
-// Moderator evaluates after each complete round
-```
-
-## Expected Data Structures
-
-### Discussion State
-```kotlin
-// Planned data structure
 @Serializable
 data class DiscussionState(
-    var currentRound: Int = 1,
-    var maxRounds: Int = 5,
     var topic: String = "",
-    var participantOpinions: MutableMap<String, String> = mutableMapOf(),
-    var votes: MutableMap<String, String> = mutableMapOf(),
+    var participantOpinions: MutableMap<String, String> = mutableMapOf(), // Expert findings
+    var votes: MutableMap<String, String> = mutableMapOf(),             // Formal approvals
     var consensusReached: Boolean = false,
     var finalDecision: String = ""
 )
 ```
 
-### Voting Result
-```kotlin
-// Planned data structure
-@Serializable
-data class VotingResult(
-    var option: String = "",
-    var votes: Int = 0,
-    var percentage: Double = 0.0,
-    var supporters: List<String> = listOf()
-)
-```
+---
 
-## Planned Features
+## Planned Features: Consensus Mechanisms
 
-### Consensus Mechanisms
-- **Vote threshold**: Require X% agreement to conclude
-- **Moderator override**: Allow moderator to make final call
-- **Time limits**: Force decisions after max rounds
-- **Weighted voting**: Give some agents more influence
+To ensure the discussion leads to a reliable outcome, Junction will include:
 
-### Discussion Management
-- **Topic focus**: Keep discussion on track
-- **Conflict resolution**: Handle disagreements
-- **Information sharing**: Distribute relevant context
-- **Progress tracking**: Monitor consensus building
-
-### Integration Points
-- **P2P support**: Register as collaborative agent
-- **Tracing**: Track discussion flow and decisions
-- **Human-in-the-loop**: Allow human moderator intervention
-- **Context management**: Share relevant information
-
-## Implementation Requirements
-
-### Core TODOs
-1. **Discussion orchestration engine**
-2. **Voting and consensus mechanisms** 
-3. **Moderator intervention logic**
-4. **Round management system**
-5. **Opinion aggregation and analysis**
-6. **P2P interface implementation**
-7. **Tracing and monitoring support**
-
-### Technical Requirements
-- **Async coordination** for simultaneous discussions
-- **State management** for multi-round conversations
-- **Conflict resolution** algorithms
-- **Context sharing** between participants
-- **Decision validation** and finalization
-
-## Planned Usage Example
-
-```kotlin
-// Future API design
-class ProductDecisionSystem {
-    private val junction = Junction()
-    
-    init {
-        setupJunction()
-    }
-    
-    private fun setupJunction() {
-        val moderator = Pipeline()
-            .addPipe(discussionModerationPipe)
-            .addPipe(consensusEvaluatorPipe)
-        
-        junction
-            .setModerator(moderator)
-            .addParticipant("security", securityExpertPipeline)
-            .addParticipant("performance", performanceExpertPipeline)
-            .addParticipant("ux", uxExpertPipeline)
-            .addParticipant("business", businessAnalystPipeline)
-            .setStrategy(DiscussionStrategy.SIMULTANEOUS)
-            .setRounds(3)
-            .setVotingThreshold(0.8)
-            .enableTracing()
-    }
-    
-    suspend fun makeProductDecision(proposal: String): ProductDecision {
-        val discussion = MultimodalContent().apply {
-            addText("Product proposal: $proposal")
-        }
-        
-        val result = junction.conductDiscussion(discussion)
-        
-        return ProductDecision(
-            proposal = proposal,
-            decision = extractDecision(result),
-            consensus = extractConsensus(result),
-            participantViews = extractViews(result),
-            votingResults = extractVotes(result)
-        )
-    }
-}
-
-data class ProductDecision(
-    val proposal: String,
-    val decision: String,
-    val consensus: Double,
-    val participantViews: Map<String, String>,
-    val votingResults: List<VotingResult>
-)
-```
-
-## Development Priority
-
-Junction is planned for future implementation after core container types are stable. Priority areas:
-
-1. **Core orchestration** - Basic discussion management
-2. **Voting mechanisms** - Consensus and decision making  
-3. **Moderator logic** - Intervention and guidance
-4. **P2P integration** - Agent registration and discovery
-5. **Advanced strategies** - Sophisticated discussion patterns
-
-## Contributing
-
-If you're interested in implementing Junction:
-
-1. **Review existing containers** for patterns and interfaces
-2. **Design discussion orchestration** algorithms
-3. **Implement voting and consensus** mechanisms
-4. **Add comprehensive tracing** support
-5. **Create test scenarios** for various discussion types
-6. **Document usage patterns** and best practices
-
-Junction represents an advanced collaborative AI pattern that could enable sophisticated multi-agent decision making once implemented.
+*   **Vote Thresholds**: Require a specific Pressure Level (e.g., 75% agreement) to conclude a decision.
+*   **Weighted Voting**: Give certain experts more influence on specific topics (e.g., the Security Expert has more weight on safety-related decisions).
+*   **Conflict Resolution**: Automated logic for the Moderator to intervene when progress stalls or agents disagree fundamentally.
+*   **High-Resolution Debate Tracing**: High-resolution telemetry to visualize how a decision evolved from round to round.
 
 ---
 
-**Previous:** [← DistributionGrid](distributiongrid.md) | **Next:** [Cross-Cutting Topics →](cross-cutting-topics.md)
+## Technical Implementation Roadmap
+
+To reach industrial readiness, Junction requires:
+1.  **Async Coordination**: An engine that can handle multiple simultaneous agent calls during the opinion rounds.
+2.  **State Preservation**: Mechanisms to share the evolving `DiscussionState` across all participants without creating context pollution.
+3.  **P2P Integration**: A full implementation of the `P2PInterface` so the council can be called as a single "Consensus Agent."
+
+## Next Steps
+
+Since Junction is experimental, start your orchestration journey with the production-ready manager-worker system.
+
+**→ [Manifold - Multi-Agent Orchestration](manifold.md)** - Coordinating specialized workers with a central manager.

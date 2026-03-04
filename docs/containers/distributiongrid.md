@@ -1,219 +1,78 @@
-# DistributionGrid
+# DistributionGrid - Decentralized Agent Swarms
 
-## Table of Contents
-- [Current Implementation Status](#current-implementation-status)
-- [Defined Data Structures](#defined-data-structures)
-- [Intended Architecture](#intended-architecture)
-- [Schema Validation](#schema-validation)
-- [Missing Implementation](#missing-implementation)
-- [Planned Usage (Not Currently Working)](#planned-usage-not-currently-working)
-- [Development Requirements](#development-requirements)
-- [Current Limitations](#current-limitations)
-- [Contributing](#contributing)
+In a highly advanced infrastructure, you don't always want a single manager coordinating every task. Sometimes you need a **Decentralized Swarm**—a system where agents autonomously decide which specialist to call next based on the evolving requirements of a project. **DistributionGrid** is the orchestration container designed for these autonomous workflows.
 
-DistributionGrid is designed for decentralized agent swarms where AI agents autonomously decide which agent to call next. **Currently this is a stub implementation** with only basic structure and data classes defined.
+Think of DistributionGrid as a **Smart Power Grid** where power (tasks) is automatically routed to the most efficient substation (agent) without central intervention.
 
-## Current Implementation Status
+> [!WARNING]
+> **Experimental Status**: The `DistributionGrid` is currently a **Stub Implementation**. The structural blueprints and data classes are defined, but the autonomous execution loop is not yet functional.
 
-⚠️ **DistributionGrid is currently incomplete** - only the class structure and data types exist.
+## Core Data Structures: The Task Cargo
 
-```kotlin
-class DistributionGrid : P2PInterface {
-    private var entryPipeline: Pipeline? = null
-    private var judgePipeline: Pipeline? = null  
-    private var workerPipelines: MutableList<Pipeline>? = null
-    private var availableAgents: List<AgentDescriptor>? = null
-    private var enableTracing = false
-    
-    // Only one implemented method:
-    fun setEntryPipeline(pipeline: Pipeline) {
-        // Validates pipeline has DistributionGridTask JSON schema
-        val requiredJsonOutputSchema = examplePromptFor(DistributionGridTask::class)
-        // ... validation logic
-        entryPipeline = pipeline
-    }
-}
-```
-
-## Defined Data Structures
-
-### DistributionGridTask
-Task payload designed to pass between agents:
+The grid relies on the `DistributionGridTask` to move data between autonomous agents.
 
 ```kotlin
 @Serializable
 data class DistributionGridTask(
-    var isTaskComplete: Boolean,
-    var taskDescription: String,        // Original task, never changes
-    var actionTaken: String,           // What current agent did
-    var requestToNextAgent: String,    // Instructions for next agent
-    var nextAgentToCall: AgentRequest, // Which agent to call next
-    var pcpRequest: PcPRequest? = null,// Optional tool execution
-    var userContent: MultimodalContent? = null // Hidden from agents
+    var isTaskComplete: Boolean,        // Has the project reached its goal?
+    var taskDescription: String,        // The foundational objective (immutable)
+    var actionTaken: String,           // A log of what the current agent just did
+    var requestToNextAgent: String,    // Specific instructions for the next specialist
+    var nextAgentToCall: AgentRequest, // The target valve for the next turn
+    var pcpRequest: PcPRequest? = null // Optional tool calls (e.g., shell, HTTP)
 )
 ```
 
-### DistributionGridJudgement
-Judge evaluation result:
+## Intended Architecture: The Autonomous Yard
 
-```kotlin
-data class DistributionGridJudgement(
-    var isTaskComplete: Boolean = false,
-    var previousAgent: String = "",
-    var previousAgentResponse: MultimodalContent = MultimodalContent()
-)
-```
+When complete, the DistributionGrid will coordinate three types of specialized mainlines:
 
-## Intended Architecture
+### 1. The Dispatcher (Entry Pipeline)
+The initial valve that assesses the task and selects the first agent to enter the swarm. It must output a valid `DistributionGridTask` object.
 
-The planned design includes:
+### 2. The Workers (Autonomous Agents)
+A pool of specialized pipelines (Registered in the **P2PRegistry**) that can process a task and then "Hand off" the flow to another worker by populating the `nextAgentToCall` field.
 
-### Dispatcher Pipeline
-- Initial task assessment and first agent selection
-- Must have JSON output schema matching `DistributionGridTask`
-
-### Worker Pipelines
-- Autonomous agents that process tasks and select next agents
-- Each must support `DistributionGridTask` input/output
-
-### Judge Pipeline
-- Validates task completion and routes incomplete tasks
-- Uses `DistributionGridJudgement` for decisions
-
-## Schema Validation
-
-The only implemented feature validates pipeline schemas:
-
-```kotlin
-fun setEntryPipeline(pipeline: Pipeline) {
-    val requiredJsonOutputSchema = examplePromptFor(DistributionGridTask::class)
-    
-    var hasSchema = false
-    for (pipe in pipeline.getPipes()) {
-        if (pipe.jsonOutput == requiredJsonOutputSchema) {
-            hasSchema = true
-            break
-        }
-    }
-    
-    if (!hasSchema) {
-        throw Exception("Entry pipeline must have a pipe with the following json output schema: $requiredJsonOutputSchema")
-    }
-    
-    entryPipeline = pipeline
-}
-```
-
-## Missing Implementation
-
-The following features are **not yet implemented**:
-
-- ❌ Task execution loop
-- ❌ Agent discovery and routing
-- ❌ Judge validation system
-- ❌ Token management and compression
-- ❌ Conversation history tracking
-- ❌ Worker pipeline management
-- ❌ P2P request handling
-- ❌ Tracing events
-- ❌ Error handling and recovery
-
-## Planned Usage (Not Currently Working)
-
-```kotlin
-// This is the intended API design, but not implemented:
-class SoftwareDevelopmentGrid {
-    private val grid = DistributionGrid()
-    
-    init {
-        // These methods don't exist yet:
-        // grid.setDispatcher(dispatcherPipeline)
-        // grid.addWorker("architect", architectPipeline)  
-        // grid.setJudge(judgePipeline)
-        // grid.setMaxIterations(50)
-        
-        // Only this works:
-        grid.setEntryPipeline(dispatcherPipeline)
-    }
-    
-    suspend fun developSoftware(requirements: String): SoftwareProject {
-        // This execute method doesn't exist:
-        // val result = grid.executeTask(requirements)
-        
-        throw NotImplementedError("DistributionGrid execution not implemented")
-    }
-}
-```
-
-## Development Requirements
-
-To complete DistributionGrid implementation:
-
-### Core Methods Needed
-```kotlin
-// Agent management
-fun addWorker(name: String, pipeline: Pipeline)
-fun setJudge(pipeline: Pipeline)
-fun setMaxIterations(max: Int)
-
-// Execution
-suspend fun executeTask(task: String): MultimodalContent
-suspend fun executeAgent(agentName: String, task: DistributionGridTask): MultimodalContent
-
-// Agent discovery
-fun updateAvailableAgents()
-fun getAgentContext(): String
-
-// Token management  
-fun manageTokens(history: ConverseHistory): ConverseHistory
-fun compressHistory(history: ConverseHistory, targetSize: Int): ConverseHistory
-```
-
-### P2P Integration
-```kotlin
-override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
-    // Route to appropriate agent based on request
-}
-
-override fun getPipelinesFromInterface(): List<Pipeline> {
-    // Return all registered pipelines
-}
-```
-
-### Tracing Support
-```kotlin
-fun enableTracing(config: TraceConfig)
-// Emit events like:
-// - DISTRIBUTION_GRID_START/END
-// - AGENT_DISPATCH/COMPLETION  
-// - TASK_ROUTING_DECISION
-// - JUDGE_VALIDATION
-// - TOKEN_COMPRESSION
-```
-
-## Current Limitations
-
-- **No execution capability** - only schema validation works
-- **No agent management** - cannot add workers or judges
-- **No P2P handling** - P2P methods are inherited but not implemented
-- **No tracing** - no trace events emitted
-- **No error handling** - no recovery mechanisms
-
-## Contributing
-
-If implementing DistributionGrid:
-
-1. **Study existing containers** (Manifold, Splitter) for patterns
-2. **Implement agent management** methods
-3. **Create execution loop** with task routing
-4. **Add judge validation** system
-5. **Implement token management** and compression
-6. **Add comprehensive tracing** support
-7. **Handle P2P requests** properly
-8. **Create test scenarios** for distributed execution
-
-DistributionGrid represents an advanced distributed AI pattern that requires significant implementation work to become functional.
+### 3. The Judge (Quality Control)
+A high-priority auditor that validates every hand-off, ensuring the swarm is actually moving toward the goal and hasn't fallen into a logic loop.
 
 ---
 
-**Previous:** [← Manifold](manifold.md) | **Next:** [Junction →](junction.md)
+## Technical Validation: Schema Checking
+
+Currently, the grid's only active feature is **Blueprint Validation**. It ensures that any entry pipeline you attach has the correct JSON output schema to produce a `DistributionGridTask`.
+
+```kotlin
+fun setEntryPipeline(pipeline: Pipeline) {
+    // TPipe verifies that the pipeline's final valve
+    // matches the required DistributionGridTask specification.
+    // ...
+}
+```
+
+---
+
+## Planned Capabilities (Development Roadmap)
+
+To reach industrial readiness, the following Infrastructure Upgrades are planned:
+
+*   **Autonomous Loop**: A kernel that handles the actual hand-off between worker agents.
+*   **Token Compression**: Logic to automatically summarize long conversation histories so the Water Level (token count) stays within model limits.
+*   **Infinite Loop Detection**: A safety valve that shuts the grid if agents start passing a task back and forth without making progress.
+*   **Deep Grid Tracing**: High-resolution telemetry to visualize the Path a task took through the autonomous swarm.
+
+---
+
+## Contributing to the Grid
+
+The `DistributionGrid` represents the cutting edge of the TPipe ecosystem. If you are interested in building decentralized agent swarms:
+
+1.  **Analyze Manifold**: Study the `Manifold` container to understand how multi-turn loops are currently handled.
+2.  **P2P Mastery**: Ensure you understand how `P2PRegistry` handles agent discovery, as the grid relies entirely on P2P for worker hand-offs.
+3.  **Autonomous Logic**: Build test scenarios where agents can successfully populate `AgentRequest` objects based on complex inputs.
+
+## Next Steps
+
+Since the DistributionGrid is experimental, start your orchestration journey with the production-ready manager-worker system.
+
+**→ [Manifold - Multi-Agent Orchestration](manifold.md)** - Coordinating specialized workers with a central manager.

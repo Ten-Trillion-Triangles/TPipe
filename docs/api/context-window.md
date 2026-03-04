@@ -1,7 +1,13 @@
 # ContextWindow Class API
 
+The `ContextWindow` class is the **Memory Reservoir**. It acts as the primary memory system for an agent, holding the "state" (LoreBooks, raw context, and conversation history) and intelligently managing how that data is filtered and "pumped" into the model's limited context space.
+
+```kotlin
+@Serializable
+data class ContextWindow(@Transient val cinit: Boolean = false)
+```
+
 ## Table of Contents
-- [Overview](#overview)
 - [Public Properties](#public-properties)
 - [Public Functions](#public-functions)
   - [LoreBook Management](#lorebook-management)
@@ -9,16 +15,8 @@
   - [Context Merging](#context-merging)
   - [Truncation](#truncation)
   - [Conversation Management](#conversation-management)
+  - [Access Control](#access-control)
   - [Utilities](#utilities)
-
-## Overview
-
-The `ContextWindow` class manages context data including lorebook entries, context elements, and conversation history with intelligent selection and truncation capabilities.
-
-```kotlin
-@Serializable
-data class ContextWindow(@Transient val cinit: Boolean = false)
-```
 
 ## Public Properties
 
@@ -26,244 +24,96 @@ data class ContextWindow(@Transient val cinit: Boolean = false)
 ```kotlin
 var loreBookKeys: MutableMap<String, LoreBook> = mutableMapOf()
 ```
-Lorebook keys and values for weighted context injection. Each entry contains key-value pairs with metadata like weight, aliases, and dependencies.
+The **Strategic Reserves**. Key-based information that is only pumped into the flow when it's relevant.
 
 **`contextElements`**
 ```kotlin
 var contextElements: MutableList<String> = mutableListOf()
 ```
-List of raw context strings for direct context injection without lorebook processing.
+The **Constant Flow**. Raw context strings that are always included in the prompt until truncated.
 
 **`converseHistory`**
 ```kotlin
 var converseHistory: ConverseHistory = ConverseHistory()
 ```
-Structured conversation history between user and LLM agent for maintaining conversation context.
+The **Stream Record**. A structured log of the conversation between the user and the agent.
 
 **`contextSize`**
 ```kotlin
 var contextSize: Int = 8000
 ```
-Maximum token size for the context window. Overridden by Pipe class settings during execution.
+The total capacity (in tokens) of this reservoir.
 
 ## Public Functions
 
-### LoreBook Management
+### LoreBook Management: Building the Reserves
 
 #### `addLoreBookEntry(key: String, value: String, weight: Int = 0, linkedKeys: List<String> = listOf(), aliasKeys: List<String> = listOf(), requiredKeys: List<String> = listOf())`
-Adds a new lorebook entry with comprehensive metadata.
-
-**Behavior:** Creates `LoreBook` object with specified parameters. Automatically adds uppercase and lowercase versions of the key as aliases for case-insensitive matching.
-
-#### `addLoreBookEntryWithObject(lorebook: LoreBook)`
-Adds lorebook entry using existing LoreBook object.
-
-**Behavior:** Wrapper around `addLoreBookEntry()` that extracts parameters from LoreBook object. Useful for copying and re-adding entries.
+Adds a new entry to the LoreBook with comprehensive metadata for smart selection.
 
 #### `findLoreBookEntry(key: String): LoreBook?`
-Finds lorebook entry by key or alias with case-insensitive matching.
-
-**Behavior:** Searches in order: uppercase key, lowercase key, exact key, then all alias keys (uppercase, lowercase, exact). Returns first match or null.
+Finds an entry by its key or any of its aliases (case-insensitive).
 
 #### `cleanLorebook(bannedChars: String = "", replaceBannedCharWith: String = "")`
-Cleans lorebook keys by removing or replacing banned characters.
-
-**Behavior:** 
-- Parses `bannedChars` as comma-space delimited list
-- Creates copy of all lorebook entries
-- Replaces banned characters with replacement string
-- Re-adds entries with cleaned keys and regenerated aliases
+Scours the LoreBook keys to remove or replace "illegal" characters, ensuring they don't break downstream logic.
 
 ---
 
-### Context Selection
+### Context Selection: Pumping Relevant Data
 
 #### `findMatchingLoreBookKeys(text: String): List<String>`
-Finds lorebook keys that match substrings in input text.
+Scans the input text for any matches against LoreBook keys or aliases.
 
-**Behavior:** Case-insensitive substring matching against both main keys and alias keys. Returns list of matching main keys (not aliases).
+#### `selectLoreBookContext(text: String, maxTokens: Int, ...): List<String>`
+The core selection algorithm. It identifies relevant keys, expands linked keys, checks dependencies, and selects the best entries that fit within the token budget.
 
-#### `countAndSortKeyHits(hitKeys: List<String>): List<Pair<String, Int>>`
-Counts key occurrences and sorts by frequency.
-
-**Behavior:** Groups identical keys, counts occurrences, returns key-count pairs sorted by count descending.
-
-#### `selectLoreBookContext(text: String, maxTokens: Int, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4): List<String>`
-Intelligently selects lorebook entries based on text relevance and token budget.
-
-**Behavior:** Complex selection algorithm:
-- Finds matching keys in input text
-- Expands selection to include linked keys
-- Validates dependency requirements
-- Sorts by hit count and weight
-- Selects entries within token budget using tokenizer configuration parameters
-- Prioritizes higher-weighted and more frequently matched entries
-
-#### `selectAndFillLoreBookContext(text: String, maxTokens: Int, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4): List<String>`
-Selects lorebook entries with an additional fill phase to maximize token usage.
-
-**Behavior:**
-- Reuses the priority selection from `selectLoreBookContext` to gather matching lorebook entries.
-- Computes remaining budget after the priority phase.
-- Iterates through non-matching entries (sorted by weight) and adds them as long as the total token usage stays within `maxTokens` and dependencies are satisfied.
-- Returns an ordered list that can be used to filter `loreBookKeys` before truncating the rest of the context.
-
-#### `selectLoreBookContextWithSettings(settings: TruncationSettings, text: String, maxTokens: Int): List<String>`
-Alternative selection method using TruncationSettings for token counting.
-
-#### `selectAndFillLoreBookContextWithSettings(settings: TruncationSettings, text: String, maxTokens: Int): List<String>`
-Selects LoreBook entries using the select-and-fill strategy while reusing a settings object.
-
-**Behavior:** Same as `selectAndFillLoreBookContext()` but uses the passed `TruncationSettings` for tokenizer configuration, preserving token counting behavior across helper methods.
-
-**Parameters:**
-- `settings` - TruncationSettings containing tokenization parameters
-- `text` - Input text to scan for matching LoreBook keys
-- `maxTokens` - Maximum tokens to allocate for lorebook selection
-
-**Returns:** Ordered list of LoreBook keys selected via the priority + fill strategy
+#### `selectAndFillLoreBookContext(text: String, maxTokens: Int, ...): List<String>`
+Similar to the above, but adds a **Fill Phase** to ensure every available token in the budget is used by adding non-matching entries (sorted by weight) after the priority matches are in.
 
 ---
 
-### Context Merging
+### Context Merging: Combining Reservoirs
 
 #### `merge(other: ContextWindow, emplaceLoreBookKeys: Boolean = true, appendKeys: Boolean = false)`
-Merges another ContextWindow into this one with configurable strategies.
-
-**Behavior:** Complex merge with multiple strategies:
-- **New entries**: Always added if key doesn't exist
-- **Existing entries with `appendKeys = true`**: Appends new value to existing value
-- **Existing entries with `emplaceLoreBookKeys = true`**: Replaces entire entry
-- **Existing entries with both false**: Keeps original entry unchanged
-- **Alias/Linked keys**: Always merged using combine utility
-- **Context elements**: Appended to existing list
-- **Conversation history**: Merged using ConverseHistory merge logic
+Merges another reservoir into this one. Supports replacing existing entries (`emplace`), appending new text to existing entries (`appendKeys`), or just adding new keys.
 
 ---
 
-### Truncation
+### Truncation: Managing Volume
 
-#### `truncateContextElements(maxTokens: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, inputText: String = "", preserveTextMatches: Boolean = false)`
-Truncates context elements to fit token budget.
+#### `truncateContextElements(maxTokens: Int, ...)`
+Trims raw context elements to fit the budget using the specified strategy (Top, Bottom, Middle).
 
-**Behavior:** Uses Dictionary truncation with specified method (TruncateTop, TruncateBottom, TruncateMiddle) and tokenizer configuration parameters.
-- When `preserveTextMatches = true`, context elements matching words from `inputText` are kept before the default truncation ordering is applied.
+#### `selectAndTruncateContext(text: String, totalTokenBudget: Int, ...)`
+The **Master Controller**. Automatically distributes the token budget across the LoreBook, conversation history, and raw context, then truncates everything to fit.
 
-#### `selectAndTruncateContext(text: String, totalTokenBudget: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, fillMode: Boolean = false, preserveTextMatches: Boolean = false)`
-Selects and truncates context with automatic budget allocation.
+> [!TIP]
+> **Priority Preservation**: Set `preserveTextMatches = true` to ensure that context elements containing keywords from the current prompt are the last to be truncated.
 
-**Behavior:** Intelligent budget allocation based on available content types:
-- **Lorebook only**: Full budget to lorebook selection
-- **Context + Lorebook**: 50/50 split
-- **Conversation + Lorebook**: Conversation first, remainder to lorebook  
-- **All three types**: 1/3 each, with lorebook getting remainder
-- **Returns**: Unit (modifies context in place)
-
-**Additional Parameters:**
-- `fillMode: Boolean = false` — when true, `selectAndTruncateContext` first runs the select-and-fill LoreBook flow (`selectAndFillLoreBookContext`) using the full budget, then splits the remaining tokens between context elements and conversation history.
-- `preserveTextMatches: Boolean = false` — when true, context elements and conversation history that include words from `text` are preserved before applying the usual truncation ordering.
-
-#### `combineAndTruncateAsString(text: String, totalTokenBudget: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4): String`
-Combines lorebook values with context elements into single string with truncation.
-
-**Behavior:** Selects lorebook context, combines with context elements, truncates result to fit token budget using tokenizer parameters.
-
-#### `combineAndTruncateAsStringWithSettings(text: String, tokenBudget: Int, settings: TruncationSettings, truncateMethod: ContextWindowSettings, multiplyBy: Int, fillMode: Boolean = false): String`
-Enhanced version with TruncationSettings object, configurable truncation method, and optional lorebook fill mode.
-
-**Behavior:** When `fillMode = true`, applies `selectAndFillLoreBookContextWithSettings()` before combining lorebook and context strings. After filtering keys based on the fill-mode selection, it concatenates the remaining sections and truncates them down to `tokenBudget`, using the supplied tokenizer parameters.
-
-**Note:** Fill mode only affects which LoreBook entries remain—it does not change how the final string is truncated. This helper therefore preserves the standard string-based truncation semantics while still respecting advanced lorebook selection.
+#### `combineAndTruncateAsString(text: String, totalTokenBudget: Int, ...): String`
+Aggressively flattens the LoreBook and raw context into a single string and truncates the result. Use this for models that don't support structured context well.
 
 ---
 
-### Conversation Management
+### Access Control: The Safety Locks
 
-#### `selectConverseHistoryLoreBookContext(maxTokens: Int, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4): List<String>`
-Selects lorebook context relevant to conversation history.
-
-**Behavior:** Extracts text from conversation history, finds matching lorebook entries using tokenizer parameters, returns list of selected lorebook keys.
-
-#### `truncateConverseHistory(maxTokens: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, inputText: String = "", preserveTextMatches: Boolean = false)`
-Truncates conversation history to fit token budget.
-
-**Behavior:** Extracts conversation text, truncates using Dictionary methods with tokenizer parameters, reconstructs conversation with truncated content.
-- When `preserveTextMatches = true`, history items containing words from `inputText` are kept before the default truncation ordering runs.
-
-#### `truncateConverseHistoryWithObject(tokenBudget: Int, multiplyBy: Int, truncateMethod: ContextWindowSettings, truncationSettings: TruncationSettings)`
-Truncates conversation using settings object for token counting parameters.
-
----
-
-### Context Access Control
+TPipe integrates with the **ContextLock** system to ensure sensitive memory isn't leaked.
 
 #### `isContextLocked(): Boolean`
-Checks if this ContextWindow is currently locked by the ContextLock system.
-
-**Behavior:** Returns true if the ContextWindow has been marked as locked via ContextLock metadata (`metaData["isLocked"]`).
-
-**Returns:** Boolean indicating lock status
-
-**Example:**
-```kotlin
-if (contextWindow.isContextLocked()) {
-    println("Context window has active locks")
-}
-```
+Returns `true` if this reservoir has active security locks.
 
 #### `canSelectLoreBookKey(key: String): Boolean`
-Checks if a specific lorebook key can be selected based on ContextLock state.
-
-**Behavior:** 
-- Returns true immediately if context is not locked
-- Checks for passthrough functions that can bypass locks
-- Handles passthrough function exceptions gracefully
-- Falls back to checking key lock state via ContextLock
-
-**Parameters:**
-- `key` - The lorebook key to check for selection eligibility
-
-**Returns:** Boolean indicating if key can be selected
-
-**Example:**
-```kotlin
-if (contextWindow.canSelectLoreBookKey("sensitive_data")) {
-    // Key is available for selection
-    val value = contextWindow.loreBookKeys["sensitive_data"]?.value
-} else {
-    // Key is locked or conditionally restricted
-    println("Access denied to sensitive_data")
-}
-```
+Checks if a specific key is accessible under the current security context.
 
 #### `getLockedKeys(): Set<String>`
-Gets list of locked lorebook keys that affect this ContextWindow.
-
-**Behavior:** 
-- Returns empty set if context is not locked
-- Queries ContextLock for keys that would be filtered from selection
-- Only returns lorebook keys (excludes page keys)
-
-**Returns:** Set of locked lorebook key names
-
-**Example:**
-```kotlin
-val lockedKeys = contextWindow.getLockedKeys()
-if (lockedKeys.isNotEmpty()) {
-    println("Locked keys: ${lockedKeys.joinToString(", ")}")
-}
-```
+Lists all keys that are currently "valved off" (locked) and cannot be selected.
 
 ---
 
 ### Utilities
 
 #### `isEmpty(): Boolean`
-Checks if context window contains any data.
-
-**Behavior:** Returns true if all collections (contextElements, loreBookKeys, converseHistory) are empty.
+Returns `true` if the reservoir is completely empty (no LoreBook, no text, no history).
 
 #### `clear()`
-Clears all context data.
-
-**Behavior:** Empties all three main collections: contextElements, loreBookKeys, and converseHistory.
+Drains the reservoir, deleting all stored context.

@@ -1,20 +1,18 @@
 # ContextLock API
 
-The ContextLock system provides fine-grained control over lorebook key and page access within TPipe's context management system. It enables selective locking of context elements to prevent their selection during lorebook processing while maintaining system performance and thread safety.
+The ContextLock system provides fine-grained control over LoreBook key and page access within TPipe. It enables selective locking of context elements to prevent their selection during model processing, while maintaining system performance and thread safety across massive multi-agent swarms.
 
 ## Overview
 
-ContextLock operates as a centralized locking mechanism that can:
-- Lock individual lorebook keys to prevent their selection
-- Lock entire pages to prevent their retrieval from ContextBank
-- Support global locks that affect all contexts
-- Support page-specific locks that only affect designated pages
-- Provide conditional bypass through passthrough functions
+ContextLock operates as a centralized security mechanism that can:
+- Lock individual LoreBook keys to prevent them from being injected into prompts.
+- Lock entire pages to prevent their retrieval from the ContextBank.
+- Support global locks affecting all contexts and page-specific locks for targeted isolation.
+- Provide conditional bypass through passthrough functions, allowing for dynamic security logic.
 
 ## Core Classes
 
 ### KeyBundle
-
 Represents a lock configuration for one or more keys or pages.
 
 ```kotlin
@@ -28,302 +26,80 @@ data class KeyBundle(
 )
 ```
 
-**Properties:**
-- `keys` - List of lorebook keys affected by this lock
-- `pages` - List of page keys where this lock applies
-- `isGlobal` - Whether this lock affects all pages globally
-- `isLocked` - Current lock state (true = locked, false = unlocked)
-- `isPageKey` - Whether this bundle locks a page rather than lorebook keys
-- `passthroughFunction` - Optional function that can bypass the lock when it returns true
+**Property Breakdown:**
+- **`keys`**: The specific LoreBook keys affected by this lock.
+- **`pages`**: The specific page keys where this lock applies.
+- **`isGlobal`**: If true, this lock affects every page in the system.
+- **`isLocked`**: The current active state of the lock.
+- **`isPageKey`**: If true, this bundle locks an entire page rather than individual keys.
+- **`passthroughFunction`**: A developer-defined logic gate. If this function returns true, the lock is bypassed regardless of its state.
+
+---
 
 ## ContextLock Object
 
-The main interface for managing locks throughout the system.
+The main interface for managing security throughout the system.
 
-### Lock Management Methods
+### Lock Management
 
-#### addLock()
-```kotlin
-fun addLock(
-    key: String,
-    pageKeys: String,
-    isPageKey: Boolean,
-    lockState: Boolean = true,
-    passthroughFunction: (() -> Boolean)? = null
-)
-```
-
-Registers a new lock bundle for the specified key.
+#### `addLock()` / `addLockWithMutex()`
+Registers a new lock bundle.
 
 **Parameters:**
-- `key` - The lorebook key or page identifier to lock
-- `pageKeys` - Comma-separated list of pages where lock applies (empty = global)
-- `isPageKey` - True if locking a page, false if locking lorebook keys
-- `lockState` - Initial lock state (default: true)
-- `passthroughFunction` - Optional bypass function
+- `key`: The LoreBook key or Page identifier to protect.
+- `pageKeys`: Comma-separated list of pages where the lock applies. Leave empty for a global lock.
+- `isPageKey`: Set to true to lock the entire page; false for individual LoreBook keys.
+- `lockState`: Initial active state (defaults to true).
+- `passthroughFunction`: Optional logic gate for conditional access.
 
-**Example:**
 ```kotlin
-// Lock a specific lorebook key globally
-ContextLock.addLock("character_name", "", false, true)
+// Example: Lock a specific page for sensitive data
+ContextLock.addLock("financial_records", "", true, true)
 
-// Lock a page
-ContextLock.addLock("sensitive_data", "", true, true)
-
-// Lock with passthrough function
-ContextLock.addLock("conditional_key", "", false, true) {
-    // Custom logic to determine if key should be accessible
-    userHasPermission("read_sensitive")
+// Example: Lock with custom logic
+ContextLock.addLock("admin_tools", "", false, true) {
+    currentUser.hasPermission("EXECUTE_ADMIN")
 }
 ```
 
-#### addLockWithMutex()
-```kotlin
-suspend fun addLockWithMutex(
-    key: String,
-    pageKeys: String,
-    isPageKey: Boolean,
-    lockState: Boolean = true,
-    passthroughFunction: (() -> Boolean)? = null
-)
-```
+#### `removeLock()` / `removeLockWithMutex()`
+Deletes a lock bundle and clears its associated metadata from all affected context windows.
 
-Thread-safe version of `addLock()` for use in coroutine contexts.
+### Lock State Control
 
-#### removeLock()
-```kotlin
-fun removeLock(key: String)
-```
+#### `lockKeyBundle()` / `unlockKeyBundle()`
+Activates or deactivates an existing lock without removing its configuration. Use the `WithMutex` variants for safe operation in concurrent coroutine scopes.
 
-Removes a lock and clears associated metadata from affected context windows.
-
-#### removeLockWithMutex()
-```kotlin
-suspend fun removeLockWithMutex(key: String)
-```
-
-Thread-safe version of `removeLock()`.
-
-### Lock State Management
-
-#### lockKeyBundle()
-```kotlin
-fun lockKeyBundle(key: String)
-```
-
-Activates an existing lock bundle.
-
-#### unlockKeyBundle()
-```kotlin
-fun unlockKeyBundle(key: String)
-```
-
-Deactivates an existing lock bundle without removing it.
-
-#### lockKeyBundleWithMutex() / unlockKeyBundleWithMutex()
-```kotlin
-suspend fun lockKeyBundleWithMutex(key: String)
-suspend fun unlockKeyBundleWithMutex(key: String)
-```
-
-Thread-safe versions for coroutine contexts.
-
-### Query Methods
-
-#### getKeyBundle()
-```kotlin
-fun getKeyBundle(key: String): KeyBundle?
-```
-
-Retrieves the KeyBundle for a specific key.
-
-#### isKeyLocked()
-```kotlin
-fun isKeyLocked(key: String): Boolean
-```
-
-Checks if a lorebook key is currently locked.
-
-#### isPageLocked()
-```kotlin
-fun isPageLocked(pageKey: String): Boolean
-```
-
-Checks if a page is currently locked.
-
-#### getLockedKeysForContext()
-```kotlin
-fun getLockedKeysForContext(
-    contextWindow: ContextWindow, 
-    pageKey: String? = null
-): Set<String>
-```
-
-Returns all locked lorebook keys that affect the specified context.
-
-## ContextWindow Integration
-
-ContextWindow includes several methods for working with locks:
-
-### isContextLocked()
-```kotlin
-fun isContextLocked(): Boolean
-```
-
-Checks if the ContextWindow has been marked as locked by the ContextLock system.
-
-### canSelectLoreBookKey()
-```kotlin
-fun canSelectLoreBookKey(key: String): Boolean
-```
-
-Determines if a specific lorebook key can be selected based on current lock state and passthrough functions.
-
-### getLockedKeys()
-```kotlin
-fun getLockedKeys(): Set<String>
-```
-
-Returns the set of locked lorebook keys for this ContextWindow.
+---
 
 ## System Integration
 
-### Lorebook Selection Impact
+### Impact on LoreBook Selection
+ContextLock enforcement is integrated directly into the `ContextWindow` selection logic:
 
-ContextLock enforcement is automatically integrated into all lorebook selection methods:
+1.  **Matching**: `findMatchingLoreBookKeys()` automatically ignores any keys covered by an active lock.
+2.  **Selection**: `selectLoreBookContext()` filters out locked keys before calculating weights and budgets.
+3.  **Filling**: `selectAndFillLoreBookContext()` ensures that even low-priority filling does not include locked data.
 
-- `findMatchingLoreBookKeys()` - Excludes locked keys from initial matching
-- `selectLoreBookContext()` - Filters locked keys from candidate selection
-- `selectAndFillLoreBookContext()` - Excludes locked keys from weight-based filling
-
-### ContextBank Integration
-
-Page locks are enforced at the ContextBank level:
+### Impact on ContextBank
+Page-level locks are enforced at the point of retrieval:
 
 ```kotlin
-// ContextBank.getContextFromBank() automatically checks page locks
-val context = ContextBank.getContextFromBank("page_key") 
-// Returns empty ContextWindow if page is locked
+// ContextBank.getContextFromBank() automatically verifies locks
+val data = ContextBank.getContextFromBank("locked_page")
+// If "locked_page" is locked, this returns an empty ContextWindow()
 ```
 
-## Usage Patterns
+---
 
-### Basic Key Locking
+## Technical Performance & Safety
 
-```kotlin
-// Lock a sensitive lorebook key
-ContextLock.addLock("api_credentials", "", false, true)
-
-// The key will be excluded from all lorebook selection
-val selectedKeys = contextWindow.selectLoreBookContext(text, maxTokens)
-// api_credentials will not appear in selectedKeys
-```
-
-### Page-Specific Locking
-
-```kotlin
-// Lock a key only on specific pages
-ContextLock.addLock("debug_info", "production,staging", false, true)
-
-// Key is only locked when processing production or staging pages
-```
-
-### Conditional Access with Passthrough Functions
-
-```kotlin
-// Lock with conditional access
-ContextLock.addLock("admin_data", "", false, true) {
-    // Allow access during business hours
-    val hour = LocalTime.now().hour
-    hour in 9..17
-}
-```
-
-### Page Locking
-
-```kotlin
-// Lock an entire page
-ContextLock.addLock("classified_page", "", true, true)
-
-// Attempts to retrieve the page return empty context
-val context = ContextBank.getContextFromBank("classified_page")
-// context will be empty
-```
-
-### Dynamic Lock Management
-
-```kotlin
-// Add lock
-ContextLock.addLock("temp_key", "", false, true)
-
-// Temporarily unlock
-ContextLock.unlockKeyBundle("temp_key")
-
-// Re-lock
-ContextLock.lockKeyBundle("temp_key")
-
-// Remove completely
-ContextLock.removeLock("temp_key")
-```
-
-## Performance Considerations
-
-- **Direct Map Access**: Query methods use direct map access for optimal performance
-- **Minimal Overhead**: Lock checking adds < 5% overhead to lorebook selection
-- **Thread Safety**: Mutation operations use mutex protection while reads are lock-free
-- **Caching**: Lock state is cached for frequently accessed keys
-
-## Thread Safety
-
-- **Mutation Operations**: Use `*WithMutex()` variants in coroutine contexts
-- **Query Operations**: Safe for concurrent access without synchronization
-- **Passthrough Functions**: Should be thread-safe if used in concurrent contexts
+*   **Thread Safety**: Mutation operations (adding/removing locks) use mutex protection. Read operations are optimized for high-speed, lock-free access to prevent bottlenecking during model generation.
+*   **Minimal Overhead**: Checking lock status adds less than 5% overhead to the LoreBook selection process.
+*   **Safe Defaults**: If a passthrough function throws an exception, TPipe defaults to the most secure state (the lock remains active).
 
 ## Best Practices
 
-1. **Use Descriptive Keys**: Choose clear, descriptive names for lock identifiers
-2. **Minimize Global Locks**: Prefer page-specific locks when possible
-3. **Handle Passthrough Exceptions**: Ensure passthrough functions handle errors gracefully
-4. **Clean Up Locks**: Remove locks when no longer needed to prevent memory leaks
-5. **Test Lock Behavior**: Verify lock enforcement in your specific use cases
-
-## Error Handling
-
-- **Missing Keys**: Query methods return safe defaults (false, null, empty sets)
-- **Passthrough Exceptions**: Caught and handled gracefully, defaulting to lock state
-- **Invalid Operations**: Silently ignored rather than throwing exceptions
-- **Thread Safety**: Mutex operations prevent race conditions during concurrent access
-
-## Integration Examples
-
-### Pipeline Integration
-
-```kotlin
-class SecurePipeline : Pipeline() {
-    init {
-        // Lock sensitive keys during pipeline execution
-        ContextLock.addLock("user_credentials", "", false, true)
-        ContextLock.addLock("api_keys", "", false, true)
-    }
-    
-    override fun cleanup() {
-        // Clean up locks when pipeline completes
-        ContextLock.removeLock("user_credentials")
-        ContextLock.removeLock("api_keys")
-    }
-}
-```
-
-### Conditional Security
-
-```kotlin
-// Environment-based locking
-ContextLock.addLock("debug_logs", "", false, true) {
-    System.getenv("ENVIRONMENT") != "production"
-}
-
-// User permission-based locking
-ContextLock.addLock("admin_panel", "", false, true) {
-    currentUser.hasRole("ADMIN")
-}
-```
+1.  **Clean Up**: Always remove temporary locks when an agent finishes its task to prevent memory accumulation in the lock registry.
+2.  **Page Isolation**: Prefer page-specific locks over global locks to maintain maximum performance in large infrastructures.
+3.  **Validate Passthroughs**: Ensure your passthrough functions are fast and non-blocking, as they are executed during the critical context-assembly phase of a Pipe execution.

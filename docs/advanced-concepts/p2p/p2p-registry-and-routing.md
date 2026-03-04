@@ -1,137 +1,121 @@
-# P2P Registry and Routing
+# P2P Registry and Routing - The Central Switching Station
 
-P2PRegistry manages agent registration, discovery, and request routing. It's a global singleton that handles all P2P communication.
+The `P2PRegistry` is the Central Switching Station of the TPipe network. It is a global singleton responsible for agent registration, discovery, and request routing. Every inter-agent communication flows through the registry, which performs critical Pressure Tests (validations) before allowing data to move between specialized valves.
 
-## Agent Registration
+## Table of Contents
+- [Agent Registration](#agent-registration)
+- [Sending Requests: Opening the Flow](#sending-requests-opening-the-flow)
+- [Discovery: Finding the Right Expert](#discovery-finding-the-right-expert)
+- [Remote Agent Catalog](#remote-agent-catalog)
+- [Operational Safety and Rejection](#operational-safety-and-rejection)
+
+---
+
+## Agent Registration: Plumbing into the Network
+
+To join the P2P network, a component must register itself. While TPipe can automatically infer most settings from an agent's `P2PInterface`, you can also provide explicit configuration for high-security environments.
 
 ### Basic Registration
+The standard way to add an agent to the local switching station.
+
 ```kotlin
-val agent = MyPipeline()  // implements P2PInterface
-P2PRegistry.register(agent)
+val auditor = AuditPipeline() // Implements P2PInterface
+P2PRegistry.register(auditor)
 ```
 
 ### Manual Registration
+Allows you to override the transport address or security requirements during registration.
+
 ```kotlin
 P2PRegistry.register(
     agent = myAgent,
-    transport = P2PTransport(Transport.Tpipe, "my-agent"),
-    descriptor = myDescriptor,
-    requirements = myRequirements
+    transport = P2PTransport(Transport.Tpipe, "high-security-vault"),
+    requirements = P2PRequirements(authMechanism = ::myAuthCheck)
 )
 ```
 
-## Making Requests
+---
 
-### Simple Request
+## Sending Requests: Opening the Flow
+
+You don't call an agent's pipeline directly. Instead, you send a request through the registry, which handles the handoff, isolation (duplication), and security checks.
+
 ```kotlin
-val request = AgentRequest(
+val simpleRequest = AgentRequest(
     agentName = "data-processor",
-    prompt = "Process this CSV file",
-    content = csvData
+    prompt = "Sanitize this JSON feed",
+    content = rawFeed
 )
 
-val response = P2PRegistry.sendP2pRequest(request)
+// The Registry finds the processor and manages the entire flow
+val response = P2PRegistry.sendP2pRequest(simpleRequest)
+
 if (response.output != null) {
-    println(response.output)
-} else {
-    println("Error: ${response.rejection?.reason}")
+    println("Flow Result: ${response.output.text}")
 }
 ```
 
-### Request with Template
+---
+
+## Discovery: Finding the Right Expert
+
+In complex swarms (like a **Manifold**), a Manager agent may not know the exact name of every worker. It can use the registry to discover available specialists.
+
 ```kotlin
-val template = P2PRequest().apply {
-    authBody = "my-auth-token"
-    context = myContextWindow
-}
+// List all agents visible to the global network
+val experts = P2PRegistry.listGlobalAgents()
 
-val response = P2PRegistry.sendP2pRequest(
-    agentRequest = request,
-    template = template
-)
-```
-
-## Agent Discovery
-
-### List Available Agents
-```kotlin
-val agents = P2PRegistry.listGlobalAgents()
-agents.forEach { descriptor ->
-    println("${descriptor.agentName}: ${descriptor.agentDescription}")
+experts.forEach { spec ->
+    println("Agent Found: ${spec.agentName} - ${spec.agentDescription}")
 }
 ```
 
-### Find Specific Agent
-```kotlin
-val agent = P2PRegistry.listGlobalAgents()
-    .find { it.agentName == "data-processor" }
-```
+---
 
 ## Remote Agent Catalog
 
-Load external agent descriptors for cross-system calls:
+TPipe supports cross-system communication by allowing you to load "Remote Blueprints" into your local registry. This tells your system that an agent exists on another server, even if the local JVM doesn't have the code for it.
 
 ```kotlin
-val remoteDescriptors = loadFromExternalSource()
-P2PRegistry.loadAgents(remoteDescriptors)
+val remoteSpecs = fetchRemoteAgentManifest()
+P2PRegistry.loadAgents(remoteSpecs)
 ```
 
-## Request Validation
+---
 
-The registry validates all requests before execution:
+## Operational Safety and Rejection
 
-```kotlin
-val (isValid, rejection) = P2PRegistry.checkAgentRequirements(
-    request = myRequest,
-    requirements = agentRequirements,
-    agent = targetAgent
-)
+Before any data enters an agent's mainline, the `P2PRegistry` performs a comprehensive validation check against the agent's `P2PRequirements`.
 
-if (!isValid) {
-    println("Validation failed: ${rejection?.reason}")
-    return
-}
-```
-
-## Error Handling
+If the request is unsafe, the registry returns a **Rejection Packet** instead of executing the model:
 
 ```kotlin
 val response = P2PRegistry.sendP2pRequest(request)
 
-when {
-    response.output != null -> {
-        // Handle successful response
-        processResult(response.output)
-    }
-    response.rejection != null -> {
-        when (response.rejection.errorType) {
-            P2PError.auth -> handleAuthError()
-            P2PError.transport -> handleTransportError()
-            P2PError.content -> handleContentError()
-            else -> handleGenericError()
-        }
+if (response.rejection != null) {
+    when (response.rejection.errorType) {
+        P2PError.auth -> println("Valve Closed: Authentication failed.")
+        P2PError.transport -> println("Valve Missing: Target agent unreachable.")
+        P2PError.json -> println("Blueprint Mismatch: Schema not allowed.")
     }
 }
 ```
 
-## Transport Limitations
+---
 
-Currently only `Transport.Tpipe` (in-process) is supported. Remote transports will throw:
+## Key Operational Behaviors
 
-```kotlin
-// This works
-P2PTransport(Transport.Tpipe, "local-agent")
+### 1. Thread-Safe Switching
+The registry uses high-performance mutexes to manage its agent list. This ensures that even in massive, concurrent agent swarms, registration and routing remain deterministic and free of race conditions.
 
-// These throw IllegalArgumentException
-P2PTransport(Transport.Http, "https://remote-agent")
-P2PTransport(Transport.Stdio, "/path/to/agent")
-```
+### 2. Transport Abstraction
+Currently, TPipe optimized for `Transport.Tpipe` (high-speed in-process communication). The registry API is designed to be transport-agnostic, meaning your routing logic won't have to change when remote HTTP and Stdio transports are enabled.
 
-## Registry State
+### 3. Isolation by Design
+The registry is the only component that can trigger **Agent Duplication**. It ensures that if an agent is marked for isolation, a fresh Valve Clone is created for every single request, preventing data leakage between callers.
 
-The registry maintains:
-- **Local agents**: Registered P2PInterface implementations
-- **Remote catalog**: External agent descriptors
-- **Request templates**: Reusable request configurations
+## Next Steps
 
-All operations are thread-safe via internal mutex protection.
+Now that you can route data between agents, learn how to build complex requests and templates.
+
+**→ [P2P Requests and Templates](p2p-requests-and-templates.md)** - Building inter-agent cargo units.

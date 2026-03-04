@@ -1,22 +1,18 @@
 # LoreBook Class API
 
-## Table of Contents
-- [Overview](#overview)
-- [Public Properties](#public-properties)
-  - [Core Properties](#core-properties)
-  - [Relationship Properties](#relationship-properties)
-- [Public Functions](#public-functions)
-  - [Content Management](#content-management)
-  - [Utilities](#utilities)
-
-## Overview
-
-The `LoreBook` class stores weighted key-value context pairs compatible with NovelAI's Lorebook system. It provides intelligent context injection based on text matching, weights, and dependency relationships.
+The `LoreBook` class is the storage unit for the Strategic Reserves. It manages weighted key-value context pairs that are intelligently injected into the flow based on text matching and dependency relationships.
 
 ```kotlin
 @Serializable
 data class LoreBook(@Transient val cinit: Boolean = false)
 ```
+
+## Table of Contents
+- [Public Properties](#public-properties)
+  - [Core Properties](#core-properties)
+  - [Relationship Properties](#relationship-properties)
+- [Public Functions](#public-functions)
+- [Usage Patterns](#usage-patterns)
 
 ## Public Properties
 
@@ -26,145 +22,89 @@ data class LoreBook(@Transient val cinit: Boolean = false)
 ```kotlin
 var key: String = ""
 ```
-The lorebook key used for text matching. When this substring is found in scanned text, the associated value is considered for context injection based on token budget and weight priority.
+The primary identifier used for text matching. When this substring is found in the input text, the entry becomes a candidate for injection into the prompt.
 
 **`value`**
 ```kotlin
 var value: String = ""
 ```
-Context content associated with the key. Can contain any information desired for the LLM - typically events, locations, NPCs, or world-building concepts that provide relevant background context.
+The actual knowledge payload. This can contain descriptions of NPCs, technical specifications, world rules, or any other background information relevant to the model.
 
 **`weight`**
 ```kotlin
 var weight: Int = 0
 ```
-Priority weight for context selection. Higher weights receive priority over lower weights when token budget is limited. Used by context selection algorithms to determine inclusion order.
+Priority level for selection. In a high-pressure scenario where the token budget is limited, TPipe sorts candidates by weight and hit-count to decide which data is pumped into the context reservoir first.
 
-### Relationship Properties
+### Relationship Properties: The Interconnects
 
 **`linkedKeys`**
 ```kotlin
 var linkedKeys: MutableList<String> = mutableListOf()
 ```
-Additional lorebook keys automatically activated when this entry is selected. When this lorebook is included in context, linked keys are also attempted for inclusion, creating cascading context activation.
+Defines cascading context activation. When this LoreBook entry is selected, TPipe automatically attempts to pull in the entries associated with these linked keys as well.
 
 **`aliasKeys`**
 ```kotlin
 var aliasKeys: MutableList<String> = mutableListOf()
 ```
-Alternative key strings that trigger this lorebook entry. Any text matching these aliases counts as a hit for the main key, enabling flexible matching patterns and synonyms.
+Alternative trigger strings. Any text matching these aliases (e.g., synonyms or shortened names) counts as a hit for the primary entry.
 
 **`requiredKeys`**
 ```kotlin
 var requiredKeys: MutableList<String> = mutableListOf()
 ```
-Dependency keys that must ALL be present in input text for this entry to be eligible for activation. Empty list means no dependencies (always eligible). Enables conditional context activation based on multiple triggers.
-
-## Public Functions
-
-### Content Management
-
-#### `combineValue(other: LoreBook)`
-Merges content from another LoreBook into this one.
-
-**Behavior:** 
-- **Value merging**: Appends other's value to this value with space separator
-- **Required keys merging**: Adds other's required keys to this entry, avoiding duplicates
-- **Other properties**: Unchanged (key, weight, linkedKeys, aliasKeys remain as-is)
-
-Useful for consolidating related lorebook entries or accumulating context from multiple sources.
+Hard dependencies. For this entry to be eligible for activation, every key in this list *must* also be present in the scanned input text. This allows for conditional knowledge that only appears in specific contexts.
 
 ---
 
-### Utilities
+## Public Functions
+
+#### `combineValue(other: LoreBook)`
+Merges content from another entry into this one.
+
+*   **Logic**: It appends the `other.value` to this entry's value with a space separator and merges the `requiredKeys` lists while preventing duplicates.
+*   **Result**: The primary key, weight, and aliases of the original object are preserved.
 
 #### `toMap(): Map<String, LoreBook>`
-Converts this LoreBook to a single-entry map.
+A utility function that wraps this single entry into a Map, using its `key` as the map key. This is the standard format required by the `ContextWindow`.
 
-**Behavior:** Returns `Map<String, LoreBook>` with this lorebook's key as the map key and this object as the value. Convenient for integration with ContextWindow's `loreBookKeys` map structure.
+---
 
 ## Usage Patterns
 
-### Basic Lorebook Entry
+### Basic Entry
 ```kotlin
-val character = LoreBook().apply {
-    key = "Alice"
-    value = "Alice is a skilled mage who specializes in fire magic. She has red hair and wears blue robes."
+val agent = LoreBook().apply {
+    key = "Main_Valve"
+    value = "The Main Valve is located in Sector 7 and controls the primary flow."
     weight = 10
 }
 ```
 
-### Entry with Aliases
+### Complex Relationships
 ```kotlin
-val location = LoreBook().apply {
-    key = "Silverbrook"
-    value = "A peaceful village nestled in the mountains, known for its crystal-clear streams."
-    weight = 5
-    aliasKeys.addAll(listOf("Silver Brook", "the village", "mountain village"))
+val schema = LoreBook().apply {
+    key = "Safety_Protocol"
+    value = "Always shut the intake before opening the bypass."
+    aliasKeys.add("emergency_procedure")
+    requiredKeys.add("High_Pressure_Warning") // Only activates if pressure warning is also found
+    linkedKeys.add("Technician_Contact")      // Automatically pulls contact info if this activates
 }
-```
-
-### Entry with Dependencies
-```kotlin
-val event = LoreBook().apply {
-    key = "dragon attack"
-    value = "The ancient red dragon Pyraxis attacked the village last winter, destroying the eastern district."
-    weight = 15
-    requiredKeys.addAll(listOf("Pyraxis", "village"))
-    linkedKeys.add("Pyraxis")
-}
-```
-
-### Entry with Linked Context
-```kotlin
-val character = LoreBook().apply {
-    key = "King Marcus"
-    value = "The wise ruler of the northern kingdom, known for his just laws."
-    weight = 12
-    linkedKeys.addAll(listOf("northern kingdom", "royal court"))
-    aliasKeys.addAll(listOf("the king", "His Majesty", "Marcus"))
-}
-```
-
-### Combining Entries
-```kotlin
-val baseEntry = LoreBook().apply {
-    key = "magic system"
-    value = "Magic requires focus and energy."
-    weight = 8
-}
-
-val additionalInfo = LoreBook().apply {
-    value = "Advanced mages can cast without verbal components."
-    requiredKeys.add("advanced magic")
-}
-
-baseEntry.combineValue(additionalInfo)
-// Result: "Magic requires focus and energy. Advanced mages can cast without verbal components."
 ```
 
 ## Integration with ContextWindow
 
-LoreBook entries are typically managed through ContextWindow:
+LoreBook entries are typically managed through the `ContextWindow` reservoir:
 
 ```kotlin
-val contextWindow = ContextWindow()
+val reservoir = ContextWindow()
 
-// Add entry directly
-contextWindow.addLoreBookEntry(
-    key = "important location",
-    value = "The Tower of Wisdom stands at the city center.",
-    weight = 10,
-    aliasKeys = listOf("tower", "wisdom tower"),
-    linkedKeys = listOf("city center"),
-    requiredKeys = listOf("city")
+// High-level helper for adding entries
+reservoir.addLoreBookEntry(
+    key = "Pump_A1",
+    value = "Model v4, manufactured 2023.",
+    weight = 5,
+    aliasKeys = listOf("primary_pump", "intake_pump")
 )
-
-// Add using LoreBook object
-val entry = LoreBook().apply {
-    key = "character"
-    value = "A mysterious figure in dark robes."
-    weight = 7
-}
-contextWindow.addLoreBookEntryWithObject(entry)
 ```

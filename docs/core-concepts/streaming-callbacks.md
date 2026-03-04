@@ -1,20 +1,12 @@
-# Streaming Callbacks
+# Streaming Callbacks - Real-Time Flow
 
-TPipe supports streaming responses from AI models, allowing you to receive and process tokens as they arrive rather than waiting for the complete response. This enables real-time UI updates, progressive content display, and lower perceived latency.
+In an industrial plumbing system, you don't always wait for a tank to fill before using the water; sometimes you need a continuous, real-time flow. **Streaming Callbacks** allow your application to receive and process model tokens (chunks of text) as they arrive, rather than waiting for the entire generation to complete.
 
-## Overview
+This reduces perceived latency and allows for real-time UI updates, logging, and metrics gathering.
 
-Streaming callbacks are functions that receive individual text chunks (tokens) as they arrive from the AI model. TPipe supports:
+## Basic Streaming: The Single Tap
 
-- **Single callback** - Legacy API for simple use cases
-- **Multiple callbacks** - Register multiple independent callbacks for different purposes
-- **Configurable execution** - Choose sequential or concurrent callback execution
-- **Error isolation** - One callback's exception doesn't affect others
-- **Backward compatibility** - Existing code continues to work unchanged
-
-## Basic Streaming (Single Callback)
-
-The simplest way to enable streaming is with a single callback:
+The simplest way to start the flow is with a single callback.
 
 ```kotlin
 import bedrockPipe.BedrockPipe
@@ -26,239 +18,81 @@ fun main() = runBlocking {
         .setRegion("us-west-2")
         .enableStreaming()
         .setStreamingCallback { chunk ->
-            print(chunk)  // Print each token as it arrives
+            print(chunk) // Print tokens as they arrive
         }
     
     pipe.generateText("Tell me a short story.")
-    println("\nDone!")
 }
 ```
 
-### Suspending Callbacks
+> [!TIP]
+> **Async Flow**: If you need to perform database writes or network calls within your callback, use the suspending version of `setStreamingCallback`.
 
-For async operations within callbacks, use suspending lambdas:
+---
 
-```kotlin
-pipe.setStreamingCallback { chunk: String ->
-    // Can use suspend functions here
-    delay(10)
-    logToDatabase(chunk)
-}
-```
+## Multiple Callbacks: The Distribution Manifold
 
-## Multiple Streaming Callbacks
-
-Register multiple independent callbacks to handle streaming chunks for different purposes without interference:
-
-```kotlin
-val pipe = BedrockPipe()
-    .setModel("anthropic.claude-3-haiku-20240307-v1:0")
-    .setRegion("us-west-2")
-    .streamingCallbacks {
-        add { chunk -> print(chunk) }           // Print to console
-        add { chunk -> logToFile(chunk) }       // Log to file
-        add { chunk -> updateMetrics(chunk) }   // Update metrics
-    }
-```
-
-### Sequential vs Concurrent Execution
-
-Control how callbacks execute:
-
-**Sequential** (default) - Callbacks execute one after another in registration order:
+For more complex systems, you might need to send the same stream to multiple destinations (e.g., a UI, a log file, and a metrics collector). TPipe's **Streaming Distribution Manifold** handles this with automatic error isolation.
 
 ```kotlin
 pipe.streamingCallbacks {
-    add { chunk -> print(chunk) }
-    add { chunk -> logToFile(chunk) }
-    sequential()  // Execute in order
-}
-```
+    add { chunk -> print(chunk) }           // user feedback
+    add { chunk -> logToFile(chunk) }       // audit trail
+    add { chunk -> updateMetrics(chunk) }   // performance monitoring
 
-**Concurrent** - Callbacks execute in parallel:
-
-```kotlin
-pipe.streamingCallbacks {
-    add { chunk -> print(chunk) }
-    add { chunk -> logToFile(chunk) }
-    concurrent()  // Execute in parallel
-}
-```
-
-Use concurrent mode for better performance when callbacks are independent. Use sequential mode when order matters or in thread-limited environments.
-
-### Error Handling
-
-Callbacks are automatically isolated - one callback's exception doesn't affect others:
-
-```kotlin
-pipe.streamingCallbacks {
-    add { chunk -> print(chunk) }
-    add { chunk -> 
-        // This might fail, but won't stop other callbacks
-        riskyOperation(chunk)
-    }
-    add { chunk -> logToFile(chunk) }  // Still executes
+    // Choose how the manifold executes
+    concurrent() // Run all callbacks in parallel (Fastest)
     
+    // Handle individual line failures
     onError { exception, chunk ->
-        println("Callback failed on chunk: $chunk")
-        println("Error: ${exception.message}")
+        println("A manifold line failed on: $chunk")
     }
 }
 ```
 
-## Advanced Usage
+### Execution Modes:
+*   **Sequential (Default)**: Callbacks execute one by one in the order they were added. Best if one callback depends on another.
+*   **Concurrent**: Callbacks execute in parallel. Best for performance when your destinations are independent.
 
-### Direct Manager Access
+---
 
-For dynamic callback management:
+## Error Isolation: Preventing Blowouts
 
-```kotlin
-val pipe = BedrockPipe()
-    .setModel("anthropic.claude-3-haiku-20240307-v1:0")
-    .setRegion("us-west-2")
+One of the most powerful features of TPipe's streaming system is **Error Isolation**. If your "Log to File" callback crashes, it won't stop the "Print to UI" callback from receiving its data. The flow continues to all healthy destinations.
 
-val manager = pipe.obtainStreamingCallbackManager()
+---
 
-// Add callbacks dynamically
-val metricsCallback: suspend (String) -> Unit = { chunk -> 
-    updateMetrics(chunk) 
-}
-manager.addCallback(metricsCallback)
+## Helpers: Opening the Mainline
 
-// Remove callbacks later
-manager.removeCallback(metricsCallback)
-
-// Check callback state
-if (manager.hasCallbacks()) {
-    println("Active callbacks: ${manager.callbackCount()}")
-}
-
-// Clear all callbacks
-manager.clearCallbacks()
-```
-
-### Mixed Legacy and New API
-
-The legacy single-callback API works alongside the new multi-callback API:
-
-```kotlin
-val pipe = BedrockPipe()
-    .setModel("anthropic.claude-3-haiku-20240307-v1:0")
-    .setRegion("us-west-2")
-    .setStreamingCallback { chunk -> print(chunk) }  // Legacy API
-    .streamingCallbacks {                             // New API
-        add { chunk -> logToFile(chunk) }
-        add { chunk -> updateMetrics(chunk) }
-    }
-
-// All three callbacks execute
-```
-
-### Non-Suspending Callbacks
-
-For simple synchronous callbacks, use the non-suspending overload:
-
-```kotlin
-val simpleCallback: (String) -> Unit = { chunk -> 
-    print(chunk)  // No suspend needed
-}
-
-pipe.streamingCallbacks {
-    add(simpleCallback)  // Automatically wrapped
-}
-```
-
-## Helper Functions
-
-### streamOutputToTerminal
-
-Convenience function to enable streaming on pipes and their reasoning pipes:
+If you just want to see the flow in your terminal during development, use the built-in helpers:
 
 ```kotlin
 import bedrockPipe.streamOutputToTerminal
 
-val pipe = BedrockPipe()
-    .setModel("anthropic.claude-3-haiku-20240307-v1:0")
-    .setRegion("us-west-2")
-
-streamOutputToTerminal(pipe)  // Enables streaming with console output
-
-pipe.generateText("Explain quantum computing.")
+// Automatically enables streaming and prints both reasoning and response
+streamOutputToTerminal(myPipe)
 ```
 
-For pipelines:
-
+For entire mainlines:
 ```kotlin
 import bedrockPipe.streamPipelineOutputToTerminal
 
-val pipeline = Pipeline()
-    .add(pipe1)
-    .add(pipe2)
-
-streamPipelineOutputToTerminal(pipeline)  // Enables streaming on all pipes
+// Opens the taps for every pipe in the pipeline
+streamPipelineOutputToTerminal(myPipeline)
 ```
 
-## Disabling Streaming
-
-Disable streaming and clear all callbacks:
-
-```kotlin
-pipe.disableStreaming()
-```
-
-This clears both legacy single callbacks and all multi-callback manager callbacks.
+---
 
 ## Best Practices
 
-1. **Use concurrent mode** when callbacks are independent and performance matters
-2. **Use sequential mode** when order matters or in thread-limited environments
-3. **Always handle errors** with `onError()` to prevent silent failures
-4. **Keep callbacks lightweight** - offload heavy processing to background threads
-5. **Use suspending callbacks** for async operations (database writes, network calls)
-6. **Test error isolation** - ensure one callback's failure doesn't break others
+*   **Keep it Lightweight**: Callbacks should be fast. If you need to do heavy processing (like complex AI analysis), offload it to a background thread or a different pipe.
+*   **Handle Errors**: Always use `onError` in the manifold to ensure you're alerted when a specific streaming destination fails.
+*   **Cleanup**: When you're done, you can call `disableStreaming()` to shut the valves and clear all registered callbacks.
 
-## Common Use Cases
+---
 
-### Real-Time UI Updates
+## Next Steps
 
-```kotlin
-pipe.streamingCallbacks {
-    add { chunk -> 
-        uiThread.post { textView.append(chunk) }
-    }
-    sequential()
-}
-```
+Now that you can stream data in real-time, learn about how to monitor the health of your infrastructure.
 
-### Logging and Metrics
-
-```kotlin
-pipe.streamingCallbacks {
-    add { chunk -> print(chunk) }              // User feedback
-    add { chunk -> logger.debug(chunk) }       // Debug logging
-    add { chunk -> metrics.recordToken() }     // Token counting
-    concurrent()  // Independent operations
-}
-```
-
-### Multi-Destination Output
-
-```kotlin
-pipe.streamingCallbacks {
-    add { chunk -> fileWriter.write(chunk) }   // Save to file
-    add { chunk -> websocket.send(chunk) }     // Send to client
-    add { chunk -> cache.append(chunk) }       // Cache response
-    concurrent()
-}
-```
-
-## API Reference
-
-See [Pipe API Documentation](../api/pipe.md) for complete method signatures and details.
-
-## Related Topics
-
-- [Pipe Class - Core Concepts](pipe-class.md)
-- [Tracing and Debugging](tracing-and-debugging.md)
-- [Bedrock Getting Started](../bedrock/getting-started.md)
+**→ [Tracing and Debugging](tracing-and-debugging.md)** - Monitoring and troubleshooting the infrastructure.

@@ -1,299 +1,99 @@
-# Merged PCP + JSON Output Mode
+# Merged PCP + JSON Output Mode - Compound Flows
 
-## Overview
+In an industrial infrastructure, sometimes you need a valve to do two things at once: provide a structured status report (JSON) AND call for a specific tool (PCP) to fix a problem. **Merged Mode** is the specialized configuration that allows TPipe to handle both structured output and tool-calling simultaneously, resolving what used to be a conflict in model instructions.
 
-TPipe now supports a **merged mode** that allows pipes to use both structured JSON output AND Pipe Context Protocol (PCP) tool calling simultaneously. This resolves the previous mutual exclusivity between these two features.
+## The Solution: The Unified Blueprint
 
-## The Problem
+Previously, if you asked for JSON and Tools at the same time, the model would often "clog," unsure which format to prioritize. Merged Mode automatically activates when you provide both a `PcpContext` and a JSON schema. It gives the AI a unified blueprint:
+-   **JSON Output (REQUIRED)**: The model must return your structured status object.
+-   **Tool Calls (OPTIONAL)**: The model can also return an array of tool requests if it needs help.
 
-Previously, when both PCP tools and JSON output were configured, the AI received conflicting instructions:
-- PCP injection: "return an array of PcPRequest objects"
-- JSON injection: "return ONLY JSON matching this schema"
+---
 
-This created ambiguity, and the AI's behavior was undefined.
+## Basic Configuration
 
-## The Solution
-
-**Merged mode** automatically activates when BOTH conditions are met:
-1. PCP tools are configured (stdio, tpipe functions, http, or python)
-2. JSON output schema is configured with `requireJsonPromptInjection()`
-
-In merged mode, the AI receives unified instructions to return:
-- **JSON output** (REQUIRED) - matching your schema
-- **Tool calls** (OPTIONAL) - as an array if needed
-
-## Usage
-
-### Basic Example
+Merged mode activates automatically when you have both fittings attached to your pipe.
 
 ```kotlin
-val pipe = BedrockPipe()
+val agent = BedrockPipe()
     .setRegion("us-east-1")
-    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setModel("anthropic.claude-3-5-sonnet-20241022-v2:0")
     
-    // Configure PCP tools
+    // Fitting 1: The Tool Belt (PCP)
     .setPcPContext(PcpContext().apply {
         addTPipeOption(TPipeContextOptions().apply {
-            functionName = "searchDatabase"
-            description = "Search customer database"
+            functionName = "check_valve_pressure"
+            description = "Get the real-time pressure for a specific valve ID."
         })
     })
     
-    // Configure JSON output
+    // Fitting 2: The Specification (JSON)
     .requireJsonPromptInjection()
-    .setJsonOutput("""{"answer": "string", "confidence": 0.0}""")
+    .setJsonOutput("""{"status": "string", "urgency": 0}""")
     
-    // Set system prompt (merged mode activates automatically)
-    .setSystemPrompt("You are a helpful assistant.")
-
-val response = pipe.execute("Find customer John Doe and tell me his status")
+    .setSystemPrompt("Monitor the plumbing mainline.")
 ```
 
-### Extracting Results
+---
 
-Use TPipe's existing extractors to parse the response:
+## Extracting the Results: The Two Output Lines
+
+Because the model returns a "Compound Result," you need to extract both the JSON Water and the PCP "Tools."
 
 ```kotlin
-// Extract JSON output (REQUIRED - will always be present)
-data class MyOutput(val answer: String, val confidence: Double)
-val output = extractJson<MyOutput>(response)
-    ?: throw IllegalStateException("AI failed to return required JSON output")
+val response = agent.execute("Check Valve 4")
 
-// Extract PCP tool calls (OPTIONAL - may be empty)
+// 1. Extract the Status Report (JSON)
+val report = extractJson<ValveStatus>(response)
+
+// 2. Extract the Tool Requests (PCP)
 val parser = PcpResponseParser()
-val pcpResult = parser.extractPcpRequests(response)
+val toolCalls = parser.extractPcpRequests(response)
 
-if (pcpResult.success) {
-    for (request in pcpResult.requests) {
-        // Execute tool calls
-        println("Tool call: ${request.tPipeContextOptions.functionName}")
-    }
+if (toolCalls.success) {
+    // Execute the requested tools...
 }
 ```
+
+---
 
 ## AI Response Examples
 
-### Case 1: Output Only (No Tools Needed)
-
+### Case 1: Simple Status (No Tools Needed)
 ```json
 {
-  "answer": "Customer John Doe is active with account status: premium",
-  "confidence": 0.95
+  "status": "Pressure normal. No intervention required.",
+  "urgency": 0
 }
 ```
 
-### Case 2: Output + Tool Calls
-
+### Case 2: Status + Action Required
 ```json
 {
-  "answer": "Searching database for customer information...",
-  "confidence": 0.0
+  "status": "Pressure high in Valve 4. Requesting sensor check.",
+  "urgency": 8
 }
 
 [
   {
-    "tPipeContextOptions": {
-      "functionName": "searchDatabase"
-    },
-    "argumentsOrFunctionParams": ["John Doe"]
+    "tPipeContextOptions": { "functionName": "check_valve_pressure" },
+    "argumentsOrFunctionParams": ["valve_4"]
   }
 ]
 ```
 
-## Contract
-
-### JSON Output: REQUIRED
-- The AI MUST return valid, deserializable JSON matching your schema
-- All fields must have valid values (no nulls - use defaults)
-- This is enforced even if no tools are called
-
-### Tool Calls: OPTIONAL
-- The AI MAY return tool call requests if needed
-- Tool calls are returned as an array (can be empty)
-- The AI decides when tools are necessary
-
-## Custom Instructions
-
-You can override the default merged mode instructions:
-
-```kotlin
-pipe.setMergedPcpJsonInstructions("""
-    Custom instructions for how the AI should format
-    responses when both JSON output and tools are available.
-""")
-```
-
-## Mode Detection
-
-TPipe automatically detects which mode to use:
-
-| PCP Tools | JSON Output | Mode | Behavior |
-|-----------|-------------|------|----------|
-| ✅ | ✅ | **Merged** | JSON output REQUIRED, tools OPTIONAL |
-| ✅ | ❌ | PCP-Only | Tool calls only |
-| ❌ | ✅ | JSON-Only | JSON output only |
-| ❌ | ❌ | None | No special injection |
-
-**Note:** `supportsNativeJson = true` disables JSON injection, preventing merged mode.
-
-## Migration Guide
-
-### Breaking Change
-
-**Before:** Pipes with both PCP and JSON output had undefined behavior.
-
-**After:** Pipes with both PCP and JSON output use merged mode.
-
-### Migration Steps
-
-If you have existing pipes with both PCP and JSON output:
-
-1. **Update response parsing:**
-   ```kotlin
-   // Old (undefined behavior)
-   val result = pipe.execute("task")
-   // Hope for the best...
-   
-   // New (explicit extraction)
-   val result = pipe.execute("task")
-   val output = extractJson<MyOutput>(result)
-   val tools = PcpResponseParser().extractPcpRequests(result)
-   ```
-
-2. **Handle both outputs:**
-   ```kotlin
-   // Process JSON output
-   if (output != null) {
-       println("Answer: ${output.answer}")
-   }
-   
-   // Process tool calls
-   if (tools.success) {
-       for (tool in tools.requests) {
-           // Execute tools
-       }
-   }
-   ```
-
-3. **If you want old behavior (not recommended):**
-   - Remove one of the configurations (either PCP or JSON output)
-   - Or set `supportsNativeJson = true` to disable JSON injection
-
-## Advanced Usage
-
-### Multiple Tool Types
-
-```kotlin
-val pcpContext = PcpContext().apply {
-    // Shell commands
-    addStdioOption(StdioContextOptions().apply {
-        command = "ls"
-        args = mutableListOf("-la")
-    })
-    
-    // Kotlin functions
-    addTPipeOption(TPipeContextOptions().apply {
-        functionName = "searchDatabase"
-    })
-    
-    // HTTP endpoints
-    addHttpOption(HttpContextOptions().apply {
-        baseUrl = "https://api.example.com"
-        endpoint = "/search"
-    })
-}
-
-pipe.setPcPContext(pcpContext)
-    .requireJsonPromptInjection()
-    .setJsonOutput("""{"status": "string", "data": []}""")
-    .setSystemPrompt("Process request")
-```
-
-### Order Independence
-
-Configuration order doesn't matter when using `applySystemPrompt()`:
-
-```kotlin
-// These produce the same result
-pipe.setJsonOutput(schema)
-    .setPcPContext(tools)
-    .setSystemPrompt("prompt")
-
-// vs
-
-pipe.setSystemPrompt("prompt")
-    .setJsonOutput(schema)
-    .setPcPContext(tools)
-    .applySystemPrompt()  // Rebuilds prompt with correct injections
-```
+---
 
 ## Best Practices
 
-1. **Always validate JSON output:**
-   ```kotlin
-   val output = extractJson<MyOutput>(response)
-       ?: throw IllegalStateException("Required JSON output missing")
-   ```
+*   **Always Validate JSON**: Even when tools are called, the JSON output is **REQUIRED**. Always check if `extractJson` returns a valid object.
+*   **Clear Tool Descriptions**: Since the model has to follow a schema AND decide when to use tools, your tool descriptions must be very clear so it knows when it's appropriate to "reach for the belt."
+*   **Use Data Classes**: For the JSON part, use Kotlin `@Serializable` data classes. This makes the extraction much safer and cleaner than raw string parsing.
 
-2. **Handle tool calls gracefully:**
-   ```kotlin
-   val tools = PcpResponseParser().extractPcpRequests(response)
-   if (tools.success && tools.requests.isNotEmpty()) {
-       // Execute tools
-   }
-   ```
+---
 
-3. **Use type-safe data classes:**
-   ```kotlin
-   @Serializable
-   data class MyOutput(
-       val answer: String,
-       val confidence: Double,
-       val sources: List<String> = emptyList()
-   )
-   ```
+## Next Steps
 
-4. **Provide clear tool descriptions:**
-   ```kotlin
-   addTPipeOption(TPipeContextOptions().apply {
-       functionName = "searchDatabase"
-       description = "Search customer database by name or ID. Returns customer details including status, account type, and contact information."
-   })
-   ```
+Now that you can combine tools and structure, learn about the advanced session management that keeps these tools running across multiple turns.
 
-## Troubleshooting
-
-### AI Not Returning JSON
-
-**Problem:** `extractJson()` returns null
-
-**Solutions:**
-- Ensure `requireJsonPromptInjection()` was called
-- Check that `supportsNativeJson` is false
-- Verify your JSON schema is valid
-- Check AI model supports instruction following
-
-### AI Not Calling Tools
-
-**Problem:** Tool calls array is empty when tools should be used
-
-**Solutions:**
-- Verify PCP context is configured correctly
-- Ensure tool descriptions are clear
-- Check that tools are relevant to the task
-- Remember: tool calls are OPTIONAL - AI decides when to use them
-
-### Conflicting Instructions
-
-**Problem:** AI seems confused about format
-
-**Solutions:**
-- Verify merged mode is activating (check system prompt)
-- Ensure both PCP and JSON are configured
-- Try custom instructions with `setMergedPcpJsonInstructions()`
-
-## See Also
-
-- [Pipe Context Protocol Overview](pipe-context-protocol.md)
-- [JSON Schema and System Prompts](json-and-system-prompts.md)
-- [Developer-in-the-Loop Functions](developer-in-the-loop.md)
+**→ [Advanced Session Management](../advanced-concepts/advanced-session-management.md)** - Managing interactive tool sessions.

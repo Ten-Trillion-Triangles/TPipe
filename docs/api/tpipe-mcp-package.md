@@ -1,308 +1,74 @@
 # TPipe-MCP Package API
 
+The TPipe-MCP package is the Protocol Bridge—the universal adapter that provides bidirectional conversion between the Model Context Protocol (MCP) and TPipe's native Pipe Context Protocol (PCP). This enables seamless integration with the wider ecosystem of MCP-compatible tools, servers, and resources while maintaining the high-performance, deterministic flow of the TPipe engine.
+
 ## Table of Contents
-- [Overview](#overview)
-- [Models](#models)
-  - [McpTool](#mcptool)
-  - [McpResource](#mcpresource)
-  - [McpRequest](#mcprequest)
-  - [ConversionResult](#conversionresult)
+- [Data Models](#data-models)
 - [Bridge Classes](#bridge-classes)
-  - [McpToPcpConverter](#mcptopcpconverter)
-  - [PcpToMcpConverter](#pcptomcpconverter)
-  - [McpJsonParser](#mcpjsonparser)
-  - [McpJsonBuilder](#mcpjsonbuilder)
-- [Extensions](#extensions)
-  - [Pipe Extensions](#pipe-extensions)
-  - [PCP Accessor](#pcp-accessor)
-
-## Overview
-
-The TPipe-MCP package provides bidirectional conversion between Model Context Protocol (MCP) and TPipe's Pipe Context Protocol (PCP), enabling seamless integration with MCP-compatible tools and services.
+- [Pipe Extensions](#pipe-extensions)
+- [Key Operational Behaviors](#key-operational-behaviors)
 
 ---
 
-## Models
+## Data Models
 
 ### McpTool
-
-Represents an MCP tool definition with function metadata and schema information.
-
-```kotlin
-@Serializable
-data class McpTool(
-    val name: String,
-    val description: String? = null,
-    val inputSchema: JsonObject,
-    val outputSchema: JsonObject? = null
-)
-```
-
-#### Public Properties
-
-**`name`** - Tool/function identifier used for invocation
-**`description`** - Optional human-readable description of tool functionality
-**`inputSchema`** - JSON Schema defining required and optional input parameters
-**`outputSchema`** - Optional JSON Schema defining expected output format
-
----
+Represents a specific function or tool available in the MCP ecosystem.
+- **`inputSchema`**: A JSON Schema defining the required and optional input parameters for the tool.
+- **`outputSchema`**: An optional JSON Schema defining the expected structure of the tool's response.
 
 ### McpResource
-
-Represents an MCP resource definition for file or data access.
-
-```kotlin
-@Serializable
-data class McpResource(
-    val uri: String,
-    val name: String,
-    val description: String? = null,
-    val mimeType: String? = null
-)
-```
-
-#### Public Properties
-
-**`uri`** - Resource URI/path for access (file://, http://, etc.)
-**`name`** - Human-readable resource identifier
-**`description`** - Optional description of resource content/purpose
-**`mimeType`** - Optional MIME type for content type identification
-
----
-
-### McpRequest
-
-Container for complete MCP request with tools and resources.
-
-```kotlin
-@Serializable
-data class McpRequest(
-    val tools: List<McpTool> = emptyList(),
-    val resources: List<McpResource> = emptyList()
-)
-```
-
-#### Public Properties
-
-**`tools`** - Available MCP tools/functions for execution
-**`resources`** - Available MCP resources for access
-
----
+Represents a data source (file, database, API) that the model can "Read."
+- **`uri`**: The standardized path to the resource (e.g., `file://`, `postgres://`, `http://`).
+- **`mimeType`**: Used by the bridge to determine how the content should be "Filtered" (e.g., `text/markdown`, `application/json`).
 
 ### ConversionResult
-
-Result container for MCP-PCP conversion operations with status and error information.
-
-```kotlin
-@Serializable
-data class ConversionResult(
-    val success: Boolean,
-    val pcpContext: PcpContext? = null,
-    val errors: List<String> = emptyList(),
-    val warnings: List<String> = emptyList()
-)
-```
-
-#### Public Properties
-
-**`success`** - Whether conversion completed successfully
-**`pcpContext`** - Resulting PCP context if conversion succeeded
-**`errors`** - List of error messages for failed conversions
-**`warnings`** - List of warning messages for non-critical issues
+The diagnostic report for a conversion operation.
+- **`pcpContext`**: The resulting TPipe Tool Belt if the conversion was successful.
+- **`errors` / `warnings`**: A list of technical logs detailing any incompatible schema types or URI schemes encountered during the adaptation.
 
 ---
 
 ## Bridge Classes
 
 ### McpToPcpConverter
-
-Converts MCP requests to PCP context format for TPipe integration.
-
-```kotlin
-class McpToPcpConverter
-```
-
-#### Public Functions
-
-**`convert(mcpRequest: McpRequest): PcpContext`**
-Converts MCP request to PCP context format.
-
-**Behavior:**
-- **Tools Conversion**: Maps MCP tools to TPipeContextOptions with parameter extraction from JSON Schema
-- **Resources Conversion**: Maps MCP resources to StdioContextOptions based on URI schemes
-- **Schema Processing**: Extracts parameter definitions, types, descriptions, and enum values
-- **Command Mapping**: Maps resource URIs to appropriate shell commands (file:// → cat, http:// → curl)
-- **Permission Assignment**: Assigns appropriate permissions based on resource types
-
----
+The primary Intake converter. It translates MCP requests into a TPipe-native `PcpContext`.
+- **Logic**: It maps MCP tools to `TPipeContextOptions` and maps resources to `StdioContextOptions` (e.g., translating a `file://` URI into a secure `cat` command in the Tool Belt).
+- **Schema Extraction**: It automatically parses JSON Schema types (string, integer, boolean) and enum values into TPipe's native `ParamType` system.
 
 ### PcpToMcpConverter
+The "Export" converter. It translates a native TPipe Tool Belt back into the standard MCP format, allowing other MCP-compatible clients to understand and use TPipe's tools.
 
-Converts PCP context back to MCP request format for reverse compatibility.
-
-```kotlin
-class PcpToMcpConverter
-```
-
-#### Public Functions
-
-**`convert(pcpContext: PcpContext): McpRequest`**
-Converts PCP context to MCP request format.
-
-**Behavior:**
-- **TPipe Options**: Converts TPipeContextOptions to MCP tools with JSON Schema generation
-- **Stdio Options**: Converts StdioContextOptions to MCP resources with URI mapping
-- **Schema Generation**: Builds JSON Schema from PCP parameter definitions
-- **Type Mapping**: Maps PCP ParamType enums to JSON Schema types
-- **URI Construction**: Reconstructs appropriate URIs from commands and arguments
+### McpJsonParser / Builder
+Low-level utilities for handling the MCP JSON-RPC wire format. They ensure that all required fields (like `name` and `uri`) are present and valid before conversion begins.
 
 ---
 
-### McpJsonParser
+## Pipe Extensions
 
-Parser for MCP JSON format that extracts structured components.
-
-```kotlin
-class McpJsonParser
-```
-
-#### Public Functions
-
-**`parseJson(mcpJson: String): McpRequest`**
-Parses MCP JSON string into structured McpRequest object.
-
-**Behavior:**
-- **JSON Validation**: Validates JSON structure and required fields
-- **Tool Extraction**: Extracts tools with inputSchema validation (must be type "object")
-- **Resource Extraction**: Extracts resources with required uri and name fields
-- **Error Handling**: Throws descriptive exceptions for malformed or invalid JSON
-
-**`validateMcpStructure(json: JsonObject): Boolean`**
-Validates JSON contains at least one MCP component.
-
-**`extractTools(json: JsonObject): List<McpTool>`**
-Extracts and validates MCP tools from JSON.
-
-**`extractResources(json: JsonObject): List<McpResource>`**
-Extracts and validates MCP resources from JSON.
-
----
-
-### McpJsonBuilder
-
-Builder for creating formatted MCP JSON from requests and contexts.
-
-```kotlin
-class McpJsonBuilder
-```
-
-#### Public Functions
-
-**`buildMcpJson(mcpRequest: McpRequest): String`**
-Converts MCP request to formatted JSON string.
-
-**Behavior:** Serializes McpRequest to pretty-printed JSON. **Warning:** This is internal format only - use JSON-RPC responses for wire format.
-
-**`buildMcpJsonFromPcp(pcpContext: PcpContext): String`**
-Converts PCP context to MCP JSON format.
-
-**Behavior:** Uses PcpToMcpConverter to convert context, then serializes to JSON.
-
----
-
-## Extensions
-
-### Pipe Extensions
-
-Extension functions for Pipe class enabling MCP integration.
+TPipe provides several Fittings for the `Pipe` class to make MCP integration effortless.
 
 #### `Pipe.setMcpContext(mcpJson: String): Pipe`
-Sets MCP context by converting MCP JSON to PCP format.
-
-**Behavior:**
-- Parses MCP JSON using McpJsonParser
-- Converts to PCP context using McpToPcpConverter
-- Applies converted context to pipe via setPcPContext()
-- Returns pipe for method chaining
-- Throws exception if JSON is malformed or conversion fails
+The standard way to equip a valve with MCP tools. It parses the JSON, converts it to a Tool Belt, and attaches it to the Pipe in one fluent step.
 
 #### `Pipe.convertAndApplyMcp(mcpJson: String): ConversionResult`
-Converts MCP JSON to PCP context with comprehensive error handling.
-
-**Behavior:**
-- Attempts MCP JSON parsing and conversion
-- Applies converted context to pipe on success
-- Returns ConversionResult with success status and error details
-- Captures and reports all conversion failures
+A safer variant of the above that returns a full diagnostic report, allowing you to handle conversion warnings programmatically.
 
 #### `Pipe.exportToMcp(): String`
-Exports current PCP context as MCP JSON format.
-
-**Behavior:**
-- Uses McpJsonBuilder to convert current PCP context
-- Returns formatted MCP JSON string
-- Enables reverse conversion for MCP compatibility
-
-#### `Pipe.convertPcpToMcp(): ConversionResult`
-Converts current PCP context to MCP format with error handling.
-
-**Behavior:**
-- Converts PCP context using PcpToMcpConverter
-- Returns ConversionResult with conversion status
-- Includes warnings about export operation
-- Captures conversion errors if they occur
+Generates a standard MCP-compliant JSON string representing the Pipe's current Tool Belt.
 
 ---
 
-### PCP Accessor
+## Key Operational Behaviors
 
-Extension property for accessing protected PCP context.
+### 1. Schema Mapping
+The bridge performs sophisticated mapping between complex JSON Schemas and TPipe's deterministic parameter system. It preserves documentation, descriptions, and strict type constraints (like `minimum` or `maximum` values for numbers).
 
-#### `Pipe.pcpContext: PcpContext`
-Extension property to access protected pcpContext field.
+### 2. URI to Command Translation
+TPipe-MCP includes an intelligent mapping system for resources:
+- `file://` URIs become secure file-reading tool calls.
+- `http://` / `https://` URIs become `curl` or `HttpExecutor` tool calls.
+- Custom URI schemes can be extended with specialized shell command mapping.
 
-**Behavior:**
-- Uses reflection to access protected field safely
-- Enables MCP bridge operations that need direct context access
-- Returns current PcpContext of the pipe
-
----
-
-## Key Behaviors
-
-### Bidirectional Conversion
-The bridge supports complete round-trip conversion between MCP and PCP formats, enabling seamless integration with MCP-compatible tools while maintaining TPipe's native capabilities.
-
-### Schema Mapping
-Sophisticated mapping between JSON Schema (MCP) and PCP parameter definitions, including:
-- Type conversion (string, integer, number, boolean, array, object)
-- Enum value preservation
-- Description and documentation transfer
-- Required field handling
-
-### URI and Command Mapping
-Intelligent mapping between MCP resource URIs and shell commands:
-- `file://` URIs → `cat` command for file reading
-- `http://`/`https://` URIs → `curl` command for HTTP requests
-- Custom URI schemes → appropriate shell commands
-
-### Error Handling
-Comprehensive error handling with detailed error messages and warnings:
-- JSON parsing errors with specific field validation
-- Schema validation errors with type checking
-- Conversion errors with context information
-- Non-critical warnings for informational purposes
-
-### Format Compliance
-Strict adherence to MCP specification requirements:
-- Tools must have `inputSchema` with type "object"
-- Resources must have required `uri` and `name` fields
-- JSON Schema validation for parameter definitions
-- Proper MIME type handling for resources
-
-### Integration Patterns
-Multiple integration approaches for different use cases:
-- Direct conversion with exception handling
-- Safe conversion with result objects
-- Extension methods for fluent API usage
-- Export capabilities for reverse compatibility
+### 3. Protocol Compliance
+The package strictly adheres to the Model Context Protocol specification. It validates that all tools have valid object-type input schemas and that all resources provide the mandatory identity fields, ensuring compatibility with any compliant MCP host or client.

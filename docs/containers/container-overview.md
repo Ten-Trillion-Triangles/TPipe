@@ -1,123 +1,86 @@
-# Container Overview
+# Container Overview - Infrastructure Orchestration
 
-## Table of Contents
-- [Container vs Pipeline](#container-vs-pipeline)
-- [P2P Integration](#p2p-integration)
-- [Container References](#container-references)
-- [Tracing Support](#tracing-support)
-- [Container Types](#container-types)
-- [When to Use Containers](#when-to-use-containers)
-- [Implementation Status](#implementation-status)
-- [Example: Basic Container Pattern](#example-basic-container-pattern)
+While a **Pipeline** represents a single mainline, **Containers** are the complex infrastructure—the pumping stations, treatment plants, and distribution grids that coordinate multiple mainlines. Containers provide high-level orchestration patterns that go beyond simple sequential execution.
 
-Containers are specialized classes that orchestrate multiple pipelines, providing higher-level coordination patterns beyond simple pipe composition. Most containers implement `P2PInterface`, though some like Junction are still in development.
+In the TPipe ecosystem, Containers allow you to route data, run processes in parallel, and manage swarms of agents with industrial precision.
 
-## Container vs Pipeline
+## Containers vs. Pipelines
+
+Think of a Pipeline as a series of connected pipes. A Container is the structure that decides which pipeline to use or how to combine their outputs.
 
 | Aspect | Pipeline | Container |
-|--------|----------|-----------|
-| **Purpose** | Sequential pipe execution | Multi-pipeline orchestration |
-| **Child Management** | Individual pipes | Complete pipelines |
-| **P2P Support** | Single agent | Can expose child pipelines |
-| **Execution Model** | Linear flow | Routing, parallel, or distributed |
-| **Tracing** | Pipe-level events | Container + child events |
+| :--- | :--- | :--- |
+| **Purpose** | Sequential execution of logic. | Coordination of multiple logic streams. |
+| **Child Units** | Individual `Pipe` instances. | Complete `Pipeline` instances. |
+| **Flow Model** | Linear (A → B → C). | Routing, Parallel, or Distributed. |
+| **P2P Role** | Represents a single agent. | Can expose and coordinate multiple agents. |
 
-## P2P Integration
+---
 
-Most containers implement `P2PInterface`:
-```kotlin
-class Connector : P2PInterface {
-    override fun getPipelinesFromInterface(): List<Pipeline> {
-        return branches.values.toList() // Expose managed pipelines
-    }
-    
-    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
-        val pipeline = branches[lastConnection]
-        return pipeline?.executeP2PRequest(request)
-    }
-}
-```
+## The Container Catalog
 
-**Note**: Junction is currently a stub class without P2P implementation.
+TPipe provides several specialized containers to handle different infrastructure needs:
 
-## Container References
+### 1. Routing Containers
+These containers act like Switching Stations, directing the flow based on specific keys or conditions.
+*   **[Connector](connector.md)**: Simple key-based routing between different pipelines.
+*   **[MultiConnector](multiconnector.md)**: Complex management of multiple connections with advanced execution modes.
 
-Child pipelines do **not** automatically store container references. This must be done manually if needed:
-```kotlin
-// Manual assignment when required
-pipeline.pipelineContainer = this
-```
+### 2. Parallel Containers
+These act like Manifolds, splitting a single flow into multiple branches that run at the same time.
+*   **[Splitter](splitter.md)**: Fan-out execution where one input is processed by multiple pipelines simultaneously, with results collected at the end.
 
-## Tracing Support
+### 3. Orchestration Containers
+The Brain of the infrastructure, managing task distribution and agent cooperation.
+*   **[Manifold](manifold.md)**: Manager-worker coordination where a Manager agent delegates tasks to a pool of Worker agents.
+*   **[DistributionGrid](distributiongrid.md)**: A decentralized swarm of agents (Experimental).
+*   **[Junction](junction.md)**: A multi-agent discussion container where agents collaborate on a single output (Experimental).
 
-Containers that support tracing follow this pattern:
-```kotlin
-fun enableTracing(config: TraceConfig = TraceConfig()) {
-    tracingEnabled = true
-    traceConfig = config
-    // Enable on child pipelines
-    childPipelines.forEach { it.enableTracing(config) }
-}
-```
+---
 
-## Container Types
+## P2P & Tracing: Unified Visibility
 
-### Routing Containers
-- **Connector**: Key-based pipeline routing
-- **MultiConnector**: Multiple connector management with execution modes
+Even though Containers manage complex, multi-pipeline flows, they remain fully integrated into the TPipe ecosystem:
 
-### Parallel Containers  
-- **Splitter**: Fan-out execution with result collection
+### P2P Integration
+Most containers implement `P2PInterface`. This means a Container can act as a single P2P endpoint, while internally delegating requests to its child pipelines. This allows you to hide complex internal orchestration behind a simple agent interface.
 
-### Orchestration Containers
-- **Manifold**: Manager-worker task coordination
-- **DistributionGrid**: Decentralized agent swarm (stub implementation)
-- **Junction**: Democratic discussion (stub implementation)
-
-## When to Use Containers
-
-**Use containers when:**
-- Multiple pipelines need coordination
-- Routing logic is required
-- Parallel execution is needed
-- Task orchestration is complex
-
-**Use direct pipe composition when:**
-- Simple sequential processing
-- Single pipeline is sufficient
-- No routing or coordination needed
-
-## Implementation Status
-
-| Container | Status | P2P Support | Tracing |
-|-----------|--------|-------------|---------|
-| Connector | ✅ Complete | ✅ Yes | ✅ Yes |
-| MultiConnector | ✅ Complete | ✅ Yes | ❌ No |
-| Splitter | ✅ Complete | ✅ Yes | ✅ Yes |
-| Manifold | ✅ Complete | ✅ Yes | ✅ Yes |
-| DistributionGrid | ⚠️ Stub | ✅ Yes | ❌ No |
-| Junction | ⚠️ Stub | ❌ No | ❌ No |
-
-## Example: Basic Container Pattern
+### Tracing Support
+Containers support Deep Tracing. When you enable tracing on a Container, it automatically propagates that configuration to every pipe in every child pipeline. This ensures you have a unified view of the entire orchestration event.
 
 ```kotlin
-class Connector : P2PInterface {
-    private val branches = mutableMapOf<Any, Pipeline>()
-    
-    fun add(key: Any, pipeline: Pipeline): Connector {
-        branches[key] = pipeline
-        return this
-    }
-    
-    suspend fun execute(path: Any, content: MultimodalContent): MultimodalContent {
-        val connection = branches[path]
-        return connection?.execute(content) ?: content.apply { terminatePipeline = true }
-    }
-    
-    override fun getPipelinesFromInterface(): List<Pipeline> = branches.values.toList()
-}
+// Enable tracing on the entire station
+manifold.enableTracing(TraceConfig(logLevel = LogLevel.DEBUG))
 ```
 
 ---
 
-**Next:** [Connector →](connector.md)
+## When to Reach for a Container?
+
+> [!TIP]
+> **Use a Pipeline** when you have a clear, step-by-step process that always follows the same path.
+>
+> **Use a Container** when:
+> *   You need to choose between different logic paths at runtime.
+> *   You want to run multiple models in parallel to save time.
+> *   You're building a Team of agents with different specialties.
+> *   You need to scale your processing across a distributed grid.
+
+## Implementation Status
+
+| Container | Maturity | P2P Ready | Deep Tracing |
+| :--- | :--- | :--- | :--- |
+| **Connector** | ✅ Production | ✅ Yes | ✅ Yes |
+| **MultiConnector** | ✅ Production | ✅ Yes | ❌ No |
+| **Splitter** | ✅ Production | ✅ Yes | ✅ Yes |
+| **Manifold** | ✅ Production | ✅ Yes | ✅ Yes |
+| **DistributionGrid** | ⚠️ Experimental | ✅ Yes | ❌ No |
+| **Junction** | ⚠️ Experimental | ❌ No | ❌ No |
+
+---
+
+## Next Steps
+
+Start with the most common orchestration pattern: simple routing.
+
+**→ [Connector - Pipeline Branching](connector.md)** - Key-based pipeline routing.

@@ -1,336 +1,77 @@
-# Cross-Cutting Topics
+# Cross-Cutting Topics - Infrastructure Patterns
+
+Across the different types of **Orchestration Containers** in TPipe, several foundational patterns remain consistent. Whether you are building a simple **Connector** or a massive **Manifold** project, understanding these cross-cutting infrastructure topics is essential for maintaining a high-performance, deterministic flow.
 
 ## Table of Contents
-- [Tracing Support](#tracing-support)
+- [Tracing and Telemetry](#tracing-and-telemetry)
 - [P2P Integration Patterns](#p2p-integration-patterns)
 - [Container State Management](#container-state-management)
-- [Error Handling Patterns](#error-handling-patterns)
-- [Testing Strategies](#testing-strategies)
-- [Performance Considerations](#performance-considerations)
-- [Implementation Status Summary](#implementation-status-summary)
-- [Best Practices Based on Actual APIs](#best-practices-based-on-actual-apis)
-
-This document covers patterns and considerations that apply across container types in TPipe, based on actual implementations.
-
-## Tracing Support
-
-### Actual Trace Events
-These are the real trace events defined in `TraceEventType.kt`:
-
-```kotlin
-// Manifold Events
-MANIFOLD_START, MANIFOLD_END, MANIFOLD_SUCCESS, MANIFOLD_FAILURE
-MANAGER_DECISION, MANAGER_TASK_ANALYSIS, MANAGER_AGENT_SELECTION
-TASK_PROGRESS_UPDATE, TASK_COMPLETION_CHECK, TASK_NEXT_STEPS
-AGENT_DISPATCH, AGENT_RESPONSE, AGENT_REQUEST_VALIDATION
-MANIFOLD_LOOP_ITERATION, MANIFOLD_TERMINATION_CHECK
-CONVERSE_HISTORY_UPDATE
-
-// Splitter Events  
-SPLITTER_START, SPLITTER_END, SPLITTER_SUCCESS, SPLITTER_FAILURE
-SPLITTER_CONTENT_DISTRIBUTION, SPLITTER_PIPELINE_DISPATCH
-SPLITTER_PIPELINE_COMPLETION, SPLITTER_PIPELINE_CALLBACK
-SPLITTER_COMPLETION_CALLBACK, SPLITTER_PARALLEL_START
-SPLITTER_PARALLEL_AWAIT, SPLITTER_RESULT_COLLECTION
-
-// P2P Events
-P2P_REQUEST_START, P2P_REQUEST_SUCCESS, P2P_REQUEST_FAILURE
-P2P_TRANSPORT_SEND, P2P_TRANSPORT_RECEIVE, PCP_CONTEXT_TRANSFER
-```
-
-### Tracing Implementation Status
-
-| Container | Tracing Support | Method |
-|-----------|----------------|---------|
-| Connector | ✅ Yes | `enableTracing(config)` |
-| MultiConnector | ❌ No | No tracing methods |
-| Splitter | ✅ Yes | `enableTracing(config)` |
-| Manifold | ✅ Yes | Built-in tracing |
-| DistributionGrid | ❌ No | Stub implementation |
-| Junction | ❌ No | Stub implementation |
-
-### Enabling Tracing
-```kotlin
-// Containers with tracing support
-connector.enableTracing(TraceConfig(
-    detailLevel = TraceDetailLevel.DETAILED,
-    includeContent = true
-))
-
-splitter.enableTracing(TraceConfig(enabled = true))
-
-// Manifold has built-in tracing when tracingEnabled = true
-```
-
-## P2P Integration Patterns
-
-### Implemented P2P Containers
-
-```kotlin
-// Connector - Routes to last connection
-class Connector : P2PInterface {
-    override fun getPipelinesFromInterface(): List<Pipeline> {
-        return branches.values.toList()
-    }
-    
-    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
-        val pipeline = branches[lastConnection]
-        return pipeline?.executeP2PRequest(request)
-    }
-}
-
-// MultiConnector - Routes to first connector
-class MultiConnector : P2PInterface {
-    override fun getPipelinesFromInterface(): List<Pipeline> {
-        return connectors.flatMap { it.getPipelinesFromInterface() }
-    }
-    
-    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
-        return connectors.firstOrNull()?.executeP2PRequest(request)
-    }
-}
-
-// Splitter - Executes all pipelines, returns aggregated result
-class Splitter : P2PInterface {
-    override suspend fun executeLocal(content: MultimodalContent): MultimodalContent {
-        val jobs = executePipelines()
-        jobs.awaitAll()
-        
-        val aggregated = MultimodalContent()
-        for ((key, result) in results.contents) {
-            aggregated.metadata[key] = result
-        }
-        return aggregated
-    }
-}
-```
-
-### Non-P2P Containers
-- **Junction**: Plain class, no P2P interface
-- **DistributionGrid**: Has P2P interface but methods not implemented
-
-## Container State Management
-
-### Available Reset Methods
-```kotlin
-// Splitter - Has result collection that needs clearing
-splitter.results.flush() // Clear MultimodalCollection
-
-// Connector - Set default path (public method)
-connector.setDefaultPath("default-route") // Reset to default routing
-
-// Note: Most containers don't expose explicit reset APIs
-// Internal state like lastConnection, workingContentObject, loopIterationCount
-// are private and cannot be directly accessed
-```
-
-### Resource Cleanup
-```kotlin
-// Manual cleanup for containers with accessible state
-fun cleanup() {
-    // Splitter - only public reset method
-    splitter.results.flush()
-    
-    // Reset pipeline states if needed (these are accessible)
-    childPipelines.forEach { pipeline ->
-        pipeline.inputTokensSpent = 0
-        pipeline.outputTokensSpent = 0
-        pipeline.content = MultimodalContent()
-    }
-    
-    // Note: Container internal state is private and cannot be reset directly
-    // Containers may need to be recreated for full state reset
-}
-```
-
-## Error Handling Patterns
-
-### Connector Error Handling
-Connector does **not** throw exceptions - it sets termination flags:
-
-```kotlin
-suspend fun execute(path: Any, content: MultimodalContent): MultimodalContent {
-    try {
-        val connection = branches[path]
-        if (connection != null) {
-            return connection.execute(content)
-        }
-        content.terminatePipeline = true // Set flag instead of throwing
-        return content
-    } catch (e: Exception) {
-        content.terminatePipeline = true // Set flag on any error
-        return content
-    }
-}
-
-// Check termination flag instead of catching exceptions
-val result = connector.execute("key", content)
-if (result.terminatePipeline) {
-    // Handle error case
-}
-```
-
-### Splitter Async Error Handling
-```kotlin
-// Handle exceptions in parallel execution
-val jobs = splitter.executePipelines()
-jobs.forEach { job ->
-    try {
-        job.await()
-    } catch (e: Exception) {
-        // Handle individual pipeline failures
-        logger.error("Pipeline failed", e)
-    }
-}
-```
-
-## Testing Strategies
-
-### Unit Testing Actual APIs
-```kotlin
-class ConnectorTest {
-    @Test
-    fun `should set termination flag on invalid key`() = runTest {
-        val connector = Connector()
-        val content = MultimodalContent()
-        
-        val result = connector.execute("nonexistent", content)
-        
-        assertTrue(result.terminatePipeline)
-    }
-}
-
-class SplitterTest {
-    @Test
-    fun `should collect results from parallel execution`() = runTest {
-        val splitter = Splitter()
-            .addContent("test", testContent)
-            .addPipeline("test", testPipeline)
-        
-        val jobs = splitter.executePipelines()
-        jobs.awaitAll()
-        
-        assertNotNull(splitter.results.contents["test"])
-    }
-}
-```
-
-### Integration Testing
-```kotlin
-class ManifoldIntegrationTest {
-    @Test
-    fun `should execute manager-worker loop`() = runTest {
-        val manifold = Manifold()
-            .setManagerPipeline(createTestManager())
-            .autoTruncateContext()
-        
-        val task = MultimodalContent().addText("Test task")
-        val result = manifold.execute(task)
-        
-        // Check that loop completed properly
-        assertTrue(result.passPipeline || result.terminatePipeline)
-    }
-}
-```
-
-### Performance Testing
-```kotlin
-class SplitterPerformanceTest {
-    @Test
-    fun `should handle parallel execution efficiently`() = runTest {
-        val splitter = Splitter()
-        repeat(10) { i ->
-            splitter.addContent("pipeline$i", testContent)
-                .addPipeline("pipeline$i", createTestPipeline())
-        }
-        
-        val startTime = System.currentTimeMillis()
-        val jobs = splitter.executePipelines()
-        jobs.awaitAll()
-        val duration = System.currentTimeMillis() - startTime
-        
-        // Should complete in reasonable time despite 10 parallel pipelines
-        assertThat(duration).isLessThan(5000)
-    }
-}
-```
-
-### Tracing Validation
-```kotlin
-class TracingTest {
-    @Test
-    fun `should emit expected trace events`() = runTest {
-        val connector = Connector()
-            .add("test", testPipeline)
-            .enableTracing()
-        
-        connector.execute("test", testContent)
-        
-        val trace = connector.getTrace()
-        assertThat(trace).contains("CONNECTOR_START")
-        assertThat(trace).contains("CONNECTOR_ROUTE_SELECTION")
-        assertThat(trace).contains("CONNECTOR_END")
-    }
-}
-```
-
-## Performance Considerations
-
-### Memory Management
-```kotlin
-// Clear collections between runs
-splitter.results.flush()
-
-// Monitor token usage in long-running containers
-val totalTokens = pipeline.inputTokensSpent + pipeline.outputTokensSpent
-if (totalTokens > threshold) {
-    // Implement compression or reset
-}
-```
-
-### Concurrency Patterns
-```kotlin
-// Splitter uses proper coroutine scoping
-return coroutineScope {
-    val jobs = mutableListOf<Deferred<Unit>>()
-    
-    for ((key, activatorValue) in activatorKeys) {
-        for (pipeline in activatorValue.pipelines) {
-            val job = async {
-                // Execute pipeline
-            }
-            jobs.add(job)
-        }
-    }
-    
-    jobs
-}
-```
-
-## Implementation Status Summary
-
-| Container | Status | Key Methods | P2P | Tracing |
-|-----------|--------|-------------|-----|---------|
-| **Connector** | ✅ Complete | `add()`, `execute()`, `setDefaultPath()` | ✅ | ✅ |
-| **MultiConnector** | ✅ Complete | `add()`, `setMode()`, `execute()` | ✅ | ❌ |
-| **Splitter** | ✅ Complete | `addContent()`, `addPipeline()`, `executePipelines()` | ✅ | ✅ |
-| **Manifold** | ✅ Complete | `execute()`, manager pipeline required | ✅ | ✅ |
-| **DistributionGrid** | ⚠️ Stub | Only `setEntryPipeline()` | ⚠️ | ❌ |
-| **Junction** | ⚠️ Stub | Empty class | ❌ | ❌ |
-
-## Best Practices Based on Actual APIs
-
-1. **Check termination flags** instead of catching exceptions (Connector pattern)
-2. **Clear result collections** between runs (Splitter)
-3. **Use proper P2P registration** with all required components
-4. **Handle async exceptions** in parallel containers
-5. **Enable tracing** where supported for debugging
-6. **Validate container state** before execution
-7. **Use meaningful keys** for routing and result identification
-8. **Test both success and failure** scenarios
-9. **Monitor resource usage** in long-running containers
-10. **Follow actual API signatures** rather than assumed patterns
+- [Error Handling: The Pressure Relief](#error-handling-the-pressure-relief)
+- [Performance and Concurrency](#performance-and-concurrency)
 
 ---
 
-**Previous:** [← Junction](junction.md)
+## Tracing and Telemetry
+
+In a complex facility, you need unified monitoring. TPipe containers propagate tracing configurations to all their child mainlines, ensuring that a single Gauge can capture the entire multi-stage process.
+
+### Operational Events
+Each container emits specialized telemetry events into the trace stream:
+*   **Manifold**: `MANAGER_DECISION`, `AGENT_DISPATCH`, `TASK_PROGRESS_UPDATE`.
+*   **Splitter**: `SPLITTER_CONTENT_DISTRIBUTION`, `SPLITTER_PARALLEL_START`.
+*   **Connector**: `CONNECTOR_ROUTE_SELECTION`.
+
+### Enabling the Gauges
+```kotlin
+// Propagates tracing to every pipe in every branch
+connector.enableTracing(TraceConfig(detailLevel = TraceDetailLevel.DETAILED))
+```
+
+---
+
+## P2P Integration Patterns
+
+Containers are the primary way to build "Multi-Stage Agents." They allow you to hide complex internal Plumbing behind a simple P2P interface.
+
+*   **Connector P2P**: Routes incoming requests to the most recently used connection or a predefined default path.
+*   **Splitter P2P**: Fans out an incoming request to multiple pipelines and returns a compound metadata response containing all findings.
+*   **MultiConnector P2P**: Typically routes to the first primary mainline in its switching yard.
+
+---
+
+## Container State Management
+
+Unlike a single Pipe, Containers often hold Inventory or "History" that must be managed between runs.
+
+*   **Flushing the Tank**: For containers like the **Splitter**, it is critical to call `results.flush()` before starting a new operation. This ensures that old data doesn't Contaminate the new result collection.
+*   **Pipeline Resets**: If you are reusing pipelines within a container, remember that their internal token counters (`inputTokensSpent`) will continue to accumulate unless manually reset.
+
+---
+
+## Error Handling: The Pressure Relief
+
+TPipe containers prioritize **Deterministic Fault Handling** over raw exceptions.
+
+### The Termination Pattern
+Instead of crashing your application, containers like the **Connector** will set `terminatePipeline = true` on the content object if a route is missing or a valve is shut.
+*   **Best Practice**: Always check `result.shouldTerminate()` after calling a container's `execute` method to handle routing failures gracefully.
+
+### Parallel Failure Management
+In a **Splitter**, one line might Burst (fail) while others succeed. The Splitter uses standard Kotlin Coroutine error handling to ensure that a single failure is logged and surfaced without necessarily killing the other parallel processes.
+
+---
+
+## Performance and Concurrency
+
+### Memory Control
+In long-running agent projects (like a **Manifold** loop), the Water Level (token count) of the conversation history will rise.
+*   **Strategy**: Use `autoTruncateContext()` on your container to ensure the supervisor doesn't exceed its context window after many turns of worker delegation.
+
+### Concurrency
+TPipe containers are built on **Kotlin Coroutines**. When you run a `Splitter`, it uses `async` blocks to ensure that the AI models are called in parallel, maximizing the Throughput of your infrastructure and reducing the total time your application waits for a response.
+
+## Next Steps
+
+Now that you understand the patterns shared by all containers, explore the specific blueprints for each one.
+
+**→ [Container Overview](container-overview.md)** - An introduction to the orchestration catalog.

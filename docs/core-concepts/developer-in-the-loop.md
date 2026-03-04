@@ -1,261 +1,101 @@
-# Developer-in-the-Loop Functions
+# Developer-in-the-Loop (DITL) - Manual Control
 
-## Table of Contents
-- [Overview of DITL Functions](#overview-of-ditl-functions)
-- [Execution Order](#execution-order)
-- [Pre-Init Function](#pre-init-function)
-- [Pre-Validation Function](#pre-validation-function)
-- [Pre-Invoke Function](#pre-invoke-function)
-- [Post-Generate Function](#post-generate-function)
-- [Validator Function](#validator-function)
-- [On-Failure Function](#on-failure-function)
-- [Transformation Function - The Most Critical DITL Function](#transformation-function---the-most-critical-ditl-function)
-- [Flow Control Methods](#flow-control-methods)
-- [Pipeline-Level Pre-Validation](#pipeline-level-pre-validation)
+In an industrial plumbing system, you often need a **Manual Shut-off Valve**—a point where an engineer can step in, inspect the flow, and make adjustments before data reaches its destination. In TPipe, this is the **Developer-in-the-Loop (DITL)** pattern.
 
-TPipe provides sophisticated developer-in-the-loop (DITL) capabilities through a series of intervention points in the pipe execution lifecycle. These functions allow developers to inject custom logic, validation, and error handling at critical stages of AI processing.
+DITL functions and pipes provide deterministic checkpoints. They allow you, the developer, to programmatically validate, transform, or reject the data flowing through any valve in your infrastructure.
 
-## Overview of DITL Functions
+## Why DITL is Essential
 
-TPipe offers seven key intervention points during pipe execution:
+AI models are powerful but fundamentally non-deterministic. They can hallucinate, break structured formatting, or generate unsafe code. DITL provides the **Deterministic Controls** needed for production systems:
 
-1. **Pre-Init Function**: Execute before any processing begins
-2. **Pre-Validation Function**: Modify context after it's loaded but before AI call
-3. **Pre-Invoke Function**: Final check before making the AI API call
-4. **Post-Generate Function**: Immediate action after AI generates content, before validation
-5. **Validator Function**: Validate AI output and control pipeline flow
-6. **Transformation Function**: **Most Critical** - Transform AI output after validation
-7. **On-Failure Function**: Handle errors and provide recovery logic
+*   **Schema Enforcement**: Verify that the model's output matches your exact JSON specifications.
+*   **Data Scrubbing**: Automatically strip out sensitive information (PII) before it is logged or stored.
+*   **Business Logic Validation**: Run code to check if the model's suggestion is physically or logically possible.
+*   **Human Intervention**: Pause the mainline and wait for a human supervisor to approve the next stage.
 
-## Execution Order
+---
 
-```
-Input → Pre-Init → Context Loading → Pre-Validation → Pre-Invoke → AI Call → Post-Generate → Validator → Transformation → On-Failure (if needed) → Output
-```
+## 1. DITL Functions: The Scrubbing Stage
 
-
-
-## Pre-Init Function
-
-**What it does**: Executes at the very beginning of pipe execution, before any context loading or processing begins. This is your first opportunity to modify or validate the input content.
-
-**When to use**: Input sanitization, early validation checks, preprocessing raw input, or setting up metadata before any AI processing occurs.
+DITL functions are the simplest way to intervene. You attach a Kotlin lambda to a Pipe. This lambda receives the model's output and can return a modified version, signal a failure, or trigger a reroute.
 
 ```kotlin
-pipe.setPreInitFunction { content ->
-    // Clean and validate input before any processing
-    if (content.text.isBlank()) {
-        content.terminate()  // Stop processing empty input
-        return@setPreInitFunction
-    }
-    
-    // Sanitize and normalize input
-    content.text = content.text.trim().replace(Regex("\\s+"), " ")
-    content.metadata["originalLength"] = content.text.length.toString()
-}
-```
+val auditor = BedrockPipe()
+    .setDITLFunction { pipe, originalOutput ->
+        // Scrub the output for forbidden terms
+        val scrubbed = originalOutput.text.replace("password", "[REDACTED]")
 
-## Pre-Validation Function
-
-**What it does**: Modifies the context window after it's been loaded but before the AI model is called. This function receives both the context window and the content, allowing you to filter, enhance, or completely replace the context based on the input.
-
-**When to use**: Dynamic context selection, filtering irrelevant context, adding computed context elements, or customizing context based on input analysis.
-
-```kotlin
-pipe.setPreValidationFunction { contextWindow, content ->
-    // Filter context to only include relevant entries
-    val keywords = extractKeywords(content?.text ?: "")
-    val filteredContext = ContextWindow()
-    
-    contextWindow.contextElements.forEach { element ->
-        if (keywords.any { keyword -> element.contains(keyword, ignoreCase = true) }) {
-            filteredContext.contextElements.add(element)
-        }
-    }
-    
-    filteredContext
-}
-```
-
-## Pre-Invoke Function
-
-**What it does**: Final checkpoint before making the AI API call. This function can conditionally skip the entire pipe by returning `true`, allowing you to provide alternative responses or route to different processing paths.
-
-**When to use**: Caching mechanisms, conditional processing based on input complexity, early response generation for simple cases, or dynamic routing decisions.
-
-```kotlin
-pipe.setPreInvokeFunction { content ->
-    // Check cache first to avoid unnecessary AI calls
-    val cachedResult = responseCache.get(content.text.hashCode())
-    if (cachedResult != null) {
-        content.text = cachedResult
-        return@setPreInvokeFunction true  // Skip AI processing
-    }
-    
-    false  // Continue with AI call
-}
-```
-
-## Post-Generate Function
-
-**What it does**: Executes immediately after the AI generates content, before any validation or transformation occurs. This is your first opportunity to capture or act on the raw AI output before it's processed by validation logic.
-
-**When to use**: Caching raw AI output, logging generated content for debugging, capturing output before validation steps that might modify it, or performing immediate actions based on AI response.
-
-```kotlin
-pipe.setPostGenerateFunction { content ->
-    // Cache the raw AI output before validation modifies it
-    val cacheKey = content.metadata["input_hash"] ?: ""
-    if (cacheKey.isNotEmpty()) {
-        outputCache.put(cacheKey, content.text)
-    }
-    
-    // Log raw output for debugging
-    logger.debug("Raw AI output: ${content.text.take(100)}...")
-    
-    // Track generation metrics
-    content.metadata["generation_timestamp"] = System.currentTimeMillis().toString()
-}
-```
-
-**Advanced usage with complex validation**:
-```kotlin
-pipe.setPostGenerateFunction { content ->
-    // Save original output before validator pipes modify it
-    content.metadata["original_output"] = content.text
-    
-    // Useful when validator pipes transform content and you need
-    // to preserve the original for comparison or fallback
-}
-.setValidatorPipe(complexValidatorPipe)
-.setValidatorFunction { content ->
-    // Can compare modified vs original
-    val original = content.metadata["original_output"] ?: ""
-    val modified = content.text
-    
-    // Validation logic here
-    validateContent(modified)
-}
-```
-
-## Validator Function
-
-**What it does**: Validates the AI output and controls pipeline flow. Returns `true` to continue the pipeline, or `false` to trigger branch pipes or failure handling. Can also set flow control flags like `repeat()`, `jumpToPipe()`, or `terminate()`.
-
-**When to use**: Quality control, format validation, retry logic, pipeline routing based on output quality, or early termination when tasks are complete.
-
-```kotlin
-pipe.setValidatorFunction { content ->
-    val quality = assessOutputQuality(content.text)
-    
-    when {
-        quality > 0.8 -> true  // High quality, continue pipeline
-        quality > 0.5 -> {
-            content.repeat()  // Medium quality, try again
-            false
-        }
-        else -> {
-            content.jumpToPipe("fallback-processor")  // Low quality, use fallback
-            false
-        }
-    }
-}
-```
-
-## On-Failure Function
-
-**What it does**: Handles errors and failures when validation fails or exceptions occur during processing. Receives both the original input content and the processed content, allowing you to implement recovery strategies.
-
-**When to use**: Error recovery, fallback content generation, logging failures, or providing graceful degradation when AI processing fails.
-
-```kotlin
-pipe.setOnFailure { originalContent, processedContent ->
-    // Log the failure and provide fallback content
-    logger.error("Processing failed for: ${originalContent.text.take(50)}")
-    
-    MultimodalContent(
-        text = "I apologize, but I couldn't process your request: '${originalContent.text}'. Please try rephrasing."
-    )
-}
-```
-
-## Transformation Function - The Most Critical DITL Function
-
-**What it does**: Processes and transforms the raw AI output immediately after generation, before any validation occurs. This is the **most important** DITL function because it's where you convert unstructured AI responses into structured, usable data.
-
-**When to use**: Always - nearly every production pipe should have a transformation function. Use it for parsing JSON responses, extracting specific data from AI text, converting unstructured text to structured data, adding metadata, and preparing content for pipeline context sharing.
-
-
-```kotlin
-pipe.setTransformationFunction { content ->
-    // Parse JSON response from AI and extract structured data
-    val aiResponse = content.text
-    val jsonMatch = extractJsonFromText(aiResponse)
-    val parsedData = Json.decodeFromString<AnalysisResult>(jsonMatch)
-    
-    // Create transformed content with structured data
-    val transformedContent = MultimodalContent()
-    transformedContent.text = parsedData.summary
-    transformedContent.metadata["confidence"] = parsedData.confidence.toString()
-    
-    // Store full result in context for next pipeline stage
-    transformedContent.context.addContextElement("analysis_result", Json.encodeToString(parsedData))
-    
-    transformedContent
-}
-```
-
-Developer-in-the-loop functions provide precise control over AI processing at key intervention points, enabling sophisticated validation, error handling, and adaptive processing logic that goes far beyond simple linear AI model calls.
-
-## Flow Control Methods
-
-Flow control methods can be called on the content object to adjust the execution direction of the pipeline:
-
-### content.repeat()
-Re-executes the current pipe with the updated content. Useful for iterative refinement or retry logic until desired quality is achieved.
-
-### content.jumpToPipe("pipe-name")
-Jumps to a specific named pipe in the pipeline, skipping intermediate pipes. Used for conditional routing and branching logic. Allows for jumping forward
-or backwards. If the pipe jumps backwards, it will execute from where it's been jumped to and move forward one step at a time.
-
-### content.terminate()
-Immediately exits the pipeline and treats it as an error/failure. Content is cleared and empty result is returned.
-
-### content.passPipeline = true
-Immediately exits the pipeline and treats it as successful early completion. Current content is preserved and returned as the final result.
-
-## Pipeline-Level Pre-Validation
-
-In addition to pipe-level DITL functions, TPipe supports pipeline-level pre-validation that executes before any pipes in the pipeline run. This is useful for:
-
-- **Input validation**: Ensure the initial content meets pipeline requirements
-- **Dynamic context setup**: Add context elements based on input analysis
-- **Pipeline routing**: Set up conditional logic that affects all pipes
-- **Resource preparation**: Initialize external resources needed by multiple pipes
-
-```kotlin
-val pipeline = Pipeline()
-    .setPreValidationFunction { context, miniBank, content ->
-        // Validate input requirements
-        if (content.text.length < 10) {
-            throw IllegalArgumentException("Input too short for processing")
-        }
-        
-        // Add dynamic context for all pipes
-        val inputType = analyzeInputType(content.text)
-        context.addContextElement("inputType", inputType)
-        
-        // Set up conditional processing flags
-        if (inputType == "technical") {
-            context.addContextElement("useSpecializedModel", "true")
-        }
+        // Return the modified content to the mainline
+        originalOutput.copy(text = scrubbed)
     }
 ```
 
-**Tracing**: Pipeline pre-validation is automatically traced when tracing is enabled, showing `VALIDATION_START`, `VALIDATION_SUCCESS`, or `VALIDATION_FAILURE` events during the `PRE_VALIDATION` phase.
+### Complex Logic
+DITL functions can also execute complex logic, such as calling external APIs or databases to verify the model's work.
+
+```kotlin
+pipe.setDITLFunction { pipe, result ->
+    if (!verifyInDatabase(result.text)) {
+        throw PipelineException("Model produced a non-existent ID.")
+    }
+    result
+}
+```
+
+---
+
+## 2. DITL Pipes: The AI Inspector
+
+Sometimes, you need another AI to check the work of the first AI. A **DITL Pipe** is a specialized valve that acts as a **Secondary Inspector**. It takes the output of a primary pipe and uses a different prompt or a more capable model to analyze it.
+
+### The Automated Auditor
+TPipe allows you to plug an "Inspector" pipe directly into another valve.
+
+```kotlin
+val generator = BedrockPipe().setPipeName("Generator")
+
+val inspector = BedrockPipe()
+    .setPipeName("Inspector")
+    .setSystemPrompt("You are a strict quality controller. Analyze the input for factual accuracy.")
+
+val mainline = Pipeline()
+    .add(generator)
+    .add(inspector) // This pipe acts as the AI-in-the-loop
+```
+
+---
+
+## 3. Flow Control: The Pressure Valve
+
+DITL often requires pausing the entire mainline to wait for external input. TPipe's pipeline supports declarative **Pause Points**.
+
+```kotlin
+val mainline = Pipeline()
+    .add(stepOne)
+    .addPausePoint("awaiting-engineer-check") // The valve shuts here
+    .add(stepTwo)
+
+val result = mainline.execute(input)
+
+if (result.isPaused) {
+    // The flow has stopped. You can now surface the result to a UI.
+    // Once the engineer approves, resume the flow:
+    mainline.resume("Manual approval received.")
+}
+```
+
+---
+
+## Best Practices
+
+*   **Prefer Determinism**: For formatting and syntax checks (like JSON), always use a code-based DITL Function for 100% accuracy.
+*   **Fail Fast**: If a DITL check fails, use the `terminate()` command to stop the flow immediately before it reaches expensive downstream pipes.
+*   **Trace the Intervention**: Use TPipe's tracing tools to see exactly how your DITL functions modified the stream. This is critical for auditing why an agent's final output differed from its raw generation.
+
+---
 
 ## Next Steps
 
-Now that you understand code-based DITL functions, learn about AI-powered validation:
+Now that you can manually control the flow, learn how to automate the inspection using specialized AI-powered pipes.
 
-**→ [Developer-in-the-Loop Pipes](developer-in-the-loop-pipes.md)** - AI-powered validation and transformation
+**→ [Developer-in-the-Loop Pipes](developer-in-the-loop-pipes.md)** - Deep dive into AI-powered validation.

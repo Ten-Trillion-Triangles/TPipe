@@ -1,77 +1,39 @@
-# First Steps - Hello World with TPipe
+# First Steps - Opening the Mainline
 
-This guide walks you through creating your first TPipe application.
+Now that your project is configured with TPipe, it is time to open the valves and start the flow of intelligence. In this guide, we build a basic text generator, handle cross-region model routing, and set up a real-time streaming response.
 
 ## Prerequisites
 
-- TPipe installed in your project ([Installation Guide](installation-and-setup.md))
-- JDK 24+ configured
-- AWS credentials configured
+- TPipe installed and configured ([See Setup Guide](installation-and-setup.md)).
+- **AWS Credentials**: Ensure your environment variables or AWS profile are configured for Bedrock access.
 
-## Project Setup
+## Basic Flow: Text Generation
 
-### build.gradle.kts
-
-```kotlin
-plugins {
-    kotlin("jvm") version "2.2.0"
-    kotlin("plugin.serialization") version "2.2.0"
-    application
-}
-
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(24))
-    }
-}
-
-kotlin {
-    jvmToolchain(24)
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_24)
-    }
-}
-
-application {
-    mainClass.set("MainKt")
-}
-
-repositories {
-    mavenCentral()
-}
-
-dependencies {
-    implementation("com.TTT:TPipe:0.0.1")
-    implementation("com.TTT:TPipe-Bedrock:0.0.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-io-core:0.8.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
-}
-```
-
-## Hello World Examples
-
-### 1. Basic Text Generation
+The **Pipe** is the starting point for any TPipe application. Think of a Pipe as a single valve connecting your code to a model.
 
 Create `src/main/kotlin/Main.kt`:
 
 ```kotlin
 import bedrockPipe.BedrockPipe
+import kotlinx.coroutines.runBlocking
 
 fun main() {
+    // 1. Initialize the valve
     val pipe = BedrockPipe()
-        .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+        .setModel("anthropic.claude-3-5-sonnet-20241022-v2:0")
         .setRegion("us-west-2")
     
+    // 2. Start the flow
     runBlocking {
         val response = pipe.generateText("Hello, world!")
-        println(response)
+        println("Model Response: ${response.text}")
     }
 }
 ```
 
-### 2. Cross-Region Model with ARN Binding
+## Advanced Routing: Cross-Region Inference
 
-Some models require cross-region ARN binding to connect:
+High-performance models often require specific **Inference Profiles** (ARNs) to manage throughput across different regions. TPipe handles this through the `bedrockEnv` singleton.
 
 ```kotlin
 import bedrockPipe.BedrockPipe
@@ -79,7 +41,7 @@ import env.bedrockEnv
 import kotlinx.coroutines.runBlocking
 
 fun main() {
-    // Required for cross-region models
+    // Bind the model to its specific inference profile ARN
     bedrockEnv.bindInferenceProfile(
         "anthropic.claude-3-5-sonnet-20241022-v2:0",
         "arn:aws:bedrock:us-west-2:123456789012:inference-profile/my-profile"
@@ -87,40 +49,48 @@ fun main() {
     
     val pipe = BedrockPipe()
         .setModel("anthropic.claude-3-5-sonnet-20241022-v2:0")
-        .setRegion("us-east-1")
+        .setRegion("us-east-1") // The local entry region for your request
     
     runBlocking {
-        val response = pipe.generateText("Hello from cross-region model!")
-        println(response)
+        val response = pipe.generateText("Requesting via cross-region mainline.")
+        println(response.text)
     }
 }
 ```
 
-### 3. Streaming Response
+> [!NOTE]
+> Models like **Claude 3.5 Sonnet** and **Amazon Nova Pro** typically require these ARN bindings for optimal performance and capacity access.
+
+## Real-Time Output: Streaming
+
+For lower perceived latency, you can stream model tokens as they are generated. TPipe's fluent builder makes it simple to attach a callback to the live stream.
 
 ```kotlin
 import bedrockPipe.BedrockPipe
 import kotlinx.coroutines.runBlocking
 
 fun main() {
-val pipe = BedrockPipe()
+    val pipe = BedrockPipe()
         .setModel("anthropic.claude-3-haiku-20240307-v1:0")
         .setRegion("us-west-2")
         .enableStreaming()
         .setStreamingCallback { chunk ->
-            print(chunk)
+            print(chunk) // Process tokens as they arrive
         }
     
     runBlocking {
-        pipe.generateText("Tell me a short story.")
-        println("\nDone!")
+        pipe.generateText("Explain quantum computing like I am five.")
+        println("\n[Flow Complete]")
     }
 }
 ```
 
-For advanced streaming features including multiple callbacks, error handling, and concurrent execution, see [Streaming Callbacks](../core-concepts/streaming-callbacks.md).
+> [!TIP]
+> For complex scenarios involving multiple models or reasoning outputs, see the [Streaming Callbacks Guide](../core-concepts/streaming-callbacks.md).
 
-### 4. Streaming with reasoning output
+## Helper: Terminal Output
+
+Use the `streamOutputToTerminal` helper during development to see all tokens, including internal reasoning logs, directly in your console:
 
 ```kotlin
 import bedrockPipe.BedrockPipe
@@ -129,38 +99,28 @@ import kotlinx.coroutines.runBlocking
 
 fun main() {
     val pipe = BedrockPipe()
-        .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+        .setModel("anthropic.claude-3-5-sonnet-20241022-v2:0")
         .setRegion("us-west-2")
 
+    // Automatically handles primary response and reasoning tokens
     streamOutputToTerminal(pipe)
 
     runBlocking {
-        pipe.generateText("Explain how streaming output is routed through reasoning pipes.")
+        pipe.generateText("Analyze this architecture diagram.")
     }
 }
 ```
 
-The helper above automatically enables streaming on the supplied [BedrockPipe] and any reasoning pipes it has been configured with, printing chunked tokens for both the primary response and any internal reasoning output.
+## Running the Flow
 
-If you are working with a [`Pipeline`](../core-concepts/pipeline-class.md), use `streamPipelineOutputToTerminal(pipeline)` instead so every pipe already registered on the pipeline participates in streaming output.
-
-## Running Your Application
+Execute your application using the standard Gradle task:
 
 ```bash
 ./gradlew run
 ```
 
-## Cross-Region ARN Binding
-
-Models requiring ARN binding:
-- `anthropic.claude-3-5-sonnet-20241022-v2:0`
-- `anthropic.claude-3-5-haiku-20241022-v1:0`
-- `amazon.nova-pro-v1:0`
-
-Use `bedrockEnv.bindInferenceProfile(modelId, arnProfile)` before creating the pipe.
-
 ## Next Steps
 
-Ready to dive deeper into TPipe? Continue with the core concepts:
+Now that you have opened the valves, learn how to precisely control the flow with the foundational **Pipe** class.
 
-**→ [Pipe Class - Core Concepts](../core-concepts/pipe-class.md)** - Understanding the fundamental Pipe class
+**→ [Pipe Class - Core Concepts](../core-concepts/pipe-class.md)** - Understanding the fundamental Pipe class.

@@ -1,381 +1,74 @@
 # TPipe-Defaults Package API
 
+The TPipe-Defaults package provides the Standard Fittings—a collection of pre-configured factories, builders, and templates that accelerate the setup of complex agentic infrastructure. It handles the heavy lifting of provider-specific optimizations for AWS Bedrock and Ollama, while offering a comprehensive system for building sophisticated reasoning mainlines.
+
 ## Table of Contents
-- [Overview](#overview)
 - [Configuration Classes](#configuration-classes)
-  - [ProviderConfiguration](#providerconfiguration)
-  - [BedrockConfiguration](#bedrockconfiguration)
-  - [OllamaConfiguration](#ollamaconfiguration)
 - [Factory Classes](#factory-classes)
-  - [ManifoldDefaults](#manifolddefaults)
-  - [BedrockDefaults](#bedrockdefaults)
-  - [OllamaDefaults](#ollamadefaults)
 - [Reasoning System](#reasoning-system)
-  - [ReasoningBuilder](#reasoningbuilder)
-  - [ReasoningPrompts](#reasoningprompts)
-  - [Enums](#enums)
-
-## Overview
-
-The TPipe-Defaults package provides pre-configured factories and builders for creating Manifold instances, pipelines, and reasoning systems with provider-specific optimizations for AWS Bedrock, Ollama, and other LLM providers.
+- [Enums and Settings](#enums-and-settings)
 
 ---
 
 ## Configuration Classes
 
 ### ProviderConfiguration
+The foundational blueprint for provider settings. It ensures that any "Mainline Source" (Bedrock, Ollama) has the necessary technical specs before it starts generating flow.
 
-Abstract base class for provider-specific configuration parameters.
+#### BedrockConfiguration
+- **`region` / `model`**: The primary coordinates for the AWS refinery.
+- **`pipeCount`**: The number of specialized valves to create when building a manager pipeline (default is 2).
+- **`inferenceProfile`**: Allows for binding the configuration to a specific cross-region ARN for optimal throughput.
 
-```kotlin
-sealed class ProviderConfiguration
-```
-
-#### Public Functions
-
-**`validate(): Boolean`**
-Validates configuration parameters for the provider.
-
-**Behavior:** Abstract method implemented by each provider to ensure required parameters are present and valid.
-
----
-
-### BedrockConfiguration
-
-Configuration for AWS Bedrock provider with comprehensive AWS integration.
-
-```kotlin
-data class BedrockConfiguration(
-    var region: String,
-    var model: String,
-    var pipeCount: Int = 2,
-    var inferenceProfile: String = "",
-    var useConverseApi: Boolean = true,
-    var accessKey: String? = null,
-    var secretKey: String? = null,
-    var sessionToken: String? = null,
-    var profileName: String? = null
-) : ProviderConfiguration()
-```
-
-#### Public Properties
-
-**Core Settings:**
-- `region` - AWS region for Bedrock API calls (required)
-- `model` - Bedrock model identifier (required)
-- `pipeCount` - Number of pipes to create in manager pipeline (default: 2)
-
-**Advanced Settings:**
-- `inferenceProfile` - Optional inference profile for binding calls
-- `useConverseApi` - Whether to use Converse API vs Invoke API (default: true)
-
-**Authentication:**
-- `accessKey` / `secretKey` - AWS credentials (optional if using profile/IAM)
-- `sessionToken` - AWS session token for temporary credentials
-- `profileName` - AWS profile name to use
-
-#### Public Functions
-
-**`validate(): Boolean`**
-Validates Bedrock configuration parameters.
-
-**Behavior:** Ensures region and model are non-blank and pipeCount is positive.
-
-**`make(region: String, model: String)`**
-Configures Bedrock settings with automatic inference profile detection.
-
-**Behavior:** Sets region and model, automatically retrieves inference profile ID if available.
-
----
-
-### OllamaConfiguration
-
-Configuration for Ollama provider with local server settings.
-
-```kotlin
-data class OllamaConfiguration(
-    val model: String,
-    val pipeCount: Int = 2,
-    val host: String = "localhost",
-    val port: Int = 11434,
-    val timeout: Long = 30000,
-    val useHttps: Boolean = false
-) : ProviderConfiguration()
-```
-
-#### Public Properties
-
-**Core Settings:**
-- `model` - Model name to use (required)
-- `pipeCount` - Number of pipes in manager pipeline (default: 2)
-
-**Connection Settings:**
-- `host` - Ollama server host (default: "localhost")
-- `port` - Ollama server port (default: 11434)
-- `timeout` - Connection timeout in milliseconds (default: 30000)
-- `useHttps` - Whether to use HTTPS (default: false)
-
-#### Public Functions
-
-**`validate(): Boolean`**
-Validates Ollama configuration parameters.
-
-**Behavior:** Ensures host and model are non-blank, port and pipeCount are positive.
+#### OllamaConfiguration
+- **`host` / `port`**: The local address of the Ollama server.
+- **`timeout`**: Standard connection limit (default is 30,000ms).
 
 ---
 
 ## Factory Classes
 
 ### ManifoldDefaults
+The central assembly line for creating **Manifold** orchestrators with provider-specific defaults.
 
-Central factory for creating pre-configured Manifold instances with provider-specific defaults.
+*   **`withBedrock(config)` / `withOllama(config)`**: Creates a fully-plumbed Manifold instance.
+*   **`buildDefaultManagerPipeline(config)`**: Constructs a standard 2-valve manager pipeline:
+    1.  **Task Analyst**: Determines if the current job is complete or needs more work.
+    2.  **Agent Selector**: Decides which specialized sub-agent (worker) to call next.
 
-```kotlin
-object ManifoldDefaults
-```
-
-#### Public Functions
-
-**`withBedrock(configuration: BedrockConfiguration): Manifold`**
-Creates Manifold instance configured for AWS Bedrock.
-
-**Behavior:**
-- Validates configuration parameters
-- Creates Bedrock-optimized Manifold with manager pipeline
-- Throws IllegalArgumentException for invalid configuration
-- Throws RuntimeException if Bedrock provider unavailable
-
-**`withOllama(configuration: OllamaConfiguration): Manifold`**
-Creates Manifold instance configured for Ollama.
-
-**Behavior:**
-- Validates configuration parameters
-- Creates Ollama-optimized Manifold with manager pipeline
-- Throws IllegalArgumentException for invalid configuration
-- Throws RuntimeException if Ollama provider unavailable
-
-**`getAvailableProviders(): List<String>`**
-Lists all available providers with implementations.
-
-**Behavior:** Checks class availability and returns list of provider names ("bedrock", "ollama").
-
-**`isProviderAvailable(providerName: String): Boolean`**
-Checks if specific provider is available.
-
-**Behavior:** Uses reflection to check for provider class availability, returns false for ClassNotFoundException.
-
-**`buildDefaultManagerPipeline(bedrockConfig: BedrockConfiguration): Pipeline`**
-Creates pre-configured manager pipeline for Bedrock.
-
-**Behavior:**
-- Creates 2-pipe manager pipeline with task analysis and agent selection
-- Applies comprehensive default prompts and settings
-- Configures JSON input/output for TaskProgress and AgentRequest
-
-**`buildDefaultManagerPipeline(ollamaConfig: OllamaConfiguration): Pipeline`**
-Creates pre-configured manager pipeline for Ollama.
-
-**`assignManagerPipelineDefaults(pipeline: Pipeline): Pipeline`**
-Applies default configuration to manager pipelines.
-
-**Behavior:**
-- **Entry Pipe**: Analyzes task completion status, outputs TaskProgress
-- **Agent Selector Pipe**: Determines next agent to call, outputs AgentRequest
-- **Configuration**: Sets temperature, context windows, truncation, prompts
-- **Validation**: Requires exactly 2 pipes in pipeline
-
----
-
-### BedrockDefaults
-
-Internal factory for Bedrock-specific Manifold creation.
-
-```kotlin
-internal object BedrockDefaults
-```
-
-#### Public Functions
-
-**`createManifold(config: BedrockConfiguration): Manifold`**
-Creates basic Bedrock-configured Manifold.
-
-**`createManagerPipeline(config: BedrockConfiguration): Pipeline`**
-Creates manager pipeline with specified number of Bedrock pipes.
-
-**`createWorkerPipe(config: BedrockConfiguration): BedrockMultimodalPipe`**
-Creates worker pipe with Bedrock configuration.
-
-**`createBedrockPipe(config: BedrockConfiguration): BedrockMultimodalPipe`**
-Creates fully configured BedrockPipe.
-
-**Behavior:**
-- Sets model (uses inference profile if provided)
-- Configures AWS region
-- Enables Converse API if specified
-
----
-
-### OllamaDefaults
-
-Internal factory for Ollama-specific Manifold creation.
-
-```kotlin
-internal object OllamaDefaults
-```
-
-#### Public Functions
-
-**`createManifold(config: OllamaConfiguration): Manifold`**
-Creates basic Ollama-configured Manifold.
-
-**`createManagerPipeline(config: OllamaConfiguration): Pipeline`**
-Creates manager pipeline with specified number of Ollama pipes.
-
-**`createWorkerPipe(config: OllamaConfiguration): OllamaPipe`**
-Creates worker pipe with Ollama configuration.
-
-**`createOllamaPipe(config: OllamaConfiguration): OllamaPipe`**
-Creates fully configured OllamaPipe.
-
-**Behavior:**
-- Sets model name
-- Configures host IP and port
-- Sets TaskProgress as JSON input
+### BedrockDefaults / OllamaDefaults
+Internal factories that handle the low-level "Piping" required to initialize specific model instances, set up JSON schemas for task progress, and enable provider-specific features like the Bedrock Converse API.
 
 ---
 
 ## Reasoning System
 
+The reasoning system transforms standard pipes into high-pressure "Thinking Tanks."
+
 ### ReasoningBuilder
-
-Factory for creating reasoning-enabled pipes with various thinking strategies.
-
-```kotlin
-object ReasoningBuilder
-```
-
-#### Public Functions
-
-**`assignDefaults(settings: ReasoningSettings, pipeSettings: PipeSettings, targetPipe: Pipe)`**
-Applies reasoning configuration to existing pipe.
-
-**Behavior:**
-- **System Prompt Assignment**: Sets reasoning-specific prompts based on method
-- **JSON Configuration**: Configures appropriate input/output objects for reasoning type
-- **Settings Application**: Applies temperature, tokens, context window settings
-- **Multi-Round Support**: Configures ConverseHistory for multi-round reasoning
-- **Metadata Binding**: Stores reasoning configuration in pipe metadata
-
-**`reasonWithBedrock(bedrockConfig: BedrockConfiguration, reasoningSettings: ReasoningSettings, pipeSettings: PipeSettings): Pipe`**
-Creates Bedrock reasoning pipe with defaults.
-
-**Behavior:** Creates BedrockPipe, applies reasoning defaults, returns as generic Pipe.
-
-**`reasonWithOllama(ollamaConfig: OllamaConfiguration, reasoningSettings: ReasoningSettings, pipeSettings: PipeSettings): Pipe`**
-Creates Ollama reasoning pipe with defaults.
-
-**Behavior:** Creates OllamaPipe, applies reasoning defaults, returns as generic Pipe.
+A high-level factory for applying reasoning templates to any Pipe.
+- **`assignDefaults(settings, pipeSettings, targetPipe)`**: Applies a reasoning strategy to an existing valve, configuring its system prompt, multi-round history, and token budgets in one operation.
+- **`reasonWithBedrock()` / `reasonWithOllama()`**: Convenience methods to create a new reasoning-enabled pipe from scratch.
 
 ### ReasoningPrompts
-
-Static prompts for different reasoning strategies.
-
-```kotlin
-object ReasoningPrompts
-```
-
-#### Public Functions
-
-**`chainOfThoughtSystemPrompt(depth: String = "", duration: String = "", method: ReasoningMethod = ReasoningMethod.StructuredCot): String`**
-Generates system prompts for chain-of-thought reasoning.
-
-**Behavior:**
-- **Explicit Reasoning**: Step-by-step analysis with clear transitions
-- **Structured CoT**: Phase-based framework (analyze→plan→execute→validate)
-- **Process-Focused**: Methodological justification and adaptive thinking
-
-**`bestIdeaPrompt(): String`**
-Prompt for single best idea generation.
-
-**`comprehensivePlanPrompt(): String`**
-Prompt for comprehensive planning approach.
-
-**`rolePlayPrompt(character: String): String`**
-Prompt for character-based reasoning.
-
-**`selectDepth(depth: ReasoningDepth): String`**
-Returns depth-specific reasoning instructions.
-
-**`selectDuration(duration: ReasoningDuration): String`**
-Returns duration-specific reasoning instructions.
+A repository of industrial-grade prompts for different thinking strategies, including:
+- **`StructuredCot`**: A phase-based framework (Analyze → Plan → Execute → Validate).
+- **`ChainOfDraft`**: A lean, high-efficiency reasoning method.
+- **`RolePlay`**: Domain-specific expertise simulation.
 
 ---
 
-## Enums
-
-### ReasoningMethod
-```kotlin
-enum class ReasoningMethod {
-    BestIdea,           // Single best solution approach
-    ComprehensivePlan,  // Detailed planning strategy
-    ExplicitCot,        // Step-by-step reasoning
-    StructuredCot,      // Phase-based framework
-    processFocusedCot,  // Methodological focus
-    RolePlay            // Character-based reasoning
-}
-```
-
-### ReasoningInjector
-```kotlin
-enum class ReasoningInjector {
-    SystemPrompt,                    // End of system prompt
-    BeforeUserPrompt,               // Before user input
-    BeforeUserPromptWithConverse,   // In ConverseHistory before user
-    AfterUserPrompt,                // After user input
-    AfterUserPromptWithConverse,    // In ConverseHistory after user
-    AsContext                       // As context page key
-}
-```
-
-### ReasoningDepth
-```kotlin
-enum class ReasoningDepth { Low, Med, High }
-```
-
-### ReasoningDuration
-```kotlin
-enum class ReasoningDuration { Short, Med, Long }
-```
+## Enums and Settings
 
 ### ReasoningSettings
+The technical specification for a reasoning tank.
+- **`reasoningMethod`**: Defines the "Thinking Style" (e.g., `ComprehensivePlan`, `ExplicitCot`).
+- **`depth`**: `Low`, `Med`, or `High` complexity of thought.
+- **`duration`**: `Short`, `Med`, or `Long` generation cycles.
+- **`numberOfRounds`**: Enables multi-turn "Deep Thinking" where the agent reflects on its own logic multiple times before answering.
 
-Configuration for reasoning behavior.
-
-```kotlin
-data class ReasoningSettings(
-    var reasoningMethod: ReasoningMethod = ReasoningMethod.StructuredCot,
-    var depth: ReasoningDepth = ReasoningDepth.Med,
-    var duration: ReasoningDuration = ReasoningDuration.Med,
-    var roleCharacter: String = "You are a helpful assistant.",
-    var reasoningInjector: ReasoningInjector = ReasoningInjector.SystemPrompt,
-    var numberOfRounds: Int = 1,
-    var focusPoints: MutableMap<Int, String> = mutableMapOf()
-)
-```
-
-## Key Behaviors
-
-### Provider Abstraction
-Unified interface for different LLM providers while maintaining provider-specific optimizations and configurations.
-
-### Default Configuration
-Comprehensive default settings for common use cases, reducing setup complexity while maintaining flexibility for customization.
-
-### Reasoning Integration
-Sophisticated reasoning system that transforms standard pipes into thinking systems for LLMs without native reasoning support.
-
-### Error Handling
-Robust validation and error reporting with descriptive messages for configuration issues and provider availability.
-
-### Extensibility
-Modular design allows easy addition of new providers and reasoning methods without affecting existing functionality.
+### ReasoningInjector
+Determines where the "Thought Cargo" is placed in the mainline:
+- **`SystemPrompt`**: Injected as foundational instructions.
+- **`BeforeUserPrompt`**: Injected as immediate context for the current turn.
+- **`AsContext`**: Injected as a structured page in the **ContextBank**.

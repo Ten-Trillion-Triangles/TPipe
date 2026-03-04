@@ -1,230 +1,107 @@
-# Error Handling and Propagation
+# Error Handling and Propagation - Fixing Leaks
 
-## Overview
+In any industrial plumbing system, you have to expect leaks, bursts, and pressure drops. TPipe's **Error Handling** system is the diagnostic kit that tells you exactly where the failure happened, what phase the pipe was in, and why the flow stopped.
 
-TPipe provides comprehensive error handling that captures failure information at the pipe level and propagates it through pipelines. This allows programmatic access to error details instead of just receiving empty content.
+Instead of just getting an empty response, TPipe provides deep, programmatic visibility into the failure chain, from the individual valve to the entire mainline.
 
-## Key Concepts
+## The Three Levels of Diagnostic Flow
 
-### Error Capture
-Errors are automatically captured when pipes fail during execution. The error information includes:
-- Exception details
-- Failure type (API call, validation, transformation, etc.)
-- Execution phase when failure occurred
-- Pipe identification
-- Timestamp
+Errors in TPipe aren't just thrown; they flow. When a failure occurs, diagnostic data is captured and propagated through three levels:
 
-### Error Propagation
-Errors flow through three levels:
-1. **Pipe Level**: Stored in `pipe.lastError`
-2. **Content Level**: Attached to `MultimodalContent.pipeError`
-3. **Pipeline Level**: Captured in `pipeline.lastError` and `pipeline.lastFailedPipe`
+1.  **Valve Level (Pipe)**: Stored in `pipe.lastError`.
+2.  **Water Level (Content)**: Attached to `MultimodalContent.pipeError`.
+3.  **Mainline Level (Pipeline)**: Captured in `pipeline.lastError` and `pipeline.lastFailedPipe`.
 
-## Basic Usage
+---
 
-### Checking Pipe Errors
+## Basic Diagnostics: Checking the Gauges
 
+### Checking a Single Pipe
 ```kotlin
-val pipe = BedrockPipe()
-    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
-    .setSystemPrompt("You are a helpful assistant.")
-
-val result = pipe.execute("What is AI?")
+val result = pipe.execute("Process data")
 
 if (pipe.hasError()) {
-    println("Error: ${pipe.getErrorMessage()}")
-    println("Type: ${pipe.getErrorType()}")
+    println("Status: Burst!")
+    println("Message: ${pipe.getErrorMessage()}")
+    println("Phase: ${pipe.lastError?.phase}") // e.g., API_CALL, VALIDATION
 }
 ```
 
-### Checking Pipeline Errors
+### Checking the Mainline (Pipeline)
+When a pipeline fails, you need to know exactly which section "burst."
 
 ```kotlin
-val pipeline = Pipeline()
-pipeline.add(pipe1)
-pipeline.add(pipe2)
-pipeline.add(pipe3)
-
-pipeline.execute("input")
+pipeline.execute("Start the flow")
 
 if (pipeline.hasError()) {
-    println("Failed at: ${pipeline.getFailedPipeName()}")
-    println(pipeline.getFullErrorContext())
+    println("Mainline Failure at: ${pipeline.getFailedPipeName()}")
+    println("Context: ${pipeline.getFullErrorContext()}")
     
-    // Access the failed pipe
-    val failedPipe = pipeline.lastFailedPipe
-    // Access detailed error
-    val error = pipeline.lastError
+    // Direct access to the failed valve and the error cargo
+    val valve = pipeline.lastFailedPipe
+    val diagnostic = pipeline.lastError
 }
 ```
 
-### Checking Content Errors
+---
+
+## Common Failure Types (Trace Events)
+
+TPipe categorizes errors so you can handle them differently:
+
+| Error Type | Meaning | Action |
+| :--- | :--- | :--- |
+| **`API_CALL_FAILURE`** | The model provider (e.g., AWS) failed. | Retry, check credentials, or check region. |
+| **`VALIDATION_FAILURE`** | The output didn't meet your "Plumbing" specs. | Adjust the prompt or use a fallback. |
+| **`TRANSFORMATION_FAILURE`** | Your post-processing code crashed. | Debug your transformation function. |
+| **`PIPE_FAILURE`** | A general infrastructure failure. | Check system logs. |
+
+---
+
+## Advanced Patterns: Rerouting the Flow
+
+### The Fallback Mainline
+You can build a pipeline with "redundant lines." If the primary pipe fails, the pipeline can be designed to handle the error and provide a fallback.
 
 ```kotlin
-val content = MultimodalContent("input")
-val result = pipe.execute(content)
-
-if (result.hasError()) {
-    val error = result.pipeError
-    println("Pipe: ${error?.pipeName}")
-    println("Phase: ${error?.phase}")
-    println("Message: ${error?.message}")
-}
-```
-
-## Error Types
-
-Errors are categorized by `TraceEventType`:
-
-- **PIPE_FAILURE**: General pipe execution failure
-- **API_CALL_FAILURE**: LLM API call failed (network, auth, rate limit)
-- **VALIDATION_FAILURE**: Validation function rejected output
-- **TRANSFORMATION_FAILURE**: Transformation function failed
-
-## Error Information
-
-The `PipeError` data class contains:
-
-```kotlin
-data class PipeError(
-    val exception: Throwable?,      // Original exception (transient)
-    val eventType: TraceEventType,  // Type of failure
-    val phase: TracePhase,          // When it failed
-    val pipeName: String,           // Which pipe failed
-    val pipeId: String,             // Unique pipe identifier
-    val timestamp: Long             // When it happened
-) {
-    val message: String             // Human-readable error message
-}
-```
-
-## Advanced Patterns
-
-### Error Recovery in Pipelines
-
-```kotlin
-val pipeline = Pipeline()
-pipeline.add(primaryPipe)
-pipeline.add(fallbackPipe)
-
-pipeline.execute("input")
+pipeline.execute(input)
 
 if (pipeline.hasError()) {
-    // Identify which pipe failed
     when (pipeline.getFailedPipeName()) {
-        "primaryPipe" -> {
-            // Primary failed, fallback should have run
-            println("Primary failed, fallback result available")
+        "primary_auditor" -> {
+            println("Primary line failed. Checking fallback results...")
         }
-        "fallbackPipe" -> {
-            // Both failed
-            println("Complete failure: ${pipeline.getErrorMessage()}")
+        "fallback_auditor" -> {
+            println("Total system failure. Shutting down flow.")
         }
     }
 }
 ```
 
-### Conditional Logic Based on Error Type
+### Intelligent Retries
+If you detect an `API_CALL_FAILURE`, it might just be a transient network "clog." You can use the error type to decide whether to retry.
 
 ```kotlin
-if (pipe.hasError()) {
-    when (pipe.getErrorType()) {
-        TraceEventType.API_CALL_FAILURE -> {
-            // Retry with exponential backoff
-            retryWithBackoff(pipe)
-        }
-        TraceEventType.VALIDATION_FAILURE -> {
-            // Log validation issue
-            logger.warn("Validation failed: ${pipe.getErrorMessage()}")
-        }
-        TraceEventType.TRANSFORMATION_FAILURE -> {
-            // Use raw output instead
-            useRawOutput()
-        }
-        else -> {
-            // Generic error handling
-            handleGenericError()
-        }
-    }
+if (pipe.getErrorType() == TraceEventType.API_CALL_FAILURE) {
+    println("Transient clog detected. Retrying with higher pressure...")
+    pipe.clearError() // Reset the gauge
+    pipe.execute(input)
 }
 ```
 
-### Error Clearing for Pipe Reuse
+---
 
-```kotlin
-val pipe = BedrockPipe()
+## Best Practices for a Robust Infrastructure
 
-// First execution fails
-pipe.execute("bad input")
-assert(pipe.hasError())
+*   **Check the Gauges Early**: Always check `pipeline.hasError()` after execution before you try to consume the results.
+*   **Name Your Pipes**: Give every Pipe a `pipeName`. An error in "Pipe 3" is much harder to find than an error in the "SQL_Generator_Valve."
+*   **Log the Context**: Use `getFullErrorContext()` in your production logs. It contains the Pipe Name, the Phase, and the Message in one concise string.
+*   **Clear Before Reuse**: If you are reusing a Pipe or Pipeline object, call `clearError()` to reset the gauges before the next run.
 
-// Clear error before reuse
-pipe.clearError()
+---
 
-// Second execution succeeds
-pipe.execute("good input")
-assert(!pipe.hasError())
-```
+## Next Steps
 
-### Accessing Detailed Error Context
+Now that you can handle failures, learn how to monitor the healthy flow of your system.
 
-```kotlin
-if (pipeline.hasError()) {
-    val error = pipeline.lastError
-    
-    println("Pipe: ${error?.pipeName} (${error?.pipeId})")
-    println("Failed in: ${error?.phase}")
-    println("Error type: ${error?.eventType}")
-    println("Time: ${error?.timestamp}")
-    println("Message: ${error?.message}")
-    
-    // Access original exception if available
-    error?.exception?.let { ex ->
-        println("Stack trace:")
-        ex.printStackTrace()
-    }
-}
-```
-
-## Integration with Tracing
-
-Error capture works seamlessly with TPipe's tracing system. When tracing is enabled, errors are captured in both the trace events and the error properties:
-
-```kotlin
-val pipe = BedrockPipe()
-    .enableTracing(TraceConfig(enabled = true))
-
-pipe.execute("input")
-
-// Error available in pipe
-if (pipe.hasError()) {
-    println(pipe.getErrorMessage())
-}
-
-// Also available in trace
-val trace = PipeTracer.getTrace(pipelineId)
-val failures = trace.filter { it.eventType == TraceEventType.PIPE_FAILURE }
-```
-
-## Best Practices
-
-1. **Always Check for Errors**: After pipeline execution, check `pipeline.hasError()` before processing results
-2. **Use Specific Error Types**: Check `getErrorType()` to handle different failure modes appropriately
-3. **Clear Errors on Reuse**: Call `clearError()` or `clearErrors()` when reusing pipes/pipelines
-4. **Log Full Context**: Use `getFullErrorContext()` for comprehensive error logging
-5. **Preserve Error Information**: Store `lastError` before clearing if you need it later
-
-## Backward Compatibility
-
-Error handling is fully backward compatible:
-- Existing code continues to work without changes
-- Empty content is still returned on failure
-- Error information is additional, not required
-- No performance impact when errors don't occur
-
-## See Also
-
-- [Pipe Class API](../api/pipe.md#error-handling)
-- [Pipeline Class API](../api/pipeline.md#error-handling)
-- [MultimodalContent API](../api/multimodal-content.md)
-- [Tracing and Debugging](tracing-and-debugging.md)
+**→ [Tracing and Debugging](tracing-and-debugging.md)** - Monitoring and troubleshooting the infrastructure.

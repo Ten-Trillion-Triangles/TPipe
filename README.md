@@ -1,6 +1,8 @@
 # TPipe - The Agent Operating Environment
 
-TPipe is an Agent Operating Environment designed for engineering robust, deterministic AI systems that can be embedded anywhere. Built on Kotlin and GraalVM, it provides strict resource accounting, secure sandboxing, and structured reasoning for production-grade multi-agent swarms.
+TPipe is high-performance infrastructure for AI agents. It provides a robust, deterministic environment for building and scaling multi-agent swarms using Kotlin and GraalVM. By treating AI interactions as a structured flow—moving through pipes, pipelines, and orchestration containers—TPipe ensures industrial-grade reliability for production systems.
+
+In TPipe, intelligence is managed as a continuous flow. Data enters a **Pipe**, chains into a **Pipeline**, and scales across complex **Orchestration Containers**. This architecture gives you the structural integrity needed to maintain strict resource accounting, secure sandboxing, and complex reasoning in even the largest AI deployments.
 
 ## Documentation
 
@@ -115,12 +117,14 @@ Complete API documentation for all TPipe components:
 
 ## Quick Start
 
+Setting up your first pipeline is simple. Here is a basic BedrockPipe configuration:
+
 ```kotlin
 import bedrockPipe.BedrockPipe
 
 val pipe = BedrockPipe()
     .setRegion("us-east-1")
-    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setModel("anthropic.claude-3-5-sonnet-20241022-v2:0")
     .setSystemPrompt("You are a helpful assistant.")
     .setTemperature(0.7)
 
@@ -128,20 +132,15 @@ val result = pipe.execute("What is artificial intelligence?")
 println(result.text)
 ```
 
-## Key Features
+## Why TPipe?
 
-- **Multi-stage AI workflows** with sophisticated error handling
-- **Timeout and retry system** with automatic recovery from transient failures and hanging LLM calls
-- **Pipeline pause/resume control** with declarative pause points and developer-in-the-loop workflows
-- **Global context sharing** across applications via ContextBank
-- **Context access control** with ContextLock enforcement for secure lorebook and page management
-- **Developer-in-the-loop integration** with code and AI-powered validation
-- **Chain-of-thought reasoning** with multiple strategies and focus points
-- **Multi-provider AI support** (AWS Bedrock, Ollama, extensible architecture)
-- **Comprehensive debugging** with detailed tracing and monitoring
-- **Multi-Stream and Independent Tracing** for parallel pipelines and complex orchestration
-- **Cross-region inference** with automatic profile binding for AWS Bedrock
-- **Service tier optimization** for AWS Bedrock (Reserved, Priority, Standard, Flex)
+- **Deterministic Flow Control**: Build multi-stage AI workflows with sophisticated error handling and automatic recovery from transient failures.
+- **Embedded Pressure Gauges**: Declarative pause and resume control with developer-in-the-loop workflows ensures you maintain programmatic control over model logic.
+- **The Central Reservoir**: Share global context across applications via ContextBank, governed by ContextLock for secure, multi-page management.
+- **DITL Integration**: Advanced programmatic validation and transformation using both code and AI-powered Developer-in-the-Loop pipes.
+- **High-Resolution Reasoning**: Deep chain-of-thought capabilities with multiple strategies and focus points for complex problem solving.
+- **Cloud and Edge Infrastructure**: Native support for AWS Bedrock (including cross-region inference and service tier optimization), Ollama, and an extensible architecture for any provider.
+- **Industrial Traceability**: Monitor every event with high-resolution tracing, independent stream monitoring, and comprehensive debugging tools.
 
 ## Requirements
 
@@ -150,6 +149,8 @@ println(result.text)
 - **Gradle** with Kotlin DSL
 
 ## Installation
+
+Add the TPipe modules to your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
