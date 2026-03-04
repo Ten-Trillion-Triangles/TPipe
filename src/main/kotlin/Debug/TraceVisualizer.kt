@@ -199,15 +199,15 @@ class TraceVisualizer {
             
             val metadata = if (event.error != null) {
                 "<strong>Error:</strong> ${event.error.message}"
-            } else if (event.metadata.isNotEmpty()) {
-                // Separate reasoning content from other metadata for better display
+            } else if (event.metadata.isNotEmpty() || event.content?.text?.isNotBlank() == true) {
+                // Separate reasoning content, inputText, and outputText from other metadata for better display
                 val reasoningKeys = listOf("modelReasoning", "reasoningPipeContent", "reasoningContent")
                 val reasoningKey = event.metadata.keys.find { it in reasoningKeys }
-                val otherMetadata = if (reasoningKey != null) {
-                    event.metadata.filterKeys { it != reasoningKey }
-                } else {
-                    event.metadata
-                }
+                val inputKey = event.metadata.keys.find { it == "inputText" }
+                val outputKey = event.metadata.keys.find { it == "outputText" }
+
+                val keysToExtract = setOfNotNull(reasoningKey, inputKey, outputKey)
+                val otherMetadata = event.metadata.filterKeys { it !in keysToExtract }
                 
                 val metadataHtml = if (otherMetadata.isNotEmpty()) {
                     otherMetadata.entries.joinToString("<br>") { "<strong>${it.key}:</strong> ${it.value}" }
@@ -215,22 +215,57 @@ class TraceVisualizer {
                     ""
                 }
                 
+                // Helper to create an expandable section
+                fun createExpandableSection(label: String, content: String, icon: String, color: String): String {
+                    if (content.isBlank() || content == "N/A" || content == "null") return ""
+                    return """
+                        <details style="margin-top: 8px;">
+                            <summary style="cursor: pointer; color: ${color}; font-weight: bold;">
+                                ${icon} ${label}
+                                (${content.length} chars)
+                            </summary>
+                            <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 8px; white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${escapeHtml(content)}</pre>
+                        </details>
+                    """.trimIndent()
+                }
+
+                val sections = mutableListOf<String>()
+                if (metadataHtml.isNotEmpty()) {
+                    sections.add(metadataHtml)
+                }
+
+                // Add inputText
+                val inputText = inputKey?.let { event.metadata[it]?.toString() } ?:
+                    if (event.eventType == TraceEventType.PIPE_START || event.eventType == TraceEventType.CONTEXT_PULL)
+                        event.content?.text
+                    else null
+
+                if (!inputText.isNullOrBlank() && inputText != "N/A" && inputText != "null") {
+                    sections.add(createExpandableSection("Input Content", inputText, "📥", "#28a745"))
+                }
+
+                // Add outputText
+                val outputText = outputKey?.let { event.metadata[it]?.toString() } ?:
+                    if (event.eventType == TraceEventType.PIPE_SUCCESS || event.eventType == TraceEventType.API_CALL_SUCCESS)
+                        event.content?.text
+                    else null
+
+                if (!outputText.isNullOrBlank() && outputText != "N/A" && outputText != "null") {
+                    sections.add(createExpandableSection("Output Content", outputText, "📤", "#17a2b8"))
+                }
+
                 // Add reasoning content in an expandable section
                 if (reasoningKey != null) {
                     val reasoningContent = event.metadata[reasoningKey].toString()
-                    val reasoningLabel = "reasoningContent"
-                    val reasoningHtml = """
-                        <details style="margin-top: 8px;">
-                            <summary style="cursor: pointer; color: #007bff; font-weight: bold;">
-                                🧠 $reasoningLabel 
-                                (${reasoningContent.length} chars)
-                            </summary>
-                            <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 8px; white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${reasoningContent}</pre>
-                        </details>
-                    """.trimIndent()
-                    if (metadataHtml.isNotEmpty()) "$metadataHtml<br>$reasoningHtml" else reasoningHtml
+                    if (reasoningContent.isNotBlank() && reasoningContent != "N/A" && reasoningContent != "null") {
+                        sections.add(createExpandableSection("reasoningContent", reasoningContent, "🧠", "#007bff"))
+                    }
+                }
+
+                if (sections.isNotEmpty()) {
+                    sections.joinToString("")
                 } else {
-                    metadataHtml
+                    "-"
                 }
             } else {
                 "-"
