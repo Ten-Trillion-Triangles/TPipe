@@ -1,5 +1,8 @@
 # Streaming Callbacks
 
+> 💡 **Tip:** Streaming is like turning on the tap and watching the water flow in real-time. You can attach multiple hoses (callbacks) to route chunks wherever you need them.
+
+
 TPipe supports streaming responses from AI models, allowing you to receive and process tokens as they arrive rather than waiting for the complete response. This enables real-time UI updates, progressive content display, and lower perceived latency.
 
 ## Overview

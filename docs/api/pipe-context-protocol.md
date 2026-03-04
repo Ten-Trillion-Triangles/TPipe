@@ -41,24 +41,24 @@ data class PcpContext(@Transient val cinit: Boolean = false)
 #### Public Properties
 
 **Transport Configuration:**
-- `transport: Transport` - Default transport mechanism (Auto, Stdio, TPipe, Http, Python, Kotlin, JavaScript)
+- **`transport: Transport`**: Default transport mechanism (Auto, Stdio, TPipe, Http, Python, Kotlin, JavaScript)
 
 **Tool Options:**
-- `stdioOptions: MutableList<StdioContextOptions>` - Available stdio commands
-- `tpipeOptions: MutableList<TPipeContextOptions>` - Available TPipe functions
-- `httpOptions: MutableList<HttpContextOptions>` - Available HTTP endpoints
-- `pythonOptions: PythonContext` - Python execution environment
-- `kotlinOptions: KotlinContext` - Kotlin scripting configuration
-- `javascriptOptions: JavaScriptContext` - JavaScript/Node.js configuration
+- **`stdioOptions: MutableList<StdioContextOptions>`**: Available stdio commands
+- **`tpipeOptions: MutableList<TPipeContextOptions>`**: Available TPipe functions
+- **`httpOptions: MutableList<HttpContextOptions>`**: Available HTTP endpoints
+- **`pythonOptions: PythonContext`**: Python execution environment
+- **`kotlinOptions: KotlinContext`**: Kotlin scripting configuration
+- **`javascriptOptions: JavaScriptContext`**: JavaScript/Node.js configuration
 
 **Security Settings:**
-- `allowedDirectoryPaths: MutableList<String>` - Permitted directory access
-- `forbiddenDirectoryPaths: MutableList<String>` - Restricted directories
-- `allowedFiles: MutableList<String>` - Permitted file access
-- `forbiddenFiles: MutableList<String>` - Restricted files
-- `enableSessionAccessControl: Boolean` - Session-based access control
-- `enableBufferAccessControl: Boolean` - Buffer access validation
-- `currentUserId: String` - Current user for access control
+- **`allowedDirectoryPaths: MutableList<String>`**: Permitted directory access
+- **`forbiddenDirectoryPaths: MutableList<String>`**: Restricted directories
+- **`allowedFiles: MutableList<String>`**: Permitted file access
+- **`forbiddenFiles: MutableList<String>`**: Restricted files
+- **`enableSessionAccessControl: Boolean`**: Session-based access control
+- **`enableBufferAccessControl: Boolean`**: Buffer access validation
+- **`currentUserId: String`**: Current user for access control
 
 #### Public Functions
 
@@ -179,25 +179,25 @@ data class StdioContextOptions(@Transient val cinit: Boolean = false)
 #### Key Properties
 
 **Command Configuration:**
-- `command: String` - Command/program to execute
-- `args: MutableList<String>` - Allowed arguments
-- `description: String` - LLM-facing command description
+- **`command: String`**: Command/program to execute
+- **`args: MutableList<String>`**: Allowed arguments
+- **`description: String`**: LLM-facing command description
 
 **Execution Control:**
-- `executionMode: StdioExecutionMode` - ONE_SHOT, INTERACTIVE, CONNECT, BUFFER_REPLAY
-- `sessionId: String?` - Session identifier for persistent connections
-- `bufferId: String?` - Buffer identifier for replay operations
-- `timeoutMs: Long` - Execution timeout (default: 30000ms)
+- **`executionMode: StdioExecutionMode`**: ONE_SHOT, INTERACTIVE, CONNECT, BUFFER_REPLAY
+- **`sessionId: String?`**: Session identifier for persistent connections
+- **`bufferId: String?`**: Buffer identifier for replay operations
+- **`timeoutMs: Long`**: Execution timeout (default: 30000ms)
 
 **Environment:**
-- `workingDirectory: String?` - Command working directory
-- `environmentVariables: MutableMap<String, String>` - Environment variables
-- `keepSessionAlive: Boolean` - Maintain session after execution
-- `bufferPersistence: Boolean` - Enable buffer persistence
-- `maxBufferSize: Int` - Maximum buffer size (default: 1MB)
+- **`workingDirectory: String?`**: Command working directory
+- **`environmentVariables: MutableMap<String, String>`**: Environment variables
+- **`keepSessionAlive: Boolean`**: Maintain session after execution
+- **`bufferPersistence: Boolean`**: Enable buffer persistence
+- **`maxBufferSize: Int`**: Maximum buffer size (default: 1MB)
 
 **Security:**
-- `permissions: MutableList<Permissions>` - Allowed operations (Read, Write, Delete, Execute)
+- **`permissions: MutableList<Permissions>`**: Allowed operations (Read, Write, Delete, Execute)
 
 ---
 
@@ -213,14 +213,14 @@ data class TPipeContextOptions(@Transient val cinit: Boolean = false)
 #### Key Properties
 
 **Function Definition:**
-- `functionName: String` - Function name for LLM calls
-- `description: String` - Function purpose and usage
-- `params: MutableMap<String, Triple<ParamType, String, List<String>>>` - Parameter definitions
+- **`functionName: String`**: Function name for LLM calls
+- **`description: String`**: Function purpose and usage
+- **`params: MutableMap<String, Triple<ParamType, String, List<String>>>`**: Parameter definitions
 
 **Parameter Structure:** Each parameter maps to Triple containing:
-- `ParamType` - Type information (String, Int, Bool, Float, Enum, List, Map, Object, Any)
-- `String` - Parameter description
-- `List<String>` - Enum values (if applicable)
+- **`ParamType`**: Type information (String, Int, Bool, Float, Enum, List, Map, Object, Any)
+- **`String`**: Parameter description
+- **`List<String>`**: Enum values (if applicable)
 
 ---
 
@@ -236,25 +236,25 @@ data class HttpContextOptions(@Transient val cinit: Boolean = false)
 #### Key Properties
 
 **Endpoint Configuration:**
-- `baseUrl: String` - Base URL for requests
-- `endpoint: String` - Endpoint path
-- `method: String` - HTTP method (default: GET)
-- `allowedMethods: MutableList<String>` - Permitted HTTP methods
+- **`baseUrl: String`**: Base URL for requests
+- **`endpoint: String`**: Endpoint path
+- **`method: String`**: HTTP method (default: GET)
+- **`allowedMethods: MutableList<String>`**: Permitted HTTP methods
 
 **Request Configuration:**
-- `requestBody: String` - Request body content
-- `headers: MutableMap<String, String>` - Request headers
-- `followRedirects: Boolean` - Follow HTTP redirects (default: true)
-- `timeoutMs: Int` - Request timeout (default: 30000ms)
+- **`requestBody: String`**: Request body content
+- **`headers: MutableMap<String, String>`**: Request headers
+- **`followRedirects: Boolean`**: Follow HTTP redirects (default: true)
+- **`timeoutMs: Int`**: Request timeout (default: 30000ms)
 
 **Authentication:**
-- `authType: String` - Authentication type (NONE, BASIC, BEARER, API_KEY)
-- `authCredentials: MutableMap<String, String>` - Authentication credentials
+- **`authType: String`**: Authentication type (NONE, BASIC, BEARER, API_KEY)
+- **`authCredentials: MutableMap<String, String>`**: Authentication credentials
 
 **Security:**
-- `allowedHosts: MutableList<String>` - Permitted hosts (empty = any host)
-- `permissions: MutableList<Permissions>` - Allowed operations
-- `description: String` - Endpoint description for LLM
+- **`allowedHosts: MutableList<String>`**: Permitted hosts (empty = any host)
+- **`permissions: MutableList<Permissions>`**: Allowed operations
+- **`description: String`**: Endpoint description for LLM
 
 ---
 
@@ -270,16 +270,16 @@ data class PythonContext(@Transient val cinit: Boolean = false)
 #### Key Properties
 
 **Python Environment:**
-- `availablePackages: MutableList<String>` - Installed packages
-- `pythonVersion: String` - Python version (e.g., "3.11.5")
-- `pythonPath: String` - Python executable path
-- `workingDirectory: String` - Execution directory
-- `environmentVariables: MutableMap<String, String>` - Environment variables
+- **`availablePackages: MutableList<String>`**: Installed packages
+- **`pythonVersion: String`**: Python version (e.g., "3.11.5")
+- **`pythonPath: String`**: Python executable path
+- **`workingDirectory: String`**: Execution directory
+- **`environmentVariables: MutableMap<String, String>`**: Environment variables
 
 **Execution Control:**
-- `timeoutMs: Int` - Execution timeout (default: 30000ms)
-- `captureOutput: Boolean` - Capture stdout/stderr (default: true)
-- `permissions: MutableList<Permissions>` - Allowed operations
+- **`timeoutMs: Int`**: Execution timeout (default: 30000ms)
+- **`captureOutput: Boolean`**: Capture stdout/stderr (default: true)
+- **`permissions: MutableList<Permissions>`**: Allowed operations
 
 ---
 
@@ -295,23 +295,23 @@ data class KotlinContext(@Transient val cinit: Boolean = false)
 #### Key Properties
 
 **Import Control:**
-- `allowedImports: MutableList<String>` - Whitelist of allowed imports
-- `blockedImports: MutableList<String>` - Blacklist of forbidden imports
-- `allowedPackages: MutableList<String>` - Allowed package prefixes
-- `blockedPackages: MutableList<String>` - Forbidden package prefixes
+- **`allowedImports: MutableList<String>`**: Whitelist of allowed imports
+- **`blockedImports: MutableList<String>`**: Blacklist of forbidden imports
+- **`allowedPackages: MutableList<String>`**: Allowed package prefixes
+- **`blockedPackages: MutableList<String>`**: Forbidden package prefixes
 
 **Security Flags:**
-- `allowTpipeIntrospection: Boolean` - Expose PcpRegistry and PcpContext (default: false)
-- `allowHostApplicationAccess: Boolean` - Expose custom bindings (default: false)
-- `allowReflection: Boolean` - Allow reflection API (default: false)
-- `allowClassLoaderAccess: Boolean` - Allow ClassLoader access (default: false)
-- `allowSystemAccess: Boolean` - Allow System class access (default: false)
+- **`allowTpipeIntrospection: Boolean`**: Expose PcpRegistry and PcpContext (default: false)
+- **`allowHostApplicationAccess: Boolean`**: Expose custom bindings (default: false)
+- **`allowReflection: Boolean`**: Allow reflection API (default: false)
+- **`allowClassLoaderAccess: Boolean`**: Allow ClassLoader access (default: false)
+- **`allowSystemAccess: Boolean`**: Allow System class access (default: false)
 
 **Bindings:**
-- `exposedBindings: MutableMap<String, String>` - Custom object bindings (name -> description)
+- **`exposedBindings: MutableMap<String, String>`**: Custom object bindings (name -> description)
 
 **Execution Control:**
-- `timeoutMs: Int` - Execution timeout (default: 30000ms)
+- **`timeoutMs: Int`**: Execution timeout (default: 30000ms)
 
 **See Also:** [PCP Kotlin and JavaScript Support](../advanced-concepts/pcp-kotlin-javascript.md)
 
@@ -329,14 +329,14 @@ data class JavaScriptContext(@Transient val cinit: Boolean = false)
 #### Key Properties
 
 **Node.js Environment:**
-- `nodePath: String` - Path to Node.js executable (default: "node")
-- `allowedModules: MutableList<String>` - Whitelist of npm modules
-- `workingDirectory: String` - Execution directory
-- `environmentVariables: MutableMap<String, String>` - Environment variables
+- **`nodePath: String`**: Path to Node.js executable (default: "node")
+- **`allowedModules: MutableList<String>`**: Whitelist of npm modules
+- **`workingDirectory: String`**: Execution directory
+- **`environmentVariables: MutableMap<String, String>`**: Environment variables
 
 **Execution Control:**
-- `timeoutMs: Int` - Execution timeout (default: 30000ms)
-- `permissions: MutableList<Permissions>` - Allowed operations
+- **`timeoutMs: Int`**: Execution timeout (default: 30000ms)
+- **`permissions: MutableList<Permissions>`**: Allowed operations
 
 **See Also:** [PCP Kotlin and JavaScript Support](../advanced-concepts/pcp-kotlin-javascript.md)
 

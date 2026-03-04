@@ -1,5 +1,8 @@
 # ContextBank - Global Context Integration
 
+> 💡 **Tip:** The **ContextBank** is your city's main water supply. It is a thread-safe, global Reservoir that persists across multiple pipelines and agents.
+
+
 ## Table of Contents
 - [What is ContextBank?](#what-is-contextbank)
 - [Core ContextBank Operations](#core-contextbank-operations)

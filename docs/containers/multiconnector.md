@@ -1,5 +1,8 @@
 # MultiConnector
 
+> 💡 **Tip:** The **MultiConnector** is a complex manifold that checks multiple conditions, routing the water to the first pipe whose Valve opens.
+
+
 ## Table of Contents
 - [Basic Usage](#basic-usage)
 - [Execution Modes](#execution-modes)

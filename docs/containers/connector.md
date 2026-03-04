@@ -1,5 +1,8 @@
 # Connector
 
+> 💡 **Tip:** The **Connector** is a conditional Valve. It tests the water flow against a condition and routes it to one pipe or the other—like a smart Y-joint.
+
+
 ## Table of Contents
 - [Basic Usage](#basic-usage)
 - [Key Methods](#key-methods)

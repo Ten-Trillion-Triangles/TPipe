@@ -165,7 +165,7 @@ Uses an AI model to handle validation failures and attempt error correction when
 - Creative problem-solving for failed outputs
 - Multi-attempt correction strategies
 
-**Note:** For consistency with `onFailure` handlers, the output of a branch pipe is processed by any configured transformation pipe or function before becoming the final result.
+> ℹ️ **Note:** For consistency with `onFailure` handlers, the output of a branch pipe is processed by any configured transformation pipe or function before becoming the final result.
 
 ### Implementation
 ```kotlin

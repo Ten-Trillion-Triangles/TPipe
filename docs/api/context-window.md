@@ -117,9 +117,9 @@ Selects LoreBook entries using the select-and-fill strategy while reusing a sett
 **Behavior:** Same as `selectAndFillLoreBookContext()` but uses the passed `TruncationSettings` for tokenizer configuration, preserving token counting behavior across helper methods.
 
 **Parameters:**
-- `settings` - TruncationSettings containing tokenization parameters
-- `text` - Input text to scan for matching LoreBook keys
-- `maxTokens` - Maximum tokens to allocate for lorebook selection
+- **`settings`**: TruncationSettings containing tokenization parameters
+- **`text`**: Input text to scan for matching LoreBook keys
+- **`maxTokens`**: Maximum tokens to allocate for lorebook selection
 
 **Returns:** Ordered list of LoreBook keys selected via the priority + fill strategy
 
@@ -173,7 +173,7 @@ Enhanced version with TruncationSettings object, configurable truncation method,
 
 **Behavior:** When `fillMode = true`, applies `selectAndFillLoreBookContextWithSettings()` before combining lorebook and context strings. After filtering keys based on the fill-mode selection, it concatenates the remaining sections and truncates them down to `tokenBudget`, using the supplied tokenizer parameters.
 
-**Note:** Fill mode only affects which LoreBook entries remain—it does not change how the final string is truncated. This helper therefore preserves the standard string-based truncation semantics while still respecting advanced lorebook selection.
+> ℹ️ **Note:** Fill mode only affects which LoreBook entries remain—it does not change how the final string is truncated. This helper therefore preserves the standard string-based truncation semantics while still respecting advanced lorebook selection.
 
 ---
 
@@ -221,7 +221,7 @@ Checks if a specific lorebook key can be selected based on ContextLock state.
 - Falls back to checking key lock state via ContextLock
 
 **Parameters:**
-- `key` - The lorebook key to check for selection eligibility
+- **`key`**: The lorebook key to check for selection eligibility
 
 **Returns:** Boolean indicating if key can be selected
 

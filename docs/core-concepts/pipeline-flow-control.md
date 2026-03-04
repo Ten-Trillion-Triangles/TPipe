@@ -1,5 +1,8 @@
 # Advanced Pipeline Flow Control
 
+> 💡 **Tip:** Flow control valves allow you to halt, pause, or redirect the flow of data through your Pipeline based on conditional logic.
+
+
 ## Table of Contents
 - [Flow Control Overview](#flow-control-overview)
 - [Pipe Jumping](#pipe-jumping)

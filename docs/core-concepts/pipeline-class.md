@@ -1,5 +1,8 @@
 # Pipeline Class - Core Concepts
 
+> 💡 **Tip:** A **Pipeline** connects multiple Pipes together into a Mainline. It routes data through your system with robust error handling, pauses, and flow control.
+
+
 ## Table of Contents
 - [What is a Pipeline?](#what-is-a-pipeline)
 - [Core Pipeline Concepts](#core-pipeline-concepts)

@@ -71,10 +71,10 @@ Stores or replaces a context window with explicit storage mode control.
 - `mode`: Storage mode controlling memory and disk persistence behavior
 
 **Storage Modes:**
-- `StorageMode.MEMORY_ONLY` - Store only in memory, no disk persistence
-- `StorageMode.MEMORY_AND_DISK` - Store in both memory and disk (default behavior)
-- `StorageMode.DISK_ONLY` - Store only on disk, load on-demand without caching
-- `StorageMode.DISK_WITH_CACHE` - Store on disk with LRU memory cache and automatic eviction
+- **`StorageMode.MEMORY_ONLY`**: Store only in memory, no disk persistence
+- **`StorageMode.MEMORY_AND_DISK`**: Store in both memory and disk (default behavior)
+- **`StorageMode.DISK_ONLY`**: Store only on disk, load on-demand without caching
+- **`StorageMode.DISK_WITH_CACHE`**: Store on disk with LRU memory cache and automatic eviction
 
 **Example:**
 ```kotlin
@@ -217,10 +217,10 @@ ContextBank.configureCachePolicy(
 ```
 
 **Eviction Policies:**
-- `EvictionPolicy.LRU` - Least Recently Used (default)
-- `EvictionPolicy.LFU` - Least Frequently Used
-- `EvictionPolicy.FIFO` - First In First Out
-- `EvictionPolicy.MANUAL` - No automatic eviction
+- **`EvictionPolicy.LRU`**: Least Recently Used (default)
+- **`EvictionPolicy.LFU`**: Least Frequently Used
+- **`EvictionPolicy.FIFO`**: First In First Out
+- **`EvictionPolicy.MANUAL`**: No automatic eviction
 
 #### `getCacheStatistics(): CacheStatistics`
 Returns current cache statistics.
@@ -272,11 +272,11 @@ Thread-safe context window swapping operation.
 All mutex-protected operations follow these patterns:
 
 **Single Mutex Operations:**
-- `emplaceWithMutex()` - Uses `bankMutex` for bank modifications
-- `updateBankedContextWithMutex()` - Uses `bankMutex` for banked context updates
+- **`emplaceWithMutex()`**: Uses `bankMutex` for bank modifications
+- **`updateBankedContextWithMutex()`**: Uses `bankMutex` for banked context updates
 
 **Dual Mutex Operations:**
-- `swapBankWithMutex()` - Uses both `bankMutex` and `swapMutex` for comprehensive safety during context swapping
+- **`swapBankWithMutex()`**: Uses both `bankMutex` and `swapMutex` for comprehensive safety during context swapping
 
 **Mutex Ordering:** When multiple mutexes are required, they are acquired in consistent order (`bankMutex` then `swapMutex`) to prevent deadlocks.
 
@@ -299,8 +299,8 @@ ContextBank provides storage and retrieval for TodoList objects, enabling task m
 Retrieves a TodoList from ContextBank storage.
 
 **Parameters:**
-- `key` - The page key identifying the TodoList
-- `copy` - If `true`, returns a deep copy; if `false`, returns direct reference
+- **`key`**: The page key identifying the TodoList
+- **`copy`**: If `true`, returns a deep copy; if `false`, returns direct reference
 
 **Behavior:** 
 1. Checks in-memory storage for the key
@@ -321,10 +321,10 @@ val todoListRef = ContextBank.getPagedTodoList("my-tasks", copy = false)
 Stores a TodoList in ContextBank.
 
 **Parameters:**
-- `key` - Unique identifier for this TodoList
-- `todoList` - The TodoList object to store
-- `writeToDisk` - If `true`, persists to `~/.tpipe/TPipe-Default/memory/todo/<key>.todo`
-- `overwrite` - If `true`, replaces existing TodoList with same key; if `false`, merges with existing
+- **`key`**: Unique identifier for this TodoList
+- **`todoList`**: The TodoList object to store
+- **`writeToDisk`**: If `true`, persists to `~/.tpipe/TPipe-Default/memory/todo/<key>.todo`
+- **`overwrite`**: If `true`, replaces existing TodoList with same key; if `false`, merges with existing
 
 **Behavior:**
 1. Stores TodoList in memory under the specified key
@@ -386,7 +386,7 @@ typealias RetrievalFunction = suspend (String) -> ContextWindow?
 A suspending function that takes a context bank key and returns a `ContextWindow` if retrieval succeeds, or `null` if it fails.
 
 **Parameters:**
-- `key` - The context bank key being requested
+- **`key`**: The context bank key being requested
 
 **Returns:** `ContextWindow?` - The retrieved context window, or null on failure
 
@@ -394,8 +394,8 @@ A suspending function that takes a context bank key and returns a `ContextWindow
 Binds a retrieval function to a specific context bank key.
 
 **Parameters:**
-- `key` - The context bank key to bind the function to
-- `function` - The suspending function that will fetch the context window
+- **`key`**: The context bank key to bind the function to
+- **`function`**: The suspending function that will fetch the context window
 
 **Behavior:**
 - When `getContextFromBank(key)` is called and the key is not in memory/disk, the retrieval function executes
@@ -428,7 +428,7 @@ val profile = ContextBank.getContextFromBank("user-profile")
 Removes a retrieval function binding from a key.
 
 **Parameters:**
-- `key` - The context bank key to unbind
+- **`key`**: The context bank key to unbind
 
 **Behavior:**
 - Removes the retrieval function for the specified key

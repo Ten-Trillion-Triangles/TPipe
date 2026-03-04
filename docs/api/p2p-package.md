@@ -47,33 +47,33 @@ data class P2PDescriptor(
 ### Key Properties
 
 **Agent Identity:**
-- `agentName` - Unique agent identifier
-- `agentDescription` - Human-readable capability description
-- `agentSkills` - Granular skill definitions for LLM understanding
+- **`agentName`**: Unique agent identifier
+- **`agentDescription`**: Human-readable capability description
+- **`agentSkills`**: Granular skill definitions for LLM understanding
 
 **Communication:**
-- `transport` - Connection method and addressing
-- `requiresAuth` - Authentication requirement flag
-- `usesConverse` - Conversation history protocol usage
+- **`transport`**: Connection method and addressing
+- **`requiresAuth`**: Authentication requirement flag
+- **`usesConverse`**: Conversation history protocol usage
 
 **Capabilities:**
-- `allowsAgentDuplication` - Pipeline copying for customization
-- `allowsCustomContext` - External context injection
-- `allowsCustomAgentJson` - Dynamic schema modification
-- `allowsExternalContext` - TPipe ContextWindow acceptance
+- **`allowsAgentDuplication`**: Pipeline copying for customization
+- **`allowsCustomContext`**: External context injection
+- **`allowsCustomAgentJson`**: Dynamic schema modification
+- **`allowsExternalContext`**: TPipe ContextWindow acceptance
 
 **Content Support:**
-- `supportedContentTypes` - Accepted content types (text, image, video, etc.)
-- `contextWindowSize` - Maximum token capacity
-- `inputPromptSchema` - Required input format
+- **`supportedContentTypes`**: Accepted content types (text, image, video, etc.)
+- **`contextWindowSize`**: Maximum token capacity
+- **`inputPromptSchema`**: Required input format
 
 **Privacy & Recording:**
-- `recordsInteractionContext` - Context storage notification
-- `recordsPromptContent` - Prompt recording notification
+- **`recordsInteractionContext`**: Context storage notification
+- **`recordsPromptContent`**: Prompt recording notification
 
 **Protocol Support:**
-- `contextProtocol` - Supported context protocols (PCP, MCP, etc.)
-- `pcpDescriptor` - PCP tool configuration
+- **`contextProtocol`**: Supported context protocols (PCP, MCP, etc.)
+- **`pcpDescriptor`**: PCP tool configuration
 
 ---
 
@@ -100,23 +100,23 @@ data class P2PRequest(
 ### Key Properties
 
 **Routing:**
-- `transport` - Target agent address
-- `returnAddress` - Response routing information
+- **`transport`**: Target agent address
+- **`returnAddress`**: Response routing information
 
 **Content:**
-- `prompt` - Multimodal request content
-- `context` - Optional context injection
+- **`prompt`**: Multimodal request content
+- **`context`**: Optional context injection
 
 **Customization:**
 - `inputSchema` / `outputSchema` - Dynamic schema overrides
-- `customContextDescriptions` - Per-pipe context instructions
-- `contextExplanationMessage` - Context usage instructions
+- **`customContextDescriptions`**: Per-pipe context instructions
+- **`contextExplanationMessage`**: Context usage instructions
 
 **Security:**
-- `authBody` - Authentication credentials
+- **`authBody`**: Authentication credentials
 
 **Tools:**
-- `pcpRequest` - PCP tool execution requests
+- **`pcpRequest`**: PCP tool execution requests
 
 ---
 
@@ -149,12 +149,12 @@ data class P2PRejection(
 ```
 
 **P2PError Enum:**
-- `auth` - Authentication failure
-- `prompt` - Prompt format/content issues
-- `json` - Schema validation failure
-- `content` - Unsupported content type
-- `transport` - Connection/routing failure
-- `none` - No error
+- **`auth`**: Authentication failure
+- **`prompt`**: Prompt format/content issues
+- **`json`**: Schema validation failure
+- **`content`**: Unsupported content type
+- **`transport`**: Connection/routing failure
+- **`none`**: No error
 
 ---
 
@@ -180,16 +180,16 @@ data class P2PRequirements(
 ### Key Properties
 
 **Input Requirements:**
-- `requireConverseInput` - Mandate conversation format
-- `acceptedContent` - Allowed content types
+- **`requireConverseInput`**: Mandate conversation format
+- **`acceptedContent`**: Allowed content types
 - `maxTokens` / `maxBinarySize` - Size limits
 
 **Security:**
-- `allowExternalConnections` - External agent access
-- `authMechanism` - Custom authentication function
+- **`allowExternalConnections`**: External agent access
+- **`authMechanism`**: Custom authentication function
 
 **Customization:**
-- `allowAgentDuplication` - Pipeline copying permission
+- **`allowAgentDuplication`**: Pipeline copying permission
 - `allowCustomContext` / `allowCustomJson` - Dynamic modification permissions
 
 ---
@@ -285,8 +285,8 @@ data class CustomJsonSchema(
 ```
 
 **Public Functions:**
-- `add(pipeName: String, description: String, jsonObject: Any)` - Adds schema for specific pipe
-- `newSchema(pipeName: String, description: String, jsonObject: Any): CustomJsonSchema?` - Creates schema from object
+- **`add(pipeName: String, description: String, jsonObject: Any)`**: Adds schema for specific pipe
+- **`newSchema(pipeName: String, description: String, jsonObject: Any): CustomJsonSchema?`**: Creates schema from object
 
 ### AgentRequest
 
@@ -304,8 +304,8 @@ data class AgentRequest(
 ```
 
 **Public Functions:**
-- `buildP2PRequest(template: P2PRequest? = null): P2PRequest` - Builds full request from template
-- `buildRequestFromRegistry(templateRef: Any): P2PRequest` - Uses registry template
+- **`buildP2PRequest(template: P2PRequest? = null): P2PRequest`**: Builds full request from template
+- **`buildRequestFromRegistry(templateRef: Any): P2PRequest`**: Uses registry template
 
 ### AgentDescriptor
 
@@ -324,7 +324,7 @@ data class AgentDescriptor(
 ```
 
 **Companion Object:**
-- `buildFromDescriptor(descriptor: P2PDescriptor): AgentDescriptor` - Creates simplified version
+- **`buildFromDescriptor(descriptor: P2PDescriptor): AgentDescriptor`**: Creates simplified version
 
 ---
 

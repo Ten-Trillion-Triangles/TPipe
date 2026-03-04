@@ -1,5 +1,8 @@
 # DistributionGrid
 
+> 💡 **Tip:** A **DistributionGrid** distributes water (tasks) from a single source across an arbitrary number of identical parallel pipes based on a dynamic input list.
+
+
 ## Table of Contents
 - [Current Implementation Status](#current-implementation-status)
 - [Defined Data Structures](#defined-data-structures)

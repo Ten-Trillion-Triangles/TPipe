@@ -1,5 +1,8 @@
 # Manifold
 
+> 💡 **Tip:** The **Manifold** orchestrates multiple specialized Agents (pipes). It is a complex switching yard that reads PCP function calls and routes the water to the correct downstream agent dynamically.
+
+
 ## Table of Contents
 - [Core Concepts](#core-concepts)
 - [Basic Usage](#basic-usage)

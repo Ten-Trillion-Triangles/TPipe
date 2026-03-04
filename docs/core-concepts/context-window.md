@@ -1,5 +1,8 @@
 # ContextWindow - Memory Storage and Retrieval
 
+> 💡 **Tip:** The **ContextWindow** is your local Reservoir. It temporarily holds the water (context and message history) flowing through a specific Pipe.
+
+
 ## Table of Contents
 - [What is a ContextWindow?](#what-is-a-contextwindow)
 - [Core Functions](#core-functions)

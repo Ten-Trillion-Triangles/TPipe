@@ -1,5 +1,8 @@
 # Reasoning Pipes
 
+> 💡 **Tip:** **Reasoning Pipes** are specialized processing plants. They isolate the LLM's "thinking" (like `<think>` tags) from its final output, sending clean water down the line.
+
+
 ## Table of Contents
 - [What are Reasoning Pipes?](#what-are-reasoning-pipes)
 - [Core Concepts](#core-concepts)

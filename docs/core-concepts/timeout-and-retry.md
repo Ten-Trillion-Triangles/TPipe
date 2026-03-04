@@ -1,5 +1,8 @@
 # Timeout and Retry System
 
+> 💡 **Tip:** Timeout and retry mechanisms are your pressure relief valves. They ensure transient failures or blocked pipes don't take down the entire system.
+
+
 ## Overview
 
 TPipe provides a timeout and retry system that protects pipelines from hanging LLM calls and enables automatic recovery from transient failures. The system uses coroutine-based timers, snapshot-based state restoration, and configurable retry strategies.

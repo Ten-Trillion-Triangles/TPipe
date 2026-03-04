@@ -1,5 +1,8 @@
 # Splitter
 
+> 💡 **Tip:** The **Splitter** is a literal split in your plumbing. One Pipe comes in, and identical water (context) flows out into multiple parallel pipes concurrently.
+
+
 ## Table of Contents
 - [Basic Usage](#basic-usage)
 - [Key Methods](#key-methods)
