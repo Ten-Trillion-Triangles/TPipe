@@ -1,26 +1,37 @@
-# Automatic Context Injection - Seamless Flow
+# Automatic Context Injection
 
-In a complex municipal infrastructure, you don't want to manually haul water from the reservoir to every pipe. You want **Automatic Injection**—a system that seamlessly pumps relevant context, rules, and history into your AI model's prompt without you writing a single line of string concatenation.
+TPipe provides powerful automatic context injection capabilities that seamlessly integrate background knowledge into AI model prompts. This system handles context retrieval, formatting, and injection without requiring manual string manipulation, ensuring your AI always has the background data it needs to make accurate decisions.
 
-TPipe handles the retrieval, formatting, and injection of context data, ensuring your AI always has the "background pressure" it needs to make smart decisions.
-
-## How it Works: The Two-Part Connection
-
-Automatic injection works by splitting context into two distinct fittings:
-
-1.  **The Schema (System Prompt)**: TPipe injects a JSON schema into the system prompt. This teaches the model *how* to read the context it's about to receive.
-2.  **The Data (User Prompt)**: The actual context data (LoreBook entries, history, etc.) is injected into the user prompt.
-
-This separation ensures the model understands the structural "rules" while keeping the actual data flow clean and separated from its behavioral instructions.
+## Table of Contents
+- [What is Automatic Context Injection?](#what-is-automatic-context-injection)
+- [Context Sources](#context-sources)
+- [Context Injection Methods](#context-injection-methods)
+- [Operational Timing](#operational-timing)
+- [Context Flow Patterns](#context-flow-patterns)
+- [Practical Examples](#practical-examples)
+- [Best Practices](#best-practices)
+- [Next Steps](#next-steps)
 
 ---
 
-## Context Sources: Where the Water Comes From
+## What is Automatic Context Injection?
 
-You can configure a Pipe to pull its context from several different Reservoirs:
+Automatic context injection is a system that:
+- **Retrieves context** from the global ContextBank or pipeline context.
+- **Injects context schema** into the system prompt to teach the AI the expected structure.
+- **Injects actual context data** into the user prompt as a JSON object.
+- **Manages context flow** between pipes and processing stages.
 
-### 1. The Central Reservoir (ContextBank)
-Pulls context from the global repository, allowing you to share data across sessions or applications.
+The system prompt receives the schema and instructions on how to use it, while the user prompt receives the actual context data. This separation ensures the AI understands the context structure while keeping the data flow clean and separated from behavioral instructions.
+
+---
+
+## Context Sources
+
+You can configure a Pipe to pull its context from several different sources:
+
+### 1. Global Context (ContextBank)
+Pulls context from the global repository, allowing you to share data across separate sessions or applications.
 
 ```kotlin
 val pipe = BedrockPipe()
@@ -29,72 +40,166 @@ val pipe = BedrockPipe()
     .autoInjectContext("Use the provided user profile for personalization.")
 ```
 
-### 2. The Mainline (Pipeline Context)
-Pulls context from the parent pipeline. This is the standard way to share "memory" between different stages of a complex workflow.
+### 2. Pipeline Context
+Pulls context from the shared memory of the parent pipeline. This is the standard way to share discoveries between different stages of a complex workflow.
 
 ```kotlin
 val pipe = BedrockPipe()
-    .pullPipelineContext() // Share memory with other pipes in this pipeline
+    .pullPipelineContext() // Share memory with other pipes in this mainline
     .autoInjectContext("Use the research gathered by the previous pipe.")
 ```
 
----
-
-## The Injection Command (`autoInjectContext`)
-
-The `autoInjectContext` method is the most important valve in this system. It does two things:
-1.  **Enables Injection**: Signals TPipe to perform the automatic pump.
-2.  **Sets Instructions**: You provide a natural language explanation of *what* the context is and *how* the model should use it.
+### 3. Page-Specific Context
+Supports multiple page keys for complex context scenarios where an agent acts as a polymath.
 
 ```kotlin
-pipe.autoInjectContext("""
-    The user prompt will contain context data in JSON format:
-    - loreBookKeys: Technical specifications for the hardware.
-    - contextElements: Safety protocols and operating rules.
-
-    Use this data to answer the user's question accurately.
-""")
+val pipe = BedrockPipe()
+    .pullGlobalContext()
+    .setPageKey("user_session, game_state, preferences")
+    .autoInjectContext("Use all provided context types.")
 ```
 
 ---
 
-## Standard Flow Patterns
+## Context Injection Methods
 
-### The "Learn and Remember" Pattern
-A common pattern is for one pipe to Learn something and store it in the pipeline context for the next pipe to use.
+### Basic Auto-Injection
+```kotlin
+val pipe = BedrockPipe()
+    .pullGlobalContext()
+    .autoInjectContext("The user prompt will contain context data in the following JSON schema. Use this context to provide accurate responses.")
+```
+
+**System Prompt Result (Schema Only)**:
+```text
+[Your original system prompt]
+
+The user prompt will contain context data in the following JSON schema. Use this context to provide accurate responses.
+
+{
+  "loreBookKeys": {...},
+  "contextElements": [...],
+  "converseHistory": {...}
+}
+```
+
+**User Prompt Result (Actual Data)**:
+```text
+[User's actual input text]
+
+{
+  "loreBookKeys": {"characterName": {"value": "John is a detective...", "weight": 5}},
+  "contextElements": ["Important rule: Always be helpful"],
+  "converseHistory": {"history": [...]}
+}
+```
+
+### Advanced Context Instructions
+You can provide detailed instructions to the AI on how to weigh and interpret the incoming context.
+```kotlin
+val pipe = BedrockPipe()
+    .pullGlobalContext()
+    .autoInjectContext("""
+        The user prompt contains context data with this structure:
+        - loreBookKeys: Character and world information with weights.
+        - contextElements: Important facts and rules as strings.
+        - converseHistory: Previous conversation history.
+
+        Use this context data to provide accurate, consistent responses.
+    """)
+```
+
+---
+
+## Operational Timing
+
+Context injection happens in a specific sequence during pipe execution:
+1.  **Pre-execution**: Context is pulled from the specified sources (Bank or Pipeline).
+2.  **Pre-validation**: Context can be modified by `setPreValidationFunction` hooks.
+3.  **Schema injection**: The structural blueprint is added to the system prompt.
+4.  **Data injection**: Actual context data is appended to the user's input.
+5.  **AI call**: The model receives both the blueprint and the data in a single turn.
+
+---
+
+## Context Flow Patterns
+
+### Sequential Learning
+One pipe can learn something and store it in the pipeline context for the next pipe to use.
 
 ```kotlin
 // Valve 1: Research and store
 val researchPipe = BedrockPipe()
-    .updatePipelineContextOnExit() // Push results to the mainline
+    .updatePipelineContextOnExit()
     .setTransformationFunction { content ->
-        content.context.addLoreBookEntry("facts", content.text)
+        content.context.addLoreBookEntry("findings", content.text)
         content
     }
 
 // Valve 2: Read and generate
 val writerPipe = BedrockPipe()
-    .pullPipelineContext() // Pull research results
-    .autoInjectContext("Use the facts gathered in the research phase.")
+    .pullPipelineContext()
+    .autoInjectContext("Use the findings gathered in the research phase.")
 ```
 
-### Multi-Page Integration
-For complex agents, you can draw from multiple specialized reservoirs simultaneously.
-
+### Global Context Updates
 ```kotlin
-val agent = BedrockPipe()
-    .setPageKey("legal_codes, case_history, client_info")
-    .enableDynamicFill() // Maximize token usage across pages
-    .autoInjectContext("You have access to legal codes, past history, and client details.")
+val pipe = BedrockPipe()
+    .pullGlobalContext()
+    .setPageKey("sessionData")
+    .setTransformationFunction { content ->
+        val sessionContext = ContextBank.getContextFromBank("sessionData")
+        sessionContext.contextElements.add("User preference: ${extract(content.text)}")
+        runBlocking { ContextBank.emplaceWithMutex("sessionData", sessionContext) }
+        content
+    }
 ```
 
 ---
 
-## Best Practices for a Clean Flow
+## Practical Examples
 
-*   **Be Explicit in Instructions**: Don't just say "Use context." Tell the model exactly what the `loreBookKeys` or `contextElements` represent in this specific scenario.
-*   **Use Truncation**: Always combine auto-injection with `autoTruncateContext()` to ensure you don't burst the model's token limit.
-*   **Security First**: Use **ContextLock** to ensure that sensitive pages aren't accidentally "pumped" into an untrusted agent's context.
+### Chat Application with Session Context
+```kotlin
+val chatPipe = BedrockPipe()
+    .pullGlobalContext()
+    .setPageKey("userSession")
+    .autoInjectContext("""
+        The user prompt contains session context:
+        - loreBookKeys: User preferences and profile.
+        - contextElements: Session rules and current state.
+        - converseHistory: Previous messages.
+    """)
+    .setTransformationFunction { content ->
+        val sessionContext = ContextBank.getContextFromBank("userSession")
+        sessionContext.converseHistory.add(ConverseRole.assistant, content)
+        runBlocking { ContextBank.emplaceWithMutex("userSession", sessionContext) }
+        content
+    }
+```
+
+### Dynamic Context Selection
+```kotlin
+val adaptivePipe = BedrockPipe()
+    .pullGlobalContext()
+    .setPreValidationFunction { contextWindow, content ->
+        val inputType = analyzeInput(content?.text ?: "")
+        when (inputType) {
+            "technical" -> contextWindow.merge(ContextBank.getContextFromBank("technical_manual"))
+            "creative" -> contextWindow.merge(ContextBank.getContextFromBank("style_guide"))
+        }
+        contextWindow
+    }
+```
+
+---
+
+## Best Practices
+
+*   **Be Explicit**: Clearly explain where the context data will be (the user prompt) and how the model should interpret the `loreBookKeys` vs `contextElements`.
+*   **Use Truncation**: Always combine auto-injection with `autoTruncateContext()` to ensure context doesn't exceed the model's token capacity.
+*   **Security First**: Use **ContextLock** to ensure that sensitive pages aren't accidentally pumped into an untrusted agent's context.
+*   **Context Budget Management**: Set appropriate `setContextWindowSize()` limits when using large reservoirs.
 
 ---
 

@@ -1,12 +1,23 @@
-# MiniBank and Multiple Page Keys - The Valve Cluster
+# MiniBank and Multiple Page Keys
 
-In a basic setup, an agent might draw from a single reservoir of memory. But as your infrastructure grows, your agents will need to become specialized polymaths—drawing from a **Valve Cluster** of different specialized reservoirs simultaneously. **MiniBank** is the container that allows TPipe to manage multiple **Page Keys** at once, keeping your data organized, isolated, and efficiently "pumped" into the model.
+MiniBank is TPipe's solution for handling multiple page keys simultaneously. When a pipe needs to access multiple context pages from ContextBank, MiniBank provides organized storage and management of these separate context sources.
 
-Think of MiniBank as the manifold that connects several separate tanks (User Data, World Rules, Inventory) into a single flow for the agent.
+## Table of Contents
+- [What is MiniBank?](#what-is-minibank)
+- [When MiniBank is Used](#when-minibank-is-used)
+- [Structure and Injection](#structure-and-injection)
+- [MiniBank Operations](#minibank-operations)
+- [Pre-Validation with MiniBank](#pre-validation-with-minibank)
+- [Context Truncation with MiniBank](#context-truncation-with-minibank)
+- [Practical Examples](#practical-examples)
+- [Best Practices](#best-practices)
+- [Next Steps](#next-steps)
+
+---
 
 ## What is MiniBank?
 
-MiniBank is a structured container that holds multiple `ContextWindow` instances, each keyed to a specific name.
+MiniBank is a structured container that holds multiple `ContextWindow` instances, each keyed to a specific name. It acts as a valve cluster—a manifold that connects several separate tanks (e.g., User Data, World Rules, Inventory) into a single flow for the agent.
 
 ```kotlin
 @Serializable
@@ -17,21 +28,23 @@ data class MiniBank(
 
 ---
 
-## When is MiniBank Used?
+## When MiniBank is Used
 
-TPipe is smart enough to handle this automatically:
+TPipe handles this automatically based on your page key configuration:
 *   **Single Page Key**: If you call `.setPageKey("user_data")`, TPipe uses a standard `ContextWindow`.
 *   **Multiple Page Keys**: If you call `.setPageKey("user_data, world_rules, inventory")`, TPipe automatically initializes a **MiniBank** to keep those reservoirs distinct.
 
 ---
 
-## Structure and Injection: How the Flow Looks
+## Structure and Injection
 
-When you use MiniBank, the data isn't just flattened into a single list. It maintains its structure, which helps the AI understand the "Category" of information it's receiving.
+When you use MiniBank, data maintains its structure, helping the AI understand the category of information it is receiving.
 
-### The User Prompt (The Data Flow)
-The actual data is injected into the user prompt as a structured JSON object:
+**System Prompt (The Blueprint)**:
+TPipe injects a JSON schema into the system prompt that explains the `contextMap` structure and identifies the available page keys.
 
+**User Prompt (The Data Flow)**:
+The actual data is injected as a structured JSON object:
 ```json
 {
   "contextMap": {
@@ -41,23 +54,37 @@ The actual data is injected into the user prompt as a structured JSON object:
 }
 ```
 
-### The System Prompt (The Manifold Blueprint)
-TPipe automatically tells the AI *how* to read this manifold by injecting the schema and instructions into the system prompt.
+---
+
+## MiniBank Operations
+
+### Automatic Population
+TPipe automatically populates the MiniBank when multiple keys are used by retrieving each page from the `ContextBank`.
+
+### Manual Operations
+```kotlin
+// Create and populate manually
+val miniBank = MiniBank()
+miniBank.contextMap["userSession"] = ContextBank.getContextFromBank("userSession")
+miniBank.contextMap["gameData"] = ContextBank.getContextFromBank("gameData")
+
+// Merge clusters
+miniBank.merge(otherMiniBank, emplaceLorebookKeys = true)
+```
 
 ---
 
-## Pre-Validation: Scrubbing Individual Lines
+## Pre-Validation with MiniBank
 
-Sometimes you need to clean one reservoir but not another. MiniBank provides a specialized hook, `setPreValidationMiniBankFunction`, which allows you to inspect and modify each page in the cluster before it reaches the AI.
+MiniBank provides a specialized hook, `setPreValidationMiniBankFunction`, allowing you to inspect and modify each page in the cluster before it reaches the AI.
 
 ```kotlin
 val agent = BedrockPipe()
     .setPageKey("user_profile, safety_rules")
     .setPreValidationMiniBankFunction { miniBank, content ->
-        // Process each line separately
         miniBank.contextMap.forEach { (key, reservoir) ->
             if (key == "user_profile") {
-                reservoir.contextElements.add("Current Time: ${now()}")
+                reservoir.contextElements.add("Last Login: ${now()}")
             }
         }
         miniBank
@@ -66,24 +93,44 @@ val agent = BedrockPipe()
 
 ---
 
-## Token Truncation: Balancing the Pressure
+## Context Truncation with MiniBank
 
-When your cluster of reservoirs is fuller than the model can handle, you need a way to Drain them fairly.
+When the cluster is fuller than the model can handle, the budget must be distributed across all pages.
 
 > [!IMPORTANT]
-> **Advanced Balancing**: To optimize tokens across multiple pages, you MUST use `TokenBudgetSettings`. Simple auto-truncation will just chop each page independently, potentially wasting space.
+> **Advanced Balancing**: To optimize tokens across multiple pages, you MUST use `TokenBudgetSettings`. Simple `autoTruncateContext()` will chop each page independently, potentially wasting space.
 
-### Multi-Page Strategies:
-*   **DYNAMIC_FILL (Default)**: The smartest strategy. It sees which pages are "half empty" and gives their unused token budget to the "overflowing" pages, ensuring the most information possible gets through.
-*   **EQUAL_SPLIT**: Divides the budget exactly evenly across all pages (e.g., 4 pages get 25% each).
+**Multi-Page Strategies** (Requires TokenBudgetSettings):
+*   **DYNAMIC_FILL (Default)**: Redistributes unused tokens from lean pages to overflowing pages, maximizing information flow.
+*   **EQUAL_SPLIT**: Divides the budget evenly across all pages.
+*   **PRIORITY_FILL**: Fills pages sequentially in the order they were defined.
+
+---
+
+## Practical Examples
+
+### Multi-User Game System
+```kotlin
+val gamePipe = BedrockPipe()
+    .setPageKey("playerStats, worldState, questLog")
+    .setPreValidationMiniBankFunction { miniBank, content ->
+        val action = extractAction(content?.text ?: "")
+        when (action) {
+            "move" -> miniBank.contextMap["worldState"]?.contextElements?.add("Moved to Sector 4")
+            "levelUp" -> miniBank.contextMap["playerStats"]?.addLoreBookEntry("Level", "5", weight = 10)
+        }
+        miniBank
+    }
+```
 
 ---
 
 ## Best Practices
 
-*   **Group Logically**: Don't create 50 separate page keys for tiny bits of data. Group related info (e.g., `user_settings` and `user_history`) into one page unless they need different security locks or truncation rules.
+*   **Group Logically**: Don't create dozens of tiny page keys. Group related info (e.g., `user_settings` and `user_history`) into one page unless they need different security locks.
 *   **Clear Instructions**: When using `autoInjectContext()`, tell the model exactly what each page in the `contextMap` represents.
-*   **Use Dynamic Fill**: In production, always use `DYNAMIC_FILL` to prevent "token starvation" in your larger reservoirs.
+*   **Use Dynamic Fill**: In production, always use `DYNAMIC_FILL` to prevent token starvation in larger context pages.
+*   **Check for Empty**: Use `miniBank.isEmpty()` to verify if any page keys were successfully loaded before processing.
 
 ---
 

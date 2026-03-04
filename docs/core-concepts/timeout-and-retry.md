@@ -1,89 +1,104 @@
-# Timeout and Retry System - Pressure Relief and Recovery
+# Timeout and Retry System
 
-In any industrial plumbing system, you have to account for "clogs" or "hanging valves." Sometimes an AI provider takes too long to respond, or a network burst causes a temporary blockage. TPipe's **Timeout and Retry System** is the pressure relief valve that prevents your entire mainline from freezing when a single pipe hangs.
+TPipe provides a timeout and retry system that protects pipelines from hanging LLM calls and enables automatic recovery from transient failures. The system uses coroutine-based timers, snapshot-based state restoration, and configurable retry strategies.
 
-It automatically monitors the "flow rate" (response time) and can perform a System Reset (retry) using saved snapshots if a pipe exceeds its time limit.
-
-## Why use Timeout and Retry?
-
-*   **Prevent Freezing**: Don't let a single slow API call hang your entire application.
-*   **Automatic Recovery**: Recover from transient network errors or rate limits without manual intervention.
-*   **Deterministic Reliability**: Set strict "Service Level Agreements" (SLAs) for every stage of your pipeline.
-*   **Recursive Protection**: Apply timeout rules once at the pipeline level and have them "leak down" to every valve and inspector.
+## Table of Contents
+- [Core Components](#core-components)
+- [Configuration](#configuration)
+- [How it Works](#how-it-works)
+- [Retry Strategies](#retry-strategies)
+- [Side Effects and Idempotency](#side-effects-and-idempotency)
+- [Best Practices](#best-practices)
+- [Next Steps](#next-steps)
 
 ---
 
-## Configuration: Setting the Time Limit
+## Core Components
 
-You can enable timeouts on a single Pipe or across an entire Pipeline.
+### PipeTimeoutStrategy
+Three strategies control timeout behavior:
+*   **`Fail`**: Terminate the mainline immediately on timeout (default).
+*   **`Retry`**: Automatically restore a snapshot and retry the call.
+*   **`CustomLogic`**: Decided by a developer-defined Kotlin function.
 
+### PipeTimeoutManager
+A singleton object that tracks active timers using coroutine Jobs. It maintains thread-safe retry counters and handles the signals required to abort or restart a pipe.
+
+---
+
+## Configuration
+
+### Pipe-Level Configuration
 ```kotlin
 pipe.enablePipeTimeout(
-    duration = 30000,   // 30 seconds limit
-    autoRetry = true,    // Automatically try again on timeout
-    retryLimit = 3       // Try up to 3 times before failing
+    applyRecursively = true,    // Propagate settings to child pipes/inspectors
+    duration = 300000,          // Timeout in milliseconds (5 min default)
+    autoRetry = true,           // Enable automatic retry
+    retryLimit = 5              // Max retry attempts before permanent failure
 )
 ```
 
-### The Three Recovery Strategies:
-1.  **Fail (Default)**: If the pipe hangs, the valve shuts, and the pipeline terminates with an error.
-2.  **Retry**: TPipe restores the content to its Pre-flow state (via a snapshot) and tries the call again.
-3.  **CustomLogic**: You provide a Kotlin function to decide whether to retry, wait, or switch to a different model.
+### Pipeline-Level Configuration
+Pipeline configuration propagates to all valves in the mainline during the `init()` phase.
+```kotlin
+pipeline.enablePipeTimeout(autoRetry = true, retryLimit = 3)
+```
 
 ---
 
-## How it Works: The Snapshot System
+## How it Works
 
-For a **Retry** to work, TPipe needs to know what the "water" looked like before it entered the pipe. When auto-retry is enabled, TPipe automatically takes a **Snapshot** of your `MultimodalContent`.
-
-1.  **Snapshot**: Content state is saved.
-2.  **Flow**: The model call begins.
-3.  **Timeout**: The timer expires; the active call is "aborted."
-4.  **Reset**: The Snapshot is restored, and the pipe executes again from the beginning.
+1.  **Initialization**: `PipeTimeoutManager` starts a coroutine timer when the pipe begins.
+2.  **Snapshot**: TPipe takes a deep-copy snapshot of the `MultimodalContent`.
+3.  **Execution**: The model API call executes while the timer runs concurrently.
+4.  **Timeout**: If the timer expires, TPipe calls `pipe.abort()` to cancel the active network job.
+5.  **Recovery**: If `Retry` is enabled and attempts are remaining:
+    - The system retrieves the preserved snapshot.
+    - It set `repeatPipe = true`.
+    - The pipe executes again from the beginning with the original state.
+6.  **Cleanup**: Once the call succeeds or permanently fails, the timer is stopped and counters are reset.
 
 ---
 
-## ⚠️ Critical Warning: Side Effects
+## Retry Strategies
 
-Because a **Retry** re-executes the pipe from the very beginning, it also re-runs your **Pre-execution DITL functions** (like `preInit` or `preValidation`).
+### 1. Automatic Retry
+Simplest approach—automatically attempts the call again with the exact same parameters.
+- **Use when**: Dealing with transient network failures or unstable LLM endpoints.
+
+### 2. Custom Logic
+Allows you to analyze the failure and decide if a retry is appropriate.
+```kotlin
+pipe.enablePipeTimeout(
+    customLogic = { pipe, content ->
+        println("Mainline clogged. Waiting 5 seconds...")
+        delay(5000) // Industrial backoff
+        true // Return true to signal a retry
+    }
+)
+```
+- **Use when**: Implementing exponential backoff or switching models on failure.
+
+---
+
+## ⚠️ Side Effects and Idempotency
+
+**IMPORTANT**: A retry re-executes the ENTIRE pipe from the beginning, including all pre-execution Developer-in-the-Loop functions:
+- `preInitFunction`
+- `preValidationFunction`
+- `preValidationMiniBankFunction`
 
 > [!CAUTION]
 > **Duplicate Writes**: If your pre-validation function writes to a database or updates the `ContextBank`, a retry will cause that write to happen again. **Always ensure your pre-flow functions are Read-Only or Idempotent.**
 
 ---
 
-## Advanced: Custom Recovery Logic
-
-Sometimes you don't want to retry immediately. You might want to wait for the "pressure" to subside (exponential backoff) or try a different "refinery" (provider).
-
-```kotlin
-pipe.enablePipeTimeout(
-    customLogic = { pipe, content ->
-        println("Mainline clogged. Waiting 5 seconds before retry...")
-        delay(5000)
-        true // Return true to signal a retry
-    }
-)
-```
-
----
-
-## Monitoring the Recovery
-
-Every retry event is logged in the **Pressure Gauges (Tracing)**. You can see exactly how many times a pipe retried and how long each attempt took.
-
-```kotlin
-// Check the retry count manually if needed
-val attempts = PipeTimeoutManager.getRetryCount(pipe)
-```
-
----
-
 ## Best Practices
 
-*   **Set Realistic Limits**: Don't set a 5-second timeout for a 100,000-token generation; give the model enough "pipe length" to finish.
+*   **Set Realistic Limits**: Don't set a 5-second timeout for a 100,000-token generation; give the model enough pipe length to finish.
 *   **Use SNAPSHOTS**: If you are using complex branching, call `.forceSaveSnapshot()` to ensure you always have a recovery point.
-*   **Offload Writes**: Perform database or ContextBank writes in **Post-execution** functions (`transformationFunction`) to ensure they only happen after a successful, non-timed-out generation.
+*   **Recursive Propagation**: Set `applyRecursively = true` so that your timeout protection also covers validator and transformation pipes.
+*   **Monitor the Gauges**: Use `PipeTracer` to see exactly how many times a valve retried and how much latency each attempt added to the total flow.
 
 ---
 

@@ -70,7 +70,7 @@ Opens the real-time flow of tokens.
 - **`streamReasoning`**: If true, the raw "Thoughts" (from models like DeepSeek) are also streamed to the callback, providing immediate feedback during complex reasoning tasks.
 
 #### `streamingCallbacks { ... }`
-Allows you to attach multiple specialized "Gauges" (callbacks) to the stream for simultaneous UI updates and logging.
+Allows you to attach multiple specialized Gauges (callbacks) to the stream for simultaneous UI updates and logging.
 
 ---
 

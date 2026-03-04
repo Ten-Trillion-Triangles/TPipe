@@ -4,6 +4,18 @@ In a complex agentic infrastructure, you cannot simply look at a final response 
 
 Tracing is the only way to effectively debug the non-deterministic nature of AI systems in production.
 
+## Table of Contents
+- [The Purpose of Tracing](#the-purpose-of-tracing)
+- [1. The PipeTracer: The Control Room](#1-the-pipetracer-the-control-room)
+- [2. Telemetry Event Types](#2-telemetry-event-types)
+- [3. High-Resolution Model Telemetry](#3-high-resolution-model-telemetry)
+- [4. Swarm Tracing: Multi-Stream Monitoring](#4-swarm-tracing-multi-stream-monitoring)
+- [5. Visualizing the Trace](#5-visualizing-the-trace)
+- [Best Practices for System Monitoring](#best-practices-for-system-monitoring)
+- [Next Steps](#next-steps)
+
+---
+
 ## The Purpose of Tracing
 
 Tracing provides the transparency required for industrial-grade AI engineering:
@@ -56,6 +68,7 @@ TPipe categorizes trace events into distinct streams, allowing you to filter out
 
 When an AI model is invoked, TPipe captures a comprehensive data packet:
 *   **Compound Prompt**: The finalized instructions and data delivered to the model.
+*   **User Input**: Exactly what was sent to the model during the specific turn.
 *   **Model Reasoning**: The raw "thought process" tokens from reasoning models.
 *   **Network Metrics**: TTFT (Time to First Token) and total connection duration.
 *   **Token Usage**: A precise breakdown of tokens spent in this specific turn.
@@ -77,12 +90,26 @@ PipeTracer.runWithIsolatedTrace("branch-v4") {
 
 ---
 
+## 5. Visualizing the Trace
+
+While raw logs are useful, TPipe traces are designed to be consumed by professional visualization tools.
+
+*   **JSON Export**: Use `PipeTracer.exportAsJson()` to send telemetry to machine-learning analysis platforms or custom dashboards.
+*   **HTML Visualizer**: Generate an interactive "Plumbing Diagram" of your execution, complete with Mermaid.js flowcharts and expandable JSON inspectors.
+
+```kotlin
+val jsonTrace = PipeTracer.exportAsJson()
+File("trace.json").writeText(jsonTrace)
+```
+
+---
+
 ## Best Practices for System Monitoring
 
 *   **Identify Your Valves**: Always use `.setPipeName()` so your traces represent meaningful stages of your infrastructure.
-*   **Monitor in Production**: Keep tracing active in production environments with a sensible retention policy to audit why agents made specific (potentially incorrect) decisions.
-*   **Export as JSON**: Use `PipeTracer.exportAsJson()` to send telemetry to external observability platforms like DataDog, Honeycomb, or a custom internal dashboard.
+*   **Monitor in Production**: Keep tracing active in production environments with a sensible retention policy to audit why agents made specific decisions.
 *   **Audit the Thoughts**: For reasoning-heavy models (like DeepSeek-R1), use the `modelReasoning` trace field to understand the logic that led to a specific output.
+*   **Use Tracing Callbacks**: Attach a `PipelineCallback` that logs specific high-priority trace events to your monitoring system (like DataDog or Sentry).
 
 ---
 

@@ -1,57 +1,122 @@
-# Token Counting and Tokenizer Tuning
+# Token Counting, Truncation, and Tokenizer Tuning
 
-In an industrial plumbing system, different fluids have different viscosities. In TPipe, **Tokens** are the same way. Every AI model has its own "Tokenizer"—the way it breaks down text into tokens. Because every model is different, a "gallon" of text for Claude might be "1.2 gallons" for Llama.
+In an industrial plumbing system, different fluids have different viscosities. In TPipe, **Tokens** are the same way. Every AI model has its own Tokenizer—the way it breaks down text into tokens. Because every model is different, a gallon of text for Claude might be 1.2 gallons for Llama.
 
 TPipe's `Dictionary` and `TruncationSettings` allow you to tune your Flow Meters to match your specific model's tokenizer with high precision.
 
-## The TruncationSettings: Tuning the Meter
+## Table of Contents
+- [The Problem with Token Counting](#the-problem-with-token-counting)
+- [TruncationSettings: Tokenizer Configuration](#truncationsettings-tokenizer-configuration)
+- [Tokenizer Profiles: Tuning for Models](#tokenizer-profiles-tuning-for-models)
+- [Token Counting Methods](#token-counting-methods)
+- [Text Truncation Methods](#text-truncation-methods)
+- [Automated Tuning (truncateModuleContext)](#automated-tuning-truncatemodulecontext)
+- [Truncation Strategies](#truncation-strategies)
+- [Next Steps](#next-steps)
 
-The `TruncationSettings` class is where you configure the "viscosity" of your text flow. It controls how TPipe estimates token counts and how it decides to chop text when the reservoir is full.
+---
+
+## The Problem with Token Counting
+
+Different AI models use different tokenizers with varying behaviors:
+- **GPT models**: Use BPE (Byte Pair Encoding) with aggressive subword splitting.
+- **Claude models**: Favor whole words and use different subword rules.
+- **Open source models**: Often use SentencePiece or custom tokenizers.
+
+TPipe's token counting system provides a configurable approximation that can be tuned to match your target model's behavior without requiring access to their proprietary logic.
+
+---
+
+## TruncationSettings: Tokenizer Configuration
+
+The `TruncationSettings` class is where you configure the viscosity of your text flow.
 
 ```kotlin
 data class TruncationSettings(
-    var multiplyWindowSizeBy: Int = 1000,           // The "Multiplier" (e.g., 32 * 1000 = 32K tokens)
-    var favorWholeWords: Boolean = true,            // Prioritize keeping words intact
-    var splitForNonWordChar: Boolean = true,        // Split on punctuation and symbols
-    var nonWordSplitCount: Int = 4                  // How many characters count as one token for non-words
+    var multiplyWindowSizeBy: Int = 1000,           // The Multiplier
+    var countSubWordsInFirstWord: Boolean = true,   // High-precision start
+    var favorWholeWords: Boolean = true,            // Prioritize semantic units
+    var countOnlyFirstWordFound: Boolean = false,   // Matching strategy
+    var splitForNonWordChar: Boolean = true,        // Split on punctuation
+    var alwaysSplitIfWholeWordExists: Boolean = false,
+    var countSubWordsIfSplit: Boolean = false,      // High-precision fragments
+    var nonWordSplitCount: Int = 4                  // Character-to-token ratio
+)
+```
+
+### The "Multiplier"
+In a large mainline, writing `128000` everywhere is tedious. TPipe uses a **Multiplier** so you can use smaller, more readable numbers.
+
+```kotlin
+// actual budget = windowSize * multiplyWindowSizeBy
+Dictionary.truncate(text, windowSize = 32, multiplyWindowSizeBy = 1000) // 32,000 tokens
+```
+
+---
+
+## Tokenizer Profiles: Tuning for Models
+
+### 1. Claude-Style Models (Anthropic)
+Claude tends to be conservative and favors whole words.
+```kotlin
+val claudeSettings = TruncationSettings(
+    favorWholeWords = true,
+    nonWordSplitCount = 4
+)
+```
+
+### 2. GPT-Style Models (OpenAI)
+GPT models use aggressive BPE and often split words into many small sub-tokens.
+```kotlin
+val gptSettings = TruncationSettings(
+    favorWholeWords = false,
+    nonWordSplitCount = 2
 )
 ```
 
 ---
 
-## Tokenizer Profiles: Tuning for Different Models
+## Token Counting Methods
 
-Because models use different math to count tokens, TPipe allows you to Tuning your settings for the specific provider you're using.
+### Basic Counting
+```kotlin
+// Use default settings
+val count = Dictionary.countTokens("Hello world!")
 
-### 1. Claude-Style Models (Anthropic)
-Claude tends to be conservative and favors whole words.
-*   `favorWholeWords = true`
-*   `nonWordSplitCount = 4`
+// Use custom settings
+val count = Dictionary.countTokens("Hello world!", customSettings)
+```
 
-### 2. GPT-Style Models (OpenAI)
-GPT models use aggressive BPE (Byte Pair Encoding) and often split words into many small sub-tokens.
-*   `favorWholeWords = false`
-*   `nonWordSplitCount = 2` (More aggressive)
-
-### 3. Open Source Models (Llama, Mistral)
-Often use SentencePiece, which handles punctuation differently.
-*   `splitForNonWordChar = false`
-*   `countSubWordsIfSplit = true`
+### Advanced Precision
+You can manually override every parameter for high-precision tuning:
+```kotlin
+val count = Dictionary.countTokens(
+    text = "...",
+    countSubWordsInFirstWord = true,
+    favorWholeWords = true,
+    splitForNonWordChar = true,
+    nonWordSplitCount = 4
+)
+```
 
 ---
 
-## The "Multiplier": Convenience in Configuration
+## Text Truncation Methods
 
-In a large mainline, writing `128000` everywhere is tedious and error-prone. TPipe uses a **Multiplier** so you can use smaller, more readable numbers in your code.
+### String-Based Cutoff
+Trims a string so that its token count falls within the specified budget. TPipe never cuts in the middle of a full word.
 
 ```kotlin
-// Set the multiplier once in your settings
-val settings = TruncationSettings(multiplyWindowSizeBy = 1000)
-
-// Now you can use simple numbers for your budget
-Dictionary.truncate(text, windowSize = 32, settings)  // 32,000 tokens
-Dictionary.truncate(text, windowSize = 128, settings) // 128,000 tokens
+val result = Dictionary.truncateWithSettings(
+    content = longText,
+    tokenBudget = 32, // 32,000 tokens (if multiplier is 1000)
+    truncationMethod = ContextWindowSettings.TruncateTop,
+    settings = mySettings
+)
 ```
+
+### List-Based Cutoff
+Specialized for `ConverseHistory`. This method removes **entire elements** from a list rather than chopping individual strings, ensuring no partial messages enter the prompt.
 
 ---
 
@@ -62,27 +127,18 @@ You don't have to manually tune these settings for every model. TPipe includes a
 ```kotlin
 val pipe = BedrockPipe()
     .setModel("anthropic.claude-3-5-sonnet-20241022-v2:0")
-    .truncateModuleContext() // Auto-configures for Claude's specific tokenizer
+    .truncateModuleContext() // Auto-configures for Claude's tokenizer
 ```
-
-**What this does**:
-- Detects the model (Claude, Nova, Llama, etc.).
-- Sets the optimal `nonWordSplitCount` and splitting rules.
-- Configures the standard `contextWindowSize` for that specific model.
 
 ---
 
-## Truncation Strategies: Choosing the Cut
+## Truncation Strategies
 
 When the reservoir overflows, you need to choose where to cut the flow:
 
-*   **`TruncateTop`**: Drops the oldest data. (Best for **Chat**).
-*   **`TruncateBottom`**: Drops the newest data. (Best for **Logic/Instructions**).
-*   **`TruncateMiddle`**: Drops the center, keeping the beginning and end. (Best for **Summarization**).
-
-```kotlin
-pipe.setContextWindowSettings(ContextWindowSettings.TruncateTop)
-```
+*   **`TruncateTop`**: Removes oldest data first. (Best for **Chat**).
+*   **`TruncateBottom`**: Removes newest data first. (Best for **Logic/Instructions**).
+*   **`TruncateMiddle`**: Preserves start and end, dropping the center. (Best for **Summarization**).
 
 ---
 

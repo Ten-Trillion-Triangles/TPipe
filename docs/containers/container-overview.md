@@ -1,10 +1,20 @@
-# Container Overview - Infrastructure Orchestration
+# Container Overview
 
-While a **Pipeline** represents a single mainline, **Containers** are the complex infrastructure—the pumping stations, treatment plants, and distribution grids that coordinate multiple mainlines. Containers provide high-level orchestration patterns that go beyond simple sequential execution.
+Containers are specialized classes that orchestrate multiple pipelines, providing higher-level coordination patterns beyond simple pipe composition. Most containers implement `P2PInterface`, providing a unified way to build distributed agent systems.
 
-In the TPipe ecosystem, Containers allow you to route data, run processes in parallel, and manage swarms of agents with industrial precision.
+## Table of Contents
+- [Container vs Pipeline](#container-vs-pipeline)
+- [The Container Catalog](#the-container-catalog)
+- [P2P Integration](#p2p-integration)
+- [Tracing Support](#tracing-support)
+- [When to Use Containers](#when-to-use-containers)
+- [Implementation Status](#implementation-status)
+- [Basic Container Pattern](#basic-container-pattern)
+- [Next Steps](#next-steps)
 
-## Containers vs. Pipelines
+---
+
+## Container vs Pipeline
 
 Think of a Pipeline as a series of connected pipes. A Container is the structure that decides which pipeline to use or how to combine their outputs.
 
@@ -38,33 +48,48 @@ The Brain of the infrastructure, managing task distribution and agent cooperatio
 
 ---
 
-## P2P & Tracing: Unified Visibility
+## P2P Integration
 
-Even though Containers manage complex, multi-pipeline flows, they remain fully integrated into the TPipe ecosystem:
-
-### P2P Integration
-Most containers implement `P2PInterface`. This means a Container can act as a single P2P endpoint, while internally delegating requests to its child pipelines. This allows you to hide complex internal orchestration behind a simple agent interface.
-
-### Tracing Support
-Containers support Deep Tracing. When you enable tracing on a Container, it automatically propagates that configuration to every pipe in every child pipeline. This ensures you have a unified view of the entire orchestration event.
+Most containers implement `P2PInterface`. This allows a Container to act as a single P2P endpoint, while internally delegating requests to its child pipelines. This hides complex internal orchestration behind a simple agent interface.
 
 ```kotlin
-// Enable tracing on the entire station
-manifold.enableTracing(TraceConfig(logLevel = LogLevel.DEBUG))
+class Connector : P2PInterface {
+    override fun getPipelinesFromInterface(): List<Pipeline> {
+        return branches.values.toList() // Expose managed pipelines
+    }
+}
 ```
 
 ---
 
-## When to Reach for a Container?
+## Tracing Support
 
-> [!TIP]
-> **Use a Pipeline** when you have a clear, step-by-step process that always follows the same path.
->
-> **Use a Container** when:
-> *   You need to choose between different logic paths at runtime.
-> *   You want to run multiple models in parallel to save time.
-> *   You're building a Team of agents with different specialties.
-> *   You need to scale your processing across a distributed grid.
+Containers support Deep Tracing. When you enable tracing on a Container, it automatically propagates that configuration to every pipe in every child pipeline. This ensures you have a unified view of the entire orchestration event.
+
+```kotlin
+fun enableTracing(config: TraceConfig = TraceConfig()) {
+    tracingEnabled = true
+    // Automatically propagates to all child pipelines
+    childPipelines.forEach { it.enableTracing(config) }
+}
+```
+
+---
+
+## When to Use Containers
+
+**Use containers when:**
+- Multiple pipelines need coordination.
+- Key-based routing logic is required.
+- Parallel execution is needed for performance or multi-perspective analysis.
+- Task orchestration is complex (e.g., manager-worker patterns).
+
+**Use direct pipe composition (Pipeline) when:**
+- You have a simple sequential process.
+- Single-stage logic is sufficient.
+- No dynamic routing is needed.
+
+---
 
 ## Implementation Status
 
@@ -76,6 +101,28 @@ manifold.enableTracing(TraceConfig(logLevel = LogLevel.DEBUG))
 | **Manifold** | ✅ Production | ✅ Yes | ✅ Yes |
 | **DistributionGrid** | ⚠️ Experimental | ✅ Yes | ❌ No |
 | **Junction** | ⚠️ Experimental | ❌ No | ❌ No |
+
+---
+
+## Basic Container Pattern
+
+```kotlin
+class Connector : P2PInterface {
+    private val branches = mutableMapOf<Any, Pipeline>()
+
+    fun add(key: Any, pipeline: Pipeline): Connector {
+        branches[key] = pipeline
+        return this
+    }
+
+    suspend fun execute(path: Any, content: MultimodalContent): MultimodalContent {
+        val connection = branches[path]
+        return connection?.execute(content) ?: content.apply { terminatePipeline = true }
+    }
+
+    override fun getPipelinesFromInterface(): List<Pipeline> = branches.values.toList()
+}
+```
 
 ---
 

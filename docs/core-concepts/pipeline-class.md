@@ -1,8 +1,24 @@
-# Pipeline Class - The Mainline Infrastructure
+# Pipeline Class - Orchestrating Multiple Pipes
 
-While a `Pipe` represents a single valve, a `Pipeline` is the **Mainline**. It is the primary infrastructure that allows you to chain multiple pipes together, creating a sophisticated flow where the output of one stage is automatically processed as the input for the next.
+If a `Pipe` is a single valve, a `Pipeline` is the **Mainline**. It is the primary infrastructure that allows you to chain multiple pipes together, creating a sophisticated flow where the output of one stage is automatically processed as the input for the next.
 
 Pipelines provide the framework for multi-stage AI reasoning, complex data transformations, and high-reliability validation loops.
+
+```kotlin
+class Pipeline : P2PInterface {
+    // Pipeline orchestration logic
+}
+```
+
+## Table of Contents
+- [Building the Mainline](#building-the-mainline)
+- [The Flow Process](#the-flow-process)
+- [Advanced Mainline Features](#advanced-mainline-features)
+- [Why use a Pipeline?](#why-use-a-pipeline)
+- [Advanced Routing](#advanced-routing)
+- [Next Steps](#next-steps)
+
+---
 
 ## Building the Mainline
 
@@ -14,6 +30,8 @@ val mainline = Pipeline()
     .add(BedrockPipe().setPipeName("Analyst").setSystemPrompt("Analyze the data for security risks..."))
     .add(BedrockPipe().setPipeName("Writer").setSystemPrompt("Summarize the final findings into Markdown."))
 ```
+
+---
 
 ## The Flow Process
 
@@ -51,9 +69,9 @@ TPipe supports **Pause Points** within the mainline. This allows you to stop the
 
 ```kotlin
 val pipeline = Pipeline()
-    .add(researchStage)
+    .add(stepOne)
     .addPausePoint("manual-approval") // The mainline stops here
-    .add(productionStage)
+    .add(stepTwo)
 
 val result = pipeline.execute("Initiate Project")
 

@@ -1,286 +1,166 @@
-# Splitter
+# Splitter - Parallel Processing
+
+Splitter enables fan-out execution where content is distributed to multiple specialized pipelines that run in parallel. Results are automatically collected in a `MultimodalCollection` for subsequent aggregation and analysis.
+
+Think of Splitter as the **Distribution Manifold** that splits a main water line into several specialized treatment filters at once.
 
 ## Table of Contents
 - [Basic Usage](#basic-usage)
 - [Key Methods](#key-methods)
-- [MultimodalCollection](#multimodalcollection)
-- [Async Coordination](#async-coordination)
-- [Callback Functions](#callback-functions)
-- [Tracing Events](#tracing-events)
+- [The Results Collection (MultimodalCollection)](#the-results-collection-multimodalcollection)
+- [Async Coordination and Parallel Flow](#async-coordination-and-parallel-flow)
+- [Callback Sensors](#callback-sensors)
+- [High-Resolution Tracing](#high-resolution-tracing)
 - [P2P Integration](#p2p-integration)
 - [Complete Example](#complete-example)
 - [Best Practices](#best-practices)
+- [Next Steps](#next-steps)
 
-Splitter enables fan-out execution where content is distributed to multiple pipelines that run in parallel. Results are collected in a `MultimodalCollection` for aggregation and processing.
+---
 
 ## Basic Usage
 
+To use a Splitter, you bind **Activation Keys** to both specialized content and the pipelines that should process them.
+
 ```kotlin
-val splitter = Splitter()
-    .addContent("analyze", analysisContent)
-    .addPipeline("analyze", analysisPipeline)
-    .addContent("summarize", summaryContent)  
-    .addPipeline("summarize", summaryPipeline)
+val manifold = Splitter()
+    .addContent("sentiment", document)
+    .addPipeline("sentiment", sentimentPipeline)
+    .addContent("legal", document)
+    .addPipeline("legal", legalAuditPipeline)
+    .addContent("summary", document)
+    .addPipeline("summary", summaryPipeline)
 
-val jobs = splitter.executePipelines()
-jobs.forEach { it.await() }
+// Start all lines in parallel
+val flows = manifold.executePipelines()
+flows.forEach { it.await() } // Wait for all filters to finish
 
-// Access results
-val analysisResult = splitter.results.contents["analyze"]
+// Collect the clean results from the tank
+val analysisResult = manifold.results.contents["sentiment"]
 ```
+
+---
 
 ## Key Methods
 
-### Content and Pipeline Management
-```kotlin
-// Add content for a specific activation key
-fun addContent(key: Any, content: MultimodalContent): Splitter
+### Infrastructure Management
+*   **`addContent(key, content)`**: Primes a specific activation line with data.
+*   **`addPipeline(key, pipeline)`**: Installs a specialized mainline onto an activation line.
+*   **`removePipeline(pipeline)`** / **`removeKey(key)`**: Decommissions specific components or lines from the manifold.
 
-// Add pipeline to an activation key
-fun addPipeline(key: Any, pipeline: Pipeline): Splitter
+### Execution Control
+*   **`executePipelines()`**: Pushes data through all bound lines simultaneously. Returns a list of `Deferred` jobs for async coordination.
 
-// Remove pipeline from all keys
-fun removePipeline(pipeline: Pipeline): Splitter
+---
 
-// Remove entire activation key
-fun removeKey(key: Any): Splitter
-```
+## The Results Collection (MultimodalCollection)
 
-### Execution
-```kotlin
-// Execute all bound pipelines in parallel
-suspend fun executePipelines(): List<Deferred<Unit>>
-```
-
-### Tracing
-```kotlin
-// Enable tracing for splitter and child pipelines
-fun enableTracing(config: TraceConfig = TraceConfig(enabled = true)): Splitter
-
-// Disable tracing
-fun disableTracing(): Splitter
-
-### Independent Tracing
-By default, enabling tracing on a Splitter merges all child pipeline traces into the Splitter's trace stream. You can configure independent tracing to keep child traces separate.
-
-```kotlin
-// Child pipelines will NOT broadcast events to the Splitter trace
-splitter.enableTracing(TraceConfig(
-    enabled = true,
-    mergeSplitterTraces = false 
-))
-```
-```
-
-## MultimodalCollection
-
-Results are stored in a thread-safe collection:
+Results are stored in a thread-safe repository keyed by your activation strings.
 
 ```kotlin
 @Serializable
 data class MultimodalCollection(
     var contents: MutableMap<String, MultimodalContent> = ConcurrentHashMap()
 ) {
-    fun flush() {
-        contents.clear()
-    }
-}
-
-// Access results after execution
-val collection = splitter.results
-for ((key, content) in collection.contents) {
-    println("Pipeline $key produced: ${content.text}")
+    fun flush() { contents.clear() }
 }
 ```
 
-## Async Coordination
+---
 
-### Parallel Execution
+## Async Coordination and Parallel Flow
+
+Splitter uses Kotlin Coroutines to maximize infrastructure throughput.
+
 ```kotlin
-// Start all pipelines asynchronously
+// Option 1: Individual await
 val jobs = splitter.executePipelines()
-
-// Wait for all to complete
 jobs.forEach { it.await() }
 
-// Or use awaitAll extension
+// Option 2: Unified awaitAll
 jobs.awaitAll()
 ```
 
-### Callback Functions
+---
 
-Splitter supports callback functions for pipeline completion:
+## Callback Sensors
+
+You can install real-time monitoring on individual lines or the entire manifold.
+
+*   **`onPipeLineFinish`**: Triggered when a single specialized line completes its flow.
+*   **`onSplitterFinish`**: Triggered when the final line in the manifold has shut down.
 
 ```kotlin
-// Called when each pipeline finishes
-splitter.onPipeLineFinish = { splitter, pipeline, content ->
-    println("Pipeline ${pipeline.pipelineName} completed")
-    processResult(content)
-}
-
-// Called when all pipelines finish
-splitter.onSplitterFinish = { splitter ->
-    println("All pipelines completed")
-    aggregateResults(splitter.results)
+splitter.onPipeLineFinish = { manifold, line, result ->
+    println("Filter Line [${line.pipelineName}] is done.")
 }
 ```
 
-## Tracing Events
+---
 
-Splitter emits comprehensive tracing events:
+## High-Resolution Tracing
+
+Splitter emits a comprehensive set of telemetry events, including `SPLITTER_CONTENT_DISTRIBUTION` and `SPLITTER_PARALLEL_START`.
+
+### Independent Tracing
+By default, the Splitter merges the trace data from all its child mainlines into one big map. If your swarm is massive, you can enable **Independent Tracing** to keep each line's gauge isolated.
 
 ```kotlin
 splitter.enableTracing(TraceConfig(
-    detailLevel = TraceDetailLevel.COMPREHENSIVE,
-    includeContent = true
+    enabled = true,
+    mergeSplitterTraces = false // Isolate the telemetry streams
 ))
-
-// Trace events include:
-// - SPLITTER_START/END/SUCCESS/FAILURE
-// - SPLITTER_CONTENT_DISTRIBUTION  
-// - SPLITTER_PIPELINE_DISPATCH/COMPLETION
-// - SPLITTER_PIPELINE_CALLBACK/COMPLETION_CALLBACK
-// - SPLITTER_PARALLEL_START/AWAIT
 ```
+
+---
 
 ## P2P Integration
 
-Splitter exposes bound pipelines through P2P:
+Splitters are perfect for creating Analyst Swarms—P2P agents that can answer multiple questions about a project in parallel.
 
 ```kotlin
-override fun getPipelinesFromInterface(): List<Pipeline> {
-    // Access through private activatorKeys map
-    return activatorKeys.values.flatMap { it.pipelines }
-}
-
-// Helper: Get all child pipelines directly
-val pipelines = splitter.getAllChildPipelines()
-
-// Helper: Get trace IDs of all child pipelines (useful for independent tracing)
-val traceIds = splitter.getChildTraceIds()
-
-override suspend fun executeLocal(content: MultimodalContent): MultimodalContent {
-    val jobs = executePipelines()
-    jobs.awaitAll()
-    
-    // Return aggregated results in metadata
-    val aggregated = MultimodalContent()
-    for ((key, result) in results.contents) {
-        aggregated.metadata[key] = result
-    }
-    return aggregated
-}
+// Registering a Splitter as a multi-skilled agent
+splitter.setP2pDescription(P2PDescriptor(
+    agentName = "document-auditor",
+    agentDescription = "Analyzes documents for sentiment, legal risk, and summaries in parallel."
+))
+P2PRegistry.register(splitter)
 ```
+
+---
 
 ## Complete Example
 
 ```kotlin
 class DocumentAnalysisSystem {
-    private val splitter = Splitter()
+    private val splitter = Splitter().enableTracing()
     
-    init {
-        // Set up callbacks
-        splitter.onPipeLineFinish = { _, pipeline, content ->
-            logPipelineCompletion(pipeline.pipelineName, content)
-        }
+    suspend fun analyze(doc: MultimodalContent): Map<String, String> {
+        splitter.results.flush() // Clear the tank
         
-        splitter.onSplitterFinish = { splitter ->
-            generateFinalReport(splitter.results)
-        }
+        splitter.addContent("risks", doc).addPipeline("risks", riskPipeline)
+        splitter.addContent("summary", doc).addPipeline("summary", summaryPipeline)
         
-        splitter.enableTracing()
-    }
-    
-    suspend fun analyzeDocument(document: MultimodalContent): AnalysisReport {
-        // Clear previous results
-        splitter.results.flush()
+        splitter.executePipelines().awaitAll()
         
-        // Bind different analysis pipelines with content
-        splitter
-            .addContent("sentiment", document)
-            .addPipeline("sentiment", sentimentPipeline)
-            .addContent("entities", document)
-            .addPipeline("entities", entityPipeline)
-            .addContent("topics", document)
-            .addPipeline("topics", topicPipeline)
-            .addContent("summary", document)
-            .addPipeline("summary", summaryPipeline)
-        
-        // Execute all analyses in parallel
-        val jobs = splitter.executePipelines()
-        jobs.awaitAll()
-        
-        // Aggregate results
-        return AnalysisReport(
-            sentiment = splitter.results.contents["sentiment"]?.text ?: "",
-            entities = extractEntities(splitter.results.contents["entities"]),
-            topics = extractTopics(splitter.results.contents["topics"]),
-            summary = splitter.results.contents["summary"]?.text ?: ""
-        )
-    }
-    
-    private suspend fun logPipelineCompletion(name: String, content: MultimodalContent) {
-        println("Analysis '$name' completed with ${content.text.length} characters")
-    }
-    
-    private suspend fun generateFinalReport(results: MultimodalCollection) {
-        val report = buildString {
-            appendLine("Document Analysis Complete")
-            appendLine("Analyses performed: ${results.contents.keys.joinToString()}")
-            appendLine("Total results: ${results.contents.size}")
-        }
-        println(report)
-    }
-    
-    fun setupP2PAgent() {
-        splitter.setP2pDescription(P2PDescriptor(
-            agentName = "document-analyzer",
-            agentDescription = "Parallel document analysis with multiple specialized pipelines",
-            transport = P2PTransport(Transport.Tpipe, "document-analyzer"),
-            requiresAuth = false,
-            usesConverse = false,
-            allowsAgentDuplication = false,
-            allowsCustomContext = false,
-            allowsCustomAgentJson = false,
-            recordsInteractionContext = false,
-            recordsPromptContent = false,
-            allowsExternalContext = false,
-            contextProtocol = ContextProtocol.none,
-            agentSkills = mutableListOf(
-                P2PSkills("parallel-analysis", "Run multiple analyses simultaneously"),
-                P2PSkills("result-aggregation", "Collect and combine analysis results")
-            )
-        ))
-        
-        splitter.setP2pRequirements(P2PRequirements(
-            allowExternalConnections = true
-        ))
-        
-        splitter.setP2pTransport(P2PTransport(Transport.Tpipe, "document-analyzer"))
-        
-        P2PRegistry.register(splitter)
+        return splitter.results.contents.mapValues { it.value.text }
     }
 }
-
-data class AnalysisReport(
-    val sentiment: String,
-    val entities: List<String>,
-    val topics: List<String>, 
-    val summary: String
-)
 ```
-
-## Best Practices
-
-- **Use meaningful activation keys** for easy result identification
-- **Clear results between runs** using `results.flush()`
-- **Implement callbacks** for real-time result processing
-- **Handle async exceptions** in pipeline execution
-- **Monitor resource usage** with many parallel pipelines
-- **Enable tracing** for debugging complex parallel flows
-- **Bind both content and pipelines** to activation keys before execution
-- **Wait for all jobs** to complete before accessing results
 
 ---
 
-**Previous:** [← MultiConnector](multiconnector.md) | **Next:** [Manifold →](manifold.md)
+## Best Practices
+
+*   **Flush the Tank**: Always call `results.flush()` before starting a new parallel run to ensure you don't have old residue in your findings.
+*   **Unique Activation Keys**: Use descriptive keys like `pii_scan` or `language_detect` for easy result identification.
+*   **Manage System Pressure**: Parallel execution consumes significant CPU/RAM. Avoid running dozens of massive pipelines simultaneously on small infrastructure.
+*   **Handle Clogs**: Always combine Splitters with **Timeout and Retry** settings on the child pipelines to prevent a single hanging valve from blocking the entire `awaitAll()`.
+
+---
+
+## Next Steps
+
+Now that you can run processes in parallel, learn about the Manager-Worker hierarchy.
+
+**→ [Manifold - Multi-Agent Orchestration](manifold.md)** - Coordinating specialized workers.

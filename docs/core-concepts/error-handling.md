@@ -1,12 +1,21 @@
-# Error Handling and Propagation - Fixing Leaks
+# Error Handling and Propagation
 
-In any industrial plumbing system, you have to expect leaks, bursts, and pressure drops. TPipe's **Error Handling** system is the diagnostic kit that tells you exactly where the failure happened, what phase the pipe was in, and why the flow stopped.
+TPipe provides comprehensive error handling that captures failure information at the pipe level and propagates it through pipelines. This allows for detailed programmatic access to error details, execution phases, and failure types, ensuring robust fault management in production systems.
 
-Instead of just getting an empty response, TPipe provides deep, programmatic visibility into the failure chain, from the individual valve to the entire mainline.
+## Table of Contents
+- [The Three Levels of Diagnostic Flow](#the-three-levels-of-diagnostic-flow)
+- [Key Error Types](#key-error-types)
+- [Basic Usage](#basic-usage)
+- [Advanced Error Patterns](#advanced-error-patterns)
+- [The PipeError Data Class](#the-pipeerror-data-class)
+- [Best Practices](#best-practices)
+- [Next Steps](#next-steps)
+
+---
 
 ## The Three Levels of Diagnostic Flow
 
-Errors in TPipe aren't just thrown; they flow. When a failure occurs, diagnostic data is captured and propagated through three levels:
+Errors in TPipe aren't just thrown; they flow through three distinct levels of the infrastructure:
 
 1.  **Valve Level (Pipe)**: Stored in `pipe.lastError`.
 2.  **Water Level (Content)**: Attached to `MultimodalContent.pipeError`.
@@ -14,89 +23,107 @@ Errors in TPipe aren't just thrown; they flow. When a failure occurs, diagnostic
 
 ---
 
-## Basic Diagnostics: Checking the Gauges
+## Key Error Types
+
+Errors are categorized by `TraceEventType` to help you determine the correct recovery action:
+
+| Error Type | Meaning | Recommended Action |
+| :--- | :--- | :--- |
+| **`API_CALL_FAILURE`** | The model provider (e.g., AWS) failed. | Retry with backoff, check credentials, or verify region. |
+| **`VALIDATION_FAILURE`** | The output didn't meet your specifications. | Adjust the prompt or trigger a fallback branch. |
+| **`TRANSFORMATION_FAILURE`** | Your post-processing logic crashed. | Debug your transformation function. |
+| **`PIPE_FAILURE`** | A general infrastructure failure. | Check system logs and resource availability. |
+
+---
+
+## Basic Usage
 
 ### Checking a Single Pipe
 ```kotlin
-val result = pipe.execute("Process data")
+val pipe = BedrockPipe()
+    .setModel("anthropic.claude-3-5-sonnet-20241022-v2:0")
+
+val result = pipe.execute("What is AI?")
 
 if (pipe.hasError()) {
-    println("Status: Burst!")
-    println("Message: ${pipe.getErrorMessage()}")
-    println("Phase: ${pipe.lastError?.phase}") // e.g., API_CALL, VALIDATION
+    println("Error: ${pipe.getErrorMessage()}")
+    println("Type: ${pipe.getErrorType()}")
+    println("Phase: ${pipe.lastError?.phase}")
 }
 ```
 
 ### Checking the Mainline (Pipeline)
-When a pipeline fails, you need to know exactly which section "burst."
-
 ```kotlin
 pipeline.execute("Start the flow")
 
 if (pipeline.hasError()) {
-    println("Mainline Failure at: ${pipeline.getFailedPipeName()}")
+    println("Mainline failure at: ${pipeline.getFailedPipeName()}")
     println("Context: ${pipeline.getFullErrorContext()}")
     
-    // Direct access to the failed valve and the error cargo
-    val valve = pipeline.lastFailedPipe
-    val diagnostic = pipeline.lastError
+    // Access the failed pipe directly
+    val failedValve = pipeline.lastFailedPipe
+    // Access the detailed error cargo
+    val errorInfo = pipeline.lastError
 }
 ```
 
 ---
 
-## Common Failure Types (Trace Events)
-
-TPipe categorizes errors so you can handle them differently:
-
-| Error Type | Meaning | Action |
-| :--- | :--- | :--- |
-| **`API_CALL_FAILURE`** | The model provider (e.g., AWS) failed. | Retry, check credentials, or check region. |
-| **`VALIDATION_FAILURE`** | The output didn't meet your "Plumbing" specs. | Adjust the prompt or use a fallback. |
-| **`TRANSFORMATION_FAILURE`** | Your post-processing code crashed. | Debug your transformation function. |
-| **`PIPE_FAILURE`** | A general infrastructure failure. | Check system logs. |
-
----
-
-## Advanced Patterns: Rerouting the Flow
+## Advanced Error Patterns
 
 ### The Fallback Mainline
-You can build a pipeline with "redundant lines." If the primary pipe fails, the pipeline can be designed to handle the error and provide a fallback.
+You can identify exactly which pipe failed and decide whether to proceed with a fallback result.
 
 ```kotlin
 pipeline.execute(input)
 
 if (pipeline.hasError()) {
     when (pipeline.getFailedPipeName()) {
-        "primary_auditor" -> {
-            println("Primary line failed. Checking fallback results...")
-        }
-        "fallback_auditor" -> {
-            println("Total system failure. Shutting down flow.")
-        }
+        "primary_auditor" -> println("Primary failed. Fallback result is available.")
+        "fallback_auditor" -> println("Complete system blockage: ${pipeline.getErrorMessage()}")
     }
 }
 ```
 
-### Intelligent Retries
-If you detect an `API_CALL_FAILURE`, it might just be a transient network "clog." You can use the error type to decide whether to retry.
-
+### Conditional Logic by Error Type
 ```kotlin
-if (pipe.getErrorType() == TraceEventType.API_CALL_FAILURE) {
-    println("Transient clog detected. Retrying with higher pressure...")
-    pipe.clearError() // Reset the gauge
-    pipe.execute(input)
+if (pipe.hasError()) {
+    when (pipe.getErrorType()) {
+        TraceEventType.API_CALL_FAILURE -> retryWithBackoff(pipe)
+        TraceEventType.VALIDATION_FAILURE -> logger.warn("Valve leak: ${pipe.getErrorMessage()}")
+        TraceEventType.TRANSFORMATION_FAILURE -> useRawOutput()
+        else -> handleGenericError()
+    }
 }
 ```
 
 ---
 
-## Best Practices for a Robust Infrastructure
+## The PipeError Data Class
 
-*   **Check the Gauges Early**: Always check `pipeline.hasError()` after execution before you try to consume the results.
-*   **Name Your Pipes**: Give every Pipe a `pipeName`. An error in "Pipe 3" is much harder to find than an error in the "SQL_Generator_Valve."
-*   **Log the Context**: Use `getFullErrorContext()` in your production logs. It contains the Pipe Name, the Phase, and the Message in one concise string.
-*   **Clear Before Reuse**: If you are reusing a Pipe or Pipeline object, call `clearError()` to reset the gauges before the next run.
+The `PipeError` object contains the comprehensive diagnostic cargo:
+
+```kotlin
+data class PipeError(
+    val exception: Throwable?,      // Original exception details
+    val eventType: TraceEventType,  // Failure category
+    val phase: TracePhase,          // Execution phase (ENTER, EXECUTE, EXIT, etc.)
+    val pipeName: String,           // Human-readable valve name
+    val pipeId: String,             // Unique system identifier
+    val timestamp: Long             // Occurrence time
+) {
+    val message: String             // Formatted error message
+}
+```
+
+---
+
+## Best Practices
+
+*   **Always Check for Errors**: After pipeline execution, verify `pipeline.hasError()` before processing the resulting data.
+*   **Name Your Pipes**: Use `.setPipeName()` so your logs identify exactly which valve failed (e.g., "SQL_Generator").
+*   **Clear Before Reuse**: If reusing a Pipe or Pipeline object, call `clearError()` or `clearErrors()` to reset the gauges.
+*   **Log Full Context**: Use `getFullErrorContext()` for comprehensive production logging.
 
 ---
 

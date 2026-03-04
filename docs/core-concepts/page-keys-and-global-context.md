@@ -1,39 +1,64 @@
-# Page Keys and Global Context - Organizing the Reservoir
+# Page Keys and Global Context
 
-In a large-scale agentic infrastructure, you don't just have one massive pool of data; you have organized **Reservoirs**. **Page Keys** are the named identifiers that allow you to partition your global **ContextBank**, ensuring that agents only pull the specific data they need for their current task.
+TPipe's page key system enables organized, targeted context retrieval from the global ContextBank. This allows pipes to access specific types of context while maintaining separation between different use cases and data types.
 
-This prevents "Mainline Pollution," where an agent is overwhelmed by irrelevant information, and ensures that user data, session history, and domain knowledge are kept separate and secure.
+## Table of Contents
+- [What are Page Keys?](#what-are-page-keys)
+- [Enabling Global Context](#enabling-global-context)
+- [Single Page Key Usage](#single-page-key-usage)
+- [Multiple Page Keys](#multiple-page-keys)
+- [Page Key vs Default Context](#page-key-vs-default-context)
+- [Integration with Pipeline Context](#integration-with-pipeline-context)
+- [Practical Examples](#practical-examples)
+- [Best Practices](#best-practices)
+- [Next Steps](#next-steps)
+
+---
 
 ## What are Page Keys?
 
-Think of a Page Key as a Valve ID for a specific section of the ContextBank.
+Page keys are named identifiers that organize context in the ContextBank:
 - **Namespace separation**: Keep `user_123_data` separate from `global_security_rules`.
 - **Targeted retrieval**: An agent can request exactly one page (e.g., `setPageKey("legal_codes")`).
 - **Multi-page support**: An agent can "mix" several reservoirs into one flow (e.g., `setPageKey("user_profile, world_lore")`).
 
 ---
 
-## Accessing the Reservoir: Single Page Keys
+## Enabling Global Context
 
-The most common pattern is to give an agent access to a single, specialized page of knowledge.
-
+### Basic Global Context Access
 ```kotlin
-val agent = BedrockPipe()
-    .pullGlobalContext()
-    .setPageKey("industrial_safety_manual")
-    .autoInjectContext("Use the safety manual to validate the procedure.")
+val pipe = BedrockPipe()
+    .pullGlobalContext()  // Enable global context retrieval
+    .autoInjectContext("Use the context data provided in the user prompt.")
 ```
 
-**What happens here?**
-1.  TPipe goes to the `ContextBank`.
-2.  It finds the page named `industrial_safety_manual`.
-3.  It "pumps" the LoreBook and history from that page into the agent's prompt.
+**What this does**:
+- Enables the pipe to pull context from the global ContextBank.
+- Uses the default banked context window (if no page key is set).
+- Retrieves all available context types (LoreBook, context elements, conversation history).
 
 ---
 
-## Complex Flows: Multiple Page Keys
+## Single Page Key Usage
 
-Sometimes an agent needs to be a "Polymath," drawing from multiple sources simultaneously. TPipe allows you to provide a comma-separated list of keys.
+### Setting a Single Page Key
+```kotlin
+val pipe = BedrockPipe()
+    .pullGlobalContext()
+    .setPageKey("userSession")  // Access specific context page
+    .autoInjectContext("Use the user session context from the user prompt.")
+```
+
+**What this does**:
+- Retrieves context stored under the "userSession" key in ContextBank.
+- Ignores other context pages, ensuring targeted, relevant background data.
+
+---
+
+## Multiple Page Keys
+
+Sometimes an agent needs to be a polymath, drawing from multiple sources simultaneously. TPipe allows you to provide a comma-separated list of keys.
 
 ```kotlin
 val agent = BedrockPipe()
@@ -47,18 +72,41 @@ val agent = BedrockPipe()
 
 ---
 
-## Page Key Management Patterns
+## Page Key vs Default Context
+
+*   **Default Context (No Page Key)**: If you call `pullGlobalContext()` without setting a page key, TPipe pulls from the general reservoir (`ContextBank.getBankedContextWindow()`). This is ideal for shared scratchpads or simple, single-context applications.
+*   **Page Key Context**: Setting a key pulls from a specific, isolated vault. This is the industrial standard for production systems.
+
+---
+
+## Integration with Pipeline Context
+
+Both global and pipeline context can be enabled simultaneously.
+
+```kotlin
+val pipe = BedrockPipe()
+    .pullGlobalContext()      // Pulls from ContextBank
+    .setPageKey("userData")   // Specific global context page
+    .pullPipelineContext()    // Also pulls pipeline context - both are merged together
+    .autoInjectContext("Use both pipeline and global context together.")
+```
+
+**Context Merging Priority**:
+1.  **Pipeline context** provides the base from previous pipeline stages.
+2.  **Global context** is merged in, adding persistent reference data.
+
+---
+
+## Practical Examples
 
 ### 1. Dynamic User Sessions
-In a multi-user application, you can use unique page keys for every user to ensure their history never leaks to someone else.
-
 ```kotlin
 val userPage = "session_${currentUser.id}"
 pipe.setPageKey(userPage)
 ```
 
-### 2. The "Shared Knowledge" Reservoir
-You can have a page that is read-only for most agents but updated by a "Senior Auditor" agent.
+### 2. The Shared Knowledge Reservoir
+You can have a page that is updated by a "Senior Auditor" and read by "Junior Agents."
 
 ```kotlin
 // Senior Auditor: Updates the manual
@@ -68,25 +116,16 @@ auditorPipe.setTransformationFunction { content ->
     ContextBank.emplaceWithMutex("global_manual", manual)
     content
 }
-
-// Junior Agent: Reads the manual
-juniorPipe.setPageKey("global_manual").pullGlobalContext()
 ```
-
----
-
-## Page Key vs. Default Context
-
-*   **Default Context**: If you call `pullGlobalContext()` without setting a page key, TPipe pulls from the "General Reservoir" (`ContextBank.getBankedContextWindow()`). This is great for simple apps or shared scratchpads.
-*   **Page Key Context**: Setting a key pulls from a specific, isolated vault. This is the industrial standard for production systems.
 
 ---
 
 ## Best Practices
 
 *   **Be Descriptive**: Use names like `client_abc_history` instead of `data1`.
-*   **Logical Grouping**: Group related data into a single page unless you have a reason to split them (e.g., separate `character_bio` from `world_rules`).
-*   **Lifecycle Control**: Remember to clear or archive old page keys (reservoirs) to keep your storage "clean" and performant.
+*   **Logical Grouping**: Group related data (e.g., `user_settings` and `user_history`) into a single page unless you have a reason to isolate them.
+*   **Lifecycle Control**: Remember to clear or archive old page keys (reservoirs) to keep your storage performant.
+*   **Conditional Selection**: Use `setPreValidationFunction` to dynamically decide which additional global pages to merge into your current context window based on the user's input.
 
 ---
 

@@ -1,57 +1,83 @@
-# Merged PCP + JSON Output Mode - Compound Flows
+# Merged PCP + JSON Output Mode
 
-In an industrial infrastructure, sometimes you need a valve to do two things at once: provide a structured status report (JSON) AND call for a specific tool (PCP) to fix a problem. **Merged Mode** is the specialized configuration that allows TPipe to handle both structured output and tool-calling simultaneously, resolving what used to be a conflict in model instructions.
+TPipe supports a **Merged Mode** that allows pipes to use both structured JSON output AND Pipe Context Protocol (PCP) tool calling simultaneously. This resolves the previous mutual exclusivity between these two features.
 
-## The Solution: The Unified Blueprint
-
-Previously, if you asked for JSON and Tools at the same time, the model would often "clog," unsure which format to prioritize. Merged Mode automatically activates when you provide both a `PcpContext` and a JSON schema. It gives the AI a unified blueprint:
--   **JSON Output (REQUIRED)**: The model must return your structured status object.
--   **Tool Calls (OPTIONAL)**: The model can also return an array of tool requests if it needs help.
+## Table of Contents
+- [The Problem](#the-problem)
+- [The Solution](#the-solution)
+- [Basic Example](#basic-example)
+- [Extracting Results](#extracting-results)
+- [AI Response Examples](#ai-response-examples)
+- [The Operational Contract](#the-operational-contract)
+- [Best Practices](#best-practices)
+- [Next Steps](#next-steps)
 
 ---
 
-## Basic Configuration
+## The Problem
 
-Merged mode activates automatically when you have both fittings attached to your pipe.
+Previously, when both PCP tools and JSON output were configured, the model received conflicting instructions:
+- **PCP Injection**: "Return an array of PcPRequest objects."
+- **JSON Injection**: "Return ONLY a JSON object matching this schema."
+
+This created ambiguity, leading to inconsistent model behavior and parsing failures.
+
+---
+
+## The Solution
+
+Merged Mode automatically activates when both conditions are met:
+1.  **PCP Tools** are configured (Stdio, HTTP, Python, or TPipe functions).
+2.  **JSON Output Schema** is configured with `requireJsonPromptInjection()`.
+
+In this mode, the AI receives unified instructions to return both the required JSON data and any optional tool calls in a single response turn.
+
+---
+
+## Basic Example
 
 ```kotlin
-val agent = BedrockPipe()
+val pipe = BedrockPipe()
     .setRegion("us-east-1")
     .setModel("anthropic.claude-3-5-sonnet-20241022-v2:0")
     
-    // Fitting 1: The Tool Belt (PCP)
+    // Configure PCP tools (Tool Belt)
     .setPcPContext(PcpContext().apply {
         addTPipeOption(TPipeContextOptions().apply {
-            functionName = "check_valve_pressure"
-            description = "Get the real-time pressure for a specific valve ID."
+            functionName = "search_database"
+            description = "Search the customer database."
         })
     })
     
-    // Fitting 2: The Specification (JSON)
+    // Configure JSON output (The Specification)
     .requireJsonPromptInjection()
-    .setJsonOutput("""{"status": "string", "urgency": 0}""")
+    .setJsonOutput("""{"answer": "string", "confidence": 0.0}""")
     
-    .setSystemPrompt("Monitor the plumbing mainline.")
+    .setSystemPrompt("You are a helpful assistant.")
+
+val response = pipe.execute("Find customer John Doe and tell me his status.")
 ```
 
 ---
 
-## Extracting the Results: The Two Output Lines
+## Extracting Results
 
-Because the model returns a "Compound Result," you need to extract both the JSON Water and the PCP "Tools."
+Because the model returns a compound result, you need to use TPipe's specialized extractors for both output lines.
 
 ```kotlin
-val response = agent.execute("Check Valve 4")
+// 1. Extract JSON output (REQUIRED - will always be present)
+data class MyOutput(val answer: String, val confidence: Double)
+val output = extractJson<MyOutput>(response)
+    ?: throw IllegalStateException("AI failed to return required JSON specification")
 
-// 1. Extract the Status Report (JSON)
-val report = extractJson<ValveStatus>(response)
-
-// 2. Extract the Tool Requests (PCP)
+// 2. Extract PCP tool calls (OPTIONAL - may be empty)
 val parser = PcpResponseParser()
 val toolCalls = parser.extractPcpRequests(response)
 
 if (toolCalls.success) {
-    // Execute the requested tools...
+    for (request in toolCalls.requests) {
+        println("Tool requested: ${request.tPipeContextOptions.functionName}")
+    }
 }
 ```
 
@@ -59,36 +85,48 @@ if (toolCalls.success) {
 
 ## AI Response Examples
 
-### Case 1: Simple Status (No Tools Needed)
+### Case 1: Status Only (No Tools Needed)
 ```json
 {
-  "status": "Pressure normal. No intervention required.",
-  "urgency": 0
+  "answer": "Customer John Doe is active with account status: premium",
+  "confidence": 0.95
 }
 ```
 
-### Case 2: Status + Action Required
+### Case 2: Status + Tool Calls
 ```json
 {
-  "status": "Pressure high in Valve 4. Requesting sensor check.",
-  "urgency": 8
+  "answer": "Searching database for customer information...",
+  "confidence": 0.0
 }
 
 [
   {
-    "tPipeContextOptions": { "functionName": "check_valve_pressure" },
-    "argumentsOrFunctionParams": ["valve_4"]
+    "tPipeContextOptions": { "functionName": "search_database" },
+    "argumentsOrFunctionParams": ["John Doe"]
   }
 ]
 ```
 
 ---
 
+## The Operational Contract
+
+### JSON Output: REQUIRED
+- The model MUST return valid, deserializable JSON matching your schema.
+- This is enforced even if no tools are called.
+
+### Tool Calls: OPTIONAL
+- The model MAY return tool call requests as an array if it determines they are necessary to complete the task.
+
+---
+
 ## Best Practices
 
-*   **Always Validate JSON**: Even when tools are called, the JSON output is **REQUIRED**. Always check if `extractJson` returns a valid object.
-*   **Clear Tool Descriptions**: Since the model has to follow a schema AND decide when to use tools, your tool descriptions must be very clear so it knows when it's appropriate to "reach for the belt."
-*   **Use Data Classes**: For the JSON part, use Kotlin `@Serializable` data classes. This makes the extraction much safer and cleaner than raw string parsing.
+*   **Always Validate JSON**: Since JSON is the required mainline, always check if `extractJson` returns a valid object before proceeding.
+*   **Clear Tool Descriptions**: Provide clear descriptions so the model knows when it is appropriate to reach for a tool vs. when it should simply answer using the schema.
+*   **Use Data Classes**: Use Kotlin `@Serializable` data classes for your JSON output to ensure type safety and cleaner extraction logic.
+*   **Custom Instructions**: You can override the default merged instructions using `pipe.setMergedPcpJsonInstructions()` for fine-tuned control.
 
 ---
 

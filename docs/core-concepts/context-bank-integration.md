@@ -1,4 +1,4 @@
-# ContextBank - The Central Reservoir
+# ContextBank - Global Context Integration
 
 In a distributed agentic infrastructure, you often need context that lives beyond a single conversation or session. `ContextBank` is the **Central Reservoir** for TPipe. It is a global repository that allows you to share, persist, and synchronize context across multiple applications, distributed agents, and long-running pipelines.
 
@@ -11,6 +11,8 @@ While a `ContextWindow` is your local tank for an individual interaction, `Conte
 *   **High-Concurrency Syncing**: Synchronize context between multiple agents working in parallel using version-based conflict resolution.
 *   **Remote Storage**: Connect to a remote `MemoryServer` to share knowledge across different physical machines.
 
+---
+
 ## Page Keys: Organizing the Reservoir
 
 The Bank is organized into **Page Keys**. Each key represents a distinct reservoir (a `ContextWindow`) within the Bank. This allows you to isolate data for different users, projects, or knowledge domains.
@@ -21,6 +23,14 @@ ContextBank.init("path/to/storage")
 
 // Access a specialized reservoir (Page)
 val safetyManual = ContextBank.getPage("industrial_safety")
+
+// Saving and Loading
+ContextBank.savePage("session_123", myContextWindow)
+val savedContext = ContextBank.loadPage("session_123")
+
+// Maintenance
+ContextBank.deletePage("obsolete_data")
+ContextBank.clearAll() // Use with caution!
 ```
 
 ---
@@ -30,7 +40,7 @@ val safetyManual = ContextBank.getPage("industrial_safety")
 ContextBank provides a high-reliability helper called `fetchMergeSaveRemoteContext`. This is designed for environments where multiple agents might be reading from and writing to the same global reservoir at once.
 
 1.  **Fetch**: TPipe pulls the latest version of the context from the global Bank (or remote server).
-2.  **Merge**: It intelligently combines that data with your local modifications using specific conflict resolution rules.
+2.  **Merge**: It intelligently combines that data with your local modifications using version-based conflict resolution.
 3.  **Save**: It pushes the updated, unified context back to the central Bank.
 
 ```kotlin
@@ -45,7 +55,7 @@ contextBank.fetchMergeSaveRemoteContext(
 
 ## Remote Access: The Pumping Station
 
-`ContextBank` can delegate its operations to a remote REST-based API. This allows you to host your infrastructure's knowledge on a dedicated memory server that all your agents can reach over the network.
+`ContextBank` can delegate its operations to a remote REST-based API. This allows you to host your infrastructure's knowledge on a dedicated memory server that all your agents can reach over the network. Optimized `/query` and `/simulate` endpoints allow for server-side processing of structured lorebook queries, reducing data transfer between the client and server.
 
 ```kotlin
 // Configure the Bank for remote network access
@@ -60,10 +70,20 @@ ContextBank.loadPage("global_rules", mode = StorageMode.REMOTE)
 
 ## Security: The Vault Logic
 
-When multiple agents are drawing from the same central reservoir, data security is paramount. TPipe integrates `ContextBank` with the **ContextLock** system to ensure that sensitive data remains "valved off" from unauthorized access.
+When multiple agents are drawing from the same central reservoir, data security is paramount. TPipe integrates `ContextBank` with the **ContextLock** system to ensure that sensitive data remains valved off from unauthorized access.
 
 *   **Access Enforcement**: Only agents with the correct credentials or in the correct security context can pull data from locked pages.
-*   **Safe Inference**: Even if an LLM is compromised, it cannot "force open" a locked reservoir; the protection is enforced at the Kotlin/Runtime level.
+*   **Safe Inference**: Even if an LLM is compromised, it cannot force open a locked reservoir; the protection is enforced at the Kotlin/Runtime level.
+
+---
+
+## Technical Integration Patterns
+
+### Multi-Stage Processing
+ContextBank allows for complex handoffs between different application stages. One stage can "Write" its discoveries to a specific Page Key, and the next stage can "Read" those discoveries as foundational context.
+
+### Context Repair
+When a remote synchronization fails due to a conflict, `fetchMergeSaveRemoteContext` provides the hooks needed to perform automated "Patching" of the reservoir state before the next attempt.
 
 **→ [ContextLock API](../api/context-lock.md)** - Learn how to secure your knowledge reservoirs.
 

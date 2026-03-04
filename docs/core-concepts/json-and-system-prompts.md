@@ -1,8 +1,19 @@
-# JSON Schema and System Prompts - The Specification
+# JSON Schema and System Prompts
 
 In a professional software ecosystem, you cannot rely on loose, unstructured text. You need high-precision **Specifications**. TPipe uses **JSON Schemas** to transform the non-deterministic output of an AI model into reliable, type-safe data that your application can actually use.
 
 By combining structured output with a professional **System Prompt**, you turn a generic model into a robust software component.
+
+## Table of Contents
+- [Why Structure is Mandatory for Production](#why-structure-is-mandatory-for-production)
+- [1. Defining the Blueprint (JSON Schema)](#1-defining-the-blueprint-json-schema)
+- [2. The System Prompt: The Operational Manual](#2-the-system-prompt-the-operational-manual)
+- [3. The Flow: Assembling the Compound Prompt](#3-the-flow-assembling-the-compound-prompt)
+- [4. Patching the Leaks: JSON Repair](#4-patching-the-leaks-json-repair)
+- [Best Practices](#best-practices)
+- [Next Steps](#next-steps)
+
+---
 
 ## Why Structure is Mandatory for Production
 
@@ -48,25 +59,50 @@ If the JSON schema is the **Blueprint**, the system prompt is the **Manual**. It
 A high-quality industrial prompt should include:
 1.  **Identity**: "You are a lead hydraulic engineer."
 2.  **Scope**: "Your task is to identify pressure drops in the provided stream."
-3.  **Constraints**: "Only report anomalies above 50 PSI. Be concise."
+3.  **Constraints**: "Only report anomalies above 50 PSI. Be concise. Do not include introductory text."
 4.  **Format Rule**: "Your final output must be a single JSON object."
+
+```kotlin
+pipe.setSystemPrompt("""
+    # Role
+    Professional Data Inspector
+
+    # Context
+    You are monitoring an industrial water mainline.
+
+    # Task
+    Identify any sensor readings that are outside of the normal range (100-200 PSI).
+
+    # Formatting
+    Your output MUST be a single JSON object matching the provided schema.
+""".trimIndent())
+```
 
 ---
 
 ## 3. The Flow: Assembling the Compound Prompt
 
-When you call `execute()`, TPipe does not just send your raw prompt. it assembles a sophisticated **Compound Specification**:
+When you call `execute()`, TPipe does not just send your raw prompt. it assembles a sophisticated **Compound Specification** in this order:
 
 1.  **Core Instructions**: Your defined `systemPrompt`.
-2.  **Structural Specs**: "You must respond in JSON. Your blueprint is: [Schema]"
-3.  **Tool Manual**: "You have access to the following tools: [PCP Definitions]"
-4.  **Background Knowledge**: Any LoreBook entries or history that have been injected.
+2.  **PCP Tools**: "You have access to the following tools: [PCP Definitions]" (if enabled).
+3.  **Structural Specs**: "You must respond in JSON. Your blueprint is: [Schema]" (via `jsonOutput`).
+4.  **Middle Prompt**: Instructions injected between input and output schemas (via `setMiddlePrompt`).
+5.  **Background Knowledge**: Any LoreBook entries or history that have been injected.
+6.  **Footer Prompt**: Final absolute constraints (via `setFooterPrompt`).
 
 ---
 
 ## 4. Patching the Leaks: JSON Repair
 
-Because models can occasionally make minor formatting errors (like trailing commas or missing brackets), TPipe includes a **JSON Repair Engine**. It attempts to patch these minor leaks automatically. If the output is truly unparseable, TPipe raises a `PipelineException`, allowing you to handle the failure gracefully using the **Error Handling** system.
+Because models can occasionally make minor formatting errors (like trailing commas or missing brackets), TPipe includes a **JSON Repair Engine**.
+
+**Repair Strategies:**
+- **Boundary Detection**: Uses bracket matching to find the JSON "Cargo" even if the model included extra conversational text.
+- **Structural Patching**: Fixes unquoted keys, trailing commas, and escaped characters.
+- **Auto-Closure**: Force-closes any brackets that the model left "Open" due to token limit truncation.
+
+If the output is truly unparseable, TPipe raises a `PipelineException`, allowing you to handle the failure gracefully using the **Error Handling** system.
 
 ---
 
@@ -76,6 +112,7 @@ Because models can occasionally make minor formatting errors (like trailing comm
 *   **Use Enums**: Limit the model's choices for status fields to prevent "Creative" but invalid labels.
 *   **Zero Temperature**: When requiring structured output, always set `temperature` to **0.0** to reduce the risk of formatting deviations.
 *   **Verify with DITL**: For mission-critical data, use a **Developer-in-the-Loop Function** to perform an additional check on the parsed JSON fields.
+*   **Native JSON**: For models that support it (like Claude 3.5), TPipe will attempt to use the provider's native JSON mode for maximum reliability.
 
 ---
 

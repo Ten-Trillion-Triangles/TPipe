@@ -1,48 +1,91 @@
-# Pipeline Flow Control - Routing the Mainline
+# Pipeline Flow Control
 
-In a complex municipal infrastructure, water doesn't always flow in a straight line. Sometimes you need to **Reroute** it to a treatment plant, **Recirculate** it through a filter, or **Shut off** the valve entirely if a leak is detected. **Pipeline Flow Control** gives you these deterministic Logic Gates for your AI workflows.
+TPipe provides sophisticated flow control mechanisms that allow pipes to dynamically alter pipeline execution through jumping, repeating, and termination. These features enable complex conditional logic and adaptive processing workflows.
 
-By using flow control, you can transform a simple sequence of pipes into an adaptive, intelligent system that reacts to the data it processes.
+## Table of Contents
+- [Flow Control Overview](#flow-control-overview)
+- [1. Pipe Jumping (Rerouting)](#1-pipe-jumping-rerouting)
+- [2. Pipe Repeating (Recirculation)](#2-pipe-repeating-recirculation)
+- [3. Pipeline Termination (Shut-off)](#3-pipeline-termination-shut-off)
+- [Practical Patterns](#practical-patterns)
+- [Monitoring Flow Control](#monitoring-flow-control)
+- [Best Practices](#best-practices)
+- [Next Steps](#next-steps)
 
-## The Three Core Controls
+---
 
-TPipe provides three primary ways to alter the flow of a pipeline:
+## Flow Control Overview
 
-### 1. Pipe Jumping (Rerouting)
-The "Router." This allows you to skip ahead to a specific pipe or jump backward to an earlier stage in the mainline.
+Linear pipeline execution (A → B → C) is often insufficient for production AI. You need flow control to handle:
+- Conditional processing based on content analysis.
+- Iterative refinement or multi-step reasoning.
+- Graceful early termination when a task is finished.
+- Error handling and automated retry logic.
+
+All flow control is managed through the `MultimodalContent` object that travels between pipes.
+
+---
+
+## 1. Pipe Jumping (Rerouting)
+
+The router allows you to skip ahead to a specific pipe or jump backward to an earlier stage in the mainline.
 
 ```kotlin
 // Inside a validator or transformation function
 content.jumpToPipe("error-handler-valve") // Jump to a named pipe
 ```
 
-### 2. Pipe Repeating (Recirculation)
-The "Iterative Filter." This tells the pipeline to execute the *current* pipe again with its own output. This is perfect for tasks that require multiple steps of refinement or "thinking."
+**How it works**: The pipeline checks for jump instructions after each pipe execution. If a target is found, it redirects to that specific pipe instead of continuing sequentially.
+
+---
+
+## 2. Pipe Repeating (Recirculation)
+
+The iterative filter tells the pipeline to execute the **current** pipe again with its own output. This is perfect for tasks that require multiple steps of refinement.
 
 ```kotlin
 content.repeat() // Execute this pipe again until a condition is met
 ```
 
-### 3. Termination (Shut-off)
-TPipe distinguishes between a Successful Finish and a "System Failure."
-
-*   **`passPipeline = true`**: The "Success Exit." Stops the flow immediately and returns the current result as a success. Use this for Shortcuts when a task is finished early.
-*   **`terminate()`**: The "Emergency Stop." Stops the flow and clears the content, signaling a failure. Use this when the input is invalid or a critical error is detected.
+**How it works**: After pipe execution, the pipeline checks the `repeatPipe` flag. If true, it re-executes the same valve with the updated content until the flag is cleared.
 
 ---
 
-## Practical Flow Patterns
+## 3. Pipeline Termination (Shut-off)
+
+TPipe distinguishes between a successful early finish and a system failure:
+
+### Pass Pipeline (Success Exit)
+```kotlin
+content.passPipeline = true  // Exit early as successful completion
+```
+- Stops the mainline immediately.
+- Preserves the current content as the final result.
+- Treats the exit as a valid completion.
+
+### Terminate Pipeline (Error Exit)
+```kotlin
+content.terminate()  // Exit due to failure
+```
+- Stops the mainline immediately.
+- Clears the content (sets to empty).
+- Signals an error/failure condition to the caller.
+
+---
+
+## Practical Patterns
 
 ### The "Quality Assurance" Loop
-You can use a combination of jumping and repeating to create a loop that keeps refining content until it meets a specific pressure (quality) standard.
+Keep refining content until it meets a specific pressure (quality) standard.
 
 ```kotlin
 val checker = BedrockPipe()
     .setPipeName("quality-gauge")
     .setValidatorFunction { content ->
         val score = assess(content.text)
-        if (score < 80 && attempts < 3) {
-            content.jumpToPipe("generator-valve") // Send it back for more work
+        if (score < 80 && getAttemptCount(content) < 3) {
+            incrementAttemptCount(content)
+            content.jumpToPipe("generator-valve") // Send it back
             false
         } else {
             true // Pressure is good, let it flow
@@ -51,14 +94,14 @@ val checker = BedrockPipe()
 ```
 
 ### The "Smart Router"
-Use an initial pipe to analyze the "chemical composition" of the input and route it to the correct specialized mainline.
+Analyze the input and route it to the correct specialized mainline.
 
 ```kotlin
 router.setValidatorFunction { content ->
     when (detectType(content.text)) {
         "technical" -> content.jumpToPipe("engineer-pipe")
         "legal" -> content.jumpToPipe("attorney-pipe")
-        "complete" -> content.passPipeline = true // No work needed!
+        "complete" -> content.passPipeline = true // Shortcut!
     }
     false // We are jumping or exiting, don't continue sequentially
 }
@@ -66,12 +109,23 @@ router.setValidatorFunction { content ->
 
 ---
 
-## Best Practices for Flow Control
+## Monitoring Flow Control
 
-*   **Prevent Infinite Recirculation**: Always include a "Turn Counter" in your metadata to ensure a pipe doesn't repeat forever.
-*   **Name Your Valves**: Pipe jumping only works if your pipes have clear, unique names set via `.setPipeName()`.
-*   **Use the Right Exit**: Only use `terminate()` for genuine failures. If the agent successfully finished the job early, use `passPipeline`.
-*   **Monitor the Gauges**: Enable **Tracing** to see a visual map of how the data jumped, repeated, and exited during execution.
+TPipe's **Tracing** system captures every jump, repeat, and termination. You can visualize the complete execution path in the trace report to see exactly how your adaptive logic behaved.
+
+```kotlin
+pipeline.enableTracing()
+val trace = pipeline.getTraceReport() // Shows the "Path" the data took
+```
+
+---
+
+## Best Practices
+
+*   **Prevent Infinite Loops**: Always include an iteration limit (e.g., using a counter in `metadata`) to ensure a pipe doesn't repeat forever.
+*   **Name Your Valves**: Pipe jumping only works if your pipes have unique names set via `.setPipeName()`.
+*   **Clear Jump Targets**: Use descriptive pipe names like `error-recovery-stage` so your flow logic is readable.
+*   **Check Termination Status**: Use `content.shouldTerminate()` to verify if a pipe has requested a shut-off before continuing with local application logic.
 
 ---
 

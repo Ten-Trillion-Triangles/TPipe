@@ -43,7 +43,10 @@ includeBuild("../TPipe/TPipe")
 ```
 
 > [!NOTE]
-> Adjust the path relative to your project location. If TPipe is in a sibling directory, use `../TPipe/TPipe`.
+> **Path Notes**:
+> - Adjust the path relative to your project location.
+> - Example: If TPipe is in a sibling directory, use `../TPipe/TPipe`.
+> - Example: If TPipe is in a subdirectory, use `TPipe/TPipe`.
 
 ### 2. Dependency Management (`build.gradle.kts`)
 
@@ -73,7 +76,7 @@ repositories {
 }
 
 dependencies {
-    // Core library (Required)
+    // Main TPipe library (Required)
     implementation("com.TTT:TPipe:0.0.1")
     
     // Provider modules (Choose your source)
@@ -90,15 +93,73 @@ dependencies {
 }
 ```
 
+### Version Catalog (Optional)
+
+For more robust dependency management, you can use a version catalog:
+
+**gradle/libs.versions.toml:**
+```toml
+[versions]
+kotlin-version = "2.2.0"
+ktor-version = "3.1.3"
+tpipe-version = "0.0.1"
+
+[libraries]
+tpipe-main = { module = "com.TTT:TPipe", version.ref = "tpipe-version" }
+tpipe-bedrock = { module = "com.TTT:TPipe-Bedrock", version.ref = "tpipe-version" }
+tpipe-ollama = { module = "com.TTT:TPipe-Ollama", version.ref = "tpipe-version" }
+tpipe-mcp = { module = "com.TTT:TPipe-MCP", version.ref = "tpipe-version" }
+tpipe-defaults = { module = "com.TTT:TPipe-Defaults", version.ref = "tpipe-version" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin-version" }
+kotlin-plugin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin-version" }
+```
+
+**build.gradle.kts:**
+```kotlin
+plugins {
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.plugin.serialization)
+}
+
+dependencies {
+    implementation(libs.tpipe.main)
+    implementation(libs.tpipe.bedrock)
+    implementation(libs.tpipe.ollama)
+    implementation(libs.tpipe.mcp)
+    implementation(libs.tpipe.defaults)
+}
+```
+
 ## Module Reference
 
-| Module | Purpose | Operational Role |
+| Module | Description | Operational Role |
 | :--- | :--- | :--- |
-| `TPipe` | Core classes and flow logic. | **Required.** The foundation of the system. |
-| `TPipe-Bedrock` | High-performance inference via AWS. | Enterprise-grade cloud models. |
-| `TPipe-Ollama` | Local LLM execution. | Local development and private hosting. |
+| `TPipe` | Main library with core classes and interfaces. | **Required.** The foundation of the system. |
+| `TPipe-Bedrock` | AWS Bedrock integration. | Enterprise-grade cloud models. |
+| `TPipe-Ollama` | Local LLM execution via Ollama. | Local development and private hosting. |
 | `TPipe-MCP` | Model Context Protocol bridge. | Connectivity to external tools and data. |
-| `TPipe-Defaults` | Sensible pre-sets and utilities. | Accelerated configuration for common tasks. |
+| `TPipe-Defaults` | Pre-configured components and utilities. | Accelerated configuration for common tasks. |
+
+## Required JVM Configuration
+
+TPipe requires specific JVM configuration to ensure compatibility with JVM 24 bytecode:
+
+```kotlin
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(24))   // JDK 24 required
+    }
+}
+
+kotlin {
+    jvmToolchain(24)                                      // Kotlin toolchain JDK 24
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_24)                   // Target JVM 24 bytecode
+    }
+}
+```
 
 ## Deployment & Native Support
 
@@ -107,13 +168,76 @@ TPipe is engineered for long-term scalability. While currently running on the JV
 - Mobile platforms
 - High-density, low-latency serverless environments
 
+## Minimal Setup Example
+
+```kotlin
+import bedrockPipe.BedrockPipe
+
+fun main() {
+    val pipe = BedrockPipe()
+        .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+        .setRegion("us-west-2")
+
+    val response = runBlocking { pipe.generateText("Hello, world!") }
+    println(response)
+}
+```
+
+## Environment Verification
+
+Use this helper to verify your environment meets TPipe's industrial standards:
+
+```kotlin
+fun verifyEnvironment() {
+    println("Java Version: ${System.getProperty("java.version")}")
+    println("Kotlin Version: ${KotlinVersion.CURRENT}")
+
+    // Verify JDK 24+
+    val javaVersion = System.getProperty("java.version")
+    val majorVersion = javaVersion.split(".")[0].toInt()
+
+    require(majorVersion >= 24) {
+        "TPipe requires JDK 24+, found: $javaVersion"
+    }
+
+    println("✓ Environment meets TPipe requirements")
+}
+```
+
 ## Common Troubleshooting
 
+### Build System Compatibility
+> [!CAUTION]
+> **Issue**: Attempting to use Maven or Groovy Gradle.
+> **Solution**: TPipe strictly requires **Kotlin Gradle DSL**. Convert your project to use `build.gradle.kts`.
+
+### JDK Version Issues
 > [!CAUTION]
 > **Unsupported class file major version**: This indicates you are attempting to run TPipe on a JDK older than 24. Verify your environment with `java -version`.
+```bash
+# Check Java version
+java -version
+# Should show version 24 or higher
+```
 
+### Kotlin Version Mismatch
 > [!IMPORTANT]
-> **Build Failures**: Ensure you are using exactly Kotlin **2.2.0** and Gradle **8.14.3+**. Using mismatched versions often leads to subtle compilation errors in the DSL.
+> **Issue**: Kotlin compilation errors.
+> **Solution**: Use exactly Kotlin **2.2.0** as specified in TPipe.
+```kotlin
+plugins {
+    kotlin("jvm") version "2.2.0"  // Must match TPipe's version
+}
+```
+
+### Gradle Version Issues
+> [!IMPORTANT]
+> **Issue**: Gradle compatibility problems.
+> **Solution**: Use Gradle **8.14.3** or higher.
+```bash
+# Update Gradle wrapper
+./gradlew wrapper --gradle-version 8.14.3
+```
 
 ## Next Steps
 
