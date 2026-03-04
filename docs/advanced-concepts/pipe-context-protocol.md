@@ -26,15 +26,19 @@ Key traits:
 
 Each transport is backed by an executor that implements the `PcpExecutor` interface.
 
-| Transport   | Executor class             | Typical usage                               |
-|-------------|----------------------------|----------------------------------------------|
-| `Stdio`     | `StdioExecutor`            | Shell commands, CLIs, interactive sessions   |
-| `Http`      | `HttpExecutor`             | REST APIs, webhooks, internal services       |
-| `Python`    | `PythonExecutor`           | Ad-hoc scripts, analysis, automation         |
-| `Tpipe`     | `PcpFunctionHandler`       | Registered Kotlin functions and lambdas      |
+| Transport     | Executor class             | Typical usage                               |
+|---------------|----------------------------|----------------------------------------------|
+| `Stdio`       | `StdioExecutor`            | Shell commands, CLIs, interactive sessions   |
+| `Http`        | `HttpExecutor`             | REST APIs, webhooks, internal services       |
+| `Python`      | `PythonExecutor`           | Ad-hoc scripts, analysis, automation         |
+| `Kotlin`      | `KotlinExecutor`           | JVM scripting, type-safe code execution      |
+| `JavaScript`  | `JavaScriptExecutor`       | Node.js scripts, npm packages, async I/O     |
+| `Tpipe`       | `PcpFunctionHandler`       | Registered Kotlin functions and lambdas      |
 
 `PcpExecutionDispatcher` chooses the executor based on the populated portion of the
 `PcPRequest`. The dispatcher also aggregates results when a response contains multiple requests.
+
+**See Also:** [PCP Kotlin and JavaScript Support](pcp-kotlin-javascript.md) for detailed coverage of Kotlin and JavaScript scripting.
 
 ## Building a PCP Context
 
@@ -151,6 +155,35 @@ ensure parameter metadata stays in sync with registered functions.
 | `timeoutMs`            | Maximum runtime.                                                 |
 | `captureOutput`        | Whether stdout/stderr should be returned.                        |
 | `permissions`          | Required permissions (e.g. `Read`, `Execute`).                   |
+
+### `KotlinContext`
+
+| Field                      | Purpose                                                          |
+|----------------------------|------------------------------------------------------------------|
+| `allowedImports`           | Whitelist of allowed import statements.                         |
+| `blockedImports`           | Blacklist of forbidden import statements.                        |
+| `allowedPackages`          | Whitelist of allowed package prefixes.                           |
+| `blockedPackages`          | Blacklist of forbidden package prefixes.                         |
+| `allowTpipeIntrospection`  | Whether to expose PcpRegistry and PcpContext to scripts.         |
+| `allowHostApplicationAccess` | Whether to expose custom bindings to scripts.                  |
+| `exposedBindings`          | Map of binding names to descriptions for custom objects.         |
+| `allowReflection`          | Whether reflection API usage is permitted.                       |
+| `allowClassLoaderAccess`   | Whether ClassLoader access is permitted.                         |
+| `allowSystemAccess`        | Whether System class access is permitted.                        |
+| `timeoutMs`                | Maximum runtime in milliseconds.                                 |
+
+### `JavaScriptContext`
+
+| Field                  | Purpose                                                          |
+|------------------------|------------------------------------------------------------------|
+| `nodePath`             | Path to Node.js executable (defaults to "node" in PATH).        |
+| `allowedModules`       | Whitelist of npm modules that can be required.                   |
+| `workingDirectory`     | Directory for script execution.                                  |
+| `environmentVariables` | Environment variables passed to Node.js process.                 |
+| `permissions`          | Required permissions (e.g. `Read`, `Execute`).                   |
+| `timeoutMs`            | Maximum runtime in milliseconds.                                 |
+
+**For detailed Kotlin and JavaScript configuration, see:** [PCP Kotlin and JavaScript Support](pcp-kotlin-javascript.md)
 
 ## Applying PCP to a Pipe
 

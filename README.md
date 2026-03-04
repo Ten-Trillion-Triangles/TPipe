@@ -64,8 +64,13 @@ Complex features and protocol integration:
 - [Pipe Context Protocol Overview](docs/advanced-concepts/pipe-context-protocol.md) - TPipe's native tool protocol
 - [Basic PCP Usage](docs/advanced-concepts/basic-pcp-usage.md) - Getting started with PCP
 - [Intermediate PCP Features](docs/advanced-concepts/intermediate-pcp-features.md) - Advanced PCP capabilities
+- [PCP Kotlin and JavaScript Support](docs/advanced-concepts/pcp-kotlin-javascript.md) - Kotlin/JS scripting in PCP
 - [Advanced Session Management](docs/advanced-concepts/advanced-session-management.md) - Complex session handling
 - [Conversation History Management](docs/advanced-concepts/conversation-history-management.md) - Managing conversation state
+
+#### Memory and Agent Systems
+- [Remote Memory](docs/advanced-concepts/remote-memory.md) - Distributed memory hosting and access
+- [Memory Introspection](docs/advanced-concepts/memory-introspection.md) - Agent memory access control
 
 #### P2P Agent Communication
 - [P2P Overview](docs/advanced-concepts/p2p/p2p-overview.md) - Distributed agent communication
@@ -134,14 +139,19 @@ println(result.text)
 - **Timeout and retry system** with automatic recovery from transient failures and hanging LLM calls
 - **Pipeline pause/resume control** with declarative pause points and developer-in-the-loop workflows
 - **Global context sharing** across applications via ContextBank
+- **Remote memory hosting** for distributed agent systems with MemoryServer and MemoryClient
+- **Memory introspection** for autonomous agents with controlled memory access
+- **Retrieval functions** for lazy-loading context from databases and APIs
 - **Context access control** with ContextLock enforcement for secure lorebook and page management
 - **Developer-in-the-loop integration** with code and AI-powered validation
 - **Chain-of-thought reasoning** with multiple strategies and focus points
 - **Multi-provider AI support** (AWS Bedrock, Ollama, extensible architecture)
+- **Kotlin and JavaScript scripting** in PCP alongside Python and native functions
 - **Comprehensive debugging** with detailed tracing and monitoring
 - **Multi-Stream and Independent Tracing** for parallel pipelines and complex orchestration
 - **Cross-region inference** with automatic profile binding for AWS Bedrock
 - **Service tier optimization** for AWS Bedrock (Reserved, Priority, Standard, Flex)
+- **Enhanced security** with DNS rebinding protection, AST-based Python validation, and UUID session IDs
 
 ## Requirements
 

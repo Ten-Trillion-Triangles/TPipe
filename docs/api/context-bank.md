@@ -10,6 +10,7 @@
   - [Thread-Safe Operations](#thread-safe-operations)
   - [Utilities](#utilities)
   - [TodoList Integration](#todolist-integration)
+  - [Retrieval Functions](#retrieval-functions)
 
 ## Overview
 
@@ -369,6 +370,204 @@ TodoLists are stored in the TPipe configuration directory:
 - **Persistence**: Survives application restarts when `writeToDisk = true`
 
 See [TodoList API](todolist.md) for complete TodoList documentation and usage examples.
+
+---
+
+### Retrieval Functions
+
+Retrieval functions enable lazy-loading of context windows from external sources like databases, APIs, or remote services. When a key with a bound retrieval function is requested, the function executes automatically to fetch the data.
+
+#### `RetrievalFunction` Type
+
+```kotlin
+typealias RetrievalFunction = suspend (String) -> ContextWindow?
+```
+
+A suspending function that takes a context bank key and returns a `ContextWindow` if retrieval succeeds, or `null` if it fails.
+
+**Parameters:**
+- `key` - The context bank key being requested
+
+**Returns:** `ContextWindow?` - The retrieved context window, or null on failure
+
+#### `registerRetrievalFunction(key: String, function: RetrievalFunction)`
+Binds a retrieval function to a specific context bank key.
+
+**Parameters:**
+- `key` - The context bank key to bind the function to
+- `function` - The suspending function that will fetch the context window
+
+**Behavior:**
+- When `getContextFromBank(key)` is called and the key is not in memory/disk, the retrieval function executes
+- The function result is cached in memory after successful retrieval
+- Thread-safe: uses `ConcurrentHashMap` for function storage
+- Retrieval functions are not persisted across application restarts
+
+**Example:**
+```kotlin
+import com.TTT.Context.ContextBank
+import com.TTT.Context.ContextWindow
+
+// Register database retrieval function
+ContextBank.registerRetrievalFunction("user-profile") { key ->
+    val data = database.query("SELECT * FROM profiles WHERE key = ?", key)
+    if (data != null)
+    {
+        val context = ContextWindow()
+        context.addText(data.toString())
+        context
+    }
+    else null
+}
+
+// Later, when accessed, automatically fetches from database
+val profile = ContextBank.getContextFromBank("user-profile")
+```
+
+#### `removeRetrievalFunction(key: String)`
+Removes a retrieval function binding from a key.
+
+**Parameters:**
+- `key` - The context bank key to unbind
+
+**Behavior:**
+- Removes the retrieval function for the specified key
+- Does not affect any cached context windows already loaded
+- Thread-safe operation
+
+**Example:**
+```kotlin
+// Remove retrieval function
+ContextBank.removeRetrievalFunction("user-profile")
+
+// Now getContextFromBank() will return empty context if not in memory/disk
+```
+
+### Retrieval Function Use Cases
+
+**Database-Backed Context:**
+```kotlin
+import com.TTT.Context.ContextBank
+import com.TTT.Context.ContextWindow
+
+// Register retrieval for database-backed lorebook
+ContextBank.registerRetrievalFunction("knowledge-base") { key ->
+    val entries = database.getLoreBookEntries(key)
+    val context = ContextWindow()
+    
+    entries.forEach { entry ->
+        context.addLoreBookEntry(
+            key = entry.triggerKey,
+            value = entry.content,
+            weight = entry.weight
+        )
+    }
+    
+    context
+}
+```
+
+**API-Backed Context:**
+```kotlin
+import com.TTT.Context.ContextBank
+import com.TTT.Context.ContextWindow
+import com.TTT.Util.httpGet
+import com.TTT.Util.deserialize
+
+// Register retrieval from REST API
+ContextBank.registerRetrievalFunction("external-data") { key ->
+    try
+    {
+        val response = httpGet("https://api.example.com/context/$key")
+        deserialize<ContextWindow>(response)
+    }
+    catch (e: Exception)
+    {
+        println("Failed to retrieve context: ${e.message}")
+        null
+    }
+}
+```
+
+**Remote Memory Integration:**
+```kotlin
+import com.TTT.Context.ContextBank
+import com.TTT.Context.MemoryClient
+
+// Register retrieval from remote memory server
+ContextBank.registerRetrievalFunction("remote-context") { key ->
+    MemoryClient.getContextWindow(key)
+}
+
+// Now local ContextBank transparently fetches from remote server
+val context = ContextBank.getContextFromBank("remote-context")
+```
+
+**Computed Context:**
+```kotlin
+import com.TTT.Context.ContextBank
+import com.TTT.Context.ContextWindow
+
+// Register dynamic context generation
+ContextBank.registerRetrievalFunction("system-stats") { key ->
+    val context = ContextWindow()
+    
+    val runtime = Runtime.getRuntime()
+    val stats = """
+        Memory: ${runtime.totalMemory() / 1024 / 1024} MB
+        Free: ${runtime.freeMemory() / 1024 / 1024} MB
+        Processors: ${runtime.availableProcessors()}
+    """.trimIndent()
+    
+    context.addText(stats)
+    context
+}
+```
+
+### Retrieval Function Behavior
+
+**Execution Flow:**
+1. `getContextFromBank(key)` is called
+2. Check if key exists in memory → return if found
+3. Check if key exists on disk → load and return if found
+4. Check if retrieval function is registered for key → execute if found
+5. Cache result in memory after successful retrieval
+6. Return empty `ContextWindow()` if all methods fail
+
+**Performance Considerations:**
+- Retrieval functions execute only on cache miss
+- Results are cached in memory after first retrieval
+- Use `evictFromMemory(key)` to force re-retrieval on next access
+- Retrieval functions are suspending for async I/O operations
+
+**Error Handling:**
+```kotlin
+import com.TTT.Context.ContextBank
+import com.TTT.Context.ContextWindow
+
+// Retrieval function with error handling
+ContextBank.registerRetrievalFunction("resilient-data") { key ->
+    var retries = 3
+    var lastError: Exception? = null
+    
+    while (retries > 0)
+    {
+        try
+        {
+            return@registerRetrievalFunction fetchFromExternalSource(key)
+        }
+        catch (e: Exception)
+        {
+            lastError = e
+            retries--
+            if (retries > 0) kotlinx.coroutines.delay(1000)
+        }
+    }
+    
+    println("Failed to retrieve $key after 3 attempts: ${lastError?.message}")
+    null
+}
+```
 
 ---
 

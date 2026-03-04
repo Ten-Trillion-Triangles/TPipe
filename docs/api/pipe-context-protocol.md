@@ -12,6 +12,14 @@
   - [TPipeContextOptions](#tpipecontextoptions)
   - [HttpContextOptions](#httpcontextoptions)
   - [PythonContext](#pythoncontext)
+  - [KotlinContext](#kotlincontext)
+  - [JavaScriptContext](#javascriptcontext)
+- [Executors](#executors)
+  - [KotlinExecutor](#kotlinexecutor)
+  - [JavaScriptExecutor](#javascriptexecutor)
+- [Security Managers](#security-managers)
+  - [KotlinSecurityManager](#kotlinsecuritymanager)
+  - [JavaScriptSecurityManager](#javascriptsecuritymanager)
 - [Result Classes](#result-classes)
 - [Enums](#enums)
 
@@ -33,13 +41,15 @@ data class PcpContext(@Transient val cinit: Boolean = false)
 #### Public Properties
 
 **Transport Configuration:**
-- `transport: Transport` - Default transport mechanism (Auto, Stdio, TPipe, Http, Python)
+- `transport: Transport` - Default transport mechanism (Auto, Stdio, TPipe, Http, Python, Kotlin, JavaScript)
 
 **Tool Options:**
 - `stdioOptions: MutableList<StdioContextOptions>` - Available stdio commands
 - `tpipeOptions: MutableList<TPipeContextOptions>` - Available TPipe functions
 - `httpOptions: MutableList<HttpContextOptions>` - Available HTTP endpoints
 - `pythonOptions: PythonContext` - Python execution environment
+- `kotlinOptions: KotlinContext` - Kotlin scripting configuration
+- `javascriptOptions: JavaScriptContext` - JavaScript/Node.js configuration
 
 **Security Settings:**
 - `allowedDirectoryPaths: MutableList<String>` - Permitted directory access
@@ -270,6 +280,150 @@ data class PythonContext(@Transient val cinit: Boolean = false)
 - `timeoutMs: Int` - Execution timeout (default: 30000ms)
 - `captureOutput: Boolean` - Capture stdout/stderr (default: true)
 - `permissions: MutableList<Permissions>` - Allowed operations
+
+---
+
+### KotlinContext
+
+Configuration for Kotlin script execution within the JVM.
+
+```kotlin
+@Serializable
+data class KotlinContext(@Transient val cinit: Boolean = false)
+```
+
+#### Key Properties
+
+**Import Control:**
+- `allowedImports: MutableList<String>` - Whitelist of allowed imports
+- `blockedImports: MutableList<String>` - Blacklist of forbidden imports
+- `allowedPackages: MutableList<String>` - Allowed package prefixes
+- `blockedPackages: MutableList<String>` - Forbidden package prefixes
+
+**Security Flags:**
+- `allowTpipeIntrospection: Boolean` - Expose PcpRegistry and PcpContext (default: false)
+- `allowHostApplicationAccess: Boolean` - Expose custom bindings (default: false)
+- `allowReflection: Boolean` - Allow reflection API (default: false)
+- `allowClassLoaderAccess: Boolean` - Allow ClassLoader access (default: false)
+- `allowSystemAccess: Boolean` - Allow System class access (default: false)
+
+**Bindings:**
+- `exposedBindings: MutableMap<String, String>` - Custom object bindings (name -> description)
+
+**Execution Control:**
+- `timeoutMs: Int` - Execution timeout (default: 30000ms)
+
+**See Also:** [PCP Kotlin and JavaScript Support](../advanced-concepts/pcp-kotlin-javascript.md)
+
+---
+
+### JavaScriptContext
+
+Configuration for JavaScript execution via Node.js.
+
+```kotlin
+@Serializable
+data class JavaScriptContext(@Transient val cinit: Boolean = false)
+```
+
+#### Key Properties
+
+**Node.js Environment:**
+- `nodePath: String` - Path to Node.js executable (default: "node")
+- `allowedModules: MutableList<String>` - Whitelist of npm modules
+- `workingDirectory: String` - Execution directory
+- `environmentVariables: MutableMap<String, String>` - Environment variables
+
+**Execution Control:**
+- `timeoutMs: Int` - Execution timeout (default: 30000ms)
+- `permissions: MutableList<Permissions>` - Allowed operations
+
+**See Also:** [PCP Kotlin and JavaScript Support](../advanced-concepts/pcp-kotlin-javascript.md)
+
+---
+
+## Executors
+
+### KotlinExecutor
+
+Executes Kotlin scripts within the JVM using the Kotlin scripting engine.
+
+```kotlin
+class KotlinExecutor : PcpExecutor
+```
+
+#### Methods
+
+**`execute(request: PcPRequest, context: PcpContext): PcpRequestResult`**
+- Validates script against `KotlinSecurityManager`
+- Executes script using JSR-223 Kotlin script engine
+- Returns execution result with output and timing
+
+**`registerBinding(name: String, obj: Any, description: String = "")`**
+- Registers custom objects for script access
+- Objects become available when `allowHostApplicationAccess = true`
+
+---
+
+### JavaScriptExecutor
+
+Executes JavaScript via external Node.js process.
+
+```kotlin
+class JavaScriptExecutor : PcpExecutor
+```
+
+#### Methods
+
+**`execute(request: PcPRequest, context: PcpContext): PcpRequestResult`**
+- Validates script against `JavaScriptSecurityManager`
+- Creates temporary script file
+- Spawns Node.js process with configured environment
+- Captures stdout/stderr
+- Returns execution result with output and timing
+
+---
+
+## Security Managers
+
+### KotlinSecurityManager
+
+Validates Kotlin scripts before execution.
+
+```kotlin
+class KotlinSecurityManager
+```
+
+#### Methods
+
+**`validateKotlinRequest(script: String, options: KotlinContext, context: PcpContext): ValidationResult`**
+
+Checks:
+- Import statements against allowlists/blocklists
+- Package usage restrictions
+- Reflection usage (if disabled)
+- ClassLoader access (if disabled)
+- System class access (if disabled)
+
+---
+
+### JavaScriptSecurityManager
+
+Validates JavaScript scripts before execution.
+
+```kotlin
+class JavaScriptSecurityManager
+```
+
+#### Methods
+
+**`validateJavaScriptRequest(script: String, options: JavaScriptContext): ValidationResult`**
+
+Checks:
+- `require()` statements against allowed modules
+- Dangerous patterns (eval, Function constructor)
+- File system access patterns
+- Network access patterns
 
 ---
 
