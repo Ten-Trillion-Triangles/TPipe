@@ -703,7 +703,9 @@ class OllamaPipe : Pipe()
                   "method" to "generateContent",
                   "model" to model,
                   "useChatApi" to useChatApi,
-                  "streaming" to streamingEnabled
+                  "streaming" to streamingEnabled,
+                  "promptLength" to content.text.length,
+                  "hasBinaryContent" to content.binaryContent.isNotEmpty()
               ))
         
         return try
@@ -730,7 +732,13 @@ class OllamaPipe : Pipe()
             {
                 responseMetadata["reasoningContent"] = result.modelReasoning
                 responseMetadata["modelSupportsReasoning"] = true
+                responseMetadata["reasoningEnabled"] = useModelReasoning
+                responseMetadata["reasoningLength"] = result.modelReasoning.length
                 responseMetadata["hasReasoning"] = true
+            }
+            else
+            {
+                responseMetadata["hasReasoning"] = false
             }
             
             trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, result, metadata = responseMetadata)
@@ -739,7 +747,12 @@ class OllamaPipe : Pipe()
         }
         catch(e: Exception)
         {
-            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, error = e)
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, 
+                  error = e,
+                  metadata = mapOf(
+                      "errorType" to (e::class.simpleName ?: "Unknown"),
+                      "errorMessage" to (e.message ?: "Unknown error")
+                  ))
             MultimodalContent("")
         }
     }
@@ -814,6 +827,15 @@ class OllamaPipe : Pipe()
         {
             val jsonRequest = serialize(request)
 
+            trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
+                  metadata = mapOf(
+                      "step" to "chatApiRequest",
+                      "requestSize" to jsonRequest.length,
+                      "hasTools" to (ollamaTools != null),
+                      "toolCount" to (ollamaTools?.size ?: 0),
+                      "messageCount" to messages.size
+                  ))
+
             val client = HttpClient(CIO) {
                 install(HttpTimeout) {
                     requestTimeoutMillis = 600000 // 10 minutes
@@ -822,28 +844,53 @@ class OllamaPipe : Pipe()
                 }
             }
             
-            val responseText = try {
-                val response: HttpResponse = client.post(Endpoints.chatEndpoint) {
-                    contentType(ContentType.Application.Json)
-                    setBody(jsonRequest)
+            return try {
+                val responseText = try {
+                    val response: HttpResponse = client.post(Endpoints.chatEndpoint) {
+                        contentType(ContentType.Application.Json)
+                        setBody(jsonRequest)
+                    }
+                    response.bodyAsText()
+                } finally {
+                    client.close()
                 }
-                response.bodyAsText()
-            } finally {
-                client.close()
-            }
-            
-            val response = deserialize<ChatResponse>(responseText) ?: throw Exception("Failed to deserialize Ollama chat response: $responseText")
+                
+                val response = deserialize<ChatResponse>(responseText) ?: throw Exception("Failed to deserialize Ollama chat response: $responseText")
 
-            var resultText = response.message?.content ?: ""
-            
-            if(response.message?.toolCalls != null && response.message.toolCalls.isNotEmpty())
+                var resultText = response.message?.content ?: ""
+                
+                val responseMetadata = extractOllamaMetadata(response).toMutableMap()
+                responseMetadata["responseLength"] = resultText.length
+                responseMetadata["success"] = true
+                
+                if(response.message?.toolCalls != null && response.message.toolCalls.isNotEmpty())
+                {
+                    val pcpRequests = response.message.toolCalls.map { call -> mapOllamaToolCallToPcp(call) }
+                    val toolCallJson = serialize(pcpRequests)
+                    resultText = if(resultText.isEmpty()) toolCallJson else "$resultText\n\n$toolCallJson"
+                    
+                    responseMetadata["toolCallsDetected"] = true
+                    responseMetadata["toolCallCount"] = response.message.toolCalls.size
+                }
+                else
+                {
+                    responseMetadata["toolCallsDetected"] = false
+                }
+
+                val result = MultimodalContent(text = resultText)
+                trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, result, metadata = responseMetadata)
+                result
+            }
+            catch(e: Exception)
             {
-                val pcpRequests = response.message.toolCalls.map { call -> mapOllamaToolCallToPcp(call) }
-                val toolCallJson = serialize(pcpRequests)
-                resultText = if(resultText.isEmpty()) toolCallJson else "$resultText\n\n$toolCallJson"
+                trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                      error = e,
+                      metadata = mapOf(
+                          "errorType" to (e::class.simpleName ?: "Unknown"),
+                          "errorMessage" to (e.message ?: "Unknown error")
+                      ))
+                throw e
             }
-
-            MultimodalContent(text = resultText)
         }
     }
 
@@ -854,6 +901,14 @@ class OllamaPipe : Pipe()
      */
     private suspend fun executeChatStream(request: ChatRequest): MultimodalContent
     {
+        trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
+              metadata = mapOf(
+                  "step" to "chatStreamStart",
+                  "streaming" to true,
+                  "hasTools" to (request.tools != null),
+                  "toolCount" to (request.tools?.size ?: 0)
+              ))
+        
         val client = HttpClient(CIO)
         {
             install(HttpTimeout)
@@ -896,14 +951,42 @@ class OllamaPipe : Pipe()
             }
             
             var resultText = textBuilder.toString()
+            
+            val responseMetadata = mutableMapOf<String, Any>(
+                "responseLength" to resultText.length,
+                "success" to true,
+                "streaming" to true,
+                "apiType" to "ChatStreamAPI"
+            )
+            
             if(toolCalls.isNotEmpty())
             {
                 val pcpRequests = toolCalls.map { call -> mapOllamaToolCallToPcp(call) }
                 val toolCallJson = serialize(pcpRequests)
                 resultText = if(resultText.isEmpty()) toolCallJson else "$resultText\n\n$toolCallJson"
+                
+                responseMetadata["toolCallsDetected"] = true
+                responseMetadata["toolCallCount"] = toolCalls.size
+            }
+            else
+            {
+                responseMetadata["toolCallsDetected"] = false
             }
             
-            MultimodalContent(text = resultText)
+            val result = MultimodalContent(text = resultText)
+            trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, result, metadata = responseMetadata)
+            result
+        }
+        catch(e: Exception)
+        {
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                  error = e,
+                  metadata = mapOf(
+                      "errorType" to (e::class.simpleName ?: "Unknown"),
+                      "errorMessage" to (e.message ?: "Unknown error"),
+                      "streaming" to true
+                  ))
+            throw e
         }
         finally
         {
@@ -948,6 +1031,13 @@ class OllamaPipe : Pipe()
         {
             val jsonRequest = serialize(request)
             
+            trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
+                  metadata = mapOf(
+                      "step" to "generateApiRequest",
+                      "requestSize" to jsonRequest.length,
+                      "hasImages" to (base64Images?.isNotEmpty() == true)
+                  ))
+            
             val client = HttpClient(CIO) {
                 install(HttpTimeout) {
                     requestTimeoutMillis = 600000 // 10 minutes
@@ -956,18 +1046,38 @@ class OllamaPipe : Pipe()
                 }
             }
 
-            val responseText = try {
-                val response: HttpResponse = client.post(Endpoints.generateEndpoint) {
-                    contentType(ContentType.Application.Json)
-                    setBody(jsonRequest)
+            try {
+                val responseText = try {
+                    val response: HttpResponse = client.post(Endpoints.generateEndpoint) {
+                        contentType(ContentType.Application.Json)
+                        setBody(jsonRequest)
+                    }
+                    response.bodyAsText()
+                } finally {
+                    client.close()
                 }
-                response.bodyAsText()
-            } finally {
-                client.close()
-            }
 
-            val response = deserialize<GeneratedResponse>(responseText) ?: throw Exception("Failed to deserialize Ollama generate response: $responseText")
-            MultimodalContent(text = response.response ?: "")
+                val response = deserialize<GeneratedResponse>(responseText) ?: throw Exception("Failed to deserialize Ollama generate response: $responseText")
+                val resultText = response.response ?: ""
+                
+                val responseMetadata = extractOllamaMetadata(response).toMutableMap()
+                responseMetadata["responseLength"] = resultText.length
+                responseMetadata["success"] = true
+                
+                val result = MultimodalContent(text = resultText)
+                trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, result, metadata = responseMetadata)
+                result
+            }
+            catch(e: Exception)
+            {
+                trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                      error = e,
+                      metadata = mapOf(
+                          "errorType" to (e::class.simpleName ?: "Unknown"),
+                          "errorMessage" to (e.message ?: "Unknown error")
+                      ))
+                throw e
+            }
         }
     }
 
@@ -978,6 +1088,13 @@ class OllamaPipe : Pipe()
      */
     private suspend fun executeGenerateStream(request: GeneratedRequest): MultimodalContent
     {
+        trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
+              metadata = mapOf(
+                  "step" to "generateStreamStart",
+                  "streaming" to true,
+                  "hasImages" to (request.images?.isNotEmpty() == true)
+              ))
+        
         val client = HttpClient(CIO)
         {
             install(HttpTimeout)
@@ -1014,7 +1131,28 @@ class OllamaPipe : Pipe()
                 }
             }
             
-            MultimodalContent(text = textBuilder.toString())
+            val resultText = textBuilder.toString()
+            val responseMetadata = mutableMapOf<String, Any>(
+                "responseLength" to resultText.length,
+                "success" to true,
+                "streaming" to true,
+                "apiType" to "GenerateStreamAPI"
+            )
+            
+            val result = MultimodalContent(text = resultText)
+            trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, result, metadata = responseMetadata)
+            result
+        }
+        catch(e: Exception)
+        {
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                  error = e,
+                  metadata = mapOf(
+                      "errorType" to (e::class.simpleName ?: "Unknown"),
+                      "errorMessage" to (e.message ?: "Unknown error"),
+                      "streaming" to true
+                  ))
+            throw e
         }
         finally
         {
@@ -1171,6 +1309,51 @@ class OllamaPipe : Pipe()
             content.modelReasoning = thinking
         }
         return content
+    }
+
+    /**
+     * Extracts metadata from ChatResponse for tracing.
+     * @param response The ChatResponse to extract from.
+     * @return Map of metadata fields.
+     */
+    private fun extractOllamaMetadata(response: ChatResponse): Map<String, Any>
+    {
+        val metadata = mutableMapOf<String, Any>()
+        response.promptEvalCount?.let { metadata["inputTokens"] = it }
+        response.evalCount?.let { metadata["outputTokens"] = it }
+        if(response.promptEvalCount != null && response.evalCount != null)
+        {
+            metadata["totalTokens"] = response.promptEvalCount + response.evalCount
+        }
+        response.totalDuration?.let { metadata["totalDuration"] = it }
+        response.loadDuration?.let { metadata["loadDuration"] = it }
+        response.promptEvalDuration?.let { metadata["promptEvalDuration"] = it }
+        response.evalDuration?.let { metadata["evalDuration"] = it }
+        response.doneReason?.let { metadata["stopReason"] = it }
+        metadata["apiType"] = "ChatAPI"
+        return metadata
+    }
+
+    /**
+     * Extracts metadata from GeneratedResponse for tracing.
+     * @param response The GeneratedResponse to extract from.
+     * @return Map of metadata fields.
+     */
+    private fun extractOllamaMetadata(response: GeneratedResponse): Map<String, Any>
+    {
+        val metadata = mutableMapOf<String, Any>()
+        response.promptEvalCount?.let { metadata["inputTokens"] = it }
+        response.evalCount?.let { metadata["outputTokens"] = it }
+        if(response.promptEvalCount != null && response.evalCount != null)
+        {
+            metadata["totalTokens"] = response.promptEvalCount + response.evalCount
+        }
+        response.totalDuration?.let { metadata["totalDuration"] = it }
+        response.loadDuration?.let { metadata["loadDuration"] = it }
+        response.promptEvalDuration?.let { metadata["promptEvalDuration"] = it }
+        response.evalDuration?.let { metadata["evalDuration"] = it }
+        metadata["apiType"] = "GenerateAPI"
+        return metadata
     }
 
     /**
