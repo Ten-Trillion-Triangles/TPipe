@@ -1,8 +1,6 @@
 package com.TTT.MCP.Bridge
 
-import com.TTT.MCP.Models.McpRequest
-import com.TTT.MCP.Models.McpTool
-import com.TTT.MCP.Models.McpResource
+import com.TTT.MCP.Models.*
 import com.TTT.PipeContextProtocol.*
 import kotlinx.serialization.json.*
 
@@ -14,8 +12,8 @@ class McpToPcpConverter
     /**
      * Converts an MCP request to PCP context format.
      * 
-     * @param mcpRequest The MCP request containing tools and resources
-     * @return PcpContext with converted tools and resources
+     * @param mcpRequest The MCP request containing tools, resources, templates, and prompts
+     * @return PcpContext with converted tools, resources, and prompts
      */
     fun convert(mcpRequest: McpRequest): PcpContext 
     {
@@ -26,6 +24,10 @@ class McpToPcpConverter
         convertTools(mcpRequest.tools).forEach { pcpContext.addTPipeOption(it) }
         // Convert MCP resources to stdio options and add to context
         convertResources(mcpRequest.resources).forEach { pcpContext.addStdioOption(it) }
+        // Convert MCP resource templates to stdio options (as dynamic commands)
+        convertResourceTemplates(mcpRequest.resourceTemplates).forEach { pcpContext.addStdioOption(it) }
+        // Convert MCP prompts to TPipe options (as they are templates)
+        convertPrompts(mcpRequest.prompts).forEach { pcpContext.addTPipeOption(it) }
         
         return pcpContext
     }
@@ -42,7 +44,13 @@ class McpToPcpConverter
         return tools.map { tool ->
             TPipeContextOptions().apply {
                 functionName = tool.name
-                description = tool.description ?: ""
+                description = buildString {
+                    append(tool.description ?: "")
+                    tool.annotations?.let { ann ->
+                        if (ann.priority != null) append("\nPriority: ${ann.priority}")
+                        if (ann.audience != null) append("\nAudience: ${ann.audience.joinToString()}")
+                    }
+                }
                 // Extract parameter definitions from JSON schema
                 params = extractParams(tool.inputSchema)
             }
@@ -65,6 +73,41 @@ class McpToPcpConverter
                 args = mutableListOf(resource.uri)
                 permissions = mutableListOf(Permissions.Read)
                 description = resource.description ?: ""
+            }
+        }
+    }
+
+    /**
+     * Converts MCP resource templates to stdio context options.
+     */
+    private fun convertResourceTemplates(templates: List<McpResourceTemplate>): List<StdioContextOptions>
+    {
+        return templates.map { template ->
+            StdioContextOptions().apply {
+                command = "mcp_resource_template"
+                args = mutableListOf(template.uriTemplate)
+                permissions = mutableListOf(Permissions.Read)
+                description = "Template: ${template.name}. ${template.description ?: ""}"
+            }
+        }
+    }
+
+    /**
+     * Converts MCP prompts to TPipe context options.
+     */
+    private fun convertPrompts(prompts: List<McpPrompt>): List<TPipeContextOptions>
+    {
+        return prompts.map { prompt ->
+            TPipeContextOptions().apply {
+                functionName = "prompt_${prompt.name}"
+                description = prompt.description ?: ""
+                params = prompt.arguments?.associate { arg ->
+                    arg.name to Triple(
+                        ParamType.String,
+                        arg.description ?: "",
+                        emptyList<String>()
+                    )
+                }?.toMutableMap() ?: mutableMapOf()
             }
         }
     }

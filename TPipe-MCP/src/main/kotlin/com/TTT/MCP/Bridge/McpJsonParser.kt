@@ -24,7 +24,9 @@ class McpJsonParser
         // Extract and construct McpRequest with all components
         return McpRequest(
             tools = extractTools(json),
-            resources = extractResources(json)
+            resources = extractResources(json),
+            resourceTemplates = extractResourceTemplates(json),
+            prompts = extractPrompts(json)
         )
     }
 
@@ -36,8 +38,8 @@ class McpJsonParser
      */
     fun validateMcpStructure(json: JsonObject): Boolean 
     {
-        // Check if JSON contains valid MCP components (no prompts in wire format)
-        return json.containsKey("tools") || json.containsKey("resources")
+        // Check if JSON contains valid MCP components
+        return json.containsKey("tools") || json.containsKey("resources") || json.containsKey("prompts") || json.containsKey("resourceTemplates")
     }
 
     /**
@@ -68,7 +70,15 @@ class McpJsonParser
             // Extract optional outputSchema
             val outputSchema = toolObj["outputSchema"]?.jsonObject
             
-            McpTool(name, description, inputSchema, outputSchema)
+            // Extract optional icons and annotations
+            val icons = toolObj["icons"]?.jsonArray?.map {
+                Json.decodeFromJsonElement<com.TTT.MCP.Models.McpIcon>(it)
+            }
+            val annotations = toolObj["annotations"]?.let {
+                Json.decodeFromJsonElement<com.TTT.MCP.Models.McpAnnotations>(it)
+            }
+
+            McpTool(name, description, inputSchema, outputSchema, icons, annotations)
         } ?: emptyList()
     }
 
@@ -91,20 +101,55 @@ class McpJsonParser
                 ?: throw IllegalArgumentException("Resource missing required 'name' field")
             val description = resourceObj["description"]?.jsonPrimitive?.content
             val mimeType = resourceObj["mimeType"]?.jsonPrimitive?.content
-            McpResource(uri, name, description, mimeType)
+            val annotations = resourceObj["annotations"]?.let {
+                Json.decodeFromJsonElement<com.TTT.MCP.Models.McpAnnotations>(it)
+            }
+            com.TTT.MCP.Models.McpResource(uri, name, description, mimeType, annotations)
+        } ?: emptyList()
+    }
+
+    /**
+     * Extracts MCP resource templates from the JSON object.
+     */
+    fun extractResourceTemplates(json: JsonObject): List<com.TTT.MCP.Models.McpResourceTemplate>
+    {
+        return json["resourceTemplates"]?.jsonArray?.mapNotNull { element ->
+            val templateObj = element.jsonObject
+            val uriTemplate = templateObj["uriTemplate"]?.jsonPrimitive?.content
+                ?: throw IllegalArgumentException("Resource template missing required 'uriTemplate' field")
+            val name = templateObj["name"]?.jsonPrimitive?.content
+                ?: throw IllegalArgumentException("Resource template missing required 'name' field")
+            val description = templateObj["description"]?.jsonPrimitive?.content
+            val mimeType = templateObj["mimeType"]?.jsonPrimitive?.content
+            val annotations = templateObj["annotations"]?.let {
+                Json.decodeFromJsonElement<com.TTT.MCP.Models.McpAnnotations>(it)
+            }
+            com.TTT.MCP.Models.McpResourceTemplate(uriTemplate, name, description, mimeType, annotations)
         } ?: emptyList()
     }
 
     /**
      * Extracts prompt templates from the JSON object.
-     * NOTE: Prompts should not be in top-level JSON - use JSON-RPC prompts/list method
-     * 
-     * @param json The JSON object containing prompts
-     * @return Map of prompt names to prompt content
      */
-    private fun extractPrompts(json: JsonObject): Map<String, String> 
+    fun extractPrompts(json: JsonObject): List<com.TTT.MCP.Models.McpPrompt>
     {
-        // Prompts should not be in wire format - return empty
-        return emptyMap()
+        return json["prompts"]?.jsonArray?.mapNotNull { element ->
+            val promptObj = element.jsonObject
+            val name = promptObj["name"]?.jsonPrimitive?.content
+                ?: throw IllegalArgumentException("Prompt missing required 'name' field")
+            val description = promptObj["description"]?.jsonPrimitive?.content
+            val arguments = promptObj["arguments"]?.jsonArray?.map { argElement ->
+                val argObj = argElement.jsonObject
+                com.TTT.MCP.Models.McpPromptArgument(
+                    name = argObj["name"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Prompt argument missing 'name'"),
+                    description = argObj["description"]?.jsonPrimitive?.content,
+                    required = argObj["required"]?.jsonPrimitive?.boolean ?: false
+                )
+            }
+            val annotations = promptObj["annotations"]?.let {
+                Json.decodeFromJsonElement<com.TTT.MCP.Models.McpAnnotations>(it)
+            }
+            com.TTT.MCP.Models.McpPrompt(name, description, arguments, annotations)
+        } ?: emptyList()
     }
 }

@@ -1,8 +1,6 @@
 package com.TTT.MCP.Bridge
 
-import com.TTT.MCP.Models.McpRequest
-import com.TTT.MCP.Models.McpTool
-import com.TTT.MCP.Models.McpResource
+import com.TTT.MCP.Models.*
 import com.TTT.PipeContextProtocol.*
 import kotlinx.serialization.json.*
 
@@ -19,10 +17,22 @@ class PcpToMcpConverter
      */
     fun convert(pcpContext: PcpContext): McpRequest 
     {
+        // Split TPipe context options into tools and prompts
+        val (prompts, tools) = pcpContext.tpipeOptions.partition {
+            it.functionName.startsWith("prompt_")
+        }
+
+        // Split Stdio options into resources and resource templates
+        val (templates, resources) = pcpContext.stdioOptions.partition {
+            it.command == "mcp_resource_template"
+        }
+
         // Convert PCP context components to MCP request format
         return McpRequest(
-            tools = convertTPipeOptions(pcpContext.tpipeOptions),
-            resources = convertStdioOptions(pcpContext.stdioOptions)
+            tools = convertTPipeOptions(tools),
+            resources = convertStdioOptions(resources),
+            resourceTemplates = convertResourceTemplates(templates),
+            prompts = convertPrompts(prompts)
         )
     }
 
@@ -36,11 +46,20 @@ class PcpToMcpConverter
     {
         // Convert each TPipe option to an MCP tool
         return tpipeOptions.map { option ->
+            val description = option.description.substringBefore("\nPriority:").substringBefore("\nAudience:").trim()
+            val priority = option.description.substringAfter("\nPriority: ", "").substringBefore("\n").toDoubleOrNull()
+            val audience = option.description.substringAfter("\nAudience: ", "").substringBefore("\n").split(", ").filter { it.isNotBlank() }
+
+            val annotations = if (priority != null || audience.isNotEmpty()) {
+                McpAnnotations(audience.takeIf { it.isNotEmpty() }, priority)
+            } else null
+
             McpTool(
                 name = option.functionName,
-                description = option.description.takeIf { it.isNotBlank() },
+                description = description.takeIf { it.isNotBlank() },
                 // Build JSON schema from parameter definitions
-                inputSchema = buildInputSchema(option.params)
+                inputSchema = buildInputSchema(option.params),
+                annotations = annotations
             )
         }
     }
@@ -61,6 +80,36 @@ class PcpToMcpConverter
                 name = option.command,
                 description = option.description.takeIf { it.isNotBlank() },
                 mimeType = inferMimeType(option.command)
+            )
+        }
+    }
+
+    /**
+     * Converts stdio options back to MCP resource templates.
+     */
+    private fun convertResourceTemplates(stdioOptions: List<StdioContextOptions>): List<McpResourceTemplate>
+    {
+        return stdioOptions.map { option ->
+            McpResourceTemplate(
+                uriTemplate = option.args.firstOrNull() ?: "",
+                name = option.description.substringAfter("Template: ").substringBefore(". "),
+                description = option.description.substringAfter(". ")
+            )
+        }
+    }
+
+    /**
+     * Converts TPipe options back to MCP prompts.
+     */
+    private fun convertPrompts(tpipeOptions: List<TPipeContextOptions>): List<McpPrompt>
+    {
+        return tpipeOptions.map { option ->
+            McpPrompt(
+                name = option.functionName.removePrefix("prompt_"),
+                description = option.description,
+                arguments = option.params.map { (name, info) ->
+                    McpPromptArgument(name, info.second, true)
+                }
             )
         }
     }
