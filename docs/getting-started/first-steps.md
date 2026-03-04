@@ -1,6 +1,6 @@
 # First Steps - Hello World with TPipe
 
-This guide walks you through creating your first TPipe application.
+> 💡 **Tip:** > 💡 **Tip:** This guide walks you through creating your first TPipe application. Think of your first `Pipe` as connecting your main water line—once it's flowing, you can route it anywhere. Think of your first `Pipe` as connecting your main water line—once it's flowing, you can route it anywhere.
 
 ## Prerequisites
 

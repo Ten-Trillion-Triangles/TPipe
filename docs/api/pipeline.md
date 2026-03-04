@@ -163,11 +163,11 @@ pipeline.setMiniBank(miniBank)
 Enables timeout tracking and retry behavior for all pipes in this pipeline.
 
 **Parameters:**
-- `applyRecursively` - If true, propagates settings to child pipes within each pipe
-- `duration` - Timeout duration in milliseconds (default 300000 = 5 minutes)
-- `autoRetry` - If true, enables automatic retry on timeout
-- `retryLimit` - Maximum retry attempts per pipe (default 5)
-- `customLogic` - Optional custom retry function for all pipes
+- **`applyRecursively`**: If true, propagates settings to child pipes within each pipe
+- **`duration`**: Timeout duration in milliseconds (default 300000 = 5 minutes)
+- **`autoRetry`**: If true, enables automatic retry on timeout
+- **`retryLimit`**: Maximum retry attempts per pipe (default 5)
+- **`customLogic`**: Optional custom retry function for all pipes
 
 **Behavior:** Configures timeout and retry settings that are applied to all pipes during `init()`. Each pipe receives:
 - `enablePipeTimeout = true`
@@ -188,7 +188,7 @@ pipeline.enablePipeTimeout(
 )
 ```
 
-**Warning:** Retry re-executes pre-execution DITL functions. Ensure these functions are read-only and don't write to ContextBank or program memory. See [Timeout and Retry](../core-concepts/timeout-and-retry.md) for details.
+> ⚠️ **Warning:** Retry re-executes pre-execution DITL functions. Ensure these functions are read-only and don't write to ContextBank or program memory. See [Timeout and Retry](../core-concepts/timeout-and-retry.md) for details.
 
 ---
 
@@ -374,7 +374,7 @@ Direct access to the pipe instance that failed.
 #### `lastError: PipeError?`
 Direct access to the complete error object from the failed pipe.
 
-**Note:** Pipeline automatically captures errors from pipes during execution. Errors persist until explicitly cleared or the pipeline executes successfully.
+> ℹ️ **Note:** Pipeline automatically captures errors from pipes during execution. Errors persist until explicitly cleared or the pipeline executes successfully.
 
 ---
 

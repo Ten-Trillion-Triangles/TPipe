@@ -61,18 +61,18 @@ data class BedrockConfiguration(
 #### Public Properties
 
 **Core Settings:**
-- `region` - AWS region for Bedrock API calls (required)
-- `model` - Bedrock model identifier (required)
-- `pipeCount` - Number of pipes to create in manager pipeline (default: 2)
+- **`region`**: AWS region for Bedrock API calls (required)
+- **`model`**: Bedrock model identifier (required)
+- **`pipeCount`**: Number of pipes to create in manager pipeline (default: 2)
 
 **Advanced Settings:**
-- `inferenceProfile` - Optional inference profile for binding calls
-- `useConverseApi` - Whether to use Converse API vs Invoke API (default: true)
+- **`inferenceProfile`**: Optional inference profile for binding calls
+- **`useConverseApi`**: Whether to use Converse API vs Invoke API (default: true)
 
 **Authentication:**
 - `accessKey` / `secretKey` - AWS credentials (optional if using profile/IAM)
-- `sessionToken` - AWS session token for temporary credentials
-- `profileName` - AWS profile name to use
+- **`sessionToken`**: AWS session token for temporary credentials
+- **`profileName`**: AWS profile name to use
 
 #### Public Functions
 
@@ -106,14 +106,14 @@ data class OllamaConfiguration(
 #### Public Properties
 
 **Core Settings:**
-- `model` - Model name to use (required)
-- `pipeCount` - Number of pipes in manager pipeline (default: 2)
+- **`model`**: Model name to use (required)
+- **`pipeCount`**: Number of pipes in manager pipeline (default: 2)
 
 **Connection Settings:**
-- `host` - Ollama server host (default: "localhost")
-- `port` - Ollama server port (default: 11434)
-- `timeout` - Connection timeout in milliseconds (default: 30000)
-- `useHttps` - Whether to use HTTPS (default: false)
+- **`host`**: Ollama server host (default: "localhost")
+- **`port`**: Ollama server port (default: 11434)
+- **`timeout`**: Connection timeout in milliseconds (default: 30000)
+- **`useHttps`**: Whether to use HTTPS (default: false)
 
 #### Public Functions
 

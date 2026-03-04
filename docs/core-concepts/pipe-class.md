@@ -1,5 +1,8 @@
 # Pipe Class - Core Concepts
 
+> 💡 **Tip:** A **Pipe** is the fundamental unit of work in TPipe—the main Valve in your AI plumbing. It controls the flow of context to the LLM and the flow of responses back out.
+
+
 ## Table of Contents
 - [Basic Structure](#basic-structure)
 - [Builder Pattern](#builder-pattern)

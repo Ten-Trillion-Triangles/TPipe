@@ -1,6 +1,8 @@
 # TPipe - The Agent Operating Environment
 
-TPipe is an Agent Operating Environment designed for engineering robust, deterministic AI systems that can be embedded anywhere. Built on Kotlin and GraalVM, it provides strict resource accounting, secure sandboxing, and structured reasoning for production-grade multi-agent swarms.
+TPipe is an Agent Operating Environment designed for engineering robust, deterministic AI systems that can be embedded anywhere. Think of it as **Municipal Plumbing** for your LLMs: data flows through **Pipes** (Valves), gets routed along **Pipelines** (Mainlines), and pools into your ContextWindow and ContextBank (Reservoirs). Built on Kotlin and GraalVM, it provides strict resource accounting, secure sandboxing, and structured reasoning for production-grade multi-agent swarms.
+
+> 💡 **Tip:** Whether you are building a simple chatbot or a massive multi-agent swarm, TPipe gives you the deterministic control and "Developer-in-the-loop" validation you need to keep your AI on track.
 
 ## Documentation
 

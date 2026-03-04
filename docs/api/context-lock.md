@@ -29,12 +29,12 @@ data class KeyBundle(
 ```
 
 **Properties:**
-- `keys` - List of lorebook keys affected by this lock
-- `pages` - List of page keys where this lock applies
-- `isGlobal` - Whether this lock affects all pages globally
-- `isLocked` - Current lock state (true = locked, false = unlocked)
-- `isPageKey` - Whether this bundle locks a page rather than lorebook keys
-- `passthroughFunction` - Optional function that can bypass the lock when it returns true
+- **`keys`**: List of lorebook keys affected by this lock
+- **`pages`**: List of page keys where this lock applies
+- **`isGlobal`**: Whether this lock affects all pages globally
+- **`isLocked`**: Current lock state (true = locked, false = unlocked)
+- **`isPageKey`**: Whether this bundle locks a page rather than lorebook keys
+- **`passthroughFunction`**: Optional function that can bypass the lock when it returns true
 
 ## ContextLock Object
 
@@ -56,11 +56,11 @@ fun addLock(
 Registers a new lock bundle for the specified key.
 
 **Parameters:**
-- `key` - The lorebook key or page identifier to lock
-- `pageKeys` - Comma-separated list of pages where lock applies (empty = global)
-- `isPageKey` - True if locking a page, false if locking lorebook keys
-- `lockState` - Initial lock state (default: true)
-- `passthroughFunction` - Optional bypass function
+- **`key`**: The lorebook key or page identifier to lock
+- **`pageKeys`**: Comma-separated list of pages where lock applies (empty = global)
+- **`isPageKey`**: True if locking a page, false if locking lorebook keys
+- **`lockState`**: Initial lock state (default: true)
+- **`passthroughFunction`**: Optional bypass function
 
 **Example:**
 ```kotlin
@@ -192,9 +192,9 @@ Returns the set of locked lorebook keys for this ContextWindow.
 
 ContextLock enforcement is automatically integrated into all lorebook selection methods:
 
-- `findMatchingLoreBookKeys()` - Excludes locked keys from initial matching
-- `selectLoreBookContext()` - Filters locked keys from candidate selection
-- `selectAndFillLoreBookContext()` - Excludes locked keys from weight-based filling
+- **`findMatchingLoreBookKeys()`**: Excludes locked keys from initial matching
+- **`selectLoreBookContext()`**: Filters locked keys from candidate selection
+- **`selectAndFillLoreBookContext()`**: Excludes locked keys from weight-based filling
 
 ### ContextBank Integration
 

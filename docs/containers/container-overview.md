@@ -1,5 +1,8 @@
 # Container Overview
 
+> 💡 **Tip:** Containers are the **pumping stations** of your Municipal Plumbing network. They dictate how water (context) splits, merges, or pools across complex, parallel pipeline networks.
+
+
 ## Table of Contents
 - [Container vs Pipeline](#container-vs-pipeline)
 - [P2P Integration](#p2p-integration)

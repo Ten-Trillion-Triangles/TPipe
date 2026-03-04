@@ -1,5 +1,8 @@
 # Developer-in-the-Loop Functions
 
+> 💡 **Tip:** Developer-in-the-loop (DITL) is your quality assurance inspector. It ensures that the water flowing out meets your strict technical standards before continuing.
+
+
 ## Table of Contents
 - [Overview of DITL Functions](#overview-of-ditl-functions)
 - [Execution Order](#execution-order)

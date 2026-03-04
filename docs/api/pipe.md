@@ -193,24 +193,24 @@ Forces the pipe to save a snapshot to the content object at startup.
 Enables timeout tracking and configures retry behavior for this pipe.
 
 **Parameters:**
-- `applyRecursively` - If true, propagates settings to child pipes (validator, branch, transformation, reasoning)
-- `duration` - Timeout duration in milliseconds (default 300000 = 5 minutes)
-- `autoRetry` - If true, sets `timeoutStrategy = Retry` for automatic retry
-- `retryLimit` - Maximum retry attempts (default 5)
-- `customLogic` - Optional custom retry function for `CustomLogic` strategy
+- **`applyRecursively`**: If true, propagates settings to child pipes (validator, branch, transformation, reasoning)
+- **`duration`**: Timeout duration in milliseconds (default 300000 = 5 minutes)
+- **`autoRetry`**: If true, sets `timeoutStrategy = Retry` for automatic retry
+- **`retryLimit`**: Maximum retry attempts (default 5)
+- **`customLogic`**: Optional custom retry function for `CustomLogic` strategy
 
 **Behavior:** Starts timeout tracking when pipe executes. On timeout, behavior depends on strategy:
 - `Fail`: Terminates immediately (default if `autoRetry = false` and `customLogic = null`)
 - `Retry`: Automatically restores snapshot and retries up to `retryLimit` times
 - `CustomLogic`: Invokes `customLogic` function to determine retry action
 
-**Warning:** Retry re-executes ALL pre-execution DITL functions (`preInitFunction`, `preValidationFunction`, etc.). These functions MUST be read-only. Writing to ContextBank or program memory will cause duplicate writes on retry. See [Timeout and Retry](../core-concepts/timeout-and-retry.md) for details.
+> ⚠️ **Warning:** Retry re-executes ALL pre-execution DITL functions (`preInitFunction`, `preValidationFunction`, etc.). These functions MUST be read-only. Writing to ContextBank or program memory will cause duplicate writes on retry. See [Timeout and Retry](../core-concepts/timeout-and-retry.md) for details.
 
 #### `setRetryFunction(func: (suspend (pipe: Pipe, content: MultimodalContent) -> Boolean)?): Pipe`
 Sets custom retry logic function for `CustomLogic` timeout strategy.
 
 **Parameters:**
-- `func` - Function receiving pipe reference and content, returns true to retry
+- **`func`**: Function receiving pipe reference and content, returns true to retry
 
 **Behavior:** Called when timeout occurs and `timeoutStrategy = CustomLogic`. Function can analyze failure, repair content, or make external checks before deciding to retry. Return `true` to retry, `false` to fail.
 
@@ -539,7 +539,7 @@ Returns comprehensive usage data for this pipe and its children.
 **Behavior:** Provides access to detailed token usage information when comprehensive tracking is enabled, or returns an empty TokenUsage object when tracking is disabled. Includes input/output tokens and child pipe usage.
 
 **TokenUsage Methods:**
-- `getUsageBreakdown(): String` - Returns formatted breakdown of token usage for debugging purposes, showing parent pipe usage, child pipe usage, and totals in a readable format.
+- **`getUsageBreakdown(): String`**: Returns formatted breakdown of token usage for debugging purposes, showing parent pipe usage, child pipe usage, and totals in a readable format.
 
 **Usage Example:**
 ```kotlin
@@ -682,7 +682,7 @@ pipe.streamingCallbacks {
 ```
 
 **Parameters:**
-- `builder` - Lambda that configures the StreamingCallbackBuilder
+- **`builder`**: Lambda that configures the StreamingCallbackBuilder
 
 **Returns:** This pipe instance for method chaining
 
@@ -726,7 +726,7 @@ Disables streaming mode and clears all callbacks.
 
 **Behavior:** Switches back to standard (non-streaming) API calls. Clears both legacy single callback and all multi-callback manager callbacks to prevent memory leaks.
 
-**Note:** Provider-specific methods (BedrockPipe) are available in provider implementations. Base Pipe class provides `obtainStreamingCallbackManager()` and `emitStreamingChunk()` for all providers.
+> ℹ️ **Note:** Provider-specific methods (BedrockPipe) are available in provider implementations. Base Pipe class provides `obtainStreamingCallbackManager()` and `emitStreamingChunk()` for all providers.
 
 ---
 
@@ -810,7 +810,7 @@ Sets pipe to validate output using AI-based analysis.
 
 **Behavior:** Validator pipe is executed with the AI-generated output. The validator pipe's output is checked for termination status only - the actual content output is discarded. The original generated content flows to `validatorFunction` and all downstream operations. This allows AI-based validation analysis without modifying the content that continues through the pipeline.
 
-**Important:** The validator pipe's text output and modifications are not passed forward. Only its termination flag (`shouldTerminate()`) is respected.
+> ⚠️ **Important:** The validator pipe's text output and modifications are not passed forward. Only its termination flag (`shouldTerminate()`) is respected.
 
 #### `setTransformationPipe(pipe: Pipe): Pipe`
 Sets pipe to transform output instead of transformation function.
@@ -953,7 +953,7 @@ Clears the stored error information.
 #### `lastError: PipeError?`
 Direct access to the complete error object containing exception, event type, phase, pipe name, pipe ID, and timestamp.
 
-**Note:** Errors are automatically captured when trace events with failure types are logged. The error persists until explicitly cleared or the pipe executes successfully.
+> ℹ️ **Note:** Errors are automatically captured when trace events with failure types are logged. The error persists until explicitly cleared or the pipe executes successfully.
 
 ---
 

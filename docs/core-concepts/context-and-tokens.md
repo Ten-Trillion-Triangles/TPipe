@@ -74,7 +74,7 @@ val budget = TokenBudgetSettings(
 )
 ```
 
-**Important:** Multi-page budgeting strategies (DYNAMIC_FILL, DYNAMIC_SIZE_FILL, EQUAL_SPLIT, etc.) **only work with TokenBudgetSettings**. Simple `autoTruncateContext()` without TokenBudgetSettings uses basic truncation and cannot distribute budgets across multiple pages.
+> ⚠️ **Important:** Multi-page budgeting strategies (DYNAMIC_FILL, DYNAMIC_SIZE_FILL, EQUAL_SPLIT, etc.) **only work with TokenBudgetSettings**. Simple `autoTruncateContext()` without TokenBudgetSettings uses basic truncation and cannot distribute budgets across multiple pages.
 
 **What this does**: 
 - **userPromptSize**: Enforces maximum user input size, throwing errors or truncating when exceeded

@@ -1,6 +1,6 @@
 # Installation and Setup
 
-This guide covers how to add TPipe to your project and setup requirements.
+> 💡 **Tip:** Installing TPipe is like laying down the foundation of your Municipal Plumbing system. We strictly require modern tools (JDK 24, Kotlin Gradle DSL) to ensure your pipelines never leak or burst under pressure.
 
 ## Prerequisites
 

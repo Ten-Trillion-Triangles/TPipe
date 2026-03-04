@@ -1,5 +1,8 @@
 # Automatic Context Injection
 
+> 💡 **Tip:** Automatic injection ensures your Reservoirs stay topped up, seamlessly injecting global state into your LLM's context window before execution.
+
+
 ## Table of Contents
 - [What is Automatic Context Injection?](#what-is-automatic-context-injection)
 - [Context Sources](#context-sources)

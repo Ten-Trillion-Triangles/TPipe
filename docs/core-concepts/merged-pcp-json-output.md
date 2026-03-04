@@ -134,7 +134,7 @@ TPipe automatically detects which mode to use:
 | ❌ | ✅ | JSON-Only | JSON output only |
 | ❌ | ❌ | None | No special injection |
 
-**Note:** `supportsNativeJson = true` disables JSON injection, preventing merged mode.
+> ℹ️ **Note:** `supportsNativeJson = true` disables JSON injection, preventing merged mode.
 
 ## Migration Guide
 

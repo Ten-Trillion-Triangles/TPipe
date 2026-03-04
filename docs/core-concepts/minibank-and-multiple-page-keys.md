@@ -238,7 +238,7 @@ val pipe = BedrockPipe()
 - **WEIGHTED_SPLIT**: Allocates budget based on page weights
 - **PRIORITY_FILL**: Fills pages sequentially until budget is exhausted
 
-**Note:** Simple `autoTruncateContext()` without `TokenBudgetSettings` uses basic truncation and cannot optimize across multiple pages.
+> ℹ️ **Note:** Simple `autoTruncateContext()` without `TokenBudgetSettings` uses basic truncation and cannot optimize across multiple pages.
 
 ### Token Counting with MiniBank
 ```kotlin

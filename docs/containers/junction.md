@@ -1,5 +1,8 @@
 # Junction
 
+> 💡 **Tip:** The **Junction** is where multiple parallel pipes merge back into one Mainline. It collects the water from multiple upstream sources and presents a unified output.
+
+
 ## Table of Contents
 - [Current Status](#current-status)
 - [Intended Design](#intended-design)

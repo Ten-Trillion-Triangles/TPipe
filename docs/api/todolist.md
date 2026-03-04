@@ -632,18 +632,18 @@ if (incomplete.isEmpty()) {
 
 Retrieves a todo list from ContextBank.
 
-- `key` - The page key used when storing the list
-- `copy` - If `true`, returns a copy; if `false`, returns direct reference
+- **`key`**: The page key used when storing the list
+- **`copy`**: If `true`, returns a copy; if `false`, returns direct reference
 - Returns the TodoList, or an empty TodoList if not found
 
 **`emplaceTodoList(key: String, todoList: TodoList, writeToDisk: Boolean, overwrite: Boolean)`**
 
 Stores a todo list in ContextBank.
 
-- `key` - Unique identifier for this todo list
-- `todoList` - The TodoList object to store
-- `writeToDisk` - If `true`, saves to `~/.tpipe/TPipe-Default/memory/todo/<key>.todo`
-- `overwrite` - If `true`, replaces existing list with same key
+- **`key`**: Unique identifier for this todo list
+- **`todoList`**: The TodoList object to store
+- **`writeToDisk`**: If `true`, saves to `~/.tpipe/TPipe-Default/memory/todo/<key>.todo`
+- **`overwrite`**: If `true`, replaces existing list with same key
 
 **`emplaceTodoListWithMutex(key: String, todoList: TodoList, writeToDisk: Boolean, overwrite: Boolean)`**
 
@@ -662,9 +662,9 @@ Links this pipe to a todo list in ContextBank. The todo list will be injected wh
 Overrides the default instructions that explain the todo list to the AI. Use this to customize how the AI should interpret and work with the tasks.
 
 **Properties:**
-- `todoPageKey: String` - The ContextBank page key for the todo list
-- `todoListInstructions: String` - Custom instructions for todo list handling
-- `injectTodoList: Boolean` - Internal flag controlling injection
+- **`todoPageKey: String`**: The ContextBank page key for the todo list
+- **`todoListInstructions: String`**: Custom instructions for todo list handling
+- **`injectTodoList: Boolean`**: Internal flag controlling injection
 
 See [Pipe API](pipe.md#todolist-integration) for complete documentation.
 
@@ -740,9 +740,9 @@ todoList.workHistory.add(
 ```
 
 **Use appropriate roles:**
-- `ConverseRole.agent` - For AI-generated work
-- `ConverseRole.user` - For human input or instructions
-- `ConverseRole.system` - For automated system events
+- **`ConverseRole.agent`**: For AI-generated work
+- **`ConverseRole.user`**: For human input or instructions
+- **`ConverseRole.system`**: For automated system events
 
 ### Pipe Configuration
 
