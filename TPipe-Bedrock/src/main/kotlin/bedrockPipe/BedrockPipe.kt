@@ -1811,6 +1811,19 @@ put("system", if (enableCaching && cacheControl != null) {
      * Builds a Converse API request object for GPT-OSS models using the same
      * structure as the Invoke API request builder.
      */
+    /**
+     * Applies guardrail configuration to ConverseRequest builder.
+     */
+    private fun aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest.Builder.applyGuardrailConfig() {
+        if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
+            this.guardrailConfig = GuardrailConfiguration {
+                this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
+                this.guardrailVersion = this@BedrockPipe.guardrailVersion
+                this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
+            }
+        }
+    }
+
     fun buildGptOssConverseRequest(modelId: String, contentBlocks: List<ContentBlock>): ConverseRequest {
         // For ContentBlocks, we need to extract text to reuse existing JSON logic
         val promptText = contentBlocks.filterIsInstance<ContentBlock.Text>()
@@ -1862,15 +1875,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
@@ -1963,15 +1968,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
 
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
@@ -2270,15 +2267,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
@@ -2695,15 +2684,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
@@ -2756,15 +2737,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
@@ -2815,15 +2788,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
 
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
@@ -3075,15 +3040,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
 
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
@@ -3291,15 +3248,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
@@ -3355,15 +3304,7 @@ put("system", if (enableCaching && cacheControl != null) {
             additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
@@ -3407,15 +3348,7 @@ put("system", if (enableCaching && cacheControl != null) {
             additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
@@ -3462,15 +3395,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
@@ -3518,15 +3443,7 @@ put("system", if (enableCaching && cacheControl != null) {
             additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
@@ -3567,15 +3484,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
@@ -3643,15 +3552,7 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
-
-            // Add guardrail configuration if set
-            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
-                this.guardrailConfig = GuardrailConfiguration {
-                    this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
-                    this.guardrailVersion = this@BedrockPipe.guardrailVersion
-                    this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
-                }
-            }
+            applyGuardrailConfig()
         }
     }
 
