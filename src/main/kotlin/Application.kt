@@ -14,7 +14,7 @@ import io.ktor.server.netty.*
  */
 fun main(args: Array<String>)
 {
-    if (args.contains("--remote-memory"))
+    if(args.contains("--remote-memory"))
     {
         TPipeConfig.remoteMemoryEnabled = true
     }

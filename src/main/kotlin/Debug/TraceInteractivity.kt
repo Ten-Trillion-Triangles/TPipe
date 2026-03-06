@@ -12,7 +12,8 @@ object TraceInteractivity
                     const firstEventRow = document.querySelector(`.event-card[data-pipe="${'$'}{pipeName}"]`) 
                         || document.querySelector(`.trace-item[data-pipe="${'$'}{pipeName}"]`);
                     
-                    if (firstEventRow) {
+                    if(firstEventRow)
+                    {
                         highlightPipeEvents(pipeName);
                         firstEventRow.scrollIntoView({ 
                             behavior: 'smooth', 

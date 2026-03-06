@@ -12,7 +12,8 @@ import com.TTT.Pipe.getFilename
  * Enhanced BedrockPipe with multimodal support for images, documents, and other binary content.
  * Extends the base BedrockPipe to handle binary data through AWS Bedrock's ContentBlock system.
  */
-open class BedrockMultimodalPipe : BedrockPipe() {
+open class BedrockMultimodalPipe : BedrockPipe()
+{
     
     /**
      * Sets the read timeout for Bedrock API calls.
@@ -106,11 +107,12 @@ open class BedrockMultimodalPipe : BedrockPipe() {
               metadata = mapOf("internalMethod" to "generateMultimodalWithConverseApi"))
         
         // GPT-OSS models need special handling - delegate to parent class
-        if (modelId.contains("openai.gpt-oss")) {
+        if(modelId.contains("openai.gpt-oss"))
+        {
             val (textResult, response) = generateGptOssWithConverseApiAndResponse(client, modelId, content.text)
             
             // Extract reasoning content from the response for tracing
-            val reasoningContent = if (response != null) {
+            val reasoningContent = if(response != null) {
                 extractReasoningFromConverseResponse(response)
             } else ""
             
@@ -120,7 +122,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                 modelReasoning = reasoningContent
             )
 
-            if (reasoningContent.isNotEmpty()) {
+            if(reasoningContent.isNotEmpty())
+            {
                 trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
                       content = result,
                       metadata = mapOf(
@@ -134,13 +137,16 @@ open class BedrockMultimodalPipe : BedrockPipe() {
         }
         
         // DeepSeek models need special handling - get response and extract reasoning
-        if (modelId.contains("deepseek")) {
+        if(modelId.contains("deepseek"))
+        {
             val converseRequest = buildDeepSeekConverseRequestObject(modelId, listOf(ContentBlock.Text(content.text)))
             
             // Check for streaming first
-            if (streamingEnabled) {
+            if(streamingEnabled)
+            {
                 val streamingResult = executeConverseStream(client, modelId, converseRequest, "DeepSeek ConverseStream")
-                if (streamingResult != null) {
+                if(streamingResult != null)
+                {
                     return MultimodalContent(
                         text = streamingResult.text,
                         binaryContent = content.binaryContent,
@@ -153,7 +159,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
             
             // Extract text content
             val textResult = response.output?.asMessage()?.content?.mapNotNull { contentBlock ->
-                when (contentBlock) {
+                when(contentBlock)
+                {
                     is ContentBlock.Text -> contentBlock.value
                     else -> null
                 }
@@ -167,7 +174,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                 modelReasoning = reasoningContent
             )
 
-            if (reasoningContent.isNotEmpty()) {
+            if(reasoningContent.isNotEmpty())
+            {
                 trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
                       content = result,
                       metadata = mapOf(
@@ -184,7 +192,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
         val contentBlocks = mutableListOf<ContentBlock>()
         
         // Add text content
-        if (content.text.isNotEmpty()) {
+        if(content.text.isNotEmpty())
+        {
             contentBlocks.add(ContentBlock.Text(content.text))
         }
         
@@ -202,7 +211,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                   ))
             
             val contentBlock = convertBinaryToContentBlock(binaryContent)
-            if (contentBlock != null) {
+            if(contentBlock != null)
+            {
                 contentBlocks.add(contentBlock)
             }
         }
@@ -226,9 +236,11 @@ open class BedrockMultimodalPipe : BedrockPipe() {
         }
         
         // Check for streaming first
-        if (streamingEnabled) {
+        if(streamingEnabled)
+        {
             val streamingResult = executeConverseStream(client, modelId, converseRequest, "ConverseStream")
-            if (streamingResult != null) {
+            if(streamingResult != null)
+            {
                 return MultimodalContent(
                     text = streamingResult.text,
                     binaryContent = content.binaryContent,
@@ -247,18 +259,20 @@ open class BedrockMultimodalPipe : BedrockPipe() {
         val responseBinaryContent = mutableListOf<BinaryContent>()
         
         responseContent?.forEach { contentBlock ->
-            when (contentBlock) {
+            when(contentBlock)
+            {
                 is ContentBlock.Text -> {
                     responseText.add(contentBlock.value)
                 }
                 is ContentBlock.Image -> {
                     // Convert AWS Image ContentBlock back to TPipe BinaryContent
                     val imageBlock = contentBlock.value
-                    when (val source = imageBlock.source) {
+                    when(val source = imageBlock.source)
+                    {
                         is ImageSource.Bytes -> {
                             responseBinaryContent.add(BinaryContent.Bytes(
                                 data = source.value,
-                                mimeType = when (imageBlock.format) {
+                                mimeType = when(imageBlock.format) {
                                     ImageFormat.Png -> "image/png"
                                     ImageFormat.Jpeg -> "image/jpeg"
                                     ImageFormat.Gif -> "image/gif"
@@ -270,7 +284,7 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                         is ImageSource.S3Location -> {
                             responseBinaryContent.add(BinaryContent.CloudReference(
                                 uri = source.value.uri ?: "",
-                                mimeType = when (imageBlock.format) {
+                                mimeType = when(imageBlock.format) {
                                     ImageFormat.Png -> "image/png"
                                     ImageFormat.Jpeg -> "image/jpeg"
                                     ImageFormat.Gif -> "image/gif"
@@ -287,11 +301,12 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                 is ContentBlock.Document -> {
                     // Convert AWS Document ContentBlock back to TPipe BinaryContent
                     val documentBlock = contentBlock.value
-                    when (val source = documentBlock.source) {
+                    when(val source = documentBlock.source)
+                    {
                         is DocumentSource.Bytes -> {
                             responseBinaryContent.add(BinaryContent.Bytes(
                                 data = source.value,
-                                mimeType = when (documentBlock.format) {
+                                mimeType = when(documentBlock.format) {
                                     DocumentFormat.Pdf -> "application/pdf"
                                     DocumentFormat.Csv -> "text/csv"
                                     DocumentFormat.Doc -> "application/msword"
@@ -309,7 +324,7 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                         is DocumentSource.S3Location -> {
                             responseBinaryContent.add(BinaryContent.CloudReference(
                                 uri = source.value.uri ?: "",
-                                mimeType = when (documentBlock.format) {
+                                mimeType = when(documentBlock.format) {
                                     DocumentFormat.Pdf -> "application/pdf"
                                     DocumentFormat.Csv -> "text/csv"
                                     DocumentFormat.Doc -> "application/msword"
@@ -358,7 +373,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
             modelReasoning = reasoningContent
         )
 
-        if (reasoningContent.isNotEmpty()) {
+        if(reasoningContent.isNotEmpty())
+        {
             trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
                   content = result,
                   metadata = mapOf(
@@ -412,7 +428,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
         val reasoningContent = extractReasoningContent(responseBody, modelId)
         val result = MultimodalContent(text = responseText, modelReasoning = reasoningContent)
 
-        if (reasoningContent.isNotEmpty()) {
+        if(reasoningContent.isNotEmpty())
+        {
             trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
                   content = result,
                   metadata = mapOf(
@@ -434,12 +451,13 @@ open class BedrockMultimodalPipe : BedrockPipe() {
      * Returns null if the content type is not supported by Bedrock's multimodal capabilities.
      */
     private fun convertBinaryToContentBlock(binaryContent: BinaryContent): ContentBlock? {
-        return when (binaryContent) {
+        return when(binaryContent) {
             is BinaryContent.Bytes -> {
                 when {
                     binaryContent.getMimeType().startsWith("image/") -> {
                         val imageFormat = getImageFormat(binaryContent.getMimeType())
-                        if (imageFormat != null) {
+                        if(imageFormat != null)
+                        {
                             val imageBlock = ImageBlock {
                                 format = imageFormat
                                 source = ImageSource.Bytes(binaryContent.data)
@@ -449,7 +467,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                     }
                     isDocumentMimeType(binaryContent.getMimeType()) -> {
                         val documentFormat = getDocumentFormat(binaryContent.getMimeType())
-                        if (documentFormat != null) {
+                        if(documentFormat != null)
+                        {
                             val documentBlock = DocumentBlock {
                                 format = documentFormat
                                 name = binaryContent.getFilename() ?: "document.${documentFormat.value}"
@@ -469,7 +488,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                 when {
                     binaryContent.getMimeType().startsWith("image/") -> {
                         val imageFormat = getImageFormat(binaryContent.getMimeType())
-                        if (imageFormat != null) {
+                        if(imageFormat != null)
+                        {
                             val imageBlock = ImageBlock {
                                 format = imageFormat
                                 source = ImageSource.S3Location(S3Location {
@@ -481,7 +501,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
                     }
                     isDocumentMimeType(binaryContent.getMimeType()) -> {
                         val documentFormat = getDocumentFormat(binaryContent.getMimeType())
-                        if (documentFormat != null) {
+                        if(documentFormat != null)
+                        {
                             val documentBlock = DocumentBlock {
                                 format = documentFormat
                                 name = binaryContent.getFilename() ?: "document.${documentFormat.value}"
@@ -509,7 +530,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
     /**
      * Maps MIME types to AWS Bedrock ImageFormat
      */
-    private fun getImageFormat(mimeType: String): ImageFormat? = when (mimeType.lowercase()) {
+    private fun getImageFormat(mimeType: String): ImageFormat? = when(mimeType.lowercase())
+    {
         "image/png" -> ImageFormat.Png
         "image/jpeg", "image/jpg" -> ImageFormat.Jpeg
         "image/gif" -> ImageFormat.Gif
@@ -520,7 +542,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
     /**
      * Maps MIME types to AWS Bedrock DocumentFormat
      */
-    private fun getDocumentFormat(mimeType: String): DocumentFormat? = when (mimeType.lowercase()) {
+    private fun getDocumentFormat(mimeType: String): DocumentFormat? = when(mimeType.lowercase())
+    {
         "application/pdf" -> DocumentFormat.Pdf
         "text/csv", "application/csv" -> DocumentFormat.Csv
         "application/msword" -> DocumentFormat.Doc
@@ -558,7 +581,8 @@ open class BedrockMultimodalPipe : BedrockPipe() {
         // This creates a text-based representation of multimodal content
         // since Invoke API only accepts JSON with text prompts
         content.binaryContent.forEach { binaryContent ->
-            when (binaryContent) {
+            when(binaryContent)
+            {
                 is BinaryContent.Base64String -> {
                     // Add base64 content as text description with preview
                     textContent.append("\n\n[${binaryContent.getMimeType()}] ${binaryContent.filename ?: "file"}: ${binaryContent.data.take(100)}...")

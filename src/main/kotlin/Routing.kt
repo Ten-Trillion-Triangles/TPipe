@@ -90,7 +90,7 @@ fun Application.configureRouting()
                 val requests = com.TTT.Util.extractJson<List<PcPRequest>>(bodyText)
                     ?: com.TTT.Util.extractJson<PcPRequest>(bodyText)?.let { listOf(it) }
 
-                if (requests == null)
+                if(requests == null)
                 {
                     call.respond(PcpExecutionResult(
                         success = false,

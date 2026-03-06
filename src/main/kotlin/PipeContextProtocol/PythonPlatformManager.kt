@@ -59,7 +59,7 @@ class PythonPlatformManager
         
         try
         {
-            when (currentPlatform)
+            when(currentPlatform)
             {
                 "windows" -> installations.addAll(detectWindowsPython())
                 "macos" -> installations.addAll(detectMacOSPython())
@@ -84,7 +84,7 @@ class PythonPlatformManager
                 errors = errors
             )
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             errors.add("Python detection failed: ${e.message}")
             return PythonDetectionResult(
@@ -106,7 +106,7 @@ class PythonPlatformManager
      */
     fun buildPythonCommand(pythonExecutable: String, scriptContent: String, workingDirectory: String): List<String>
     {
-        return when (currentPlatform)
+        return when(currentPlatform)
         {
             "windows" -> listOf(pythonExecutable, "-c", scriptContent)
             else -> listOf(pythonExecutable, "-c", scriptContent)
@@ -124,7 +124,7 @@ class PythonPlatformManager
         return try
         {
             val file = File(executable)
-            if (!file.exists() || !file.canExecute())
+            if(!file.exists() || !file.canExecute())
             {
                 return false
             }
@@ -136,7 +136,7 @@ class PythonPlatformManager
             
             // Wait with timeout to prevent hanging
             val completed = process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
-            if (!completed)
+            if(!completed)
             {
                 process.destroyForcibly()
                 return false
@@ -144,7 +144,7 @@ class PythonPlatformManager
             
             process.exitValue() == 0
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             false
         }
@@ -166,7 +166,7 @@ class PythonPlatformManager
             
             // Wait with timeout
             val completed = process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
-            if (!completed)
+            if(!completed)
             {
                 process.destroyForcibly()
                 return "unknown"
@@ -175,7 +175,7 @@ class PythonPlatformManager
             val output = process.inputStream.bufferedReader().readText().trim()
             
             // Parse "Python 3.11.5" -> "3.11.5"
-            if (output.startsWith("Python "))
+            if(output.startsWith("Python "))
             {
                 output.substring(7)
             }
@@ -184,7 +184,7 @@ class PythonPlatformManager
                 "unknown"
             }
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             "unknown"
         }
@@ -226,7 +226,7 @@ class PythonPlatformManager
         )
         
         windowsPaths.forEach { path ->
-            if (File(path).exists() || path in listOf("python.exe", "py.exe", "python3.exe"))
+            if(File(path).exists() || path in listOf("python.exe", "py.exe", "python3.exe"))
             {
                 val version = getPythonVersion(path)
                 installations.add(PythonInstallation(path, version, "windows"))
@@ -256,7 +256,7 @@ class PythonPlatformManager
         )
         
         macosPaths.forEach { path ->
-            if (File(path).exists() || path in listOf("python3", "python"))
+            if(File(path).exists() || path in listOf("python3", "python"))
             {
                 val version = getPythonVersion(path)
                 installations.add(PythonInstallation(path, version, "macos"))
@@ -286,7 +286,7 @@ class PythonPlatformManager
         )
         
         linuxPaths.forEach { path ->
-            if (File(path).exists() || path in listOf("python3", "python"))
+            if(File(path).exists() || path in listOf("python3", "python"))
             {
                 val version = getPythonVersion(path)
                 installations.add(PythonInstallation(path, version, "linux"))

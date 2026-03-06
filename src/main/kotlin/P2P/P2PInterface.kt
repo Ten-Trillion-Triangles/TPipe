@@ -7,7 +7,8 @@ import com.TTT.Pipeline.Pipeline
  * Interface for P2P communication. Enables handling requests, connecting to the TPipe llm frameworks inside container
  * classes and pipelines. Activating pipelines and containers, and setting and getting p2p data.
  */
-interface P2PInterface {
+interface P2PInterface
+{
 
     /** Getter and setter. Too many objects will have either different names, access levels, or other complications
      * which unfortunately forces us to deploy basic P2P actions through this interface.

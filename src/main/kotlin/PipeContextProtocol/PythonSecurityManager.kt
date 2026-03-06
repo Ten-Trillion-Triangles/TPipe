@@ -164,26 +164,26 @@ class PythonSecurityManager(
         val warnings = mutableListOf<String>()
         
         // Validate script size (primarily to prevent memory exhaustion, not security)
-        if (script.length > securityConfig.maxScriptSize)
+        if(script.length > securityConfig.maxScriptSize)
         {
             errors.add("Script size ${script.length} exceeds maximum ${securityConfig.maxScriptSize} bytes")
         }
         
         // Validate timeout
-        if (context.timeoutMs > securityConfig.maxTimeoutMs)
+        if(context.timeoutMs > securityConfig.maxTimeoutMs)
         {
             errors.add("Timeout ${context.timeoutMs}ms exceeds maximum allowed ${securityConfig.maxTimeoutMs}ms")
         }
         
         // Validate permissions based on detected operations
-        if (securityConfig.requirePermissions)
+        if(securityConfig.requirePermissions)
         {
-            if (containsFileOperations(script) && !context.permissions.contains(Permissions.Write))
+            if(containsFileOperations(script) && !context.permissions.contains(Permissions.Write))
             {
                 errors.add("Write permission required for file operations")
             }
             
-            if (containsNetworkOperations(script) && !context.permissions.contains(Permissions.Read))
+            if(containsNetworkOperations(script) && !context.permissions.contains(Permissions.Read))
             {
                 errors.add("Read permission required for network operations")
             }
@@ -229,7 +229,7 @@ class PythonSecurityManager(
             )
             
             importPatterns.forEach { pattern ->
-                if (getCompiledRegex(pattern).containsMatchIn(script))
+                if(getCompiledRegex(pattern).containsMatchIn(script))
                 {
                     errors.add("Import '$blockedImport' is not allowed at current security level (Regex match)")
                     return@forEach // Break inner loop once found
@@ -244,7 +244,7 @@ class PythonSecurityManager(
                 "import\\s+$allowedImport\\s+as\\s+\\w+"
             )
 
-            if (importPatterns.any { pattern -> getCompiledRegex(pattern).containsMatchIn(script) })
+            if(importPatterns.any { pattern -> getCompiledRegex(pattern).containsMatchIn(script) })
             {
                 warnings.add("Import '$allowedImport' allowed via security override (Regex match)")
             }
@@ -259,7 +259,7 @@ class PythonSecurityManager(
             )
             
             functionPatterns.forEach { pattern ->
-                if (getCompiledRegex(pattern).containsMatchIn(script))
+                if(getCompiledRegex(pattern).containsMatchIn(script))
                 {
                     errors.add("Function '$blockedFunction' is not allowed at current security level (Regex match)")
                     return@forEach // Break inner loop once found
@@ -273,7 +273,7 @@ class PythonSecurityManager(
                 "getattr\\s*\\([^,]+,\\s*['\"]${allowedFunction.split(".").last()}['\"]\\s*\\)"
             )
 
-            if (functionPatterns.any { pattern -> getCompiledRegex(pattern).containsMatchIn(script) })
+            if(functionPatterns.any { pattern -> getCompiledRegex(pattern).containsMatchIn(script) })
             {
                 warnings.add("Function '$allowedFunction' allowed via security override (Regex match)")
             }
@@ -282,14 +282,14 @@ class PythonSecurityManager(
         // Check blocked patterns with compiled regex
         val blockedPatterns = getBlockedPatterns() - securityConfig.allowedPatterns
         blockedPatterns.forEach { pattern ->
-            if (getCompiledRegex(pattern).containsMatchIn(script))
+            if(getCompiledRegex(pattern).containsMatchIn(script))
             {
                 errors.add("Pattern '$pattern' is not allowed at current security level")
             }
         }
 
         securityConfig.allowedPatterns.forEach { pattern ->
-            if (getCompiledRegex(pattern).containsMatchIn(script))
+            if(getCompiledRegex(pattern).containsMatchIn(script))
             {
                 warnings.add("Pattern '$pattern' allowed via security override")
             }
@@ -307,7 +307,7 @@ class PythonSecurityManager(
         var tempValidatorFile: File? = null
         try
         {
-            val pythonExecutable = if (context.pythonPath.isNotEmpty()) context.pythonPath else {
+            val pythonExecutable = if(context.pythonPath.isNotEmpty()) context.pythonPath else {
                 platformManager.detectPythonInstallations().defaultInstallation?.executable ?: "python3"
             }
 
@@ -341,7 +341,7 @@ class PythonSecurityManager(
             process.outputStream.bufferedWriter().use { it.write(inputJson) }
 
             val completed = process.waitFor(10, TimeUnit.SECONDS)
-            if (!completed)
+            if(!completed)
             {
                 process.destroyForcibly()
                 return@withContext PythonValidationResult(false, listOf("AST Validation timed out"))
@@ -349,7 +349,7 @@ class PythonSecurityManager(
 
             val output = process.inputStream.bufferedReader().readText()
 
-            if (process.exitValue() != 0)
+            if(process.exitValue() != 0)
             {
                 return@withContext PythonValidationResult(false, listOf("AST Validator failed: $output"))
             }
@@ -361,7 +361,7 @@ class PythonSecurityManager(
 
             PythonValidationResult(isValid, errors, warnings)
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             PythonValidationResult(false, listOf("AST Validation error: ${e.message}"))
         }
@@ -372,7 +372,7 @@ class PythonSecurityManager(
      */
     private fun getBlockedImports(): Set<String>
     {
-        return when (securityConfig.level)
+        return when(securityConfig.level)
         {
             PythonSecurityLevel.STRICT -> PythonConstants.DANGEROUS_IMPORTS + setOf("sys", "importlib", "ctypes")
             PythonSecurityLevel.BALANCED -> PythonConstants.DANGEROUS_IMPORTS // Only most dangerous
@@ -386,7 +386,7 @@ class PythonSecurityManager(
      */
     private fun getBlockedFunctions(): Set<String>
     {
-        return when (securityConfig.level)
+        return when(securityConfig.level)
         {
             PythonSecurityLevel.STRICT -> PythonConstants.DANGEROUS_FUNCTIONS + setOf("eval", "exec", "compile", "__import__")
             PythonSecurityLevel.BALANCED -> PythonConstants.DANGEROUS_FUNCTIONS // Only direct system calls
@@ -400,7 +400,7 @@ class PythonSecurityManager(
      */
     private fun getBlockedPatterns(): Set<String>
     {
-        return when (securityConfig.level)
+        return when(securityConfig.level)
         {
             PythonSecurityLevel.STRICT -> PythonConstants.DANGEROUS_PATTERNS.toSet()
             PythonSecurityLevel.BALANCED -> setOf("eval\\s*\\(", "exec\\s*\\(") // Only code injection

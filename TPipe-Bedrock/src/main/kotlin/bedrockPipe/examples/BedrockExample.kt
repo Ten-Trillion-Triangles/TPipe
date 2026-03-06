@@ -69,7 +69,7 @@ fun main() = runBlocking {
             content.text.isNotEmpty() && content.text.length > 10
         }
         .setTransformationFunction { content ->
-            val trimmed = content.text.trim().take(200) + if (content.text.length > 200) "..." else ""
+            val trimmed = content.text.trim().take(200) + if(content.text.length > 200) "..." else ""
             content.text = trimmed
             content
         }

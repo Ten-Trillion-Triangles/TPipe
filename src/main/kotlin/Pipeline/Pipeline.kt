@@ -33,7 +33,8 @@ import java.util.UUID
  * prediction model. Each AI is intended to make a single prediction, and it's return call operated upon, then
  * moved forward into the specified pipe.
  */
-class Pipeline : P2PInterface {
+class Pipeline : P2PInterface
+{
 //=============================================== Properties =========================================================//
 
     /**
@@ -225,7 +226,8 @@ class Pipeline : P2PInterface {
         return description
     }
 
-    override fun setP2pDescription(description: P2PDescriptor) {
+    override fun setP2pDescription(description: P2PDescriptor)
+    {
         p2pDescriptor = description
     }
 
@@ -234,11 +236,13 @@ class Pipeline : P2PInterface {
         return transport
     }
 
-    override fun setP2pTransport(transport: P2PTransport) {
+    override fun setP2pTransport(transport: P2PTransport)
+    {
         p2pTransport = transport
     }
 
-    override fun setP2pRequirements(requirements: P2PRequirements) {
+    override fun setP2pRequirements(requirements: P2PRequirements)
+    {
         p2PRequirements = requirements
     }
 
@@ -250,7 +254,8 @@ class Pipeline : P2PInterface {
         return pipelineContainer
     }
 
-    override fun setContainerObject(container: Any) {
+    override fun setContainerObject(container: Any)
+    {
         pipelineContainer = container
     }
 
@@ -478,12 +483,17 @@ class Pipeline : P2PInterface {
         this.pipeTimeout = duration
         this.maxRetryAttempts = retryLimit
         
-        if(autoRetry) {
+        if(autoRetry)
+        {
              this.timeoutStrategy = PipeTimeoutStrategy.Retry
-        } else if(customLogic != null) {
+        }
+        else if(customLogic != null)
+        {
              this.timeoutStrategy = PipeTimeoutStrategy.CustomLogic
              this.pipeRetryFunction = customLogic
-        } else {
+        }
+        else
+        {
              this.timeoutStrategy = PipeTimeoutStrategy.Fail
         }
         
@@ -497,7 +507,8 @@ class Pipeline : P2PInterface {
      */
     fun add(pipe: Pipe): Pipeline
     {
-        if (!pipes.contains(pipe)) {
+        if(!pipes.contains(pipe))
+        {
             pipes.add(pipe)
             pipe.setPipelineRef(this)
         }
@@ -612,7 +623,7 @@ class Pipeline : P2PInterface {
      */
     fun getFailureAnalysis(): FailureAnalysis?
     {
-        return if (tracingEnabled) PipeTracer.getFailureAnalysis(pipelineId) else null
+        return if(tracingEnabled) PipeTracer.getFailureAnalysis(pipelineId) else null
     }
 
     /**
@@ -784,9 +795,10 @@ class Pipeline : P2PInterface {
      */
     suspend fun pause()
     {
-        if (!pausingEnabled) return  // No-op if no pause points declared
+        if(!pausingEnabled) return  // No-op if no pause points declared
         
-        if (tracingEnabled) {
+        if(tracingEnabled)
+        {
             trace(TraceEventType.PIPELINE_PAUSE, TracePhase.ORCHESTRATION,
                   metadata = mapOf("currentPipeIndex" to currentPipeIndex))
         }
@@ -796,7 +808,8 @@ class Pipeline : P2PInterface {
         resumeSignal.receive()
         isPaused = false
         
-        if (tracingEnabled) {
+        if(tracingEnabled)
+        {
             trace(TraceEventType.PIPELINE_RESUME, TracePhase.ORCHESTRATION,
                   metadata = mapOf("currentPipeIndex" to currentPipeIndex))
         }
@@ -831,7 +844,8 @@ class Pipeline : P2PInterface {
      */
     private suspend fun checkPausePoint()
     {
-        if (pausingEnabled && isPaused) {
+        if(pausingEnabled && isPaused)
+        {
             resumeSignal.receive()
             isPaused = false
         }
@@ -844,7 +858,7 @@ class Pipeline : P2PInterface {
      */
     private fun getCurrentPipe(): Pipe?
     {
-        return if (currentPipeIndex < pipes.size) pipes[currentPipeIndex] else null
+        return if(currentPipeIndex < pipes.size) pipes[currentPipeIndex] else null
     }
 
     /**
@@ -855,7 +869,8 @@ class Pipeline : P2PInterface {
      */
     private suspend fun checkConditionalPause(pipe: Pipe, content: MultimodalContent)
     {
-        if (conditionalPauseFunction?.invoke(pipe, content) == true) {
+        if(conditionalPauseFunction?.invoke(pipe, content) == true)
+        {
             pause()
         }
     }
@@ -877,7 +892,7 @@ class Pipeline : P2PInterface {
         error: Throwable? = null
     )
     {
-        if (!tracingEnabled) return
+        if(!tracingEnabled) return
         
         val event = TraceEvent(
             timestamp = System.currentTimeMillis(),
@@ -1099,7 +1114,8 @@ class Pipeline : P2PInterface {
 
         //Run pre validation function prior to any execution operations on the content object.
         preValidationFunction?.let { func ->
-            if (tracingEnabled) {
+            if(tracingEnabled)
+            {
                 trace(TraceEventType.VALIDATION_START, TracePhase.PRE_VALIDATION, initialContent,
                     metadata = mapOf("pipelineFunctionType" to "preValidation"))
             }
@@ -1107,12 +1123,16 @@ class Pipeline : P2PInterface {
             try {
                 func.invoke(context, miniBank, initialContent)
                 
-                if (tracingEnabled) {
+                if(tracingEnabled)
+                {
                     trace(TraceEventType.VALIDATION_SUCCESS, TracePhase.PRE_VALIDATION, initialContent,
                         metadata = mapOf("pipelineFunctionType" to "preValidation"))
                 }
-            } catch (e: Exception) {
-                if (tracingEnabled) {
+            }
+            catch(e: Exception)
+            {
+                if(tracingEnabled)
+                {
                     trace(TraceEventType.VALIDATION_FAILURE, TracePhase.PRE_VALIDATION, initialContent,
                         metadata = mapOf("pipelineFunctionType" to "preValidation"), error = e)
                 }
@@ -1137,7 +1157,8 @@ class Pipeline : P2PInterface {
         while(currentPipeIndex < pipes.size)
         {
             // PAUSE POINT 1: Before pipe execution (if declared)
-            if (pauseBeforePipes) {
+            if(pauseBeforePipes)
+            {
                 checkPausePoint()
             }
 
@@ -1148,7 +1169,7 @@ class Pipeline : P2PInterface {
             // Check conditional pause before pipe execution
             conditionalPauseFunction?.let { checkConditionalPause(pipe, generatedContent) }
             
-            if (tracingEnabled)
+            if(tracingEnabled)
             {
                 pipe.enableTracing(traceConfig)
                 pipe.addTraceId(pipelineId)
@@ -1163,25 +1184,26 @@ class Pipeline : P2PInterface {
                 generatedContent = result.await()
                 
                 // Capture pipe errors after execution
-                if (pipe.hasError())
+                if(pipe.hasError())
                 {
                     lastFailedPipe = pipe
                     lastError = pipe.lastError
                 }
                 
                 // Also check if error was propagated through content
-                if (generatedContent.pipeError != null && lastError == null)
+                if(generatedContent.pipeError != null && lastError == null)
                 {
                     lastFailedPipe = pipe
                     lastError = generatedContent.pipeError
                 }
             }
 
-            catch(e: Exception) {
+            catch(e: Exception)
+            {
                 trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, generatedContent, error = e)
                 
                 // Capture exception-based failures
-                if (pipe.hasError())
+                if(pipe.hasError())
                 {
                     lastFailedPipe = pipe
                     lastError = pipe.lastError
@@ -1199,7 +1221,7 @@ class Pipeline : P2PInterface {
             
             //Track token usage from pipes that have comprehensive tracking enabled.
             val pipeIndex = currentPipeIndex
-            if (pipe.isComprehensiveTokenTrackingEnabled())
+            if(pipe.isComprehensiveTokenTrackingEnabled())
             {
                 //Add this pipe's token usage to the pipeline's aggregated tracking.
                 pipelineTokenUsage.addChildUsage("pipe-$pipeIndex-${pipe.pipeName}", pipe.getTokenUsage())
@@ -1210,7 +1232,8 @@ class Pipeline : P2PInterface {
             }
 
             // PAUSE POINT 2: After pipe execution (if declared)
-            if (pauseAfterPipes) {
+            if(pauseAfterPipes)
+            {
                 checkPausePoint()
             }
 
@@ -1232,19 +1255,20 @@ class Pipeline : P2PInterface {
                 generatedContent = repeatPipeResult.await()
                 
                 // PAUSE POINT 3: After repeat pipe (if declared)
-                if (pauseAfterRepeats) {
+                if(pauseAfterRepeats)
+                {
                     checkPausePoint()
                 }
             }
 
             if(generatedContent.shouldTerminate())
             {
-                if (tracingEnabled)
+                if(tracingEnabled)
                 {
                     PipeTracer.addEvent(pipelineId, TraceEvent(
                         timestamp = System.currentTimeMillis(),
                         pipeId = "pipeline-${pipelineId}",
-                        pipeName = if (pipe.pipeName.isNotEmpty()) pipe.pipeName else pipe.javaClass.simpleName,
+                        pipeName = if(pipe.pipeName.isNotEmpty()) pipe.pipeName else pipe.javaClass.simpleName,
                         eventType = TraceEventType.PIPELINE_TERMINATION,
                         phase = TracePhase.CLEANUP,
                         content = generatedContent,
@@ -1263,7 +1287,7 @@ class Pipeline : P2PInterface {
                     PipeTracer.addEvent(pipelineId, TraceEvent(
                         timestamp = System.currentTimeMillis(),
                         pipeId = "pipeline-${pipelineId}",
-                        pipeName = if (pipe.pipeName.isNotEmpty()) pipe.pipeName else pipe.javaClass.simpleName,
+                        pipeName = if(pipe.pipeName.isNotEmpty()) pipe.pipeName else pipe.javaClass.simpleName,
                         eventType = TraceEventType.PIPELINE_TERMINATION,
                         phase = TracePhase.CLEANUP,
                         content = generatedContent,
@@ -1286,7 +1310,8 @@ class Pipeline : P2PInterface {
             }
 
             // PAUSE POINT 4: Before jump operations (if declared)
-            if (pauseBeforeJumps && !generatedContent.getJumpToPipe().isEmpty()) {
+            if(pauseBeforeJumps && !generatedContent.getJumpToPipe().isEmpty())
+            {
                 checkPausePoint()
             }
 
@@ -1295,7 +1320,8 @@ class Pipeline : P2PInterface {
         }
 
         // PAUSE POINT 5: On pipeline completion (if declared)
-        if (pauseOnCompletion) {
+        if(pauseOnCompletion)
+        {
             checkPausePoint()
         }
 

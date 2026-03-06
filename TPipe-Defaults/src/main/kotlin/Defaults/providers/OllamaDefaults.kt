@@ -37,7 +37,7 @@ internal object OllamaDefaults
         val pipeline = Pipeline()
         
         //Create the specified number of pipes for the manager pipeline
-        for (i in 2..config.pipeCount)
+        for(i in 2..config.pipeCount)
         {
             val pipe = createOllamaPipe(config)
             pipeline.add(pipe)

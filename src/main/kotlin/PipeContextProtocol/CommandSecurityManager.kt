@@ -359,7 +359,7 @@ class CommandSecurityManager
         
         // Check platform-specific classification
         commandDatabase[command]?.let { classification ->
-            if (classification.platform == currentPlatform || 
+            if(classification.platform == currentPlatform ||
                 classification.platform == Platform.UNIX_LIKE ||
                 (currentPlatform == Platform.MACOS && classification.platform == Platform.UNIX_LIKE))
             {
@@ -380,7 +380,7 @@ class CommandSecurityManager
     ): Boolean
     {
         // If specific commands are allowed, check that first
-        if (allowedCommands.isNotEmpty())
+        if(allowedCommands.isNotEmpty())
         {
             return allowedCommands.contains(command)
         }
@@ -391,7 +391,7 @@ class CommandSecurityManager
         val commandLevel = classification?.level ?: SecurityLevel.RESTRICTED
         
         // Check if command level is within allowed range
-        return when (maxSecurityLevel)
+        return when(maxSecurityLevel)
         {
             SecurityLevel.SAFE -> commandLevel == SecurityLevel.SAFE
             SecurityLevel.RESTRICTED -> commandLevel in listOf(SecurityLevel.SAFE, SecurityLevel.RESTRICTED)
@@ -429,13 +429,13 @@ class CommandSecurityManager
         val normalizedPath = path.replace("\\", "/").lowercase()
         
         // Block system directories
-        val systemPaths = when (getCurrentPlatform())
+        val systemPaths = when(getCurrentPlatform())
         {
             Platform.WINDOWS -> listOf("c:/windows", "c:/system32", "c:/program files")
             else -> listOf("/etc", "/sys", "/proc", "/dev", "/boot", "/root")
         }
         
-        if (systemPaths.any { normalizedPath.startsWith(it) })
+        if(systemPaths.any { normalizedPath.startsWith(it) })
         {
             return permissions.contains(Permissions.Execute) // Only allow with explicit execute permission
         }
@@ -456,7 +456,7 @@ class CommandSecurityManager
      */
     fun validateSessionAccess(sessionId: String, userId: String): Boolean
     {
-        if (sessionId.isEmpty() || userId.isEmpty()) return false
+        if(sessionId.isEmpty() || userId.isEmpty()) return false
         
         val session = StdioSessionManager.getSession(sessionId)
         
@@ -482,7 +482,7 @@ class CommandSecurityManager
         sanitized = sanitized.replace(Regex("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]"), "")
         
         // Limit length
-        if (sanitized.length > maxLength)
+        if(sanitized.length > maxLength)
         {
             sanitized = sanitized.take(maxLength)
         }
@@ -505,12 +505,14 @@ class CommandSecurityManager
         val warnings = mutableListOf<String>()
         var isValid = true
         
-        if (sessionCount > 10) {
+        if(sessionCount > 10)
+        {
             warnings.add("Too many active sessions: $sessionCount")
             isValid = false
         }
         
-        if (memoryPercent > 80) {
+        if(memoryPercent > 80)
+        {
             warnings.add("High memory usage: ${memoryPercent.toInt()}%")
             isValid = false
         }
@@ -536,7 +538,7 @@ class CommandSecurityManager
                 classification.platform == Platform.UNIX_LIKE ||
                 (currentPlatform == Platform.MACOS && classification.platform == Platform.UNIX_LIKE)
             
-            val isWithinLevel = when (maxLevel)
+            val isWithinLevel = when(maxLevel)
             {
                 SecurityLevel.SAFE -> classification.level == SecurityLevel.SAFE
                 SecurityLevel.RESTRICTED -> classification.level in listOf(SecurityLevel.SAFE, SecurityLevel.RESTRICTED)

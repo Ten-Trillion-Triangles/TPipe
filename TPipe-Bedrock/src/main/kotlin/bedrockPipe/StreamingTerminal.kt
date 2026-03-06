@@ -9,16 +9,19 @@ import com.TTT.Pipe.Pipe
  * This helper ensures that every Bedrock-backed pipe in the set emits tokens as they arrive, including any
  * reasoning pipes that have been associated via [Pipe.setReasoningPipe].
  */
-fun streamOutputToTerminal(vararg pipes: Pipe) {
+fun streamOutputToTerminal(vararg pipes: Pipe)
+{
     streamOutputToTerminal(pipes.asList())
 }
 
 /**
  * Enables streaming output on the provided pipes and their reasoning workflows.
  */
-fun streamOutputToTerminal(pipes: Iterable<Pipe>) {
+fun streamOutputToTerminal(pipes: Iterable<Pipe>)
+{
     val configured = mutableSetOf<Pipe>()
-    for (pipe in pipes) {
+    for(pipe in pipes)
+    {
         configureStreamingForPipe(pipe, configured)
     }
 }
@@ -27,7 +30,8 @@ private fun configureStreamingForPipe(
     pipe: Pipe?,
     configured: MutableSet<Pipe>,
 ) {
-    if (pipe == null || !configured.add(pipe)) {
+    if(pipe == null || !configured.add(pipe))
+    {
         return
     }
 
@@ -35,8 +39,10 @@ private fun configureStreamingForPipe(
     configureStreamingForPipe(pipe.reasoningPipe, configured)
 }
 
-private fun configureBedrockStreaming(pipe: Pipe) {
-    if (pipe !is BedrockPipe) {
+private fun configureBedrockStreaming(pipe: Pipe)
+{
+    if(pipe !is BedrockPipe)
+    {
         return
     }
 
@@ -46,7 +52,8 @@ private fun configureBedrockStreaming(pipe: Pipe) {
         } as (String) -> Unit)
 }
 
-private fun printChunk(chunk: String) {
+private fun printChunk(chunk: String)
+{
     print(chunk)
     System.out.flush()
 }
@@ -54,6 +61,7 @@ private fun printChunk(chunk: String) {
 /**
  * Enables streaming output for every pipe registered with the pipeline.
  */
-fun streamPipelineOutputToTerminal(pipeline: Pipeline) {
+fun streamPipelineOutputToTerminal(pipeline: Pipeline)
+{
     streamOutputToTerminal(pipeline.getPipes())
 }

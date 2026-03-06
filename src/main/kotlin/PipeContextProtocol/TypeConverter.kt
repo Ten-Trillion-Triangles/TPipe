@@ -52,7 +52,7 @@ class PrimitiveConverter : TypeConverter
      */
     override fun canConvert(from: ParamType, to: String): Boolean 
     {
-        return when (from) 
+        return when(from)
         {
             ParamType.String -> to.contains("String")
             ParamType.Int -> to.contains("Int")
@@ -69,12 +69,12 @@ class PrimitiveConverter : TypeConverter
      */
     override fun convert(value: Any?, targetType: String): Any? 
     {
-        if (value == null) return null
+        if(value == null) return null
         
         val stringValue = value.toString()
         val isNullable = targetType.endsWith("?")
         
-        if (stringValue.isEmpty() && isNullable) return null
+        if(stringValue.isEmpty() && isNullable) return null
         
         return try
         {
@@ -88,7 +88,7 @@ class PrimitiveConverter : TypeConverter
                 else -> convertToEnum(stringValue, targetType)
             }
         } 
-        catch (e: NumberFormatException) 
+        catch(e: NumberFormatException)
         {
             throw IllegalArgumentException("Cannot convert '$stringValue' to $targetType: ${e.message}")
         }
@@ -105,7 +105,7 @@ class PrimitiveConverter : TypeConverter
         {
             java.lang.Enum.valueOf(enumClass, candidate)
         }
-        catch (e: IllegalArgumentException)
+        catch(e: IllegalArgumentException)
         {
             throw IllegalArgumentException("Value '$candidate' is not valid for enum ${enumClass.name}", e)
         }
@@ -117,10 +117,10 @@ class PrimitiveConverter : TypeConverter
         attempts.add(className)
 
         var binaryCandidate = className
-        while (true)
+        while(true)
         {
             val lastDot = binaryCandidate.lastIndexOf('.')
-            if (lastDot < 0) break
+            if(lastDot < 0) break
             binaryCandidate = binaryCandidate.substring(0, lastDot) + "$" + binaryCandidate.substring(lastDot + 1)
             attempts.add(binaryCandidate)
         }
@@ -131,20 +131,20 @@ class PrimitiveConverter : TypeConverter
             ClassLoader.getSystemClassLoader()
         ).distinct()
 
-        for (loader in classLoaders)
+        for(loader in classLoaders)
         {
-            for (candidate in attempts)
+            for(candidate in attempts)
             {
                 try
                 {
                     val rawClass = loader.loadClass(candidate)
-                    if (rawClass.isEnum)
+                    if(rawClass.isEnum)
                     {
                         @Suppress("UNCHECKED_CAST")
                         return rawClass as Class<out Enum<*>>
                     }
                 }
-                catch (_: ClassNotFoundException)
+                catch(_: ClassNotFoundException)
                 {
                     // Try next candidate
                 }
@@ -184,7 +184,7 @@ class CollectionConverter : TypeConverter
      */
     override fun canConvert(from: ParamType, to: String): Boolean 
     {
-        return when (from) 
+        return when(from)
         {
             ParamType.List -> to.contains("List") || to.contains("Array")
             ParamType.Map -> to.contains("Map")
@@ -198,10 +198,10 @@ class CollectionConverter : TypeConverter
      */
     override fun convert(value: Any?, targetType: String): Any? 
     {
-        if (value == null) return null
+        if(value == null) return null
         
         val stringValue = value.toString()
-        if (stringValue.isEmpty()) return null
+        if(stringValue.isEmpty()) return null
         
         return try 
         {
@@ -213,7 +213,7 @@ class CollectionConverter : TypeConverter
                 else -> throw IllegalArgumentException("Unsupported collection type: $targetType")
             }
         } 
-        catch (e: Exception) 
+        catch(e: Exception)
         {
             throw IllegalArgumentException("Cannot convert '$stringValue' to $targetType: ${e.message}")
         }
@@ -225,7 +225,7 @@ class CollectionConverter : TypeConverter
      */
     override fun convertBack(value: Any?, sourceType: ParamType): String 
     {
-        return if (value == null) "" else json.encodeToString(value)
+        return if(value == null) "" else json.encodeToString(value)
     }
 }
 
@@ -253,16 +253,16 @@ class ObjectConverter : TypeConverter
      */
     override fun convert(value: Any?, targetType: String): Any? 
     {
-        if (value == null) return null
+        if(value == null) return null
         
         val stringValue = value.toString()
-        if (stringValue.isEmpty()) return null
+        if(stringValue.isEmpty()) return null
         
         return try 
         {
             json.decodeFromString<Map<String, Any>>(stringValue)
         } 
-        catch (e: Exception) 
+        catch(e: Exception)
         {
             // Fallback to string if JSON parsing fails
             stringValue
@@ -275,7 +275,7 @@ class ObjectConverter : TypeConverter
      */
     override fun convertBack(value: Any?, sourceType: ParamType): String 
     {
-        return when (value) 
+        return when(value)
         {
             null -> ""
             is String -> value
@@ -283,7 +283,7 @@ class ObjectConverter : TypeConverter
             {
                 json.encodeToString(value)
             } 
-            catch (e: Exception) 
+            catch(e: Exception)
             {
                 value.toString()
             }

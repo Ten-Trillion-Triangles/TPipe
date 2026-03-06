@@ -30,11 +30,11 @@ object MemoryServer
             {
                 // Always check auth if routes are accessed, regardless of enable flag
                 val authMechanism = P2PRegistry.globalAuthMechanism
-                if (authMechanism != null)
+                if(authMechanism != null)
                 {
                     val authHeader = call.request.header("Authorization") ?: ""
                     val isAuthorized = authMechanism(authHeader)
-                    if (!isAuthorized)
+                    if(!isAuthorized)
                     {
                         call.respond(P2PResponse().apply {
                             rejection = P2PRejection(P2PError.auth, "Unauthorized memory request")
@@ -72,10 +72,10 @@ object MemoryServer
                         rejection = P2PRejection(P2PError.transport, "Failed to deserialize ContextWindow")
                     })
 
-                    if (TPipeConfig.enforceMemoryVersioning)
+                    if(TPipeConfig.enforceMemoryVersioning)
                     {
                         val existing = ContextBank.getContextFromBank(key, skipRemote = true)
-                        if (window.version < existing.version)
+                        if(window.version < existing.version)
                         {
                             // If client version is older, attempt server-side merge if possible
                             // For simplicity, we currently just reject and expect client to fetch-merge-save
@@ -167,10 +167,10 @@ object MemoryServer
                         rejection = P2PRejection(P2PError.transport, "Failed to deserialize TodoList")
                     })
 
-                    if (TPipeConfig.enforceMemoryVersioning)
+                    if(TPipeConfig.enforceMemoryVersioning)
                     {
                         val existing = ContextBank.getPagedTodoList(key, skipRemote = true)
-                        if (todo.version < existing.version)
+                        if(todo.version < existing.version)
                         {
                             return@post call.respond(P2PResponse().apply {
                                 rejection = P2PRejection(P2PError.transport, "Versioning conflict: server version is ${existing.version}, client version is ${todo.version}")
@@ -237,7 +237,7 @@ object MemoryServer
                     val body = call.receiveText()
                     val lockState = body.toBoolean()
 
-                    if (lockState) ContextLock.lockKeyBundleWithMutex(key, skipRemote = true)
+                    if(lockState) ContextLock.lockKeyBundleWithMutex(key, skipRemote = true)
                     else ContextLock.unlockKeyBundleWithMutex(key, skipRemote = true)
 
                     call.respond(true)

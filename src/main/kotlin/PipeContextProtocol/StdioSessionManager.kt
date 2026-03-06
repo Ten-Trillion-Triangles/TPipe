@@ -73,7 +73,7 @@ object StdioSessionManager
         // Always check resource limits before creating session (hard enforced)
         val securityManager = CommandSecurityManager()
         val resourceCheck = securityManager.checkResourceLimits(sessionId)
-        if (!resourceCheck.isValid)
+        if(!resourceCheck.isValid)
         {
             throw SecurityException("Resource limit exceeded: ${resourceCheck.warnings.joinToString(", ")}")
         }
@@ -106,7 +106,7 @@ object StdioSessionManager
             activeSessions[sessionId] = session
             session
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             throw RuntimeException("Failed to create session: ${e.message}", e)
         }
@@ -154,16 +154,16 @@ object StdioSessionManager
             
             // Simple timeout mechanism - read available lines
             var attempts = 0
-            while (attempts < 10 && !reader.ready())
+            while(attempts < 10 && !reader.ready())
             {
                 Thread.sleep(100)
                 attempts++
             }
             
-            while (reader.ready())
+            while(reader.ready())
             {
                 val line = reader.readLine()
-                if (line != null)
+                if(line != null)
                 {
                     output.appendLine(line)
                 }
@@ -179,7 +179,7 @@ object StdioSessionManager
                 isActive = session.process?.isAlive ?: false
             )
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             SessionResponse("", "Communication error: ${e.message}", false)
         }
@@ -197,12 +197,12 @@ object StdioSessionManager
             val output = StringBuilder()
             val startTime = System.currentTimeMillis()
             
-            while (System.currentTimeMillis() - startTime < timeoutMs)
+            while(System.currentTimeMillis() - startTime < timeoutMs)
             {
-                if (reader.ready())
+                if(reader.ready())
                 {
                     val line = reader.readLine()
-                    if (line != null)
+                    if(line != null)
                     {
                         output.appendLine(line)
                     }
@@ -215,7 +215,7 @@ object StdioSessionManager
             
             output.toString()
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             "Error reading output: ${e.message}"
         }
@@ -236,7 +236,7 @@ object StdioSessionManager
             
             // Terminate process
             session.process?.let { process ->
-                if (process.isAlive)
+                if(process.isAlive)
                 {
                     process.destroyForcibly()
                     process.waitFor(5, TimeUnit.SECONDS)
@@ -250,7 +250,7 @@ object StdioSessionManager
             
             return true
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             return false
         }

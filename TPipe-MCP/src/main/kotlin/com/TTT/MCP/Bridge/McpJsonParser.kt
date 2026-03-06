@@ -63,7 +63,8 @@ class McpJsonParser
                 ?: throw IllegalArgumentException("Tool '$name' missing required inputSchema")
             
             val schemaType = inputSchema["type"]?.jsonPrimitive?.content
-            if (schemaType != "object") {
+            if(schemaType != "object")
+            {
                 throw IllegalArgumentException("Tool '$name' inputSchema must have type 'object', got '$schemaType'")
             }
             

@@ -18,7 +18,7 @@ object Dictionary
             val stream = object {}.javaClass.getResourceAsStream("/Words.txt") ?: error("No dictionary")
             stream.bufferedReader().use { it.readLines().filter { line -> line.isNotBlank() } }
         }
-        catch (e : Exception)
+        catch(e : Exception)
         {
             emptyList()
         }
@@ -30,16 +30,19 @@ object Dictionary
         val lowerText = text.lowercase()
         var longestMatch: String? = null
         
-        for (len in minOf(text.length, 50) downTo 1) {
+        for(len in minOf(text.length, 50) downTo 1)
+        {
             val substring = lowerText.substring(0, len)
             
-            if (wholeWordsOnly) {
+            if(wholeWordsOnly)
+            {
                 // Check if it's a complete word boundary
                 val isWholeWord = (len == text.length || !text[len].isLetter())
-                if (!isWholeWord) continue
+                if(!isWholeWord) continue
             }
             
-            if (wordsSet.contains(substring)) {
+            if(wordsSet.contains(substring))
+            {
                 longestMatch = substring
                 break
             }
@@ -53,21 +56,24 @@ object Dictionary
         val matches = mutableListOf<Pair<String, Int>>()
         var pos = 0
         
-        while (pos < text.length) {
+        while(pos < text.length)
+        {
             var found = false
             
-            for (len in minOf(text.length - pos, 50) downTo 1) {
+            for(len in minOf(text.length - pos, 50) downTo 1)
+            {
                 val substring = lowerText.substring(pos, pos + len)
                 
-                if (wordsSet.contains(substring)) {
+                if(wordsSet.contains(substring))
+                {
                     matches.add(substring to pos)
-                    pos += if (allowOverlaps) 1 else len
+                    pos += if(allowOverlaps) 1 else len
                     found = true
                     break
                 }
             }
             
-            if (!found) pos++
+            if(!found) pos++
         }
         
         return matches
@@ -129,7 +135,7 @@ object Dictionary
         ) : Int
     {
         // Handle empty input - no tokens to count
-        if (text.isEmpty()) return 0
+        if(text.isEmpty()) return 0
         
         var tokenCount = 0
 
@@ -203,7 +209,8 @@ object Dictionary
                             
                             // FIX: Count the skipped non-word characters
                             val skippedLength = i - matchEnd
-                            if (skippedLength > 0) {
+                            if(skippedLength > 0)
+                            {
                                 wordTokens += (skippedLength + nonWordSplitCount - 1) / nonWordSplitCount
                             }
                             i
@@ -304,13 +311,13 @@ object Dictionary
         )
         
         // Return original text if already within limit
-        if (currentTokens <= tokenMax) return text
+        if(currentTokens <= tokenMax) return text
         
         // Split text into words for processing
         val words = text.split(" ")
         
         // Apply truncation strategy based on settings
-        return when (truncateSettings) 
+        return when(truncateSettings)
         {
             // Remove words from beginning, keep end
             ContextWindowSettings.TruncateTop ->
@@ -319,7 +326,7 @@ object Dictionary
                 val result = mutableListOf<String>()
                 
                 // Process words from end to beginning
-                for (i in words.indices.reversed()) 
+                for(i in words.indices.reversed())
                 {
                     val wordTokens = countTokens(
                         words[i], countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
@@ -327,7 +334,7 @@ object Dictionary
                     )
                     
                     // Add word if it fits within token limit
-                    if (tokens + wordTokens <= tokenMax) 
+                    if(tokens + wordTokens <= tokenMax)
                     {
                         result.add(0, words[i])
                         tokens += wordTokens
@@ -345,7 +352,7 @@ object Dictionary
                 val result = mutableListOf<String>()
                 
                 // Process words from beginning to end
-                for (word in words) 
+                for(word in words)
                 {
                     val wordTokens = countTokens(
                         word, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
@@ -353,7 +360,7 @@ object Dictionary
                     )
                     
                     // Add word if it fits within token limit
-                    if (tokens + wordTokens <= tokenMax) 
+                    if(tokens + wordTokens <= tokenMax)
                     {
                         result.add(word)
                         tokens += wordTokens
@@ -375,14 +382,14 @@ object Dictionary
                 val bottomWords = mutableListOf<String>()
                 
                 // Collect words from beginning
-                for (word in words) 
+                for(word in words)
                 {
                     val wordTokens = countTokens(
                         word, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                         splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
                     )
                     
-                    if (topTokens + wordTokens <= halfTarget) 
+                    if(topTokens + wordTokens <= halfTarget)
                     {
                         topWords.add(word)
                         topTokens += wordTokens
@@ -391,7 +398,7 @@ object Dictionary
                 }
                 
                 // Collect words from end, avoiding overlap with beginning
-                for (i in words.indices.reversed()) 
+                for(i in words.indices.reversed())
                 {
                     val wordTokens = countTokens(
                         words[i], countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
@@ -399,12 +406,12 @@ object Dictionary
                     )
                     
                     // Only add if within token limit and not overlapping with top words
-                    if (bottomTokens + wordTokens <= halfTarget && i >= topWords.size) 
+                    if(bottomTokens + wordTokens <= halfTarget && i >= topWords.size)
                     {
                         bottomWords.add(0, words[i])
                         bottomTokens += wordTokens
                     } 
-                    else if (i < topWords.size) break
+                    else if(i < topWords.size) break
                 }
                 
                 // Combine beginning and end words
@@ -489,10 +496,10 @@ object Dictionary
         }
         
         // Return original list if already within limit
-        if (totalTokens <= tokenMax) return messages
+        if(totalTokens <= tokenMax) return messages
         
         // Apply truncation strategy based on settings
-        return when (truncateSettings)
+        return when(truncateSettings)
         {
             // Remove messages from beginning, keep end
             ContextWindowSettings.TruncateTop ->
@@ -501,7 +508,7 @@ object Dictionary
                 val result = mutableListOf<String>()
                 
                 // Process messages from end to beginning
-                for (i in messages.indices.reversed())
+                for(i in messages.indices.reversed())
                 {
                     val messageTokens = countTokens(
                         messages[i], countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
@@ -509,7 +516,7 @@ object Dictionary
                     )
                     
                     // Add message if it fits within token limit
-                    if (tokens + messageTokens <= tokenMax)
+                    if(tokens + messageTokens <= tokenMax)
                     {
                         result.add(0, messages[i])
                         tokens += messageTokens
@@ -527,7 +534,7 @@ object Dictionary
                 val result = mutableListOf<String>()
                 
                 // Process messages from beginning to end
-                for (message in messages)
+                for(message in messages)
                 {
                     val messageTokens = countTokens(
                         message, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
@@ -535,7 +542,7 @@ object Dictionary
                     )
                     
                     // Add message if it fits within token limit
-                    if (tokens + messageTokens <= tokenMax)
+                    if(tokens + messageTokens <= tokenMax)
                     {
                         result.add(message)
                         tokens += messageTokens
@@ -557,14 +564,14 @@ object Dictionary
                 val bottomMessages = mutableListOf<String>()
                 
                 // Collect messages from beginning
-                for (message in messages)
+                for(message in messages)
                 {
                     val messageTokens = countTokens(
                         message, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                         splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
                     )
                     
-                    if (topTokens + messageTokens <= halfTarget)
+                    if(topTokens + messageTokens <= halfTarget)
                     {
                         topMessages.add(message)
                         topTokens += messageTokens
@@ -573,7 +580,7 @@ object Dictionary
                 }
                 
                 // Collect messages from end, avoiding overlap with beginning
-                for (i in messages.indices.reversed())
+                for(i in messages.indices.reversed())
                 {
                     val messageTokens = countTokens(
                         messages[i], countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
@@ -581,12 +588,12 @@ object Dictionary
                     )
                     
                     // Only add if within token limit and not overlapping with top messages
-                    if (bottomTokens + messageTokens <= halfTarget && i >= topMessages.size)
+                    if(bottomTokens + messageTokens <= halfTarget && i >= topMessages.size)
                     {
                         bottomMessages.add(0, messages[i])
                         bottomTokens += messageTokens
                     }
-                    else if (i < topMessages.size) break
+                    else if(i < topMessages.size) break
                 }
                 
                 // Combine beginning and end messages

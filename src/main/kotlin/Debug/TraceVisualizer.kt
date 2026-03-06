@@ -1,6 +1,7 @@
 package com.TTT.Debug
 
-class TraceVisualizer {
+class TraceVisualizer
+{
     
     fun generateFlowChart(trace: List<TraceEvent>): String {
         val flowChart = StringBuilder()
@@ -8,14 +9,17 @@ class TraceVisualizer {
         // Detect if this is a Manifold trace
         val isManifoldTrace = trace.any { it.eventType.name.startsWith("MANIFOLD_") }
         
-        if (isManifoldTrace) {
+        if(isManifoldTrace)
+        {
             flowChart.append("=== Manifold Orchestration Flow ===\n")
-        } else {
+        }
+        else
+        {
             flowChart.append("=== Pipeline Flow Chart ===\n")
         }
         
         trace.forEach { event ->
-            val symbol = when (event.eventType) {
+            val symbol = when(event.eventType) {
                 // Existing pipe events
                 TraceEventType.PIPE_START -> "▶️"
                 TraceEventType.PIPE_SUCCESS -> "✅"
@@ -75,7 +79,8 @@ class TraceVisualizer {
             val elapsed = event.timestamp - startTime
             timeline.append("[${elapsed}ms] ${event.pipeName}: ${event.eventType} (${event.phase})\n")
             
-            if (event.error != null) {
+            if(event.error != null)
+            {
                 timeline.append("    ERROR: ${event.error.message}\n")
             }
         }
@@ -88,7 +93,7 @@ class TraceVisualizer {
         output.append("=== TPipe Execution Trace ===\n")
         
         trace.forEach { event ->
-            val status = when (event.eventType) {
+            val status = when(event.eventType) {
                 TraceEventType.PIPE_SUCCESS, TraceEventType.API_CALL_SUCCESS, TraceEventType.VALIDATION_SUCCESS -> "[SUCCESS]"
                 TraceEventType.PIPE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE -> "[FAILURE]"
                 else -> "[INFO]"
@@ -96,11 +101,13 @@ class TraceVisualizer {
             
             output.append("$status ${event.pipeName} - ${event.eventType} (${event.phase})\n")
             
-            if (event.error != null) {
+            if(event.error != null)
+            {
                 output.append("  Error: ${event.error.message}\n")
             }
             
-            if (event.metadata.isNotEmpty()) {
+            if(event.metadata.isNotEmpty())
+            {
                 output.append("  Metadata: ${event.metadata}\n")
             }
         }
@@ -111,9 +118,11 @@ class TraceVisualizer {
     fun generateHtmlReport(trace: List<TraceEvent>): String {
         val isManifoldTrace = trace.any { it.eventType.name.startsWith("MANIFOLD_") }
         
-        return if (isManifoldTrace) {
+        return if(isManifoldTrace) {
             generateManifoldHtmlReport(trace)
-        } else {
+        }
+        else
+        {
             generateStandardHtmlReport(trace)
         }
     }
@@ -137,12 +146,14 @@ class TraceVisualizer {
             val nodeKey = TraceNodeMapper.resolveNodeKey(event)
             val currentNode = nodeMap[nodeKey]
             
-            if (prevNode != null && currentNode != null && prevNode != currentNode) {
+            if(prevNode != null && currentNode != null && prevNode != currentNode)
+            {
                 graph.append("    $prevNode --> $currentNode\n")
             }
             
             // Add styling based on event type
-            when (event.eventType) {
+            when(event.eventType)
+            {
                 TraceEventType.PIPE_SUCCESS, TraceEventType.API_CALL_SUCCESS -> {
                     currentNode?.let { graph.append("    $it:::success\n") }
                 }
@@ -154,7 +165,8 @@ class TraceVisualizer {
                 }
             }
             
-            if (currentNode != null) {
+            if(currentNode != null)
+            {
                 prevNode = currentNode
             }
         }
@@ -185,21 +197,23 @@ class TraceVisualizer {
         
         trace.forEach { event ->
             val elapsed = event.timestamp - startTime
-            val statusClass = when (event.eventType) {
+            val statusClass = when(event.eventType) {
                 TraceEventType.PIPE_SUCCESS, TraceEventType.API_CALL_SUCCESS, TraceEventType.VALIDATION_SUCCESS -> "success"
                 TraceEventType.PIPE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE -> "failure"
                 else -> "info"
             }
             
-            val status = when (event.eventType) {
+            val status = when(event.eventType) {
                 TraceEventType.PIPE_SUCCESS, TraceEventType.API_CALL_SUCCESS, TraceEventType.VALIDATION_SUCCESS -> "✅ SUCCESS"
                 TraceEventType.PIPE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE -> "❌ FAILURE"
                 else -> "ℹ️ INFO"
             }
             
-            val metadata = if (event.error != null) {
+            val metadata = if(event.error != null) {
                 "<strong>Error:</strong> ${event.error.message}"
-            } else if (event.metadata.isNotEmpty() || event.content?.text?.isNotBlank() == true) {
+            }
+            else if(event.metadata.isNotEmpty() || event.content?.text?.isNotBlank() == true)
+            {
                 // Separate reasoning content, inputText, and outputText from other metadata for better display
                 val reasoningKeys = listOf("modelReasoning", "reasoningPipeContent", "reasoningContent")
                 val reasoningKey = event.metadata.keys.find { it in reasoningKeys }
@@ -216,15 +230,17 @@ class TraceVisualizer {
                 val keysToExtract = setOfNotNull(reasoningKey, inputKey, outputKey, requestObjectKey, generatedContentKey, fullPromptKey, contentTextKey, pageKeyKey, contextWindowKey, miniBankKey)
                 val otherMetadata = event.metadata.filterKeys { it !in keysToExtract }
                 
-                val metadataHtml = if (otherMetadata.isNotEmpty()) {
+                val metadataHtml = if(otherMetadata.isNotEmpty()) {
                     otherMetadata.entries.joinToString("<br>") { "<strong>${it.key}:</strong> ${it.value}" }
-                } else {
+                }
+                else
+                {
                     ""
                 }
                 
                 // Helper to create an expandable section
                 fun createExpandableSection(label: String, content: String, icon: String, color: String): String {
-                    if (content.isBlank() || content == "N/A" || content == "null") return ""
+                    if(content.isBlank() || content == "N/A" || content == "null") return ""
                     return """
                         <details style="margin-top: 8px;">
                             <summary style="cursor: pointer; color: ${color}; font-weight: bold;">
@@ -237,86 +253,103 @@ class TraceVisualizer {
                 }
 
                 val sections = mutableListOf<String>()
-                if (metadataHtml.isNotEmpty()) {
+                if(metadataHtml.isNotEmpty())
+                {
                     sections.add(metadataHtml)
                 }
 
                 // Add inputText
                 val inputText = inputKey?.let { event.metadata[it]?.toString() } ?:
-                    if (event.eventType == TraceEventType.PIPE_START || event.eventType == TraceEventType.CONTEXT_PULL)
+                    if(event.eventType == TraceEventType.PIPE_START || event.eventType == TraceEventType.CONTEXT_PULL)
                         event.content?.text
                     else null
 
-                if (!inputText.isNullOrBlank() && inputText != "N/A" && inputText != "null") {
+                if(!inputText.isNullOrBlank() && inputText != "N/A" && inputText != "null")
+                {
                     sections.add(createExpandableSection("Input Content", inputText, "📥", "#28a745"))
                 }
 
                 // Add outputText
                 val outputText = outputKey?.let { event.metadata[it]?.toString() } ?:
-                    if (event.eventType == TraceEventType.PIPE_SUCCESS || event.eventType == TraceEventType.API_CALL_SUCCESS)
+                    if(event.eventType == TraceEventType.PIPE_SUCCESS || event.eventType == TraceEventType.API_CALL_SUCCESS)
                         event.content?.text
                     else null
 
-                if (!outputText.isNullOrBlank() && outputText != "N/A" && outputText != "null") {
+                if(!outputText.isNullOrBlank() && outputText != "N/A" && outputText != "null")
+                {
                     sections.add(createExpandableSection("Output Content", outputText, "📤", "#17a2b8"))
                 }
 
                 // Add requestObject
                 val requestObject = requestObjectKey?.let { event.metadata[it]?.toString() }
-                if (!requestObject.isNullOrBlank() && requestObject != "N/A" && requestObject != "null") {
+                if(!requestObject.isNullOrBlank() && requestObject != "N/A" && requestObject != "null")
+                {
                     sections.add(createExpandableSection("Request Object", requestObject, "📦", "#6c757d"))
                 }
 
                 // Add generatedContent
                 val generatedContent = generatedContentKey?.let { event.metadata[it]?.toString() }
-                if (!generatedContent.isNullOrBlank() && generatedContent != "N/A" && generatedContent != "null") {
+                if(!generatedContent.isNullOrBlank() && generatedContent != "N/A" && generatedContent != "null")
+                {
                     sections.add(createExpandableSection("Generated Content", generatedContent, "✨", "#fd7e14"))
                 }
 
                 // Add fullPrompt
                 val fullPrompt = fullPromptKey?.let { event.metadata[it]?.toString() }
-                if (!fullPrompt.isNullOrBlank() && fullPrompt != "N/A" && fullPrompt != "null") {
+                if(!fullPrompt.isNullOrBlank() && fullPrompt != "N/A" && fullPrompt != "null")
+                {
                     sections.add(createExpandableSection("Full Prompt", fullPrompt, "📝", "#000000"))
                 }
 
                 // Add contentText
                 val contentText = contentTextKey?.let { event.metadata[it]?.toString() }
-                if (!contentText.isNullOrBlank() && contentText != "N/A" && contentText != "null") {
+                if(!contentText.isNullOrBlank() && contentText != "N/A" && contentText != "null")
+                {
                     sections.add(createExpandableSection("Content Text", contentText, "📄", "#000000"))
                 }
 
                 // Add pageKey
                 val pageKey = pageKeyKey?.let { event.metadata[it]?.toString() }
-                if (!pageKey.isNullOrBlank() && pageKey != "N/A" && pageKey != "null") {
+                if(!pageKey.isNullOrBlank() && pageKey != "N/A" && pageKey != "null")
+                {
                     sections.add(createExpandableSection("Page Key", pageKey, "🔑", "#ffc107"))
                 }
 
                 // Add contextWindow
                 val contextWindow = contextWindowKey?.let { event.metadata[it]?.toString() }
-                if (!contextWindow.isNullOrBlank() && contextWindow != "N/A" && contextWindow != "null") {
+                if(!contextWindow.isNullOrBlank() && contextWindow != "N/A" && contextWindow != "null")
+                {
                     sections.add(createExpandableSection("Context Window", contextWindow, "🪟", "#6f42c1"))
                 }
 
                 // Add miniBank
                 val miniBank = miniBankKey?.let { event.metadata[it]?.toString() }
-                if (!miniBank.isNullOrBlank() && miniBank != "N/A" && miniBank != "null") {
+                if(!miniBank.isNullOrBlank() && miniBank != "N/A" && miniBank != "null")
+                {
                     sections.add(createExpandableSection("Mini Bank", miniBank, "🏦", "#e83e8c"))
                 }
 
                 // Add reasoning content in an expandable section
-                if (reasoningKey != null) {
+                if(reasoningKey != null)
+                {
                     val reasoningContent = event.metadata[reasoningKey].toString()
-                    if (reasoningContent.isNotBlank() && reasoningContent != "N/A" && reasoningContent != "null") {
+                    if(reasoningContent.isNotBlank() && reasoningContent != "N/A" && reasoningContent != "null")
+                    {
                         sections.add(createExpandableSection("reasoningContent", reasoningContent, "🧠", "#007bff"))
                     }
                 }
 
-                if (sections.isNotEmpty()) {
+                if(sections.isNotEmpty())
+                {
                     sections.joinToString("")
-                } else {
+                }
+                else
+                {
                     "-"
                 }
-            } else {
+            }
+            else
+            {
                 "-"
             }
             
@@ -498,7 +531,7 @@ class TraceVisualizer {
         nodes.forEach { node ->
             graph.append("    ${node.nodeId}[\"${escapeHtml(node.pipeName)}\"]\n")
             graph.append("    click ${node.nodeId} scrollToEvent\n")
-            val styleClass = when (node.status) {
+            val styleClass = when(node.status) {
                 NodeStatus.SUCCESS -> "success"
                 NodeStatus.FAILURE -> "failure"
                 NodeStatus.INFO -> "info"
@@ -511,7 +544,8 @@ class TraceVisualizer {
         trace.forEach { event ->
             val label = mapManifoldNodeName(event)
             val node = nodeMap[label] ?: return@forEach
-            if (previousNodeId != null && previousNodeId != node.nodeId) {
+            if(previousNodeId != null && previousNodeId != node.nodeId)
+            {
                 graph.append("    $previousNodeId --> ${node.nodeId}\n")
             }
             previousNodeId = node.nodeId
@@ -575,7 +609,8 @@ class TraceVisualizer {
             .forEach { event ->
                 val agentName = event.metadata["agentName"] as? String ?: "Unknown"
                 val stats = agentStats.getOrPut(agentName) { mutableMapOf() }
-                when (event.eventType) {
+                when(event.eventType)
+                {
                     TraceEventType.AGENT_DISPATCH -> stats["dispatches"] = stats.getOrDefault("dispatches", 0) + 1
                     TraceEventType.AGENT_RESPONSE -> stats["responses"] = stats.getOrDefault("responses", 0) + 1
                     else -> {} // Ignore other event types
@@ -588,7 +623,7 @@ class TraceVisualizer {
         agentStats.forEach { (agentName, stats) ->
             val dispatches = stats["dispatches"] ?: 0
             val responses = stats["responses"] ?: 0
-            val successRate = if (dispatches > 0) (responses * 100 / dispatches) else 0
+            val successRate = if(dispatches > 0) (responses * 100 / dispatches) else 0
             val pipeName = "$AGENT_NODE_PREFIX$agentName"
             table.append("<tr class=\"trace-item agent-row\" data-pipe=\"$pipeName\"><td>$agentName</td><td>$dispatches</td><td>$responses</td><td>$successRate%</td></tr>")
         }
@@ -626,7 +661,7 @@ class TraceVisualizer {
             event.eventType.name.startsWith("MANAGER_") -> MANAGER_NODE_NAME
             event.eventType in listOf(TraceEventType.AGENT_DISPATCH, TraceEventType.AGENT_RESPONSE) ->
                 "$AGENT_NODE_PREFIX${event.metadata["agentName"] ?: "Unknown"}"
-            else -> if (event.pipeName.isNotBlank()) event.pipeName else MANIFOLD_NODE_NAME
+            else -> if(event.pipeName.isNotBlank()) event.pipeName else MANIFOLD_NODE_NAME
         }
     }
 
@@ -635,7 +670,7 @@ class TraceVisualizer {
     }
 
     private fun formatMetadata(metadata: Map<String, Any>): String {
-        if (metadata.isEmpty()) return "<p class=\"empty-state\">No metadata recorded for this event.</p>"
+        if(metadata.isEmpty()) return "<p class=\"empty-state\">No metadata recorded for this event.</p>"
         val items = metadata.entries.joinToString("") { (key, value) ->
             "<div class=\"metadata-item\"><strong>${escapeHtml(key)}</strong><span>${escapeHtml(value.toString())}</span></div>"
         }
@@ -645,13 +680,13 @@ class TraceVisualizer {
     private fun formatContentSummary(event: TraceEvent): String {
         val parts = mutableListOf<String>()
         event.content?.text?.takeIf { it.isNotBlank() }?.let { text ->
-            val preview = if (text.length > 220) "${text.take(220)}…" else text
+            val preview = if(text.length > 220) "${text.take(220)}…" else text
             parts.add("<div class=\"content-preview\"><pre>${escapeHtml(preview)}</pre></div>")
         }
         event.contextSnapshot?.let { snapshot ->
             parts.add("<span class=\"context-chip\">Context: ${escapeHtml(snapshot.toString())}</span>")
         }
-        if (parts.isEmpty()) return "<p class=\"empty-state\">No content captured for this event.</p>"
+        if(parts.isEmpty()) return "<p class=\"empty-state\">No content captured for this event.</p>"
         val inner = parts.joinToString("")
         return "<details class=\"event-details\"><summary>Content &amp; Context</summary>$inner</details>"
     }
@@ -720,7 +755,7 @@ class TraceVisualizer {
     }
 
     private fun buildManifoldSummary(trace: List<TraceEvent>): String {
-        if (trace.isEmpty()) return ""
+        if(trace.isEmpty()) return ""
         val totalEvents = trace.size
         val failureCount = trace.count { classifyEventSeverity(it) == EventSeverity.FAILURE }
         val successCount = trace.count { classifyEventSeverity(it) == EventSeverity.SUCCESS }
@@ -732,7 +767,7 @@ class TraceVisualizer {
             .mapNotNull { it.metadata["agentName"]?.toString() }
             .distinct()
         val duration = formatDuration(durationMs)
-        val agentSummary = if (agentNames.isEmpty()) "No agent interactions" else agentNames.joinToString(", ") { escapeHtml(it) }
+        val agentSummary = if(agentNames.isEmpty()) "No agent interactions" else agentNames.joinToString(", ") { escapeHtml(it) }
 
         return """
             <div class="summary-grid">
@@ -761,7 +796,7 @@ class TraceVisualizer {
     }
 
     private fun formatDuration(durationMs: Long): String {
-        if (durationMs <= 0) return "0 ms"
+        if(durationMs <= 0) return "0 ms"
         val seconds = durationMs / 1000
         val millis = durationMs % 1000
         val minutes = seconds / 60
@@ -805,7 +840,7 @@ class TraceVisualizer {
     private fun formatNodeLabel(nodeKey: String): String {
         fun splitLabel(marker: String, key: String): String {
             val index = key.indexOf(marker)
-            if (index == -1) return key
+            if(index == -1) return key
             val prefix = key.substring(0, index)
             val suffix = key.substring(index + marker.length)
             return "$prefix\n${suffix.replace('_', ' ')}"
@@ -834,10 +869,12 @@ class TraceVisualizer {
         trace.forEach { event ->
             val nodeKey = TraceNodeMapper.resolveNodeKey(event)
             val currentNode = nodeMap[nodeKey]
-            if (prevNode != null && currentNode != null && prevNode != currentNode) {
+            if(prevNode != null && currentNode != null && prevNode != currentNode)
+            {
                 graph.append("    $prevNode --> $currentNode\n")
             }
-            if (currentNode != null) {
+            if(currentNode != null)
+            {
                 prevNode = currentNode
             }
         }
@@ -846,7 +883,7 @@ class TraceVisualizer {
     private fun addNodeStyling(graph: StringBuilder, nodes: List<TraceNode>) 
     {
         nodes.forEach { node ->
-            val cssClass = when (node.status) {
+            val cssClass = when(node.status) {
                 NodeStatus.SUCCESS -> "success"
                 NodeStatus.FAILURE -> "failure"
                 NodeStatus.WARNING -> "warning"

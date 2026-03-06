@@ -82,9 +82,9 @@ class StreamingCallbackManager(
      */
     suspend fun emitToAll(chunk: String)
     {
-        if (callbacks.isEmpty()) return
+        if(callbacks.isEmpty()) return
 
-        when (executionMode)
+        when(executionMode)
         {
             StreamingExecutionMode.SEQUENTIAL -> emitSequential(chunk)
             StreamingExecutionMode.CONCURRENT -> emitConcurrent(chunk)
@@ -96,13 +96,13 @@ class StreamingCallbackManager(
      */
     private suspend fun emitSequential(chunk: String)
     {
-        for (callback in callbacks)
+        for(callback in callbacks)
         {
             try
             {
                 callback(chunk)
             }
-            catch (e: Exception)
+            catch(e: Exception)
             {
                 onError?.invoke(e, chunk)
             }
@@ -113,14 +113,14 @@ class StreamingCallbackManager(
      * Emits chunk to all callbacks concurrently using coroutines.
      */
     private suspend fun emitConcurrent(chunk: String) = coroutineScope {
-        for (callback in callbacks)
+        for(callback in callbacks)
         {
             launch {
                 try
                 {
                     callback(chunk)
                 }
-                catch (e: Exception)
+                catch(e: Exception)
                 {
                     onError?.invoke(e, chunk)
                 }

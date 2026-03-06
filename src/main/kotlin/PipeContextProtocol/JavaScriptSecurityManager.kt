@@ -29,7 +29,7 @@ class JavaScriptSecurityManager
         val blockedModules = JavaScriptConstants.DANGEROUS_MODULES - context.allowedModules.toSet()
         blockedModules.forEach { module ->
             val pattern = "require\\s*\\(\\s*['\"]$module['\"]\\s*\\)"
-            if (Regex(pattern).containsMatchIn(script))
+            if(Regex(pattern).containsMatchIn(script))
             {
                 errors.add("Module '$module' is not allowed")
             }
@@ -37,7 +37,7 @@ class JavaScriptSecurityManager
 
         // Check dangerous patterns
         JavaScriptConstants.DANGEROUS_PATTERNS.forEach { pattern ->
-            if (Regex(pattern).containsMatchIn(script))
+            if(Regex(pattern).containsMatchIn(script))
             {
                 errors.add("Dangerous pattern detected: $pattern")
             }

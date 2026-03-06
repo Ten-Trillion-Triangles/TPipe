@@ -46,10 +46,10 @@ class PcpResponseParser
         {
             // Try to extract single PCP request first using TPipe's extractJson
             val singleRequest = extractJson<PcPRequest>(llmResponse)
-            if (singleRequest != null)
+            if(singleRequest != null)
             {
                 val validation = validatePcpRequest(singleRequest)
-                if (validation.isValid)
+                if(validation.isValid)
                 {
                     requests.add(singleRequest)
                 }
@@ -62,12 +62,12 @@ class PcpResponseParser
             {
                 // Try to extract array of PCP requests
                 val multipleRequests = extractJson<List<PcPRequest>>(llmResponse)
-                if (multipleRequests != null)
+                if(multipleRequests != null)
                 {
-                    for (request in multipleRequests)
+                    for(request in multipleRequests)
                     {
                         val validation = validatePcpRequest(request)
-                        if (validation.isValid)
+                        if(validation.isValid)
                         {
                             requests.add(request)
                         }
@@ -83,7 +83,7 @@ class PcpResponseParser
                 }
             }
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             errors.add("Failed to parse PCP requests: ${e.message}")
         }
@@ -109,17 +109,17 @@ class PcpResponseParser
         
         // Determine transport based on populated context options
         val transport = determineTransport(request)
-        if (transport == Transport.Unknown)
+        if(transport == Transport.Unknown)
         {
             errors.add("No valid transport context found - at least one context option must be populated")
         }
         
         // Validate transport-specific requirements
-        when (transport)
+        when(transport)
         {
             Transport.Tpipe ->
             {
-                if (request.tPipeContextOptions.functionName.isEmpty())
+                if(request.tPipeContextOptions.functionName.isEmpty())
                 {
                     errors.add("Function name is required for native function transport")
                 }
@@ -127,7 +127,7 @@ class PcpResponseParser
             
             Transport.Stdio ->
             {
-                if (request.stdioContextOptions.command.isEmpty())
+                if(request.stdioContextOptions.command.isEmpty())
                 {
                     errors.add("Command is required for stdio transport")
                 }
@@ -135,7 +135,7 @@ class PcpResponseParser
             
             Transport.Http ->
             {
-                if (request.httpContextOptions.baseUrl.isEmpty())
+                if(request.httpContextOptions.baseUrl.isEmpty())
                 {
                     errors.add("Base URL is required for HTTP transport")
                 }
@@ -143,7 +143,7 @@ class PcpResponseParser
             
             Transport.Python ->
             {
-                if (request.argumentsOrFunctionParams.isEmpty())
+                if(request.argumentsOrFunctionParams.isEmpty())
                 {
                     errors.add("Python script is required for Python transport")
                 }
@@ -151,7 +151,7 @@ class PcpResponseParser
 
             Transport.Kotlin ->
             {
-                if (request.argumentsOrFunctionParams.isEmpty())
+                if(request.argumentsOrFunctionParams.isEmpty())
                 {
                     errors.add("Kotlin script is required for Kotlin transport")
                 }
@@ -159,7 +159,7 @@ class PcpResponseParser
 
             Transport.JavaScript ->
             {
-                if (request.argumentsOrFunctionParams.isEmpty())
+                if(request.argumentsOrFunctionParams.isEmpty())
                 {
                     errors.add("JavaScript script is required for JavaScript transport")
                 }

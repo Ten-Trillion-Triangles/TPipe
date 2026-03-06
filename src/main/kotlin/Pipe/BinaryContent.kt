@@ -14,7 +14,8 @@ import java.util.Base64
  * Supports multiple transport formats and automatic conversion between them.
  */
 @Serializable
-sealed class BinaryContent {
+sealed class BinaryContent
+{
     
     /**
      * Raw binary data stored as byte array
@@ -33,8 +34,8 @@ sealed class BinaryContent {
         )
         
         override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (javaClass != other?.javaClass) return false
+            if(this === other) return true
+            if(javaClass != other?.javaClass) return false
             other as Bytes
             return data.contentEquals(other.data) && mimeType == other.mimeType && filename == other.filename
         }
@@ -189,7 +190,7 @@ data class MultimodalContent(
      */
     fun addText(additionalText: String)
     {
-        text = if (text.isEmpty()) additionalText else "$text\n\n$additionalText"
+        text = if(text.isEmpty()) additionalText else "$text\n\n$additionalText"
     }
     
     /**
@@ -324,17 +325,20 @@ data class MultimodalContent(
     fun merge(other: MultimodalContent)
     {
         // Merge text content
-        if (other.text.isNotEmpty()) {
+        if(other.text.isNotEmpty())
+        {
             addText(other.text)
         }
         
         // Replace binary content if other has content
-        if (other.binaryContent.isNotEmpty()) {
+        if(other.binaryContent.isNotEmpty())
+        {
             binaryContent = other.binaryContent.toMutableList()
         }
         
         // Replace model reasoning if other has content
-        if (other.modelReasoning.isNotEmpty()) {
+        if(other.modelReasoning.isNotEmpty())
+        {
             modelReasoning = other.modelReasoning
         }
         
@@ -362,7 +366,8 @@ data class MultimodalContent(
 /**
  * Extension function to get MIME type from BinaryContent
  */
-fun BinaryContent.getMimeType(): String = when (this) {
+fun BinaryContent.getMimeType(): String = when(this)
+{
     is BinaryContent.Bytes -> mimeType
     is BinaryContent.Base64String -> mimeType
     is BinaryContent.CloudReference -> mimeType
@@ -372,7 +377,8 @@ fun BinaryContent.getMimeType(): String = when (this) {
 /**
  * Extension function to get filename from BinaryContent
  */
-fun BinaryContent.getFilename(): String? = when (this) {
+fun BinaryContent.getFilename(): String? = when(this)
+{
     is BinaryContent.Bytes -> filename
     is BinaryContent.Base64String -> filename
     is BinaryContent.CloudReference -> filename

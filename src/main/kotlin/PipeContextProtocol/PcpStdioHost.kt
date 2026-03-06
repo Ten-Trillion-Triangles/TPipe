@@ -27,10 +27,10 @@ object PcpStdioHost
      */
     fun runLoop() = runBlocking {
         val reader = System.`in`.bufferedReader()
-        while (true)
+        while(true)
         {
             val input = reader.readLine() ?: break
-            if (input.trim().lowercase() == "exit") break
+            if(input.trim().lowercase() == "exit") break
 
             val result = processInput(input)
             println(serialize(result))
@@ -47,7 +47,7 @@ object PcpStdioHost
         val requests = com.TTT.Util.extractJson<List<PcPRequest>>(input)
             ?: com.TTT.Util.extractJson<PcPRequest>(input)?.let { listOf(it) }
 
-        if (requests == null)
+        if(requests == null)
         {
             return PcpExecutionResult(
                 success = false,
@@ -59,13 +59,13 @@ object PcpStdioHost
 
         // Handle global authentication if set
         val authMechanism = P2PRegistry.globalAuthMechanism
-        if (authMechanism != null)
+        if(authMechanism != null)
         {
             // For Stdio PCP, we don't have a clear transport auth body,
             // but we can pass an empty string or handle it via a specific convention if needed.
             // For now, we'll assume standalone PCP over Stdio might need auth too.
             val isAuthorized = authMechanism("")
-            if (!isAuthorized)
+            if(!isAuthorized)
             {
                 return PcpExecutionResult(
                     success = false,

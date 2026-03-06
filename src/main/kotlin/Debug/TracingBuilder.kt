@@ -1,6 +1,7 @@
 package com.TTT.Debug
 
-class TracingBuilder {
+class TracingBuilder
+{
     private var config = TraceConfig()
     
     fun enabled(enabled: Boolean = true): TracingBuilder {

@@ -7,9 +7,10 @@ enum class TraceEventPriority {
     INTERNAL     // DEBUG level events
 }
 
-object EventPriorityMapper {
+object EventPriorityMapper
+{
     fun getPriority(eventType: TraceEventType): TraceEventPriority {
-        return when (eventType) {
+        return when(eventType) {
             // Existing CRITICAL events
             TraceEventType.PIPE_FAILURE,
             TraceEventType.API_CALL_FAILURE,
@@ -90,7 +91,7 @@ object EventPriorityMapper {
     
     fun shouldTrace(eventType: TraceEventType, detailLevel: TraceDetailLevel): Boolean {
         val priority = getPriority(eventType)
-        return when (detailLevel) {
+        return when(detailLevel) {
             TraceDetailLevel.MINIMAL -> priority == TraceEventPriority.CRITICAL
             TraceDetailLevel.NORMAL -> priority in listOf(TraceEventPriority.CRITICAL, TraceEventPriority.STANDARD)
             TraceDetailLevel.VERBOSE -> priority in listOf(TraceEventPriority.CRITICAL, TraceEventPriority.STANDARD, TraceEventPriority.DETAILED)

@@ -23,7 +23,7 @@ object PcpInstructionGenerator
         val lines = mutableListOf<String>()
         lines.add("MEMORY ACCESS:")
 
-        if (kotlinOptions.allowTpipeIntrospection)
+        if(kotlinOptions.allowTpipeIntrospection)
         {
             lines.add("- TPipe introspection ENABLED: You can access PcpRegistry and PcpContext objects")
             lines.add("  - PcpRegistry: Execute additional PCP requests")
@@ -34,7 +34,7 @@ object PcpInstructionGenerator
             lines.add("- TPipe introspection DISABLED: Internal TPipe objects are not accessible")
         }
 
-        if (kotlinOptions.allowHostApplicationAccess && kotlinOptions.exposedBindings.isNotEmpty())
+        if(kotlinOptions.allowHostApplicationAccess && kotlinOptions.exposedBindings.isNotEmpty())
         {
             lines.add("- Host application access ENABLED: Available bindings:")
             kotlinOptions.exposedBindings.forEach { (name, description) ->
@@ -54,7 +54,7 @@ object PcpInstructionGenerator
         val lines = mutableListOf<String>()
         lines.add("FILE SYSTEM ACCESS:")
 
-        if (kotlinOptions.allowFileRead)
+        if(kotlinOptions.allowFileRead)
         {
             lines.add("- File read operations: ALLOWED")
         }
@@ -63,7 +63,7 @@ object PcpInstructionGenerator
             lines.add("- File read operations: BLOCKED")
         }
 
-        if (kotlinOptions.allowFileWrite)
+        if(kotlinOptions.allowFileWrite)
         {
             lines.add("- File write operations: ALLOWED")
         }
@@ -72,7 +72,7 @@ object PcpInstructionGenerator
             lines.add("- File write operations: BLOCKED")
         }
 
-        if (kotlinOptions.allowFileDelete)
+        if(kotlinOptions.allowFileDelete)
         {
             lines.add("- File delete operations: ALLOWED")
         }
@@ -81,7 +81,7 @@ object PcpInstructionGenerator
             lines.add("- File delete operations: BLOCKED")
         }
 
-        if (pcpContext.allowedDirectoryPaths.isNotEmpty())
+        if(pcpContext.allowedDirectoryPaths.isNotEmpty())
         {
             lines.add("- File operations restricted to: ${pcpContext.allowedDirectoryPaths.joinToString(", ")}")
         }
@@ -90,12 +90,12 @@ object PcpInstructionGenerator
             lines.add("- File operations allowed in any directory (no path restrictions)")
         }
 
-        if (pcpContext.forbiddenDirectoryPaths.isNotEmpty())
+        if(pcpContext.forbiddenDirectoryPaths.isNotEmpty())
         {
             lines.add("- Forbidden directories: ${pcpContext.forbiddenDirectoryPaths.joinToString(", ")}")
         }
 
-        if (kotlinOptions.workingDirectory.isNotEmpty())
+        if(kotlinOptions.workingDirectory.isNotEmpty())
         {
             lines.add("- Working directory: ${kotlinOptions.workingDirectory}")
         }
@@ -108,12 +108,12 @@ object PcpInstructionGenerator
         val lines = mutableListOf<String>()
         lines.add("IMPORTS AND PACKAGES:")
 
-        if (kotlinOptions.allowedImports.isNotEmpty())
+        if(kotlinOptions.allowedImports.isNotEmpty())
         {
             lines.add("- Import ALLOWLIST mode: Only these imports allowed:")
             lines.add("  ${kotlinOptions.allowedImports.joinToString(", ")}")
         }
-        else if (kotlinOptions.blockedImports.isNotEmpty())
+        else if(kotlinOptions.blockedImports.isNotEmpty())
         {
             lines.add("- Import BLOCKLIST mode: These imports blocked:")
             lines.add("  ${kotlinOptions.blockedImports.joinToString(", ")}")
@@ -123,12 +123,12 @@ object PcpInstructionGenerator
             lines.add("- Default blocklist: java.io.File, ProcessBuilder, Runtime, java.net.Socket, etc.")
         }
 
-        if (kotlinOptions.allowedPackages.isNotEmpty())
+        if(kotlinOptions.allowedPackages.isNotEmpty())
         {
             lines.add("- Package ALLOWLIST: ${kotlinOptions.allowedPackages.joinToString(", ")}")
         }
 
-        if (kotlinOptions.blockedPackages.isNotEmpty())
+        if(kotlinOptions.blockedPackages.isNotEmpty())
         {
             lines.add("- Package BLOCKLIST: ${kotlinOptions.blockedPackages.joinToString(", ")}")
         }
@@ -141,10 +141,10 @@ object PcpInstructionGenerator
         val lines = mutableListOf<String>()
         lines.add("CAPABILITIES:")
 
-        lines.add("- Network access: ${if (kotlinOptions.allowNetworkAccess) "ALLOWED" else "BLOCKED"}")
-        lines.add("- Process execution: ${if (kotlinOptions.allowProcessExecution) "ALLOWED" else "BLOCKED"}")
-        lines.add("- Reflection: ${if (kotlinOptions.allowReflection) "ALLOWED" else "BLOCKED"}")
-        lines.add("- ClassLoader access: ${if (kotlinOptions.allowClassLoaderAccess) "ALLOWED" else "BLOCKED"}")
+        lines.add("- Network access: ${if(kotlinOptions.allowNetworkAccess) "ALLOWED" else "BLOCKED"}")
+        lines.add("- Process execution: ${if(kotlinOptions.allowProcessExecution) "ALLOWED" else "BLOCKED"}")
+        lines.add("- Reflection: ${if(kotlinOptions.allowReflection) "ALLOWED" else "BLOCKED"}")
+        lines.add("- ClassLoader access: ${if(kotlinOptions.allowClassLoaderAccess) "ALLOWED" else "BLOCKED"}")
         lines.add("- Execution timeout: ${kotlinOptions.timeoutMs}ms")
 
         return lines.joinToString("\n")
@@ -182,7 +182,7 @@ KOTLIN SCRIPT EXECUTION:
         val lines = mutableListOf<String>()
         lines.add("PYTHON PACKAGES:")
         
-        if (pythonOptions.availablePackages.isNotEmpty())
+        if(pythonOptions.availablePackages.isNotEmpty())
         {
             lines.add("- Package ALLOWLIST mode: Only these packages can be imported:")
             lines.add("  ${pythonOptions.availablePackages.joinToString(", ")}")
@@ -200,7 +200,7 @@ KOTLIN SCRIPT EXECUTION:
         val lines = mutableListOf<String>()
         lines.add("FILE SYSTEM ACCESS:")
         
-        if (pcpContext.allowedDirectoryPaths.isNotEmpty())
+        if(pcpContext.allowedDirectoryPaths.isNotEmpty())
         {
             lines.add("- File operations restricted to: ${pcpContext.allowedDirectoryPaths.joinToString(", ")}")
         }
@@ -209,12 +209,12 @@ KOTLIN SCRIPT EXECUTION:
             lines.add("- File operations allowed in any directory (no path restrictions)")
         }
         
-        if (pcpContext.forbiddenDirectoryPaths.isNotEmpty())
+        if(pcpContext.forbiddenDirectoryPaths.isNotEmpty())
         {
             lines.add("- Forbidden directories: ${pcpContext.forbiddenDirectoryPaths.joinToString(", ")}")
         }
         
-        if (pythonOptions.workingDirectory.isNotEmpty())
+        if(pythonOptions.workingDirectory.isNotEmpty())
         {
             lines.add("- Working directory: ${pythonOptions.workingDirectory}")
         }
@@ -231,7 +231,7 @@ KOTLIN SCRIPT EXECUTION:
         val lines = mutableListOf<String>()
         lines.add("CAPABILITIES:")
         
-        if (pythonOptions.permissions.isNotEmpty())
+        if(pythonOptions.permissions.isNotEmpty())
         {
             lines.add("- Permissions: ${pythonOptions.permissions.joinToString(", ")}")
         }
@@ -242,7 +242,7 @@ KOTLIN SCRIPT EXECUTION:
         
         lines.add("- Execution timeout: ${pythonOptions.timeoutMs}ms")
         
-        if (pythonOptions.pythonVersion.isNotEmpty())
+        if(pythonOptions.pythonVersion.isNotEmpty())
         {
             lines.add("- Python version: ${pythonOptions.pythonVersion}")
         }
@@ -282,7 +282,7 @@ PYTHON SCRIPT EXECUTION:
         val lines = mutableListOf<String>()
         lines.add("JAVASCRIPT MODULES:")
         
-        if (javascriptOptions.allowedModules.isNotEmpty())
+        if(javascriptOptions.allowedModules.isNotEmpty())
         {
             lines.add("- Module ALLOWLIST mode: Only these modules can be required:")
             lines.add("  ${javascriptOptions.allowedModules.joinToString(", ")}")
@@ -300,7 +300,7 @@ PYTHON SCRIPT EXECUTION:
         val lines = mutableListOf<String>()
         lines.add("FILE SYSTEM ACCESS:")
         
-        if (pcpContext.allowedDirectoryPaths.isNotEmpty())
+        if(pcpContext.allowedDirectoryPaths.isNotEmpty())
         {
             lines.add("- File operations restricted to: ${pcpContext.allowedDirectoryPaths.joinToString(", ")}")
         }
@@ -309,12 +309,12 @@ PYTHON SCRIPT EXECUTION:
             lines.add("- File operations allowed in any directory (no path restrictions)")
         }
         
-        if (pcpContext.forbiddenDirectoryPaths.isNotEmpty())
+        if(pcpContext.forbiddenDirectoryPaths.isNotEmpty())
         {
             lines.add("- Forbidden directories: ${pcpContext.forbiddenDirectoryPaths.joinToString(", ")}")
         }
         
-        if (javascriptOptions.workingDirectory.isNotEmpty())
+        if(javascriptOptions.workingDirectory.isNotEmpty())
         {
             lines.add("- Working directory: ${javascriptOptions.workingDirectory}")
         }
@@ -331,7 +331,7 @@ PYTHON SCRIPT EXECUTION:
         val lines = mutableListOf<String>()
         lines.add("CAPABILITIES:")
         
-        if (javascriptOptions.permissions.isNotEmpty())
+        if(javascriptOptions.permissions.isNotEmpty())
         {
             lines.add("- Permissions: ${javascriptOptions.permissions.joinToString(", ")}")
         }
@@ -342,7 +342,7 @@ PYTHON SCRIPT EXECUTION:
         
         lines.add("- Execution timeout: ${javascriptOptions.timeoutMs}ms")
         
-        if (javascriptOptions.nodePath.isNotEmpty())
+        if(javascriptOptions.nodePath.isNotEmpty())
         {
             lines.add("- Node.js path: ${javascriptOptions.nodePath}")
         }

@@ -18,7 +18,7 @@ class JavaScriptExecutor : PcpExecutor
         val mergedOptions = mergeContextOptions(request.javascriptContextOptions, context.javascriptOptions)
 
         val validation = securityManager.validateJavaScriptRequest(script, mergedOptions)
-        if (!validation.isValid)
+        if(!validation.isValid)
         {
             return@coroutineScope PcpRequestResult(
                 success = false,
@@ -29,7 +29,7 @@ class JavaScriptExecutor : PcpExecutor
             )
         }
 
-        if (script.isEmpty())
+        if(script.isEmpty())
         {
             return@coroutineScope PcpRequestResult(
                 success = false,
@@ -51,7 +51,7 @@ class JavaScriptExecutor : PcpExecutor
 
             val processBuilder = ProcessBuilder(command)
 
-            if (mergedOptions.workingDirectory.isNotEmpty())
+            if(mergedOptions.workingDirectory.isNotEmpty())
             {
                 processBuilder.directory(File(mergedOptions.workingDirectory))
             }
@@ -68,7 +68,7 @@ class JavaScriptExecutor : PcpExecutor
                 process.errorStream.bufferedReader().readText()
             }
 
-            val completed = if (mergedOptions.timeoutMs > 0)
+            val completed = if(mergedOptions.timeoutMs > 0)
             {
                 process.waitFor(mergedOptions.timeoutMs.toLong(), TimeUnit.MILLISECONDS)
             }
@@ -78,7 +78,7 @@ class JavaScriptExecutor : PcpExecutor
                 true
             }
 
-            if (!completed)
+            if(!completed)
             {
                 process.destroyForcibly()
                 return@coroutineScope PcpRequestResult(
@@ -92,17 +92,17 @@ class JavaScriptExecutor : PcpExecutor
 
             val output = outputDeferred.await()
             val errorOutput = errorDeferred.await()
-            val finalOutput = if (errorOutput.isNotEmpty()) "$output\nSTDERR: $errorOutput" else output
+            val finalOutput = if(errorOutput.isNotEmpty()) "$output\nSTDERR: $errorOutput" else output
 
             PcpRequestResult(
                 success = process.exitValue() == 0,
                 output = finalOutput.trim(),
                 executionTimeMs = System.currentTimeMillis() - startTime,
                 transport = Transport.JavaScript,
-                error = if (process.exitValue() != 0) "JavaScript failed with exit code: ${process.exitValue()}" else null
+                error = if(process.exitValue() != 0) "JavaScript failed with exit code: ${process.exitValue()}" else null
             )
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             PcpRequestResult(
                 success = false,
@@ -121,17 +121,17 @@ class JavaScriptExecutor : PcpExecutor
     private fun mergeContextOptions(requestOptions: JavaScriptContext, contextOptions: JavaScriptContext): JavaScriptContext
     {
         return JavaScriptContext().apply {
-            nodePath = if (contextOptions.nodePath.isNotEmpty()) contextOptions.nodePath else requestOptions.nodePath
-            timeoutMs = if (contextOptions.timeoutMs > 0) contextOptions.timeoutMs else requestOptions.timeoutMs
+            nodePath = if(contextOptions.nodePath.isNotEmpty()) contextOptions.nodePath else requestOptions.nodePath
+            timeoutMs = if(contextOptions.timeoutMs > 0) contextOptions.timeoutMs else requestOptions.timeoutMs
             allowedModules.addAll(contextOptions.allowedModules)
-            if (allowedModules.isEmpty()) allowedModules.addAll(requestOptions.allowedModules)
+            if(allowedModules.isEmpty()) allowedModules.addAll(requestOptions.allowedModules)
 
-            workingDirectory = if (contextOptions.workingDirectory.isNotEmpty()) contextOptions.workingDirectory else requestOptions.workingDirectory
+            workingDirectory = if(contextOptions.workingDirectory.isNotEmpty()) contextOptions.workingDirectory else requestOptions.workingDirectory
             environmentVariables.putAll(requestOptions.environmentVariables)
             environmentVariables.putAll(contextOptions.environmentVariables)
 
             permissions.addAll(contextOptions.permissions)
-            if (permissions.isEmpty()) permissions.addAll(requestOptions.permissions)
+            if(permissions.isEmpty()) permissions.addAll(requestOptions.permissions)
         }
     }
 }

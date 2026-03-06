@@ -6,7 +6,8 @@ package com.TTT.Context
  * to the llm as context. Such as a prior chapter for a story, and then the officially added content to the story.
  */
 @kotlinx.serialization.Serializable
-data class MiniBank(var contextMap: MutableMap<String, ContextWindow> = mutableMapOf<String, ContextWindow>()) {
+data class MiniBank(var contextMap: MutableMap<String, ContextWindow> = mutableMapOf<String, ContextWindow>())
+{
     
     /**
      * Merge another MiniBank into this one, combining context windows by key.
@@ -33,9 +34,12 @@ data class MiniBank(var contextMap: MutableMap<String, ContextWindow> = mutableM
               onlyEmplaceIfNull: Boolean = false)
     {
         other.contextMap.forEach { (key, contextWindow) ->
-            if (contextMap.containsKey(key)) {
+            if(contextMap.containsKey(key))
+            {
                 contextMap[key]?.merge(contextWindow, emplaceLorebookKeys, appendKeys, emplaceConverseHistory, onlyEmplaceIfNull)
-            } else {
+            }
+            else
+            {
                 contextMap[key] = contextWindow
             }
         }

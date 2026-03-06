@@ -20,14 +20,14 @@ object TraceStreamMerger
      */
     fun bubbleMerge(vararg objects: Any) 
     {
-        if (objects.size < 2) return
+        if(objects.size < 2) return
         
         // Validate all objects have trace IDs before starting
         val traceIds = objects.mapNotNull { getTraceId(it) }
-        if (traceIds.size != objects.size) return
+        if(traceIds.size != objects.size) return
         
         // Bubble from deepest child up to parent
-        for (i in objects.size - 1 downTo 1) 
+        for(i in objects.size - 1 downTo 1)
         {
             val child = objects[i]
             val parent = objects[i - 1]
@@ -36,12 +36,12 @@ object TraceStreamMerger
             val parentId = getTraceId(parent)
             
             // Skip if either trace ID is null
-            if (childId == null || parentId == null) continue
+            if(childId == null || parentId == null) continue
             
             val childEvents = PipeTracer.getTrace(childId)
             
             // Get traces - if child is empty, skip merge
-            if (childEvents.isEmpty()) continue
+            if(childEvents.isEmpty()) continue
             
             // FIXED: Use mergeTrace instead of replaceTrace to preserve parent events
             PipeTracer.mergeTrace(parentId, childEvents)
@@ -56,7 +56,7 @@ object TraceStreamMerger
      */
     private fun getTraceId(obj: Any): String? 
     {
-        return when (obj) 
+        return when(obj)
         {
             is Pipeline -> obj.getTraceId()
             is Manifold -> obj.getTraceId()

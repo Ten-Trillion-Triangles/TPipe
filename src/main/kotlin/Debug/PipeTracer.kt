@@ -5,26 +5,31 @@ import kotlinx.serialization.json.Json
 import java.util.concurrent.ConcurrentHashMap
 import java.util.Collections
 
-object PipeTracer {
+object PipeTracer
+{
     private val traces = ConcurrentHashMap<String, MutableList<TraceEvent>>()
     private var isEnabled = false
     private var maxTraceHistory = 1000
     
-    fun enable() {
+    fun enable()
+    {
         isEnabled = true
     }
     
-    fun disable() {
+    fun disable()
+    {
         isEnabled = false
     }
     
-    fun startTrace(pipelineId: String) {
-        if (!isEnabled) return
+    fun startTrace(pipelineId: String)
+    {
+        if(!isEnabled) return
         traces[pipelineId] = Collections.synchronizedList(mutableListOf())
     }
     
-    fun addEvent(pipelineId: String, event: TraceEvent) {
-        if (!isEnabled) return
+    fun addEvent(pipelineId: String, event: TraceEvent)
+    {
+        if(!isEnabled) return
         
         val traceList = traces.getOrPut(pipelineId) { Collections.synchronizedList(mutableListOf()) }
         
@@ -32,7 +37,8 @@ object PipeTracer {
             traceList.add(event)
             
             // Maintain max history limit
-            if (traceList.size > maxTraceHistory) {
+            if(traceList.size > maxTraceHistory)
+            {
                 traceList.removeAt(0)
             }
         }
@@ -53,17 +59,20 @@ object PipeTracer {
         }
     }
     
-    fun clearTrace(pipelineId: String) {
+    fun clearTrace(pipelineId: String)
+    {
         traces.remove(pipelineId)
     }
     
-    fun replaceTrace(pipelineId: String, events: List<TraceEvent>) {
-        if (!isEnabled) return
+    fun replaceTrace(pipelineId: String, events: List<TraceEvent>)
+    {
+        if(!isEnabled) return
         traces[pipelineId] = Collections.synchronizedList(events.toMutableList())
     }
     
-    fun mergeTrace(pipelineId: String, newEvents: List<TraceEvent>) {
-        if (!isEnabled) return
+    fun mergeTrace(pipelineId: String, newEvents: List<TraceEvent>)
+    {
+        if(!isEnabled) return
         
         val traceList = traces.getOrPut(pipelineId) { Collections.synchronizedList(mutableListOf()) }
         
@@ -80,7 +89,7 @@ object PipeTracer {
     fun exportTrace(pipelineId: String, format: TraceFormat): String {
         val trace = getTrace(pipelineId)
         val visualizer = TraceVisualizer()
-        return when (format) {
+        return when(format) {
             TraceFormat.JSON -> exportAsJson(trace)
             TraceFormat.HTML -> visualizer.generateHtmlReport(trace)
             TraceFormat.MARKDOWN -> exportAsMarkdown(trace)
@@ -98,7 +107,8 @@ object PipeTracer {
         
         val suggestedFixes = mutableListOf<String>()
         failureEvent?.let { failure ->
-            when (failure.eventType) {
+            when(failure.eventType)
+            {
                 TraceEventType.API_CALL_FAILURE -> {
                     suggestedFixes.add("Check network connectivity and API credentials")
                     suggestedFixes.add("Verify model availability and parameters")
@@ -128,7 +138,9 @@ object PipeTracer {
     private fun exportAsJson(trace: List<TraceEvent>): String {
         return try {
             Json.encodeToString(trace)
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             "Error serializing trace: ${e.message}"
         }
     }
@@ -142,7 +154,7 @@ object PipeTracer {
         md.append("|-----------|------|-------|-------|--------|\n")
         
         trace.forEach { event ->
-            val status = when (event.eventType) {
+            val status = when(event.eventType) {
                 TraceEventType.PIPE_SUCCESS, TraceEventType.API_CALL_SUCCESS, TraceEventType.VALIDATION_SUCCESS -> "✅ SUCCESS"
                 TraceEventType.PIPE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE -> "❌ FAILURE"
                 else -> "ℹ️ INFO"

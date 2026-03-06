@@ -467,7 +467,7 @@ data class PcpContext(@kotlinx.serialization.Transient val cinit : Boolean = fal
      */
     fun addTPipeOption(option: TPipeContextOptions)
     {
-        if (option.functionName.isNotBlank())
+        if(option.functionName.isNotBlank())
         {
             tpipeOptions.add(option)
         }

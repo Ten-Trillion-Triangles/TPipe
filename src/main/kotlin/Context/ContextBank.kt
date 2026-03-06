@@ -132,19 +132,19 @@ object ContextBank
      */
     private fun enforceEvictionPolicy()
     {
-        if (cacheConfig.evictionPolicy == EvictionPolicy.MANUAL)
+        if(cacheConfig.evictionPolicy == EvictionPolicy.MANUAL)
         {
             return
         }
 
-        while (bank.size > cacheConfig.maxEntries)
+        while(bank.size > cacheConfig.maxEntries)
         {
             evictLeastValuable()
         }
 
         var totalBytes = bank.values.sumOf { estimateSize(it) }
 
-        while (totalBytes > cacheConfig.maxMemoryBytes && bank.isNotEmpty())
+        while(totalBytes > cacheConfig.maxMemoryBytes && bank.isNotEmpty())
         {
             val evictedSize = evictLeastValuable()
             totalBytes -= evictedSize
@@ -163,12 +163,12 @@ object ContextBank
             .filter { bank.containsKey(it.key) }
             .filter { it.storageMode == StorageMode.DISK_WITH_CACHE }
 
-        if (candidates.isEmpty())
+        if(candidates.isEmpty())
         {
             return 0L
         }
 
-        val toEvict = when (cacheConfig.evictionPolicy)
+        val toEvict = when(cacheConfig.evictionPolicy)
         {
             EvictionPolicy.LRU -> candidates.minByOrNull { it.lastAccessed }
             EvictionPolicy.LFU -> candidates.minByOrNull { it.accessCount }
@@ -176,7 +176,7 @@ object ContextBank
             else -> null
         }
 
-        if (toEvict != null)
+        if(toEvict != null)
         {
             val size = estimateSize(bank[toEvict.key])
             bank.remove(toEvict.key)
@@ -195,7 +195,7 @@ object ContextBank
      */
     private fun estimateSize(window: ContextWindow?): Long
     {
-        if (window == null) return 0L
+        if(window == null) return 0L
         return serialize(window).length.toLong()
     }
 
@@ -233,7 +233,7 @@ object ContextBank
      */
     fun emplace(key: String, window: ContextWindow, mode: StorageMode, skipRemote: Boolean = false)
     {
-        if (!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
         {
             runBlocking {
                 MemoryClient.emplaceContextWindow(key, window)
@@ -243,7 +243,7 @@ object ContextBank
 
         val bankDir = "${TPipeConfig.getLorebookDir()}/${key}.bank"
 
-        when (mode)
+        when(mode)
         {
             StorageMode.MEMORY_ONLY ->
             {
@@ -288,7 +288,7 @@ object ContextBank
      */
     fun emplace(key: String, window: ContextWindow, persistToDisk: Boolean = false, skipRemote: Boolean = false)
     {
-        val mode = if (persistToDisk) StorageMode.MEMORY_AND_DISK else StorageMode.MEMORY_ONLY
+        val mode = if(persistToDisk) StorageMode.MEMORY_AND_DISK else StorageMode.MEMORY_ONLY
         emplace(key, window, mode, skipRemote)
     }
 
@@ -320,7 +320,7 @@ object ContextBank
     suspend fun emplaceWithMutex(key: String, window: ContextWindow, persistToDisk: Boolean = false, skipRemote: Boolean = false)
     {
         bankMutex.withLock {
-            val mode = if (persistToDisk) StorageMode.MEMORY_AND_DISK else StorageMode.MEMORY_ONLY
+            val mode = if(persistToDisk) StorageMode.MEMORY_AND_DISK else StorageMode.MEMORY_ONLY
             emplace(key, window, mode, skipRemote)
         }
     }
@@ -332,7 +332,7 @@ object ContextBank
      */
     fun deletePersistingBankKey(key: String, skipRemote: Boolean = false) : Boolean
     {
-        if (!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
         {
             return runBlocking {
                 MemoryClient.deleteContextWindow(key)
@@ -428,7 +428,7 @@ object ContextBank
         val totalBytes = bank.values.sumOf { estimateSize(it) }
 
         val totalAccesses = storageMetadata.values.sumOf { it.accessCount }
-        val cacheHitRate = if (totalAccesses == 0) 0.0 else
+        val cacheHitRate = if(totalAccesses == 0) 0.0 else
         {
             val hits = storageMetadata.values
                 .filter { bank.containsKey(it.key) }
@@ -454,7 +454,7 @@ object ContextBank
             .filter { it.storageMode == StorageMode.DISK_WITH_CACHE }
             .map { it.key }
 
-        for (key in diskWithCacheKeys)
+        for(key in diskWithCacheKeys)
         {
             bank.remove(key)
         }
@@ -579,25 +579,25 @@ object ContextBank
     fun getContextFromBank(key: String, copy: Boolean = true, skipRemote: Boolean = false) : ContextWindow
     {
         // Retrieval functions always take priority over all other storage modes.
-        if (retrievalFunctions.containsKey(key))
+        if(retrievalFunctions.containsKey(key))
         {
             val function = retrievalFunctions[key]!!
             val context = runBlocking {
                 function(key)
             } ?: throw IllegalStateException("Retrieval function for key '$key' failed to return a context window.")
 
-            return if (copy) context.deepCopy() else context
+            return if(copy) context.deepCopy() else context
         }
 
         val mode = getStorageMode(key)
-        if (!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
         {
             return runBlocking {
                 MemoryClient.getContextWindow(key) ?: ContextWindow()
             }
         }
 
-        if (ContextLock.isPageLocked(key))
+        if(ContextLock.isPageLocked(key))
         {
             return ContextWindow()
         }
@@ -605,19 +605,19 @@ object ContextBank
         trackAccess(key)
         var context: ContextWindow
 
-        if (bank.containsKey(key))
+        if(bank.containsKey(key))
         {
             context = bank[key]!!
-            return if (copy) context.deepCopy() else context
+            return if(copy) context.deepCopy() else context
         }
 
         val diskPath = "${TPipeConfig.getLorebookDir()}/${key}.bank"
-        if (File(diskPath).exists())
+        if(File(diskPath).exists())
         {
             val contextJson = readStringFromFile(diskPath)
             context = deserialize<ContextWindow>(contextJson) ?: ContextWindow()
 
-            when (mode)
+            when(mode)
             {
                 StorageMode.DISK_ONLY ->
                 {
@@ -637,7 +637,7 @@ object ContextBank
                 StorageMode.REMOTE -> { /* Handled above */ }
             }
 
-            return if (copy) context.deepCopy() else context
+            return if(copy) context.deepCopy() else context
         }
 
         return ContextWindow()
@@ -650,7 +650,7 @@ object ContextBank
     fun getPageKeys(skipRemote: Boolean = false) : List<String>
     {
         val localKeys = (bank.keys + retrievalFunctions.keys).distinct()
-        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
             val remoteKeys = runBlocking {
                 MemoryClient.getPageKeys()
@@ -667,7 +667,7 @@ object ContextBank
     fun getTodoListKeys(skipRemote: Boolean = false) : List<String>
     {
         val localKeys = todoList.keys.toList()
-        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
             val remoteKeys = runBlocking {
                 MemoryClient.getTodoListKeys()
@@ -692,7 +692,7 @@ object ContextBank
      */
     fun getPagedTodoList(key: String, copy: Boolean = true, skipRemote: Boolean = false) : TodoList
     {
-        if (!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
         {
             return runBlocking {
                 MemoryClient.getTodoList(key) ?: TodoList()
@@ -702,21 +702,21 @@ object ContextBank
         trackAccess(key)
         val mode = getStorageMode(key)
 
-        if (todoList.containsKey(key))
+        if(todoList.containsKey(key))
         {
             val list = todoList[key]!!
-            return if (copy) list.deepCopy() else list
+            return if(copy) list.deepCopy() else list
         }
 
         val diskPath = TPipeConfig.getTodoListDir()
         val fullFilePath = "${diskPath}/${key}.todo"
         val fileContents = readStringFromFile(fullFilePath)
 
-        if (fileContents.isNotEmpty())
+        if(fileContents.isNotEmpty())
         {
             val result = deserialize<TodoList>(fileContents) ?: TodoList()
 
-            when (mode)
+            when(mode)
             {
                 StorageMode.DISK_ONLY ->
                 {
@@ -736,7 +736,7 @@ object ContextBank
                 StorageMode.REMOTE -> { /* Handled above */ }
             }
 
-            return if (copy) result.deepCopy() else result
+            return if(copy) result.deepCopy() else result
         }
 
         return TodoList()
@@ -763,7 +763,7 @@ object ContextBank
         skipRemote: Boolean = false
     )
     {
-        val mode = if (persistToDisk) StorageMode.MEMORY_AND_DISK else StorageMode.MEMORY_ONLY
+        val mode = if(persistToDisk) StorageMode.MEMORY_AND_DISK else StorageMode.MEMORY_ONLY
         emplaceTodoList(key, todoList, mode, allowUpdatesOnly, allowCompletionsOnly, skipRemote)
     }
 
@@ -811,7 +811,7 @@ object ContextBank
         skipRemote: Boolean = false
     )
     {
-        if (!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
         {
             runBlocking {
                 MemoryClient.emplaceTodoList(key, todoList)
@@ -820,20 +820,20 @@ object ContextBank
         }
 
         val bankedTasks = ContextBank.todoList[key]
-        val todoListToEmplace = if (bankedTasks == null) todoList
+        val todoListToEmplace = if(bankedTasks == null) todoList
         else applyTodoListWriteProtection(todoList, bankedTasks, allowUpdatesOnly, allowCompletionsOnly)
 
         val todoPath = TPipeConfig.getTodoListDir()
         val fullFilePath = "${todoPath}/${key}.todo"
 
-        when (mode)
+        when(mode)
         {
             StorageMode.MEMORY_ONLY ->
             {
                 ContextBank.todoList[key] = todoListToEmplace
 
                 // Maintain backward compatibility: persist if file already exists
-                if (File(fullFilePath).exists())
+                if(File(fullFilePath).exists())
                 {
                     val todoAsString = serialize(todoListToEmplace)
                     writeStringToFile(fullFilePath, todoAsString)
@@ -878,11 +878,11 @@ object ContextBank
     {
         val validTaskNumbers = mutableListOf<Int>()
 
-        if (allowUpdatesOnly)
+        if(allowUpdatesOnly)
         {
-            for (task in todoList.tasks.tasks)
+            for(task in todoList.tasks.tasks)
             {
-                if (bankedTasks.find(task.taskNumber) != null)
+                if(bankedTasks.find(task.taskNumber) != null)
                 {
                     validTaskNumbers.add(task.taskNumber)
                 }
@@ -891,12 +891,12 @@ object ContextBank
 
         var todoListToEmplace = TodoList()
 
-        if (validTaskNumbers.isNotEmpty())
+        if(validTaskNumbers.isNotEmpty())
         {
-            for (number in validTaskNumbers)
+            for(number in validTaskNumbers)
             {
                 val task = todoList.find(number)
-                if (task != null) todoListToEmplace.tasks.tasks.add(task)
+                if(task != null) todoListToEmplace.tasks.tasks.add(task)
             }
         }
         else
@@ -904,9 +904,9 @@ object ContextBank
             todoListToEmplace = todoList
         }
 
-        if (allowCompletionsOnly)
+        if(allowCompletionsOnly)
         {
-            for (task in todoListToEmplace.tasks.tasks)
+            for(task in todoListToEmplace.tasks.tasks)
             {
                 bankedTasks.find(task.taskNumber)?.isComplete = task.isComplete
             }
@@ -914,9 +914,9 @@ object ContextBank
         }
         else
         {
-            for (task in todoListToEmplace.tasks.tasks)
+            for(task in todoListToEmplace.tasks.tasks)
             {
-                if (bankedTasks.tasks.tasks.contains(task))
+                if(bankedTasks.tasks.tasks.contains(task))
                 {
                     bankedTasks.tasks.tasks[bankedTasks.tasks.tasks.indexOf(task)] = task
                 }
@@ -934,12 +934,12 @@ object ContextBank
      */
     private fun enforceTodoListEvictionPolicy()
     {
-        if (cacheConfig.evictionPolicy == EvictionPolicy.MANUAL)
+        if(cacheConfig.evictionPolicy == EvictionPolicy.MANUAL)
         {
             return
         }
 
-        while (todoList.size > cacheConfig.maxEntries)
+        while(todoList.size > cacheConfig.maxEntries)
         {
             evictLeastValuableTodoList()
         }
@@ -954,9 +954,9 @@ object ContextBank
             .filter { todoList.containsKey(it.key) }
             .filter { it.storageMode == StorageMode.DISK_WITH_CACHE }
 
-        if (candidates.isEmpty()) return
+        if(candidates.isEmpty()) return
 
-        val toEvict = when (cacheConfig.evictionPolicy)
+        val toEvict = when(cacheConfig.evictionPolicy)
         {
             EvictionPolicy.LRU -> candidates.minByOrNull { it.lastAccessed }
             EvictionPolicy.LFU -> candidates.minByOrNull { it.accessCount }

@@ -50,13 +50,16 @@ object bedrockEnv
      * Creates default configuration file if it doesn't exist.
      * File format: modelId=inferenceProfileId
      */
-    fun loadInferenceConfig() {
+    fun loadInferenceConfig()
+    {
         val configFile = File(System.getProperty("user.home"), ".aws/inference.txt")
-        if (!configFile.exists()) {
+        if(!configFile.exists())
+        {
             createDefaultInferenceConfig(configFile)
         }
         configFile.readLines().forEach { line ->
-            if (line.contains("=")) {
+            if(line.contains("="))
+            {
                 val (key, value) = line.split("=", limit = 2)
                 modelToInferenceMap[key.trim()] = value.trim()
             }
@@ -70,7 +73,8 @@ object bedrockEnv
      * 
      * @param configFile The configuration file to create
      */
-    private fun createDefaultInferenceConfig(configFile: File) {
+    private fun createDefaultInferenceConfig(configFile: File)
+    {
         configFile.parentFile.mkdirs()
         val serverlessModels = listOf(
             // AI21 Jamba models
@@ -300,7 +304,7 @@ object bedrockEnv
      */
     private fun isModelAvailableInRegion(modelId: String, region: String): Boolean {
         // Region-specific model availability based on AWS Bedrock documentation
-        return when (region.lowercase()) {
+        return when(region.lowercase()) {
             "us-east-1", "us-west-2" -> true // All models available
             "eu-west-1", "eu-central-1" -> {
                 !modelId.contains("openai") && 
@@ -335,7 +339,8 @@ object bedrockEnv
     fun bindInferenceProfile(modelId: String, inferenceProfileId: String): Boolean {
         modelToInferenceMap[modelId] = inferenceProfileId
         
-        if (configLoaded) {
+        if(configLoaded)
+        {
             val configFile = File(System.getProperty("user.home"), ".aws/inference.txt")
             val content = modelToInferenceMap.entries.sortedBy { it.key }
                 .joinToString("\n") { "${it.key}=${it.value}" }

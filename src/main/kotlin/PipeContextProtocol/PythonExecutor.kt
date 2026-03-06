@@ -88,7 +88,7 @@ class PythonExecutor : PcpExecutor
         val validation = securityManager.validatePythonRequest(script, mergedOptions)
         val warnings = validation.warnings.toMutableList()
 
-        if (!validation.isValid)
+        if(!validation.isValid)
         {
             return PcpRequestResult(
                 success = false,
@@ -100,7 +100,7 @@ class PythonExecutor : PcpExecutor
         }
         
         // Get script content
-        if (script.isEmpty())
+        if(script.isEmpty())
         {
             return PcpRequestResult(
                 success = false,
@@ -113,7 +113,7 @@ class PythonExecutor : PcpExecutor
         
         // Validate package imports against context whitelist
         val importValidation = validatePackageImports(script, mergedOptions)
-        if (!importValidation.isValid)
+        if(!importValidation.isValid)
         {
             return PcpRequestResult(
                 success = false,
@@ -137,29 +137,29 @@ class PythonExecutor : PcpExecutor
     {
         return PythonContext().apply {
             // Use context interpreter path if specified, otherwise request path
-            pythonPath = if (contextOptions.pythonPath.isNotEmpty()) 
+            pythonPath = if(contextOptions.pythonPath.isNotEmpty())
                 contextOptions.pythonPath else requestOptions.pythonPath
             
             // Use context timeout if specified, otherwise request timeout
-            timeoutMs = if (contextOptions.timeoutMs > 0) 
+            timeoutMs = if(contextOptions.timeoutMs > 0)
                 contextOptions.timeoutMs else requestOptions.timeoutMs
             
             // CRITICAL: Use context package whitelist (security override)
             availablePackages.addAll(contextOptions.availablePackages)
-            if (availablePackages.isEmpty())
+            if(availablePackages.isEmpty())
             {
                 availablePackages.addAll(requestOptions.availablePackages)
             }
             
             // Context permissions override request permissions
             permissions.addAll(contextOptions.permissions)
-            if (permissions.isEmpty())
+            if(permissions.isEmpty())
             {
                 permissions.addAll(requestOptions.permissions)
             }
             
             // Context working directory overrides request
-            workingDirectory = if (contextOptions.workingDirectory.isNotEmpty()) 
+            workingDirectory = if(contextOptions.workingDirectory.isNotEmpty())
                 contextOptions.workingDirectory else requestOptions.workingDirectory
                 
             // Merge environment variables (context takes precedence)
@@ -170,7 +170,7 @@ class PythonExecutor : PcpExecutor
             captureOutput = contextOptions.captureOutput
             
             // Context python version overrides request
-            pythonVersion = if (contextOptions.pythonVersion.isNotEmpty())
+            pythonVersion = if(contextOptions.pythonVersion.isNotEmpty())
                 contextOptions.pythonVersion else requestOptions.pythonVersion
         }
     }
@@ -202,7 +202,7 @@ class PythonExecutor : PcpExecutor
             val processBuilder = ProcessBuilder(command)
             
             // Set working directory if specified
-            if (options.workingDirectory.isNotEmpty())
+            if(options.workingDirectory.isNotEmpty())
             {
                 processBuilder.directory(File(options.workingDirectory))
             }
@@ -216,7 +216,7 @@ class PythonExecutor : PcpExecutor
             val process = processBuilder.start()
             
             // Handle timeout
-            val completed = if (options.timeoutMs > 0)
+            val completed = if(options.timeoutMs > 0)
             {
                 process.waitFor(options.timeoutMs.toLong(), TimeUnit.MILLISECONDS)
             }
@@ -226,7 +226,7 @@ class PythonExecutor : PcpExecutor
                 true
             }
             
-            if (!completed)
+            if(!completed)
             {
                 process.destroyForcibly()
                 scriptFile.delete()
@@ -243,7 +243,7 @@ class PythonExecutor : PcpExecutor
             val output = process.inputStream.bufferedReader().readText()
             val errorOutput = process.errorStream.bufferedReader().readText()
 
-            val finalOutput = if (errorOutput.isNotEmpty())
+            val finalOutput = if(errorOutput.isNotEmpty())
             {
                 "$output\nSTDERR: $errorOutput"
             }
@@ -261,10 +261,10 @@ class PythonExecutor : PcpExecutor
                 output = outputWithWarnings,
                 executionTimeMs = System.currentTimeMillis() - startTime,
                 transport = Transport.Python,
-                error = if (process.exitValue() != 0) "Python script failed with exit code: ${process.exitValue()}" else null
+                error = if(process.exitValue() != 0) "Python script failed with exit code: ${process.exitValue()}" else null
             )
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             PcpRequestResult(
                 success = false,
@@ -282,7 +282,7 @@ class PythonExecutor : PcpExecutor
     private fun validatePackageImports(script: String, contextOptions: PythonContext): PythonValidationResult
     {
         // If no package restrictions, allow all imports
-        if (contextOptions.availablePackages.isEmpty())
+        if(contextOptions.availablePackages.isEmpty())
         {
             return PythonValidationResult(true, null)
         }
@@ -291,13 +291,13 @@ class PythonExecutor : PcpExecutor
         val imports = extractImportStatements(script)
         
         // Check each import against whitelist
-        for (importName in imports)
+        for(importName in imports)
         {
             val isAllowed = contextOptions.availablePackages.any { allowedPackage ->
                 importName == allowedPackage || importName.startsWith("$allowedPackage.")
             }
             
-            if (!isAllowed)
+            if(!isAllowed)
             {
                 return PythonValidationResult(false, "Import '$importName' not in allowed packages list")
             }
@@ -314,25 +314,25 @@ class PythonExecutor : PcpExecutor
         val imports = mutableListOf<String>()
         val lines = script.lines()
         
-        for (line in lines)
+        for(line in lines)
         {
             val trimmed = line.trim()
             
             // Handle "import module" statements
-            if (trimmed.startsWith("import ") && !trimmed.startsWith("import *"))
+            if(trimmed.startsWith("import ") && !trimmed.startsWith("import *"))
             {
                 val parts = trimmed.substring(7).split(",")
                 parts.forEach { part ->
                     val moduleName = part.trim().split(" ")[0]
-                    if (moduleName.isNotEmpty()) imports.add(moduleName)
+                    if(moduleName.isNotEmpty()) imports.add(moduleName)
                 }
             }
             
             // Handle "from module import" statements
-            else if (trimmed.startsWith("from ") && " import " in trimmed)
+            else if(trimmed.startsWith("from ") && " import " in trimmed)
             {
                 val fromPart = trimmed.substring(5, trimmed.indexOf(" import ")).trim()
-                if (fromPart.isNotEmpty()) imports.add(fromPart)
+                if(fromPart.isNotEmpty()) imports.add(fromPart)
             }
         }
         
@@ -353,9 +353,9 @@ class PythonExecutor : PcpExecutor
     private fun resolvePythonExecutable(context: PythonContext): String?
     {
         // Use specified Python path if provided and valid
-        if (context.pythonPath.isNotEmpty())
+        if(context.pythonPath.isNotEmpty())
         {
-            if (platformManager.validatePythonExecutable(context.pythonPath))
+            if(platformManager.validatePythonExecutable(context.pythonPath))
             {
                 return context.pythonPath
             }
@@ -363,18 +363,18 @@ class PythonExecutor : PcpExecutor
         
         // Detect available Python installations
         val detectionResult = platformManager.detectPythonInstallations()
-        if (!detectionResult.success || detectionResult.defaultInstallation == null)
+        if(!detectionResult.success || detectionResult.defaultInstallation == null)
         {
             return null
         }
         
         // Filter by version if specified
-        if (context.pythonVersion.isNotEmpty())
+        if(context.pythonVersion.isNotEmpty())
         {
             val matchingInstallation = detectionResult.installations.find { installation ->
                 installation.version.startsWith(context.pythonVersion)
             }
-            if (matchingInstallation != null)
+            if(matchingInstallation != null)
             {
                 return matchingInstallation.executable
             }
@@ -399,7 +399,7 @@ class PythonExecutor : PcpExecutor
 
     private fun mergeWarningsWithOutput(warnings: List<String>, output: String): String
     {
-        if (warnings.isEmpty())
+        if(warnings.isEmpty())
         {
             return output
         }
@@ -411,7 +411,7 @@ class PythonExecutor : PcpExecutor
             }
         }.trimEnd()
 
-        return if (output.isBlank())
+        return if(output.isBlank())
         {
             warningSection
         }

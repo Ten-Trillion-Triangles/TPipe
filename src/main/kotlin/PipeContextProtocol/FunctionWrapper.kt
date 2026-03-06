@@ -59,13 +59,13 @@ class KotlinFunction(
 
         function.valueParameters.forEach { kParameter ->
             val name = kParameter.name ?: return@forEach
-            if (parameters.containsKey(name))
+            if(parameters.containsKey(name))
             {
                 callArguments[kParameter] = parameters[name]
             }
         }
 
-        return if (function.isSuspend)
+        return if(function.isSuspend)
         {
             function.callSuspendBy(callArguments)
         }
@@ -83,7 +83,7 @@ class KotlinFunction(
     {
         return try 
         {
-            if (function.instanceParameter != null || function.extensionReceiverParameter != null)
+            if(function.instanceParameter != null || function.extensionReceiverParameter != null)
             {
                 false
             }
@@ -93,7 +93,7 @@ class KotlinFunction(
                 function.valueParameters.size == signature.parameters.size
             }
         } 
-        catch (e: Exception) 
+        catch(e: Exception)
         {
             false
         }
@@ -118,7 +118,7 @@ class LambdaFunction<T>(
     {
         // Create ordered parameter array based on signature
         val orderedParams = signature.parameters.map { paramInfo ->
-            parameters[paramInfo.name] ?: if (paramInfo.isOptional) null 
+            parameters[paramInfo.name] ?: if(paramInfo.isOptional) null
             else throw IllegalArgumentException("Required parameter '${paramInfo.name}' not provided")
         }.toTypedArray()
         
@@ -139,7 +139,7 @@ class LambdaFunction<T>(
         {
             lambda != null && lambda!!::class.java.methods.any { it.name == "invoke" }
         } 
-        catch (e: Exception) 
+        catch(e: Exception)
         {
             false
         }

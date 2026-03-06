@@ -25,16 +25,16 @@ object MemoryClient
     private suspend fun <T> withRetry(block: suspend () -> T): T?
     {
         var lastException: Exception? = null
-        for (i in 1..MAX_RETRIES)
+        for(i in 1..MAX_RETRIES)
         {
             try
             {
                 return block()
             }
-            catch (e: Exception)
+            catch(e: Exception)
             {
                 lastException = e
-                if (i < MAX_RETRIES) delay(RETRY_DELAY_MS * i)
+                if(i < MAX_RETRIES) delay(RETRY_DELAY_MS * i)
             }
         }
         return null
@@ -62,7 +62,7 @@ object MemoryClient
     {
         val url = "${getBaseUrl()}/context/bank/$key"
         val response = withRetry { httpGet(url, authToken = getAuthToken()) } ?: return null
-        if (response.startsWith("Error:")) return null
+        if(response.startsWith("Error:")) return null
         return deserialize<ContextWindow>(response)
     }
 
@@ -93,7 +93,7 @@ object MemoryClient
         val aliases = aliasKeys.joinToString(",")
         val url = "${getBaseUrl()}/context/bank/$key/query?query=$query&minWeight=$minWeight&extractRegex=$extractRegex&requiredKeys=$required&aliasKeys=$aliases"
         val response = withRetry { httpGet(url, authToken = getAuthToken()) } ?: return emptyList()
-        if (response.startsWith("Error:")) return emptyList()
+        if(response.startsWith("Error:")) return emptyList()
         return deserialize<List<LoreBookQueryResult>>(response) ?: emptyList()
     }
 
@@ -104,7 +104,7 @@ object MemoryClient
     {
         val url = "${getBaseUrl()}/context/bank/$key/simulate?text=$text"
         val response = withRetry { httpGet(url, authToken = getAuthToken()) } ?: return emptyList()
-        if (response.startsWith("Error:")) return emptyList()
+        if(response.startsWith("Error:")) return emptyList()
         return deserialize<List<String>>(response) ?: emptyList()
     }
 
@@ -135,7 +135,7 @@ object MemoryClient
     {
         val url = "${getBaseUrl()}/context/todo/$key"
         val response = withRetry { httpGet(url, authToken = getAuthToken()) } ?: return null
-        if (response.startsWith("Error:")) return null
+        if(response.startsWith("Error:")) return null
         return deserialize<TodoList>(response)
     }
 
@@ -177,12 +177,12 @@ object MemoryClient
     {
         val now = System.currentTimeMillis()
         keyLockCache[key]?.let { (state, timestamp) ->
-            if (now - timestamp < CACHE_TTL_MS) return state
+            if(now - timestamp < CACHE_TTL_MS) return state
         }
 
         val url = "${getBaseUrl()}/context/lock/$key/state"
         val response = withRetry { httpGet(url, authToken = getAuthToken()) } ?: return false
-        if (response.startsWith("Error:")) return false
+        if(response.startsWith("Error:")) return false
         val state = response.trim().toBoolean()
 
         keyLockCache[key] = state to now
@@ -196,12 +196,12 @@ object MemoryClient
     {
         val now = System.currentTimeMillis()
         pageLockCache[pageKey]?.let { (state, timestamp) ->
-            if (now - timestamp < CACHE_TTL_MS) return state
+            if(now - timestamp < CACHE_TTL_MS) return state
         }
 
         val url = "${getBaseUrl()}/context/lock/page/$pageKey/state"
         val response = withRetry { httpGet(url, authToken = getAuthToken()) } ?: return false
-        if (response.startsWith("Error:")) return false
+        if(response.startsWith("Error:")) return false
         val state = response.trim().toBoolean()
 
         pageLockCache[pageKey] = state to now
@@ -216,10 +216,10 @@ object MemoryClient
         val url = "${getBaseUrl()}/context/lock"
         val body = serialize(request)
         val response = withRetry { httpPost(url, body, authToken = getAuthToken()) } ?: return false
-        if (!response.startsWith("Error:"))
+        if(!response.startsWith("Error:"))
         {
             val now = System.currentTimeMillis()
-            if (request.isPageKey) pageLockCache[request.key] = request.lockState to now
+            if(request.isPageKey) pageLockCache[request.key] = request.lockState to now
             else keyLockCache[request.key] = request.lockState to now
             return true
         }
@@ -233,7 +233,7 @@ object MemoryClient
     {
         val url = "${getBaseUrl()}/context/lock/$key"
         val response = withRetry { httpDelete(url, authToken = getAuthToken()) } ?: return false
-        if (!response.startsWith("Error:"))
+        if(!response.startsWith("Error:"))
         {
             keyLockCache.remove(key)
             pageLockCache.remove(key)
@@ -250,7 +250,7 @@ object MemoryClient
         val url = "${getBaseUrl()}/context/lock/$key/state"
         val body = lockState.toString()
         val response = withRetry { httpPost(url, body, authToken = getAuthToken()) } ?: return false
-        if (!response.startsWith("Error:"))
+        if(!response.startsWith("Error:"))
         {
             val now = System.currentTimeMillis()
             keyLockCache[key] = lockState to now

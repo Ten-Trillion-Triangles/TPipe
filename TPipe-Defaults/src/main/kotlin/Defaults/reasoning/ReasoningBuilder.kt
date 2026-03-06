@@ -163,7 +163,7 @@ object ReasoningBuilder
          * Assign the system prompt to configure the pipe to have chain of thought behavior based on the enum
          * settings provided.
          */
-        when (settings.reasoningMethod)
+        when(settings.reasoningMethod)
         {
             ReasoningMethod.StructuredCot -> {
                 targetSystemPrompt = chainOfThoughtSystemPrompt(
@@ -244,11 +244,13 @@ object ReasoningBuilder
             .requireJsonPromptInjection()
         
         // Apply token budget settings if provided
-        if (pipeSettings.tokenBudgetSettings != null) {
+        if(pipeSettings.tokenBudgetSettings != null)
+        {
             targetPipe.setTokenBudget(pipeSettings.tokenBudgetSettings!!)
         }
         // Type-safe JSON output using cast
-        when (jsonOutputClass) {
+        when(jsonOutputClass)
+        {
             StructuredCot::class -> targetPipe.setJsonOutput(jsonOutputObject as StructuredCot)
             ProcessFocusedResult::class -> targetPipe.setJsonOutput(jsonOutputObject as ProcessFocusedResult)
             ExplicitReasoningDetailed::class -> targetPipe.setJsonOutput(jsonOutputObject as ExplicitReasoningDetailed)

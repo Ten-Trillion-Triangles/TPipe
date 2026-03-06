@@ -44,7 +44,7 @@ object IntCoercionSerializer : KSerializer<Int>
     override fun deserialize(decoder: Decoder): Int
     {
         // Check if we're dealing with JSON input that may contain mixed types
-        return when (val jsonDecoder = decoder as? JsonDecoder)
+        return when(val jsonDecoder = decoder as? JsonDecoder)
         {
             // Non-JSON decoder - use standard Int decoding
             null -> decoder.decodeInt()
@@ -52,7 +52,7 @@ object IntCoercionSerializer : KSerializer<Int>
             // JSON decoder - handle type coercion
             else -> {
                 val element = jsonDecoder.decodeJsonElement()
-                when (element)
+                when(element)
                 {
                     is JsonPrimitive -> {
                         when
