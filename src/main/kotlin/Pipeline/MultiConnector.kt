@@ -95,7 +95,7 @@ class MultiConnector : P2PInterface
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {
         // Execute P2P request using the first available connector in sequential mode
-        if (connectors.isNotEmpty())
+        if(connectors.isNotEmpty())
         {
             return connectors.first().executeP2PRequest(request)
         }
@@ -152,7 +152,7 @@ class MultiConnector : P2PInterface
      */
     suspend fun execute(paths: List<Any>, content: MultimodalContent): List<MultimodalContent>
     {
-        return when (executionMode)
+        return when(executionMode)
         {
             ExecutionMode.SEQUENTIAL -> listOf(executeSequential(paths, content))
             ExecutionMode.PARALLEL -> executeParallel(listOf(content), paths)
@@ -187,7 +187,7 @@ class MultiConnector : P2PInterface
      */
     suspend fun execute(paths: List<Any>, contentList: List<MultimodalContent>): List<MultimodalContent>
     {
-        return when (executionMode)
+        return when(executionMode)
         {
             ExecutionMode.SEQUENTIAL -> contentList.map { executeSequential(paths, it) }
             ExecutionMode.PARALLEL -> executeParallel(contentList, paths)
@@ -207,10 +207,10 @@ class MultiConnector : P2PInterface
         var result = content
         
         // Process through each connector in sequence
-        for (i in connectors.indices)
+        for(i in connectors.indices)
         {
             // Only continue if we have a path and pipeline hasn't been terminated
-            if (i < paths.size && !result.terminatePipeline)
+            if(i < paths.size && !result.terminatePipeline)
             {
                 result = connectors[i].execute(paths[i], result)
             }
@@ -228,13 +228,13 @@ class MultiConnector : P2PInterface
     private suspend fun executeFallback(paths: List<Any>, content: MultimodalContent): MultimodalContent
     {
         // Try each connector until one succeeds
-        for (i in connectors.indices)
+        for(i in connectors.indices)
         {
-            if (i < paths.size)
+            if(i < paths.size)
             {
                 val result = connectors[i].execute(paths[i], content)
                 // Return first successful result (pipeline not terminated)
-                if (!result.terminatePipeline) return result
+                if(!result.terminatePipeline) return result
             }
         }
         // All connectors failed, terminate pipeline

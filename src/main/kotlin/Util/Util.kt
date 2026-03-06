@@ -63,7 +63,7 @@ inline fun <reified T> serialize(obj: T, encodedefault : Boolean = true): String
     return try {
         json.encodeToString(obj)
     }
-    catch (e: Exception)
+    catch(e: Exception)
     {
         ""
     }
@@ -113,9 +113,10 @@ inline fun <reified T> deserialize(jsonString: String, useRepair: Boolean = true
         
         result
     }
-    catch (e: Exception)
+    catch(e: Exception)
     {
-        if (useRepair) {
+        if(useRepair)
+        {
             return repairAndDeserialize<T>(jsonString)
         }
         return null
@@ -144,7 +145,8 @@ fun repairJsonString(input: String): String
     
     // Extract JSON boundaries with proper bracket matching
     val jsonBounds = findJsonBounds(repaired)
-    if (jsonBounds != null) {
+    if(jsonBounds != null)
+    {
         repaired = repaired.substring(jsonBounds.first, jsonBounds.second + 1)
     }
     
@@ -173,15 +175,16 @@ fun repairJsonString(input: String): String
 private fun findJsonBounds(input: String): Pair<Int, Int>?
 {
     val start = input.indexOfFirst { it == '{' || it == '[' }
-    if (start == -1) return null
+    if(start == -1) return null
     
     val openChar = input[start]
-    val closeChar = if (openChar == '{') '}' else ']'
+    val closeChar = if(openChar == '{') '}' else ']'
     var depth = 0
     var inString = false
     var escaped = false
     
-    for (i in start until input.length) {
+    for(i in start until input.length)
+    {
         val char = input[i]
         when {
             escaped -> escaped = false
@@ -190,14 +193,14 @@ private fun findJsonBounds(input: String): Pair<Int, Int>?
             !inString && char == openChar -> depth++
             !inString && char == closeChar -> {
                 depth--
-                if (depth == 0) return Pair(start, i)
+                if(depth == 0) return Pair(start, i)
             }
         }
     }
     
     // If unclosed, find reasonable end point
     val lastBrace = input.lastIndexOf(closeChar)
-    return if (lastBrace > start) Pair(start, lastBrace) else null
+    return if(lastBrace > start) Pair(start, lastBrace) else null
 }
 
 private fun fixUnquotedValues(input: String): String
@@ -212,9 +215,12 @@ private fun fixUnquotedValues(input: String): String
         val value = match.groupValues[2].trim()
         
         // Don't quote if it's clearly a number, boolean, or null
-        if (value.matches(Regex("\\-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?|true|false|null"))) {
+        if(value.matches(Regex("\\-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?|true|false|null")))
+        {
             match.value
-        } else {
+        }
+        else
+        {
             "$prefix\"$value\""
         }
     }
@@ -238,7 +244,8 @@ private fun completeStructure(input: String): String
     
     // Handle truncated strings
     val quoteCount = result.count { it == '"' }
-    if (quoteCount % 2 != 0) {
+    if(quoteCount % 2 != 0)
+    {
         result += "\""
     }
     
@@ -274,7 +281,9 @@ inline fun <reified T> repairAndDeserialize(malformedJson: String): T?
     // Try standard repair first
     val result = try {
         json.decodeFromString<T>(repaired)
-    } catch (e: Exception) {
+    }
+    catch(e: Exception)
+    {
         null
     }
 
@@ -299,7 +308,7 @@ inline fun <reified T> aggressiveExtraction(malformedJson: String): T?
     var allJsonObjects : List<JsonElement>? = extractAllJsonObjects(malformedJson)
     if(!allJsonObjects!!.isEmpty())
     {
-        for (jsonElement in allJsonObjects) //We have to skip this if we fail to find anything due to nullptr shenanagins above.
+        for(jsonElement in allJsonObjects) //We have to skip this if we fail to find anything due to nullptr shenanagins above.
         {
             try {
                 val jsonString = Json.encodeToString(JsonElement.serializer(), jsonElement)
@@ -308,7 +317,7 @@ inline fun <reified T> aggressiveExtraction(malformedJson: String): T?
                     isLenient = true
                     coerceInputValues = true
                 }.decodeFromString<T>(jsonString)
-            } catch (e: Exception) { continue }
+            } catch(e: Exception) { continue }
         }
     }
 
@@ -333,7 +342,8 @@ inline fun <reified T> aggressiveTextMining(text: String): T?
     val fieldNames = clazz.declaredFields.map { it.name }
     
     // Mine for field values using multiple patterns
-    for (fieldName in fieldNames) {
+    for(fieldName in fieldNames)
+    {
         val patterns = listOf(
             Regex("$fieldName[\"'\\s]*[:=][\"'\\s]*([^,}\\]\\n]+)", RegexOption.IGNORE_CASE),
             Regex("\"$fieldName\"[\\s]*:[\\s]*\"([^\"]*)", RegexOption.IGNORE_CASE),
@@ -341,10 +351,12 @@ inline fun <reified T> aggressiveTextMining(text: String): T?
             Regex("$fieldName[\\s]*is[\\s]*([^,\\n]+)", RegexOption.IGNORE_CASE)
         )
         
-        for (pattern in patterns) {
+        for(pattern in patterns)
+        {
             pattern.find(text)?.let { match ->
                 val value = match.groupValues[1].trim().removeSurrounding("\"", "'")
-                if (value.isNotEmpty()) {
+                if(value.isNotEmpty())
+                {
                     reconstructed[fieldName] = value
                     break
                 }
@@ -352,7 +364,7 @@ inline fun <reified T> aggressiveTextMining(text: String): T?
         }
     }
     
-    return if (reconstructed.isNotEmpty()) {
+    return if(reconstructed.isNotEmpty()) {
         try {
             val jsonString = Json.encodeToString(reconstructed)
             Json { 
@@ -360,7 +372,7 @@ inline fun <reified T> aggressiveTextMining(text: String): T?
                 isLenient = true
                 coerceInputValues = true
             }.decodeFromString<T>(jsonString)
-        } catch (e: Exception) { null }
+        } catch(e: Exception) { null }
     } else null
 }
 
@@ -377,11 +389,15 @@ inline fun <reified T> validateFieldRequirements(extractedFields: Set<String>): 
         val requiredFields = mutableSetOf<String>()
         val optionalFields = mutableSetOf<String>()
         
-        for (i in 0 until descriptor.elementsCount) {
+        for(i in 0 until descriptor.elementsCount)
+        {
             val fieldName = descriptor.getElementName(i)
-            if (descriptor.isElementOptional(i)) {
+            if(descriptor.isElementOptional(i))
+            {
                 optionalFields.add(fieldName)
-            } else {
+            }
+            else
+            {
                 requiredFields.add(fieldName)
             }
         }
@@ -391,14 +407,18 @@ inline fun <reified T> validateFieldRequirements(extractedFields: Set<String>): 
         
         // Fixed logic: If there are required fields, they must all match
         // If there are no required fields, at least one optional field must match
-        val result = if (requiredFields.isNotEmpty()) {
+        val result = if(requiredFields.isNotEmpty()) {
             hasAllRequired
-        } else {
+        }
+        else
+        {
             hasOneOptional
         }
         
         result
-    } catch (e: Exception) {
+    }
+    catch(e: Exception)
+    {
         false // If we can't validate, reject to be safe
     }
 }
@@ -417,10 +437,11 @@ inline fun <reified T> templateBasedReconstruction(text: String): T?
         
         // Try to fill fields with extracted data
         val extracted = extractJsonData(text)
-        if (extracted.isEmpty()) return null
+        if(extracted.isEmpty()) return null
         
         // Validate that extracted fields match target type structure
-        if (!validateFieldRequirements<T>(extracted.keys.toSet())) {
+        if(!validateFieldRequirements<T>(extracted.keys.toSet()))
+        {
             return null
         }
         
@@ -428,18 +449,21 @@ inline fun <reified T> templateBasedReconstruction(text: String): T?
             field.isAccessible = true
             extracted[field.name]?.let { value ->
                 try {
-                    when (field.type) {
+                    when(field.type)
+                    {
                         String::class.java -> field.set(instance, value)
                         Boolean::class.java -> field.set(instance, value.lowercase() == "true")
                         Int::class.java -> field.set(instance, value.toIntOrNull() ?: 0)
                         Double::class.java -> field.set(instance, value.toDoubleOrNull() ?: 0.0)
                     }
-                } catch (e: Exception) { /* Skip field */ }
+                } catch(e: Exception) { /* Skip field */ }
             }
         }
         
         instance as T
-    } catch (e: Exception) {
+    }
+    catch(e: Exception)
+    {
         null
     }
 }
@@ -466,11 +490,13 @@ fun extractJsonData(malformedJson: String): Map<String, String>
         Regex("([a-zA-Z_][\\w\\s-]*)\\s*:\\s*([^,}\\]\\n]+?)(?=[,}\\]\\n]|$)")
     )
     
-    for (pattern in patterns) {
+    for(pattern in patterns)
+    {
         pattern.findAll(malformedJson).forEach { match ->
             val key = match.groupValues[1].trim()
             val value = match.groupValues[2].trim()
-            if (key.isNotEmpty() && !result.containsKey(key)) {
+            if(key.isNotEmpty() && !result.containsKey(key))
+            {
                 result[key] = value
             }
         }
@@ -554,7 +580,7 @@ fun deepCopyInternal(obj: Any?, kClass: KClass<*>): Any?
 inline fun <reified T> reflectionBasedReconstruct(malformedJson: String): T?
 {
     val extracted = extractJsonData(malformedJson)
-    if (extracted.isEmpty()) return null
+    if(extracted.isEmpty()) return null
     
     try {
         val clazz = T::class.java
@@ -565,9 +591,10 @@ inline fun <reified T> reflectionBasedReconstruct(malformedJson: String): T?
             val fieldName = field.name
             val extractedValue = extracted[fieldName]
             
-            if (extractedValue != null) {
+            if(extractedValue != null)
+            {
                 // Convert string value to appropriate type
-                val convertedValue = when (field.type) {
+                val convertedValue = when(field.type) {
                     Boolean::class.java -> extractedValue.lowercase() == "true"
                     Int::class.java -> extractedValue.toIntOrNull()
                     Double::class.java -> extractedValue.toDoubleOrNull()
@@ -576,7 +603,8 @@ inline fun <reified T> reflectionBasedReconstruct(malformedJson: String): T?
                     String::class.java -> extractedValue
                     else -> {
                         // Handle nested objects by recursively extracting
-                        if (extractedValue.startsWith("{") && extractedValue.endsWith("}")) {
+                        if(extractedValue.startsWith("{") && extractedValue.endsWith("}"))
+                        {
                             extractJsonData(extractedValue)
                         } else extractedValue
                     }
@@ -604,17 +632,23 @@ inline fun <reified T> reflectionBasedReconstruct(malformedJson: String): T?
         
         val jsonString = try {
             json.encodeToString(reconstructed)
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             return null
         }
         
         return try {
             json.decodeFromString<T>(jsonString)
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             null
         }
         
-    } catch (e: Exception) {
+    }
+    catch(e: Exception)
+    {
         return null
     }
 }
@@ -633,20 +667,24 @@ inline fun <reified T : Any> constructPipeFromTemplate(
     val kClass = T::class
     val newPipeInstance = try {
         kClass.java.getDeclaredConstructor().newInstance()
-    } catch (e: Exception) {
+    }
+    catch(e: Exception)
+    {
         // Fallback to null if instantiation fails
         null
     } ?: return null
 
     // 2. Copy serializable properties via reflection
     kClass.memberProperties.forEach { prop ->
-        if (prop is KMutableProperty1<*, *>) {
+        if(prop is KMutableProperty1<*, *>)
+        {
             // Check if the property is marked as transient (skip these by default to match serialization behavior)
             val isTransient = prop.annotations.any { 
                 it.annotationClass.qualifiedName?.contains("Transient") == true 
             }
             
-            if (!isTransient) {
+            if(!isTransient)
+            {
                 try {
                     prop.isAccessible = true
                     @Suppress("UNCHECKED_CAST")
@@ -657,7 +695,9 @@ inline fun <reified T : Any> constructPipeFromTemplate(
                     
                     @Suppress("UNCHECKED_CAST")
                     (prop as KMutableProperty1<Any, Any?>).set(newPipeInstance, copiedValue)
-                } catch (e: Exception) {
+                }
+                catch(e: Exception)
+                {
                     // Skip if property is not accessible or not settable in this context
                 }
             }
@@ -665,8 +705,10 @@ inline fun <reified T : Any> constructPipeFromTemplate(
     }
 
     // 3. Re-apply flags logic for non-serializable content (functions, sub-pipes, metadata)
-    if (newPipeInstance is Pipe) {
-        if (copyFunctions) {
+    if(newPipeInstance is Pipe)
+    {
+        if(copyFunctions)
+        {
             template.validatorFunction?.let { newPipeInstance.validatorFunction = it }
             template.transformationFunction?.let { newPipeInstance.transformationFunction = it }
             template.preValidationFunction?.let { newPipeInstance.preValidationFunction = it }
@@ -677,13 +719,16 @@ inline fun <reified T : Any> constructPipeFromTemplate(
             template.postGenerateFunction?.let { newPipeInstance.postGenerateFunction = it }
         }
 
-        if (copyMetadata) {
-            for (it in template.pipeMetadata) {
+        if(copyMetadata)
+        {
+            for(it in template.pipeMetadata)
+            {
                 newPipeInstance.pipeMetadata[it.key] = it.value
             }
         }
 
-        if (copyPipes) {
+        if(copyPipes)
+        {
             template.validatorPipe?.let { newPipeInstance.validatorPipe = it }
             template.transformationPipe?.let { newPipeInstance.transformationPipe = it }
             template.branchPipe?.let { newPipeInstance.branchPipe = it }
@@ -703,9 +748,11 @@ inline fun <reified T : Any> constructPipeFromTemplate(
  */
 fun getHomeFolder(): File {
     val os = System.getProperty("os.name")
-    return if (os.contains("Windows")) {
+    return if(os.contains("Windows")) {
         File(System.getenv("USERPROFILE"))
-    } else {
+    }
+    else
+    {
         File(System.getProperty("user.home"))
     }
 }
@@ -716,21 +763,32 @@ fun getHomeFolder(): File {
  * @param starPath The path of the file to copy.
  * @param destPath The path to copy the file to.
  */
-fun copyFile(starPath : String, destPath : String) {
+fun copyFile(starPath : String, destPath : String)
+{
 
     try {
         val targetFile = File(destPath)
         val sourceFile = File(starPath)
         sourceFile.copyTo(targetFile, overwrite = false)
-    } catch (e: NoSuchFileException) {
+    }
+    catch(e: NoSuchFileException)
+    {
         println("Error: Source file not found: ${e.message}")
-    } catch (e: FileAlreadyExistsException) {
+    }
+    catch(e: FileAlreadyExistsException)
+    {
         println("Error: Destination file already exists: ${e.message}")
-    } catch (e: FileSystemException) {
+    }
+    catch(e: FileSystemException)
+    {
         println("Error: Failed to create target directory: ${e.message}")
-    } catch (e: IOException) {
+    }
+    catch(e: IOException)
+    {
         println("Error: I/O error occurred: ${e.message}")
-    } catch (e: Exception) {
+    }
+    catch(e: Exception)
+    {
         println("Unexpected error: ${e.message}")
     }
 
@@ -743,14 +801,16 @@ fun copyFile(starPath : String, destPath : String) {
  * @param starPath The path of the directory to copy.
  * @param destPath The path to copy the directory to.
  */
-fun copyDir(starPath : String, destPath : String) {
+fun copyDir(starPath : String, destPath : String)
+{
     //File(starPath).copyRecursively(File(destPath), true)
 
     File(starPath).copyRecursively(
         File(destPath),
         overwrite = true,
         onError = { file, exception ->
-            when (exception) {
+            when(exception)
+            {
                 is AccessDeniedException -> {
                     println("Error copying $file: Permission denied")
                     OnErrorAction.SKIP
@@ -780,22 +840,22 @@ fun deleteDir(path : String)
     {
         File(path).deleteRecursively()
     }
-    catch (e : AccessDeniedException)
+    catch(e : AccessDeniedException)
     {
         println("Error deleting $path: Permission denied")
         OnErrorAction.SKIP
     }
-    catch (e : IOException)
+    catch(e : IOException)
     {
         println("Error deleting $path: I/O error: ${e.message}")
         OnErrorAction.SKIP
     }
-    catch (e : SecurityException)
+    catch(e : SecurityException)
     {
         println("Error deleting $path: Security violation: ${e.message}")
         OnErrorAction.SKIP
     }
-    catch (e : Exception)
+    catch(e : Exception)
     {
         println("Unexpected error deleting $path: ${e.message}")
         OnErrorAction.SKIP
@@ -833,7 +893,7 @@ fun findFileCascading(path : String) : File
     val maxIterations = 10
     var iterations = 0
 
-    while (!File(mutablePath).exists())
+    while(!File(mutablePath).exists())
     {
         mutablePath = "../$mutablePath"
 
@@ -862,7 +922,8 @@ fun getWorkingDirectory() : String
  * @param filepath The Unix filepath to write to.
  * @param content The string to write to the file.
  */
-fun writeStringToFile(filepath: String, content: String) {
+fun writeStringToFile(filepath: String, content: String)
+{
 
     if(!File(filepath).exists())
     {
@@ -987,7 +1048,9 @@ suspend fun launchProgramAsync(path: MutableList<String>): Deferred<ProgramResul
             outputJob.await()
             
             ProgramResult(exitCode, output.toString())
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             ProgramResult(-1, "Error executing program: ${e.message}")
         }
     }
@@ -1074,7 +1137,7 @@ fun getDirRecursive(root : File) : List<File>
 fun getOs() : String
 {
     val os = System.getProperty("os.name").lowercase()
-    return when (os) {
+    return when(os) {
         "linux" -> "Linux"
         "mac os x" -> "Mac"
         else -> "Win64"
@@ -1122,7 +1185,8 @@ fun getStringFromArgsbyIndex(args : List<String>, index : Int) : String
 
 fun clearScreen()
 {
-    when (System.getProperty("os.name")) {
+    when(System.getProperty("os.name"))
+    {
         "Linux", "Mac OS X" -> Runtime.getRuntime().exec("clear")
         "Windows" -> Runtime.getRuntime().exec("cls")
         else -> println("Unsupported operating system")
@@ -1210,10 +1274,10 @@ fun copyPipeline(originalPipeline: Pipeline, copyFunctions: Boolean = false, cop
     newPipeline.context = originalPipeline.context
 
     // Copy all pipes using constructPipeFromTemplate
-    for (originalPipe in originalPipeline.getPipes())
+    for(originalPipe in originalPipeline.getPipes())
     {
         val copiedPipe = constructPipeFromTemplate<Pipe>(originalPipe, copyFunctions, copyPipes)
-        if (copiedPipe != null)
+        if(copiedPipe != null)
         {
             newPipeline.add(copiedPipe)
         }
@@ -1256,9 +1320,11 @@ fun getLowestContextWindowSize(pipes:  List<Pipe>) : Int
  */
 fun removeFromFirstOccurrence(input: String, target: String): String {
     val index = input.indexOf(target)
-    return if (index != -1) {
+    return if(index != -1) {
         input.substring(0, index)
-    } else {
+    }
+    else
+    {
         input
     }
 }
@@ -1271,7 +1337,8 @@ fun removeFromFirstOccurrence(input: String, target: String): String {
  */
 fun getAllFilePaths(directoryPath: String): List<String> {
     val directory = File(directoryPath)
-    if (!directory.exists() || !directory.isDirectory) {
+    if(!directory.exists() || !directory.isDirectory)
+    {
         return emptyList()
     }
 
@@ -1289,20 +1356,26 @@ fun getAllFilePaths(directoryPath: String): List<String> {
  */
 fun deleteFile(filePath: String): Boolean {
     val file = File(filePath)
-    if (!file.exists()) {
+    if(!file.exists())
+    {
         println("Error: File not found at $filePath")
         return false
     }
-    if (!file.isFile) {
+    if(!file.isFile)
+    {
         println("Error: Path $filePath is not a file.")
         return false
     }
     try {
         return file.delete()
-    } catch (e: SecurityException) {
+    }
+    catch(e: SecurityException)
+    {
         println("Error deleting file $filePath: Permission denied. ${e.message}")
         return false
-    } catch (e: Exception) {
+    }
+    catch(e: Exception)
+    {
         println("Unexpected error deleting file $filePath: ${e.message}")
         return false
     }

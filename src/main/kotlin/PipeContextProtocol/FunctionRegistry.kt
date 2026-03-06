@@ -100,7 +100,7 @@ object FunctionRegistry
     {
         val errors = mutableListOf<String>()
         functions.forEach { (name, function) ->
-            if (!function.validate()) 
+            if(!function.validate())
             {
                 errors.add("Function '$name' failed validation")
             }
@@ -169,9 +169,11 @@ object FunctionRegistry
     private fun extractEnumValues(type: KType): List<String>
     {
         val classifier = type.classifier as? KClass<*>
-        return if (classifier?.java?.isEnum == true) {
+        return if(classifier?.java?.isEnum == true) {
             classifier.java.enumConstants.map { it.toString() }
-        } else {
+        }
+        else
+        {
             emptyList()
         }
     }

@@ -34,20 +34,25 @@ data class TraceEvent(
     }
 }
 
-object MapAnySerializer : KSerializer<Map<String, Any>> {
+object MapAnySerializer : KSerializer<Map<String, Any>>
+{
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("MapAny", PrimitiveKind.STRING)
 
-    override fun serialize(encoder: Encoder, value: Map<String, Any>) {
+    override fun serialize(encoder: Encoder, value: Map<String, Any>)
+    {
         val json = buildJsonObject {
-            for ((k, v) in value) {
+            for((k, v) in value)
+            {
                 putValue(k, v)
             }
         }
         encoder.encodeSerializableValue(JsonObject.serializer(), json)
     }
 
-    private fun JsonObjectBuilder.putValue(k: String, v: Any?) {
-        when (v) {
+    private fun JsonObjectBuilder.putValue(k: String, v: Any?)
+    {
+        when(v)
+        {
             is String -> put(k, v)
             is Number -> put(k, v)
             is Boolean -> put(k, v)
@@ -63,8 +68,10 @@ object MapAnySerializer : KSerializer<Map<String, Any>> {
         }
     }
     
-    private fun JsonArrayBuilder.addValue(v: Any?) {
-        when (v) {
+    private fun JsonArrayBuilder.addValue(v: Any?)
+    {
+        when(v)
+        {
             is String -> add(v)
             is Number -> add(v)
             is Boolean -> add(v)

@@ -37,7 +37,7 @@ object ManifoldDefaults
         return try 
         {
             BedrockDefaults.createManifold(configuration)
-        } catch (e: Exception) 
+        } catch(e: Exception)
         {
             throw RuntimeException("Failed to create Bedrock Manifold: ${e.message}", e)
         }
@@ -58,7 +58,7 @@ object ManifoldDefaults
         return try 
         {
             OllamaDefaults.createManifold(configuration)
-        } catch (e: Exception) 
+        } catch(e: Exception)
         {
             throw RuntimeException("Failed to create Ollama Manifold: ${e.message}", e)
         }
@@ -73,8 +73,8 @@ object ManifoldDefaults
     {
         val providers = mutableListOf<String>()
         
-        if (isProviderAvailable("bedrock")) providers.add("bedrock")
-        if (isProviderAvailable("ollama")) providers.add("ollama")
+        if(isProviderAvailable("bedrock")) providers.add("bedrock")
+        if(isProviderAvailable("ollama")) providers.add("ollama")
         
         return providers
     }
@@ -89,7 +89,7 @@ object ManifoldDefaults
     {
         return try 
         {
-            when (providerName.lowercase()) 
+            when(providerName.lowercase())
             {
                 "bedrock" -> {
                     Class.forName("bedrockPipe.BedrockPipe")
@@ -101,7 +101,7 @@ object ManifoldDefaults
                 }
                 else -> false
             }
-        } catch (e: ClassNotFoundException) 
+        } catch(e: ClassNotFoundException)
         {
             false
         }
@@ -229,7 +229,8 @@ object ManifoldDefaults
                 // Directly extract TaskProgress from the content of the entryPipe
                 val taskProgress = extractJson<TaskProgress>(content.text)
 
-                if (taskProgress != null && taskProgress.isTaskComplete) {
+                if(taskProgress != null && taskProgress.isTaskComplete)
+                {
                     content.passPipeline = true // Signal the pipe to pass through
                     return@setPreInvokeFunction true // Return true for early exit
                 }

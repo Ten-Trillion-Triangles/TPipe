@@ -8,26 +8,30 @@ import kotlinx.coroutines.runBlocking
 /**
  * Example demonstrating how to use the TPipe tracing system.
  */
-class TracingExample {
+class TracingExample
+{
     
     /**
      * Mock pipe for demonstration purposes.
      */
-    class MockPipe(private val name: String, private val shouldFail: Boolean = false) : Pipe() {
+    class MockPipe(private val name: String, private val shouldFail: Boolean = false) : Pipe()
+    {
         
         override suspend fun init(): Pipe = this
         
         override fun truncateModuleContext(): Pipe = this
         
         override suspend fun generateText(promptInjector: String): String {
-            if (shouldFail) {
+            if(shouldFail)
+            {
                 throw RuntimeException("Mock failure in $name")
             }
             return "Generated text from $name: $promptInjector"
         }
         
         override suspend fun generateContent(content: MultimodalContent): MultimodalContent {
-            if (shouldFail) {
+            if(shouldFail)
+            {
                 throw RuntimeException("Mock failure in $name")
             }
             val result = generateText(content.text)
@@ -37,7 +41,8 @@ class TracingExample {
     
     companion object {
         @JvmStatic
-        fun main(args: Array<String>) {
+        fun main(args: Array<String>)
+        {
             runBlocking {
                 demonstrateBasicTracing()
                 demonstrateFailureTracing()

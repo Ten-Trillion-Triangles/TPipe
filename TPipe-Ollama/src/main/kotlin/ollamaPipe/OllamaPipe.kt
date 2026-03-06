@@ -804,7 +804,9 @@ class OllamaPipe : Pipe()
         {
             try {
                 Json.parseToJsonElement(jsonOutput)
-            } catch (e: Exception) {
+            }
+            catch(e: Exception)
+            {
                 JsonPrimitive("json")
             }
         } else null
@@ -1007,7 +1009,9 @@ class OllamaPipe : Pipe()
         {
             try {
                 Json.parseToJsonElement(jsonOutput)
-            } catch (e: Exception) {
+            }
+            catch(e: Exception)
+            {
                 JsonPrimitive("json")
             }
         } else null

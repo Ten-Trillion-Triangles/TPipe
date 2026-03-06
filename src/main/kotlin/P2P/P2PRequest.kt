@@ -42,7 +42,7 @@ data class CustomJsonSchema(
                 return customJsonSchemaObject
             }
 
-            catch (e: Exception)
+            catch(e: Exception)
             {
                 return null
             }
@@ -116,7 +116,8 @@ data class AgentRequest(
     fun buildP2PRequest(template: P2PRequest? = null) : P2PRequest
     {
         val request = template ?: P2PRequest()
-        if(prompt.isNotEmpty()) {
+        if(prompt.isNotEmpty())
+        {
             request.prompt.addText(prompt)
         }
 
@@ -147,18 +148,18 @@ data class AgentRequest(
             //This line makes no sense!!! Even when it was a string it makes no sense!!!
             request.pcpRequest = template?.pcpRequest ?: PcPRequest()
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             request.pcpRequest = null
         }
 
         template?.let {
-            if (request.authBody.isEmpty()) request.authBody = it.authBody
-            if (request.contextExplanationMessage.isEmpty()) request.contextExplanationMessage = it.contextExplanationMessage
-            if (request.context == null) request.context = it.context
-            if (request.inputSchema == null) request.inputSchema = it.inputSchema
-            if (request.outputSchema == null) request.outputSchema = it.outputSchema
-            if (request.returnAddress.transportAddress.isEmpty()) request.returnAddress = it.returnAddress
+            if(request.authBody.isEmpty()) request.authBody = it.authBody
+            if(request.contextExplanationMessage.isEmpty()) request.contextExplanationMessage = it.contextExplanationMessage
+            if(request.context == null) request.context = it.context
+            if(request.inputSchema == null) request.inputSchema = it.inputSchema
+            if(request.outputSchema == null) request.outputSchema = it.outputSchema
+            if(request.returnAddress.transportAddress.isEmpty()) request.returnAddress = it.returnAddress
         }
 
         return request

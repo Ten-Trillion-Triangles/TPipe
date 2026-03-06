@@ -39,7 +39,7 @@ class HttpExecutor : PcpExecutor
     {
         val startTime = System.currentTimeMillis()
 
-        val matchingOption = if (context.httpOptions.isNotEmpty())
+        val matchingOption = if(context.httpOptions.isNotEmpty())
         {
             findMatchingEndpoint(request.httpContextOptions, context)
                 ?: return PcpRequestResult(
@@ -57,7 +57,7 @@ class HttpExecutor : PcpExecutor
 
         val mergedOptions = mergeContextOptions(request.httpContextOptions, matchingOption)
 
-        if (mergedOptions.baseUrl.isEmpty())
+        if(mergedOptions.baseUrl.isEmpty())
         {
             return PcpRequestResult(
                 success = false,
@@ -85,14 +85,14 @@ class HttpExecutor : PcpExecutor
         return context.httpOptions.firstOrNull { contextOption ->
             val contextDetails = parseUrl(contextOption.baseUrl) ?: return@firstOrNull false
 
-            if (!hostsMatch(requestDetails, contextDetails)) return@firstOrNull false
-            if (!schemesMatch(requestDetails, contextDetails)) return@firstOrNull false
+            if(!hostsMatch(requestDetails, contextDetails)) return@firstOrNull false
+            if(!schemesMatch(requestDetails, contextDetails)) return@firstOrNull false
 
             val contextMethod = contextOption.method.takeIf { it.isNotBlank() }?.uppercase()
-            if (contextMethod != null && contextMethod != requestMethod) return@firstOrNull false
+            if(contextMethod != null && contextMethod != requestMethod) return@firstOrNull false
 
             val allowedPath = buildNormalizedPath(contextDetails.path, contextOption.endpoint)
-            if (allowedPath != "/" && !requestPath.startsWith(allowedPath)) return@firstOrNull false
+            if(allowedPath != "/" && !requestPath.startsWith(allowedPath)) return@firstOrNull false
 
             true
         }
@@ -120,9 +120,11 @@ class HttpExecutor : PcpExecutor
             method = resolvedMethodRaw.uppercase()
             val resolvedMethod = method
 
-            endpoint = if (contextOption?.endpoint?.isNotEmpty() == true) {
+            endpoint = if(contextOption?.endpoint?.isNotEmpty() == true) {
                 contextOption.endpoint
-            } else {
+            }
+            else
+            {
                 requestOptions.endpoint
             }
 
@@ -136,7 +138,7 @@ class HttpExecutor : PcpExecutor
             }
 
             permissions.addAll(contextOption?.permissions ?: emptyList())
-            if (permissions.isEmpty())
+            if(permissions.isEmpty())
             {
                 permissions.addAll(requestOptions.permissions)
             }
@@ -144,11 +146,11 @@ class HttpExecutor : PcpExecutor
             requestBody = requestOptions.requestBody
 
             allowedMethods.addAll((contextOption?.allowedMethods ?: emptyList()).map { it.uppercase() })
-            if (allowedMethods.isEmpty())
+            if(allowedMethods.isEmpty())
             {
                 allowedMethods.addAll(requestOptions.allowedMethods.map { it.uppercase() })
             }
-            if (allowedMethods.isEmpty())
+            if(allowedMethods.isEmpty())
             {
                 allowedMethods.add(resolvedMethod)
             }
@@ -157,7 +159,7 @@ class HttpExecutor : PcpExecutor
             allowedMethods.clear()
             allowedMethods.addAll(normalizedMethods)
 
-            authType = if (contextOption?.authType?.isNotEmpty() == true)
+            authType = if(contextOption?.authType?.isNotEmpty() == true)
             {
                 contextOption.authType
             }
@@ -169,11 +171,11 @@ class HttpExecutor : PcpExecutor
             contextOption?.authCredentials?.let { authCredentials.putAll(it) }
 
             allowedHosts.addAll(contextOption?.allowedHosts ?: emptyList())
-            if (allowedHosts.isEmpty())
+            if(allowedHosts.isEmpty())
             {
                 allowedHosts.addAll(requestOptions.allowedHosts)
             }
-            if (allowedHosts.isEmpty() && baseUrl.isNotEmpty())
+            if(allowedHosts.isEmpty() && baseUrl.isNotEmpty())
             {
                 parseUrl(baseUrl)?.let { addAllowedHostVariants(allowedHosts, it) }
             }
@@ -181,7 +183,7 @@ class HttpExecutor : PcpExecutor
 
             followRedirects = contextOption?.followRedirects ?: requestOptions.followRedirects
 
-            description = if (contextOption?.description?.isNotEmpty() == true)
+            description = if(contextOption?.description?.isNotEmpty() == true)
             {
                 contextOption.description
             }
@@ -202,7 +204,7 @@ class HttpExecutor : PcpExecutor
         val options = request.httpContextOptions
 
         val validation = securityManager.validateHttpRequest(options)
-        if (!validation.isValid)
+        if(!validation.isValid)
         {
             return PcpRequestResult(
                 success = false,
@@ -216,16 +218,16 @@ class HttpExecutor : PcpExecutor
         val trimmedEndpoint = options.endpoint.trim()
 
         // SSRF PROTECTION: Use validated IP address for the request to prevent DNS rebinding
-        val originalUrl = try { URL(options.baseUrl) } catch (e: Exception) { null }
-        val requestUrl = if (validation.validatedIp != null && originalUrl != null)
+        val originalUrl = try { URL(options.baseUrl) } catch(e: Exception) { null }
+        val requestUrl = if(validation.validatedIp != null && originalUrl != null)
         {
             // Reconstruct URL with IP address but keep original port/path/query/fragment
             val protocol = originalUrl.protocol
-            val port = if (originalUrl.port != -1) ":${originalUrl.port}" else ""
-            val ipAddress = if (validation.validatedIp!!.contains(":")) "[${validation.validatedIp}]" else validation.validatedIp
+            val port = if(originalUrl.port != -1) ":${originalUrl.port}" else ""
+            val ipAddress = if(validation.validatedIp!!.contains(":")) "[${validation.validatedIp}]" else validation.validatedIp
             val path = originalUrl.path
-            val query = if (originalUrl.query != null) "?${originalUrl.query}" else ""
-            val fragment = if (originalUrl.ref != null) "#${originalUrl.ref}" else ""
+            val query = if(originalUrl.query != null) "?${originalUrl.query}" else ""
+            val fragment = if(originalUrl.ref != null) "#${originalUrl.ref}" else ""
             "$protocol://$ipAddress$port$path$query$fragment"
         }
         else
@@ -235,9 +237,9 @@ class HttpExecutor : PcpExecutor
 
         val fullUrl = buildString {
             append(requestUrl)
-            if (trimmedEndpoint.isNotEmpty())
+            if(trimmedEndpoint.isNotEmpty())
             {
-                if (!requestUrl.endsWith("/") && !trimmedEndpoint.startsWith("/"))
+                if(!requestUrl.endsWith("/") && !trimmedEndpoint.startsWith("/"))
                 {
                     append('/')
                 }
@@ -254,13 +256,13 @@ class HttpExecutor : PcpExecutor
         }
 
         // SSRF PROTECTION: Manually set Host header to original hostname
-        if (validation.validatedIp != null && originalUrl != null)
+        if(validation.validatedIp != null && originalUrl != null)
         {
             headers["Host"] = originalUrl.host
         }
 
         val authType = options.authType.uppercase()
-        val httpAuth = if (authType.isNotEmpty() && authType != HttpConstants.AUTH_TYPE_NONE)
+        val httpAuth = if(authType.isNotEmpty() && authType != HttpConstants.AUTH_TYPE_NONE)
         {
             headers.entries.removeIf { it.key.equals("Authorization", ignoreCase = true) }
             HttpAuth(authType, options.authCredentials.toMap())
@@ -272,7 +274,7 @@ class HttpExecutor : PcpExecutor
 
         return try
         {
-            val sanitizedBody = if (options.requestBody.isNotEmpty())
+            val sanitizedBody = if(options.requestBody.isNotEmpty())
             {
                 securityManager.sanitizeRequestBody(options.requestBody, contentTypeHeader)
             }
@@ -292,7 +294,7 @@ class HttpExecutor : PcpExecutor
             )
 
             val responseOutput = formatHttpResponse(response)
-            val output = if (validation.warnings.isNotEmpty())
+            val output = if(validation.warnings.isNotEmpty())
             {
                 buildString {
                     append("Warnings:\n")
@@ -322,7 +324,7 @@ class HttpExecutor : PcpExecutor
                 error = error
             )
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             PcpRequestResult(
                 success = false,
@@ -340,7 +342,7 @@ class HttpExecutor : PcpExecutor
      */
     private fun parseUrl(value: String): ParsedUrl?
     {
-        if (value.isBlank()) return null
+        if(value.isBlank()) return null
 
         return try
         {
@@ -349,11 +351,11 @@ class HttpExecutor : PcpExecutor
                 original = value,
                 scheme = url.protocol.lowercase(),
                 host = url.host.lowercase(),
-                port = if (url.port == -1) url.defaultPort else url.port,
+                port = if(url.port == -1) url.defaultPort else url.port,
                 path = url.path.ifEmpty { "/" }
             )
         }
-        catch (_: Exception)
+        catch(_: Exception)
         {
             null
         }
@@ -361,7 +363,7 @@ class HttpExecutor : PcpExecutor
 
     private fun hostsMatch(request: ParsedUrl, context: ParsedUrl): Boolean
     {
-        if (!request.host.equals(context.host, ignoreCase = true)) return false
+        if(!request.host.equals(context.host, ignoreCase = true)) return false
         return request.port == context.port
     }
 
@@ -384,12 +386,12 @@ class HttpExecutor : PcpExecutor
             else -> "$base/$addition"
         }
 
-        return if (combined.isEmpty()) "/" else "/" + combined.trim('/').replace(Regex("/+"), "/")
+        return if(combined.isEmpty()) "/" else "/" + combined.trim('/').replace(Regex("/+"), "/")
     }
 
     private fun normalizePathComponent(raw: String): String
     {
-        if (raw.isBlank()) return ""
+        if(raw.isBlank()) return ""
 
         val withoutQuery = raw.substringBefore('?').substringBefore('#')
         val sanitizedSeparators = withoutQuery.replace('\\', '/')
@@ -401,14 +403,14 @@ class HttpExecutor : PcpExecutor
     private fun addAllowedHostVariants(target: MutableList<String>, url: ParsedUrl)
     {
         val baseHost = url.host
-        val hostWithPort = if (url.port == url.defaultPortForScheme()) baseHost else "$baseHost:${url.port}"
+        val hostWithPort = if(url.port == url.defaultPortForScheme()) baseHost else "$baseHost:${url.port}"
 
-        if (target.none { it.equals(baseHost, true) })
+        if(target.none { it.equals(baseHost, true) })
         {
             target.add(baseHost)
         }
 
-        if (hostWithPort != baseHost && target.none { it.equals(hostWithPort, true) })
+        if(hostWithPort != baseHost && target.none { it.equals(hostWithPort, true) })
         {
             target.add(hostWithPort)
         }
@@ -425,7 +427,7 @@ class HttpExecutor : PcpExecutor
 
     private fun ParsedUrl.defaultPortForScheme(): Int
     {
-        return when (scheme.lowercase())
+        return when(scheme.lowercase())
         {
             "http" -> 80
             "https" -> 443
@@ -460,13 +462,13 @@ class HttpExecutor : PcpExecutor
             }
         }
         
-        if (response.headers.isNotEmpty())
+        if(response.headers.isNotEmpty())
         {
             output.appendLine()
         }
         
         // Add response body
-        if (response.body.isNotEmpty())
+        if(response.body.isNotEmpty())
         {
             output.appendLine(response.body)
         }

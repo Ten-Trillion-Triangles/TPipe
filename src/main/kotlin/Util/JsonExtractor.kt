@@ -46,7 +46,7 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
     
     // Process all boundaries, preferring larger ranges
     allBoundaries.forEach { range ->
-        if (!overlapsWithProcessed(range, processedRanges))
+        if(!overlapsWithProcessed(range, processedRanges))
         {
             val jsonCandidate = input.substring(range)
             
@@ -56,7 +56,7 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
                 results.add(element)
                 processedRanges.add(range)
             }
-            catch (e: Exception)
+            catch(e: Exception)
             {
                 // Only repair if original parsing failed
                 try {
@@ -65,7 +65,7 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
                     results.add(element)
                     processedRanges.add(range)
                 }
-                catch (e2: Exception)
+                catch(e2: Exception)
                 {
                     // Try fallback repair for severely malformed JSON
                     tryFallbackExtraction(jsonCandidate)?.let { fallbackElement ->
@@ -79,7 +79,7 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
     
     // Also find JSON arrays
     arrayBoundaries.forEach { range ->
-        if (!overlapsWithProcessed(range, processedRanges))
+        if(!overlapsWithProcessed(range, processedRanges))
         {
             val jsonCandidate = input.substring(range)
             
@@ -89,7 +89,7 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
                 results.add(element)
                 processedRanges.add(range)
             }
-            catch (e: Exception)
+            catch(e: Exception)
             {
                 // Only repair if original parsing failed
                 try {
@@ -98,7 +98,7 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
                     results.add(element)
                     processedRanges.add(range)
                 }
-                catch (e2: Exception)
+                catch(e2: Exception)
                 {
                     // Try fallback repair for severely malformed JSON
                     tryFallbackExtraction(jsonCandidate)?.let { fallbackElement ->
@@ -122,13 +122,15 @@ private fun findJsonBoundaries(input: String, openChar: Char, closeChar: Char): 
     val boundaries = mutableListOf<IntRange>()
     var i = 0
     
-    while (i < input.length) {
+    while(i < input.length)
+    {
         // Find next top-level opening bracket
-        while (i < input.length && input[i] != openChar) {
+        while(i < input.length && input[i] != openChar)
+        {
             i++
         }
         
-        if (i >= input.length) break
+        if(i >= input.length) break
         
         val start = i
         var depth = 0
@@ -136,7 +138,8 @@ private fun findJsonBoundaries(input: String, openChar: Char, closeChar: Char): 
         var escaped = false
         
         // Track from opening bracket to matching closing bracket
-        while (i < input.length) {
+        while(i < input.length)
+        {
             val char = input[i]
             
             when {
@@ -146,7 +149,8 @@ private fun findJsonBoundaries(input: String, openChar: Char, closeChar: Char): 
                 !inString && char == openChar -> depth++
                 !inString && char == closeChar -> {
                     depth--
-                    if (depth == 0) {
+                    if(depth == 0)
+                    {
                         boundaries.add(start..i)
                         i++
                         break
@@ -157,7 +161,8 @@ private fun findJsonBoundaries(input: String, openChar: Char, closeChar: Char): 
         }
         
         // Handle truncated JSON - if we reached end of input with unclosed brackets
-        if (depth > 0 && start < input.length) {
+        if(depth > 0 && start < input.length)
+        {
             boundaries.add(start until input.length)
         }
     }
@@ -200,13 +205,13 @@ private fun tryFallbackExtraction(jsonCandidate: String): JsonElement?
     
     // Extract key-value pairs and attempt manual reconstruction
     val extracted = extractJsonData(jsonCandidate)
-    if (extracted.isNotEmpty())
+    if(extracted.isNotEmpty())
     {
         try {
             val reconstructedJson = buildJsonFromExtracted(extracted)
             return json.parseToJsonElement(reconstructedJson)
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             return null
         }
@@ -223,7 +228,7 @@ private fun buildJsonFromExtracted(extracted: Map<String, String>): String
     val jsonBuilder = StringBuilder("{")
     
     extracted.entries.forEachIndexed { index, (key, value) ->
-        if (index > 0) jsonBuilder.append(",")
+        if(index > 0) jsonBuilder.append(",")
         
         jsonBuilder.append("\"$key\":")
         
@@ -268,23 +273,25 @@ inline fun <reified T> deserializeFirstMatch(jsonElements: List<JsonElement>): T
         decodeEnumsCaseInsensitive = true
     }
     
-    for (element in jsonElements)
+    for(element in jsonElements)
     {
         try {
             // Try direct deserialization first
             val jsonString = json.encodeToString(JsonElement.serializer(), element)
             return json.decodeFromString<T>(jsonString)
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             // If element is an array, try deserializing its first element
-            if (element is kotlinx.serialization.json.JsonArray && element.isNotEmpty()) {
+            if(element is kotlinx.serialization.json.JsonArray && element.isNotEmpty())
+            {
                 try {
                     val firstElement = element[0]
                     val jsonString = json.encodeToString(JsonElement.serializer(), firstElement)
                     return json.decodeFromString<T>(jsonString)
                 }
-                catch (e3: Exception) {
+                catch(e3: Exception)
+                {
                     // Continue to repair fallback
                 }
             }
@@ -294,7 +301,7 @@ inline fun <reified T> deserializeFirstMatch(jsonElements: List<JsonElement>): T
                 val jsonString = json.encodeToString(JsonElement.serializer(), element)
                 return deserialize<T>(jsonString)
             }
-            catch (e2: Exception)
+            catch(e2: Exception)
             {
                 //Exists so a breakpoint can be hooked here.
                 val  doesNothing = true
@@ -324,7 +331,7 @@ fun extractNonJsonText(input: String): String
     
     // Collect all JSON array boundaries
     findJsonBoundaries(input, '[', ']').forEach { range ->
-        if (!overlapsWithProcessed(range, jsonRanges.toSet()))
+        if(!overlapsWithProcessed(range, jsonRanges.toSet()))
         {
             jsonRanges.add(range)
         }
@@ -337,9 +344,9 @@ fun extractNonJsonText(input: String): String
     val result = StringBuilder()
     var lastEnd = 0
     
-    for (range in jsonRanges)
+    for(range in jsonRanges)
     {
-        if (range.first > lastEnd)
+        if(range.first > lastEnd)
         {
             result.append(input.substring(lastEnd, range.first))
         }
@@ -347,7 +354,7 @@ fun extractNonJsonText(input: String): String
     }
     
     // Append remaining text after last JSON
-    if (lastEnd < input.length)
+    if(lastEnd < input.length)
     {
         result.append(input.substring(lastEnd))
     }

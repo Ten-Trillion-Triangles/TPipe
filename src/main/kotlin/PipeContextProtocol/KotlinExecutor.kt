@@ -26,7 +26,7 @@ class KotlinExecutor : PcpExecutor
         val mergedOptions = mergeContextOptions(request.kotlinContextOptions, context.kotlinOptions)
 
         val validation = securityManager.validateKotlinRequest(script, mergedOptions, context)
-        if (!validation.isValid)
+        if(!validation.isValid)
         {
             return PcpRequestResult(
                 success = false,
@@ -49,13 +49,13 @@ class KotlinExecutor : PcpExecutor
 
             val bindings = scriptContext.getBindings(javax.script.ScriptContext.ENGINE_SCOPE)
 
-            if (mergedOptions.allowTpipeIntrospection)
+            if(mergedOptions.allowTpipeIntrospection)
             {
                 bindings["PcpRegistry"] = PcpRegistry
                 bindings["PcpContext"] = context
             }
 
-            if (mergedOptions.allowHostApplicationAccess)
+            if(mergedOptions.allowHostApplicationAccess)
             {
                 mergedOptions.exposedBindings.keys.forEach { bindingName ->
                     customBindings[bindingName]?.let { obj ->
@@ -66,18 +66,21 @@ class KotlinExecutor : PcpExecutor
 
             val result = try {
                 engine.eval(script, scriptContext)
-            } catch (e: Exception) {
+            }
+            catch(e: Exception)
+            {
                 val captured = writer.toString().trim()
-                if (captured.isNotEmpty()) {
+                if(captured.isNotEmpty())
+                {
                     throw Exception("Execution failed but captured output: $captured. Error: ${e.message}", e)
                 }
                 throw e
             }
 
             val output = writer.toString().trim()
-            val finalOutput = if (result != null && result !is Unit)
+            val finalOutput = if(result != null && result !is Unit)
             {
-                if (output.isNotEmpty()) "$output\nResult: $result" else "Result: $result"
+                if(output.isNotEmpty()) "$output\nResult: $result" else "Result: $result"
             }
             else
             {
@@ -91,7 +94,7 @@ class KotlinExecutor : PcpExecutor
                 transport = Transport.Kotlin
             )
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             PcpRequestResult(
                 success = false,
@@ -115,11 +118,11 @@ class KotlinExecutor : PcpExecutor
             exposedBindings = (contextOptions.exposedBindings + requestOptions.exposedBindings).toMutableMap(),
             allowReflection = contextOptions.allowReflection || requestOptions.allowReflection,
             allowClassLoaderAccess = contextOptions.allowClassLoaderAccess || requestOptions.allowClassLoaderAccess,
-            workingDirectory = if (contextOptions.workingDirectory.isNotEmpty()) contextOptions.workingDirectory else requestOptions.workingDirectory,
+            workingDirectory = if(contextOptions.workingDirectory.isNotEmpty()) contextOptions.workingDirectory else requestOptions.workingDirectory,
             allowFileRead = contextOptions.allowFileRead || requestOptions.allowFileRead,
             allowFileWrite = contextOptions.allowFileWrite || requestOptions.allowFileWrite,
             allowFileDelete = contextOptions.allowFileDelete || requestOptions.allowFileDelete,
-            timeoutMs = if (contextOptions.timeoutMs > 0) contextOptions.timeoutMs else requestOptions.timeoutMs,
+            timeoutMs = if(contextOptions.timeoutMs > 0) contextOptions.timeoutMs else requestOptions.timeoutMs,
             permissions = (contextOptions.permissions + requestOptions.permissions).toMutableList(),
             environmentVariables = (contextOptions.environmentVariables + requestOptions.environmentVariables).toMutableMap(),
             allowNetworkAccess = contextOptions.allowNetworkAccess || requestOptions.allowNetworkAccess,

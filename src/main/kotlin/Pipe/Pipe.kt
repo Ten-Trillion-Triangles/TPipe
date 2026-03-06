@@ -200,7 +200,7 @@ data class TokenUsage(
         val breakdown = StringBuilder()
         breakdown.append("Parent Pipe: $inputTokens input, $outputTokens output\n")
         
-        if (childPipeTokens.isNotEmpty())
+        if(childPipeTokens.isNotEmpty())
         {
             breakdown.append("Child Pipes:\n")
             childPipeTokens.forEach { (name, usage) ->
@@ -372,13 +372,13 @@ object PipeTimeoutManager
     {
         val attempts = getRetryCount(pipe)
         
-        return if (attempts < pipe.maxRetryAttempts && pipe.timeoutStrategy == PipeTimeoutStrategy.Retry) 
+        return if(attempts < pipe.maxRetryAttempts && pipe.timeoutStrategy == PipeTimeoutStrategy.Retry)
         {
             incrementRetryCount(pipe)
             pipe.timeoutTrace(TraceEventType.PIPE_RETRY, TracePhase.EXECUTION, metadata = mapOf("attempt" to getRetryCount(pipe)))
             
             val snapshot = content.getSnapshot()
-            if (snapshot != null) 
+            if(snapshot != null)
             {
                 snapshot.repeatPipe = true
                 snapshot
@@ -391,7 +391,7 @@ object PipeTimeoutManager
                 content
             }
         } 
-        else if (pipe.timeoutStrategy == PipeTimeoutStrategy.CustomLogic)
+        else if(pipe.timeoutStrategy == PipeTimeoutStrategy.CustomLogic)
         {
             // Custom logic is handled by the pipe's own retry function if set.
             // We'll return the content as is and let the catch block handle the invocation if needed,
@@ -425,7 +425,8 @@ object PipeTimeoutManager
  * As such, many functions here are abstract and have no functionality.
  */
 @kotlinx.serialization.Serializable
-abstract class Pipe : P2PInterface, ProviderInterface {
+abstract class Pipe : P2PInterface, ProviderInterface
+{
 
 //============================================= properties ===========================================================//
 
@@ -1202,7 +1203,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         get() = activeTraceIds.firstOrNull()
         set(value) {
             activeTraceIds.clear()
-            if (value != null) {
+            if(value != null)
+            {
                 activeTraceIds.add(value)
             }
         }
@@ -1327,7 +1329,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     fun obtainStreamingCallbackManager(): StreamingCallbackManager
     {
-        if (streamingCallbackManager == null)
+        if(streamingCallbackManager == null)
         {
             streamingCallbackManager = StreamingCallbackManager()
         }
@@ -1510,7 +1512,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         /**
          * MERGED MODE: Both JSON output and PCP tools configured.
          */
-        if (useMergedMode)
+        if(useMergedMode)
         {
             val pcpAsJson = serialize(pcpContext, false)
             val pcpRequestExample = examplePromptFor(PcPRequest::class)
@@ -1538,7 +1540,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         /**
          * PCP-ONLY MODE: Tools configured but no JSON output requirement.
          */
-        else if (hasPcpTools && !hasJsonOutput)
+        else if(hasPcpTools && !hasJsonOutput)
         {
             val pcpAsJson = serialize(pcpContext, false)
             val pcpRequestAsJson = examplePromptFor(PcPRequest::class)
@@ -1707,7 +1709,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          * JSON output is REQUIRED, tool calls are OPTIONAL.
          * This resolves the mutual exclusivity between JSON output and PCP tool requests.
          */
-        if (useMergedMode)
+        if(useMergedMode)
         {
             val pcpAsJson = serialize(pcpContext, false)
             val pcpRequestExample = examplePromptFor(PcPRequest::class)
@@ -1740,7 +1742,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          * PCP-ONLY MODE: Tools configured but no JSON output requirement.
          * Bind the pcp context and schema to the system prompt.
          */
-        else if (hasPcpTools && !hasJsonOutput)
+        else if(hasPcpTools && !hasJsonOutput)
         {
             val pcpAsJson = serialize(pcpContext, false)
             val pcpRequestAsJson = examplePromptFor(PcPRequest::class)
@@ -1765,7 +1767,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             systemPrompt = systemPrompt + actualPcpInstructions
             
             // Add Kotlin-specific security boundaries if Kotlin is configured
-            if (pcpContext.kotlinOptions.allowTpipeIntrospection || 
+            if(pcpContext.kotlinOptions.allowTpipeIntrospection ||
                 pcpContext.kotlinOptions.allowHostApplicationAccess ||
                 pcpContext.kotlinOptions.allowedImports.isNotEmpty() ||
                 pcpContext.kotlinOptions.blockedImports.isNotEmpty())
@@ -1779,7 +1781,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             }
             
             // Add Python-specific security boundaries if Python is configured
-            if (pcpContext.pythonOptions.availablePackages.isNotEmpty() ||
+            if(pcpContext.pythonOptions.availablePackages.isNotEmpty() ||
                 pcpContext.pythonOptions.workingDirectory.isNotEmpty() ||
                 pcpContext.pythonOptions.permissions.isNotEmpty())
             {
@@ -1792,7 +1794,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             }
             
             // Add JavaScript-specific security boundaries if JavaScript is configured
-            if (pcpContext.javascriptOptions.allowedModules.isNotEmpty() ||
+            if(pcpContext.javascriptOptions.allowedModules.isNotEmpty() ||
                 pcpContext.javascriptOptions.workingDirectory.isNotEmpty() ||
                 pcpContext.javascriptOptions.permissions.isNotEmpty())
             {
@@ -1959,7 +1961,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             pipeMetadata[USER_PROMPT_SNAPSHOT] as MultimodalContent
         }
 
-        catch(e: Exception) {
+        catch(e: Exception)
+        {
             MultimodalContent()
         }
 
@@ -2481,7 +2484,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
         val effectiveKeys = if(reserveEmptyPageBudget) {
             pageKeys
-        } else {
+        }
+        else
+        {
             pageKeys.filter { key ->
                 val window = miniContextBank.contextMap[key]
                 window != null && !window.isEmpty()
@@ -3210,7 +3215,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     fun setPresencePenalty(penalty: Double): Pipe
     {
-        if (penalty < -2.0 || penalty > 2.0)
+        if(penalty < -2.0 || penalty > 2.0)
         {
             throw IllegalArgumentException("Presence penalty must be between -2.0 and 2.0, got: $penalty")
         }
@@ -3242,7 +3247,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setLogitBias(bias: Map<Int, Double>): Pipe
     {
         bias.values.forEach { value ->
-            if (value < -100.0 || value > 100.0)
+            if(value < -100.0 || value > 100.0)
             {
                 throw IllegalArgumentException("Logit bias values must be between -100.0 and 100.0, got: $value")
             }
@@ -3261,7 +3266,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     fun setN(completions: Int): Pipe
     {
-        if (completions < 1)
+        if(completions < 1)
         {
             throw IllegalArgumentException("Number of completions must be at least 1, got: $completions")
         }
@@ -3632,9 +3637,12 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     fun setStringOnFailure(func: (json: String, newText: String) -> Boolean): Pipe {
         this.onFailure = { original, processed ->
             val result = func(original.text, processed.text)
-            if (result) {
+            if(result)
+            {
                 processed
-            } else {
+            }
+            else
+            {
                 processed.terminate()
                 processed
             }
@@ -3765,7 +3773,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         val parser = PcpResponseParser()
         val parseResult = parser.extractPcpRequests(llmResponse)
         
-        if (!parseResult.success)
+        if(!parseResult.success)
         {
             return PcpExecutionResult(
                 success = false,
@@ -3777,7 +3785,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         
         // Execute with actual pipe context and apply introspection leash if enabled
         val config = memoryIntrospectionConfig
-        return if (config != null)
+        return if(config != null)
         {
             MemoryIntrospection.withCoroutineScope(config)
             {
@@ -3850,15 +3858,19 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     fun getReasoningContent(): String {
         return try {
-            if (jsonOutput.contains("reasoning")) {
+            if(jsonOutput.contains("reasoning"))
+            {
                 val json = kotlinx.serialization.json.Json.parseToJsonElement(jsonOutput)
-                if (json is kotlinx.serialization.json.JsonObject) {
+                if(json is kotlinx.serialization.json.JsonObject)
+                {
                     json["reasoning"]?.let { element ->
-                        if (element is kotlinx.serialization.json.JsonPrimitive) element.content else ""
+                        if(element is kotlinx.serialization.json.JsonPrimitive) element.content else ""
                     } ?: ""
                 } else ""
             } else ""
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             ""
         }
     }
@@ -3896,27 +3908,27 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     {
         // Auto-capture errors for failure event types
         // Only capture if no error exists yet, or if this error has an exception (more specific)
-        if (eventType == TraceEventType.PIPE_FAILURE || 
+        if(eventType == TraceEventType.PIPE_FAILURE ||
             eventType == TraceEventType.API_CALL_FAILURE || 
             eventType == TraceEventType.VALIDATION_FAILURE || 
             eventType == TraceEventType.TRANSFORMATION_FAILURE)
         {
-            if (lastError == null || (error != null && lastError?.exception == null))
+            if(lastError == null || (error != null && lastError?.exception == null))
             {
                 lastError = PipeError(
                     exception = error,
                     eventType = eventType,
                     phase = phase,
-                    pipeName = if (pipeName.isNotEmpty()) pipeName else (this::class.simpleName ?: "UnknownPipe"),
+                    pipeName = if(pipeName.isNotEmpty()) pipeName else (this::class.simpleName ?: "UnknownPipe"),
                     pipeId = pipeId
                 )
             }
         }
         
-        if (!tracingEnabled) return
+        if(!tracingEnabled) return
         
         // Check if this event should be traced based on detail level
-        if (!EventPriorityMapper.shouldTrace(eventType, traceConfig.detailLevel)) return
+        if(!EventPriorityMapper.shouldTrace(eventType, traceConfig.detailLevel)) return
         
         // Build metadata based on detail level
         val enhancedMetadata = buildMetadataForLevel(metadata, traceConfig.detailLevel, eventType, error, content, phase)
@@ -3924,12 +3936,12 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         val event = TraceEvent(
             timestamp = System.currentTimeMillis(),
             pipeId = pipeId,
-            pipeName = if (pipeName.isNotEmpty()) pipeName else (this::class.simpleName ?: "UnknownPipe"),
+            pipeName = if(pipeName.isNotEmpty()) pipeName else (this::class.simpleName ?: "UnknownPipe"),
             eventType = eventType,
             phase = phase,
-            content = if (shouldIncludeContent(traceConfig.detailLevel)) content else null,
-            contextSnapshot = if (shouldIncludeContext(traceConfig.detailLevel)) contextWindow else null,
-            metadata = if (traceConfig.includeMetadata) enhancedMetadata else emptyMap(),
+            content = if(shouldIncludeContent(traceConfig.detailLevel)) content else null,
+            contextSnapshot = if(shouldIncludeContext(traceConfig.detailLevel)) contextWindow else null,
+            metadata = if(traceConfig.includeMetadata) enhancedMetadata else emptyMap(),
             error = error
         )
         
@@ -3952,7 +3964,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * Thread-safe.
      * @param id The trace ID to add.
      */
-    fun addTraceId(id: String) {
+    fun addTraceId(id: String)
+    {
         activeTraceIds.add(id)
     }
 
@@ -3961,7 +3974,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * Thread-safe.
      * @param id The trace ID to remove.
      */
-    fun removeTraceId(id: String) {
+    fun removeTraceId(id: String)
+    {
         activeTraceIds.remove(id)
     }
 
@@ -3969,7 +3983,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * Clears all active trace IDs.
      * Thread-safe.
      */
-    fun clearTraceIds() {
+    fun clearTraceIds()
+    {
         activeTraceIds.clear()
     }
 
@@ -4004,10 +4019,10 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     private fun propagateTracingRecursively(visitedPipes: MutableSet<String> = mutableSetOf())
     {
-        if (pipeId in visitedPipes) return
+        if(pipeId in visitedPipes) return
         visitedPipes.add(pipeId)
 
-        if (!tracingEnabled) return
+        if(!tracingEnabled) return
 
         listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { childPipe ->
             childPipe.enableTracing(traceConfig)
@@ -4026,10 +4041,12 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     ): Map<String, Any> {
         val metadata = baseMetadata.toMutableMap()
         
-        when (detailLevel) {
+        when(detailLevel)
+        {
             TraceDetailLevel.MINIMAL -> {
                 // Only error information for failures
-                if (error != null) {
+                if(error != null)
+                {
                     metadata["error"] = error.message ?: "Unknown error"
                 }
             }
@@ -4038,7 +4055,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 // Basic pipe information
                 metadata["model"] = model.ifEmpty { "not_set" }
                 metadata["provider"] = provider.name
-                if (error != null) {
+                if(error != null)
+                {
                     metadata["error"] = error.message ?: "Unknown error"
                     metadata["errorType"] = error::class.simpleName ?: "Unknown"
                 }
@@ -4052,7 +4070,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 metadata["hasValidatorFunction"] = (validatorFunction != null).toString()
                 metadata["hasTransformationFunction"] = (transformationFunction != null).toString()
                 metadata["hasPreValidationFunction"] = (preValidationFunction != null).toString()
-                if (error != null) {
+                if(error != null)
+                {
                     metadata["error"] = error.message ?: "Unknown error"
                     metadata["errorType"] = error::class.simpleName ?: "Unknown"
                 }
@@ -4069,10 +4088,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 metadata["transformationFunction"] = transformationFunction?.toString() ?: "null"
                 metadata["preValidationFunction"] = preValidationFunction?.toString() ?: "null"
                 metadata["onFailure"] = onFailure?.toString() ?: "null"
-                metadata["validatorPipe"] = if (validatorPipe != null) validatorPipe!!::class.simpleName ?: "UnknownPipe" else "null"
-                metadata["transformationPipe"] = if (transformationPipe != null) transformationPipe!!::class.simpleName ?: "UnknownPipe" else "null"
-                metadata["branchPipe"] = if (branchPipe != null) branchPipe!!::class.simpleName ?: "UnknownPipe" else "null"
-                if (error != null) {
+                metadata["validatorPipe"] = if(validatorPipe != null) validatorPipe!!::class.simpleName ?: "UnknownPipe" else "null"
+                metadata["transformationPipe"] = if(transformationPipe != null) transformationPipe!!::class.simpleName ?: "UnknownPipe" else "null"
+                metadata["branchPipe"] = if(branchPipe != null) branchPipe!!::class.simpleName ?: "UnknownPipe" else "null"
+                if(error != null)
+                {
                     metadata["error"] = error.message ?: "Unknown error"
                     metadata["errorType"] = error::class.simpleName ?: "Unknown"
                     metadata["stackTrace"] = error.stackTraceToString()
@@ -4081,7 +4101,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         }
         
         // Add model reasoning metadata when available (for models with native reasoning support)
-        if (eventType == TraceEventType.API_CALL_SUCCESS && content != null && content.modelReasoning.isNotEmpty())
+        if(eventType == TraceEventType.API_CALL_SUCCESS && content != null && content.modelReasoning.isNotEmpty())
         {
             metadata["reasoningContent"] = content.modelReasoning
             metadata["modelSupportsReasoning"] = true
@@ -4090,7 +4110,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         }
         
         // Add reasoning pipe metadata only once per execution to avoid duplication (for reasoning pipes)
-        if (isExecutingAsReasoningPipe && !reasoningContentAlreadyTraced && eventType == TraceEventType.API_CALL_SUCCESS && content != null)
+        if(isExecutingAsReasoningPipe && !reasoningContentAlreadyTraced && eventType == TraceEventType.API_CALL_SUCCESS && content != null)
         {
             metadata["reasoningContent"] = content.text
             metadata["isReasoningPipe"] = true
@@ -4101,7 +4121,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
     
     private fun shouldIncludeContent(detailLevel: TraceDetailLevel): Boolean {
-        return when (detailLevel) {
+        return when(detailLevel) {
             TraceDetailLevel.MINIMAL -> false
             TraceDetailLevel.NORMAL -> false
             TraceDetailLevel.VERBOSE -> traceConfig.includeContext
@@ -4110,7 +4130,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
     }
 
     private fun shouldIncludeContext(detailLevel: TraceDetailLevel): Boolean {
-        return when (detailLevel) {
+        return when(detailLevel) {
             TraceDetailLevel.MINIMAL -> false
             TraceDetailLevel.NORMAL -> false
             TraceDetailLevel.VERBOSE -> traceConfig.includeContext
@@ -4713,7 +4733,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      */
     suspend fun execute(content: MultimodalContent): MultimodalContent = coroutineScope {
         var result = executeMultimodal(content)
-        while (result.repeatPipe) 
+        while(result.repeatPipe)
         {
             result = executeMultimodal(result)
         }
@@ -4733,11 +4753,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      * Internal multimodal execution logic shared by both execute methods
      */
     private suspend fun executeMultimodal(inputContent: MultimodalContent): MultimodalContent = coroutineScope{
-        if (enablePipeTimeout) 
+        if(enablePipeTimeout)
         {
             PipeTimeoutManager.startTracking(this@Pipe, pipeTimeout)
             // If we're set to retry, we MUST have a snapshot.
-            if (timeoutStrategy == PipeTimeoutStrategy.Retry && maxRetryAttempts > 0) 
+            if(timeoutStrategy == PipeTimeoutStrategy.Retry && maxRetryAttempts > 0)
             {
                 inputContent.saveSnapshot()
             }
@@ -5021,11 +5041,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              * Merge input content, or supplied externally set content into all of our data that has come into this
              * pipe thus far. This is the final step before truncation, and then execution.
              */
-            var baseContent = if (multimodalInput.text.isNotEmpty() || multimodalInput.binaryContent.isNotEmpty()) {
+            var baseContent = if(multimodalInput.text.isNotEmpty() || multimodalInput.binaryContent.isNotEmpty()) {
                 val merged = MultimodalContent(multimodalInput.text, multimodalInput.binaryContent.toMutableList(), multimodalInput.terminatePipeline)
                 merged.addText(inputContent.text)
                 merged
-            } else {
+            }
+            else
+            {
                 inputContent
             }
 
@@ -5223,7 +5245,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     processedContent = truncateToFitTokenBudget(processedContent) //Invoke again to account for injection overflow.
                 }
             }
-            catch (e: Exception)
+            catch(e: Exception)
             {
                 trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, processedContent, error = e)
             }
@@ -5251,20 +5273,22 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 } finally {
                     activeJob = null
                 }
-            } catch(e: Exception) {
-                if (e is CancellationException && PipeTimeoutManager.isTimeout(this@Pipe)) 
+            }
+            catch(e: Exception)
+            {
+                if(e is CancellationException && PipeTimeoutManager.isTimeout(this@Pipe))
                 {
                     val result = PipeTimeoutManager.handleTimeoutSignal(this@Pipe, inputContent)
                     
-                    if (timeoutStrategy == PipeTimeoutStrategy.CustomLogic) 
+                    if(timeoutStrategy == PipeTimeoutStrategy.CustomLogic)
                     {
                         pipeRetryFunction?.invoke(this@Pipe, inputContent)
                     }
 
-                    if (result.repeatPipe || result.terminatePipeline) 
+                    if(result.repeatPipe || result.terminatePipeline)
                     {
                         // Return a copy with empty text if we are terminating to avoid returning input text
-                        if (result.terminatePipeline) return@coroutineScope result.apply { text = "" }
+                        if(result.terminatePipeline) return@coroutineScope result.apply { text = "" }
                         return@coroutineScope result
                     }
                 }
@@ -5310,7 +5334,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             val outputTokens = countTokens(false, generatedContent)
 
             //Perform comprehensive output token tracking if enabled.
-            if (comprehensiveTokenTracking)
+            if(comprehensiveTokenTracking)
             {
                 //Store the output token count in our usage tracking.
                 pipeTokenUsage.outputTokens = outputTokens
@@ -5343,7 +5367,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             {
                 trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.VALIDATION)
                 try {
-                    if (tracingEnabled)
+                    if(tracingEnabled)
                     {
                         validatorPipe!!.propagateTracingRecursively()
                     }
@@ -5356,14 +5380,16 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     validatorPipeContent.currentPipe = inputContent.currentPipe //Avoid nullptr leakage.
                     validatorPipeContent.metadata = generatedContent.metadata //Copy to avoid leakage after llm call.
                     //Track validator pipe token usage if comprehensive tracking is enabled.
-                    if (comprehensiveTokenTracking)
+                    if(comprehensiveTokenTracking)
                     {
                         validatorPipe?.let { pipe ->
                             //Add the validator pipe's token usage to our child pipe tracking.
                             pipeTokenUsage.addChildUsage("validator-${pipe.pipeName}", pipe.getTokenUsage())
                         }
                     }
-                } catch (e: Exception) {
+                }
+                catch(e: Exception)
+                {
                     trace(TraceEventType.PIPE_FAILURE, TracePhase.VALIDATION, generatedContent, error = e)
                     validatorPipeContent = generatedContent
                 }
@@ -5374,7 +5400,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 /**
                  * Execute validation function if provided.
                  */
-                if (validatorFunction != null)
+                if(validatorFunction != null)
                 {
                     trace(TraceEventType.VALIDATION_START, TracePhase.VALIDATION, generatedContent,
                           metadata = mapOf("inputText" to generatedContent.text))
@@ -5387,11 +5413,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     {
                         trace(TraceEventType.VALIDATION_SUCCESS, TracePhase.VALIDATION, generatedContent)
                         //Invoke transformation pipe if provided.
-                        if (transformationPipe != null)
+                        if(transformationPipe != null)
                         {
                             trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.TRANSFORMATION)
                             try {
-                                if (tracingEnabled)
+                                if(tracingEnabled)
                                 {
                                     transformationPipe!!.propagateTracingRecursively()
                                 }
@@ -5405,7 +5431,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                                 generatedContent.currentPipe = inputContent.currentPipe
                                 generatedContent.metadata = metadataBackup //Copy over in case the llm stomps this.
                                 //Track transformation pipe token usage if comprehensive tracking is enabled.
-                                if (comprehensiveTokenTracking)
+                                if(comprehensiveTokenTracking)
                                 {
                                     transformationPipe?.let { pipe ->
                                         //Add the transformation pipe's token usage to our child pipe tracking.
@@ -5413,7 +5439,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                                     }
                                 }
 
-                            } catch (e: Exception) {
+                            }
+                            catch(e: Exception)
+                            {
                                 trace(TraceEventType.PIPE_FAILURE, TracePhase.TRANSFORMATION, generatedContent, error = e)
                                 // Continue with original content if transformation pipe fails
                             }
@@ -5422,7 +5450,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         /**
                          * Apply transformation function if provided.
                          */
-                        val finalResult = if (transformationFunction != null)
+                        val finalResult = if(transformationFunction != null)
                         {
                             trace(TraceEventType.TRANSFORMATION_START, TracePhase.TRANSFORMATION, generatedContent,
                                   metadata = mapOf("inputText" to generatedContent.text))
@@ -5456,7 +5484,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         }
 
                         trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, finalResult,
-                              metadata = mapOf("outputText" to if (isExecutingAsReasoningPipe) "" else finalResult.text))
+                              metadata = mapOf("outputText" to if(isExecutingAsReasoningPipe) "" else finalResult.text))
                         return@coroutineScope embedContentIntoInternalConverse(finalResult).takeIf { wrapContentWithConverseHistory } ?: finalResult
                     }
 
@@ -5474,11 +5502,11 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                 else
                 {
                     // No validation function, continue to transformation
-                    if (transformationPipe != null)
+                    if(transformationPipe != null)
                     {
                         trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.TRANSFORMATION)
                         try {
-                            if (tracingEnabled)
+                            if(tracingEnabled)
                             {
                                 transformationPipe!!.propagateTracingRecursively()
                             }
@@ -5492,7 +5520,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             generatedContent.currentPipe = inputContent.currentPipe //Prevent nullptr leakage.
                             generatedContent.metadata = metadataBackup
                             //Track transformation pipe token usage if comprehensive tracking is enabled.
-                            if (comprehensiveTokenTracking)
+                            if(comprehensiveTokenTracking)
                             {
                                 transformationPipe?.let { pipe ->
                                     //Add the transformation pipe's token usage to our child pipe tracking.
@@ -5500,13 +5528,15 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                                 }
                             }
 
-                        } catch (e: Exception) {
+                        }
+                        catch(e: Exception)
+                        {
                             trace(TraceEventType.PIPE_FAILURE, TracePhase.TRANSFORMATION, generatedContent, error = e)
                             // Continue with original content if transformation pipe fails
                         }
                     }
 
-                    val finalResult = if (transformationFunction != null)
+                    val finalResult = if(transformationFunction != null)
                     {
                         trace(TraceEventType.TRANSFORMATION_START, TracePhase.TRANSFORMATION, generatedContent,
                               metadata = mapOf("inputText" to generatedContent.text))
@@ -5532,7 +5562,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                     }
 
                     trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, finalResult,
-                          metadata = mapOf("outputText" to if (isExecutingAsReasoningPipe) "" else finalResult.text))
+                          metadata = mapOf("outputText" to if(isExecutingAsReasoningPipe) "" else finalResult.text))
                     return@coroutineScope embedContentIntoInternalConverse(finalResult).takeIf { wrapContentWithConverseHistory } ?: finalResult
                 }
             }
@@ -5547,12 +5577,13 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             }
 
             //Execute branch pipe if provided.
-            if (branchPipe != null)
+            if(branchPipe != null)
             {
                     trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.POST_PROCESSING)
                     try {
                         // Initialize and setup branch pipe
-                        if (tracingEnabled) {
+                        if(tracingEnabled)
+                        {
                             branchPipe!!.propagateTracingRecursively()
                         }
 
@@ -5562,7 +5593,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         var branchResult = branchPipeResult.await()
                         
                         //Track branch pipe token usage if comprehensive tracking is enabled.
-                        if (comprehensiveTokenTracking)
+                        if(comprehensiveTokenTracking)
                         {
                             branchPipe?.let { pipe ->
                                 //Add the branch pipe's token usage to our child pipe tracking.
@@ -5581,7 +5612,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             {
                                 trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.TRANSFORMATION)
                                 try {
-                                    if (tracingEnabled)
+                                    if(tracingEnabled)
                                     {
                                         transformationPipe!!.propagateTracingRecursively()
                                     }
@@ -5596,13 +5627,15 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                                     branchResult.metadata = metadataBackup
                                     
                                     //Track transformation pipe token usage if comprehensive tracking is enabled.
-                                    if (comprehensiveTokenTracking)
+                                    if(comprehensiveTokenTracking)
                                     {
                                         transformationPipe?.let { pipe ->
                                             pipeTokenUsage.addChildUsage("transformation-${pipe.pipeName}", pipe.getTokenUsage())
                                         }
                                     }
-                                } catch (e: Exception) {
+                                }
+                                catch(e: Exception)
+                                {
                                     trace(TraceEventType.PIPE_FAILURE, TracePhase.TRANSFORMATION, branchResult, error = e)
                                     // Continue with branch result if transformation pipe fails
                                 }
@@ -5628,7 +5661,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                             trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, branchResult,
                                   metadata = mapOf("outputText" to branchResult.text))
                             
-                            if (!branchResult.repeatPipe) 
+                            if(!branchResult.repeatPipe)
                             {
                                 PipeTimeoutManager.clearRetryCount(this@Pipe)
                             }
@@ -5637,14 +5670,17 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         }
                         
                         generatedContent = branchResult
-                    } catch (e: Exception) {
+                    }
+                    catch(e: Exception)
+                    {
                         trace(TraceEventType.PIPE_FAILURE, TracePhase.POST_PROCESSING, generatedContent, error = e)
                         // Branch pipe failed, continue to failure function
                     }
                 }
 
                 //Invoke failure function if provided.
-                if (onFailure != null) {
+                if(onFailure != null)
+                {
                     trace(TraceEventType.VALIDATION_FAILURE, TracePhase.POST_PROCESSING,
                           metadata = mapOf("originalText" to processedContent.text, "failedText" to generatedContent.text))
                     val branchResult: Deferred<MultimodalContent> = async {
@@ -5685,7 +5721,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
                         trace(TraceEventType.PIPE_SUCCESS, TracePhase.TRANSFORMATION,
                             metadata = mapOf("output" to "${failureResult.text}"))
 
-                        if (!failureResult.repeatPipe) 
+                        if(!failureResult.repeatPipe)
                         {
                             PipeTimeoutManager.clearRetryCount(this@Pipe)
                         }
@@ -5702,7 +5738,9 @@ abstract class Pipe : P2PInterface, ProviderInterface {
             failedContent.pipeError = lastError
             return@coroutineScope failedContent
             
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             trace(TraceEventType.PIPE_FAILURE, TracePhase.CLEANUP, inputContent, error = e)
             val failedContent = MultimodalContent("")
             failedContent.pipeError = lastError
@@ -5935,7 +5973,8 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              * step of the reasoning process.
              */
             val result = reasoningPipe?.let { pipe ->
-                if (tracingEnabled) {
+                if(tracingEnabled)
+                {
                     pipe.propagateTracingRecursively()
                 }
                 pipe.isExecutingAsReasoningPipe = true
@@ -6005,7 +6044,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
         //Circular reference issue here. We need to get this to string form or something.
         val reasoningMethod = reasoningPipe?.pipeMetadata["injectionMethod"] as? String ?: ""
 
-        when (reasoningMethod)
+        when(reasoningMethod)
         {
             "SystemPrompt" -> {
                 val injectionMessage = """
@@ -6273,7 +6312,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      *
      * @return TokenUsage object containing comprehensive usage data, or empty object if tracking disabled
      */
-    fun getTokenUsage(): TokenUsage = if (comprehensiveTokenTracking) pipeTokenUsage else TokenUsage()
+    fun getTokenUsage(): TokenUsage = if(comprehensiveTokenTracking) pipeTokenUsage else TokenUsage()
 
     /**
      * Returns total input tokens consumed by this pipe and nested pipes when tracking is enabled.
@@ -6282,7 +6321,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      *
      * @return Total input token count across this pipe and all nested pipes, or 0 if tracking disabled
      */
-    fun getTotalInputTokens(): Int = if (comprehensiveTokenTracking) pipeTokenUsage.totalInputTokens else 0
+    fun getTotalInputTokens(): Int = if(comprehensiveTokenTracking) pipeTokenUsage.totalInputTokens else 0
 
     /**
      * Returns total output tokens consumed by this pipe and nested pipes when tracking is enabled.
@@ -6291,7 +6330,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
      *
      * @return Total output token count across this pipe and all nested pipes, or 0 if tracking disabled
      */
-    fun getTotalOutputTokens(): Int = if (comprehensiveTokenTracking) pipeTokenUsage.totalOutputTokens else 0
+    fun getTotalOutputTokens(): Int = if(comprehensiveTokenTracking) pipeTokenUsage.totalOutputTokens else 0
 
     /**
      * Indicates whether comprehensive token tracking is enabled on this pipe.
@@ -6339,13 +6378,15 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
     override fun getP2pDescription(): P2PDescriptor? = p2pDescriptor
 
-    override fun setP2pTransport(transport: P2PTransport) {
+    override fun setP2pTransport(transport: P2PTransport)
+    {
         p2pTransport = transport
     }
 
     override fun getP2pTransport(): P2PTransport? = p2pTransport
 
-    override fun setP2pRequirements(requirements: P2PRequirements) {
+    override fun setP2pRequirements(requirements: P2PRequirements)
+    {
         p2pRequirements = requirements
     }
 
@@ -6353,11 +6394,12 @@ abstract class Pipe : P2PInterface, ProviderInterface {
 
     override fun getContainerObject(): Any? = containerObject
 
-    override fun setContainerObject(container: Any) {
+    override fun setContainerObject(container: Any)
+    {
         containerObject = container
     }
 
-    override fun getPipelinesFromInterface(): List<Pipeline> = if (pipelineRef != null) listOf(pipelineRef!!) else emptyList()
+    override fun getPipelinesFromInterface(): List<Pipeline> = if(pipelineRef != null) listOf(pipelineRef!!) else emptyList()
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
         val response = P2PResponse()
@@ -6419,7 +6461,7 @@ abstract class Pipe : P2PInterface, ProviderInterface {
          */
         fun createTokenEncourageList(tokens: List<String>, bias: Double = 1.0): Map<Int, Double>
         {
-            if (bias < 0.0 || bias > 100.0)
+            if(bias < 0.0 || bias > 100.0)
             {
                 throw IllegalArgumentException("Bias must be between 0.0 and 100.0, got: $bias")
             }

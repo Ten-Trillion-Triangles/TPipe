@@ -38,7 +38,7 @@ internal object BedrockDefaults
         val pipeline = Pipeline()
         
         //Create the specified number of pipes for the manager pipeline
-        for (i in 1 .. config.pipeCount)
+        for(i in 1 .. config.pipeCount)
         {
             val pipe = createBedrockPipe(config)
             pipeline.add(pipe)
@@ -68,7 +68,7 @@ internal object BedrockDefaults
     {
         return BedrockMultimodalPipe().apply {
             //Set model - if inference profile is provided, use it directly as the model ID
-            if (config.inferenceProfile.isNotEmpty()) 
+            if(config.inferenceProfile.isNotEmpty())
             {
                 setModel(config.inferenceProfile)
             }
@@ -81,7 +81,7 @@ internal object BedrockDefaults
             setRegion(config.region)
             
             //Set API type based on configuration
-            if (config.useConverseApi) 
+            if(config.useConverseApi)
             {
                 useConverseApi()
             }

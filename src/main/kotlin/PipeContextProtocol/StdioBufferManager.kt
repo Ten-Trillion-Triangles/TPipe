@@ -104,9 +104,9 @@ class StdioBufferManager
     {
         val buffer = buffers[bufferId] ?: return
 
-        if (context?.enableBufferAccessControl == true)
+        if(context?.enableBufferAccessControl == true)
         {
-            val permissions = if (requiredPermissions.isEmpty()) listOf(Permissions.Write) else requiredPermissions
+            val permissions = if(requiredPermissions.isEmpty()) listOf(Permissions.Write) else requiredPermissions
             ensureBufferAccess(bufferId, context, permissions)
         }
 
@@ -122,7 +122,7 @@ class StdioBufferManager
             buffer.entries.add(entry)
 
             // Limit buffer size to prevent memory issues
-            if (buffer.entries.size > 10000)
+            if(buffer.entries.size > 10000)
             {
                 buffer.entries.removeAt(0)
             }
@@ -154,9 +154,9 @@ class StdioBufferManager
     {
         val buffer = buffers[bufferId] ?: return null
 
-        if (context?.enableBufferAccessControl == true)
+        if(context?.enableBufferAccessControl == true)
         {
-            val permissions = if (requiredPermissions.isEmpty()) listOf(Permissions.Read) else requiredPermissions
+            val permissions = if(requiredPermissions.isEmpty()) listOf(Permissions.Read) else requiredPermissions
             ensureBufferAccess(bufferId, context, permissions)
         }
 
@@ -178,7 +178,7 @@ class StdioBufferManager
     {
         val buffer = buffers[bufferId] ?: return emptyList()
 
-        if (context?.enableBufferAccessControl == true)
+        if(context?.enableBufferAccessControl == true)
         {
             ensureBufferAccess(bufferId, context, listOf(Permissions.Read))
         }
@@ -188,7 +188,7 @@ class StdioBufferManager
         synchronized(buffer.entries)
         {
             buffer.entries.forEachIndexed { index, entry ->
-                if (entry.content.contains(pattern, ignoreCase = true))
+                if(entry.content.contains(pattern, ignoreCase = true))
                 {
                     matches.add(
                         BufferMatch(
@@ -225,7 +225,7 @@ class StdioBufferManager
             File(filePath).writeText(json)
             true
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             false
         }
@@ -247,7 +247,7 @@ class StdioBufferManager
             
             buffer
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             null
         }
@@ -307,11 +307,11 @@ class StdioBufferManager
     {
         val limit = bufferLimits[bufferId] ?: return
 
-        if (limit <= 0) return
+        if(limit <= 0) return
 
         var currentSize = buffer.entries.sumOf { it.content.length }
 
-        while (currentSize > limit && buffer.entries.isNotEmpty())
+        while(currentSize > limit && buffer.entries.isNotEmpty())
         {
             val removed = buffer.entries.removeAt(0)
             currentSize -= removed.content.length
@@ -325,14 +325,14 @@ class StdioBufferManager
         val session = StdioSessionManager.getSession(buffer.sessionId)
             ?: throw SecurityException("Buffer access denied: session not found for $bufferId")
 
-        if (session.ownerId != context.currentUserId)
+        if(session.ownerId != context.currentUserId)
         {
             throw SecurityException("Buffer access denied for user ${context.currentUserId}")
         }
 
-        if (requiredPermissions.isNotEmpty())
+        if(requiredPermissions.isNotEmpty())
         {
-            if (context.stdioOptions.isEmpty())
+            if(context.stdioOptions.isEmpty())
             {
                 throw SecurityException("Buffer access denied: no stdio options configured for access control")
             }
@@ -345,7 +345,7 @@ class StdioBufferManager
 
             val hasPermission = requiredPermissions.all { allowedPermissions.contains(it) }
 
-            if (!hasPermission)
+            if(!hasPermission)
             {
                 val missing = requiredPermissions.joinToString(", ")
                 throw SecurityException("Buffer access denied: missing permissions [$missing]")

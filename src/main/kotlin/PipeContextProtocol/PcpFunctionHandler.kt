@@ -22,7 +22,7 @@ class PcpFunctionHandler : PcpExecutor
         val startTime = System.currentTimeMillis()
         
         // Check if function execution is allowed in context
-        if (context.tpipeOptions.isEmpty())
+        if(context.tpipeOptions.isEmpty())
         {
             return PcpRequestResult(
                 success = false,
@@ -37,7 +37,7 @@ class PcpFunctionHandler : PcpExecutor
         val functionName = request.tPipeContextOptions.functionName
         val matchingFunction = context.tpipeOptions.find { it.functionName == functionName }
         
-        if (matchingFunction == null)
+        if(matchingFunction == null)
         {
             return PcpRequestResult(
                 success = false,
@@ -80,7 +80,7 @@ class PcpFunctionHandler : PcpExecutor
         return try 
         {
             val functionName = request.tPipeContextOptions.functionName
-            if (functionName.isEmpty()) 
+            if(functionName.isEmpty())
             {
                 return PcpFunctionResponse(
                     success = false,
@@ -94,7 +94,7 @@ class PcpFunctionHandler : PcpExecutor
             
             // Validate function parameters
             val parameterValidation = validateFunctionParameters(functionName, parameters)
-            if (!parameterValidation.isValid)
+            if(!parameterValidation.isValid)
             {
                 return PcpFunctionResponse(
                     success = false,
@@ -108,7 +108,7 @@ class PcpFunctionHandler : PcpExecutor
             
             // Store return value if successful
             var returnKey = ""
-            if (invocationResult.success && invocationResult.returnValue != null) 
+            if(invocationResult.success && invocationResult.returnValue != null)
             {
                 returnKey = returnValueHandler.storeReturnValue(value = invocationResult.returnValue)
             }
@@ -121,7 +121,7 @@ class PcpFunctionHandler : PcpExecutor
                 error = invocationResult.error
             )
         } 
-        catch (e: Exception) 
+        catch(e: Exception)
         {
             PcpFunctionResponse(
                 success = false,
@@ -157,11 +157,11 @@ class PcpFunctionHandler : PcpExecutor
         val parameters = mutableMapOf<String, String>()
         val nativeFunction = FunctionRegistry.getFunction(functionName)
         
-        if (nativeFunction != null) 
+        if(nativeFunction != null)
         {
             // Map arguments to actual parameter names from signature
             nativeFunction.signature.parameters.forEachIndexed { index, paramInfo ->
-                if (index < arguments.size) 
+                if(index < arguments.size)
                 {
                     parameters[paramInfo.name] = arguments[index]
                 }
@@ -209,21 +209,21 @@ class PcpFunctionHandler : PcpExecutor
     private fun validateParameters(signature: FunctionSignature, parameters: Map<String, String>): FunctionValidationResult
     {
         // Check each parameter in signature
-        for (paramInfo in signature.parameters)
+        for(paramInfo in signature.parameters)
         {
             val paramName = paramInfo.name
             val providedValue = parameters[paramName]
             
             // Check required parameters
-            if (!paramInfo.isOptional && providedValue == null)
+            if(!paramInfo.isOptional && providedValue == null)
             {
                 return FunctionValidationResult(false, "Missing required parameter: $paramName")
             }
             
             // Validate enum values
-            if (providedValue != null && paramInfo.enumValues.isNotEmpty())
+            if(providedValue != null && paramInfo.enumValues.isNotEmpty())
             {
-                if (!paramInfo.enumValues.contains(providedValue))
+                if(!paramInfo.enumValues.contains(providedValue))
                 {
                     return FunctionValidationResult(false, "Invalid value '$providedValue' for parameter '$paramName'. Allowed: ${paramInfo.enumValues.joinToString(", ")}")
                 }

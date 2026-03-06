@@ -65,10 +65,10 @@ data class ContextWindow(
         
         loreBookKeys.forEach { (key, loreBook) ->
             // Check main key
-            if (lowerText.contains(key.lowercase()))
+            if(lowerText.contains(key.lowercase()))
             {
                 // Check if key is locked before adding
-                if (canSelectLoreBookKey(key))
+                if(canSelectLoreBookKey(key))
                 {
                     matchingKeys.add(key)
                 }
@@ -76,10 +76,10 @@ data class ContextWindow(
             
             // Check alias keys
             loreBook.aliasKeys.forEach { alias ->
-                if (lowerText.contains(alias.lowercase()))
+                if(lowerText.contains(alias.lowercase()))
                 {
                     // Check if key is locked before adding
-                    if (canSelectLoreBookKey(key))
+                    if(canSelectLoreBookKey(key))
                     {
                         matchingKeys.add(key)
                     }
@@ -111,7 +111,7 @@ data class ContextWindow(
     {
         return loreBookKeys.mapValues { (_, loreBook) ->
             // Empty requiredKeys means no dependencies (always satisfied)
-            if (loreBook.requiredKeys.isEmpty()) 
+            if(loreBook.requiredKeys.isEmpty())
             {
                 true
             } 
@@ -171,16 +171,19 @@ data class ContextWindow(
         val toProcess = mutableSetOf<String>()
         toProcess.addAll(matchingKeys)
         
-        while (toProcess.isNotEmpty()) {
+        while(toProcess.isNotEmpty())
+        {
             val currentKey = toProcess.first()
             toProcess.remove(currentKey)
             
-            if (!expandedKeys.contains(currentKey)) {
+            if(!expandedKeys.contains(currentKey))
+            {
                 expandedKeys.add(currentKey)
                 
                 // Add linked keys to processing queue
                 loreBookKeys[currentKey]?.linkedKeys?.forEach { linkedKey ->
-                    if (loreBookKeys.containsKey(linkedKey) && !expandedKeys.contains(linkedKey)) {
+                    if(loreBookKeys.containsKey(linkedKey) && !expandedKeys.contains(linkedKey))
+                    {
                         toProcess.add(linkedKey)
                     }
                 }
@@ -193,7 +196,7 @@ data class ContextWindow(
         
         // Check all lorebook keys to see if their dependencies are satisfied
         loreBookKeys.forEach { (key, loreBook) ->
-            if (!dependencyEligibleKeys.contains(key) && loreBook.requiredKeys.isNotEmpty()) 
+            if(!dependencyEligibleKeys.contains(key) && loreBook.requiredKeys.isNotEmpty())
             {
                 // Check if all required keys are present in expanded keys
                 val allDependenciesSatisfied = loreBook.requiredKeys.all { requiredKey ->
@@ -206,7 +209,7 @@ data class ContextWindow(
                     }
                 }
                 
-                if (allDependenciesSatisfied) 
+                if(allDependenciesSatisfied)
                 {
                     dependencyEligibleKeys.add(key)
                 }
@@ -239,7 +242,7 @@ data class ContextWindow(
         var usedTokens = 0
         
         // Step 6: Select entries that fit within token budget, respecting priority order
-        for ((key, loreBook, _) in candidates)
+        for((key, loreBook, _) in candidates)
         {
             // Calculate token cost of this lorebook value using Dictionary tokenizer
             val valueTokens = Dictionary.countTokens(
@@ -249,7 +252,7 @@ data class ContextWindow(
             )
             
             // Only add if it fits within remaining token budget
-            if (usedTokens + valueTokens <= maxTokens)
+            if(usedTokens + valueTokens <= maxTokens)
             {
                 selected.add(key)
                 usedTokens += valueTokens
@@ -286,7 +289,7 @@ data class ContextWindow(
         nonWordSplitCount: Int = 4
     ): List<String>
     {
-        if (maxTokens <= 0) return listOf()
+        if(maxTokens <= 0) return listOf()
 
         val priorityKeys = selectLoreBookContext(
             text,
@@ -305,7 +308,7 @@ data class ContextWindow(
 
         var usedTokens = selectedKeys.sumOf { key ->
             val loreBook = loreBookKeys[key]
-            if (loreBook == null) return@sumOf 0
+            if(loreBook == null) return@sumOf 0
             Dictionary.countTokens(
                 loreBook.value,
                 countSubWordsInFirstWord,
@@ -318,7 +321,7 @@ data class ContextWindow(
             )
         }
 
-        if (usedTokens >= maxTokens) return selectedKeys
+        if(usedTokens >= maxTokens) return selectedKeys
 
         val fillCandidates = loreBookKeys.keys
             .filter { it !in selectedSet }
@@ -327,10 +330,10 @@ data class ContextWindow(
             .mapNotNull { key -> loreBookKeys[key]?.let { key to it } }
             .sortedByDescending { (_, loreBook) -> loreBook.weight }
 
-        for ((key, loreBook) in fillCandidates)
+        for((key, loreBook) in fillCandidates)
         {
             val dependencyStatus = checkKeyDependencies(selectedSet)
-            if (dependencyStatus[key] != true) continue
+            if(dependencyStatus[key] != true) continue
 
             val tokenCost = Dictionary.countTokens(
                 loreBook.value,
@@ -343,14 +346,14 @@ data class ContextWindow(
                 nonWordSplitCount
             )
 
-            if (usedTokens + tokenCost <= maxTokens)
+            if(usedTokens + tokenCost <= maxTokens)
             {
                 selectedKeys.add(key)
                 selectedSet.add(key)
                 usedTokens += tokenCost
             }
 
-            if (usedTokens >= maxTokens)
+            if(usedTokens >= maxTokens)
             {
                 break
             }
@@ -494,7 +497,8 @@ data class ContextWindow(
     {
         // Add missing lorebook entries
         other.loreBookKeys.forEach { (key, loreBook) ->
-            if (!loreBookKeys.containsKey(key)) {
+            if(!loreBookKeys.containsKey(key))
+            {
                 loreBookKeys[key] = loreBook
             }
 
@@ -526,20 +530,21 @@ data class ContextWindow(
         
         // Merge context elements, skipping duplicates
         other.contextElements.forEach { element ->
-            if (!contextElements.contains(element)) {
+            if(!contextElements.contains(element))
+            {
                 contextElements.add(element)
             }
         }
         
         // Handle converse history merging based on parameters
-        if (emplaceConverseHistory)
+        if(emplaceConverseHistory)
         {
-            if (onlyEmplaceIfNull && converseHistory.history.isEmpty())
+            if(onlyEmplaceIfNull && converseHistory.history.isEmpty())
             {
                 // Copy converse history only if target is empty
                 converseHistory.history.addAll(other.converseHistory.history)
             }
-            else if (!onlyEmplaceIfNull)
+            else if(!onlyEmplaceIfNull)
             {
                 // Replace entire converse history
                 converseHistory.history.clear()
@@ -575,14 +580,16 @@ data class ContextWindow(
         inputText: String = "",
         preserveTextMatches: Boolean = false
     ) {
-        if (maxTokens <= 0) return
+        if(maxTokens <= 0) return
 
-        if (preserveTextMatches && inputText.isNotBlank()) {
+        if(preserveTextMatches && inputText.isNotBlank())
+        {
             val inputWords = inputText.lowercase()
                 .split(Regex("\\W+"))
                 .filter { it.isNotBlank() }
 
-            if (inputWords.isNotEmpty() && contextElements.isNotEmpty()) {
+            if(inputWords.isNotEmpty() && contextElements.isNotEmpty())
+            {
                 val (textMatching, regular) = contextElements.partition { element ->
                     val lowerElement = element.lowercase()
                     inputWords.any { word -> lowerElement.contains(word) }
@@ -601,9 +608,11 @@ data class ContextWindow(
                     )
                 }
 
-                val preservedMatching = if (matchingTokens <= maxTokens) {
+                val preservedMatching = if(matchingTokens <= maxTokens) {
                     textMatching
-                } else {
+                }
+                else
+                {
                     Dictionary.truncate(
                         textMatching,
                         maxTokens,
@@ -633,7 +642,7 @@ data class ContextWindow(
                 }
 
                 val remainingBudget = maxTokens - usedTokens
-                val preservedRegular = if (remainingBudget > 0 && regular.isNotEmpty()) {
+                val preservedRegular = if(remainingBudget > 0 && regular.isNotEmpty()) {
                     Dictionary.truncate(
                         regular,
                         remainingBudget,
@@ -647,7 +656,9 @@ data class ContextWindow(
                         countSubWordsIfSplit,
                         nonWordSplitCount
                     )
-                } else {
+                }
+                else
+                {
                     emptyList()
                 }
 
@@ -996,7 +1007,7 @@ data class ContextWindow(
             .joinToString(" ")
         
         // Truncate combined string using Dictionary
-        if (multiplyWindowSizeBy == 0) return combinedString
+        if(multiplyWindowSizeBy == 0) return combinedString
         
         return Dictionary.truncate(
             combinedString,
@@ -1095,15 +1106,17 @@ data class ContextWindow(
         entries: List<ConverseData>,
         targetTexts: List<String>
     ): List<ConverseData> {
-        if (entries.isEmpty() || targetTexts.isEmpty()) return emptyList()
+        if(entries.isEmpty() || targetTexts.isEmpty()) return emptyList()
 
         val entryQueues = entries.groupBy { it.content.text }
             .mapValues { (_, value) -> ArrayDeque(value) }
 
         val preservedEntries = mutableListOf<ConverseData>()
-        for (text in targetTexts) {
+        for(text in targetTexts)
+        {
             val queue = entryQueues[text]
-            if (!queue.isNullOrEmpty()) {
+            if(!queue.isNullOrEmpty())
+            {
                 preservedEntries.add(queue.removeFirst())
             }
         }
@@ -1177,14 +1190,16 @@ data class ContextWindow(
         preserveTextMatches: Boolean = false
     )
     {
-        if (maxTokens <= 0) return
+        if(maxTokens <= 0) return
 
-        if (preserveTextMatches && inputText.isNotBlank()) {
+        if(preserveTextMatches && inputText.isNotBlank())
+        {
             val inputWords = inputText.lowercase()
                 .split(Regex("\\W+"))
                 .filter { it.isNotBlank() }
 
-            if (inputWords.isNotEmpty() && converseHistory.history.isNotEmpty()) {
+            if(inputWords.isNotEmpty() && converseHistory.history.isNotEmpty())
+            {
                 val textMatchingEntries = converseHistory.history.filter { converseData ->
                     val lowerContent = converseData.content.text.lowercase()
                     inputWords.any { word -> lowerContent.contains(word) }
@@ -1206,9 +1221,11 @@ data class ContextWindow(
                 }
 
                 val matchingTexts = textMatchingEntries.map { it.content.text }
-                val preservedMatchingTexts = if (matchingTokens <= maxTokens) {
+                val preservedMatchingTexts = if(matchingTokens <= maxTokens) {
                     matchingTexts
-                } else {
+                }
+                else
+                {
                     Dictionary.truncate(
                         matchingTexts,
                         maxTokens,
@@ -1239,7 +1256,7 @@ data class ContextWindow(
 
                 val remainingBudget = maxTokens - usedTokens
                 val regularTexts = regularEntries.map { it.content.text }
-                val preservedRegularTexts = if (remainingBudget > 0 && regularEntries.isNotEmpty()) {
+                val preservedRegularTexts = if(remainingBudget > 0 && regularEntries.isNotEmpty()) {
                     Dictionary.truncate(
                         regularTexts,
                         remainingBudget,
@@ -1253,7 +1270,9 @@ data class ContextWindow(
                         countSubWordsIfSplit,
                         nonWordSplitCount
                     )
-                } else {
+                }
+                else
+                {
                     emptyList()
                 }
 
@@ -1382,18 +1401,18 @@ data class ContextWindow(
      */
     fun canSelectLoreBookKey(key: String): Boolean
     {
-        if (!isContextLocked()) return true
+        if(!isContextLocked()) return true
         
         // Check if key has passthrough function that allows bypass
         val bundle = ContextLock.getKeyBundle(key)
-        if (bundle?.passthroughFunction != null)
+        if(bundle?.passthroughFunction != null)
         {
             try
             {
                 // Execute passthrough function - if returns true, allow selection
                 return bundle.passthroughFunction?.invoke() ?: false
             }
-            catch (e: Exception)
+            catch(e: Exception)
             {
                 // If passthrough function fails, default to lock state
                 return !bundle.isLocked
@@ -1411,7 +1430,7 @@ data class ContextWindow(
      */
     fun getLockedKeys(): Set<String>
     {
-        if (!isContextLocked()) return emptySet()
+        if(!isContextLocked()) return emptySet()
         return ContextLock.getLockedKeysForContext(this)
     }
 }

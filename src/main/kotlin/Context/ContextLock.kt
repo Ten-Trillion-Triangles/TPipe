@@ -50,7 +50,7 @@ object ContextLock
                 skipRemote: Boolean = false
                 )
     {
-        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
             runBlocking {
                 MemoryClient.addLock(LockRequest(key, pageKeys, isPageKey, lockState))
@@ -165,7 +165,7 @@ object ContextLock
      */
     fun removeLock(key: String, skipRemote: Boolean = false)
     {
-        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
             runBlocking {
                 MemoryClient.removeLock(key)
@@ -267,7 +267,7 @@ object ContextLock
      */
     private fun applyLockState(key: String, lockState: Boolean, skipRemote: Boolean = false)
     {
-        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
             runBlocking {
                 MemoryClient.updateLockState(key, lockState)
@@ -321,7 +321,7 @@ object ContextLock
      */
     fun isKeyLocked(key: String, skipRemote: Boolean = false): Boolean
     {
-        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
             return runBlocking {
                 MemoryClient.isKeyLocked(key)
@@ -341,7 +341,7 @@ object ContextLock
      */
     fun isPageLocked(pageKey: String, skipRemote: Boolean = false): Boolean
     {
-        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
             return runBlocking {
                 MemoryClient.isPageLocked(pageKey)
@@ -363,7 +363,7 @@ object ContextLock
      */
     fun getLockedKeysForContext(contextWindow: ContextWindow, pageKey: String? = null, skipRemote: Boolean = false): Set<String>
     {
-        if (!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
             return runBlocking {
                 MemoryClient.getLockKeys()

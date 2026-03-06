@@ -23,7 +23,7 @@ class ReturnValueHandler
      */
     fun storeReturnValue(key: String = "", value: Any?): String 
     {
-        val storageKey = if (key.isEmpty()) UUID.randomUUID().toString() else key
+        val storageKey = if(key.isEmpty()) UUID.randomUUID().toString() else key
         returnValues[storageKey] = value
         return storageKey
     }
@@ -114,7 +114,7 @@ class ReturnValueHandler
      */
     private fun convertValueToString(value: Any?): String 
     {
-        if (value == null) return ""
+        if(value == null) return ""
         
         // Try to find appropriate converter
         val converter = typeConverters.find { 
@@ -130,7 +130,7 @@ class ReturnValueHandler
      */
     private fun mapValueToParamType(value: Any): ParamType 
     {
-        return when (value) 
+        return when(value)
         {
             is String -> ParamType.String
             is Int -> ParamType.Int

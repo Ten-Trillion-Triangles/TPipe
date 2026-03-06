@@ -54,7 +54,7 @@ class StdioExecutor : PcpExecutor
         val startTime = System.currentTimeMillis()
         
         // Check if security is active - if context has any restrictions
-        if (context.stdioOptions.isNotEmpty() || context.allowedDirectoryPaths.isNotEmpty() || 
+        if(context.stdioOptions.isNotEmpty() || context.allowedDirectoryPaths.isNotEmpty() ||
             context.forbiddenDirectoryPaths.isNotEmpty() || context.allowedFiles.isNotEmpty() || 
             context.forbiddenFiles.isNotEmpty())
         {
@@ -63,7 +63,7 @@ class StdioExecutor : PcpExecutor
                 it.command == request.stdioContextOptions.command 
             }
             
-            if (matchingOption == null)
+            if(matchingOption == null)
             {
                 return PcpRequestResult(
                     success = false,
@@ -76,7 +76,7 @@ class StdioExecutor : PcpExecutor
             
             // Validate filesystem restrictions
             val pathValidation = validateFilesystemAccess(request.stdioContextOptions, context)
-            if (!pathValidation.isValid)
+            if(!pathValidation.isValid)
             {
                 return PcpRequestResult(
                     success = false,
@@ -89,11 +89,11 @@ class StdioExecutor : PcpExecutor
         }
         
         // Optional session access validation (if enabled)
-        if (context.enableSessionAccessControl)
+        if(context.enableSessionAccessControl)
         {
             val sessionId = request.stdioContextOptions.sessionId ?: ""
             
-            if (sessionId.isNotEmpty() && !securityManager.validateSessionAccess(sessionId, context.currentUserId))
+            if(sessionId.isNotEmpty() && !securityManager.validateSessionAccess(sessionId, context.currentUserId))
             {
                 return PcpRequestResult(
                     success = false,
@@ -106,19 +106,21 @@ class StdioExecutor : PcpExecutor
         }
         
         // Execute with merged context options (security enforced)
-        val contextOption = if (context.stdioOptions.isNotEmpty()) {
+        val contextOption = if(context.stdioOptions.isNotEmpty()) {
             context.stdioOptions.find { it.command == request.stdioContextOptions.command } ?: StdioContextOptions()
-        } else {
+        }
+        else
+        {
             StdioContextOptions()
         }
         val mergedOptions = mergeContextOptions(request.stdioContextOptions, contextOption)
         val secureRequest = request.copy(stdioContextOptions = mergedOptions)
 
-        return when (secureRequest.stdioContextOptions.executionMode)
+        return when(secureRequest.stdioContextOptions.executionMode)
         {
             StdioExecutionMode.ONE_SHOT ->
             {
-                if (secureRequest.stdioContextOptions.keepSessionAlive)
+                if(secureRequest.stdioContextOptions.keepSessionAlive)
                 {
                     executePersistentOneShot(secureRequest, context)
                 }
@@ -141,7 +143,7 @@ class StdioExecutor : PcpExecutor
                         error = null
                     )
                 }
-                catch (e: Exception)
+                catch(e: Exception)
                 {
                     PcpRequestResult(
                         success = false,
@@ -166,7 +168,7 @@ class StdioExecutor : PcpExecutor
                         error = null
                     )
                 }
-                catch (e: Exception)
+                catch(e: Exception)
                 {
                     PcpRequestResult(
                         success = false,
@@ -191,7 +193,7 @@ class StdioExecutor : PcpExecutor
                         error = null
                     )
                 }
-                catch (e: Exception)
+                catch(e: Exception)
                 {
                     PcpRequestResult(
                         success = false,
@@ -218,22 +220,22 @@ class StdioExecutor : PcpExecutor
         
         // Add command arguments that look like paths
         options.args.forEach { arg ->
-            if (isLikelyPath(arg)) pathsToCheck.add(arg)
+            if(isLikelyPath(arg)) pathsToCheck.add(arg)
         }
         
         // Check each path against restrictions
-        for (path in pathsToCheck)
+        for(path in pathsToCheck)
         {
             val resolvedPath = resolvePath(path)
             
             // 1. Check forbidden lists first (deny takes precedence)
-            if (isForbiddenPath(resolvedPath, context) || isForbiddenFile(resolvedPath, context))
+            if(isForbiddenPath(resolvedPath, context) || isForbiddenFile(resolvedPath, context))
             {
                 return ValidationResult(false, "Access denied to forbidden path: $path")
             }
             
             // 2. Check allowed lists (if they exist)
-            if (!isAllowedPath(resolvedPath, context) || !isAllowedFile(resolvedPath, context))
+            if(!isAllowedPath(resolvedPath, context) || !isAllowedFile(resolvedPath, context))
             {
                 return ValidationResult(false, "Access denied - path not in allowed list: $path")
             }
@@ -250,27 +252,27 @@ class StdioExecutor : PcpExecutor
     {
         return StdioContextOptions().apply {
             // Use context command if specified, otherwise request command
-            command = if (contextOptions.command.isNotEmpty()) 
+            command = if(contextOptions.command.isNotEmpty())
                 contextOptions.command else requestOptions.command
             
             // Context arguments override request arguments
             args.addAll(contextOptions.args)
-            if (args.isEmpty())
+            if(args.isEmpty())
             {
                 args.addAll(requestOptions.args)
             }
             
             // Context working directory overrides request
-            workingDirectory = if (contextOptions.workingDirectory?.isNotEmpty() == true) 
+            workingDirectory = if(contextOptions.workingDirectory?.isNotEmpty() == true)
                 contextOptions.workingDirectory else requestOptions.workingDirectory
                 
             // Context timeout overrides request
-            timeoutMs = if (contextOptions.timeoutMs > 0) 
+            timeoutMs = if(contextOptions.timeoutMs > 0)
                 contextOptions.timeoutMs else requestOptions.timeoutMs
                 
             // Context permissions override request permissions
             permissions.addAll(contextOptions.permissions)
-            if (permissions.isEmpty())
+            if(permissions.isEmpty())
             {
                 permissions.addAll(requestOptions.permissions)
             }
@@ -280,7 +282,7 @@ class StdioExecutor : PcpExecutor
             environmentVariables.putAll(contextOptions.environmentVariables)
             
             // Context execution mode overrides request
-            executionMode = if (contextOptions.executionMode != StdioExecutionMode.ONE_SHOT)
+            executionMode = if(contextOptions.executionMode != StdioExecutionMode.ONE_SHOT)
             {
                 contextOptions.executionMode
             }
@@ -294,7 +296,7 @@ class StdioExecutor : PcpExecutor
             bufferId = contextOptions.bufferId ?: requestOptions.bufferId
             
             // Context description overrides request
-            description = if (contextOptions.description.isNotEmpty())
+            description = if(contextOptions.description.isNotEmpty())
                 contextOptions.description else requestOptions.description
 
             keepSessionAlive = contextOptions.keepSessionAlive || requestOptions.keepSessionAlive
@@ -318,7 +320,7 @@ class StdioExecutor : PcpExecutor
         
         // Validate permissions before execution
         val validation = validatePermissions(options)
-        if (!validation.isValid)
+        if(!validation.isValid)
         {
             return PcpRequestResult(
                 success = false,
@@ -341,7 +343,7 @@ class StdioExecutor : PcpExecutor
             val processBuilder = ProcessBuilder(command)
             
             // Set working directory if specified
-            if (options.workingDirectory?.isNotEmpty() == true)
+            if(options.workingDirectory?.isNotEmpty() == true)
             {
                 processBuilder.directory(File(options.workingDirectory!!))
             }
@@ -355,7 +357,7 @@ class StdioExecutor : PcpExecutor
             val process = processBuilder.start()
             
             // Handle timeout
-            val completed = if (options.timeoutMs > 0)
+            val completed = if(options.timeoutMs > 0)
             {
                 process.waitFor(options.timeoutMs.toLong(), TimeUnit.MILLISECONDS)
             }
@@ -365,7 +367,7 @@ class StdioExecutor : PcpExecutor
                 true
             }
             
-            if (!completed)
+            if(!completed)
             {
                 process.destroyForcibly()
                 return PcpRequestResult(
@@ -381,7 +383,7 @@ class StdioExecutor : PcpExecutor
             val output = process.inputStream.bufferedReader().readText()
             val errorOutput = process.errorStream.bufferedReader().readText()
             
-            val finalOutput = if (errorOutput.isNotEmpty())
+            val finalOutput = if(errorOutput.isNotEmpty())
             {
                 "$output\nSTDERR: $errorOutput"
             }
@@ -395,10 +397,10 @@ class StdioExecutor : PcpExecutor
                 output = finalOutput,
                 executionTimeMs = System.currentTimeMillis() - startTime,
                 transport = Transport.Stdio,
-                error = if (process.exitValue() != 0) "Command failed with exit code: ${process.exitValue()}" else null
+                error = if(process.exitValue() != 0) "Command failed with exit code: ${process.exitValue()}" else null
             )
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             PcpRequestResult(
                 success = false,
@@ -427,7 +429,7 @@ class StdioExecutor : PcpExecutor
         {
             java.io.File(path).canonicalPath
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             path // Fallback to original if resolution fails
         }
@@ -460,7 +462,7 @@ class StdioExecutor : PcpExecutor
      */
     private fun isAllowedPath(path: String, context: PcpContext): Boolean
     {
-        if (context.allowedDirectoryPaths.isEmpty()) return true
+        if(context.allowedDirectoryPaths.isEmpty()) return true
         
         return context.allowedDirectoryPaths.any { allowedPath ->
             val resolvedAllowed = resolvePath(allowedPath)
@@ -473,7 +475,7 @@ class StdioExecutor : PcpExecutor
      */
     private fun isAllowedFile(path: String, context: PcpContext): Boolean
     {
-        if (context.allowedFiles.isEmpty()) return true
+        if(context.allowedFiles.isEmpty()) return true
         
         return context.allowedFiles.any { allowedFile ->
             val resolvedAllowed = resolvePath(allowedFile)
@@ -500,7 +502,7 @@ class StdioExecutor : PcpExecutor
 
         val result = InteractiveResult(
             sessionId = session.sessionId,
-            bufferId = if (options.bufferPersistence) session.bufferId else "",
+            bufferId = if(options.bufferPersistence) session.bufferId else "",
             initialOutput = "Interactive session created: ${session.sessionId}",
             isSessionActive = session.isActive
         )
@@ -509,7 +511,7 @@ class StdioExecutor : PcpExecutor
 
         return buildString {
             append("Session created: ${result.sessionId}")
-            if (options.bufferPersistence)
+            if(options.bufferPersistence)
             {
                 append("\nBuffer: ${session.bufferId}")
             }
@@ -526,7 +528,7 @@ class StdioExecutor : PcpExecutor
             ?: throw IllegalArgumentException("Session ID required for CONNECT mode")
         
         val input = options.args.joinToString(" ")
-        if (input.isEmpty())
+        if(input.isEmpty())
         {
             throw IllegalArgumentException("Input required for session communication")
         }
@@ -534,7 +536,7 @@ class StdioExecutor : PcpExecutor
         val session = sessionManager.getSession(sessionId)
             ?: throw IllegalArgumentException("Session not found: $sessionId")
 
-        if (context.enableSessionAccessControl && session.ownerId != context.currentUserId)
+        if(context.enableSessionAccessControl && session.ownerId != context.currentUserId)
         {
             throw SecurityException("Session access denied for user ${context.currentUserId}")
         }
@@ -548,12 +550,12 @@ class StdioExecutor : PcpExecutor
 
         bufferManager.appendToBuffer(session.bufferId, sanitizedInput, BufferDirection.INPUT, context = context)
         bufferManager.appendToBuffer(session.bufferId, response.output, BufferDirection.OUTPUT, context = context)
-        if (response.error.isNotEmpty())
+        if(response.error.isNotEmpty())
         {
             bufferManager.appendToBuffer(session.bufferId, response.error, BufferDirection.ERROR, context = context)
         }
 
-        return if (response.error.isNotEmpty())
+        return if(response.error.isNotEmpty())
         {
             "Error: ${response.error}\nOutput: ${response.output}"
         }
@@ -582,7 +584,7 @@ class StdioExecutor : PcpExecutor
         
         buffer.entries.forEach { entry ->
             val timestamp = java.time.Instant.ofEpochMilli(entry.timestamp)
-            val direction = when (entry.direction)
+            val direction = when(entry.direction)
             {
                 BufferDirection.INPUT -> ">> "
                 BufferDirection.OUTPUT -> "<< "
@@ -601,7 +603,7 @@ class StdioExecutor : PcpExecutor
         val options = request.stdioContextOptions
 
         val validation = validatePermissions(options)
-        if (!validation.isValid)
+        if(!validation.isValid)
         {
             return PcpRequestResult(
                 success = false,
@@ -634,7 +636,7 @@ class StdioExecutor : PcpExecutor
                 else -> 1000L
             }
 
-            val initialOutput = if (initialReadTimeout > 0)
+            val initialOutput = if(initialReadTimeout > 0)
             {
                 sessionManager.readOutput(persistentSession.sessionId, initialReadTimeout)
             }
@@ -642,11 +644,11 @@ class StdioExecutor : PcpExecutor
 
             val output = buildString {
                 append("Session created: ${persistentSession.sessionId}")
-                if (options.bufferPersistence)
+                if(options.bufferPersistence)
                 {
                     append("\nBuffer: ${persistentSession.bufferId}")
                 }
-                if (initialOutput.isNotBlank())
+                if(initialOutput.isNotBlank())
                 {
                     append("\n")
                     append(initialOutput.trimEnd())
@@ -661,7 +663,7 @@ class StdioExecutor : PcpExecutor
                 error = null
             )
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             session?.let { sessionManager.closeSession(it.sessionId) }
 
@@ -682,7 +684,7 @@ class StdioExecutor : PcpExecutor
         logCreation: Boolean = true
     ): StdioBuffer?
     {
-        if (!options.bufferPersistence)
+        if(!options.bufferPersistence)
         {
             return null
         }
@@ -690,7 +692,7 @@ class StdioExecutor : PcpExecutor
         val existing = bufferManager.getBuffer(session.bufferId)
         val buffer = bufferManager.ensureBuffer(session.bufferId, session.sessionId, options.maxBufferSize)
 
-        if (logCreation && existing == null)
+        if(logCreation && existing == null)
         {
             bufferManager.appendToBuffer(
                 buffer.bufferId,
@@ -722,7 +724,7 @@ class StdioExecutor : PcpExecutor
         }
         
         // Validate command with security level - now supports FORBIDDEN if developer allows it
-        if (!securityManager.validateCommand(options.command, emptyList(), maxSecurityLevel))
+        if(!securityManager.validateCommand(options.command, emptyList(), maxSecurityLevel))
         {
             val classification = securityManager.getCommandClassification(options.command)
             val levelName = classification?.level?.name ?: "UNKNOWN"
@@ -733,7 +735,7 @@ class StdioExecutor : PcpExecutor
         // Check for command injection
         val allInput = listOf(options.command) + options.args
         allInput.forEach { input ->
-            if (securityManager.detectCommandInjection(input))
+            if(securityManager.detectCommandInjection(input))
             {
                 errors.add("Potential command injection detected in: $input")
             }
@@ -741,7 +743,7 @@ class StdioExecutor : PcpExecutor
         
         // Validate working directory permissions
         options.workingDirectory?.let { workingDir ->
-            if (!securityManager.checkPathPermissions(workingDir, options.permissions))
+            if(!securityManager.checkPathPermissions(workingDir, options.permissions))
             {
                 errors.add("Access denied to working directory: $workingDir")
             }

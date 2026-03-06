@@ -37,7 +37,7 @@ class FunctionInvoker
             
             // Validate parameters against signature
             val validationResult = validateParameters(nativeFunction.signature, parameters)
-            if (!validationResult.isValid) 
+            if(!validationResult.isValid)
             {
                 return InvocationResult(
                     success = false,
@@ -65,7 +65,7 @@ class FunctionInvoker
                 error = null
             )
         } 
-        catch (e: Exception) 
+        catch(e: Exception)
         {
             InvocationResult(
                 success = false,
@@ -91,7 +91,7 @@ class FunctionInvoker
         
         // Check required parameters are present
         signature.parameters.forEach { paramInfo ->
-            if (!paramInfo.isOptional && !parameters.containsKey(paramInfo.name)) 
+            if(!paramInfo.isOptional && !parameters.containsKey(paramInfo.name))
             {
                 errors.add("Required parameter '${paramInfo.name}' is missing")
             }
@@ -100,12 +100,12 @@ class FunctionInvoker
         // Check parameter types can be converted
         parameters.forEach { (paramName, paramValue) ->
             val paramInfo = signature.parameters.find { it.name == paramName }
-            if (paramInfo != null) 
+            if(paramInfo != null)
             {
                 val canConvert = typeConverters.any { converter ->
                     converter.canConvert(paramInfo.type, paramInfo.kotlinType)
                 }
-                if (!canConvert) 
+                if(!canConvert)
                 {
                     errors.add("Cannot convert parameter '$paramName' to type '${paramInfo.kotlinType}'")
                 }
@@ -130,7 +130,7 @@ class FunctionInvoker
         signature.parameters.forEach { paramInfo ->
             val paramValue = parameters[paramInfo.name]
 
-            if (paramValue != null)
+            if(paramValue != null)
             {
                 val converter = typeConverters.find { it.canConvert(paramInfo.type, paramInfo.kotlinType) }
                     ?: throw IllegalArgumentException(
@@ -155,7 +155,7 @@ class FunctionInvoker
      */
     private fun convertReturnValue(returnValue: Any?, returnTypeInfo: ReturnTypeInfo): String 
     {
-        if (returnValue == null) return ""
+        if(returnValue == null) return ""
         
         val converter = typeConverters.find { it.canConvert(returnTypeInfo.type, returnTypeInfo.kotlinType) }
         return converter?.convertBack(returnValue, returnTypeInfo.type) ?: returnValue.toString()

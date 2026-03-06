@@ -83,10 +83,10 @@ class JsonSchemaGenerator(
             id?.let { put("\$id", it) }
             
             // Merge root schema properties
-            for ((k, v) in root) put(k, v)
+            for((k, v) in root) put(k, v)
             
             // Add definitions section if any complex types were encountered
-            if (defs.isNotEmpty()) put("\$defs", JsonObject(defs))
+            if(defs.isNotEmpty()) put("\$defs", JsonObject(defs))
         }
     }
 
@@ -111,7 +111,7 @@ class JsonSchemaGenerator(
             id?.let { put("\$id", it) }
             
             // Merge root schema properties
-            for ((k, v) in root) put(k, v)
+            for((k, v) in root) put(k, v)
         }
     }
 
@@ -165,7 +165,8 @@ class JsonSchemaGenerator(
 
         val exampleString = jsonFormatter.encodeToString(JsonObject.serializer(), result.example)
 
-        if (result.enumLegend.isEmpty()) {
+        if(result.enumLegend.isEmpty())
+        {
             return exampleString
         }
 
@@ -197,12 +198,13 @@ class JsonSchemaGenerator(
      * Generates example JSON data showing the expected structure.
      */
     private fun exampleForDescriptor(desc: SerialDescriptor): JsonElement {
-        if (desc.isNullable) {
+        if(desc.isNullable)
+        {
             return exampleForDescriptor(desc.nonNullOriginal)
         }
 
-        return when (desc.kind) {
-            is PrimitiveKind -> when (desc.kind) {
+        return when(desc.kind) {
+            is PrimitiveKind -> when(desc.kind) {
                 PrimitiveKind.STRING, PrimitiveKind.CHAR -> JsonPrimitive("example_string")
                 PrimitiveKind.INT, PrimitiveKind.LONG, PrimitiveKind.SHORT, PrimitiveKind.BYTE -> JsonPrimitive(0)
                 PrimitiveKind.FLOAT, PrimitiveKind.DOUBLE -> JsonPrimitive(0.0)
@@ -211,12 +213,13 @@ class JsonSchemaGenerator(
             }
             SerialKind.ENUM -> {
                 registerEnumHint(currentPath(), desc)
-                val enumValue = if (desc.elementsCount > 0) desc.getElementName(0) else "ENUM_VALUE"
+                val enumValue = if(desc.elementsCount > 0) desc.getElementName(0) else "ENUM_VALUE"
                 JsonPrimitive(enumValue)
             }
             StructureKind.LIST -> {
                 val elementDescriptor = desc.getElementDescriptor(0)
-                if (elementDescriptor.kind == SerialKind.ENUM) {
+                if(elementDescriptor.kind == SerialKind.ENUM)
+                {
                     registerEnumHint(listPath(), elementDescriptor)
                 }
                 pathStack.addLast("[]")
@@ -229,12 +232,14 @@ class JsonSchemaGenerator(
             }
             StructureKind.CLASS, StructureKind.OBJECT -> {
                 val name = sanitize(desc.serialName)
-                if (name in building) {
+                if(name in building)
+                {
                     return buildJsonObject {}
                 }
                 building += name
                 val result = buildJsonObject {
-                    for (i in 0 until desc.elementsCount) {
+                    for(i in 0 until desc.elementsCount)
+                    {
                         val propName = desc.getElementName(i)
                         val child = desc.getElementDescriptor(i)
                         pathStack.addLast(propName)
@@ -253,11 +258,12 @@ class JsonSchemaGenerator(
 
     private fun listPath(): String {
         val base = currentPath()
-        return if (base.isBlank()) "[]" else "$base[]"
+        return if(base.isBlank()) "[]" else "$base[]"
     }
 
-    private fun registerEnumHint(path: String, descriptor: SerialDescriptor) {
-        if (descriptor.kind != SerialKind.ENUM || descriptor.elementsCount == 0) return
+    private fun registerEnumHint(path: String, descriptor: SerialDescriptor)
+    {
+        if(descriptor.kind != SerialKind.ENUM || descriptor.elementsCount == 0) return
         val normalized = path
             .replace(".[]", "[]")
             .ifBlank { "<root>" }
@@ -265,11 +271,12 @@ class JsonSchemaGenerator(
     }
 
     private fun descriptorContainsEnum(desc: SerialDescriptor, visited: MutableSet<String>): Boolean {
-        if (desc.isNullable) {
+        if(desc.isNullable)
+        {
             return descriptorContainsEnum(desc.nonNullOriginal, visited)
         }
 
-        return when (desc.kind) {
+        return when(desc.kind) {
             SerialKind.ENUM -> true
             is PrimitiveKind -> false
             StructureKind.LIST -> descriptorContainsEnum(desc.getElementDescriptor(0), visited)
@@ -277,9 +284,12 @@ class JsonSchemaGenerator(
                 descriptorContainsEnum(desc.getElementDescriptor(1), visited)
             StructureKind.CLASS, StructureKind.OBJECT -> {
                 val name = desc.serialName
-                if (!visited.add(name)) {
+                if(!visited.add(name))
+                {
                     false
-                } else {
+                }
+                else
+                {
                     val contains = (0 until desc.elementsCount).any { index ->
                         descriptorContainsEnum(desc.getElementDescriptor(index), visited)
                     }
@@ -327,25 +337,28 @@ class JsonSchemaGenerator(
      */
     private fun schemaForDescriptor(desc: SerialDescriptor, inlineNullable: Boolean = true): JsonObject {
         // Handle nullable types first - they wrap the underlying type
-        if (desc.isNullable) {
+        if(desc.isNullable)
+        {
             // Get schema for the non-null version
             val nonNull = schemaForDescriptor(desc.nonNullOriginal, inlineNullable = true)
             
             // For simple types, create union type ["string", "null"]
-            return if (inlineNullable && nonNull["type"] is JsonPrimitive) {
+            return if(inlineNullable && nonNull["type"] is JsonPrimitive) {
                 val t = nonNull["type"]!!
                 buildJsonObject {
                     // Copy all properties except "type"
-                    for ((k, v) in nonNull) if (k != "type") put(k, v)
+                    for((k, v) in nonNull) if(k != "type") put(k, v)
                     
                     // Create union type with null
-                    put("type", when (t) {
+                    put("type", when(t) {
                         is JsonPrimitive -> JsonArray(listOf(t, JsonPrimitive("null")))
                         is JsonArray -> JsonArray(t + JsonPrimitive("null"))  // Already a union
                         else -> JsonPrimitive("null")
                     })
                 }
-            } else {
+            }
+            else
+            {
                 // For complex types, use anyOf construct
                 buildJsonObject {
                     put("anyOf", buildJsonArray {
@@ -357,7 +370,7 @@ class JsonSchemaGenerator(
         }
 
         // Dispatch to appropriate schema generator based on descriptor kind
-        return when (desc.kind) {
+        return when(desc.kind) {
             is PrimitiveKind -> primitiveSchema(desc)
             SerialKind.ENUM -> enumSchema(desc)
             // Detect Set types by name since StructureKind.SET may not be available
@@ -380,25 +393,28 @@ class JsonSchemaGenerator(
      */
     private fun schemaForDescriptorInlined(desc: SerialDescriptor, inlineNullable: Boolean = true): JsonObject {
         // Handle nullable types first - they wrap the underlying type
-        if (desc.isNullable) {
+        if(desc.isNullable)
+        {
             // Get schema for the non-null version
             val nonNull = schemaForDescriptorInlined(desc.nonNullOriginal, inlineNullable = true)
             
             // For simple types, create union type ["string", "null"]
-            return if (inlineNullable && nonNull["type"] is JsonPrimitive) {
+            return if(inlineNullable && nonNull["type"] is JsonPrimitive) {
                 val t = nonNull["type"]!!
                 buildJsonObject {
                     // Copy all properties except "type"
-                    for ((k, v) in nonNull) if (k != "type") put(k, v)
+                    for((k, v) in nonNull) if(k != "type") put(k, v)
                     
                     // Create union type with null
-                    put("type", when (t) {
+                    put("type", when(t) {
                         is JsonPrimitive -> JsonArray(listOf(t, JsonPrimitive("null")))
                         is JsonArray -> JsonArray(t + JsonPrimitive("null"))  // Already a union
                         else -> JsonPrimitive("null")
                     })
                 }
-            } else {
+            }
+            else
+            {
                 // For complex types, use anyOf construct
                 buildJsonObject {
                     put("anyOf", buildJsonArray {
@@ -410,7 +426,7 @@ class JsonSchemaGenerator(
         }
 
         // Dispatch to appropriate schema generator based on descriptor kind
-        return when (desc.kind) {
+        return when(desc.kind) {
             is PrimitiveKind -> primitiveSchema(desc)
             SerialKind.ENUM -> enumSchema(desc)
             // Detect Set types by name since StructureKind.SET may not be available
@@ -435,7 +451,7 @@ class JsonSchemaGenerator(
      */
     private fun primitiveSchema(desc: SerialDescriptor): JsonObject = buildJsonObject {
         // Map Kotlin primitive kinds to JSON Schema types
-        val t = when (desc.kind) {
+        val t = when(desc.kind) {
             PrimitiveKind.BYTE, PrimitiveKind.SHORT, PrimitiveKind.INT, PrimitiveKind.LONG -> "integer"
             PrimitiveKind.FLOAT, PrimitiveKind.DOUBLE -> "number"
             PrimitiveKind.BOOLEAN -> "boolean"
@@ -445,7 +461,8 @@ class JsonSchemaGenerator(
         put("type", t)
         
         // Add format constraints and validation rules for specific types
-        when (desc.serialName) {
+        when(desc.serialName)
+        {
             "kotlin.Char" -> { 
                 put("minLength", 1)
                 put("maxLength", 1) 
@@ -489,7 +506,7 @@ class JsonSchemaGenerator(
         put("items", schemaForDescriptor(desc.getElementDescriptor(0)))
         
         // Add uniqueItems constraint for Set types
-        if (uniqueItems) put("uniqueItems", true)
+        if(uniqueItems) put("uniqueItems", true)
     }
 
     /**
@@ -502,7 +519,7 @@ class JsonSchemaGenerator(
         put("items", schemaForDescriptorInlined(desc.getElementDescriptor(0)))
         
         // Add uniqueItems constraint for Set types
-        if (uniqueItems) put("uniqueItems", true)
+        if(uniqueItems) put("uniqueItems", true)
     }
 
     /**
@@ -520,7 +537,8 @@ class JsonSchemaGenerator(
         val valueDesc = desc.getElementDescriptor(1)  // Map value type
 
         // Check if we need structured key representation
-        if (options.structuredMapKeys && keyDesc.kind !is PrimitiveKind && keyDesc.kind != SerialKind.ENUM) {
+        if(options.structuredMapKeys && keyDesc.kind !is PrimitiveKind && keyDesc.kind != SerialKind.ENUM)
+        {
             // Complex key types require array-of-objects representation
             // Matches Json { allowStructuredMapKeys = true } serialization
             return buildJsonObject {
@@ -555,7 +573,8 @@ class JsonSchemaGenerator(
         val valueDesc = desc.getElementDescriptor(1)  // Map value type
 
         // Check if we need structured key representation
-        if (options.structuredMapKeys && keyDesc.kind !is PrimitiveKind && keyDesc.kind != SerialKind.ENUM) {
+        if(options.structuredMapKeys && keyDesc.kind !is PrimitiveKind && keyDesc.kind != SerialKind.ENUM)
+        {
             // Complex key types require array-of-objects representation
             // Matches Json { allowStructuredMapKeys = true } serialization
             return buildJsonObject {
@@ -601,7 +620,7 @@ class JsonSchemaGenerator(
             }
         }
         // Primitive keys: add format constraints where applicable
-        keyDesc.kind is PrimitiveKind && keyDesc.serialName.startsWith("kotlin.") -> when (keyDesc.kind) {
+        keyDesc.kind is PrimitiveKind && keyDesc.serialName.startsWith("kotlin.") -> when(keyDesc.kind) {
             PrimitiveKind.BOOLEAN -> buildJsonObject {
                 put("type", "string")
                 put("enum", JsonArray(listOf(JsonPrimitive("true"), JsonPrimitive("false"))))
@@ -629,9 +648,11 @@ class JsonSchemaGenerator(
     private fun classSchema(desc: SerialDescriptor): JsonObject {
         val name = defName(desc)
         
-        if (name != null) {
+        if(name != null)
+        {
             // Check if we need to generate the definition
-            if (name !in defs && name !in building) {
+            if(name !in defs && name !in building)
+            {
                 // Mark as building to prevent infinite recursion
                 building += name
                 
@@ -660,7 +681,8 @@ class JsonSchemaGenerator(
         val name = sanitize(desc.serialName)
         
         // Prevent infinite recursion by checking if we're already building this type
-        if (name in building) {
+        if(name in building)
+        {
             // Return a simple object schema to break the cycle
             return buildJsonObject { 
                 put("type", "object")
@@ -693,13 +715,14 @@ class JsonSchemaGenerator(
         
         // Generate properties for each field
         val props = buildJsonObject {
-            for (i in 0 until desc.elementsCount) {
+            for(i in 0 until desc.elementsCount)
+            {
                 // Get property name (respects @SerialName annotations)
                 val propName = desc.getElementName(i)
                 val child = desc.getElementDescriptor(i)
                 
                 // Generate schema for this property
-                put(propName, if (inline) schemaForDescriptorInlined(child) else schemaForDescriptor(child))
+                put(propName, if(inline) schemaForDescriptorInlined(child) else schemaForDescriptor(child))
             }
         }
         put("properties", props)
@@ -711,7 +734,8 @@ class JsonSchemaGenerator(
             }
             .map { i -> desc.getElementName(i) }
             
-        if (required.isNotEmpty()) {
+        if(required.isNotEmpty())
+        {
             put("required", JsonArray(required.map(::JsonPrimitive)))
         }
 
@@ -832,7 +856,8 @@ class JsonSchemaGenerator(
      * @param desc SerialDescriptor to check
      * @return Sanitized name for $defs, or null if should be inlined
      */
-    private fun defName(desc: SerialDescriptor): String? = when (desc.kind) {
+    private fun defName(desc: SerialDescriptor): String? = when(desc.kind)
+    {
         StructureKind.CLASS, StructureKind.OBJECT, SerialKind.ENUM -> sanitize(desc.serialName)
         else -> null
     }

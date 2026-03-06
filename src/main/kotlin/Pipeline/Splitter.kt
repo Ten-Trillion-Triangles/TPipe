@@ -174,7 +174,7 @@ class Splitter: P2PInterface
      */
     fun getChildTraceIds(): Map<String, String> {
         return getAllChildPipelines().associate { pipeline ->
-            val name = if (pipeline.pipelineName.isNotEmpty()) pipeline.pipelineName else "UnknownPipeline-${pipeline.hashCode()}"
+            val name = if(pipeline.pipelineName.isNotEmpty()) pipeline.pipelineName else "UnknownPipeline-${pipeline.hashCode()}"
             name to pipeline.getTraceId()
         }
     }
@@ -287,9 +287,9 @@ class Splitter: P2PInterface
         metadata: Map<String, Any> = emptyMap(),
         error: Throwable? = null
     ) {
-        if (!tracingEnabled) return
+        if(!tracingEnabled) return
         
-        if (!EventPriorityMapper.shouldTrace(eventType, traceConfig.detailLevel)) return
+        if(!EventPriorityMapper.shouldTrace(eventType, traceConfig.detailLevel)) return
         
         val enhancedMetadata = buildSplitterMetadata(metadata, traceConfig.detailLevel, eventType, error)
         
@@ -299,9 +299,9 @@ class Splitter: P2PInterface
             pipeName = "Splitter-${activatorKeys.size}keys",
             eventType = eventType,
             phase = phase,
-            content = if (shouldIncludeContent(traceConfig.detailLevel)) content else null,
+            content = if(shouldIncludeContent(traceConfig.detailLevel)) content else null,
             contextSnapshot = null,
-            metadata = if (traceConfig.includeMetadata) enhancedMetadata else emptyMap(),
+            metadata = if(traceConfig.includeMetadata) enhancedMetadata else emptyMap(),
             error = error
         )
         
@@ -319,9 +319,11 @@ class Splitter: P2PInterface
     ): Map<String, Any> {
         val metadata = baseMetadata.toMutableMap()
         
-        when (detailLevel) {
+        when(detailLevel)
+        {
             TraceDetailLevel.MINIMAL -> {
-                if (error != null) {
+                if(error != null)
+                {
                     metadata["error"] = error.message ?: "Unknown error"
                 }
             }
@@ -330,7 +332,8 @@ class Splitter: P2PInterface
                 metadata["splitterId"] = splitterId
                 metadata["activatorKeyCount"] = activatorKeys.size
                 metadata["totalPipelines"] = activatorKeys.values.sumOf { it.pipelines.size }
-                if (error != null) {
+                if(error != null)
+                {
                     metadata["error"] = error.message ?: "Unknown error"
                     metadata["errorType"] = error::class.simpleName ?: "Unknown"
                 }
@@ -343,7 +346,8 @@ class Splitter: P2PInterface
                 metadata["pipelinesByKey"] = activatorKeys.mapValues { it.value.pipelines.size }
                 metadata["hasOnPipelineFinish"] = (onPipeLineFinish != null).toString()
                 metadata["hasOnSplitterFinish"] = (onSplitterFinish != null).toString()
-                if (error != null) {
+                if(error != null)
+                {
                     metadata["error"] = error.message ?: "Unknown error"
                     metadata["errorType"] = error::class.simpleName ?: "Unknown"
                 }
@@ -359,7 +363,8 @@ class Splitter: P2PInterface
                 metadata["resultCount"] = results.contents.size
                 metadata["hasOnPipelineFinish"] = (onPipeLineFinish != null).toString()
                 metadata["hasOnSplitterFinish"] = (onSplitterFinish != null).toString()
-                if (error != null) {
+                if(error != null)
+                {
                     metadata["error"] = error.message ?: "Unknown error"
                     metadata["errorType"] = error::class.simpleName ?: "Unknown"
                     metadata["stackTrace"] = error.stackTraceToString()
@@ -371,7 +376,7 @@ class Splitter: P2PInterface
     }
 
     private fun shouldIncludeContent(detailLevel: TraceDetailLevel): Boolean {
-        return when (detailLevel) {
+        return when(detailLevel) {
             TraceDetailLevel.MINIMAL -> false
             TraceDetailLevel.NORMAL -> false
             TraceDetailLevel.VERBOSE -> traceConfig.includeContext
@@ -390,7 +395,7 @@ class Splitter: P2PInterface
      * Gets failure analysis for this Splitter if tracing is enabled.
      */
     fun getFailureAnalysis(): FailureAnalysis? {
-        return if (tracingEnabled) PipeTracer.getFailureAnalysis(splitterId) else null
+        return if(tracingEnabled) PipeTracer.getFailureAnalysis(splitterId) else null
     }
 
     /**
@@ -441,7 +446,8 @@ class Splitter: P2PInterface
     suspend fun init(config: TraceConfig = TraceConfig())
     {
         // Initialize tracing if enabled
-        if (tracingEnabled) {
+        if(tracingEnabled)
+        {
             PipeTracer.startTrace(splitterId)
             trace(TraceEventType.SPLITTER_START, TracePhase.INITIALIZATION,
                   metadata = mapOf(
@@ -456,7 +462,8 @@ class Splitter: P2PInterface
             val pipelines = it.value.pipelines
             
             // Trace content distribution
-            if (tracingEnabled) {
+            if(tracingEnabled)
+            {
                 trace(TraceEventType.SPLITTER_CONTENT_DISTRIBUTION, TracePhase.INITIALIZATION,
                       it.value.content,
                       metadata = mapOf(
@@ -477,14 +484,17 @@ class Splitter: P2PInterface
                 {
                     pipeline.enableTracing(traceConfig)
                     // Merge splitter traces if configured to do so
-                    if (traceConfig.mergeSplitterTraces) {
+                    if(traceConfig.mergeSplitterTraces)
+                    {
                         // Set splitter ID as additional trace ID - this makes events appear in BOTH traces
-                        for (pipe in pipeline.getPipes()) {
+                        for(pipe in pipeline.getPipes())
+                        {
                             pipe.addTraceId(splitterId)
                             
                             // Prefix pipe name with pipeline name for clarity in trace visualization
-                            val prefix = if (pipeline.pipelineName.isNotEmpty()) pipeline.pipelineName else it.key.toString()
-                            if (prefix.isNotEmpty() && !pipe.pipeName.startsWith("$prefix:")) {
+                            val prefix = if(pipeline.pipelineName.isNotEmpty()) pipeline.pipelineName else it.key.toString()
+                            if(prefix.isNotEmpty() && !pipe.pipeName.startsWith("$prefix:"))
+                            {
                                 pipe.pipeName = "$prefix:${pipe.pipeName}"
                             }
                         }
@@ -508,7 +518,8 @@ class Splitter: P2PInterface
     {
         results.flush() //Clear out before we start so that we aren't holding stale data here.
 
-        if (tracingEnabled) {
+        if(tracingEnabled)
+        {
             trace(TraceEventType.SPLITTER_PARALLEL_START, TracePhase.EXECUTION,
                   metadata = mapOf("totalJobs" to activatorKeys.values.sumOf { it.pipelines.size }))
         }
@@ -517,11 +528,12 @@ class Splitter: P2PInterface
             val jobs = mutableListOf<Deferred<Unit>>()
             
             //Iterate through all activator keys and their bound pipelines.
-            for ((key, activatorValue) in activatorKeys)
+            for((key, activatorValue) in activatorKeys)
             {
-                for (pipeline in activatorValue.pipelines)
+                for(pipeline in activatorValue.pipelines)
                 {
-                    if (tracingEnabled) {
+                    if(tracingEnabled)
+                    {
                         trace(TraceEventType.SPLITTER_PIPELINE_DISPATCH, TracePhase.EXECUTION,
                               activatorValue.content,
                               metadata = mapOf(
@@ -534,7 +546,8 @@ class Splitter: P2PInterface
                     val job = async {
                         try
                         {
-                            if (tracingEnabled) {
+                            if(tracingEnabled)
+                            {
                                 // Add pipeline start event to Splitter trace
                                 trace(TraceEventType.PIPE_START, TracePhase.EXECUTION,
                                       activatorValue.content,
@@ -557,7 +570,8 @@ class Splitter: P2PInterface
                             //Execute pipeline with the content associated with this key.
                             val result = pipeline.execute(copiedContent)
                             
-                            if (tracingEnabled) {
+                            if(tracingEnabled)
+                            {
                                 // Add pipeline success event to Splitter trace
                                 trace(TraceEventType.PIPE_SUCCESS, TracePhase.EXECUTION,
                                       result,
@@ -572,7 +586,8 @@ class Splitter: P2PInterface
                             //Store successful result in results collection.
                             storeResult(key, pipeline, result)
                             
-                            if (tracingEnabled) {
+                            if(tracingEnabled)
+                            {
                                 trace(TraceEventType.SPLITTER_PIPELINE_COMPLETION, TracePhase.EXECUTION,
                                       result,
                                       metadata = mapOf(
@@ -584,7 +599,8 @@ class Splitter: P2PInterface
                             
                             //Invoke pipeline completion callback if set.
                             onPipeLineFinish?.let { callback ->
-                                if (tracingEnabled) {
+                                if(tracingEnabled)
+                                {
                                     trace(TraceEventType.SPLITTER_PIPELINE_CALLBACK, TracePhase.POST_PROCESSING,
                                           result,
                                           metadata = mapOf("pipelineName" to pipeline.pipelineName))
@@ -592,7 +608,7 @@ class Splitter: P2PInterface
                                 callback(this@Splitter, pipeline, result)
                             }
                         }
-                        catch (e: Exception)
+                        catch(e: Exception)
                         {
                             //Handle pipeline execution failure by creating error content.
                             val errorContent = MultimodalContent("Pipeline execution failed: ${e.message}")
@@ -600,7 +616,8 @@ class Splitter: P2PInterface
                             //Store error result in results collection.
                             storeResult(key, pipeline, errorContent)
                             
-                            if (tracingEnabled) {
+                            if(tracingEnabled)
+                            {
                                 trace(TraceEventType.SPLITTER_FAILURE, TracePhase.EXECUTION,
                                       activatorValue.content,
                                       error = e,
@@ -612,7 +629,8 @@ class Splitter: P2PInterface
                             
                             //Invoke pipeline completion callback with error content.
                             onPipeLineFinish?.let { callback ->
-                                if (tracingEnabled) {
+                                if(tracingEnabled)
+                                {
                                     trace(TraceEventType.SPLITTER_PIPELINE_CALLBACK, TracePhase.POST_PROCESSING,
                                           errorContent,
                                           metadata = mapOf("pipelineName" to pipeline.pipelineName))
@@ -627,7 +645,8 @@ class Splitter: P2PInterface
             }
             
             // Launch completion monitoring
-            if (tracingEnabled) {
+            if(tracingEnabled)
+            {
                 launch {
                     trace(TraceEventType.SPLITTER_PARALLEL_AWAIT, TracePhase.POST_PROCESSING,
                           metadata = mapOf("jobCount" to jobs.size))
@@ -647,9 +666,11 @@ class Splitter: P2PInterface
                         callback(this@Splitter)
                     }
                     
-                    val finalEventType = if (results.contents.isEmpty()) {
+                    val finalEventType = if(results.contents.isEmpty()) {
                         TraceEventType.SPLITTER_FAILURE
-                    } else {
+                    }
+                    else
+                    {
                         TraceEventType.SPLITTER_SUCCESS
                     }
                     
@@ -699,7 +720,7 @@ class Splitter: P2PInterface
         val completed = completedPipelines.incrementAndGet()
         
         //Check if all pipelines have completed to trigger splitter completion.
-        if (completed >= totalPipelines)
+        if(completed >= totalPipelines)
         {
             handleSplitterCompletion()
         }
@@ -715,7 +736,7 @@ class Splitter: P2PInterface
         //Use mutex to ensure thread-safe callback execution.
         executionMutex.withLock {
             //Check completion flag to prevent multiple callback invocations.
-            if (!splitterCompleted)
+            if(!splitterCompleted)
             {
                 //Mark splitter as completed.
                 splitterCompleted = true

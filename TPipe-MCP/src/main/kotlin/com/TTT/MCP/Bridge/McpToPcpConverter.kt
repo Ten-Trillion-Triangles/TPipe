@@ -47,8 +47,8 @@ class McpToPcpConverter
                 description = buildString {
                     append(tool.description ?: "")
                     tool.annotations?.let { ann ->
-                        if (ann.priority != null) append("\nPriority: ${ann.priority}")
-                        if (ann.audience != null) append("\nAudience: ${ann.audience.joinToString()}")
+                        if(ann.priority != null) append("\nPriority: ${ann.priority}")
+                        if(ann.audience != null) append("\nAudience: ${ann.audience.joinToString()}")
                     }
                 }
                 // Extract parameter definitions from JSON schema
@@ -156,7 +156,7 @@ class McpToPcpConverter
     private fun mapJsonSchemaToParamType(schema: JsonObject): ParamType 
     {
         // Map JSON schema types to corresponding PCP parameter types
-        return when (schema["type"]?.jsonPrimitive?.content) {
+        return when(schema["type"]?.jsonPrimitive?.content) {
             "string" -> ParamType.String
             "integer" -> ParamType.Int
             "number" -> ParamType.Float

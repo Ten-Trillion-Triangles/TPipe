@@ -167,7 +167,8 @@ class NovaCanvasPipe : BedrockMultimodalPipe()
             put("taskType", taskType.value)
             
             // Build task-specific parameters based on task type
-            when (taskType) {
+            when(taskType)
+            {
                 TaskType.TEXT_IMAGE -> {
                     // Text-to-image generation with optional conditioning
                     putJsonObject("textToImageParams") {
@@ -175,12 +176,13 @@ class NovaCanvasPipe : BedrockMultimodalPipe()
                         put("text", content.text)
                         
                         // Add negative prompt if specified
-                        if (negativeText.isNotEmpty()) put("negativeText", negativeText)
+                        if(negativeText.isNotEmpty()) put("negativeText", negativeText)
                         
                         // Add conditioning image if provided
                         content.binaryContent.firstOrNull()?.let { binary ->
                             // Convert binary content to appropriate format
-                            when (binary) {
+                            when(binary)
+                            {
                                 is BinaryContent.Base64String -> put("conditionImage", binary.data)
                                 is BinaryContent.Bytes -> put("conditionImage", Base64.getEncoder().encodeToString(binary.data))
                                 is BinaryContent.CloudReference -> put("conditionImage", binary.uri)
@@ -198,7 +200,7 @@ class NovaCanvasPipe : BedrockMultimodalPipe()
                         put("text", content.text)
                         
                         // Add negative prompt if specified
-                        if (negativeText.isNotEmpty()) put("negativeText", negativeText)
+                        if(negativeText.isNotEmpty()) put("negativeText", negativeText)
                         
                         // Set similarity strength for variations
                         put("similarityStrength", similarityStrength)
@@ -207,7 +209,8 @@ class NovaCanvasPipe : BedrockMultimodalPipe()
                         putJsonArray("images") {
                             content.binaryContent.forEach { binary ->
                                 // Convert each binary content to appropriate format
-                                when (binary) {
+                                when(binary)
+                                {
                                     is BinaryContent.Base64String -> add(binary.data)
                                     is BinaryContent.Bytes -> add(Base64.getEncoder().encodeToString(binary.data))
                                     is BinaryContent.CloudReference -> add(binary.uri)
@@ -224,11 +227,12 @@ class NovaCanvasPipe : BedrockMultimodalPipe()
                         put("text", content.text)
                         
                         // Add negative prompt if specified
-                        if (negativeText.isNotEmpty()) put("negativeText", negativeText)
+                        if(negativeText.isNotEmpty()) put("negativeText", negativeText)
                         
                         // Add reference image for color extraction
                         content.binaryContent.firstOrNull()?.let { binary ->
-                            when (binary) {
+                            when(binary)
+                            {
                                 is BinaryContent.Base64String -> put("referenceImage", binary.data)
                                 is BinaryContent.Bytes -> put("referenceImage", Base64.getEncoder().encodeToString(binary.data))
                                 is BinaryContent.CloudReference -> put("referenceImage", binary.uri)
@@ -237,7 +241,8 @@ class NovaCanvasPipe : BedrockMultimodalPipe()
                         }
                         
                         // Add color palette if specified
-                        if (colors.isNotEmpty()) {
+                        if(colors.isNotEmpty())
+                        {
                             putJsonArray("colors") {
                                 colors.forEach { add(it) }
                             }
@@ -249,7 +254,8 @@ class NovaCanvasPipe : BedrockMultimodalPipe()
                     putJsonObject("backgroundRemovalParams") {
                         // Add source image for background removal
                         content.binaryContent.firstOrNull()?.let { binary ->
-                            when (binary) {
+                            when(binary)
+                            {
                                 is BinaryContent.Base64String -> put("image", binary.data)
                                 is BinaryContent.Bytes -> put("image", Base64.getEncoder().encodeToString(binary.data))
                                 is BinaryContent.CloudReference -> put("image", binary.uri)

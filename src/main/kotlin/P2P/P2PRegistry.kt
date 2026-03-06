@@ -222,7 +222,8 @@ object P2PRegistry
 
         if(requirements.requireConverseInput)
         {
-            if(converseJson == null && converseHistoryJson == null) {
+            if(converseJson == null && converseHistoryJson == null)
+            {
                 val rejection = P2PRejection()
                 rejection.reason = "Agent requires converse input format but none was provided"
                 rejection.errorType = P2PError.prompt
@@ -234,7 +235,8 @@ object P2PRegistry
         if(!requirements.allowExternalConnections)
         {
             val returnPathIsLocal = Agents[request.returnAddress]
-            if(returnPathIsLocal == null) {
+            if(returnPathIsLocal == null)
+            {
                 val rejection = P2PRejection()
                 rejection.reason = "Agent does not allow external connections"
                 rejection.errorType = P2PError.transport
@@ -272,7 +274,8 @@ object P2PRegistry
                 if(countingSettings != null)
                 {
                     val tokenCount = Dictionary.countTokens(request.prompt.text, countingSettings)
-                    if(tokenCount > requirements.maxTokens) {
+                    if(tokenCount > requirements.maxTokens)
+                    {
                         val rejection = P2PRejection()
                         rejection.reason = "Request exceeds maximum token limit of ${requirements.maxTokens}"
                         rejection.errorType = P2PError.prompt
@@ -280,7 +283,7 @@ object P2PRegistry
                     }
                 }
             }
-            catch (e: Exception)
+            catch(e: Exception)
             {
                 val rejection = P2PRejection()
                 rejection.reason = "Failed to count tokens: ${e.message}"
@@ -317,20 +320,22 @@ object P2PRegistry
                         rejection.errorType = P2PError.configuration
                         return Pair(false, rejection)
                     }
-                } catch (e: Exception) {
+                }
+                catch(e: Exception)
+                {
                     // If we can't get truncation settings, skip this validation
                 }
             }
         }
 
         // Check accepted content types
-        if (requirements.acceptedContent != null)
+        if(requirements.acceptedContent != null)
         {
-            for (binaryContent in request.prompt.binaryContent)
+            for(binaryContent in request.prompt.binaryContent)
             {
                 val mimeType = binaryContent.getMimeType()
                 val isSupported = requirements.acceptedContent!!.any { contentType ->
-                    when (contentType.toString().lowercase())
+                    when(contentType.toString().lowercase())
                     {
                         "image" -> mimeType.startsWith("image/")
                         "document" -> mimeType.startsWith("application/") || mimeType.startsWith("text/")
@@ -339,7 +344,8 @@ object P2PRegistry
                         else -> mimeType.contains(contentType.toString(), ignoreCase = true)
                     }
                 }
-                if (!isSupported) {
+                if(!isSupported)
+                {
                     val rejection = P2PRejection()
                     rejection.reason = "Unsupported content type: $mimeType"
                     rejection.errorType = P2PError.content
@@ -380,13 +386,15 @@ object P2PRegistry
         
         // Check agent configuration for multi-page setup using public methods
         val pipe = agent as? Pipe
-        val agentHasMultiPage = if (pipe != null) {
+        val agentHasMultiPage = if(pipe != null) {
             try {
                 val truncationSettings = pipe.getTruncationSettings()
                 truncationSettings.multiPageBudgetStrategy != null || 
                 truncationSettings.pageWeights != null ||
                 truncationSettings.fillMode
-            } catch (e: Exception) {
+            }
+            catch(e: Exception)
+            {
                 false
             }
         } else false

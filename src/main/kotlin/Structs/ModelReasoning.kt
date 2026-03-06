@@ -58,7 +58,7 @@ data class ExplicitReasoningDetailed(
             append("${step.reasoningStep}. Looking at ${step.contextualFocus}, I need to consider ${step.considerations}. ")
             append("${step.deductionProcess} This means: ${step.conclusion}. ")
             append("${step.reasoningExplanation} ")
-            if (step.connectionToNext.isNotEmpty()) append("${step.connectionToNext} ")
+            if(step.connectionToNext.isNotEmpty()) append("${step.connectionToNext} ")
         }
         
         append("Based on this reasoning, the next steps should be: ${recommendedSteps}")
@@ -160,7 +160,8 @@ data class ProcessFocused(
         append("Working through this step by step: ")
         workThroughEachStep.forEach { step ->
             append("${step.stepName}. ${step.justification}. ")
-            if (step.alternativeAction.isNotEmpty()) {
+            if(step.alternativeAction.isNotEmpty())
+            {
                 append("Alternative consideration: ${step.alternativeAction}. ")
             }
         }
@@ -297,12 +298,13 @@ data class MultiPhasePlan(
             
             phase.steps.forEach { step ->
                 append("${step.stepDescription}. ")
-                if (step.needs.isNotEmpty()) append("Requirements: ${step.needs.joinToString(", ")}. ")
-                if (step.timeFrame.isNotEmpty()) append("Timeline: ${step.timeFrame}. ")
-                if (step.prerequisites.isNotEmpty()) append("Prerequisites: ${step.prerequisites.joinToString(", ")}. ")
+                if(step.needs.isNotEmpty()) append("Requirements: ${step.needs.joinToString(", ")}. ")
+                if(step.timeFrame.isNotEmpty()) append("Timeline: ${step.timeFrame}. ")
+                if(step.prerequisites.isNotEmpty()) append("Prerequisites: ${step.prerequisites.joinToString(", ")}. ")
             }
             
-            if (phase.checkpoints.isNotEmpty()) {
+            if(phase.checkpoints.isNotEmpty())
+            {
                 append("Checkpoints: ${phase.checkpoints.joinToString(", ")}. ")
             }
             
@@ -449,7 +451,7 @@ fun extractReasoningContent(method: String, content: MultimodalContent) : String
 {
     var resultJson = ""
 
-    when (method)
+    when(method)
     {
         "BestIdea" -> {
             val asObject = extractJson<BestIdeaResponse>(content.text) ?: BestIdeaResponse()

@@ -31,49 +31,56 @@ data class HttpSecurityConfig(
     val allowPrivateNetworks: Boolean = getDefaultAllowPrivate(level)
 ) {
     companion object {
-        fun getDefaultMaxTimeout(level: HttpSecurityLevel): Long = when(level) {
+        fun getDefaultMaxTimeout(level: HttpSecurityLevel): Long = when(level)
+        {
             HttpSecurityLevel.STRICT -> 30000L      // 30 seconds
             HttpSecurityLevel.BALANCED -> 300000L   // 5 minutes  
             HttpSecurityLevel.PERMISSIVE -> 1800000L // 30 minutes
             HttpSecurityLevel.DISABLED -> Long.MAX_VALUE
         }
         
-        fun getDefaultMaxBodySize(level: HttpSecurityLevel): Int = when(level) {
+        fun getDefaultMaxBodySize(level: HttpSecurityLevel): Int = when(level)
+        {
             HttpSecurityLevel.STRICT -> 65536       // 64KB
             HttpSecurityLevel.BALANCED -> 1048576   // 1MB
             HttpSecurityLevel.PERMISSIVE -> 10485760 // 10MB
             HttpSecurityLevel.DISABLED -> Int.MAX_VALUE
         }
         
-        fun getDefaultMaxHeaders(level: HttpSecurityLevel): Int = when(level) {
+        fun getDefaultMaxHeaders(level: HttpSecurityLevel): Int = when(level)
+        {
             HttpSecurityLevel.STRICT -> 10
             HttpSecurityLevel.BALANCED -> 50
             HttpSecurityLevel.PERMISSIVE -> 100
             HttpSecurityLevel.DISABLED -> Int.MAX_VALUE
         }
         
-        fun getDefaultRequireHosts(level: HttpSecurityLevel): Boolean = when(level) {
+        fun getDefaultRequireHosts(level: HttpSecurityLevel): Boolean = when(level)
+        {
             HttpSecurityLevel.STRICT -> true
             HttpSecurityLevel.BALANCED -> true
             HttpSecurityLevel.PERMISSIVE -> false
             HttpSecurityLevel.DISABLED -> false
         }
         
-        fun getDefaultRequireMethods(level: HttpSecurityLevel): Boolean = when(level) {
+        fun getDefaultRequireMethods(level: HttpSecurityLevel): Boolean = when(level)
+        {
             HttpSecurityLevel.STRICT -> true
             HttpSecurityLevel.BALANCED -> true  
             HttpSecurityLevel.PERMISSIVE -> false
             HttpSecurityLevel.DISABLED -> false
         }
         
-        fun getDefaultRequirePermissions(level: HttpSecurityLevel): Boolean = when(level) {
+        fun getDefaultRequirePermissions(level: HttpSecurityLevel): Boolean = when(level)
+        {
             HttpSecurityLevel.STRICT -> true
             HttpSecurityLevel.BALANCED -> true
             HttpSecurityLevel.PERMISSIVE -> true
             HttpSecurityLevel.DISABLED -> false
         }
         
-        fun getDefaultAllowPrivate(level: HttpSecurityLevel): Boolean = when(level) {
+        fun getDefaultAllowPrivate(level: HttpSecurityLevel): Boolean = when(level)
+        {
             HttpSecurityLevel.STRICT -> false
             HttpSecurityLevel.BALANCED -> false
             HttpSecurityLevel.PERMISSIVE -> false
@@ -186,14 +193,14 @@ class HttpSecurityManager(
         var validatedIp: String? = null
         
         // Validate required fields
-        if (options.baseUrl.isEmpty())
+        if(options.baseUrl.isEmpty())
         {
             errors.add("Base URL is required")
         }
         
         val normalizedMethod = options.method.uppercase()
 
-        if (!HttpConstants.ALL_METHODS.contains(normalizedMethod))
+        if(!HttpConstants.ALL_METHODS.contains(normalizedMethod))
         {
             errors.add("Unsupported HTTP method: ${options.method}")
         }
@@ -201,20 +208,20 @@ class HttpSecurityManager(
         // PERMISSION VALIDATION - Prevent unauthorized requests
         // Unlike the original stdio system that allowed any command with empty permissions,
         // we require explicit permissions for ALL HTTP methods by default
-        if (securityConfig.requirePermissions)
+        if(securityConfig.requirePermissions)
         {
             when
             {
                 normalizedMethod in HttpConstants.READ_METHODS ->
                 {
-                    if (!options.permissions.contains(Permissions.Read))
+                    if(!options.permissions.contains(Permissions.Read))
                     {
                         errors.add("Read permission required for ${normalizedMethod} requests")
                     }
                 }
                 normalizedMethod in HttpConstants.WRITE_METHODS ->
                 {
-                    if (!options.permissions.contains(Permissions.Write))
+                    if(!options.permissions.contains(Permissions.Write))
                     {
                         errors.add("Write permission required for ${normalizedMethod} requests")
                     }
@@ -224,15 +231,15 @@ class HttpSecurityManager(
 
         // Endpoint sanitisation
         val trimmedEndpoint = options.endpoint.trim()
-        if (trimmedEndpoint.startsWith("http", ignoreCase = true) || trimmedEndpoint.startsWith("//"))
+        if(trimmedEndpoint.startsWith("http", ignoreCase = true) || trimmedEndpoint.startsWith("//"))
         {
             errors.add("Endpoint must be relative and may not include a scheme or host")
         }
-        if (trimmedEndpoint.contains(".."))
+        if(trimmedEndpoint.contains(".."))
         {
             errors.add("Relative path traversal (.. segments) is not allowed in endpoint")
         }
-        if (trimmedEndpoint.contains('\\'))
+        if(trimmedEndpoint.contains('\\'))
         {
             errors.add("Backslash characters are not allowed in HTTP endpoints")
         }
@@ -240,42 +247,42 @@ class HttpSecurityManager(
         // HOST ALLOWLIST VALIDATION - Prevent requests to arbitrary external services
         // This prevents LLMs from making requests to any website on the internet
         // unless explicitly allowed by the developer
-        if (securityConfig.requireExplicitHosts && options.allowedHosts.isEmpty())
+        if(securityConfig.requireExplicitHosts && options.allowedHosts.isEmpty())
         {
             errors.add("Allowed hosts list is required at current security level")
         }
 
-        if (options.allowedHosts.any { it.trim() == "*" })
+        if(options.allowedHosts.any { it.trim() == "*" })
         {
             errors.add("Wildcard host '*' is not permitted in allowed hosts")
         }
         
         // METHOD ALLOWLIST VALIDATION - Prevent use of dangerous HTTP methods
         // This prevents LLMs from using methods like DELETE unless explicitly allowed
-        if (securityConfig.requireExplicitMethods && options.allowedMethods.isEmpty())
+        if(securityConfig.requireExplicitMethods && options.allowedMethods.isEmpty())
         {
             errors.add("Allowed methods list is required at current security level")
         }
         
         // Validate method against allowed methods if specified
-        if (options.allowedMethods.isNotEmpty() && !options.allowedMethods.contains(normalizedMethod))
+        if(options.allowedMethods.isNotEmpty() && !options.allowedMethods.contains(normalizedMethod))
         {
             errors.add("Method ${normalizedMethod} not in allowed methods list")
         }
 
         // RESOURCE LIMIT VALIDATION - Prevent resource exhaustion attacks
         // These limits prevent LLMs from creating requests that could hang or crash the system
-        if (options.timeoutMs > securityConfig.maxTimeoutMs)
+        if(options.timeoutMs > securityConfig.maxTimeoutMs)
         {
             errors.add("Timeout ${options.timeoutMs}ms exceeds maximum allowed ${securityConfig.maxTimeoutMs}ms")
         }
         
-        if (options.requestBody.length > securityConfig.maxRequestBodySize)
+        if(options.requestBody.length > securityConfig.maxRequestBodySize)
         {
             errors.add("Request body size ${options.requestBody.length} exceeds maximum ${securityConfig.maxRequestBodySize} bytes")
         }
         
-        if (options.headers.size > securityConfig.maxHeaders)
+        if(options.headers.size > securityConfig.maxHeaders)
         {
             errors.add("Header count ${options.headers.size} exceeds maximum ${securityConfig.maxHeaders}")
         }
@@ -283,9 +290,9 @@ class HttpSecurityManager(
         // URL SECURITY VALIDATION - Prevent SSRF and malicious URLs
         val fullUrl = buildString {
             append(options.baseUrl)
-            if (trimmedEndpoint.isNotEmpty())
+            if(trimmedEndpoint.isNotEmpty())
             {
-                if (!options.baseUrl.endsWith("/") && !trimmedEndpoint.startsWith("/"))
+                if(!options.baseUrl.endsWith("/") && !trimmedEndpoint.startsWith("/"))
                 {
                     append('/')
                 }
@@ -293,7 +300,7 @@ class HttpSecurityManager(
             }
         }
         val urlValidation = validateUrl(fullUrl, options.allowedHosts)
-        if (!urlValidation.isValid)
+        if(!urlValidation.isValid)
         {
             errors.addAll(urlValidation.errors)
         }
@@ -302,7 +309,7 @@ class HttpSecurityManager(
         
         // HEADER SECURITY VALIDATION - Detect potentially dangerous headers
         val headerValidation = validateHeaders(options.headers)
-        if (!headerValidation.isValid)
+        if(!headerValidation.isValid)
         {
             errors.addAll(headerValidation.errors)
         }
@@ -310,7 +317,7 @@ class HttpSecurityManager(
         
         // AUTHENTICATION VALIDATION - Ensure auth credentials are properly formatted
         val authValidation = validateAuthentication(options.authType, options.authCredentials)
-        if (!authValidation.isValid)
+        if(!authValidation.isValid)
         {
             errors.addAll(authValidation.errors)
         }
@@ -337,7 +344,7 @@ class HttpSecurityManager(
             val urlObj = URL(url)
             
             // Check protocol
-            if (urlObj.protocol !in listOf("http", "https"))
+            if(urlObj.protocol !in listOf("http", "https"))
             {
                 errors.add("Only HTTP and HTTPS protocols are allowed")
             }
@@ -348,10 +355,10 @@ class HttpSecurityManager(
             // - http://192.168.1.1/config (access internal network devices)  
             // - http://169.254.169.254/metadata (access cloud metadata services)
             // Can be disabled for local development by setting allowPrivateNetworks = true
-            if (!securityConfig.allowPrivateNetworks)
+            if(!securityConfig.allowPrivateNetworks)
             {
                 val result = checkSsrfProtection(url)
-                if (result.isPrivate)
+                if(result.isPrivate)
                 {
                     errors.add("Access to private networks is not allowed (SSRF protection)")
                 }
@@ -359,10 +366,10 @@ class HttpSecurityManager(
             }
             
             // Check allowed hosts if specified
-            if (allowedHosts.isNotEmpty())
+            if(allowedHosts.isNotEmpty())
             {
                 val host = urlObj.host.lowercase()
-                val hostWithPort = if (urlObj.port > 0 && urlObj.port != urlObj.defaultPort)
+                val hostWithPort = if(urlObj.port > 0 && urlObj.port != urlObj.defaultPort)
                 {
                     "$host:${urlObj.port}"
                 }
@@ -377,26 +384,26 @@ class HttpSecurityManager(
                     }
                 }
 
-                if (!matches)
+                if(!matches)
                 {
                     errors.add("Host '${urlObj.host}' is not in allowed hosts list")
                 }
             }
             
             // Check for suspicious patterns
-            if (url.contains("@") && !url.startsWith("https://"))
+            if(url.contains("@") && !url.startsWith("https://"))
             {
                 warnings.add("URL contains '@' character which may indicate credential injection")
             }
             
             // Check for port scanning attempts
             val port = urlObj.port
-            if (port != -1 && port !in listOf(80, 443, 8080, 8443))
+            if(port != -1 && port !in listOf(80, 443, 8080, 8443))
             {
                 warnings.add("Non-standard port $port detected")
             }
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             errors.add("Invalid URL format: ${e.message}")
         }
@@ -429,7 +436,7 @@ class HttpSecurityManager(
             val host = urlObj.host
             
             // Check for localhost variations first to avoid DNS lookup if possible
-            if (host.lowercase() in listOf("localhost", "127.0.0.1", "::1", "0.0.0.0"))
+            if(host.lowercase() in listOf("localhost", "127.0.0.1", "::1", "0.0.0.0"))
             {
                 return SsrfCheckResult(true, host)
             }
@@ -441,7 +448,7 @@ class HttpSecurityManager(
             
             return SsrfCheckResult(isPrivateNetwork(ip), ip)
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             // If we can't resolve, we MUST assume it's unsafe (fail-closed)
             // because an attacker might use a non-resolvable host that resolves
@@ -462,19 +469,19 @@ class HttpSecurityManager(
             val lowerName = name.lowercase()
             
             // Check for dangerous headers
-            if (lowerName in dangerousHeaders)
+            if(lowerName in dangerousHeaders)
             {
                 warnings.add("Potentially sensitive header: $name")
             }
             
             // Check for injection attempts
-            if (value.contains("\r") || value.contains("\n"))
+            if(value.contains("\r") || value.contains("\n"))
             {
                 errors.add("Header injection detected in $name")
             }
             
             // Check for overly long headers
-            if (value.length > 8192)
+            if(value.length > 8192)
             {
                 errors.add("Header $name exceeds maximum length")
             }
@@ -495,7 +502,7 @@ class HttpSecurityManager(
      */
     fun sanitizeRequestBody(body: String, contentType: String): String
     {
-        if (body.isEmpty()) return body
+        if(body.isEmpty()) return body
         
         var sanitized = body
         
@@ -539,7 +546,7 @@ class HttpSecurityManager(
         sanitized = sanitized.replace("javascript:", "javascript\\u003a")
         
         // Limit JSON depth to prevent parser attacks
-        if (countJsonDepth(sanitized) > MAX_JSON_DEPTH)
+        if(countJsonDepth(sanitized) > MAX_JSON_DEPTH)
         {
             throw SecurityException("JSON depth exceeds maximum allowed: $MAX_JSON_DEPTH")
         }
@@ -558,7 +565,7 @@ class HttpSecurityManager(
         sanitized = sanitized.replace(Regex("[<>\"'&=]"), "")
         
         // Limit length
-        if (sanitized.length > MAX_TEXT_LENGTH)
+        if(sanitized.length > MAX_TEXT_LENGTH)
         {
             sanitized = sanitized.substring(0, MAX_TEXT_LENGTH)
         }
@@ -577,7 +584,7 @@ class HttpSecurityManager(
         sanitized = sanitized.replace(Regex("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]"), "")
         
         // Limit length to prevent DoS
-        if (sanitized.length > MAX_TEXT_LENGTH)
+        if(sanitized.length > MAX_TEXT_LENGTH)
         {
             sanitized = sanitized.substring(0, MAX_TEXT_LENGTH)
         }
@@ -596,7 +603,7 @@ class HttpSecurityManager(
         sanitized = sanitized.replace("\u0000", "")
         
         // Limit total size
-        if (sanitized.length > MAX_BODY_SIZE)
+        if(sanitized.length > MAX_BODY_SIZE)
         {
             throw SecurityException("Request body size exceeds maximum: $MAX_BODY_SIZE bytes")
         }
@@ -612,9 +619,9 @@ class HttpSecurityManager(
         var depth = 0
         var maxDepth = 0
         
-        for (char in json)
+        for(char in json)
         {
-            when (char)
+            when(char)
             {
                 '{', '[' ->
                 {
@@ -654,7 +661,7 @@ class HttpSecurityManager(
     {
         val headers = mutableMapOf<String, String>()
         
-        when (authType.uppercase())
+        when(authType.uppercase())
         {
             "BASIC" ->
             {
@@ -687,14 +694,14 @@ class HttpSecurityManager(
     private fun isPrivateNetwork(ip: String): Boolean
     {
         // Check if it's a localhost variation
-        if (ip.lowercase() in listOf("localhost", "127.0.0.1", "::1", "0.0.0.0")) return true
+        if(ip.lowercase() in listOf("localhost", "127.0.0.1", "::1", "0.0.0.0")) return true
 
         try
         {
             val address = InetAddress.getByName(ip)
 
             // Use built-in InetAddress checks
-            if (address.isLoopbackAddress || address.isSiteLocalAddress || address.isLinkLocalAddress || address.isAnyLocalAddress)
+            if(address.isLoopbackAddress || address.isSiteLocalAddress || address.isLinkLocalAddress || address.isAnyLocalAddress)
             {
                 return true
             }
@@ -703,7 +710,7 @@ class HttpSecurityManager(
             val bytes = address.address
 
             // IPv4 Checks
-            if (bytes.size == 4)
+            if(bytes.size == 4)
             {
                 val b1 = bytes[0].toInt() and 0xFF
                 val b2 = bytes[1].toInt() and 0xFF
@@ -720,7 +727,7 @@ class HttpSecurityManager(
                 }
             }
             // IPv6 Checks
-            else if (bytes.size == 16)
+            else if(bytes.size == 16)
             {
                 val b1 = bytes[0].toInt() and 0xFF
 
@@ -732,7 +739,7 @@ class HttpSecurityManager(
                 }
             }
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             return true // Fail-closed on parse error
         }
@@ -747,16 +754,16 @@ class HttpSecurityManager(
     {
         val errors = mutableListOf<String>()
         
-        when (authType.lowercase())
+        when(authType.lowercase())
         {
             "bearer" ->
             {
                 val token = credentials["token"]
-                if (token.isNullOrBlank())
+                if(token.isNullOrBlank())
                 {
                     errors.add("Bearer token is required")
                 }
-                else if (token.length < 10)
+                else if(token.length < 10)
                 {
                     errors.add("Bearer token appears too short")
                 }
@@ -766,7 +773,7 @@ class HttpSecurityManager(
             {
                 val username = credentials["username"]
                 val password = credentials["password"]
-                if (username.isNullOrBlank() || password.isNullOrBlank())
+                if(username.isNullOrBlank() || password.isNullOrBlank())
                 {
                     errors.add("Username and password are required for basic auth")
                 }
@@ -775,7 +782,7 @@ class HttpSecurityManager(
             "apikey" ->
             {
                 val key = credentials["key"]
-                if (key.isNullOrBlank())
+                if(key.isNullOrBlank())
                 {
                     errors.add("API key is required")
                 }

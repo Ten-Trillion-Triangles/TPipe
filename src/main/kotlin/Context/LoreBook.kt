@@ -71,7 +71,8 @@ data class LoreBook(@kotlinx.serialization.Transient val cinit:  Boolean = false
         value = "$value ${other.value}"
         // Merge required keys, avoiding duplicates
         other.requiredKeys.forEach { key ->
-            if (!requiredKeys.contains(key)) {
+            if(!requiredKeys.contains(key))
+            {
                 requiredKeys.add(key)
             }
         }

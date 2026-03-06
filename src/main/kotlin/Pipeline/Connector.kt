@@ -29,15 +29,18 @@ class Connector : P2PInterface
     private var p2pTransport: P2PTransport? = null
     private var p2PRequirements: P2PRequirements? = null
 
-    override fun setP2pDescription(description: P2PDescriptor) {
+    override fun setP2pDescription(description: P2PDescriptor)
+    {
         p2pDescriptor = description
     }
 
-    override fun setP2pTransport(transport: P2PTransport) {
+    override fun setP2pTransport(transport: P2PTransport)
+    {
         p2pTransport = transport
     }
 
-    override fun setP2pRequirements(requirements: P2PRequirements) {
+    override fun setP2pRequirements(requirements: P2PRequirements)
+    {
         p2PRequirements = requirements
     }
 
@@ -173,7 +176,7 @@ class Connector : P2PInterface
             return content
         }
 
-        catch (e: Exception)
+        catch(e: Exception)
         {
             content.terminatePipeline = true
             return content

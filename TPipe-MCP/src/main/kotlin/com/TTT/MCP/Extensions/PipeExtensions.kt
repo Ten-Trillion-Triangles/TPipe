@@ -41,7 +41,9 @@ fun Pipe.convertAndApplyMcp(mcpJson: String): ConversionResult
         // Apply the converted context to this pipe
         this.setPcPContext(pcpContext)
         ConversionResult(success = true, pcpContext = pcpContext)
-    } catch (e: Exception) {
+    }
+    catch(e: Exception)
+    {
         // Return error result if conversion fails
         ConversionResult(
             success = false,
@@ -78,7 +80,9 @@ fun Pipe.convertPcpToMcp(): ConversionResult
             pcpContext = this.pcpContext,
             warnings = listOf("Exported MCP JSON from PCP context")
         )
-    } catch (e: Exception) {
+    }
+    catch(e: Exception)
+    {
         // Return error result if conversion fails
         ConversionResult(
             success = false,

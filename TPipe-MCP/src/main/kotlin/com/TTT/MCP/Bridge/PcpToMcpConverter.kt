@@ -50,7 +50,7 @@ class PcpToMcpConverter
             val priority = option.description.substringAfter("\nPriority: ", "").substringBefore("\n").toDoubleOrNull()
             val audience = option.description.substringAfter("\nAudience: ", "").substringBefore("\n").split(", ").filter { it.isNotBlank() }
 
-            val annotations = if (priority != null || audience.isNotEmpty()) {
+            val annotations = if(priority != null || audience.isNotEmpty()) {
                 McpAnnotations(audience.takeIf { it.isNotEmpty() }, priority)
             } else null
 
@@ -134,17 +134,20 @@ class PcpToMcpConverter
                     val jsonType = mapParamTypeToJsonType(paramInfo.first)
                     put("type", jsonType)
                     
-                    if (paramInfo.second.isNotBlank()) {
+                    if(paramInfo.second.isNotBlank())
+                    {
                         put("description", paramInfo.second)
                     }
                     
                     // Add enum values if specified
-                    if (paramInfo.third.isNotEmpty()) {
+                    if(paramInfo.third.isNotEmpty())
+                    {
                         put("enum", JsonArray(paramInfo.third.map { JsonPrimitive(it) }))
                     }
                     
                     // Add items for array types
-                    if (jsonType == "array") {
+                    if(jsonType == "array")
+                    {
                         put("items", buildJsonObject {
                             put("type", "string") // Default to string items
                         })
@@ -157,7 +160,8 @@ class PcpToMcpConverter
         return buildJsonObject {
             put("type", "object")
             put("properties", properties)
-            if (requiredFields.isNotEmpty()) {
+            if(requiredFields.isNotEmpty())
+            {
                 put("required", JsonArray(requiredFields.map { JsonPrimitive(it) }))
             }
         }
@@ -172,7 +176,7 @@ class PcpToMcpConverter
     private fun mapParamTypeToJsonType(paramType: ParamType): String 
     {
         // Map PCP parameter types back to JSON schema types
-        return when (paramType) {
+        return when(paramType) {
             ParamType.String -> "string"
             ParamType.Int -> "integer"
             ParamType.Float -> "number"
@@ -194,7 +198,7 @@ class PcpToMcpConverter
     private fun mapCommandToUri(command: String, args: List<String>): String 
     {
         // Map shell commands back to appropriate URI schemes
-        return when (command) {
+        return when(command) {
             "cat", "head", "tail" -> "file://${args.firstOrNull() ?: ""}"
             "curl" -> args.firstOrNull() ?: "http://localhost"
             else -> "stdio://$command"
@@ -210,7 +214,7 @@ class PcpToMcpConverter
     private fun inferMimeType(command: String): String? 
     {
         // Infer appropriate MIME type based on shell command
-        return when (command) {
+        return when(command) {
             "cat", "head", "tail" -> "text/plain"
             "curl" -> "application/json"
             else -> null

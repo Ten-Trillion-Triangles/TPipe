@@ -55,7 +55,8 @@ enum class BedrockPriorityTier
  * @property bedrockClient AWS Bedrock Runtime client instance
  */
 @kotlinx.serialization.Serializable
-open class BedrockPipe : Pipe() {
+open class BedrockPipe : Pipe()
+{
 
 //=========================================Provider interface===========================================================
 
@@ -444,7 +445,7 @@ open class BedrockPipe : Pipe() {
      */
     protected fun mapServiceTier(): ServiceTierType
     {
-        return when (serviceTier)
+        return when(serviceTier)
         {
             BedrockPriorityTier.Reserved -> ServiceTierType.Reserved
             BedrockPriorityTier.Priority -> ServiceTierType.Priority
@@ -483,7 +484,8 @@ open class BedrockPipe : Pipe() {
         this.streamingEnabled = true
         this.streamModelReasoning = streamReasoning
 
-        if (callback != null) {
+        if(callback != null)
+        {
             this.streamingCallback = callback
         }
 
@@ -642,11 +644,11 @@ open class BedrockPipe : Pipe() {
         requestedModelId = model
 
         // Resolve model to inference profile if configured
-        if (model.isNotEmpty())
+        if(model.isNotEmpty())
         {
             // Check if this model has a configured inference profile
             val inferenceId = bedrockEnv.getInferenceProfileId(model)
-            if (!inferenceId.isNullOrEmpty())
+            if(!inferenceId.isNullOrEmpty())
             {
                 // Use inference profile ARN instead of direct model ID
                 // This enables provisioned throughput for better performance
@@ -663,7 +665,7 @@ open class BedrockPipe : Pipe() {
         }
         
         // Validate GPT-OSS region requirement
-        if (model.contains("openai.gpt-oss") && region.lowercase() != "us-west-2")
+        if(model.contains("openai.gpt-oss") && region.lowercase() != "us-west-2")
         {
             // GPT-OSS models are only available in us-west-2 region
             // Force region change to ensure API calls succeed
@@ -679,7 +681,7 @@ open class BedrockPipe : Pipe() {
             
             // Check bedrockEnv for programmatically set credentials
             val (accessKey, secretKey) = bedrockEnv.getKeys()
-            if (accessKey.isNotEmpty() && secretKey.isNotEmpty())
+            if(accessKey.isNotEmpty() && secretKey.isNotEmpty())
             {
                 credentialsProvider = StaticCredentialsProvider(
                     Credentials(accessKey, secretKey)
@@ -764,13 +766,16 @@ open class BedrockPipe : Pipe() {
                 "success" to true
             )
             
-            if (result.modelReasoning.isNotEmpty()) {
+            if(result.modelReasoning.isNotEmpty())
+            {
                 responseMetadata["reasoningContent"] = result.modelReasoning
                 responseMetadata["modelSupportsReasoning"] = true
                 responseMetadata["reasoningEnabled"] = useModelReasoning
                 responseMetadata["reasoningLength"] = result.modelReasoning.length
                 responseMetadata["hasReasoning"] = true
-            } else {
+            }
+            else
+            {
                 responseMetadata["hasReasoning"] = false
             }
             
@@ -779,7 +784,7 @@ open class BedrockPipe : Pipe() {
             
             result.text
         } 
-        catch (e: Exception) 
+        catch(e: Exception)
         {
             // Call exception function if set to allow user handling of API errors
             exceptionFunction?.invoke(MultimodalContent(promptInjector), e)
@@ -842,7 +847,9 @@ open class BedrockPipe : Pipe() {
                   ))
             result
             
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             // Call exception function if set to allow user handling of API errors
             exceptionFunction?.invoke(content, e)
             
@@ -869,7 +876,7 @@ open class BedrockPipe : Pipe() {
         val targetModelId = model.ifEmpty { requestedModelId }
         
         // Use unified result object
-        var result = if (useConverseApi)
+        var result = if(useConverseApi)
         {
             // Converse API path
             generateWithConverseApi(client, requestedModelId, fullPrompt)
@@ -925,10 +932,10 @@ open class BedrockPipe : Pipe() {
         }
         
         // Attempt streaming if enabled
-        if (streamingEnabled)
+        if(streamingEnabled)
         {
             val streamingResult = executeInvokeStream(client, requestedModelId, requestJson)
-            if (streamingResult != null)
+            if(streamingResult != null)
             {
                 return streamingResult
             }
@@ -961,7 +968,8 @@ open class BedrockPipe : Pipe() {
         )
         
         // Add reasoning metadata if reasoning content was found
-        if (reasoningContent.isNotEmpty()) {
+        if(reasoningContent.isNotEmpty())
+        {
             responseMetadata["reasoningContent"] = reasoningContent
             responseMetadata["modelSupportsReasoning"] = true
             responseMetadata["reasoningEnabled"] = useModelReasoning
@@ -969,22 +977,23 @@ open class BedrockPipe : Pipe() {
         
         // Extract stop reason
         val stopReason = extractStopReasonFromInvokeResponse(responseBody, requestedModelId)
-        if (stopReason.isNotEmpty()) {
+        if(stopReason.isNotEmpty())
+        {
             responseMetadata["stopReason"] = stopReason
         }
         
         // Check for max token overflow
         val isMaxTokenOverflow = isMaxTokenStopReason(stopReason)
-        if (isMaxTokenOverflow)
+        if(isMaxTokenOverflow)
         {
             responseMetadata["maxTokenOverflow"] = true
             
-            if (allowMaxTokenOverflow && extractedText.isNotEmpty())
+            if(allowMaxTokenOverflow && extractedText.isNotEmpty())
             {
                 trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, 
                       metadata = responseMetadata + mapOf("overflowAllowed" to true))
             }
-            else if (!allowMaxTokenOverflow)
+            else if(!allowMaxTokenOverflow)
             {
                 trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
                       error = RuntimeException("Max tokens exceeded"),
@@ -1229,7 +1238,7 @@ open class BedrockPipe : Pipe() {
             }
         }
         
-        if (truncateContextAsString)
+        if(truncateContextAsString)
         {
             contextWindow.combineAndTruncateAsString(
                 userPrompt,
@@ -1289,7 +1298,7 @@ open class BedrockPipe : Pipe() {
             putJsonArray("content") {
                 add(buildJsonObject {
                     put("text", prompt)
-                    if (enableCaching && cacheControl != null)
+                    if(enableCaching && cacheControl != null)
                     {
                         putJsonObject("cache_control") {
                             put("type", cacheControl)
@@ -1300,12 +1309,12 @@ open class BedrockPipe : Pipe() {
         })
         
         return buildJsonObject {
-            if (systemPrompt.isNotEmpty())
+            if(systemPrompt.isNotEmpty())
             {
                 putJsonArray("system") {
                     add(buildJsonObject {
                         put("text", systemPrompt)
-                        if (enableCaching && cacheControl != null)
+                        if(enableCaching && cacheControl != null)
                         {
                             putJsonObject("cache_control") {
                                 put("type", cacheControl)
@@ -1316,14 +1325,14 @@ open class BedrockPipe : Pipe() {
             }
             put("messages", JsonArray(messages))
             putJsonObject("inferenceConfig") {
-                if (!highReasoning && maxTokens > 0)
+                if(!highReasoning && maxTokens > 0)
                 {
-                    if (maxTokens > 0) put("maxTokens", maxTokens)
+                    if(maxTokens > 0) put("maxTokens", maxTokens)
                 }
-                if (!highReasoning && temperature > 0) put("temperature", temperature)
-                if (!highReasoning && topP > 0) put("topP", topP)
-                if (!highReasoning && topK > 0) put("topK", if (topK > 128) 128 else topK)
-                if (stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+                if(!highReasoning && temperature > 0) put("temperature", temperature)
+                if(!highReasoning && topP > 0) put("topP", topP)
+                if(!highReasoning && topK > 0) put("topK", if(topK > 128) 128 else topK)
+                if(stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
                 novaReasoning?.let { put("reasoningConfig", it.json) }
             }
             toolConfig?.let { put("toolConfig", it) }
@@ -1349,7 +1358,7 @@ open class BedrockPipe : Pipe() {
             putJsonArray("content") {
                 add(buildJsonObject {
                     put("text", prompt)
-                    if (enableCaching && cacheControl != null)
+                    if(enableCaching && cacheControl != null)
                     {
                         putJsonObject("cache_control") {
                             put("type", cacheControl)
@@ -1360,11 +1369,11 @@ open class BedrockPipe : Pipe() {
         })
 
         val systemMessages = mutableListOf<JsonObject>()
-        if (systemPrompt.isNotEmpty())
+        if(systemPrompt.isNotEmpty())
         {
             systemMessages.add(buildJsonObject {
                 put("text", systemPrompt)
-                if (enableCaching && cacheControl != null)
+                if(enableCaching && cacheControl != null)
                 {
                     putJsonObject("cache_control") {
                         put("type", cacheControl)
@@ -1373,7 +1382,7 @@ open class BedrockPipe : Pipe() {
             })
         }
 
-        if (!pcpContext.tpipeOptions.isEmpty())
+        if(!pcpContext.tpipeOptions.isEmpty())
         {
             systemMessages.add(buildJsonObject {
                 put("text", "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}")
@@ -1381,7 +1390,7 @@ open class BedrockPipe : Pipe() {
         }
 
         return buildJsonObject {
-            if (systemMessages.isNotEmpty())
+            if(systemMessages.isNotEmpty())
             {
                 putJsonArray("system") {
                     systemMessages.forEach { add(it) }
@@ -1389,10 +1398,10 @@ open class BedrockPipe : Pipe() {
             }
             put("messages", JsonArray(messages))
             putJsonObject("inferenceConfig") {
-                if (maxTokens > 0) put("maxTokens", maxTokens)
-                if (temperature > 0) put("temperature", temperature)
-                if (topP > 0) put("topP", topP)
-                if (stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+                if(maxTokens > 0) put("maxTokens", maxTokens)
+                if(temperature > 0) put("temperature", temperature)
+                if(topP > 0) put("topP", topP)
+                if(stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             }
             additionalFields?.let { put("additionalModelRequestFields", it) }
         }.toString()
@@ -1400,14 +1409,14 @@ open class BedrockPipe : Pipe() {
 
     private fun buildMiniMaxAdditionalModelRequestFieldsJson(toolConfig: JsonObject?): JsonObject?
     {
-        if (topK <= 0 && !useModelReasoning && toolConfig == null)
+        if(topK <= 0 && !useModelReasoning && toolConfig == null)
         {
             return null
         }
 
         return buildJsonObject {
-            if (topK > 0) put("topK", topK)
-            if (useModelReasoning) put("reasoning_split", JsonPrimitive(true))
+            if(topK > 0) put("topK", topK)
+            if(useModelReasoning) put("reasoning_split", JsonPrimitive(true))
             toolConfig?.let { put("toolConfig", it) }
         }
     }
@@ -1429,7 +1438,7 @@ open class BedrockPipe : Pipe() {
 
         messages.add(buildJsonObject {
             put("role", "user")
-put("content", if (enableCaching && cacheControl != null) {
+put("content", if(enableCaching && cacheControl != null) {
                 JsonArray(listOf(buildJsonObject {
                     put("type", "text")
                     put("text", prompt)
@@ -1437,7 +1446,9 @@ put("content", if (enableCaching && cacheControl != null) {
                         put("type", cacheControl)
                     }
                 }))
-            } else {
+            }
+            else
+            {
                 JsonPrimitive(prompt)
             })
         })
@@ -1445,8 +1456,9 @@ put("content", if (enableCaching && cacheControl != null) {
         return buildJsonObject {
             put("anthropic_version", "bedrock-2023-05-31")
             put("max_tokens", maxTokens)
-            if (systemPrompt.isNotEmpty()) {
-put("system", if (enableCaching && cacheControl != null) {
+            if(systemPrompt.isNotEmpty())
+            {
+put("system", if(enableCaching && cacheControl != null) {
                     JsonArray(listOf(buildJsonObject {
                         put("type", "text")
                         put("text", systemPrompt)
@@ -1454,18 +1466,21 @@ put("system", if (enableCaching && cacheControl != null) {
                             put("type", cacheControl)
                         }
                     }))
-                } else {
+                }
+                else
+                {
                     JsonPrimitive(systemPrompt)
                 })
             }
             put("messages", JsonArray(messages))
-            if (toolUse.isNotEmpty()) put("tools", JsonArray(toolUse))
-            if (toolChoice != null) put("tool_choice", buildJsonObject {
+            if(toolUse.isNotEmpty()) put("tools", JsonArray(toolUse))
+            if(toolChoice != null) put("tool_choice", buildJsonObject {
                 put("type", toolChoice)
             })
             
             // Add thinking configuration for Claude extended thinking
-            if (useModelReasoning) {
+            if(useModelReasoning)
+            {
                 put("thinking", buildJsonObject {
                     put("type", "enabled")
                     val budgetTokens = modelReasoningSettingsV2.takeIf { it > 0 }?.coerceAtMost(maxTokens) ?: 4000
@@ -1473,9 +1488,9 @@ put("system", if (enableCaching && cacheControl != null) {
                 })
             }
             
-            if (temperature > 0) put("temperature", temperature)
-            if (topP > 0) put("top_p", topP)
-            if (stopSequences.isNotEmpty()) put("stop_sequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+            if(temperature > 0) put("temperature", temperature)
+            if(topP > 0) put("top_p", topP)
+            if(stopSequences.isNotEmpty()) put("stop_sequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
         }.toString()
     }
     
@@ -1494,9 +1509,9 @@ put("system", if (enableCaching && cacheControl != null) {
             put("inputText", prompt)
             putJsonObject("textGenerationConfig") {
                 put("maxTokenCount", maxTokens)
-                if (temperature > 0) put("temperature", temperature)
-                if (topP > 0) put("topP", topP)
-                if (stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+                if(temperature > 0) put("temperature", temperature)
+                if(topP > 0) put("topP", topP)
+                if(stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             }
         }.toString()
     }
@@ -1513,10 +1528,10 @@ put("system", if (enableCaching && cacheControl != null) {
     {
         return buildJsonObject {
             put("prompt", prompt)
-            if (maxTokens > 0) put("maxTokens", maxTokens)
-            if (temperature > 0) put("temperature", temperature)
-            if (topP > 0) put("topP", topP)
-            if (stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+            if(maxTokens > 0) put("maxTokens", maxTokens)
+            if(temperature > 0) put("temperature", temperature)
+            if(topP > 0) put("topP", topP)
+            if(stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
         }.toString()
     }
     
@@ -1534,10 +1549,10 @@ put("system", if (enableCaching && cacheControl != null) {
         return buildJsonObject {
             put("prompt", prompt)
             put("max_tokens", maxTokens)
-            if (temperature > 0) put("temperature", temperature)
-            if (topP > 0) put("p", topP)
-            if (topK > 0) put("k", topK)
-            if (stopSequences.isNotEmpty()) put("stop_sequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+            if(temperature > 0) put("temperature", temperature)
+            if(topP > 0) put("p", topP)
+            if(topK > 0) put("k", topK)
+            if(stopSequences.isNotEmpty()) put("stop_sequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
         }.toString()
     }
     
@@ -1554,8 +1569,8 @@ put("system", if (enableCaching && cacheControl != null) {
         return buildJsonObject {
             put("prompt", prompt)
             put("max_gen_len", maxTokens)
-            if (temperature > 0) put("temperature", temperature)
-            if (topP > 0) put("top_p", topP)
+            if(temperature > 0) put("temperature", temperature)
+            if(topP > 0) put("top_p", topP)
         }.toString()
     }
     
@@ -1572,10 +1587,10 @@ put("system", if (enableCaching && cacheControl != null) {
         return buildJsonObject {
             put("prompt", prompt)
             put("max_tokens", maxTokens)
-            if (temperature > 0) put("temperature", temperature)
-            if (topP > 0) put("top_p", topP)
-            if (topK > 0) put("top_k", topK)
-            if (stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+            if(temperature > 0) put("temperature", temperature)
+            if(topP > 0) put("top_p", topP)
+            if(topK > 0) put("top_k", topK)
+            if(stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
         }.toString()
     }
     
@@ -1595,14 +1610,16 @@ put("system", if (enableCaching && cacheControl != null) {
         val messages = mutableListOf<JsonObject>()
 
         // Add system prompt to system array
-        if (systemPrompt.isNotEmpty()) {
+        if(systemPrompt.isNotEmpty())
+        {
             systemBlocks.add(buildJsonObject {
                 put("text", systemPrompt)
             })
         }
 
         // Add PCP context as system instruction (developer role equivalent)
-        if (!pcpContext.tpipeOptions.isEmpty()) {
+        if(!pcpContext.tpipeOptions.isEmpty())
+        {
             val pcpInstructions = "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
             systemBlocks.add(buildJsonObject {
                 put("text", pcpInstructions)
@@ -1622,17 +1639,19 @@ put("system", if (enableCaching && cacheControl != null) {
         // Build main request object
         return buildJsonObject {
             put("modelId", model) // Note: different field name
-            if (systemBlocks.isNotEmpty()) {
+            if(systemBlocks.isNotEmpty())
+            {
                 put("system", JsonArray(systemBlocks))
             }
             put("messages", JsonArray(messages))
 
             // Inference configuration
             put("inferenceConfig", buildJsonObject {
-                if (temperature > 0) put("temperature", temperature)
-                if (maxTokens > 0) if (maxTokens > 0) put("maxTokens", maxTokens)
-                if (topP > 0) put("topP", topP)
-                if (stopSequences.isNotEmpty()) {
+                if(temperature > 0) put("temperature", temperature)
+                if(maxTokens > 0) if(maxTokens > 0) put("maxTokens", maxTokens)
+                if(topP > 0) put("topP", topP)
+                if(stopSequences.isNotEmpty())
+                {
                     put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
                 }
             })
@@ -1674,7 +1693,8 @@ put("system", if (enableCaching && cacheControl != null) {
         val systemBlocks = mutableListOf<SystemContentBlock>()
         requestObj["system"]?.jsonArray?.forEach { systemBlock ->
             val text = systemBlock.jsonObject["text"]?.jsonPrimitive?.content
-            if (!text.isNullOrEmpty()) {
+            if(!text.isNullOrEmpty())
+            {
                 systemBlocks.add(SystemContentBlock.Text(text))
             }
         }
@@ -1683,7 +1703,8 @@ put("system", if (enableCaching && cacheControl != null) {
         return ConverseRequest {
             this.modelId = modelId
             this.messages = messages
-            if (systemBlocks.isNotEmpty()) {
+            if(systemBlocks.isNotEmpty())
+            {
                 this.system = systemBlocks
             }
 
@@ -1700,7 +1721,8 @@ put("system", if (enableCaching && cacheControl != null) {
 
             // Handle additional model fields using centralized helper
             val documentMap = getModelSpecificOpenAIParameters(modelId)
-            if (documentMap.isNotEmpty()) {
+            if(documentMap.isNotEmpty())
+            {
                 additionalModelRequestFields = Document.Map(documentMap)
             }
             
@@ -1730,24 +1752,30 @@ put("system", if (enableCaching && cacheControl != null) {
         })
 
         return buildJsonObject {
-            if (systemPrompt.isNotEmpty()) {
+            if(systemPrompt.isNotEmpty())
+            {
                 put("system", systemPrompt)
             }
-            if (!pcpContext.tpipeOptions.isEmpty()) {
+            if(!pcpContext.tpipeOptions.isEmpty())
+            {
                 val pcpPrompt = "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
-                if (systemPrompt.isNotEmpty()) {
+                if(systemPrompt.isNotEmpty())
+                {
                     put("system", systemPrompt + "\n\n" + pcpPrompt)
-                } else {
+                }
+                else
+                {
                     put("system", pcpPrompt)
                 }
             }
 
             put("messages", JsonArray(messages))
             
-            if (temperature > 0) put("temperature", temperature)
-            if (maxTokens > 0) put("max_tokens", maxTokens)
-            if (topP > 0) put("top_p", topP)
-            if (stopSequences.isNotEmpty()) {
+            if(temperature > 0) put("temperature", temperature)
+            if(maxTokens > 0) put("max_tokens", maxTokens)
+            if(topP > 0) put("top_p", topP)
+            if(stopSequences.isNotEmpty())
+            {
                 put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             }
 
@@ -1767,10 +1795,12 @@ put("system", if (enableCaching && cacheControl != null) {
         })
 
         val systemBlocks = mutableListOf<SystemContentBlock>()
-        if (systemPrompt.isNotEmpty()) {
+        if(systemPrompt.isNotEmpty())
+        {
             systemBlocks.add(SystemContentBlock.Text(systemPrompt))
         }
-        if (!pcpContext.tpipeOptions.isEmpty()) {
+        if(!pcpContext.tpipeOptions.isEmpty())
+        {
             systemBlocks.add(SystemContentBlock.Text(
                 "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
             ))
@@ -1781,18 +1811,19 @@ put("system", if (enableCaching && cacheControl != null) {
         return ConverseRequest {
             this.modelId = model
             this.messages = messages
-            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+            if(systemBlocks.isNotEmpty()) this.system = systemBlocks
 
             inferenceConfig = InferenceConfiguration {
-                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
-                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
-                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+                if(this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if(this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if(this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if(this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
 
             // Apply all model-specific parameters via centralized helper
             val documentMap = getModelSpecificOpenAIParameters(requestedModelId)
-            if (documentMap.isNotEmpty()) {
+            if(documentMap.isNotEmpty())
+            {
                 additionalModelRequestFields = Document.Map(documentMap)
             }
 
@@ -1805,7 +1836,7 @@ put("system", if (enableCaching && cacheControl != null) {
     }
 
     private fun anyToJsonElement(value: Any?): JsonElement? {
-        return when (value) {
+        return when(value) {
             null -> null
             is JsonElement -> value
             is Number -> JsonPrimitive(value.toDouble())
@@ -1813,7 +1844,8 @@ put("system", if (enableCaching && cacheControl != null) {
             is String -> JsonPrimitive(value)
             is Map<*, *> -> buildJsonObject {
                 value.forEach { (key, entryValue) ->
-                    if (key is String) {
+                    if(key is String)
+                    {
                         anyToJsonElement(entryValue)?.let { put(key, it) }
                     }
                 }
@@ -1847,47 +1879,57 @@ put("system", if (enableCaching && cacheControl != null) {
             modelId.contains("deepseek") ||
             isGlmModel(modelId) -> {
                 // Standard OpenAI parameters
-                if (repetitionPenalty != 0.0) {
+                if(repetitionPenalty != 0.0)
+                {
                     parameterValues["frequency_penalty"] = repetitionPenalty
                 }
-                if (presencePenalty != 0.0) {
+                if(presencePenalty != 0.0)
+                {
                     parameterValues["presence_penalty"] = presencePenalty
                 }
                 seed?.let {
                     parameterValues["seed"] = it
                 }
-                if (logitBias.isNotEmpty()) {
+                if(logitBias.isNotEmpty())
+                {
                     val logitBiasMap = mutableMapOf<String, Any?>()
                     logitBias.forEach { (tokenId, bias) ->
                         logitBiasMap[tokenId.toString()] = bias
                     }
                     parameterValues["logit_bias"] = logitBiasMap
                 }
-                if (n > 1) {
+                if(n > 1)
+                {
                     parameterValues["n"] = n
                 }
-                if (user.isNotEmpty()) {
+                if(user.isNotEmpty())
+                {
                     parameterValues["user"] = user
                 }
                 
                 // top_k support (standardized)
-                if (topK > 0) {
+                if(topK > 0)
+                {
                     // Clamp topK to valid range for most providers (1-255 or 1-100)
                     val clampedTopK = topK.coerceIn(1, 255)
                     parameterValues["top_k"] = clampedTopK
                 }
 
                 // Centralized Reasoning Parameters
-                if (useModelReasoning) {
+                if(useModelReasoning)
+                {
                     when {
                         modelId.contains("openai.gpt-oss") -> {
                             parameterValues["reasoning_effort"] = modelReasoningSettingsV3.ifEmpty { "low" }
                             parameterValues["include_reasoning"] = true
                         }
                         modelId.contains("qwen") -> {
-                            if (isQwen3Model(modelId)) {
+                            if(isQwen3Model(modelId))
+                            {
                                 parameterValues["reasoning_config"] = getNormalizedReasoningEffort()
-                            } else {
+                            }
+                            else
+                            {
                                 parameterValues["enable_thinking"] = true
                                 parameterValues["thinking_budget"] = computeOpenAIReasoningBudget()
                             }
@@ -1900,11 +1942,14 @@ put("system", if (enableCaching && cacheControl != null) {
             }
 
             modelId.contains("ai21.j2") || modelId.contains("ai21.jamba") -> {
-                if (repetitionPenalty != 0.0 || presencePenalty != 0.0) {
-                    if (repetitionPenalty != 0.0) {
+                if(repetitionPenalty != 0.0 || presencePenalty != 0.0)
+                {
+                    if(repetitionPenalty != 0.0)
+                    {
                         parameterValues["frequencyPenalty"] = mapOf("scale" to repetitionPenalty)
                     }
-                    if (presencePenalty != 0.0) {
+                    if(presencePenalty != 0.0)
+                    {
                         parameterValues["presencePenalty"] = mapOf("scale" to presencePenalty)
                     }
                 }
@@ -1923,26 +1968,31 @@ put("system", if (enableCaching && cacheControl != null) {
         when {
             modelId.contains("openai.gpt-oss") || modelId.contains("qwen") || modelId.contains("deepseek") || isGlmModel(modelId) -> {
                 // These models use OpenAI Chat Completions format - validate all OpenAI parameters
-                if (repetitionPenalty < -2.0 || repetitionPenalty > 2.0) {
+                if(repetitionPenalty < -2.0 || repetitionPenalty > 2.0)
+                {
                     throw IllegalArgumentException("repetitionPenalty (mapped to frequency_penalty) must be between -2.0 and 2.0, got: $repetitionPenalty")
                 }
                 
-                if (presencePenalty < -2.0 || presencePenalty > 2.0) {
+                if(presencePenalty < -2.0 || presencePenalty > 2.0)
+                {
                     throw IllegalArgumentException("presence_penalty must be between -2.0 and 2.0, got: $presencePenalty")
                 }
                 
                 logitBias.values.forEach { bias ->
-                    if (bias < -100.0 || bias > 100.0) {
+                    if(bias < -100.0 || bias > 100.0)
+                    {
                         throw IllegalArgumentException("logit_bias values must be between -100.0 and 100.0, got: $bias")
                     }
                 }
                 
-                if (n < 1) {
+                if(n < 1)
+                {
                     throw IllegalArgumentException("n must be at least 1, got: $n")
                 }
                 
                 // Warn about potentially problematic combinations
-                if (n > 1 && seed != null) {
+                if(n > 1 && seed != null)
+                {
                     trace(TraceEventType.VALIDATION_FAILURE, TracePhase.INITIALIZATION, 
                           metadata = mapOf("warning" to "Using seed with n > 1 may not produce deterministic results"))
                 }
@@ -1950,13 +2000,15 @@ put("system", if (enableCaching && cacheControl != null) {
             
             modelId.contains("ai21.j2") || modelId.contains("ai21.jamba") -> {
                 // AI21 supports penalties but in different format - validate ranges
-                if (repetitionPenalty < -2.0 || repetitionPenalty > 2.0) {
+                if(repetitionPenalty < -2.0 || repetitionPenalty > 2.0)
+                {
                     trace(TraceEventType.VALIDATION_FAILURE, TracePhase.INITIALIZATION,
                           metadata = mapOf("warning" to "AI21 penalty range may differ from OpenAI standard"))
                 }
                 
                 // Other OpenAI parameters not supported - warn if set
-                if (seed != null || logitBias.isNotEmpty() || n > 1 || user.isNotEmpty()) {
+                if(seed != null || logitBias.isNotEmpty() || n > 1 || user.isNotEmpty())
+                {
                     trace(TraceEventType.VALIDATION_FAILURE, TracePhase.INITIALIZATION,
                           metadata = mapOf("warning" to "Some OpenAI parameters not supported by AI21 models"))
                 }
@@ -1964,7 +2016,7 @@ put("system", if (enableCaching && cacheControl != null) {
             
             else -> {
                 // All other models don't support OpenAI parameters - warn if any are set
-                if (repetitionPenalty != 0.0 || presencePenalty != 0.0 || seed != null || 
+                if(repetitionPenalty != 0.0 || presencePenalty != 0.0 || seed != null ||
                     logitBias.isNotEmpty() || n > 1 || user.isNotEmpty()) {
                     trace(TraceEventType.VALIDATION_FAILURE, TracePhase.INITIALIZATION,
                           metadata = mapOf(
@@ -1999,7 +2051,8 @@ put("system", if (enableCaching && cacheControl != null) {
         return buildJsonObject {
             val messages = mutableListOf<JsonElement>()
             
-            if (systemPrompt.isNotEmpty()) {
+            if(systemPrompt.isNotEmpty())
+            {
                 messages.add(buildJsonObject {
                     put("role", "system")
                     put("content", systemPrompt)
@@ -2013,9 +2066,9 @@ put("system", if (enableCaching && cacheControl != null) {
             
             put("messages", JsonArray(messages))
             put("max_tokens", maxTokens)
-            if (temperature > 0) put("temperature", temperature)
-            if (topP > 0) put("top_p", topP)
-            if (stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+            if(temperature > 0) put("temperature", temperature)
+            if(topP > 0) put("top_p", topP)
+            if(stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             
             // Add all model-specific parameters (top_k, reasoning, penalties, etc.)
             val openAIParams = getModelSpecificOpenAIParameterValues(requestedModelId.ifEmpty { "qwen" })
@@ -2037,14 +2090,14 @@ put("system", if (enableCaching && cacheControl != null) {
      */
     private fun buildDeepSeekRequest(prompt: String): String
     {
-        val fullPrompt = if (systemPrompt.isNotEmpty()) "$systemPrompt\n\n$prompt" else prompt
+        val fullPrompt = if(systemPrompt.isNotEmpty()) "$systemPrompt\n\n$prompt" else prompt
         
         return buildJsonObject {
             put("prompt", fullPrompt)
             put("max_tokens", maxTokens)
-            if (temperature > 0) put("temperature", temperature)
-            if (topP > 0) put("top_p", topP)
-            if (stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+            if(temperature > 0) put("temperature", temperature)
+            if(topP > 0) put("top_p", topP)
+            if(stopSequences.isNotEmpty()) put("stop", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             
             // Add all model-specific parameters (top_k, reasoning, penalties, etc.)
             val openAIParams = getModelSpecificOpenAIParameterValues("deepseek")
@@ -2073,24 +2126,25 @@ put("system", if (enableCaching && cacheControl != null) {
             content = contentBlocks
         })
 
-        val systemBlocks = if (systemPrompt.isNotEmpty()) {
+        val systemBlocks = if(systemPrompt.isNotEmpty()) {
             listOf(SystemContentBlock.Text(systemPrompt))
         } else emptyList()
 
         return ConverseRequest {
             this.modelId = modelId
             this.messages = messages
-            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+            if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             inferenceConfig = InferenceConfiguration {
-                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
-                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
-                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+                if(this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if(this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if(this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if(this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
             // Add model-specific parameters via centralized helper
             val documentMap = getModelSpecificOpenAIParameters(modelId)
-            if (documentMap.isNotEmpty()) {
+            if(documentMap.isNotEmpty())
+            {
                 additionalModelRequestFields = Document.Map(documentMap)
             }
             
@@ -2171,7 +2225,7 @@ put("system", if (enableCaching && cacheControl != null) {
 
         val response = client.converse(converseRequest)
         val text = response.output?.asMessage()?.content?.mapNotNull { contentBlock ->
-            when (contentBlock)
+            when(contentBlock)
             {
                 is ContentBlock.Text -> contentBlock.value
                 is ContentBlock.ReasoningContent -> {
@@ -2181,16 +2235,20 @@ put("system", if (enableCaching && cacheControl != null) {
                         val clazz = reasoningBlock.javaClass
                         val fields = clazz.declaredFields
 
-                        for (field in fields) {
+                        for(field in fields)
+                        {
                             field.isAccessible = true
                             val value = field.get(reasoningBlock)
 
-                            if (value is String && value.length > 10 && !value.contains("Sensitive Data Redacted")) {
+                            if(value is String && value.length > 10 && !value.contains("Sensitive Data Redacted"))
+                            {
                                 return@mapNotNull value
                             }
                         }
                         null
-                    } catch (e: Exception) {
+                    }
+                    catch(e: Exception)
+                    {
                         null
                     }
                 }
@@ -2227,7 +2285,8 @@ put("system", if (enableCaching && cacheControl != null) {
             
             // Extract text content, including from SdkUnknown blocks
             val extractedText = content?.mapNotNull { contentBlock ->
-                when (contentBlock) {
+                when(contentBlock)
+                {
                     is ContentBlock.Text -> contentBlock.value
                     is ContentBlock.ReasoningContent -> {
                         // Try to extract text from reasoning content using reflection
@@ -2237,47 +2296,58 @@ put("system", if (enableCaching && cacheControl != null) {
                             val fields = clazz.declaredFields
                             
                             // Look for fields that might contain the actual content
-                            for (field in fields) {
+                            for(field in fields)
+                            {
                                 field.isAccessible = true
                                 val value = field.get(reasoningBlock)
                                 
                                 // If the field value is a string and looks like content, use it
-                                if (value is String && value.length > 100 && !value.contains("Sensitive Data Redacted")) {
+                                if(value is String && value.length > 100 && !value.contains("Sensitive Data Redacted"))
+                                {
                                     return@mapNotNull value
                                 }
                                 
                                 // If the field value is a ReasoningTextBlock, dive deeper
-                                if (value != null && value.javaClass.simpleName.contains("ReasoningTextBlock")) {
+                                if(value != null && value.javaClass.simpleName.contains("ReasoningTextBlock"))
+                                {
                                     // Access fields of the ReasoningTextBlock
                                     val textBlockClass = value.javaClass
                                     val textBlockFields = textBlockClass.declaredFields
                                     
-                                    for (textField in textBlockFields) {
+                                    for(textField in textBlockFields)
+                                    {
                                         textField.isAccessible = true
                                         try {
                                             val textValue = textField.get(value)
                                             
                                             // If this field contains actual text content
-                                            if (textValue is String && textValue.length > 100 && !textValue.contains("Sensitive Data Redacted")) {
+                                            if(textValue is String && textValue.length > 100 && !textValue.contains("Sensitive Data Redacted"))
+                                            {
                                                 return@mapNotNull textValue
                                             }
-                                        } catch (e: Exception) {
+                                        }
+                                        catch(e: Exception)
+                                        {
                                             // Continue to next field
                                         }
                                     }
                                 }
                                 
                                 // If the field value is a collection or object, try to extract text from it
-                                if (value != null && value !is String) {
+                                if(value != null && value !is String)
+                                {
                                     val valueString = value.toString()
-                                    if (valueString.length > 100 && !valueString.contains("Sensitive Data Redacted")) {
+                                    if(valueString.length > 100 && !valueString.contains("Sensitive Data Redacted"))
+                                    {
                                         return@mapNotNull valueString
                                     }
                                 }
                             }
                             
                             "" // Return empty to trigger fallback
-                        } catch (e: Exception) {
+                        }
+                        catch(e: Exception)
+                        {
                             "" // Return empty to trigger fallback
                         }
                     }
@@ -2288,23 +2358,28 @@ put("system", if (enableCaching && cacheControl != null) {
                             val fields = clazz.declaredFields
                             
                             // Look for fields that might contain the actual content
-                            for (field in fields) {
+                            for(field in fields)
+                            {
                                 field.isAccessible = true
                                 val value = field.get(contentBlock)
                                 
                                 // If the field value is a string and looks like content, use it
-                                if (value is String && value.length > 10) {
+                                if(value is String && value.length > 10)
+                                {
                                     return@mapNotNull value
                                 }
                                 
                                 // If the field value is a map or object, try to extract text from it
-                                if (value != null) {
+                                if(value != null)
+                                {
                                     val valueString = value.toString()
-                                    if (valueString.contains("text") && valueString.length > 50) {
+                                    if(valueString.contains("text") && valueString.length > 50)
+                                    {
                                         // Try to parse as JSON-like structure
                                         val textPattern = """"text"\s*:\s*"([^"]+)"""
                                         val textMatch = Regex(textPattern).find(valueString)
-                                        if (textMatch != null) {
+                                        if(textMatch != null)
+                                        {
                                             return@mapNotNull textMatch.groupValues[1]
                                         }
                                     }
@@ -2312,7 +2387,9 @@ put("system", if (enableCaching && cacheControl != null) {
                             }
                             
                             "" // Return empty string to trigger fallback to Invoke API
-                        } catch (e: Exception) {
+                        }
+                        catch(e: Exception)
+                        {
                             null
                         }
                     }
@@ -2321,15 +2398,15 @@ put("system", if (enableCaching && cacheControl != null) {
             }?.joinToString("\n") ?: ""
             
             // Handle max token overflow for Converse API using same logic as Invoke API
-            if (isConverseOverflow)
+            if(isConverseOverflow)
             {
-                if (allowMaxTokenOverflow && extractedText.isNotEmpty())
+                if(allowMaxTokenOverflow && extractedText.isNotEmpty())
                 {
                     // Allow overflow with content - return the partial response
                     return extractedText
                 }
 
-                else if (!allowMaxTokenOverflow)
+                else if(!allowMaxTokenOverflow)
                 {
                     // Treat as error - return empty to trigger fallback to Invoke API
                     return ""
@@ -2344,7 +2421,9 @@ put("system", if (enableCaching && cacheControl != null) {
             
             extractedText
             
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             ""
         }
     }
@@ -2372,7 +2451,7 @@ put("system", if (enableCaching && cacheControl != null) {
         })
         
         return buildJsonObject {
-            if (systemPrompt.isNotEmpty())
+            if(systemPrompt.isNotEmpty())
             {
                 putJsonArray("system") {
                     add(buildJsonObject {
@@ -2382,10 +2461,10 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             put("messages", JsonArray(messages))
             putJsonObject("inferenceConfig") {
-                if (maxTokens > 0) put("maxTokens", maxTokens)
-                if (temperature > 0) put("temperature", temperature)
-                if (topP > 0) put("topP", topP)
-                if (stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+                if(maxTokens > 0) put("maxTokens", maxTokens)
+                if(temperature > 0) put("temperature", temperature)
+                if(topP > 0) put("topP", topP)
+                if(stopSequences.isNotEmpty()) put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
             }
         }.toString()
     }
@@ -2404,10 +2483,10 @@ put("system", if (enableCaching && cacheControl != null) {
         return buildJsonObject {
             put("prompt", prompt)
             put("max_tokens", maxTokens)
-            if (temperature > 0) put("temperature", temperature)
-            if (topP > 0) put("top_p", topP)
-            if (topK > 0) put("top_k", topK)
-            if (stopSequences.isNotEmpty()) put("stop_sequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
+            if(temperature > 0) put("temperature", temperature)
+            if(topP > 0) put("top_p", topP)
+            if(topK > 0) put("top_k", topK)
+            if(stopSequences.isNotEmpty()) put("stop_sequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
         }.toString()
     }
     
@@ -2421,12 +2500,14 @@ put("system", if (enableCaching && cacheControl != null) {
     {
         return try {
             val reasoningContent = response.output?.asMessage()?.content?.mapNotNull { contentBlock ->
-                when (contentBlock) {
+                when(contentBlock)
+                {
                     is ContentBlock.ReasoningContent -> {
                         val reasoningBlock = contentBlock.value
                         
                         // Use the proper AWS SDK structure to extract reasoning
-                        when (reasoningBlock) {
+                        when(reasoningBlock)
+                        {
                             is aws.sdk.kotlin.services.bedrockruntime.model.ReasoningContentBlock.ReasoningText -> {
                                 // Access the ReasoningTextBlock and get its text property
                                 val reasoningTextBlock = reasoningBlock.value
@@ -2447,14 +2528,19 @@ put("system", if (enableCaching && cacheControl != null) {
             }?.joinToString("\n") ?: ""
             
             // Debug logging to verify reasoning content extraction
-            if (reasoningContent.isNotEmpty()) {
+            if(reasoningContent.isNotEmpty())
+            {
                 //println("DEBUG: Nova reasoning content extracted: ${reasoningContent.length} characters")
-            } else {
+            }
+            else
+            {
                 //println("DEBUG: No Nova reasoning content found in response")
             }
             
             reasoningContent
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             println("DEBUG: Error extracting Nova reasoning content: ${e.message}")
             ""
         }
@@ -2476,26 +2562,27 @@ put("system", if (enableCaching && cacheControl != null) {
             content = contentBlocks
         })
         
-        val systemBlocks = if (systemPrompt.isNotEmpty()) {
+        val systemBlocks = if(systemPrompt.isNotEmpty()) {
             listOf(SystemContentBlock.Text(systemPrompt))
         } else emptyList()
         
         return ConverseRequest {
             this.modelId = model
             this.messages = messages
-            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+            if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
-                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
-                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+                if(this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if(this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if(this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if(this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
             // Add thinking configuration for Claude extended thinking
             val documentMap = mutableMapOf<String, Document?>()
             
-            if (useModelReasoning) {
+            if(useModelReasoning)
+            {
                 val budgetTokens = modelReasoningSettingsV2.takeIf { it > 0 }?.coerceAtMost(maxTokens) ?: 4000
                 val thinkingConfig = mutableMapOf<String, Document?>()
                 thinkingConfig["type"] = Document.String("enabled")
@@ -2506,7 +2593,8 @@ put("system", if (enableCaching && cacheControl != null) {
             // Add model-specific OpenAI parameters (Claude doesn't support any, so this will be empty)
             documentMap.putAll(getModelSpecificOpenAIParameters(model))
             
-            if (documentMap.isNotEmpty()) {
+            if(documentMap.isNotEmpty())
+            {
                 additionalModelRequestFields = Document.Map(documentMap)
             }
             
@@ -2534,7 +2622,7 @@ put("system", if (enableCaching && cacheControl != null) {
             content = contentBlocks
         })
         
-        val systemBlocks = if (systemPrompt.isNotEmpty()) {
+        val systemBlocks = if(systemPrompt.isNotEmpty()) {
             listOf(SystemContentBlock.Text(systemPrompt))
         } else emptyList()
         val requestedModelId = getRequestedModelId()
@@ -2547,13 +2635,13 @@ put("system", if (enableCaching && cacheControl != null) {
         return ConverseRequest {
             this.modelId = targetModelId
             this.messages = messages
-            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+            if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                if (!highReasoning) if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
-                if (!highReasoning && this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (!highReasoning && this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
-                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+                if(!highReasoning) if(this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if(!highReasoning && this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if(!highReasoning && this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if(this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
 
             additionalFields?.let {
@@ -2580,10 +2668,12 @@ put("system", if (enableCaching && cacheControl != null) {
         })
 
         val systemBlocks = mutableListOf<SystemContentBlock>()
-        if (systemPrompt.isNotEmpty()) {
+        if(systemPrompt.isNotEmpty())
+        {
             systemBlocks.add(SystemContentBlock.Text(systemPrompt))
         }
-        if (!pcpContext.tpipeOptions.isEmpty()) {
+        if(!pcpContext.tpipeOptions.isEmpty())
+        {
             systemBlocks.add(SystemContentBlock.Text(
                 "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
             ))
@@ -2597,13 +2687,13 @@ put("system", if (enableCaching && cacheControl != null) {
         return ConverseRequest {
             this.modelId = targetModelId
             this.messages = messages
-            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+            if(systemBlocks.isNotEmpty()) this.system = systemBlocks
 
             inferenceConfig = InferenceConfiguration {
-                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
-                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
-                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+                if(this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if(this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if(this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if(this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
 
             additionalFields?.let {
@@ -2623,7 +2713,7 @@ put("system", if (enableCaching && cacheControl != null) {
     private data class NovaReasoningConfig(val json: JsonObject, val map: Map<String, Any>)
 
     private fun getRequestedModelId(): String {
-        if (requestedModelId.isNotEmpty()) return requestedModelId
+        if(requestedModelId.isNotEmpty()) return requestedModelId
         val fallback = model.ifEmpty { "anthropic.claude-3-sonnet-20240229-v1:0" }
         requestedModelId = fallback
         return fallback
@@ -2636,7 +2726,7 @@ put("system", if (enableCaching && cacheControl != null) {
 
     private fun getNormalizedNovaReasoningEffort(): String {
         val effort = modelReasoningSettingsV3.takeIf { it.isNotBlank() }?.lowercase() ?: "medium"
-        return when (effort) {
+        return when(effort) {
             "low", "medium", "high" -> effort
             else -> "medium"
         }
@@ -2647,7 +2737,7 @@ put("system", if (enableCaching && cacheControl != null) {
     }
 
     private fun buildNovaReasoningConfig(modelId: String): NovaReasoningConfig? {
-        if (!isNovaAdvancedModel(modelId) || !useModelReasoning) return null
+        if(!isNovaAdvancedModel(modelId) || !useModelReasoning) return null
         val effort = getNormalizedNovaReasoningEffort()
         val json = buildJsonObject {
             put("type", "enabled")
@@ -2664,19 +2754,23 @@ put("system", if (enableCaching && cacheControl != null) {
         toolConfig: JsonObject?
     ): Map<String, Any>? {
         val inferenceConfig = mutableMapOf<String, Any>()
-        if (!highReasoning && topK > 0) {
-            inferenceConfig["topK"] = if (topK > 128) 128 else topK
+        if(!highReasoning && topK > 0)
+        {
+            inferenceConfig["topK"] = if(topK > 128) 128 else topK
         }
-        if (novaReasoning != null) {
+        if(novaReasoning != null)
+        {
             inferenceConfig["reasoningConfig"] = novaReasoning.map
         }
         val fields = mutableMapOf<String, Any>()
-        if (inferenceConfig.isNotEmpty()) {
+        if(inferenceConfig.isNotEmpty())
+        {
             fields["inferenceConfig"] = inferenceConfig
         }
         toolConfig?.let {
             val toolMap = jsonObjectToMap(it)
-            if (toolMap.isNotEmpty()) {
+            if(toolMap.isNotEmpty())
+            {
                 fields["toolConfig"] = toolMap
             }
         }
@@ -2684,7 +2778,8 @@ put("system", if (enableCaching && cacheControl != null) {
         // Add model-specific OpenAI parameters (Nova doesn't support any, so this will be empty)
         val openAIParams = getModelSpecificOpenAIParameters(modelId)
         openAIParams.forEach { (key, document) ->
-            when (document) {
+            when(document)
+            {
                 is Document.Number -> fields[key] = document.toString().toDoubleOrNull() ?: 0.0
                 is Document.String -> fields[key] = document.toString().removeSurrounding("\"")
                 is Document.Boolean -> fields[key] = document.toString().toBoolean()
@@ -2693,19 +2788,21 @@ put("system", if (enableCaching && cacheControl != null) {
             }
         }
         
-        if (fields.isEmpty()) return null
+        if(fields.isEmpty()) return null
         return fields
     }
 
     private fun buildNovaToolConfig(): JsonObject? {
-        if (toolUse.isEmpty() && toolChoice.isNullOrEmpty()) return null
+        if(toolUse.isEmpty() && toolChoice.isNullOrEmpty()) return null
         return buildJsonObject {
-            if (toolUse.isNotEmpty()) {
+            if(toolUse.isNotEmpty())
+            {
                 putJsonArray("tools") {
                     toolUse.forEach { add(it) }
                 }
             }
-            if (toolChoice != null) {
+            if(toolChoice != null)
+            {
                 put("toolChoice", buildJsonObject {
                     put("type", toolChoice)
                 })
@@ -2716,7 +2813,9 @@ put("system", if (enableCaching && cacheControl != null) {
     private fun mapToDocument(fields: Map<String, Any>): Document? {
         return try {
             Document.Map(convertMapToDocumentMap(fields))
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             null
         }
     }
@@ -2727,7 +2826,8 @@ put("system", if (enableCaching && cacheControl != null) {
      */
     private fun convertMapToDocumentMap(map: Map<String, Any>): Map<String, Document?> {
         val documentMap = mutableMapOf<String, Document?>()
-        for ((key, value) in map) {
+        for((key, value) in map)
+        {
             documentMap[key] = convertValueToDocument(value)
         }
         return documentMap
@@ -2737,7 +2837,7 @@ put("system", if (enableCaching && cacheControl != null) {
      * Converts a value to the appropriate Document type.
      */
     private fun convertValueToDocument(value: Any?): Document? {
-        return when (value) {
+        return when(value) {
             null -> null
             is String -> Document.String(value)
             is Number -> Document.Number(value)
@@ -2771,7 +2871,8 @@ put("system", if (enableCaching && cacheControl != null) {
             putJsonArray("content") {
                 add(buildJsonObject {
                     put("text", prompt)
-                    if (enableCaching && cacheControl != null) {
+                    if(enableCaching && cacheControl != null)
+                    {
                         putJsonObject("cache_control") {
                             put("type", cacheControl)
                         }
@@ -2781,10 +2882,12 @@ put("system", if (enableCaching && cacheControl != null) {
         })
 
         val systemMessages = mutableListOf<JsonObject>()
-        if (systemPrompt.isNotEmpty()) {
+        if(systemPrompt.isNotEmpty())
+        {
             systemMessages.add(buildJsonObject {
                 put("text", systemPrompt)
-                if (enableCaching && cacheControl != null) {
+                if(enableCaching && cacheControl != null)
+                {
                     putJsonObject("cache_control") {
                         put("type", cacheControl)
                     }
@@ -2792,14 +2895,16 @@ put("system", if (enableCaching && cacheControl != null) {
             })
         }
 
-        if (!pcpContext.tpipeOptions.isEmpty()) {
+        if(!pcpContext.tpipeOptions.isEmpty())
+        {
             systemMessages.add(buildJsonObject {
                 put("text", "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}")
             })
         }
 
         return buildJsonObject {
-            if (systemMessages.isNotEmpty()) {
+            if(systemMessages.isNotEmpty())
+            {
                 putJsonArray("system") {
                     systemMessages.forEach { add(it) }
                 }
@@ -2808,10 +2913,11 @@ put("system", if (enableCaching && cacheControl != null) {
             put("messages", JsonArray(messages))
 
             putJsonObject("inferenceConfig") {
-                if (maxTokens > 0) put("maxTokens", maxTokens)
-                if (temperature > 0) put("temperature", temperature)
-                if (topP > 0) put("topP", topP)
-                if (stopSequences.isNotEmpty()) {
+                if(maxTokens > 0) put("maxTokens", maxTokens)
+                if(temperature > 0) put("temperature", temperature)
+                if(topP > 0) put("topP", topP)
+                if(stopSequences.isNotEmpty())
+                {
                     put("stopSequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
                 }
             }
@@ -2831,10 +2937,12 @@ put("system", if (enableCaching && cacheControl != null) {
         })
 
         val systemBlocks = mutableListOf<SystemContentBlock>()
-        if (systemPrompt.isNotEmpty()) {
+        if(systemPrompt.isNotEmpty())
+        {
             systemBlocks.add(SystemContentBlock.Text(systemPrompt))
         }
-        if (!pcpContext.tpipeOptions.isEmpty()) {
+        if(!pcpContext.tpipeOptions.isEmpty())
+        {
             systemBlocks.add(SystemContentBlock.Text(
                 "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
             ))
@@ -2848,13 +2956,13 @@ put("system", if (enableCaching && cacheControl != null) {
         return ConverseRequest {
             this.modelId = targetModelId
             this.messages = messages
-            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+            if(systemBlocks.isNotEmpty()) this.system = systemBlocks
 
             inferenceConfig = InferenceConfiguration {
-                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
-                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
-                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+                if(this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if(this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if(this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if(this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
 
             additionalFields?.let {
@@ -2876,14 +2984,16 @@ put("system", if (enableCaching && cacheControl != null) {
         toolConfig: JsonObject?
     ): JsonObject? {
         // Kimi 2.5 uses top-level reasoning_config
-        if (isKimi25Model(requestedModelId)) {
-            if (!useModelReasoning && toolConfig == null && topK <= 0) return null
+        if(isKimi25Model(requestedModelId))
+        {
+            if(!useModelReasoning && toolConfig == null && topK <= 0) return null
             
             return buildJsonObject {
-                if (useModelReasoning) {
+                if(useModelReasoning)
+                {
                     put("reasoning_config", getNormalizedReasoningEffort())
                 }
-                if (topK > 0) put("top_k", topK)
+                if(topK > 0) put("top_k", topK)
                 toolConfig?.let { put("toolConfig", it) }
             }
         }
@@ -2892,20 +3002,20 @@ put("system", if (enableCaching && cacheControl != null) {
         val reasoningConfig = buildKimiReasoningConfig(requestedModelId)
         val inferenceConfig = buildJsonObject {
             reasoningConfig?.let { put("reasoningConfig", it) }
-            if (topK > 0) put("topK", topK)
+            if(topK > 0) put("topK", topK)
         }
 
-        if (inferenceConfig.isEmpty() && toolConfig == null) return null
+        if(inferenceConfig.isEmpty() && toolConfig == null) return null
 
         return buildJsonObject {
-            if (inferenceConfig.isNotEmpty()) put("inferenceConfig", inferenceConfig)
+            if(inferenceConfig.isNotEmpty()) put("inferenceConfig", inferenceConfig)
             toolConfig?.let { put("toolConfig", it) }
         }
     }
 
     private fun buildKimiReasoningConfig(modelId: String): JsonObject? {
         // Kimi K2 Thinking and Kimi 2.5 don't use this nested format
-        if (isKimi25Model(modelId) || modelId.contains("-thinking") || !useModelReasoning) return null
+        if(isKimi25Model(modelId) || modelId.contains("-thinking") || !useModelReasoning) return null
         
         val budgetTokens = modelReasoningSettingsV2.takeIf { it > 0 }?.coerceAtMost(maxTokens) ?: maxTokens
         return buildJsonObject {
@@ -2915,7 +3025,7 @@ put("system", if (enableCaching && cacheControl != null) {
     }
 
     private fun jsonElementToAny(element: JsonElement): Any? {
-        return when (element) {
+        return when(element) {
             is JsonObject -> jsonObjectToMap(element)
             is JsonArray -> element.mapNotNull { jsonElementToAny(it) }
             is JsonPrimitive -> primitiveToAny(element)
@@ -3002,14 +3112,16 @@ put("system", if (enableCaching && cacheControl != null) {
 
     private fun getNormalizedReasoningEffort(): String {
         val effort = modelReasoningSettingsV3.takeIf { it.isNotBlank() }?.lowercase()
-        if (effort != null) {
-            return when (effort) {
+        if(effort != null)
+        {
+            return when(effort) {
                 "low", "medium", "high" -> effort
                 else -> "medium"
             }
         }
         
-        if (modelReasoningSettingsV2 > 0) {
+        if(modelReasoningSettingsV2 > 0)
+        {
             return when {
                 modelReasoningSettingsV2 >= 2000 -> "high"
                 modelReasoningSettingsV2 >= 1000 -> "medium"
@@ -3023,12 +3135,12 @@ put("system", if (enableCaching && cacheControl != null) {
     private fun computeOpenAIReasoningBudget(): Int
     {
         val configured = modelReasoningSettingsV2.takeIf { it > 0 }
-        if (configured != null)
+        if(configured != null)
         {
-            val maxAllowed = if (maxTokens > 0) maxTokens else configured
+            val maxAllowed = if(maxTokens > 0) maxTokens else configured
             return configured.coerceAtMost(maxAllowed)
         }
-        return if (maxTokens > 0) (maxTokens / 4).coerceAtLeast(1000) else 4000
+        return if(maxTokens > 0) (maxTokens / 4).coerceAtLeast(1000) else 4000
     }
 
     /**
@@ -3047,24 +3159,25 @@ put("system", if (enableCaching && cacheControl != null) {
             content = contentBlocks
         })
         
-        val systemBlocks = if (systemPrompt.isNotEmpty()) {
+        val systemBlocks = if(systemPrompt.isNotEmpty()) {
             listOf(SystemContentBlock.Text(systemPrompt))
         } else emptyList()
         
         return ConverseRequest {
             this.modelId = model
             this.messages = messages
-            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+            if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
-                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
-                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+                if(this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if(this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if(this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if(this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
             // Titan-specific additional model fields
-            if (topK > 0) {
+            if(topK > 0)
+            {
                 val documentMap = mutableMapOf<String, Document?>()
                 documentMap["topK"] = Document.Number(this@BedrockPipe.topK)
                 additionalModelRequestFields = Document.Map(documentMap)
@@ -3098,15 +3211,16 @@ put("system", if (enableCaching && cacheControl != null) {
             this.messages = messages
             
             inferenceConfig = InferenceConfiguration {
-                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
-                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
-                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+                if(this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if(this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if(this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if(this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
             // AI21-specific additional model fields
             val documentMap = mutableMapOf<String, Document?>()
-            if (this@BedrockPipe.topK > 0) {
+            if(this@BedrockPipe.topK > 0)
+            {
                 documentMap["topK"] = Document.Number(this@BedrockPipe.topK)
             }
             documentMap["countPenalty"] = Document.Map(mutableMapOf("scale" to Document.Number(0.0)))
@@ -3116,10 +3230,12 @@ put("system", if (enableCaching && cacheControl != null) {
             documentMap.putAll(openAIParams)
             
             // Set default penalties if no OpenAI parameters were added
-            if (!documentMap.containsKey("presencePenalty")) {
+            if(!documentMap.containsKey("presencePenalty"))
+            {
                 documentMap["presencePenalty"] = Document.Map(mutableMapOf("scale" to Document.Number(0.0)))
             }
-            if (!documentMap.containsKey("frequencyPenalty")) {
+            if(!documentMap.containsKey("frequencyPenalty"))
+            {
                 documentMap["frequencyPenalty"] = Document.Map(mutableMapOf("scale" to Document.Number(0.0)))
             }
             
@@ -3153,15 +3269,16 @@ put("system", if (enableCaching && cacheControl != null) {
             this.messages = messages
             
             inferenceConfig = InferenceConfiguration {
-                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
-                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
-                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+                if(this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if(this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if(this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if(this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
             // Cohere-specific additional model fields
             val documentMap = mutableMapOf<String, Document?>()
-            if (this@BedrockPipe.topK > 0) {
+            if(this@BedrockPipe.topK > 0)
+            {
                 documentMap["k"] = Document.Number(this@BedrockPipe.topK)
             }
             documentMap["return_likelihoods"] = Document.String("NONE")
@@ -3191,24 +3308,25 @@ put("system", if (enableCaching && cacheControl != null) {
             content = contentBlocks
         })
         
-        val systemBlocks = if (systemPrompt.isNotEmpty()) {
+        val systemBlocks = if(systemPrompt.isNotEmpty()) {
             listOf(SystemContentBlock.Text(systemPrompt))
         } else emptyList()
         
         return ConverseRequest {
             this.modelId = model
             this.messages = messages
-            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+            if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
-                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
-                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+                if(this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if(this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if(this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if(this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
             // Llama-specific additional model fields
-            if (topK > 0) {
+            if(topK > 0)
+            {
                 val documentMap = mutableMapOf<String, Document?>()
                 documentMap["top_k"] = Document.Number(this@BedrockPipe.topK)
                 additionalModelRequestFields = Document.Map(documentMap)
@@ -3237,25 +3355,26 @@ put("system", if (enableCaching && cacheControl != null) {
             content = contentBlocks
         })
         
-        val systemBlocks = if (systemPrompt.isNotEmpty()) {
+        val systemBlocks = if(systemPrompt.isNotEmpty()) {
             listOf(SystemContentBlock.Text(systemPrompt))
         } else emptyList()
         
         return ConverseRequest {
             this.modelId = model
             this.messages = messages
-            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+            if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
-                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
-                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+                if(this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if(this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if(this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if(this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
             // Mistral-specific additional model fields
             val documentMap = mutableMapOf<String, Document?>()
-            if (this@BedrockPipe.topK > 0) {
+            if(this@BedrockPipe.topK > 0)
+            {
                 documentMap["top_k"] = Document.Number(this@BedrockPipe.topK)
             }
             documentMap["safe_prompt"] = Document.Boolean(false)
@@ -3285,20 +3404,20 @@ put("system", if (enableCaching && cacheControl != null) {
             content = contentBlocks
         })
         
-        val systemBlocks = if (systemPrompt.isNotEmpty()) {
+        val systemBlocks = if(systemPrompt.isNotEmpty()) {
             listOf(SystemContentBlock.Text(systemPrompt))
         } else emptyList()
         
         return ConverseRequest {
             this.modelId = model
             this.messages = messages
-            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+            if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
-                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
-                if (this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
+                if(this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if(this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if(this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if(this@BedrockPipe.stopSequences.isNotEmpty()) stopSequences = this@BedrockPipe.stopSequences
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
@@ -3338,7 +3457,8 @@ put("system", if (enableCaching && cacheControl != null) {
         val systemBlocks = mutableListOf<SystemContentBlock>()
         
         // Add main system prompt
-        if (systemPrompt.isNotEmpty()) {
+        if(systemPrompt.isNotEmpty())
+        {
             systemBlocks.add(SystemContentBlock.Text(systemPrompt))
         }
 
@@ -3346,7 +3466,8 @@ put("system", if (enableCaching && cacheControl != null) {
          * This will happen regardless of weather prompt injection is enabled. Disable prompt injection for
          * models that don't need it.
          */
-        if (!pcpContext.tpipeOptions.isEmpty()) {
+        if(!pcpContext.tpipeOptions.isEmpty())
+        {
             val pcpInstructions = "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
             systemBlocks.add(SystemContentBlock.Text(pcpInstructions))
         }
@@ -3354,17 +3475,18 @@ put("system", if (enableCaching && cacheControl != null) {
         return ConverseRequest {
             this.modelId = targetModelId
             this.messages = messages
-            if (systemBlocks.isNotEmpty()) this.system = systemBlocks
+            if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             
             inferenceConfig = InferenceConfiguration {
-                if (this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
-                if (this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
-                if (this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
+                if(this@BedrockPipe.maxTokens > 0) maxTokens = this@BedrockPipe.maxTokens
+                if(this@BedrockPipe.temperature > 0) temperature = this@BedrockPipe.temperature.toFloat()
+                if(this@BedrockPipe.topP > 0) topP = this@BedrockPipe.topP.toFloat()
             }
             
             // Apply all model-specific parameters via centralized helper
             val documentMap = getModelSpecificOpenAIParameters(targetModelId)
-            if (documentMap.isNotEmpty()) {
+            if(documentMap.isNotEmpty())
+            {
                 additionalModelRequestFields = Document.Map(documentMap)
             }
             
@@ -3406,9 +3528,11 @@ put("system", if (enableCaching && cacheControl != null) {
             }
             
             // Check for streaming first
-            if (streamingEnabled) {
+            if(streamingEnabled)
+            {
                 val streamingResult = executeConverseStream(client, modelId, converseRequest, "ConverseStream")
-                if (streamingResult != null) {
+                if(streamingResult != null)
+                {
                     return streamingResult
                 }
             }
@@ -3424,7 +3548,8 @@ put("system", if (enableCaching && cacheControl != null) {
             
             // Extract text content from response
             val extractedText = content?.mapNotNull { contentBlock ->
-                when (contentBlock) {
+                when(contentBlock)
+                {
                     is ContentBlock.Text -> contentBlock.value
                     else -> null
                 }
@@ -3444,7 +3569,8 @@ put("system", if (enableCaching && cacheControl != null) {
             )
 
             // Add stop reason if available
-            if (converseStopReason.isNotEmpty()) {
+            if(converseStopReason.isNotEmpty())
+            {
                 responseMetadata["stopReason"] = converseStopReason
             }
 
@@ -3456,18 +3582,19 @@ put("system", if (enableCaching && cacheControl != null) {
             }
 
             // Add reasoning metadata if reasoning content was found
-            if (reasoningContent.isNotEmpty()) {
+            if(reasoningContent.isNotEmpty())
+            {
                 responseMetadata["reasoningContent"] = reasoningContent
                 responseMetadata["modelSupportsReasoning"] = true
                 responseMetadata["reasoningEnabled"] = useModelReasoning
             }
 
             // Handle max token overflow for Converse API
-            if (isConverseOverflow)
+            if(isConverseOverflow)
             {
                 responseMetadata["maxTokenOverflow"] = true
 
-                if (allowMaxTokenOverflow && extractedText.isNotEmpty())
+                if(allowMaxTokenOverflow && extractedText.isNotEmpty())
                 {
                     // Allow overflow with content
                     val overflowResult = MultimodalContent(text = extractedText, modelReasoning = reasoningContent)
@@ -3475,7 +3602,7 @@ put("system", if (enableCaching && cacheControl != null) {
                     return overflowResult
                 }
 
-                else if (!allowMaxTokenOverflow)
+                else if(!allowMaxTokenOverflow)
                 {
                     // Treat as error
                     trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, 
@@ -3502,7 +3629,9 @@ put("system", if (enableCaching && cacheControl != null) {
 
             return result
             
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             println("DEBUG: generateWithConverseApi failed for model $modelId: ${e.message}")
             e.printStackTrace()
             trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, error = e)
@@ -3568,10 +3697,12 @@ put("system", if (enableCaching && cacheControl != null) {
         modelId: String,
         prompt: String
     ): String {
-        if (streamingEnabled) {
+        if(streamingEnabled)
+        {
             val streamingRequest = buildGptOssConverseRequest(modelId, prompt)
             val streamingResult = executeConverseStream(client, modelId, streamingRequest, "GPT-OSS ConverseStream")
-            if (streamingResult != null) {
+            if(streamingResult != null)
+            {
                 return streamingResult.text
             }
         }
@@ -3603,14 +3734,17 @@ put("system", if (enableCaching && cacheControl != null) {
         prompt: String,
         originalPrompt: String
     ): String {
-        if (streamingEnabled) {
+        if(streamingEnabled)
+        {
             val streamingRequest = buildDeepSeekConverseRequestObject(modelId, prompt)
             val streamingResult = executeConverseStream(client, modelId, streamingRequest, "DeepSeek ConverseStream")
-            if (streamingResult != null && streamingResult.text.isNotEmpty() && !streamingResult.text.contains("SdkUnknown")) {
+            if(streamingResult != null && streamingResult.text.isNotEmpty() && !streamingResult.text.contains("SdkUnknown"))
+            {
                 return streamingResult.text
             }
 
-            if (streamingResult != null && streamingResult.text.contains("SdkUnknown")) {
+            if(streamingResult != null && streamingResult.text.contains("SdkUnknown"))
+            {
                 trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
                       metadata = mapOf(
                           "apiType" to "DeepSeek ConverseStream",
@@ -3625,7 +3759,8 @@ put("system", if (enableCaching && cacheControl != null) {
               metadata = mapOf("apiType" to "DeepSeek ConverseAPI", "modelId" to modelId, "streaming" to false))
         val converseResult = generateWithConverseApi(client, modelId, prompt)
 
-        if (converseResult.text.isEmpty() || converseResult.text.contains("SdkUnknown")) {
+        if(converseResult.text.isEmpty() || converseResult.text.contains("SdkUnknown"))
+        {
             trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
                   metadata = mapOf(
                       "apiType" to "DeepSeek ConverseAPI",
@@ -3662,11 +3797,14 @@ put("system", if (enableCaching && cacheControl != null) {
         modelId: String,
         prompt: String
     ): String {
-        if (streamingEnabled) {
+        if(streamingEnabled)
+        {
             val streamingRequest = buildConverseRequestForStreaming(modelId, prompt)
-            if (streamingRequest != null) {
+            if(streamingRequest != null)
+            {
                 val streamingResult = executeConverseStream(client, modelId, streamingRequest, "ConverseStream")
-                if (streamingResult != null) {
+                if(streamingResult != null)
+                {
                     return streamingResult.text
                 }
             }
@@ -3720,7 +3858,8 @@ put("system", if (enableCaching && cacheControl != null) {
                         // Extract reasoning deltas for models that support it
                         deltaEvent.delta?.asReasoningContentOrNull()?.asTextOrNull()?.let { reasoningDelta ->
                             reasoningBuilder.append(reasoningDelta)
-                            if (streamModelReasoning) {
+                            if(streamModelReasoning)
+                            {
                                 emitStreamingChunk(reasoningDelta)
                             }
                         }
@@ -3758,24 +3897,28 @@ put("system", if (enableCaching && cacheControl != null) {
             )
 
             // Add stop reason if available
-            if (stopReason.isNotEmpty()) {
+            if(stopReason.isNotEmpty())
+            {
                 metadata["stopReason"] = stopReason
             }
 
             // Add reasoning content if captured
-            if (reasoningBuilder.isNotEmpty()) {
+            if(reasoningBuilder.isNotEmpty())
+            {
                 metadata["reasoningContent"] = reasoningBuilder.toString()
                 metadata["modelSupportsReasoning"] = true
                 metadata["reasoningEnabled"] = useModelReasoning
             }
 
             // Add token usage metrics if available
-            if (usageMetadata.isNotEmpty()) {
+            if(usageMetadata.isNotEmpty())
+            {
                 metadata.putAll(usageMetadata)
             }
 
             // Handle max token overflow scenarios
-            if (overflowDetected) {
+            if(overflowDetected)
+            {
                 metadata["maxTokenOverflow"] = true
                 return when {
                     allowMaxTokenOverflow && finalText.isNotEmpty() -> {
@@ -3808,7 +3951,9 @@ put("system", if (enableCaching && cacheControl != null) {
             
             return processedResult
 
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             // Trace streaming failure
             trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
                   error = e,
@@ -3850,21 +3995,25 @@ put("system", if (enableCaching && cacheControl != null) {
                     // Handle chunk events containing JSON data
                     event.asChunkOrNull()?.let { chunk ->
                         val bytes = chunk.bytes
-                        if (bytes != null && bytes.isNotEmpty()) {
+                        if(bytes != null && bytes.isNotEmpty())
+                        {
                             // Decode chunk bytes to string and extract deltas
                             val chunkString = bytes.decodeToString()
                             val (textDelta, reasoningDelta) = extractInvokeStreamDeltas(chunkString, modelId)
                             
                             // Accumulate text deltas and emit to callback
-                            if (textDelta.isNotEmpty()) {
+                            if(textDelta.isNotEmpty())
+                            {
                                 textBuilder.append(textDelta)
                                 emitStreamingChunk(textDelta)
                             }
                             
                             // Accumulate reasoning deltas for tracing
-                            if (reasoningDelta.isNotEmpty()) {
+                            if(reasoningDelta.isNotEmpty())
+                            {
                                 reasoningBuilder.append(reasoningDelta)
-                                if (streamModelReasoning) {
+                                if(streamModelReasoning)
+                                {
                                     emitStreamingChunk(reasoningDelta)
                                 }
                             }
@@ -3885,7 +4034,8 @@ put("system", if (enableCaching && cacheControl != null) {
             )
 
             // Add reasoning content if captured
-            if (reasoningBuilder.isNotEmpty()) {
+            if(reasoningBuilder.isNotEmpty())
+            {
                 metadata["reasoningContent"] = reasoningBuilder.toString()
                 metadata["modelSupportsReasoning"] = true
                 metadata["reasoningEnabled"] = useModelReasoning
@@ -3896,7 +4046,9 @@ put("system", if (enableCaching && cacheControl != null) {
             val result = MultimodalContent(text = finalText, modelReasoning = reasoningBuilder.toString())
             return splitInterleavedReasoning(result)
 
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             // Trace streaming failure
             trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
                   error = e,
@@ -3923,13 +4075,13 @@ put("system", if (enableCaching && cacheControl != null) {
     {
         // Invoke legacy single callback for backward compatibility
         val callback = streamingCallback
-        if (callback != null)
+        if(callback != null)
         {
             try
             {
                 callback(chunk)
             }
-            catch (e: Exception)
+            catch(e: Exception)
             {
                 trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
                       error = e,
@@ -3955,25 +4107,31 @@ put("system", if (enableCaching && cacheControl != null) {
     private fun extractInvokeStreamDeltas(chunkJson: String, modelId: String): Pair<String, String> {
         // Clean up the chunk and handle empty input
         val trimmed = chunkJson.trim()
-        if (trimmed.isEmpty()) {
+        if(trimmed.isEmpty())
+        {
             return "" to ""
         }
 
         return try {
             // Parse the JSON chunk
             val element = Json.parseToJsonElement(trimmed)
-            if (element !is JsonObject) {
+            if(element !is JsonObject)
+            {
                 // Handle non-JSON text chunks
-                if (!trimmed.startsWith("{")) trimmed to "" else "" to ""
-            } else {
+                if(!trimmed.startsWith("{")) trimmed to "" else "" to ""
+            }
+            else
+            {
                 val obj = element
 
                 // Extract text content from various possible field locations
                 var text = obj["text"]?.jsonPrimitive?.contentOrNull ?: ""
-                if (text.isEmpty()) {
+                if(text.isEmpty())
+                {
                     text = obj["completion"]?.jsonPrimitive?.contentOrNull ?: ""
                 }
-                if (text.isEmpty()) {
+                if(text.isEmpty())
+                {
                     text = obj["outputText"]?.jsonPrimitive?.contentOrNull ?: ""
                 }
                 
@@ -3983,26 +4141,31 @@ put("system", if (enableCaching && cacheControl != null) {
                 // Check delta object for text content
                 val deltaObj = choicesDelta ?: obj["delta"]?.jsonObject
                 deltaObj?.let { d ->
-                    if (text.isEmpty()) {
+                    if(text.isEmpty())
+                    {
                         text = d["content"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
-                    if (text.isEmpty()) {
+                    if(text.isEmpty())
+                    {
                         text = d["text"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
-                    if (text.isEmpty()) {
+                    if(text.isEmpty())
+                    {
                         text = d["completion"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
                 }
                 
                 // Check content array for text blocks
-                if (text.isEmpty()) {
+                if(text.isEmpty())
+                {
                     obj["content"]?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull?.let {
                         text = it
                     }
                 }
                 
                 // Fallback to raw text if not JSON structured
-                if (text.isEmpty() && !trimmed.startsWith("{")) {
+                if(text.isEmpty() && !trimmed.startsWith("{"))
+                {
                     text = trimmed
                 }
 
@@ -4011,49 +4174,59 @@ put("system", if (enableCaching && cacheControl != null) {
                 deltaObj?.let { d ->
                     reasoning = d["reasoning_content"]?.jsonPrimitive?.contentOrNull ?: ""
                     
-                    if (reasoning.isEmpty()) {
+                    if(reasoning.isEmpty())
+                    {
                         reasoning = d["reasoning"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
                     
-                    if (reasoning.isEmpty()) {
+                    if(reasoning.isEmpty())
+                    {
                         reasoning = d["thinking"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
 
-                    if (reasoning.isEmpty()) {
+                    if(reasoning.isEmpty())
+                    {
                         reasoning = d["reasoning_delta"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
                     
-                    if (reasoning.isEmpty()) {
+                    if(reasoning.isEmpty())
+                    {
                         reasoning = d["reasoningText"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
                     
-                    if (reasoning.isEmpty()) {
+                    if(reasoning.isEmpty())
+                    {
                         d["reasoningContent"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull?.let {
                             reasoning = it
                         }
                     }
                 }
                 
-                if (reasoning.isEmpty()) {
+                if(reasoning.isEmpty())
+                {
                     reasoning = obj["reasoning"]?.jsonPrimitive?.contentOrNull ?: ""
                 }
 
-                if (reasoning.isEmpty()) {
+                if(reasoning.isEmpty())
+                {
                     reasoning = obj["thinking"]?.jsonPrimitive?.contentOrNull ?: ""
                 }
 
                 // Check for guardrail traces that might contain reasoning
                 obj["amazon-bedrock-trace"]?.jsonObject?.get("guardrail")?.let {
-                    if (reasoning.isEmpty()) {
+                    if(reasoning.isEmpty())
+                    {
                         reasoning = it.toString()
                     }
                 }
 
                 text to reasoning
             }
-        } catch (_: Exception) {
+        }
+        catch(_: Exception)
+        {
             // Handle JSON parsing errors gracefully
-            if (!trimmed.startsWith("{")) trimmed to "" else "" to ""
+            if(!trimmed.startsWith("{")) trimmed to "" else "" to ""
         }
     }
 
@@ -4073,7 +4246,7 @@ put("system", if (enableCaching && cacheControl != null) {
     private fun isMaxTokenStopReason(stopReason: String): Boolean
     {
         // Convert to lowercase for case-insensitive matching across different model responses
-        return when (stopReason.lowercase()) 
+        return when(stopReason.lowercase())
         {
             "length" -> true           // GPT-OSS, DeepSeek models use this
             "max_tokens" -> true       // Claude models use this specific term
@@ -4117,7 +4290,9 @@ put("system", if (enableCaching && cacheControl != null) {
                 }
                 else -> ""
             }
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             ""
         }
     }
@@ -4169,8 +4344,10 @@ put("system", if (enableCaching && cacheControl != null) {
                 }
             }
             
-            if (usage.isNotEmpty()) usage else null
-        } catch (e: Exception) {
+            if(usage.isNotEmpty()) usage else null
+        }
+        catch(e: Exception)
+        {
             null
         }
     }
@@ -4239,7 +4416,8 @@ put("system", if (enableCaching && cacheControl != null) {
                     when {
                         isDeepSeekR1(modelId) -> {
                             // R1 models: Use existing logic (preserve current behavior)
-                            if (useConverseApi) {
+                            if(useConverseApi)
+                            {
                                 val message = json["output"]?.jsonObject?.get("message")?.jsonObject
                                 val content = message?.get("content")?.jsonArray
                                 content?.mapNotNull { contentItem ->
@@ -4250,14 +4428,17 @@ put("system", if (enableCaching && cacheControl != null) {
                                         else -> null
                                     }
                                 }?.joinToString("\n") ?: ""
-                            } else {
+                            }
+                            else
+                            {
                                 json["reasoning"]?.jsonPrimitive?.content ?: ""
                             }
                         }
                         
                         isDeepSeekV31(modelId) -> {
                             // V3.1 models: Enhanced reasoning extraction
-                            if (useConverseApi) {
+                            if(useConverseApi)
+                            {
                                 val message = json["output"]?.jsonObject?.get("message")?.jsonObject
                                 val content = message?.get("content")?.jsonArray
                                 content?.mapNotNull { contentItem ->
@@ -4270,7 +4451,9 @@ put("system", if (enableCaching && cacheControl != null) {
                                         else -> null
                                     }
                                 }?.joinToString("\n") ?: ""
-                            } else {
+                            }
+                            else
+                            {
                                 // Invoke API: Check multiple possible locations
                                 json["reasoning"]?.jsonPrimitive?.content 
                                     ?: json["thinking"]?.jsonPrimitive?.content
@@ -4307,14 +4490,17 @@ put("system", if (enableCaching && cacheControl != null) {
 
                     reasoningDetails?.forEach { detail ->
                         val detailText = detail.jsonObject["text"]?.jsonPrimitive?.content
-                        if (!detailText.isNullOrEmpty()) {
+                        if(!detailText.isNullOrEmpty())
+                        {
                             reasoningParts.add(detailText)
                         }
                     }
 
-                    if (reasoningParts.isEmpty()) {
+                    if(reasoningParts.isEmpty())
+                    {
                         val contentText = message?.get("content")?.jsonPrimitive?.content
-                        if (!contentText.isNullOrEmpty()) {
+                        if(!contentText.isNullOrEmpty())
+                        {
                             reasoningParts.addAll(extractThinkSegmentsFromContent(contentText))
                         }
                     }
@@ -4335,9 +4521,12 @@ put("system", if (enableCaching && cacheControl != null) {
                         }
                     }?.joinToString("\n")
                     
-                    if (!novaStyleReasoning.isNullOrEmpty()) {
+                    if(!novaStyleReasoning.isNullOrEmpty())
+                    {
                         novaStyleReasoning
-                    } else {
+                    }
+                    else
+                    {
                         val choice = json["choices"]?.jsonArray?.firstOrNull()?.jsonObject
                         val choiceMessage = choice?.get("message")?.jsonObject
                         
@@ -4352,7 +4541,9 @@ put("system", if (enableCaching && cacheControl != null) {
 
                 else -> "" // Unknown model, no reasoning extraction
             }
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             "" // Fail silently if JSON parsing fails
         }
     }
@@ -4362,7 +4553,8 @@ put("system", if (enableCaching && cacheControl != null) {
         val regex = "<think>(?s:.*?)</think>".toRegex(RegexOption.IGNORE_CASE)
         segments.addAll(regex.findAll(content).mapNotNull { it.groupValues.getOrNull(1)?.trim() })
         
-        if (segments.isEmpty() && content.contains("</think>", ignoreCase = true)) {
+        if(segments.isEmpty() && content.contains("</think>", ignoreCase = true))
+        {
              val endTagIndex = content.indexOf("</think>", ignoreCase = true)
              segments.add(content.substring(0, endTagIndex).trim())
         }
@@ -4377,10 +4569,11 @@ put("system", if (enableCaching && cacheControl != null) {
      * @return Processed MultimodalContent with reasoning separated if found in tags
      */
     private fun splitInterleavedReasoning(content: MultimodalContent): MultimodalContent {
-        if (content.modelReasoning.isNotEmpty()) return content
+        if(content.modelReasoning.isNotEmpty()) return content
         
         val text = content.text
-        if (text.contains("</think>", ignoreCase = true)) {
+        if(text.contains("</think>", ignoreCase = true))
+        {
             val thinking = extractThinkSegmentsFromContent(text).joinToString("\n")
             // Clean up both full tags and the implicit start case
             var cleanedText = text.replace("(?si)<think>.*?</think>".toRegex(), "")
@@ -4426,7 +4619,7 @@ put("system", if (enableCaching && cacheControl != null) {
                 modelId.contains("minimax") -> {
                     val choice = json["choices"]?.jsonArray?.firstOrNull()?.jsonObject
                     val contentElement = choice?.get("message")?.jsonObject?.get("content")
-                    when (contentElement)
+                    when(contentElement)
                     {
                         is JsonPrimitive -> contentElement.content
                         is JsonArray -> contentElement.mapNotNull { element: JsonElement -> element.jsonPrimitive?.content }.joinToString("\n")
@@ -4458,7 +4651,8 @@ put("system", if (enableCaching && cacheControl != null) {
                     json["outputs"]?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: ""
                 }
                 modelId.contains("deepseek") -> {
-                    if (useConverseApi) {
+                    if(useConverseApi)
+                    {
                         // DeepSeek Converse API uses message.content array structure
                         val message = json["output"]?.jsonObject?.get("message")?.jsonObject
                         val content = message?.get("content")?.jsonArray
@@ -4475,7 +4669,9 @@ put("system", if (enableCaching && cacheControl != null) {
                                 else -> null
                             }
                         }?.joinToString("\n") ?: ""
-                    } else {
+                    }
+                    else
+                    {
                         // DeepSeek Invoke API uses choices array: choices[0].text
                         json["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: ""
                     }
@@ -4495,7 +4691,9 @@ put("system", if (enableCaching && cacheControl != null) {
                     json["text"]?.jsonPrimitive?.content ?: json["output"]?.jsonPrimitive?.content ?: json["response"]?.jsonPrimitive?.content ?: ""
                 }
             }
-        } catch (e: Exception) {
+        }
+        catch(e: Exception)
+        {
             "" // Fail silently if JSON parsing fails
         }
     }

@@ -616,11 +616,11 @@ class Manifold : P2PInterface
         managerPipeline.setContainerObject(this)
         
         // Setup tracing propagation to manager pipeline if enabled
-        if (tracingEnabled)
+        if(tracingEnabled)
         {
             managerPipeline.enableTracing(traceConfig)
             // Set currentPipelineId on individual pipes in the manager pipeline
-            for (pipe in managerPipeline.getPipes())
+            for(pipe in managerPipeline.getPipes())
             {
                 pipe.currentPipelineId = manifoldId
             }
@@ -680,11 +680,11 @@ class Manifold : P2PInterface
             workerPipe.setContainerObject(this)
             
             // Setup tracing propagation to worker pipelines if enabled
-            if (tracingEnabled)
+            if(tracingEnabled)
             {
                 workerPipe.enableTracing(traceConfig)
                 // Set currentPipelineId on individual pipes in the worker pipeline
-                for (pipe in workerPipe.getPipes())
+                for(pipe in workerPipe.getPipes())
                 {
                     pipe.currentPipelineId = manifoldId
                 }
@@ -738,7 +738,7 @@ class Manifold : P2PInterface
         hasP2P(managerPipeline)
 
         // === TRACING: Initialize execution tracing ===
-        if (tracingEnabled)
+        if(tracingEnabled)
         {
             PipeTracer.startTrace(manifoldId)
             trace(TraceEventType.MANIFOLD_START, TracePhase.ORCHESTRATION, content,
@@ -753,7 +753,7 @@ class Manifold : P2PInterface
         if(isConverseHistory == null)
         {
             // === TRACING: Converse history creation ===
-            if (tracingEnabled)
+            if(tracingEnabled)
             {
                 trace(TraceEventType.CONVERSE_HISTORY_UPDATE, TracePhase.ORCHESTRATION,
                       metadata = mapOf("action" to "createInitialHistory"))
@@ -792,7 +792,7 @@ class Manifold : P2PInterface
         {
             // === TRACING: Loop iteration tracking ===
             loopIterationCount++
-            if (tracingEnabled)
+            if(tracingEnabled)
             {
                 trace(TraceEventType.MANIFOLD_LOOP_ITERATION, TracePhase.ORCHESTRATION,
                       metadata = mapOf(
@@ -804,7 +804,7 @@ class Manifold : P2PInterface
 
             //Step 1: Execute the manager pipeline and get the initial result of its actions.
             // === TRACING: Manager task analysis ===
-            if (tracingEnabled)
+            if(tracingEnabled)
             {
                 trace(TraceEventType.MANAGER_TASK_ANALYSIS, TracePhase.ORCHESTRATION,
                       workingContentObject,
@@ -867,7 +867,7 @@ class Manifold : P2PInterface
             val managerResult = managerPipeline.execute(workingContentObject)
 
             // === TRACING: Manager decision ===
-            if (tracingEnabled)
+            if(tracingEnabled)
             {
                 trace(TraceEventType.MANAGER_DECISION, TracePhase.ORCHESTRATION, managerResult,
                       metadata = mapOf(
@@ -882,10 +882,12 @@ class Manifold : P2PInterface
             val latestTaskProgressJson = currentConverseHistory?.history?.lastOrNull { it.role == ConverseRole.system }?.content?.text
             val taskProgress = latestTaskProgressJson?.let { extractJson<TaskProgress>(it) }
 
-            if (taskProgress != null && taskProgress.isTaskComplete) {
+            if(taskProgress != null && taskProgress.isTaskComplete)
+            {
                 workingContentObject.passPipeline = true
                 // === TRACING: Manifold completion signaled by manager ===
-                if (tracingEnabled) {
+                if(tracingEnabled)
+                {
                     trace(TraceEventType.MANIFOLD_SUCCESS, TracePhase.CLEANUP, managerResult,
                           metadata = mapOf("reason" to "Manager signaled task completion"))
                 }
@@ -990,9 +992,11 @@ class Manifold : P2PInterface
              * the manager pipeline to choose the best agent for the next task. Unfortunately we often run into
              * issues where some llm's don't quite get the memo and produce pcp tool calls anyways.
              */
-            if (agentRequest != null && agentRequest.pcpRequest != PcPRequest()) {
+            if(agentRequest != null && agentRequest.pcpRequest != PcPRequest())
+            {
                 agentRequest.pcpRequest = PcPRequest()
-                if (tracingEnabled) {
+                if(tracingEnabled)
+                {
                     trace(TraceEventType.AGENT_REQUEST_INVALID, TracePhase.ORCHESTRATION,
                           metadata = mapOf("reason" to "pcpRequest reset to empty PcPRequest",
                                            "agentName" to agentRequest.agentName))
@@ -1003,7 +1007,7 @@ class Manifold : P2PInterface
             if(agentRequest == null)
             {
                 // === TRACING: Invalid agent request ===
-                if (tracingEnabled)
+                if(tracingEnabled)
                 {
                     trace(TraceEventType.AGENT_REQUEST_INVALID, TracePhase.ORCHESTRATION,
                           managerResult,
@@ -1019,7 +1023,7 @@ class Manifold : P2PInterface
             }
 
             // === TRACING: Valid agent request ===
-            if (tracingEnabled)
+            if(tracingEnabled)
             {
                 trace(TraceEventType.AGENT_REQUEST_VALIDATION, TracePhase.ORCHESTRATION,
                       metadata = mapOf(
@@ -1044,7 +1048,7 @@ class Manifold : P2PInterface
                 workingContentObject.text = serialize(previousConverseHistory, encodedefault = false)
                 
                 // === TRACING: Converse history update ===
-                if (tracingEnabled)
+                if(tracingEnabled)
                 {
                     trace(TraceEventType.CONVERSE_HISTORY_UPDATE, TracePhase.ORCHESTRATION,
                           metadata = mapOf(
@@ -1067,7 +1071,7 @@ class Manifold : P2PInterface
                 agentInteractionMap[agentRequest.agentName] = 
                     agentInteractionMap.getOrDefault(agentRequest.agentName, 0) + 1
 
-                if (tracingEnabled)
+                if(tracingEnabled)
                 {
                     trace(TraceEventType.AGENT_DISPATCH, TracePhase.AGENT_COMMUNICATION,
                           metadata = mapOf(
@@ -1084,7 +1088,7 @@ class Manifold : P2PInterface
                  * json input is set to.
                  */
                 val workerConverseHistory = extractJson<ConverseHistory>(workingContentObject.text)
-                if (workerConverseHistory != null)
+                if(workerConverseHistory != null)
                 {
                     agentRequest.prompt = serialize(workerConverseHistory, encodedefault = false)
                     agentRequest.promptSchema = InputSchema.json
@@ -1099,7 +1103,7 @@ class Manifold : P2PInterface
                 if(rejection != null)
                 {
                     // === TRACING: P2P request rejection ===
-                    if (tracingEnabled)
+                    if(tracingEnabled)
                     {
                         trace(TraceEventType.P2P_REQUEST_FAILURE, TracePhase.AGENT_COMMUNICATION,
                               error = Exception("P2P request rejected: $rejection"),
@@ -1114,7 +1118,7 @@ class Manifold : P2PInterface
                 }
 
                 // === TRACING: Successful agent response ===
-                if (tracingEnabled)
+                if(tracingEnabled)
                 {
                     trace(TraceEventType.AGENT_RESPONSE, TracePhase.AGENT_COMMUNICATION,
                           response.output,
@@ -1208,7 +1212,7 @@ class Manifold : P2PInterface
                     converseHistory?.add(ConverseRole.agent, response.output!!)
                     
                     // === TRACING: Agent response added to history ===
-                    if (tracingEnabled)
+                    if(tracingEnabled)
                     {
                         trace(TraceEventType.CONVERSE_HISTORY_UPDATE, TracePhase.ORCHESTRATION,
                               metadata = mapOf(
@@ -1217,9 +1221,11 @@ class Manifold : P2PInterface
                                   "historySize" to converseHistory.history.size
                               ))
                     }
-                } catch(e: Exception) {
+                }
+                catch(e: Exception)
+                {
                     // === TRACING: Converse history update failure ===
-                    if (tracingEnabled)
+                    if(tracingEnabled)
                     {
                         trace(TraceEventType.MANIFOLD_FAILURE, TracePhase.ORCHESTRATION,
                               error = e,
@@ -1245,7 +1251,7 @@ class Manifold : P2PInterface
                     workingContentObject.merge(response.output!!)
                     
                     // === TRACING: Content merge successful ===
-                    if (tracingEnabled)
+                    if(tracingEnabled)
                     {
                         trace(TraceEventType.AGENT_RESPONSE_PROCESSING, TracePhase.ORCHESTRATION,
                               workingContentObject,
@@ -1255,9 +1261,11 @@ class Manifold : P2PInterface
                                   "finalContentSize" to workingContentObject.text.length
                               ))
                     }
-                } catch(e: Exception) {
+                }
+                catch(e: Exception)
+                {
                     // === TRACING: Content merge failure ===
-                    if (tracingEnabled)
+                    if(tracingEnabled)
                     {
                         trace(TraceEventType.MANIFOLD_FAILURE, TracePhase.ORCHESTRATION,
                               error = e,
@@ -1270,9 +1278,11 @@ class Manifold : P2PInterface
                     break
                 }
 
-            } catch(e: Exception) {
+            }
+            catch(e: Exception)
+            {
                 // === TRACING: P2P communication failure ===
-                if (tracingEnabled)
+                if(tracingEnabled)
                 {
                     trace(TraceEventType.P2P_COMMUNICATION_FAILURE, TracePhase.AGENT_COMMUNICATION,
                           error = e,
@@ -1286,7 +1296,7 @@ class Manifold : P2PInterface
             }
             
             // === TRACING: Termination condition check ===
-            if (tracingEnabled)
+            if(tracingEnabled)
             {
                 trace(TraceEventType.MANIFOLD_TERMINATION_CHECK, TracePhase.ORCHESTRATION,
                       metadata = mapOf(
@@ -1301,11 +1311,13 @@ class Manifold : P2PInterface
         }
 
         // === TRACING: Final execution result ===
-        if (tracingEnabled)
+        if(tracingEnabled)
         {
-            val finalEventType = if (workingContentObject.terminatePipeline) {
+            val finalEventType = if(workingContentObject.terminatePipeline) {
                 TraceEventType.MANIFOLD_FAILURE
-            } else {
+            }
+            else
+            {
                 TraceEventType.MANIFOLD_SUCCESS
             }
             
@@ -1388,10 +1400,10 @@ class Manifold : P2PInterface
         error: Throwable? = null
     )
     {
-        if (!tracingEnabled) return
+        if(!tracingEnabled) return
         
         // Verbosity filtering using existing EventPriorityMapper
-        if (!EventPriorityMapper.shouldTrace(eventType, traceConfig.detailLevel)) return
+        if(!EventPriorityMapper.shouldTrace(eventType, traceConfig.detailLevel)) return
         
         // Build enhanced metadata based on verbosity level
         val enhancedMetadata = buildManifoldMetadata(metadata, traceConfig.detailLevel, eventType, error)
@@ -1403,9 +1415,9 @@ class Manifold : P2PInterface
             pipeName = "Manifold-${managerPipeline.pipelineName}",
             eventType = eventType,
             phase = phase,
-            content = if (shouldIncludeContent(traceConfig.detailLevel)) content else null,
-            contextSnapshot = if (shouldIncludeContext(traceConfig.detailLevel)) managerPipeline.context else null,
-            metadata = if (traceConfig.includeMetadata) enhancedMetadata else emptyMap(),
+            content = if(shouldIncludeContent(traceConfig.detailLevel)) content else null,
+            contextSnapshot = if(shouldIncludeContext(traceConfig.detailLevel)) managerPipeline.context else null,
+            metadata = if(traceConfig.includeMetadata) enhancedMetadata else emptyMap(),
             error = error
         )
         
@@ -1432,11 +1444,11 @@ class Manifold : P2PInterface
     {
         val metadata = baseMetadata.toMutableMap()
         
-        when (detailLevel)
+        when(detailLevel)
         {
             TraceDetailLevel.MINIMAL ->
             {
-                if (error != null)
+                if(error != null)
                 {
                     metadata["error"] = error.message ?: "Unknown error"
                 }
@@ -1448,7 +1460,7 @@ class Manifold : P2PInterface
                 metadata["managerPipeline"] = managerPipeline.pipelineName
                 metadata["workerCount"] = workerPipelines.size
                 metadata["loopIteration"] = loopIterationCount
-                if (error != null)
+                if(error != null)
                 {
                     metadata["error"] = error.message ?: "Unknown error"
                     metadata["errorType"] = error::class.simpleName ?: "Unknown"
@@ -1466,7 +1478,7 @@ class Manifold : P2PInterface
                 metadata["taskComplete"] = currentTaskProgress.isTaskComplete
                 metadata["taskProgress"] = currentTaskProgress.taskProgressStatus
                 metadata["agentInteractions"] = agentInteractionMap.size
-                if (error != null)
+                if(error != null)
                 {
                     metadata["error"] = error.message ?: "Unknown error"
                     metadata["errorType"] = error::class.simpleName ?: "Unknown"
@@ -1489,7 +1501,7 @@ class Manifold : P2PInterface
                 metadata["agentInteractionMap"] = agentInteractionMap
                 metadata["workingContentSize"] = workingContentObject.text.length
                 metadata["p2pDescriptor"] = p2pDescriptor?.agentName ?: "null"
-                if (error != null)
+                if(error != null)
                 {
                     metadata["error"] = error.message ?: "Unknown error"
                     metadata["errorType"] = error::class.simpleName ?: "Unknown"
@@ -1510,7 +1522,7 @@ class Manifold : P2PInterface
      */
     private fun shouldIncludeContent(detailLevel: TraceDetailLevel): Boolean
     {
-        return when (detailLevel)
+        return when(detailLevel)
         {
             TraceDetailLevel.MINIMAL -> false
             TraceDetailLevel.NORMAL -> false
@@ -1528,7 +1540,7 @@ class Manifold : P2PInterface
      */
     private fun shouldIncludeContext(detailLevel: TraceDetailLevel): Boolean
     {
-        return when (detailLevel)
+        return when(detailLevel)
         {
             TraceDetailLevel.MINIMAL -> false
             TraceDetailLevel.NORMAL -> false
@@ -1555,7 +1567,7 @@ class Manifold : P2PInterface
      */
     fun getFailureAnalysis(): FailureAnalysis?
     {
-        return if (tracingEnabled) PipeTracer.getFailureAnalysis(manifoldId) else null
+        return if(tracingEnabled) PipeTracer.getFailureAnalysis(manifoldId) else null
     }
 
     /**

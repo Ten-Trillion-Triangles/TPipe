@@ -3,7 +3,8 @@ package com.TTT.Debug
 import com.TTT.Pipe.MultimodalContent
 import java.io.File
 
-fun main() {
+fun main()
+{
     println("Generating HTML trace files...")
     
     // Generate standard pipeline trace

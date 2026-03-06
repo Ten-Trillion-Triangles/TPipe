@@ -53,7 +53,7 @@ class PcpExecutionDispatcher
      */
     private fun routeRequest(transport: Transport): PcpExecutor
     {
-        return when (transport)
+        return when(transport)
         {
             Transport.Tpipe -> functionHandler
             Transport.Stdio -> stdioExecutor
@@ -76,7 +76,7 @@ class PcpExecutionDispatcher
             
             // Validate transport against context restrictions
             val transportValidation = validateTransport(requestTransport, context)
-            if (!transportValidation.isValid)
+            if(!transportValidation.isValid)
             {
                 return PcpRequestResult(
                     success = false,
@@ -90,7 +90,7 @@ class PcpExecutionDispatcher
             val executor = routeRequest(requestTransport)
             executor.execute(request, context)
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             val transport = responseParser.determineTransport(request)
             PcpRequestResult(
@@ -109,13 +109,13 @@ class PcpExecutionDispatcher
     private fun validateTransport(requestTransport: Transport, context: PcpContext): TransportValidationResult
     {
         // Auto transport allows any request type
-        if (context.transport == Transport.Auto)
+        if(context.transport == Transport.Auto)
         {
             return TransportValidationResult(true, null)
         }
         
         // Specific transport must match context
-        if (context.transport != requestTransport)
+        if(context.transport != requestTransport)
         {
             return TransportValidationResult(
                 false, 
@@ -148,13 +148,13 @@ class PcpExecutionDispatcher
             jobs.forEach { job ->
                 val result = job.await()
                 results.add(result)
-                if (!result.success && result.error != null)
+                if(!result.success && result.error != null)
                 {
                     errors.add(result.error)
                 }
             }
         }
-        catch (e: Exception)
+        catch(e: Exception)
         {
             errors.add("Execution dispatcher failed: ${e.message}")
         }

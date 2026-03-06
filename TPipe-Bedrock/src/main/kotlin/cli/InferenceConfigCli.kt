@@ -21,7 +21,8 @@ import env.bedrockEnv
  * - bind <model> <profile> - Bind model to inference profile
  * - help - Show help information
  */
-object InferenceConfigCli {
+object InferenceConfigCli
+{
     
     /**
      * Main entry point for the CLI application.
@@ -40,7 +41,7 @@ object InferenceConfigCli {
         // Load inference profile mappings from configuration file
         bedrockEnv.loadInferenceConfig()
         
-        if (args.isNotEmpty())
+        if(args.isNotEmpty())
         {
             handleCommand(args)
         }
@@ -62,7 +63,8 @@ object InferenceConfigCli {
     private fun handleCommand(args: Array<String>)
     {
         // Route command to appropriate handler based on first argument
-        when (args[0].lowercase()) {
+        when(args[0].lowercase())
+        {
             "list" -> listModels(args.getOrNull(1))
             "search" -> searchModels(args.getOrNull(1) ?: "")
             "bind" -> bindModel(args.getOrNull(1), args.getOrNull(2))
@@ -84,7 +86,8 @@ object InferenceConfigCli {
      */
     private fun interactiveMode()
     {
-        while (true) {
+        while(true)
+        {
             println("\nOptions:")
             println("1. List all models")
             println("2. Search models")
@@ -95,7 +98,8 @@ object InferenceConfigCli {
             println("7. Exit")
             print("Choose option (1-7): ")
             
-            when (readLine()?.trim()) {
+            when(readLine()?.trim())
+            {
                 "1" -> listModels()
                 "2" -> {
                     print("Enter search term: ")
@@ -137,7 +141,7 @@ object InferenceConfigCli {
     private fun listModels(filter: String? = null)
     {
         // Get models list - all models or filtered by search term
-        val models: List<String> = if (filter.isNullOrEmpty())
+        val models: List<String> = if(filter.isNullOrEmpty())
         {
             bedrockEnv.getAllModels()
         }
@@ -151,7 +155,7 @@ object InferenceConfigCli {
         // Display each model with its current binding status
         models.forEachIndexed { index: Int, model: String ->
             val profileId = bedrockEnv.getInferenceProfileId(model)
-            val binding = if (profileId.isNullOrEmpty()) "direct" else profileId
+            val binding = if(profileId.isNullOrEmpty()) "direct" else profileId
             println("${index + 1}. $model -> $binding")
         }
         println("Total: ${models.size} models")
@@ -167,7 +171,7 @@ object InferenceConfigCli {
      */
     private fun searchModels(query: String)
     {
-        if (query.isEmpty())
+        if(query.isEmpty())
         {
             println("Please provide a search term.")
             return
@@ -178,7 +182,7 @@ object InferenceConfigCli {
         println("\nSearch results for '$query':")
         results.forEachIndexed { index: Int, model: String ->
             val profileId = bedrockEnv.getInferenceProfileId(model)
-            val binding = if (profileId.isNullOrEmpty()) "direct" else profileId
+            val binding = if(profileId.isNullOrEmpty()) "direct" else profileId
             println("${index + 1}. $model -> $binding")
         }
         println("Found: ${results.size} models")
@@ -192,8 +196,10 @@ object InferenceConfigCli {
      * 
      * @param provider Provider name to filter by (case-insensitive)
      */
-    private fun listByProvider(provider: String?) {
-        if (provider.isNullOrEmpty()) {
+    private fun listByProvider(provider: String?)
+    {
+        if(provider.isNullOrEmpty())
+        {
             println("Please provide a provider name.")
             return
         }
@@ -203,7 +209,7 @@ object InferenceConfigCli {
         println("\nModels from provider '$provider':")
         models.forEachIndexed { index: Int, model: String ->
             val profileId = bedrockEnv.getInferenceProfileId(model)
-            val binding = if (profileId.isNullOrEmpty()) "direct" else profileId
+            val binding = if(profileId.isNullOrEmpty()) "direct" else profileId
             println("${index + 1}. $model -> $binding")
         }
         println("Total: ${models.size} models")
@@ -217,8 +223,10 @@ object InferenceConfigCli {
      * 
      * @param region AWS region code (e.g., 'us-east-1', 'eu-west-1')
      */
-    private fun listByRegion(region: String?) {
-        if (region.isNullOrEmpty()) {
+    private fun listByRegion(region: String?)
+    {
+        if(region.isNullOrEmpty())
+        {
             println("Please provide a region name.")
             return
         }
@@ -228,7 +236,7 @@ object InferenceConfigCli {
         println("\nModels available in region '$region':")
         models.entries.forEachIndexed { index: Int, entry: Map.Entry<String, String> ->
             val (model, profileId) = entry
-            val binding = if (profileId.isEmpty()) "direct" else profileId
+            val binding = if(profileId.isEmpty()) "direct" else profileId
             println("${index + 1}. $model -> $binding")
         }
         println("Total: ${models.size} models")
@@ -243,8 +251,10 @@ object InferenceConfigCli {
      * @param modelId AWS Bedrock model ID to configure
      * @param inferenceProfileId Inference profile ID or empty for direct calls
      */
-    private fun bindModel(modelId: String?, inferenceProfileId: String?) {
-        if (modelId.isNullOrEmpty()) {
+    private fun bindModel(modelId: String?, inferenceProfileId: String?)
+    {
+        if(modelId.isNullOrEmpty())
+        {
             println("Please provide a model ID.")
             return
         }
@@ -253,10 +263,13 @@ object InferenceConfigCli {
         val profileId = inferenceProfileId ?: ""
         val success = bedrockEnv.bindInferenceProfile(modelId, profileId)
         
-        if (success) {
-            val binding = if (profileId.isEmpty()) "direct calls" else "profile: $profileId"
+        if(success)
+        {
+            val binding = if(profileId.isEmpty()) "direct calls" else "profile: $profileId"
             println("✓ Successfully bound $modelId to $binding")
-        } else {
+        }
+        else
+        {
             println("✗ Failed to bind model. Model ID not found: $modelId")
             println("Use 'search' or 'list' to find valid model IDs.")
         }
@@ -268,7 +281,8 @@ object InferenceConfigCli {
      * Shows which models are bound to inference profiles and provides
      * a summary of total bound vs unbound models.
      */
-    private fun showCurrentBindings() {
+    private fun showCurrentBindings()
+    {
         // Get all models and filter for those with inference profile bindings
         val allModels: List<String> = bedrockEnv.getAllModels()
         val boundModels = allModels.filter { model: String -> 
@@ -278,9 +292,12 @@ object InferenceConfigCli {
         
         println("\nCurrent inference profile bindings:")
         // Display bound models or indicate if none are bound
-        if (boundModels.isEmpty()) {
+        if(boundModels.isEmpty())
+        {
             println("No models are bound to inference profiles (all using direct calls)")
-        } else {
+        }
+        else
+        {
             boundModels.forEachIndexed { index: Int, model: String ->
                 val profileId = bedrockEnv.getInferenceProfileId(model)
                 println("${index + 1}. $model -> $profileId")
@@ -295,7 +312,8 @@ object InferenceConfigCli {
      * Shows usage examples, available commands, supported providers,
      * and configuration file format details.
      */
-    private fun showHelp() {
+    private fun showHelp()
+    {
         println("\nUsage:")
         println("  kotlin -cp build/libs/tpipe-bedrock.jar cli.InferenceConfigCli [command] [args]")
         println("\nCommands:")

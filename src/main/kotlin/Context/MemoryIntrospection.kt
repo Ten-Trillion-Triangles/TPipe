@@ -58,7 +58,7 @@ object MemoryIntrospection
         }
         finally
         {
-            if (previous == null)
+            if(previous == null)
             {
                 configThreadLocal.remove()
             }
@@ -97,11 +97,11 @@ object MemoryIntrospection
     fun isPageAllowed(pageKey: String): Boolean
     {
         val config = getCurrentConfig()
-        if (!config.allowRead && !config.allowWrite)
+        if(!config.allowRead && !config.allowWrite)
         {
             return false
         }
-        if (config.allowedPageKeys.contains("*"))
+        if(config.allowedPageKeys.contains("*"))
         {
             return true
         }
@@ -126,20 +126,20 @@ object MemoryIntrospection
     fun canWrite(pageKey: String): Boolean
     {
         val config = getCurrentConfig()
-        if (!config.allowWrite)
+        if(!config.allowWrite)
         {
             return false
         }
 
         // If it's a new page, check allowPageCreation
         val pageExists = ContextBank.getPageKeys().contains(pageKey)
-        if (!pageExists && !config.allowPageCreation)
+        if(!pageExists && !config.allowPageCreation)
         {
             return false
         }
 
         // Check if the key itself is allowed
-        if (config.allowedPageKeys.contains("*"))
+        if(config.allowedPageKeys.contains("*"))
         {
             return true
         }

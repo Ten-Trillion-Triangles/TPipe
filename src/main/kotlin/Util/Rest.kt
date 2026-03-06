@@ -64,7 +64,8 @@ suspend fun httpRequest(
             https {
                 // If we have a Host header, use it for SNI even if we connect to an IP
                 val hostHeader = headers.entries.find { it.key.equals("Host", ignoreCase = true) }?.value
-                if (hostHeader != null) {
+                if(hostHeader != null)
+                {
                     serverName = hostHeader.substringBefore(':')
                 }
             }
@@ -85,7 +86,7 @@ suspend fun httpRequest(
             }
             
             // Handle authentication using HttpSecurityManager
-            if (auth.type.isNotEmpty() && auth.type.uppercase() != HttpConstants.AUTH_TYPE_NONE) 
+            if(auth.type.isNotEmpty() && auth.type.uppercase() != HttpConstants.AUTH_TYPE_NONE)
             {
                 val securityManager = HttpSecurityManager()
                 val authHeaders = securityManager.generateAuthHeaders(auth.type, auth.credentials)
@@ -95,10 +96,10 @@ suspend fun httpRequest(
             }
             
             // Set body for methods that support it
-            if (body.isNotEmpty() && method.uppercase() in HttpConstants.BODY_METHODS) 
+            if(body.isNotEmpty() && method.uppercase() in HttpConstants.BODY_METHODS)
             {
                 setBody(body)
-                if (!headers.containsKey("Content-Type")) 
+                if(!headers.containsKey("Content-Type"))
                 {
                     contentType(ContentType.Application.Json)
                 }
@@ -121,7 +122,9 @@ suspend fun httpRequest(
             body = responseBody,
             responseTimeMs = responseTime
         )
-    } catch (e: Exception) {
+    }
+    catch(e: Exception)
+    {
         val responseTime = System.currentTimeMillis() - startTime
         HttpResponseData(
             statusCode = 0,
@@ -155,7 +158,9 @@ suspend fun httpGet(url: String, acceptType: String = "*/*", authToken: String? 
             }
         }
         response.bodyAsText()
-    } catch (e: IOException) {
+    }
+    catch(e: IOException)
+    {
         "Error: ${e.message}"
     } finally {
         client.close()
@@ -189,7 +194,9 @@ suspend fun httpPut(url: String, body: String, acceptType: String = "*/*", authT
             }
         }
         response.bodyAsText()
-    } catch (e: IOException) {
+    }
+    catch(e: IOException)
+    {
         "Error: ${e.message}"
     } finally {
         client.close()
@@ -221,7 +228,9 @@ suspend fun httpPost(url: String, body: String, acceptType: String = "*/*", auth
             }
         }
         response.bodyAsText()
-    } catch (e: IOException) {
+    }
+    catch(e: IOException)
+    {
         "Error: ${e.message}"
     } finally {
         client.close()
@@ -243,13 +252,15 @@ suspend fun httpDelete(url: String, body: String = "", authToken: String? = null
     val client = HttpClient()
 
     return try {
-        val response: HttpResponse = if (body.isEmpty()) {
+        val response: HttpResponse = if(body.isEmpty()) {
             client.delete(url) {
                 authToken?.let {
                     header(HttpHeaders.Authorization, "Bearer $it")
                 }
             }
-        } else {
+        }
+        else
+        {
             client.delete(url) {
                 setBody(body) // Set the request body
                 contentType(ContentType.Application.Json) // Set content type, adjust if needed
@@ -259,7 +270,9 @@ suspend fun httpDelete(url: String, body: String = "", authToken: String? = null
             }
         }
         response.bodyAsText()
-    } catch (e: IOException) {
+    }
+    catch(e: IOException)
+    {
         "Error: ${e.message}"
     } finally {
         client.close()
