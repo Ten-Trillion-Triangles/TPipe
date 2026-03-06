@@ -156,6 +156,20 @@ object Dictionary
             // Process the word until fully consumed
             while(remainingWord.isNotEmpty()) 
             {
+                // Handle leading non-letter characters
+                if(!remainingWord[0].isLetter())
+                {
+                    var nonWordEnd = 0
+                    while(nonWordEnd < remainingWord.length && !remainingWord[nonWordEnd].isLetter()) nonWordEnd++
+
+                    if(nonWordEnd > 0)
+                    {
+                        wordTokens += (nonWordEnd + nonWordSplitCount - 1) / nonWordSplitCount
+                        remainingWord = remainingWord.substring(nonWordEnd)
+                        continue
+                    }
+                }
+
                 // Find matches based on configuration
                 val bestMatch = when {
                     // First word gets loose matching for subword counting
