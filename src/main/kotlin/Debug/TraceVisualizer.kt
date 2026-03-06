@@ -231,7 +231,20 @@ class TraceVisualizer
                 val otherMetadata = event.metadata.filterKeys { it !in keysToExtract }
                 
                 val metadataHtml = if(otherMetadata.isNotEmpty()) {
-                    otherMetadata.entries.joinToString("<br>") { "<strong>${it.key}:</strong> ${it.value}" }
+                    otherMetadata.entries.joinToString("<br>") { entry ->
+                        val key = entry.key
+                        val value = entry.value
+                        if (key.contains("token", ignoreCase = true)) {
+                            val color = when {
+                                key.contains("input", ignoreCase = true) -> "#28a745" // Green
+                                key.contains("output", ignoreCase = true) -> "#17a2b8" // Blue
+                                else -> "#6f42c1" // Purple
+                            }
+                            "<strong>${escapeHtml(key)}:</strong> <span style=\"color: $color; font-weight: bold;\">${escapeHtml(value.toString())}</span>"
+                        } else {
+                            "<strong>${escapeHtml(key)}:</strong> ${escapeHtml(value.toString())}"
+                        }
+                    }
                 }
                 else
                 {
@@ -671,8 +684,19 @@ class TraceVisualizer
 
     private fun formatMetadata(metadata: Map<String, Any>): String {
         if(metadata.isEmpty()) return "<p class=\"empty-state\">No metadata recorded for this event.</p>"
-        val items = metadata.entries.joinToString("") { (key, value) ->
-            "<div class=\"metadata-item\"><strong>${escapeHtml(key)}</strong><span>${escapeHtml(value.toString())}</span></div>"
+        val items = metadata.entries.joinToString("") { entry ->
+            val key = entry.key
+            val value = entry.value
+            if (key.contains("token", ignoreCase = true)) {
+                val color = when {
+                    key.contains("input", ignoreCase = true) -> "#28a745" // Green
+                    key.contains("output", ignoreCase = true) -> "#17a2b8" // Blue
+                    else -> "#6f42c1" // Purple
+                }
+                "<div class=\"metadata-item\"><strong>${escapeHtml(key)}</strong><span style=\"color: $color; font-weight: bold;\">${escapeHtml(value.toString())}</span></div>"
+            } else {
+                "<div class=\"metadata-item\"><strong>${escapeHtml(key)}</strong><span>${escapeHtml(value.toString())}</span></div>"
+            }
         }
         return "<div class=\"metadata-grid\">$items</div>"
     }
