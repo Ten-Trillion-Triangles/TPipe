@@ -5953,6 +5953,21 @@ abstract class Pipe : P2PInterface, ProviderInterface {
              */
             result.text = extractReasoningContent(reasoningPipe?.pipeMetadata["reasoningMethod"] as? String ?: "", result)
             contentCopy.modelReasoning += " ${result.text}"
+
+            /**
+             * Push the assistant's previous response into the history so the AI has context
+             * of its previous steps in multi-round setups. This must be done for all rounds
+             * except the last to ensure the next round has context.
+             */
+            if (usingConverse && round < rounds) {
+                val historyForAssistant = deserialize<ConverseHistory>(contentCopy.text) ?: ConverseHistory()
+                //We create a deep copy of the content object so we don't accidentally modify references
+                val assistantContent = result.deepCopy()
+                val assistantData = ConverseData(ConverseRole.assistant, assistantContent)
+                historyForAssistant.add(assistantData)
+                val newJson = serialize(historyForAssistant, encodedefault = false)
+                contentCopy.text = newJson
+            }
         }
 
         if(reasoningBudget > 0)

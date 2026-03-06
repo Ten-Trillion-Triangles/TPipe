@@ -258,25 +258,8 @@ object ReasoningBuilder
             ChainOfDraftResponse::class -> targetPipe.setJsonOutput(jsonOutputObject as ChainOfDraftResponse)
         }
 
-        if(settings.numberOfRounds > 1)
+        if(settings.numberOfRounds <= 1)
         {
-            /**
-             * Require converse history so it can see its prior steps as we go along. Internally at the
-             * execution stage of the pipe itself, we'll adress this and quietly wrap the user's request into
-             * the converse history block as needed. This only matters if we're doing multiple rounds of
-             * reasoning. Otherwise, we won't stomp over whatever was assigned as json input and output.
-             */
-            targetPipe.setJsonOutput(ConverseHistory())
-                .setJsonInput(ConverseHistory())
-                .requireJsonPromptInjection()
-        }
-
-        else
-        {
-            /**
-             * Clamp to 1 so we don't have to ever assume 0 is a number we're having to account for when handling
-             * more reasoning rounds. This also ensures we're defended against any divide by zero errors.
-             */
             settings.numberOfRounds = 1
         }
 
