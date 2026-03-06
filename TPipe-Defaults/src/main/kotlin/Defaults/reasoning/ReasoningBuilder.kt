@@ -260,6 +260,10 @@ object ReasoningBuilder
 
         if(settings.numberOfRounds <= 1)
         {
+            /**
+             * Clamp to 1 so we don't have to ever assume 0 is a number we're having to account for when handling
+             * more reasoning rounds. This also ensures we're defended against any divide by zero errors.
+             */
             settings.numberOfRounds = 1
         }
 
