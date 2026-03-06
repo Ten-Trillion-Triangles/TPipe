@@ -134,9 +134,13 @@ class TraceVisualizer
         val nodeMap = nodes.associate { it.pipeName to it.nodeId }
         
         // Create nodes for each pipe
-        nodes.forEach { node ->
+        nodes.forEachIndexed { index, node ->
             val label = formatNodeLabel(node.pipeName).replace("\n", "<br/>")
-            graph.append("    ${node.nodeId}[\"$label\"]\n")
+            if (index == 0) {
+                graph.append("    ${node.nodeId}{{\"$label\"}}\n")
+            } else {
+                graph.append("    ${node.nodeId}[\"$label\"]\n")
+            }
             graph.append("    click ${node.nodeId} scrollToEvent\n")  // ADD: Click handler
         }
         
@@ -541,8 +545,12 @@ class TraceVisualizer
 
         val nodeMap = nodes.associateBy { it.pipeName }
 
-        nodes.forEach { node ->
-            graph.append("    ${node.nodeId}[\"${escapeHtml(node.pipeName)}\"]\n")
+        nodes.forEachIndexed { index, node ->
+            if (index == 0) {
+                graph.append("    ${node.nodeId}{{\"${escapeHtml(node.pipeName)}\"}}\n")
+            } else {
+                graph.append("    ${node.nodeId}[\"${escapeHtml(node.pipeName)}\"]\n")
+            }
             graph.append("    click ${node.nodeId} scrollToEvent\n")
             val styleClass = when(node.status) {
                 NodeStatus.SUCCESS -> "success"
