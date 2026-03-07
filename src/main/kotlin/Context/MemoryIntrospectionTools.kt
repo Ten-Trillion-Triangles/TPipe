@@ -1,5 +1,7 @@
 package com.TTT.Context
 
+import com.TTT.PipeContextProtocol.ContextOptionParameter
+
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.Config.TPipeConfig
 import com.TTT.PipeContextProtocol.TPipeContextOptions
@@ -244,65 +246,65 @@ object MemoryIntrospectionTools
         addIfMissing(TPipeContextOptions().apply {
             functionName = "getLorebookEntry"
             description = "Retrieves a specific lorebook entry from a page."
-            params["pageKey"] = Triple(ParamType.String, "The page key to access.", emptyList())
-            params["key"] = Triple(ParamType.String, "The lorebook trigger key.", emptyList())
+            params["pageKey"] = ContextOptionParameter(ParamType.String, "The page key to access.", emptyList())
+            params["key"] = ContextOptionParameter(ParamType.String, "The lorebook trigger key.", emptyList())
         })
 
         addIfMissing(TPipeContextOptions().apply {
             functionName = "queryLorebook"
             description = "Performs a structured search on the lorebook of a page. Supports filtering by query string, weight, and keys."
-            params["pageKey"] = Triple(ParamType.String, "The page key to query.", emptyList())
-            params["query"] = Triple(ParamType.String, "Substring to find in keys or values (optional).", emptyList())
-            params["minWeight"] = Triple(ParamType.Int, "Minimum weight for entries (optional).", emptyList())
-            params["extractRegex"] = Triple(ParamType.String, "Regex to extract specific data from matching entries (optional).", emptyList())
+            params["pageKey"] = ContextOptionParameter(ParamType.String, "The page key to query.", emptyList())
+            params["query"] = ContextOptionParameter(ParamType.String, "Substring to find in keys or values (optional).", emptyList())
+            params["minWeight"] = ContextOptionParameter(ParamType.Int, "Minimum weight for entries (optional).", emptyList())
+            params["extractRegex"] = ContextOptionParameter(ParamType.String, "Regex to extract specific data from matching entries (optional).", emptyList())
         })
 
         addIfMissing(TPipeContextOptions().apply {
             functionName = "searchMemory"
             description = "Performs a deep search across all lorebook entries and context elements on a page."
-            params["pageKey"] = Triple(ParamType.String, "The page key to search.", emptyList())
-            params["query"] = Triple(ParamType.String, "The query string to search for.", emptyList())
-            params["extractRegex"] = Triple(ParamType.String, "Regex to extract specific data from matches (optional).", emptyList())
+            params["pageKey"] = ContextOptionParameter(ParamType.String, "The page key to search.", emptyList())
+            params["query"] = ContextOptionParameter(ParamType.String, "The query string to search for.", emptyList())
+            params["extractRegex"] = ContextOptionParameter(ParamType.String, "Regex to extract specific data from matches (optional).", emptyList())
         })
 
         addIfMissing(TPipeContextOptions().apply {
             functionName = "simulateLorebookTrigger"
             description = "Simulates what lorebook entries would be triggered by a specific input text."
-            params["pageKey"] = Triple(ParamType.String, "The page key.", emptyList())
-            params["text"] = Triple(ParamType.String, "The input text to test triggers for.", emptyList())
+            params["pageKey"] = ContextOptionParameter(ParamType.String, "The page key.", emptyList())
+            params["text"] = ContextOptionParameter(ParamType.String, "The input text to test triggers for.", emptyList())
         })
 
         addIfMissing(TPipeContextOptions().apply {
             functionName = "getLorebook"
             description = "Retrieves the entire lorebook for a specific page."
-            params["pageKey"] = Triple(ParamType.String, "The page key to access.", emptyList())
+            params["pageKey"] = ContextOptionParameter(ParamType.String, "The page key to access.", emptyList())
         })
 
         addIfMissing(TPipeContextOptions().apply {
             functionName = "updateLorebookEntry"
             description = "Adds or updates a lorebook entry on a page. Requires write permission."
-            params["pageKey"] = Triple(ParamType.String, "The page key.", emptyList())
-            params["entry"] = Triple(ParamType.Object, "The LoreBook entry object.", emptyList())
+            params["pageKey"] = ContextOptionParameter(ParamType.String, "The page key.", emptyList())
+            params["entry"] = ContextOptionParameter(ParamType.Object, "The LoreBook entry object.", emptyList())
         })
 
         addIfMissing(TPipeContextOptions().apply {
             functionName = "deleteLorebookEntry"
             description = "Deletes a lorebook entry from a page. Requires write permission."
-            params["pageKey"] = Triple(ParamType.String, "The page key.", emptyList())
-            params["key"] = Triple(ParamType.String, "The lorebook trigger key to delete.", emptyList())
+            params["pageKey"] = ContextOptionParameter(ParamType.String, "The page key.", emptyList())
+            params["key"] = ContextOptionParameter(ParamType.String, "The lorebook trigger key to delete.", emptyList())
         })
 
         addIfMissing(TPipeContextOptions().apply {
             functionName = "getTodoList"
             description = "Retrieves the todo list for a page."
-            params["pageKey"] = Triple(ParamType.String, "The page key.", emptyList())
+            params["pageKey"] = ContextOptionParameter(ParamType.String, "The page key.", emptyList())
         })
 
         addIfMissing(TPipeContextOptions().apply {
             functionName = "updateTodoList"
             description = "Updates the todo list for a page. Requires write permission."
-            params["pageKey"] = Triple(ParamType.String, "The page key.", emptyList())
-            params["todoList"] = Triple(ParamType.Object, "The TodoList object.", emptyList())
+            params["pageKey"] = ContextOptionParameter(ParamType.String, "The page key.", emptyList())
+            params["todoList"] = ContextOptionParameter(ParamType.Object, "The TodoList object.", emptyList())
         })
     }
 }

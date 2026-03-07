@@ -108,7 +108,7 @@ class PcpToMcpConverter
                 name = option.functionName.removePrefix("prompt_"),
                 description = option.description,
                 arguments = option.params.map { (name, info) ->
-                    McpPromptArgument(name, info.second, true)
+                    McpPromptArgument(name, info.description, info.isRequired)
                 }
             )
         }
@@ -120,29 +120,31 @@ class PcpToMcpConverter
      * @param params Map of parameter names to type information
      * @return JsonObject representing the input schema
      */
-    private fun buildInputSchema(params: Map<String, Triple<ParamType, String, List<String>>>): JsonObject 
+    private fun buildInputSchema(params: Map<String, ContextOptionParameter>): JsonObject
     {
         val requiredFields = mutableListOf<String>()
         
         // Build properties object from parameter definitions
         val properties = buildJsonObject {
             params.forEach { (paramName, paramInfo) ->
-                // Assume all parameters are required for now
-                requiredFields.add(paramName)
+                if(paramInfo.isRequired)
+                {
+                    requiredFields.add(paramName)
+                }
                 
                 put(paramName, buildJsonObject {
-                    val jsonType = mapParamTypeToJsonType(paramInfo.first)
+                    val jsonType = mapParamTypeToJsonType(paramInfo.type)
                     put("type", jsonType)
                     
-                    if(paramInfo.second.isNotBlank())
+                    if(paramInfo.description.isNotBlank())
                     {
-                        put("description", paramInfo.second)
+                        put("description", paramInfo.description)
                     }
                     
                     // Add enum values if specified
-                    if(paramInfo.third.isNotEmpty())
+                    if(paramInfo.enumValues.isNotEmpty())
                     {
-                        put("enum", JsonArray(paramInfo.third.map { JsonPrimitive(it) }))
+                        put("enum", JsonArray(paramInfo.enumValues.map { JsonPrimitive(it) }))
                     }
                     
                     // Add items for array types

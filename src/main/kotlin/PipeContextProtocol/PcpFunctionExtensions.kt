@@ -37,8 +37,12 @@ fun TPipeContextOptions.fromFunctionSignature(signature: FunctionSignature): TPi
     
     // Convert parameters to PCP format
     signature.parameters.forEach { param ->
-        val paramTriple = Triple(param.type, param.description, param.enumValues)
-        this.params[param.name] = paramTriple
+        this.params[param.name] = ContextOptionParameter(
+            type = param.type,
+            description = param.description,
+            enumValues = param.enumValues,
+            isRequired = !param.isOptional
+        )
     }
     
     return this

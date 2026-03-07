@@ -102,10 +102,10 @@ class McpToPcpConverter
                 functionName = "prompt_${prompt.name}"
                 description = prompt.description ?: ""
                 params = prompt.arguments?.associate { arg ->
-                    arg.name to Triple(
-                        ParamType.String,
-                        arg.description ?: "",
-                        emptyList<String>()
+                    arg.name to ContextOptionParameter(
+                        type = ParamType.String,
+                        description = arg.description ?: "",
+                        isRequired = arg.required ?: false
                     )
                 }?.toMutableMap() ?: mutableMapOf()
             }
@@ -118,9 +118,9 @@ class McpToPcpConverter
      * @param schema The JSON schema object
      * @return Map of parameter names to type information
      */
-    private fun extractParams(schema: JsonObject): MutableMap<String, Triple<ParamType, String, List<String>>> 
+    private fun extractParams(schema: JsonObject): MutableMap<String, ContextOptionParameter>
     {
-        val params = mutableMapOf<String, Triple<ParamType, String, List<String>>>()
+        val params = mutableMapOf<String, ContextOptionParameter>()
         
         // Extract required fields list
         val requiredFields = schema["required"]?.jsonArray?.mapNotNull { 
@@ -140,7 +140,8 @@ class McpToPcpConverter
                     it.jsonPrimitive?.content
                 } ?: emptyList()
                 
-                params[paramName] = Triple(type, description, enumValues)
+                val isRequired = requiredFields.contains(paramName)
+                params[paramName] = ContextOptionParameter(type, description, enumValues, isRequired)
             }
         }
         
