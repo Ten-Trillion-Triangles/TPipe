@@ -88,6 +88,7 @@ Integration guides for different AI providers:
 #### AWS Bedrock
 - [Getting Started with TPipe-Bedrock](docs/bedrock/getting-started.md) - Setup, configuration, and first steps
 - [AWS Bedrock Inference Binding](docs/bedrock/inference-binding.md) - Cross-region model access and configuration
+- [AWS Bedrock Guardrails](docs/bedrock/guardrails.md) - Content safety and moderation with Guardrails
 
 ### 📚 API Reference
 
@@ -153,6 +154,7 @@ println(result.text)
 - **Multi-Stream and Independent Tracing** for parallel pipelines and complex orchestration
 - **Cross-region inference** with automatic profile binding for AWS Bedrock
 - **Service tier optimization** for AWS Bedrock (Reserved, Priority, Standard, Flex)
+- **Content safety with AWS Bedrock Guardrails** for automatic content moderation and policy enforcement
 - **Enhanced security** with DNS rebinding protection, AST-based Python validation, and UUID session IDs
 
 ## Requirements

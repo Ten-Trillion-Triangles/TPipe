@@ -18,7 +18,7 @@
 
 ## Overview
 
-The TPipe-MCP package provides bidirectional conversion between Model Context Protocol (MCP) and TPipe's Pipe Context Protocol (PCP), enabling seamless integration with MCP-compatible tools and services.
+The TPipe-MCP package provides bidirectional conversion between Model Context Protocol (MCP) and TPipe's Pipe Context Protocol (PCP), enabling seamless integration with MCP-compatible tools and services. Implements Model Context Protocol specification **2025-11-25** with full compliance verified through integration tests.
 
 ---
 

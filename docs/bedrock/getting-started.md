@@ -349,6 +349,58 @@ ContextBank.emplaceWithMutex("companyInfo", context)
 val result = runBlocking { pipe.execute("Tell me about ACME Corp") }
 ```
 
+### Content Safety with Guardrails
+
+AWS Bedrock Guardrails provide content moderation and safety controls for AI applications. Guardrails automatically filter both user inputs and model outputs against configured policies.
+
+#### Basic Guardrail Configuration
+
+```kotlin
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setGuardrail(
+        identifier = "abc123def456",  // Your guardrail ID from AWS Console
+        version = "1"                  // Version number or "DRAFT"
+    )
+    .setSystemPrompt("You are a helpful assistant.")
+
+runBlocking {
+    pipe.init()
+    
+    // Guardrail automatically applied to all interactions
+    val result = pipe.execute("User message")
+    println(result.text)
+}
+```
+
+#### Standalone Content Evaluation
+
+Validate content without invoking foundation models:
+
+```kotlin
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setGuardrail("abc123def456", "1")
+
+runBlocking {
+    pipe.init()
+    
+    // Pre-validate user input
+    val assessment = pipe.applyGuardrailStandalone(
+        content = userInput,
+        source = "INPUT"
+    )
+    
+    when (assessment?.action) {
+        "GUARDRAIL_INTERVENED" -> println("Content blocked by guardrail")
+        "NONE" -> println("Content passed guardrail checks")
+    }
+}
+```
+
+**See Also:** [AWS Bedrock Guardrails Guide](guardrails.md) for comprehensive documentation including IAM requirements, trace debugging, pipeline integration, and best practices.
+
 ### Developer-in-the-Loop Functions
 ```kotlin
 val pipe = BedrockPipe()

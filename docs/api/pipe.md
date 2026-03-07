@@ -730,6 +730,85 @@ Disables streaming mode and clears all callbacks.
 
 ---
 
+### AWS Bedrock Guardrails (BedrockPipe)
+
+AWS Bedrock Guardrails provide content moderation and safety controls. These methods are specific to BedrockPipe.
+
+#### `setGuardrail(identifier: String, version: String = "DRAFT", enableTrace: Boolean = false): BedrockPipe`
+Configures AWS Bedrock Guardrail for content filtering.
+
+**Parameters:**
+- `identifier`: Guardrail ID or ARN from AWS Bedrock Console
+- `version`: Guardrail version number or "DRAFT" (default: "DRAFT")
+- `enableTrace`: Enable guardrail tracing for debugging (default: false)
+
+**Behavior:** Guardrails automatically evaluate both user inputs and model responses against configured policies including content filters, denied topics, sensitive information filters, and word filters. Requires `bedrock:ApplyGuardrail` IAM permission.
+
+**Example:**
+```kotlin
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setGuardrail("abc123def456", "1", enableTrace = true)
+```
+
+#### `enableFullGuardrailTrace(): BedrockPipe`
+Enables comprehensive guardrail tracing including non-detected content.
+
+**Behavior:** Provides enhanced debugging for content filters, denied topics, PII detection, and contextual grounding policies. Sets trace mode to "enabled_full".
+
+**Example:**
+```kotlin
+val pipe = BedrockPipe()
+    .setGuardrail("abc123def456", "DRAFT")
+    .enableFullGuardrailTrace()
+```
+
+#### `clearGuardrail(): BedrockPipe`
+Removes guardrail configuration and disables content filtering.
+
+**Example:**
+```kotlin
+pipe.clearGuardrail()
+```
+
+#### `suspend fun applyGuardrailStandalone(content: String, source: String = "INPUT", fullOutput: Boolean = false): ApplyGuardrailResponse?`
+Evaluates content against configured guardrail without invoking foundation models.
+
+**Parameters:**
+- `content`: Text content to evaluate
+- `source`: "INPUT" for user input or "OUTPUT" for model output (default: "INPUT")
+- `fullOutput`: Return full assessment including non-detected content (default: false)
+
+**Returns:** `ApplyGuardrailResponse` containing action taken and detailed assessments, or null on failure.
+
+**Throws:**
+- `IllegalStateException` if guardrail is not configured
+- `IllegalArgumentException` if client is not initialized
+
+**Behavior:** Allows independent content validation at any stage of application flow. Useful for pre-validating user input, checking content at multiple pipeline stages, or implementing custom content moderation workflows. Requires prior guardrail configuration via `setGuardrail()`.
+
+**Example:**
+```kotlin
+runBlocking {
+    pipe.init()
+    
+    val assessment = pipe.applyGuardrailStandalone(
+        content = userInput,
+        source = "INPUT"
+    )
+    
+    when (assessment?.action) {
+        "GUARDRAIL_INTERVENED" -> println("Content blocked")
+        "NONE" -> println("Content passed checks")
+    }
+}
+```
+
+**See Also:** [AWS Bedrock Guardrails Guide](../bedrock/guardrails.md) for comprehensive documentation.
+
+---
+
 ### Function Hooks
 
 #### `infix fun setValidatorFunction(func: suspend (MultimodalContent) -> Boolean): Pipe`
