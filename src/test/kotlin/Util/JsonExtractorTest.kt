@@ -58,4 +58,64 @@ class JsonExtractorTest
         assertEquals(1, array[0].jsonObject["id"]?.jsonPrimitive?.int)
         assertEquals("two", array[1].jsonObject["id"]?.jsonPrimitive?.content)
     }
+
+    @Test
+    fun `extractNonJsonText returns only non-JSON text`()
+    {
+        val input = "Hello {\"key\":\"value\"} World"
+        val expected = "Hello  World"
+        assertEquals(expected, extractNonJsonText(input))
+    }
+
+    @Test
+    fun `extractNonJsonText removes multiple JSON objects and arrays`()
+    {
+        val input = "Prefix {\"a\": 1} Middle [1, 2] Suffix"
+        val expected = "Prefix  Middle  Suffix"
+        assertEquals(expected, extractNonJsonText(input))
+    }
+
+    @Test
+    fun `extractNonJsonText handles nested JSON objects inside arrays`()
+    {
+        val input = "text [1, {\"a\": 1}, 2] text"
+        val expected = "text [1, , 2] text"
+        assertEquals(expected, extractNonJsonText(input))
+    }
+
+    @Test
+    fun `extractNonJsonText handles empty input`()
+    {
+        val input = ""
+        val expected = ""
+        assertEquals(expected, extractNonJsonText(input))
+    }
+
+    @Test
+    fun `extractNonJsonText handles input with no JSON`()
+    {
+        val input = "This is just regular text without any JSON."
+        val expected = "This is just regular text without any JSON."
+        assertEquals(expected, extractNonJsonText(input))
+    }
+
+    @Test
+    fun `extractNonJsonText handles input that is only JSON`()
+    {
+        val input = "{\"key\":\"value\"}"
+        assertEquals("", extractNonJsonText(input))
+
+        val input2 = "[1, 2, 3]"
+        assertEquals("", extractNonJsonText(input2))
+    }
+
+    @Test
+    fun `extractNonJsonText handles unclosed JSON-like structures gracefully`()
+    {
+        val input1 = "Text with unclosed { object and text"
+        assertEquals("Text with unclosed ", extractNonJsonText(input1))
+
+        val input2 = "Text with unclosed [ array and text"
+        assertEquals("Text with unclosed ", extractNonJsonText(input2))
+    }
 }
