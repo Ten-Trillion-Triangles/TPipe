@@ -12,6 +12,13 @@ import aws.sdk.kotlin.services.bedrockruntime.model.InferenceConfiguration
 import aws.sdk.kotlin.services.bedrockruntime.model.ConversationRole
 import aws.sdk.kotlin.services.bedrockruntime.model.ResponseStream
 import aws.sdk.kotlin.services.bedrockruntime.model.GuardrailStreamConfiguration
+import aws.sdk.kotlin.services.bedrockruntime.model.GuardrailConfiguration
+import aws.sdk.kotlin.services.bedrockruntime.model.ApplyGuardrailRequest
+import aws.sdk.kotlin.services.bedrockruntime.model.ApplyGuardrailResponse
+import aws.sdk.kotlin.services.bedrockruntime.model.GuardrailContentBlock
+import aws.sdk.kotlin.services.bedrockruntime.model.GuardrailTextBlock
+import aws.sdk.kotlin.services.bedrockruntime.model.GuardrailContentSource
+import aws.sdk.kotlin.services.bedrockruntime.model.GuardrailTrace
 import aws.sdk.kotlin.services.bedrockruntime.model.ServiceTierType
 import aws.sdk.kotlin.services.bedrockruntime.model.ServiceTier
 import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
@@ -263,6 +270,26 @@ open class BedrockPipe : Pipe()
     private var serviceTier: BedrockPriorityTier = BedrockPriorityTier.Standard
     
     /**
+     * Guardrail identifier for content filtering and safety policies.
+     * Can be guardrail ID or ARN.
+     */
+    @kotlinx.serialization.Serializable
+    private var guardrailIdentifier: String = ""
+
+    /**
+     * Version of the guardrail to use. Can be version number or "DRAFT".
+     */
+    @kotlinx.serialization.Serializable
+    private var guardrailVersion: String = ""
+
+    /**
+     * Guardrail trace setting for debugging guardrail decisions.
+     * Values: "enabled", "disabled", "enabled_full"
+     */
+    @kotlinx.serialization.Serializable
+    private var guardrailTrace: String = "disabled"
+
+    /**
      * Sets the AWS region for Bedrock API calls.
      * 
      * Configures which AWS region will be used for all Bedrock operations.
@@ -433,6 +460,129 @@ open class BedrockPipe : Pipe()
      * @return This pipe instance for method chaining
      * @see BedrockPriorityTier for available tier options
      */
+    /**
+     * Sets the guardrail to use for content filtering and safety policies.
+     * Guardrails evaluate both user inputs and model responses against configured policies
+     * including content filters, denied topics, sensitive information filters, and word filters.
+     *
+     * @param identifier The guardrail identifier (ID or ARN)
+     * @param version The guardrail version to use (version number or "DRAFT")
+     * @param enableTrace Enable guardrail tracing for debugging (default: false)
+     * @return This BedrockPipe instance for method chaining
+     *
+     * @see clearGuardrail to remove guardrail configuration
+     * @see applyGuardrailStandalone for standalone content evaluation
+     *
+     * @since Requires bedrock:ApplyGuardrail IAM permission
+     */
+    fun setGuardrail(identifier: String, version: String = "DRAFT", enableTrace: Boolean = false): BedrockPipe {
+        this.guardrailIdentifier = identifier
+        this.guardrailVersion = version
+        this.guardrailTrace = if (enableTrace) "enabled" else "disabled"
+        return this
+    }
+
+    /**
+     * Enables full guardrail tracing which includes both detected and non-detected content
+     * for enhanced debugging. Only applies to content filters, denied topics, sensitive
+     * information PII detection, and contextual grounding policies.
+     *
+     * @return This BedrockPipe instance for method chaining
+     */
+    fun enableFullGuardrailTrace(): BedrockPipe {
+        this.guardrailTrace = "enabled_full"
+        return this
+    }
+
+    /**
+     * Clears the guardrail configuration, disabling content filtering.
+     *
+     * @return This BedrockPipe instance for method chaining
+     */
+    fun clearGuardrail(): BedrockPipe {
+        this.guardrailIdentifier = ""
+        this.guardrailVersion = ""
+        this.guardrailTrace = "disabled"
+        return this
+    }
+
+    /**
+     * Evaluates content against the configured guardrail without invoking foundation models.
+     * This allows independent content validation at any stage of your application flow.
+     *
+     * @param content The text content to evaluate
+     * @param source Whether content is from user input ("INPUT") or model output ("OUTPUT")
+     * @param fullOutput Return full assessment including non-detected content for debugging
+     * @return ApplyGuardrailResponse containing action taken and detailed assessments
+     *
+     * @throws IllegalStateException if guardrail is not configured
+     * @throws IllegalArgumentException if client is not initialized
+     *
+     * @see setGuardrail to configure guardrail before calling this method
+     *
+     * @since Requires bedrock:ApplyGuardrail IAM permission
+     */
+    suspend fun applyGuardrailStandalone(
+        content: String,
+        source: String = "INPUT",
+        fullOutput: Boolean = false
+    ): ApplyGuardrailResponse? {
+        // Validate guardrail configuration
+        if (guardrailIdentifier.isEmpty()) {
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                  metadata = mapOf("error" to "Guardrail not configured"))
+            throw IllegalStateException("Guardrail must be configured before calling applyGuardrailStandalone. Use setGuardrail() first.")
+        }
+
+        // Validate client initialization
+        val client = bedrockClient ?: run {
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                  metadata = mapOf("error" to "Client not initialized"))
+            throw IllegalArgumentException("BedrockPipe must be initialized before applying guardrails. Call init() first.")
+        }
+
+        trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
+              metadata = mapOf(
+                  "method" to "applyGuardrailStandalone",
+                  "guardrailId" to guardrailIdentifier,
+                  "guardrailVersion" to guardrailVersion,
+                  "source" to source,
+                  "contentLength" to content.length,
+                  "fullOutput" to fullOutput
+              ))
+
+        return try {
+            val request = ApplyGuardrailRequest {
+                this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
+                this.guardrailVersion = this@BedrockPipe.guardrailVersion
+                this.source = GuardrailContentSource.fromValue(source)
+                this.content = listOf(
+                    GuardrailContentBlock.Text(
+                        GuardrailTextBlock {
+                            this.text = content
+                        }
+                    )
+                )
+            }
+
+            val response = client.applyGuardrail(request)
+
+            trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+                  metadata = mapOf(
+                      "action" to response.action.toString(),
+                      "outputCount" to (response.outputs?.size ?: 0) as Any,
+                      "hasAssessments" to (response.assessments?.isNotEmpty() ?: false) as Any
+                  ))
+
+            response
+
+        } catch (e: Exception) {
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                  metadata = mapOf("error" to (e.message ?: "Unknown error") as Any), error = e)
+            null
+        }
+    }
+
     fun setServiceTier(tier: BedrockPriorityTier): BedrockPipe
     {
         this.serviceTier = tier
@@ -950,6 +1100,13 @@ open class BedrockPipe : Pipe()
             body = requestJson.toByteArray()
             contentType = "application/json"
             serviceTier = mapServiceTier()
+
+            // Add guardrail configuration if set
+            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
+                this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
+                this.guardrailVersion = this@BedrockPipe.guardrailVersion
+                this.trace = aws.sdk.kotlin.services.bedrockruntime.model.Trace.fromValue(guardrailTrace)
+            }
         }
 
         val response = client.invokeModel(invokeRequest)
@@ -1673,6 +1830,19 @@ put("system", if(enableCaching && cacheControl != null) {
      * Builds a Converse API request object for GPT-OSS models using the same
      * structure as the Invoke API request builder.
      */
+    /**
+     * Applies guardrail configuration to ConverseRequest builder.
+     */
+    private fun aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest.Builder.applyGuardrailConfig() {
+        if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
+            this.guardrailConfig = GuardrailConfiguration {
+                this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
+                this.guardrailVersion = this@BedrockPipe.guardrailVersion
+                this.trace = GuardrailTrace.fromValue(this@BedrockPipe.guardrailTrace)
+            }
+        }
+    }
+
     fun buildGptOssConverseRequest(modelId: String, contentBlocks: List<ContentBlock>): ConverseRequest {
         // For ContentBlocks, we need to extract text to reuse existing JSON logic
         val promptText = contentBlocks.filterIsInstance<ContentBlock.Text>()
@@ -1727,6 +1897,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -1828,6 +1999,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
 
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -2149,6 +2321,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -2599,6 +2772,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -2651,6 +2825,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -2703,6 +2878,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
 
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -2972,6 +3148,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
 
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -3184,6 +3361,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -3242,6 +3420,7 @@ put("system", if(enableCaching && cacheControl != null) {
             additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -3286,6 +3465,7 @@ put("system", if(enableCaching && cacheControl != null) {
             additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -3333,6 +3513,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -3381,6 +3562,7 @@ put("system", if(enableCaching && cacheControl != null) {
             additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -3421,6 +3603,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -3491,6 +3674,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyGuardrailConfig()
         }
     }
 
@@ -3985,6 +4169,13 @@ put("system", if(enableCaching && cacheControl != null) {
             body = requestJson.toByteArray()
             contentType = "application/json"
             accept = "application/json"
+
+            // Add guardrail configuration if set
+            if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
+                this.guardrailIdentifier = this@BedrockPipe.guardrailIdentifier
+                this.guardrailVersion = this@BedrockPipe.guardrailVersion
+                this.trace = aws.sdk.kotlin.services.bedrockruntime.model.Trace.fromValue(guardrailTrace)
+            }
         }
 
         return try {
