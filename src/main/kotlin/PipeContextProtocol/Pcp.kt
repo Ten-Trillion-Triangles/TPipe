@@ -165,13 +165,23 @@ data class TPipeContextOptions(@kotlinx.serialization.Transient val cinit : Bool
 
     /**
      * List of all function parameters, containing the variable type of the param, an optional description,
-     * and a list of all possible enum values if it's an enum type. If not, this value should not be applied
-     * and will be discarded by the PCP constructor.
+     * a list of all possible enum values if it's an enum type, and a boolean indicating if it is required.
      */
     @kotlinx.serialization.Serializable
-    var params = mutableMapOf<String, Triple<ParamType, String, List<String> > >()
+    var params = mutableMapOf<String, ContextOptionParameter>()
 
 }
+
+/**
+ * Parameter options for a specific context option argument.
+ */
+@kotlinx.serialization.Serializable
+data class ContextOptionParameter(
+    val type: ParamType,
+    val description: String,
+    val enumValues: List<String> = emptyList(),
+    val isRequired: Boolean = false
+)
 
 /**
  * Context options for HTTP requests. Allows the LLM to make HTTP calls with specified constraints.

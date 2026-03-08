@@ -1528,6 +1528,9 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 |Available tools:
                 |${pcpAsJson}
                 |
+                |Each tool's parameters include an "isRequired" field - you MUST provide all parameters where isRequired is true, 
+                |while parameters where isRequired is false are optional and may be omitted.
+                |
                 |If you wish to call any tools, return an array of the following json:
                 |[${pcpRequestExample}]
                 |
@@ -1549,8 +1552,9 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 |The Pipe Context Protocol is a standardized way to communicate with user's machine. The protocol is as follows:
                 |${pcpAsJson}
                 |
-                |The above Pipe Context Protocol json defines each tool you can call and what it can do. You may use any of it
-                |to complete the task the user has requested of you.
+                |The above Pipe Context Protocol json defines each tool you can call and what it can do. Each tool's parameters 
+                |include an "isRequired" field - you MUST provide all parameters where isRequired is true, while parameters 
+                |where isRequired is false are optional and may be omitted.
                 |
                 |If you wish to call or use any tools provided to you return an array of the following json for each tool you wish to call:
                 |${pcpRequestAsJson}

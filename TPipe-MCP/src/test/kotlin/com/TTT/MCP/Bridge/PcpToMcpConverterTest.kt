@@ -29,7 +29,7 @@ class PcpToMcpConverterTest
             functionName = "test_function"
             description = "Test description"
             params = mutableMapOf(
-                "param1" to Triple(ParamType.String, "String parameter", emptyList())
+                "param1" to ContextOptionParameter(ParamType.String, "String parameter", emptyList())
             )
         }
         pcpContext.addTPipeOption(tpipeOption)

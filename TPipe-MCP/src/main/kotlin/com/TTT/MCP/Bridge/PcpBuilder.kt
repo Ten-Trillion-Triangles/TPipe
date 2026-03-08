@@ -31,7 +31,7 @@ class PcpBuilder
     fun addTPipeFunction(
         name: String, 
         description: String, 
-        params: Map<String, Triple<ParamType, String, List<String>>>
+        params: Map<String, ContextOptionParameter>
     ): PcpBuilder 
     {
         // Create TPipe context option with provided parameters

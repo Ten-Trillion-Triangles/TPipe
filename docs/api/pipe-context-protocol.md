@@ -167,6 +167,26 @@ Determines transport type based on populated context options.
 
 ## Context Options
 
+
+### ContextOptionParameter
+
+Data class defining a parameter for a context option.
+
+```kotlin
+data class ContextOptionParameter(
+    val type: ParamType,
+    val description: String,
+    val enumValues: List<String> = emptyList(),
+    val isRequired: Boolean = false
+)
+```
+
+**Properties:**
+- `type: ParamType`: The data type of the parameter (e.g., `String`, `Int`, `List`).
+- `description: String`: Optional explanation of the parameter for the LLM.
+- `enumValues: List<String>`: List of allowed values if the parameter acts as an enum.
+- `isRequired: Boolean`: Boolean indicating whether the LLM is required to provide this parameter.
+
 ### StdioContextOptions
 
 Configuration for stdio command execution.
