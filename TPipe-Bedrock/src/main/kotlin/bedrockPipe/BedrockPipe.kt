@@ -1542,7 +1542,7 @@ open class BedrockPipe : Pipe()
         if(!pcpContext.tpipeOptions.isEmpty())
         {
             systemMessages.add(buildJsonObject {
-                put("text", "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}")
+                put("text", "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}\n\nEach tool's parameters include an \"isRequired\" field - you MUST provide all parameters where isRequired is true, while parameters where isRequired is false are optional and may be omitted.")
             })
         }
 
@@ -1777,7 +1777,7 @@ put("system", if(enableCaching && cacheControl != null) {
         // Add PCP context as system instruction (developer role equivalent)
         if(!pcpContext.tpipeOptions.isEmpty())
         {
-            val pcpInstructions = "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
+            val pcpInstructions = "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}\n\nEach tool's parameters include an \"isRequired\" field - you MUST provide all parameters where isRequired is true, while parameters where isRequired is false are optional and may be omitted."
             systemBlocks.add(buildJsonObject {
                 put("text", pcpInstructions)
             })
@@ -1929,7 +1929,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             if(!pcpContext.tpipeOptions.isEmpty())
             {
-                val pcpPrompt = "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
+                val pcpPrompt = "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}\n\nEach tool's parameters include an \"isRequired\" field - you MUST provide all parameters where isRequired is true, while parameters where isRequired is false are optional and may be omitted."
                 if(systemPrompt.isNotEmpty())
                 {
                     put("system", systemPrompt + "\n\n" + pcpPrompt)
@@ -1973,7 +1973,7 @@ put("system", if(enableCaching && cacheControl != null) {
         if(!pcpContext.tpipeOptions.isEmpty())
         {
             systemBlocks.add(SystemContentBlock.Text(
-                "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
+                "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}\n\nEach tool's parameters include an \"isRequired\" field - you MUST provide all parameters where isRequired is true, while parameters where isRequired is false are optional and may be omitted."
             ))
         }
 
@@ -2850,7 +2850,7 @@ put("system", if(enableCaching && cacheControl != null) {
         if(!pcpContext.tpipeOptions.isEmpty())
         {
             systemBlocks.add(SystemContentBlock.Text(
-                "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
+                "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}\n\nEach tool's parameters include an \"isRequired\" field - you MUST provide all parameters where isRequired is true, while parameters where isRequired is false are optional and may be omitted."
             ))
         }
 
@@ -3074,7 +3074,7 @@ put("system", if(enableCaching && cacheControl != null) {
         if(!pcpContext.tpipeOptions.isEmpty())
         {
             systemMessages.add(buildJsonObject {
-                put("text", "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}")
+                put("text", "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}\n\nEach tool's parameters include an \"isRequired\" field - you MUST provide all parameters where isRequired is true, while parameters where isRequired is false are optional and may be omitted.")
             })
         }
 
@@ -3120,7 +3120,7 @@ put("system", if(enableCaching && cacheControl != null) {
         if(!pcpContext.tpipeOptions.isEmpty())
         {
             systemBlocks.add(SystemContentBlock.Text(
-                "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
+                "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}\n\nEach tool's parameters include an \"isRequired\" field - you MUST provide all parameters where isRequired is true, while parameters where isRequired is false are optional and may be omitted."
             ))
         }
 
@@ -3651,7 +3651,7 @@ put("system", if(enableCaching && cacheControl != null) {
          */
         if(!pcpContext.tpipeOptions.isEmpty())
         {
-            val pcpInstructions = "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}"
+            val pcpInstructions = "Available tools: ${com.TTT.Util.serialize(pcpContext, false)}\n\nEach tool's parameters include an \"isRequired\" field - you MUST provide all parameters where isRequired is true, while parameters where isRequired is false are optional and may be omitted."
             systemBlocks.add(SystemContentBlock.Text(pcpInstructions))
         }
         
