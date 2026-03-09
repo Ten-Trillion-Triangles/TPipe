@@ -57,6 +57,7 @@ data class TruncationSettings(
          var alwaysSplitIfWholeWordExists: Boolean = false,
          var countSubWordsIfSplit: Boolean = false,
          var nonWordSplitCount: Int = 4,
+         var tokenCountingBias: Double = 0.0,
          var fillMode: Boolean = false,
          var multiPageBudgetStrategy: MultiPageBudgetStrategy? = null,
          var pageWeights: Map<String, Double>? = null)
@@ -1172,6 +1173,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     protected var alwaysSplitIfWholeWordExists: Boolean = false
     protected var countSubWordsIfSplit: Boolean = true
     protected var nonWordSplitCount: Int = 2
+    protected var tokenCountingBias: Double = 0.0
 
     /**
      * Tracing system properties for debugging and monitoring pipe execution.
@@ -3432,6 +3434,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
+     * Set the token counting bias for this pipe.
+     */
+    fun setTokenCountingBias(value: Double): Pipe {
+        this.tokenCountingBias = value
+        return this
+    }
+
+    /**
      * Activate pipe timeout system. This allows for a pipe to be stopped in the event the llm
      * hangs, the provider hangs, or another system failure occurs that prevents the framework
      * from detecting a dropped connection, or if the connection gets stuck and never drops.
@@ -3846,6 +3856,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         returnVar.splitForNonWordChar = splitForNonWordChar
         returnVar.multiplyWindowSizeBy = multiplyWindowSizeBy
         returnVar.countSubWordsIfSplit = countSubWordsIfSplit
+        returnVar.tokenCountingBias = tokenCountingBias
         returnVar.alwaysSplitIfWholeWordExists = alwaysSplitIfWholeWordExists
         returnVar.countSubWordsInFirstWord = countSubWordsInFirstWord
 

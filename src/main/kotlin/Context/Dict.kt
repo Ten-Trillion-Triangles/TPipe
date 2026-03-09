@@ -96,7 +96,8 @@ object Dictionary
             settings.splitForNonWordChar,
             settings.alwaysSplitIfWholeWordExists,
             settings.countSubWordsIfSplit,
-            settings.nonWordSplitCount
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias
         )
     }
 
@@ -130,7 +131,8 @@ object Dictionary
         splitForNonWordChar : Boolean = true,
         alwaysSplitIfWholeWordExists : Boolean = false,
         countSubWordsIfSplit : Boolean = false,
-        nonWordSplitCount : Int = 4
+        nonWordSplitCount : Int = 4,
+        tokenCountingBias: Double = 0.0
 
         ) : Int
     {
@@ -267,7 +269,7 @@ object Dictionary
             tokenCount += maxOf(1, wordTokens)
         }
 
-        return tokenCount
+        return Math.round(tokenCount * (1.0 + tokenCountingBias)).toInt()
     }
 
 
@@ -306,7 +308,8 @@ object Dictionary
         splitForNonWordChar : Boolean = true,
         alwaysSplitIfWholeWordExists : Boolean = false,
         countSubWordsIfSplit : Boolean = false,
-        nonWordSplitCount : Int = 4
+        nonWordSplitCount : Int = 4,
+        tokenCountingBias: Double = 0.0
 
         ) : String
     {
@@ -321,7 +324,7 @@ object Dictionary
         // Check current token count using same parameters
         val currentTokens = countTokens(
             text, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound, 
-            splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+            splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
         )
         
         // Return original text if already within limit
@@ -344,7 +347,7 @@ object Dictionary
                 {
                     val wordTokens = countTokens(
                         words[i], countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
                     )
                     
                     // Add word if it fits within token limit
@@ -370,7 +373,7 @@ object Dictionary
                 {
                     val wordTokens = countTokens(
                         word, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
                     )
                     
                     // Add word if it fits within token limit
@@ -400,7 +403,7 @@ object Dictionary
                 {
                     val wordTokens = countTokens(
                         word, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
                     )
                     
                     if(topTokens + wordTokens <= halfTarget)
@@ -416,7 +419,7 @@ object Dictionary
                 {
                     val wordTokens = countTokens(
                         words[i], countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
                     )
                     
                     // Only add if within token limit and not overlapping with top words
@@ -455,7 +458,8 @@ object Dictionary
           splitForNonWordChar = settings.splitForNonWordChar,
           alwaysSplitIfWholeWordExists = settings.alwaysSplitIfWholeWordExists,
           countSubWordsIfSplit = settings.countSubWordsIfSplit,
-          nonWordSplitCount = settings.nonWordSplitCount
+          nonWordSplitCount = settings.nonWordSplitCount,
+          tokenCountingBias = settings.tokenCountingBias
       )
     }
 
@@ -489,7 +493,8 @@ object Dictionary
         splitForNonWordChar : Boolean = true,
         alwaysSplitIfWholeWordExists : Boolean = false,
         countSubWordsIfSplit : Boolean = false,
-        nonWordSplitCount : Int = 4
+        nonWordSplitCount : Int = 4,
+        tokenCountingBias: Double = 0.0
 
         ) : List<String>
     {
@@ -505,7 +510,7 @@ object Dictionary
         val totalTokens = messages.sumOf { message ->
             countTokens(
                 message, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
             )
         }
         
@@ -526,7 +531,7 @@ object Dictionary
                 {
                     val messageTokens = countTokens(
                         messages[i], countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
                     )
                     
                     // Add message if it fits within token limit
@@ -552,7 +557,7 @@ object Dictionary
                 {
                     val messageTokens = countTokens(
                         message, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
                     )
                     
                     // Add message if it fits within token limit
@@ -582,7 +587,7 @@ object Dictionary
                 {
                     val messageTokens = countTokens(
                         message, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
                     )
                     
                     if(topTokens + messageTokens <= halfTarget)
@@ -598,7 +603,7 @@ object Dictionary
                 {
                     val messageTokens = countTokens(
                         messages[i], countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                        splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
                     )
                     
                     // Only add if within token limit and not overlapping with top messages
