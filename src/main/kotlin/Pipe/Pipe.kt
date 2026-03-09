@@ -48,6 +48,7 @@ import kotlin.math.absoluteValue
 import kotlin.reflect.KClass
 
 //==============================================Data Classes==========================================================//
+@kotlinx.serialization.Serializable
 data class TruncationSettings(
          var multiplyWindowSizeBy: Int = 0,
          var countSubWordsInFirstWord: Boolean = true,
