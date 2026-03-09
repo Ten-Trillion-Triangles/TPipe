@@ -161,7 +161,8 @@ data class ContextWindow(
         splitForNonWordChar: Boolean = true,
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
-        nonWordSplitCount: Int = 4
+        nonWordSplitCount: Int = 4,
+        tokenCountingBias: Double = 0.0
     ): List<String> {
         // Step 1: Find all lorebook keys that match substrings in the input text (includes aliases)
         val matchingKeys = findMatchingLoreBookKeys(text)
@@ -248,7 +249,7 @@ data class ContextWindow(
             val valueTokens = Dictionary.countTokens(
                 loreBook.value, countSubWordsInFirstWord, favorWholeWords, 
                 countOnlyFirstWordFound, splitForNonWordChar, alwaysSplitIfWholeWordExists, 
-                countSubWordsIfSplit, nonWordSplitCount
+                countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
             )
             
             // Only add if it fits within remaining token budget
@@ -286,7 +287,8 @@ data class ContextWindow(
         splitForNonWordChar: Boolean = true,
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
-        nonWordSplitCount: Int = 4
+        nonWordSplitCount: Int = 4,
+        tokenCountingBias: Double = 0.0
     ): List<String>
     {
         if(maxTokens <= 0) return listOf()
@@ -300,7 +302,8 @@ data class ContextWindow(
             splitForNonWordChar,
             alwaysSplitIfWholeWordExists,
             countSubWordsIfSplit,
-            nonWordSplitCount
+            nonWordSplitCount,
+            tokenCountingBias
         )
 
         val selectedKeys = priorityKeys.toMutableList()
@@ -317,7 +320,8 @@ data class ContextWindow(
                 splitForNonWordChar,
                 alwaysSplitIfWholeWordExists,
                 countSubWordsIfSplit,
-                nonWordSplitCount
+                nonWordSplitCount,
+                tokenCountingBias
             )
         }
 
@@ -343,7 +347,8 @@ data class ContextWindow(
                 splitForNonWordChar,
                 alwaysSplitIfWholeWordExists,
                 countSubWordsIfSplit,
-                nonWordSplitCount
+                nonWordSplitCount,
+                tokenCountingBias
             )
 
             if(usedTokens + tokenCost <= maxTokens)
@@ -376,7 +381,8 @@ data class ContextWindow(
             settings.splitForNonWordChar,
             settings.alwaysSplitIfWholeWordExists,
             settings.countSubWordsIfSplit,
-            settings.nonWordSplitCount
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias
         )
     }
     
@@ -399,7 +405,8 @@ data class ContextWindow(
             settings.splitForNonWordChar,
             settings.alwaysSplitIfWholeWordExists,
             settings.countSubWordsIfSplit,
-            settings.nonWordSplitCount
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias
         )
     }
     
@@ -577,6 +584,7 @@ data class ContextWindow(
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
         nonWordSplitCount: Int = 4,
+        tokenCountingBias: Double = 0.0,
         inputText: String = "",
         preserveTextMatches: Boolean = false
     ) {
@@ -604,7 +612,8 @@ data class ContextWindow(
                         splitForNonWordChar,
                         alwaysSplitIfWholeWordExists,
                         countSubWordsIfSplit,
-                        nonWordSplitCount
+                        nonWordSplitCount,
+                        tokenCountingBias
                     )
                 }
 
@@ -624,7 +633,8 @@ data class ContextWindow(
                         splitForNonWordChar,
                         alwaysSplitIfWholeWordExists,
                         countSubWordsIfSplit,
-                        nonWordSplitCount
+                        nonWordSplitCount,
+                        tokenCountingBias
                     )
                 }
 
@@ -637,7 +647,8 @@ data class ContextWindow(
                         splitForNonWordChar,
                         alwaysSplitIfWholeWordExists,
                         countSubWordsIfSplit,
-                        nonWordSplitCount
+                        nonWordSplitCount,
+                        tokenCountingBias
                     )
                 }
 
@@ -654,7 +665,8 @@ data class ContextWindow(
                         splitForNonWordChar,
                         alwaysSplitIfWholeWordExists,
                         countSubWordsIfSplit,
-                        nonWordSplitCount
+                        nonWordSplitCount,
+                        tokenCountingBias
                     )
                 }
                 else
@@ -678,7 +690,8 @@ data class ContextWindow(
             splitForNonWordChar,
             alwaysSplitIfWholeWordExists,
             countSubWordsIfSplit,
-            nonWordSplitCount
+            nonWordSplitCount,
+            tokenCountingBias
         ).toMutableList()
     }
     
@@ -710,6 +723,7 @@ data class ContextWindow(
             settings.alwaysSplitIfWholeWordExists,
             settings.countSubWordsIfSplit,
             settings.nonWordSplitCount,
+            settings.tokenCountingBias,
             fillMode,
             preserveTextMatches
         )
@@ -743,6 +757,7 @@ data class ContextWindow(
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
         nonWordSplitCount: Int = 4,
+        tokenCountingBias: Double = 0.0,
         fillMode: Boolean = false,
         preserveTextMatches: Boolean = false
     ) {
@@ -771,7 +786,8 @@ data class ContextWindow(
                 splitForNonWordChar,
                 alwaysSplitIfWholeWordExists,
                 countSubWordsIfSplit,
-                nonWordSplitCount
+                nonWordSplitCount,
+                tokenCountingBias
             )
 
             val lorebookTokensUsed = selectedLorebookKeys.sumOf { key ->
@@ -785,7 +801,8 @@ data class ContextWindow(
                     splitForNonWordChar,
                     alwaysSplitIfWholeWordExists,
                     countSubWordsIfSplit,
-                    nonWordSplitCount
+                    nonWordSplitCount,
+                    tokenCountingBias
                 )
             }
 
@@ -800,7 +817,7 @@ data class ContextWindow(
                 truncateContextElements(
                     contextBudget, 1, truncateSettings,
                     countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
                     inputText = text,
                     preserveTextMatches = preserveTextMatches
                 )
@@ -809,7 +826,7 @@ data class ContextWindow(
                 truncateConverseHistory(
                     historyBudget, 1, truncateSettings,
                     countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
                     inputText = text,
                     preserveTextMatches = preserveTextMatches
                 )
@@ -820,7 +837,7 @@ data class ContextWindow(
                 truncateContextElements(
                     remainingBudget, 1, truncateSettings,
                     countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
                     inputText = text,
                     preserveTextMatches = preserveTextMatches
                 )
@@ -831,7 +848,7 @@ data class ContextWindow(
                 truncateConverseHistory(
                     remainingBudget, 1, truncateSettings,
                     countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
                     inputText = text,
                     preserveTextMatches = preserveTextMatches
                 )
@@ -846,7 +863,7 @@ data class ContextWindow(
             val selectedLorebookKeys = selectLoreBookContext(
                 text, multipliedTokenBudget,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
             )
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
         }
@@ -859,21 +876,21 @@ data class ContextWindow(
             truncateConverseHistory(
                 halfBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
                 inputText = text,
                 preserveTextMatches = preserveTextMatches
             )
 
             val conversationTokensUsed = countConverseHistoryTokens(
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
             )
 
             val lorebookBudget = multipliedTokenBudget - conversationTokensUsed
             val selectedLorebookKeys = selectLoreBookContext(
                 text, lorebookBudget,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
             )
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
@@ -887,7 +904,7 @@ data class ContextWindow(
             truncateContextElements(
                 halfBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
                 inputText = text,
                 preserveTextMatches = preserveTextMatches
             )
@@ -896,7 +913,7 @@ data class ContextWindow(
                 Dictionary.countTokens(
                     element, countSubWordsInFirstWord, favorWholeWords,
                     countOnlyFirstWordFound, splitForNonWordChar, alwaysSplitIfWholeWordExists,
-                    countSubWordsIfSplit, nonWordSplitCount
+                    countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
                 )
             }
 
@@ -904,7 +921,7 @@ data class ContextWindow(
             val selectedLorebookKeys = selectLoreBookContext(
                 text, lorebookBudget,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
             )
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
@@ -919,7 +936,7 @@ data class ContextWindow(
             truncateContextElements(
                 thirdBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
                 inputText = text,
                 preserveTextMatches = preserveTextMatches
             )
@@ -927,7 +944,7 @@ data class ContextWindow(
             truncateConverseHistory(
                 thirdBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount,
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
                 inputText = text,
                 preserveTextMatches = preserveTextMatches
             )
@@ -937,13 +954,13 @@ data class ContextWindow(
                 Dictionary.countTokens(
                     element, countSubWordsInFirstWord, favorWholeWords,
                     countOnlyFirstWordFound, splitForNonWordChar, alwaysSplitIfWholeWordExists,
-                    countSubWordsIfSplit, nonWordSplitCount
+                    countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
                 )
             }
 
             val conversationTokensUsed = countConverseHistoryTokens(
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
             )
 
             // Give lorebook remaining budget (third + unused tokens from other components)
@@ -951,7 +968,7 @@ data class ContextWindow(
             val selectedLorebookKeys = selectLoreBookContext(
                 text, lorebookBudget,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
             )
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
@@ -984,13 +1001,14 @@ data class ContextWindow(
         splitForNonWordChar: Boolean = true,
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
-        nonWordSplitCount: Int = 4
+        nonWordSplitCount: Int = 4,
+        tokenCountingBias: Double = 0.0
     ): String {
         // Get selected lorebook keys
         val selectedKeys = selectLoreBookContext(
             text, totalTokenBudget,
             countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-            splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+            splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
         )
         
         // Combine lorebook values into single string
@@ -1015,7 +1033,7 @@ data class ContextWindow(
             multiplyWindowSizeBy,
             truncateSettings,
             countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-            splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount
+            splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
         )
     }
 
@@ -1051,7 +1069,8 @@ data class ContextWindow(
             settings.splitForNonWordChar,
             settings.alwaysSplitIfWholeWordExists,
             settings.countSubWordsIfSplit,
-            settings.nonWordSplitCount
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias
         )
     }
 
@@ -1085,7 +1104,8 @@ data class ContextWindow(
         splitForNonWordChar: Boolean = true,
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
-        nonWordSplitCount: Int = 4
+        nonWordSplitCount: Int = 4,
+        tokenCountingBias: Double = 0.0
     ): Int
     {
         return converseHistory.history.sumOf { converseData ->
@@ -1097,7 +1117,8 @@ data class ContextWindow(
                 splitForNonWordChar,
                 alwaysSplitIfWholeWordExists,
                 countSubWordsIfSplit,
-                nonWordSplitCount
+                nonWordSplitCount,
+                tokenCountingBias
             )
         }
     }
@@ -1145,7 +1166,8 @@ data class ContextWindow(
         splitForNonWordChar: Boolean = true,
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
-        nonWordSplitCount: Int = 4
+        nonWordSplitCount: Int = 4,
+        tokenCountingBias: Double = 0.0
     ): List<String>
     {
         val conversationText = extractConverseHistoryText()
@@ -1158,7 +1180,8 @@ data class ContextWindow(
             splitForNonWordChar,
             alwaysSplitIfWholeWordExists,
             countSubWordsIfSplit,
-            nonWordSplitCount
+            nonWordSplitCount,
+            tokenCountingBias
         )
     }
 
@@ -1186,6 +1209,7 @@ data class ContextWindow(
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
         nonWordSplitCount: Int = 4,
+        tokenCountingBias: Double = 0.0,
         inputText: String = "",
         preserveTextMatches: Boolean = false
     )
@@ -1216,7 +1240,8 @@ data class ContextWindow(
                         splitForNonWordChar,
                         alwaysSplitIfWholeWordExists,
                         countSubWordsIfSplit,
-                        nonWordSplitCount
+                        nonWordSplitCount,
+                        tokenCountingBias
                     )
                 }
 
@@ -1237,7 +1262,8 @@ data class ContextWindow(
                         splitForNonWordChar,
                         alwaysSplitIfWholeWordExists,
                         countSubWordsIfSplit,
-                        nonWordSplitCount
+                        nonWordSplitCount,
+                        tokenCountingBias
                     )
                 }
 
@@ -1250,7 +1276,8 @@ data class ContextWindow(
                         splitForNonWordChar,
                         alwaysSplitIfWholeWordExists,
                         countSubWordsIfSplit,
-                        nonWordSplitCount
+                        nonWordSplitCount,
+                        tokenCountingBias
                     )
                 }
 
@@ -1268,7 +1295,8 @@ data class ContextWindow(
                         splitForNonWordChar,
                         alwaysSplitIfWholeWordExists,
                         countSubWordsIfSplit,
-                        nonWordSplitCount
+                        nonWordSplitCount,
+                        tokenCountingBias
                     )
                 }
                 else
@@ -1297,7 +1325,8 @@ data class ContextWindow(
             splitForNonWordChar,
             alwaysSplitIfWholeWordExists,
             countSubWordsIfSplit,
-            nonWordSplitCount
+            nonWordSplitCount,
+            tokenCountingBias
         )
 
         // Filter conversation history to keep only entries with text that survived truncation
@@ -1327,7 +1356,8 @@ data class ContextWindow(
             truncationSettings.splitForNonWordChar,
             truncationSettings.alwaysSplitIfWholeWordExists,
             truncationSettings.countSubWordsIfSplit,
-            truncationSettings.nonWordSplitCount
+            truncationSettings.nonWordSplitCount,
+            truncationSettings.tokenCountingBias
         )
     }
 
