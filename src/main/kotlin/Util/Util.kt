@@ -924,37 +924,16 @@ fun getWorkingDirectory() : String
  */
 fun writeStringToFile(filepath: String, content: String)
 {
-
-    if(!File(filepath).exists())
+    val file = File(filepath)
+    val parentDir = file.parentFile
+    if (parentDir != null && !parentDir.exists())
     {
-        val file = File(filepath)
-        val split = filepath.split("/").toMutableList()
-        split.removeAt(split.lastIndex)
-        var folderPath = ""
-
-        for(i in split)
+        if (!parentDir.mkdirs())
         {
-            folderPath = "$folderPath$i/"
+            throw error("Unable to create directory ${parentDir.absolutePath} to store file $filepath in writeStringToFile @ Util.kt")
         }
-
-        //Remove extra trailing / on the path.
-        folderPath = folderPath.removeSuffix("/")
-        val dir = File(folderPath)
-
-        if(!dir.exists())
-        {
-            val result = dir.mkdirs()
-            if(!result)
-            {
-                throw error("Unable to load config file because we can't create the main directory to store it in" +
-                        " in writeStringToFile @ Util.kt")
-                return
-            }
-        }
-
-
     }
-    File(filepath).writeText(content)
+    file.writeText(content)
 }
 
 
