@@ -16,19 +16,40 @@ fun main(args: Array<String>) {
     var testString = ""
     var expectedTokens = -1
 
+    // Check if args are provided via file (from tuner.sh)
+    val argsFile = System.getProperty("tunerArgsFile")
+    val actualArgs = if (argsFile != null) {
+        try {
+            // Read file and split by separator
+            val content = java.io.File(argsFile).readText()
+            val split = content.split("---ARG---").toTypedArray()
+            System.err.println("DEBUG: Read ${split.size} args from file")
+            split.forEachIndexed { i, arg ->
+                System.err.println("DEBUG: arg[$i] = ${arg.take(50)}... (${arg.length} chars)")
+            }
+            split
+        } catch (e: Exception) {
+            System.err.println("ERROR: Could not read args file: $argsFile")
+            System.err.println("ERROR: ${e.message}")
+            args
+        }
+    } else {
+        args
+    }
+
     // 1. Simple manual parsing of command line args
     var i = 0
-    while(i < args.size) {
-        when(args[i]) {
+    while(i < actualArgs.size) {
+        when(actualArgs[i]) {
             "--test-string", "-s" -> {
-                if(i + 1 < args.size) {
-                    testString = args[i + 1]
+                if(i + 1 < actualArgs.size) {
+                    testString = actualArgs[i + 1]
                     i++
                 }
             }
             "--expected-tokens", "-t" -> {
-                if(i + 1 < args.size) {
-                    expectedTokens = args[i + 1].toIntOrNull() ?: -1
+                if(i + 1 < actualArgs.size) {
+                    expectedTokens = actualArgs[i + 1].toIntOrNull() ?: -1
                     i++
                 }
             }
@@ -44,6 +65,11 @@ fun main(args: Array<String>) {
 
     println("Starting Tuner with Expected Tokens: $expectedTokens")
     println("Input Text Length: ${testString.length} chars")
+    
+    // Estimate time for large inputs
+    if(testString.length > 1000) {
+        println("Note: Large input detected. This may take 1-2 minutes...")
+    }
 
     // 2. Setup testing ranges for sane limits
     val booleans = listOf(true, false)
@@ -52,6 +78,9 @@ fun main(args: Array<String>) {
     var bestConfig: TruncationSettings? = null
     var bestDiff = Int.MAX_VALUE
     var bestCount = -1
+    
+    var combinationsTested = 0
+    val totalCombinations = 512
 
     // 3. Iterate over all reasonable combinations of the parameters
     for(countSubWordsInFirstWord in booleans) {
@@ -61,6 +90,14 @@ fun main(args: Array<String>) {
                     for(alwaysSplitIfWholeWordExists in booleans) {
                         for(countSubWordsIfSplit in booleans) {
                             for(nonWordSplitCount in nonWordSplitCounts) {
+                                
+                                combinationsTested++
+                                
+                                // Progress indicator for large inputs
+                                if(testString.length > 1000 && combinationsTested % 64 == 0) {
+                                    System.err.print(".")
+                                    System.err.flush()
+                                }
 
                                 val settings = TruncationSettings(
                                     countSubWordsInFirstWord = countSubWordsInFirstWord,
@@ -98,11 +135,21 @@ fun main(args: Array<String>) {
                                     break
                                 }
                             }
+                            if(bestDiff == 0) break
                         }
+                        if(bestDiff == 0) break
                     }
+                    if(bestDiff == 0) break
                 }
+                if(bestDiff == 0) break
             }
+            if(bestDiff == 0) break
         }
+        if(bestDiff == 0) break
+    }
+    
+    if(testString.length > 1000) {
+        System.err.println() // New line after progress dots
     }
 
     if(bestConfig == null) {

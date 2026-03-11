@@ -422,6 +422,18 @@ Sets advanced token budgeting configuration with support for dynamic user prompt
 
 **Tip:** Set `preserveTextMatches = true` inside `TokenBudgetSettings` (or call `enableTextMatchingPreservation()`) to keep context elements and conversation history entries that match the user prompt before the rest of the truncation budget is applied.
 
+#### `setTokenCountingBias(value: Double): Pipe`
+Sets multiplicative adjustment for all token counts.
+
+**Behavior:** Applies bias to token counting: `adjustedTokens = round(rawTokens * (1.0 + bias))`. Use positive values (0.1-0.3) to add safety margin when TPipe underestimates, negative values (-0.05 to -0.1) to maximize context when TPipe overestimates. Default is 0.0 (no adjustment).
+
+**Examples:**
+```kotlin
+pipe.setTokenCountingBias(0.1)   // Add 10% safety margin
+pipe.setTokenCountingBias(0.2)   // Add 20% safety margin  
+pipe.setTokenCountingBias(-0.05) // Reduce by 5% to maximize usage
+```
+
 #### `pullGlobalContext(): Pipe`
 Enables pulling context from global context bank.
 

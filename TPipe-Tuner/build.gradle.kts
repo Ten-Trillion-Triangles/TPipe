@@ -26,6 +26,12 @@ application {
     mainClass.set("com.TTT.Tuner.TunerAppKt")
 }
 
+// Configure run task to pass system properties
+tasks.named<JavaExec>("run") {
+    // Forward all system properties from Gradle to the application
+    systemProperties = System.getProperties().entries.associate { it.key.toString() to it.value }
+}
+
 repositories {
     mavenCentral()
 }

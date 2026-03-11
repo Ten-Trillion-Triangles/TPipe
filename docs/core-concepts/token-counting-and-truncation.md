@@ -35,9 +35,46 @@ data class TruncationSettings(
     var splitForNonWordChar: Boolean = true,        // Split on punctuation/symbols
     var alwaysSplitIfWholeWordExists: Boolean = false, // Force splitting behavior
     var countSubWordsIfSplit: Boolean = false,      // Count subwords after splitting
-    var nonWordSplitCount: Int = 4                  // Characters per token for non-words
+    var nonWordSplitCount: Int = 4,                 // Characters per token for non-words
+    var tokenCountingBias: Double = 0.0             // Multiplicative adjustment to token counts
 )
 ```
+
+### Token Counting Bias
+
+The `tokenCountingBias` parameter applies a multiplicative adjustment to all token counts. This is useful when TPipe's token counting consistently over or underestimates compared to your target model's actual tokenizer.
+
+**Formula:**
+```kotlin
+adjustedTokens = Math.round(rawTokenCount * (1.0 + tokenCountingBias)).toInt()
+```
+
+**Common Use Cases:**
+- **Positive bias** (0.1 to 0.3): When TPipe underestimates tokens, add safety margin
+- **Negative bias** (-0.1 to -0.05): When TPipe overestimates tokens, maximize context usage
+- **Zero bias** (0.0): Default, no adjustment
+
+**Examples:**
+```kotlin
+// Add 10% safety margin (TPipe counts 100 tokens → 110 tokens)
+pipe.setTokenCountingBias(0.1)
+
+// Add 20% safety margin (TPipe counts 100 tokens → 120 tokens)
+pipe.setTokenCountingBias(0.2)
+
+// Reduce by 5% to maximize usage (TPipe counts 100 tokens → 95 tokens)
+pipe.setTokenCountingBias(-0.05)
+
+// No adjustment (TPipe counts 100 tokens → 100 tokens)
+pipe.setTokenCountingBias(0.0)
+```
+
+**Integration:**
+Token counting bias is automatically applied across all TPipe memory systems:
+- **ContextWindow**: Lorebook selection and truncation
+- **ConverseHistory**: Conversation history management
+- **MiniBank**: Multi-page context truncation
+- **All Dictionary operations**: Token counting and truncation
 
 ### Token Multiplier Explanation
 
@@ -84,7 +121,8 @@ val tokenCount = Dictionary.countTokens(
     splitForNonWordChar = true,         // Split on punctuation
     alwaysSplitIfWholeWordExists = false, // Don't force splits
     countSubWordsIfSplit = false,       // Use character counting after splits
-    nonWordSplitCount = 4               // 4 characters = 1 token for non-words
+    nonWordSplitCount = 4,              // 4 characters = 1 token for non-words
+    tokenCountingBias = 0.1             // Add 10% safety margin
 )
 ```
 
@@ -114,7 +152,8 @@ val truncatedText = Dictionary.truncate(
 val settings = TruncationSettings(
     multiplyWindowSizeBy = 1000,        // Use smaller input numbers
     favorWholeWords = true,
-    nonWordSplitCount = 3
+    nonWordSplitCount = 3,
+    tokenCountingBias = 0.15            // Add 15% safety margin
 )
 
 val truncatedText = Dictionary.truncateWithSettings(
@@ -181,6 +220,95 @@ ContextWindowSettings.TruncateMiddle
 **Use for**: Summarization tasks where context and conclusion are both important.
 
 ## Practical Examples
+
+### TPipe-Tuner: Automated Token Counting Calibration
+
+TPipe includes a dedicated tuning tool that automatically finds optimal `TruncationSettings` for any LLM tokenizer. Instead of manually adjusting parameters, TPipe-Tuner tests all combinations and applies fine-grained `tokenCountingBias` to match your target model's exact token counting behavior.
+
+#### How TPipe-Tuner Works
+
+1. **Exhaustive Search**: Tests all boolean combinations of truncation settings with `nonWordSplitCount` values from 1-8
+2. **Best Match Selection**: Finds the configuration that minimizes difference from expected token count
+3. **Fine-Tuning**: Applies `tokenCountingBias` with 0.1% precision to achieve exact match
+4. **JSON Output**: Returns optimal configuration ready to use in your code
+
+#### Using TPipe-Tuner
+
+**Step 1: Get a test string and actual token count from your target model**
+
+```bash
+# Example: Get token count from Claude API
+echo "Hello world! This is a test." | claude-tokenizer
+# Output: 7 tokens
+```
+
+**Step 2: Run TPipe-Tuner**
+
+```bash
+# Linux/macOS
+./TPipe-Tuner/tuner.sh --test-string "Hello world! This is a test." --expected-tokens 7
+
+# Windows
+TPipe-Tuner\tuner.bat --test-string "Hello world! This is a test." --expected-tokens 7
+
+# macOS (double-click tuner.command and enter arguments when prompted)
+```
+
+**Step 3: Review the output**
+
+```
+Starting Tuner with Expected Tokens: 7
+Input Text Length: 28 chars
+Best base configuration found with count 6 (Diff: 1)
+Applying fine-grained token counting bias...
+Optimal Bias Applied: 0.1667 resulting in 7 tokens (Diff: 0)
+
+================ OPTIMAL CONFIGURATION ================
+{
+    "countSubWordsInFirstWord": true,
+    "favorWholeWords": true,
+    "countOnlyFirstWordFound": false,
+    "splitForNonWordChar": true,
+    "alwaysSplitIfWholeWordExists": false,
+    "countSubWordsIfSplit": false,
+    "nonWordSplitCount": 4,
+    "tokenCountingBias": 0.1667
+}
+=======================================================
+```
+
+**Step 4: Apply the configuration**
+
+```kotlin
+// Use the tuned settings in your pipe
+val settings = TruncationSettings(
+    countSubWordsInFirstWord = true,
+    favorWholeWords = true,
+    countOnlyFirstWordFound = false,
+    splitForNonWordChar = true,
+    alwaysSplitIfWholeWordExists = false,
+    countSubWordsIfSplit = false,
+    nonWordSplitCount = 4,
+    tokenCountingBias = 0.1667
+)
+
+val pipe = BedrockPipe()
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setTruncationSettings(settings)
+```
+
+#### Tuner Scripts
+
+- **tuner.sh**: Linux/macOS command-line execution
+- **tuner.bat**: Windows command-line execution  
+- **tuner.command**: macOS double-click execution (opens Terminal automatically)
+
+#### Best Practices
+
+- Use representative text samples from your actual use case
+- Test with multiple strings of varying lengths for better accuracy
+- Prefer longer test strings (100+ tokens) for more reliable calibration
+- Re-tune when switching between model families (GPT → Claude → Nova)
 
 ### Tuning for a Specific Model
 ```kotlin

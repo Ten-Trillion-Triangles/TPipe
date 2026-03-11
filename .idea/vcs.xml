@@ -13,6 +13,8 @@
     <mapping directory="$PROJECT_DIR$/TPipe-MCP/src/test" vcs="Perforce" />
     <mapping directory="$PROJECT_DIR$/TPipe-Ollama" vcs="Perforce" />
     <mapping directory="$PROJECT_DIR$/TPipe-Ollama/src/main" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/TPipe-Tuner" vcs="Perforce" />
+    <mapping directory="$PROJECT_DIR$/TPipe-Tuner/src/main" vcs="Perforce" />
     <mapping directory="$PROJECT_DIR$/src/main" vcs="Perforce" />
     <mapping directory="$PROJECT_DIR$/src/test" vcs="Perforce" />
   </component>

@@ -12,6 +12,7 @@
             <option value="$PROJECT_DIR$/TPipe-Defaults" />
             <option value="$PROJECT_DIR$/TPipe-MCP" />
             <option value="$PROJECT_DIR$/TPipe-Ollama" />
+            <option value="$PROJECT_DIR$/TPipe-Tuner" />
           </set>
         </option>
       </GradleProjectSettings>

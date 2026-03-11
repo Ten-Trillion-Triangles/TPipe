@@ -22,8 +22,13 @@ As an LLM agent, when you are tasked with "tuning TPipe for a specific LLM model
    ./TPipe-Tuner/tuner.sh --test-string "Hello world! This is a test." --expected-tokens 7
    ```
 
+   **For large strings or JSON (recommended):**
+   ```bash
+   ./TPipe-Tuner/tuner.sh --test-string "$(cat your-file.json)" --expected-tokens 1305
+   ```
+
 3. **Read the Output**
-   The application will run for a few seconds scanning combinations and applying bias. It will print the exact optimal configuration in a JSON block at the end of the output.
+   The application will run for a few seconds (or 1-2 minutes for large inputs) scanning combinations and applying bias. It will print the exact optimal configuration in a JSON block at the end of the output.
 
    **Sample Output:**
    ```json
@@ -46,6 +51,10 @@ As an LLM agent, when you are tasked with "tuning TPipe for a specific LLM model
 
 ## Notes for Agents
 
-* If the test string has spaces or special characters, make sure to wrap it in quotes when passing it as a command-line argument.
+* The test string must be properly quoted when passing it as a command-line argument. Use double quotes around the entire string.
+* For large strings, multi-line content, or JSON, use command substitution: `--test-string "$(cat file.txt)"` - this works reliably for any size input.
+* The tuner uses a temp file internally to avoid shell escaping issues, so strings with spaces, newlines, quotes, and special characters are handled correctly.
+* The tuner may take 1-2 minutes for very large strings (4000+ characters) as it tests 512 parameter combinations.
+* Progress dots appear every 64 combinations for large inputs to show the tuner is working.
 * The script calls Gradle (`gradle :TPipe-Tuner:run`) under the hood, so expect standard Gradle build output before the tuner output appears.
 * If the tuner output says "Failed to find any viable combinations", verify that the expected token count makes sense for the size of the test string.
