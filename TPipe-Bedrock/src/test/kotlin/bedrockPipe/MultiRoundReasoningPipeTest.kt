@@ -43,6 +43,8 @@ class MultiRoundReasoningPipeTest {
             val result = pipeline.execute(MultimodalContent(text = "What is 2+2? Answer in one word. Don't be confused."))
             System.err.println("Single Round Result Text: ${result.text}")
             System.err.println("Single Round Result Reasoning: ${result.modelReasoning}")
+            assertNull(result.pipeError, "Single round execution should complete without errors")
+            assertTrue(result.text.isNotEmpty(), "Single round result should contain actual output")
             assertFalse(result.text.contains("{\"history\":["), "Result text should not contain ConverseHistory JSON")
             assertFalse(result.text.contains("DEVELOPER PROMPT"), "Result text should not contain DEVELOPER PROMPT")
         }
@@ -78,6 +80,8 @@ class MultiRoundReasoningPipeTest {
             val result = pipeline.execute(MultimodalContent(text = "What is 2+2? Answer in one word. I am confused."))
             System.err.println("Multi Round Result Text: ${result.text}")
             System.err.println("Multi Round Result Reasoning: ${result.modelReasoning}")
+            assertNull(result.pipeError, "Multi round execution should complete without errors")
+            assertTrue(result.text.isNotEmpty(), "Multi round result should contain actual output")
             assertFalse(result.text.contains("{\"history\":["), "Result text should not contain ConverseHistory JSON")
             assertFalse(result.text.contains("DEVELOPER PROMPT"), "Result text should not contain DEVELOPER PROMPT")
         }
@@ -121,6 +125,8 @@ class MultiRoundReasoningPipeTest {
             val result = pipeline.execute(MultimodalContent(text = "What is 2+2? Answer in one word. Explain briefly."))
             System.err.println("Nested Round Result Text: ${result.text}")
             System.err.println("Nested Round Result Reasoning: ${result.modelReasoning}")
+            assertNull(result.pipeError, "Nested reasoning execution should complete without errors")
+            assertTrue(result.text.isNotEmpty(), "Nested reasoning result should contain actual output")
             assertFalse(result.text.contains("{\"history\":["), "Result text should not contain ConverseHistory JSON")
             assertFalse(result.text.contains("DEVELOPER PROMPT"), "Result text should not contain DEVELOPER PROMPT")
         }
