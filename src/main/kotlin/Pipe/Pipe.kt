@@ -5835,13 +5835,21 @@ abstract class Pipe : P2PInterface, ProviderInterface
              */
             val systemConverseData = ConverseData(ConverseRole.developer, MultimodalContent("$rawSystemPrompt ${getMiddlePromptForReasoning()} ${getFooterPromptForReasoning()}"))
 
-            //Now we can add the user's original prompt.
-            val converseData = ConverseData(ConverseRole.user, content)
             val newHistory = ConverseHistory()
-
-            //Now we'll have each part we need for it to reason correctly.
             newHistory.add(systemConverseData)
-            newHistory.add(converseData)
+
+            if (converseSchemaRef != null && !converseSchemaRef.isEmpty()) {
+                // We have an existing ConverseHistory, append its items
+                for (item in converseSchemaRef.history) {
+                    newHistory.add(item)
+                }
+            } else {
+                //Now we can add the user's original prompt.
+                val converseData = ConverseData(ConverseRole.user, content)
+
+                //Now we'll have each part we need for it to reason correctly.
+                newHistory.add(converseData)
+            }
 
             /**
              * Re-apply the system prompt of the reasoning pipe at the very bottom of the user prompt. This helps
