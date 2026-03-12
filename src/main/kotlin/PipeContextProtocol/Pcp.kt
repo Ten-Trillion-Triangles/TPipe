@@ -503,7 +503,8 @@ data class PcPRequest(var stdioContextOptions: StdioContextOptions = StdioContex
                       var pythonContextOptions: PythonContext = PythonContext(),
                       var kotlinContextOptions: KotlinContext = KotlinContext(),
                       var javascriptContextOptions: JavaScriptContext = JavaScriptContext(),
-                      var argumentsOrFunctionParams : List<String> = mutableListOf<String>()
+                      var argumentsOrFunctionParams : List<String> = mutableListOf<String>(),
+                      var callParams : Map<String, String> = mutableMapOf<String, String>()
                     )
 
 
