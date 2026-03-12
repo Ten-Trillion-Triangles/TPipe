@@ -90,7 +90,7 @@ class PcpFunctionHandler : PcpExecutor
             }
             
             // Convert arguments to parameter map
-            val parameters = convertArgumentsToParameters(functionName, request.argumentsOrFunctionParams)
+            val parameters = convertArgumentsToParameters(functionName, request.argumentsOrFunctionParams, request.callParams)
             
             // Validate function parameters
             val parameterValidation = validateFunctionParameters(functionName, parameters)
@@ -152,7 +152,7 @@ class PcpFunctionHandler : PcpExecutor
      * @param arguments List of argument strings from PCP request
      * @return Map of parameter names to values
      */
-    private fun convertArgumentsToParameters(functionName: String, arguments: List<String>): Map<String, String> 
+    private fun convertArgumentsToParameters(functionName: String, arguments: List<String>, callParams: Map<String, String>): Map<String, String>
     {
         val parameters = mutableMapOf<String, String>()
         val nativeFunction = FunctionRegistry.getFunction(functionName)
@@ -175,6 +175,11 @@ class PcpFunctionHandler : PcpExecutor
             }
         }
         
+        // Merge callParams (named parameters), overriding positional ones
+        callParams.forEach { (key, value) ->
+            parameters[key] = value
+        }
+
         return parameters
     }
     
