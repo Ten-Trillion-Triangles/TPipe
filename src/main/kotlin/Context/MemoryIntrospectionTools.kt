@@ -7,7 +7,6 @@ import com.TTT.Config.TPipeConfig
 import com.TTT.PipeContextProtocol.TPipeContextOptions
 import com.TTT.PipeContextProtocol.ParamType
 import com.TTT.PipeContextProtocol.FunctionRegistry
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 
 /**
@@ -22,9 +21,9 @@ object MemoryIntrospectionTools
      */
     suspend fun listPageKeys(): List<String>
     {
-        val allKeys = ContextBank.getPageKeys()
+        val allKeys = ContextBank.getPageKeysSuspend()
         return allKeys.filter { key ->
-            MemoryIntrospection.canRead(key) && !ContextLock.isPageLocked(key)
+            MemoryIntrospection.canRead(key) && !ContextLock.isPageLockedSuspend(key)
         }
     }
 
@@ -34,10 +33,10 @@ object MemoryIntrospectionTools
      */
     suspend fun getLorebookEntry(pageKey: String, key: String): LoreBook?
     {
-        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLocked(pageKey)) return null
-        if(ContextLock.isKeyLocked(key)) return null
+        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return null
+        if(ContextLock.isKeyLockedSuspend(key)) return null
 
-        val window = ContextBank.getContextFromBank(pageKey)
+        val window = ContextBank.getContextFromBankSuspend(pageKey)
         return window.findLoreBookEntry(key)
     }
 
@@ -47,11 +46,11 @@ object MemoryIntrospectionTools
      */
     suspend fun getLorebook(pageKey: String): Map<String, LoreBook>
     {
-        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLocked(pageKey)) return emptyMap()
+        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return emptyMap()
 
-        val window = ContextBank.getContextFromBank(pageKey)
+        val window = ContextBank.getContextFromBankSuspend(pageKey)
         return window.loreBookKeys.filter { (key, _) ->
-            !ContextLock.isKeyLocked(key)
+            !ContextLock.isKeyLockedSuspend(key)
         }
     }
 
@@ -68,7 +67,7 @@ object MemoryIntrospectionTools
         extractRegex: String = ""
     ): List<LoreBookQueryResult>
     {
-        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLocked(pageKey)) return emptyList()
+        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return emptyList()
 
         // Optimize for remote memory if configured
         val mode = ContextBank.getStorageMode(pageKey)
@@ -77,7 +76,7 @@ object MemoryIntrospectionTools
             return MemoryClient.queryLorebook(pageKey, query, minWeight, requiredKeys, aliasKeys, extractRegex)
         }
 
-        val window = ContextBank.getContextFromBank(pageKey)
+        val window = ContextBank.getContextFromBankSuspend(pageKey)
         val regex = if(extractRegex.isNotEmpty()) Regex(extractRegex) else null
 
         return window.loreBookKeys.filter { (key, entry) ->
@@ -111,7 +110,7 @@ object MemoryIntrospectionTools
      */
     suspend fun simulateLorebookTrigger(pageKey: String, text: String): List<String>
     {
-        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLocked(pageKey)) return emptyList()
+        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return emptyList()
 
         // Optimize for remote memory if configured
         val mode = ContextBank.getStorageMode(pageKey)
@@ -120,7 +119,7 @@ object MemoryIntrospectionTools
             return MemoryClient.simulateLorebookTrigger(pageKey, text)
         }
 
-        val window = ContextBank.getContextFromBank(pageKey)
+        val window = ContextBank.getContextFromBankSuspend(pageKey)
         // Note: findMatchingLoreBookKeys already filters using canSelectLoreBookKey which respects ContextLock
         return window.findMatchingLoreBookKeys(text)
     }
@@ -135,12 +134,12 @@ object MemoryIntrospectionTools
         extractRegex: String = ""
     ): MemorySearchResult
     {
-        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLocked(pageKey))
+        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey))
         {
             return MemorySearchResult(emptyList(), emptyList())
         }
 
-        val window = ContextBank.getContextFromBank(pageKey)
+        val window = ContextBank.getContextFromBankSuspend(pageKey)
         val regex = if(extractRegex.isNotEmpty()) Regex(extractRegex) else null
 
         val lorebookMatches = queryLorebook(pageKey, query, extractRegex = extractRegex)
@@ -163,12 +162,12 @@ object MemoryIntrospectionTools
      */
     suspend fun updateLorebookEntry(pageKey: String, entry: LoreBook): Boolean
     {
-        if(!MemoryIntrospection.canWrite(pageKey) || ContextLock.isPageLocked(pageKey)) return false
-        if(ContextLock.isKeyLocked(entry.key)) return false
+        if(!MemoryIntrospection.canWriteSuspend(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return false
+        if(ContextLock.isKeyLockedSuspend(entry.key)) return false
 
-        val window = ContextBank.getContextFromBankWithMutex(pageKey)
-        window.addLoreBookEntryWithObject(entry)
-        ContextBank.emplaceWithMutex(pageKey, window, persistToDisk = true)
+        ContextBank.mutateContextWindowSuspend(pageKey, mode = StorageMode.MEMORY_AND_DISK) { window ->
+            window.addLoreBookEntryWithObject(entry)
+        }
         return true
     }
 
@@ -178,16 +177,14 @@ object MemoryIntrospectionTools
      */
     suspend fun deleteLorebookEntry(pageKey: String, key: String): Boolean
     {
-        if(!MemoryIntrospection.canWrite(pageKey) || ContextLock.isPageLocked(pageKey)) return false
-        if(ContextLock.isKeyLocked(key)) return false
+        if(!MemoryIntrospection.canWriteSuspend(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return false
+        if(ContextLock.isKeyLockedSuspend(key)) return false
 
-        val window = ContextBank.getContextFromBankWithMutex(pageKey)
-        if(window.loreBookKeys.remove(key) != null)
-        {
-            ContextBank.emplaceWithMutex(pageKey, window, persistToDisk = true)
-            return true
+        var removed = false
+        ContextBank.mutateContextWindowSuspend(pageKey, mode = StorageMode.MEMORY_AND_DISK) { window ->
+            removed = window.loreBookKeys.remove(key) != null
         }
-        return false
+        return removed
     }
 
     /**
@@ -196,8 +193,8 @@ object MemoryIntrospectionTools
      */
     suspend fun getTodoList(pageKey: String): TodoList?
     {
-        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLocked(pageKey)) return null
-        return ContextBank.getPagedTodoList(pageKey)
+        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return null
+        return ContextBank.getPagedTodoListSuspend(pageKey)
     }
 
     /**
@@ -206,8 +203,8 @@ object MemoryIntrospectionTools
      */
     suspend fun updateTodoList(pageKey: String, todoList: TodoList): Boolean
     {
-        if(!MemoryIntrospection.canWrite(pageKey) || ContextLock.isPageLocked(pageKey)) return false
-        ContextBank.emplaceWithMutex(pageKey, todoList, persistToDisk = true)
+        if(!MemoryIntrospection.canWriteSuspend(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return false
+        ContextBank.emplaceTodoListSuspend(pageKey, todoList, StorageMode.MEMORY_AND_DISK)
         return true
     }
 

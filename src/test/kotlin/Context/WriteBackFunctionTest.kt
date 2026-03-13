@@ -1,5 +1,6 @@
 package com.TTT.Context
 
+import com.TTT.Config.TPipeConfig
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.Before
@@ -13,6 +14,8 @@ class WriteBackFunctionTest
     fun setup() {
         ContextBank.clearWriteBackFunctions()
         ContextBank.evictAllFromMemory()
+        TPipeConfig.remoteMemoryEnabled = false
+        TPipeConfig.useRemoteMemoryGlobally = false
     }
 
     @Test

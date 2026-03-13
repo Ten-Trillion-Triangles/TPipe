@@ -4925,7 +4925,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 //Pull from context bank if no page keys are set.
                 if(pageKey.isEmpty() && pageKeyList.isEmpty())
                 {
-                    contextWindow = ContextBank.copyBankedContextWindow() ?: ContextWindow()
+                    contextWindow = ContextBank.getBankedContextWindowSuspend()
                 }
 
                 else
@@ -4936,20 +4936,20 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         //Populate the mini bank for multi-page key setup.
                         for(page in pageKeyList)
                         {
-                            val pagedContext = ContextBank.getContextFromBank(page)
+                            val pagedContext = ContextBank.getContextFromBankSuspend(page)
                             miniContextBank.contextMap[page] = pagedContext
                         }
 
                         //Force add the banked context if the user forced it to be pulled even with page keys.
                         if(pullFromBankedContext)
                         {
-                            val bankedContext = ContextBank.getBankedContextWindow()
+                            val bankedContext = ContextBank.getBankedContextWindowSuspend()
                             miniContextBank.contextMap["Banked Context"] = bankedContext
                         }
                     }
 
 
-                    contextWindow = ContextBank.getContextFromBank(pageKey)
+                    contextWindow = ContextBank.getContextFromBankSuspend(pageKey)
 
                     /**
                      * Pull from global context if designated defaulting to the loaded bank, and using a paged bank value

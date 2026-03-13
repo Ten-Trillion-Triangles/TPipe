@@ -48,7 +48,7 @@ object MemoryServer
             {
                 get("/keys")
                 {
-                    call.respond(ContextBank.getPageKeys(skipRemote = true))
+                    call.respond(ContextBank.getPageKeysSuspend(skipRemote = true))
                 }
 
                 get("/{key}")
@@ -57,7 +57,7 @@ object MemoryServer
                         rejection = P2PRejection(P2PError.transport, "Missing context key")
                     })
 
-                    val context = ContextBank.getContextFromBank(key, skipRemote = true)
+                    val context = ContextBank.getContextFromBankSuspend(key, skipRemote = true)
                     call.respond(context)
                 }
 
@@ -74,7 +74,7 @@ object MemoryServer
 
                     if(TPipeConfig.enforceMemoryVersioning)
                     {
-                        val existing = ContextBank.getContextFromBank(key, skipRemote = true)
+                        val existing = ContextBank.getContextFromBankSuspend(key, skipRemote = true)
                         if(window.version < existing.version)
                         {
                             // If client version is older, attempt server-side merge if possible
@@ -86,8 +86,8 @@ object MemoryServer
                     }
 
                     // For remote writes, we ensure version is advanced to the next state
-                    window.version = maxOf(window.version, ContextBank.getContextFromBank(key, skipRemote = true).version) + 1
-                    ContextBank.emplaceWithMutex(key, window, mode = StorageMode.MEMORY_AND_DISK, skipRemote = true)
+                    window.version = maxOf(window.version, ContextBank.getContextFromBankSuspend(key, skipRemote = true).version) + 1
+                    ContextBank.emplaceSuspend(key, window, mode = StorageMode.MEMORY_AND_DISK, skipRemote = true)
                     call.respond(window)
                 }
 
@@ -134,7 +134,7 @@ object MemoryServer
                         rejection = P2PRejection(P2PError.transport, "Missing context key")
                     })
 
-                    val result = ContextBank.deletePersistingBankKeyWithMutex(key, skipRemote = true)
+                    val result = ContextBank.deletePersistingBankKeySuspend(key, skipRemote = true)
                     call.respond(result)
                 }
             }
@@ -143,7 +143,7 @@ object MemoryServer
             {
                 get("/keys")
                 {
-                    call.respond(ContextBank.getTodoListKeys(skipRemote = true))
+                    call.respond(ContextBank.getTodoListKeysSuspend(skipRemote = true))
                 }
 
                 get("/{key}")
@@ -152,7 +152,7 @@ object MemoryServer
                         rejection = P2PRejection(P2PError.transport, "Missing todo key")
                     })
 
-                    val todo = ContextBank.getPagedTodoList(key, skipRemote = true)
+                    val todo = ContextBank.getPagedTodoListSuspend(key, skipRemote = true)
                     call.respond(todo)
                 }
 
@@ -169,7 +169,7 @@ object MemoryServer
 
                     if(TPipeConfig.enforceMemoryVersioning)
                     {
-                        val existing = ContextBank.getPagedTodoList(key, skipRemote = true)
+                        val existing = ContextBank.getPagedTodoListSuspend(key, skipRemote = true)
                         if(todo.version < existing.version)
                         {
                             return@post call.respond(P2PResponse().apply {
@@ -178,8 +178,8 @@ object MemoryServer
                         }
                     }
 
-                    todo.version = maxOf(todo.version, ContextBank.getPagedTodoList(key, skipRemote = true).version) + 1
-                    ContextBank.emplaceTodoList(key, todo, mode = StorageMode.MEMORY_AND_DISK, skipRemote = true)
+                    todo.version = maxOf(todo.version, ContextBank.getPagedTodoListSuspend(key, skipRemote = true).version) + 1
+                    ContextBank.emplaceTodoListSuspend(key, todo, mode = StorageMode.MEMORY_AND_DISK, skipRemote = true)
                     call.respond(todo)
                 }
             }
@@ -188,7 +188,7 @@ object MemoryServer
             {
                 get("/keys")
                 {
-                    call.respond(ContextLock.getLockKeys(skipRemote = true))
+                    call.respond(ContextLock.getLockKeysSuspend(skipRemote = true))
                 }
 
                 get("/{key}/state")
@@ -196,7 +196,7 @@ object MemoryServer
                     val key = call.parameters["key"] ?: return@get call.respond(P2PResponse().apply {
                         rejection = P2PRejection(P2PError.transport, "Missing lock key")
                     })
-                    call.respond(ContextLock.isKeyLocked(key, skipRemote = true))
+                    call.respond(ContextLock.isKeyLockedSuspend(key, skipRemote = true))
                 }
 
                 get("/page/{pageKey}/state")
@@ -204,7 +204,7 @@ object MemoryServer
                     val pageKey = call.parameters["pageKey"] ?: return@get call.respond(P2PResponse().apply {
                         rejection = P2PRejection(P2PError.transport, "Missing page key")
                     })
-                    call.respond(ContextLock.isPageLocked(pageKey, skipRemote = true))
+                    call.respond(ContextLock.isPageLockedSuspend(pageKey, skipRemote = true))
                 }
 
                 post("/")

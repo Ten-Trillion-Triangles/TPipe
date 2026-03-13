@@ -145,4 +145,31 @@ object MemoryIntrospection
         }
         return config.allowedPageKeys.contains(pageKey)
     }
+
+    /**
+     * Suspend-safe version of [canWrite] for coroutine-heavy memory flows.
+     *
+     * @param pageKey The key to check.
+     * @return True if allowed, false otherwise.
+     */
+    suspend fun canWriteSuspend(pageKey: String): Boolean
+    {
+        val config = getCurrentConfig()
+        if(!config.allowWrite)
+        {
+            return false
+        }
+
+        val pageExists = ContextBank.getPageKeysSuspend().contains(pageKey)
+        if(!pageExists && !config.allowPageCreation)
+        {
+            return false
+        }
+
+        if(config.allowedPageKeys.contains("*"))
+        {
+            return true
+        }
+        return config.allowedPageKeys.contains(pageKey)
+    }
 }

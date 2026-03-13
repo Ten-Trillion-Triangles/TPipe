@@ -58,15 +58,13 @@ object ContextBank
     /**
      * Banked context windows to allow for TPipe to manage multiple separate and distinct context windows at once.
      */
-    @Volatile
-    private var bank = mutableMapOf<String, ContextWindow>()
+    private val bank = ConcurrentHashMap<String, ContextWindow>()
 
     /**
      * Stores todo lists as page keys to active todo lists. Allows for multiple agents to access this and
      * update, or view the todo lists as sandboxed, or global tasks.
      */
-    @Volatile
-    private var todoList = mutableMapOf<String, TodoList>()
+    private val todoList = ConcurrentHashMap<String, TodoList>()
 
     /**
      * Mutex object for managing swapping the banked context window.
@@ -84,11 +82,25 @@ object ContextBank
     val todoMutex = Mutex()
 
     /**
+     * Mutex used for coordinating cache policy and eviction decisions across all page keys.
+     */
+    private val cacheMutex = Mutex()
+
+    /**
+     * Per-page locks that allow unrelated page keys to be read and mutated concurrently.
+     */
+    private val pageMutexes = ConcurrentHashMap<String, Mutex>()
+
+    /**
+     * Per-todo locks that allow unrelated todo keys to be read and mutated concurrently.
+     */
+    private val todoMutexes = ConcurrentHashMap<String, Mutex>()
+
+    /**
      * Storage metadata for tracking storage modes and access patterns.
      * Maps keys to their storage configuration and statistics.
      */
-    @Volatile
-    private var storageMetadata = mutableMapOf<String, StorageMetadata>()
+    private val storageMetadata = ConcurrentHashMap<String, StorageMetadata>()
 
     /**
      * Cache configuration controlling eviction policies and memory limits.
@@ -111,10 +123,124 @@ object ContextBank
     private val writeBackFunctions = ConcurrentHashMap<String, WriteBackFunction>()
 
     /**
-     * Map of write back functions bound to specific context bank keys.
-     * When a key with a bound function is written, the function is executed to save the data.
-     * Uses ConcurrentHashMap for thread-safe access.
+     * Resolve the mutex for a specific context page key.
+     *
+     * @param key The page key that needs coordinated access.
+     * @return The mutex dedicated to that page key.
      */
+    private fun getPageMutex(key: String): Mutex
+    {
+        return pageMutexes.computeIfAbsent(key) { Mutex() }
+    }
+
+    /**
+     * Resolve the mutex for a specific todo list key.
+     *
+     * @param key The todo list key that needs coordinated access.
+     * @return The mutex dedicated to that todo key.
+     */
+    private fun getTodoMutex(key: String): Mutex
+    {
+        return todoMutexes.computeIfAbsent(key) { Mutex() }
+    }
+
+    /**
+     * Create the snapshot that should be exposed to a caller for a context window.
+     *
+     * @param context Context window currently stored in the bank.
+     * @param copy When true, return a deep copy instead of the shared reference.
+     * @return Caller-facing context window value.
+     */
+    private fun snapshotContextWindow(context: ContextWindow, copy: Boolean): ContextWindow
+    {
+        return if(copy) context.deepCopy() else context
+    }
+
+    /**
+     * Create the snapshot that should be exposed to a caller for a todo list.
+     *
+     * @param list Todo list currently stored in the bank.
+     * @param copy When true, return a deep copy instead of the shared reference.
+     * @return Caller-facing todo list value.
+     */
+    private fun snapshotTodoList(list: TodoList, copy: Boolean): TodoList
+    {
+        return if(copy) list.deepCopy() else list
+    }
+
+    /**
+     * Load a context window for [key] while the caller already holds that page key's mutex.
+     *
+     * @param key The page key being loaded.
+     * @param mode The storage mode for the page.
+     * @return The loaded or cached context window.
+     */
+    private fun loadContextWindowForKeyLocked(key: String, mode: StorageMode): ContextWindow
+    {
+        bank[key]?.let { return it }
+
+        val diskPath = "${TPipeConfig.getLorebookDir()}/${key}.bank"
+        if(!File(diskPath).exists())
+        {
+            return ContextWindow()
+        }
+
+        val context = deserialize<ContextWindow>(readStringFromFile(diskPath)) ?: ContextWindow()
+
+        when(mode)
+        {
+            StorageMode.DISK_ONLY ->
+            {
+                return context
+            }
+
+            StorageMode.DISK_WITH_CACHE, StorageMode.MEMORY_AND_DISK, StorageMode.MEMORY_ONLY ->
+            {
+                bank.putIfAbsent(key, context)
+            }
+
+            StorageMode.REMOTE -> { /* Handled by caller. */ }
+        }
+
+        return bank[key] ?: context
+    }
+
+    /**
+     * Load a todo list for [key] while the caller already holds that todo key's mutex.
+     *
+     * @param key The todo-list key being loaded.
+     * @param mode The storage mode for the todo list.
+     * @return The loaded or cached todo list.
+     */
+    private fun loadTodoListForKeyLocked(key: String, mode: StorageMode): TodoList
+    {
+        todoList[key]?.let { return it }
+
+        val fileContents = readStringFromFile("${TPipeConfig.getTodoListDir()}/${key}.todo")
+        if(fileContents.isEmpty())
+        {
+            return TodoList()
+        }
+
+        val result = deserialize<TodoList>(fileContents) ?: TodoList()
+
+        when(mode)
+        {
+            StorageMode.DISK_ONLY ->
+            {
+                return result
+            }
+
+            StorageMode.DISK_WITH_CACHE, StorageMode.MEMORY_AND_DISK, StorageMode.MEMORY_ONLY ->
+            {
+                todoList.putIfAbsent(key, result)
+            }
+
+            StorageMode.REMOTE -> { /* Handled by caller. */ }
+        }
+
+        return todoList[key] ?: result
+    }
 
     /**
      * Update or create storage metadata for a key.
@@ -124,15 +250,16 @@ object ContextBank
      */
     private fun updateMetadata(key: String, mode: StorageMode)
     {
-        val existing = storageMetadata[key]
-        storageMetadata[key] = StorageMetadata(
-            key = key,
-            storageMode = mode,
-            lastAccessed = System.currentTimeMillis(),
-            accessCount = (existing?.accessCount ?: 0) + 1,
-            sizeBytes = existing?.sizeBytes ?: 0L,
-            version = existing?.version ?: 0L
-        )
+        storageMetadata.compute(key) { _, existing ->
+            StorageMetadata(
+                key = key,
+                storageMode = mode,
+                lastAccessed = System.currentTimeMillis(),
+                accessCount = (existing?.accessCount ?: 0) + 1,
+                sizeBytes = existing?.sizeBytes ?: 0L,
+                version = existing?.version ?: 0L
+            )
+        }
     }
 
     /**
@@ -142,18 +269,29 @@ object ContextBank
      */
     private fun trackAccess(key: String)
     {
-        val existing = storageMetadata[key] ?: return
-        storageMetadata[key] = existing.copy(
-            lastAccessed = System.currentTimeMillis(),
-            accessCount = existing.accessCount + 1
-        )
+        storageMetadata.computeIfPresent(key) { _, existing ->
+            existing.copy(
+                lastAccessed = System.currentTimeMillis(),
+                accessCount = existing.accessCount + 1
+            )
+        }
     }
 
     /**
      * Enforce cache eviction policy based on configured limits.
      * Removes entries from memory when maxEntries or maxMemoryBytes limits are exceeded.
      */
-    private fun enforceEvictionPolicy()
+    private suspend fun enforceEvictionPolicy()
+    {
+        cacheMutex.withLock {
+            enforceEvictionPolicyLocked()
+        }
+    }
+
+    /**
+     * Enforce cache eviction policy while holding [cacheMutex].
+     */
+    private fun enforceEvictionPolicyLocked()
     {
         if(cacheConfig.evictionPolicy == EvictionPolicy.MANUAL)
             {
@@ -162,14 +300,14 @@ object ContextBank
 
         while(bank.size > cacheConfig.maxEntries)
             {
-            evictLeastValuable()
+            evictLeastValuableLocked()
             }
 
         var totalBytes = bank.values.sumOf { estimateSize(it) }
 
         while(totalBytes > cacheConfig.maxMemoryBytes && bank.isNotEmpty())
             {
-            val evictedSize = evictLeastValuable()
+            val evictedSize = evictLeastValuableLocked()
             totalBytes -= evictedSize
             }
     }
@@ -180,7 +318,7 @@ object ContextBank
      *
      * @return Size in bytes of the evicted entry, or 0 if nothing was evicted
      */
-    private fun evictLeastValuable(): Long
+    private fun evictLeastValuableLocked(): Long
     {
         val candidates = storageMetadata.values
             .filter { bank.containsKey(it.key) }
@@ -225,22 +363,44 @@ object ContextBank
 
     /**
      * Retrieve the existing banked context window reference.
-     * Warning: Do not call this if you are updating the context window inside of pipes or coroutines. Use copy
-     * instead to collect the window for safety reasons.
+     * This is a blocking compatibility wrapper and should not be used from coroutine-heavy internal code.
+     * Use [getBankedContextWindowSuspend] internally instead.
      */
     fun getBankedContextWindow() : ContextWindow
     {
-        return bankedContextWindow
+        return runBlocking {
+            getBankedContextWindowSuspend()
+        }
     }
 
     /**
-     * Get a copy of the existing banked context window. This should be used when inside a coroutine or alternate
-     * thread.
+     * Get a copy of the existing banked context window.
      */
     fun copyBankedContextWindow() : ContextWindow?
     {
-        val json = serialize(bankedContextWindow)
-        return deserialize<ContextWindow>(json) as? ContextWindow
+        return getBankedContextWindow()
+    }
+
+    /**
+     * Retrieve the existing banked context window using the suspend-safe code path.
+     *
+     * @param copy When true, return a deep copy instead of the stored reference.
+     * @return The caller-facing banked context window snapshot.
+     */
+    suspend fun getBankedContextWindowSuspend(copy: Boolean = true): ContextWindow
+    {
+        swapMutex.withLock {
+            return snapshotContextWindow(bankedContextWindow, copy)
+        }
+    }
+
+    /**
+     * Retrieve the raw shared banked context window reference.
+     * This is unsafe unless the caller guarantees exclusive access.
+     */
+    fun getBankedContextWindowReference() : ContextWindow
+    {
+        return bankedContextWindow
     }
 
     /**
@@ -257,17 +417,17 @@ object ContextBank
     fun emplace(key: String, window: ContextWindow, mode: StorageMode, skipRemote: Boolean = false)
     {
         if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
-            {
+        {
             runBlocking {
                 MemoryClient.emplaceContextWindow(key, window)
             }
             return
-            }
+        }
 
         val bankDir = "${TPipeConfig.getLorebookDir()}/${key}.bank"
 
         when(mode)
-            {
+        {
             StorageMode.MEMORY_ONLY ->
             {
                 bank[key] = window
@@ -276,26 +436,25 @@ object ContextBank
             StorageMode.MEMORY_AND_DISK ->
             {
                 bank[key] = window
-                val value = serialize(window)
-                writeStringToFile(bankDir, value)
+                writeStringToFile(bankDir, serialize(window))
             }
 
             StorageMode.DISK_ONLY ->
             {
-                val value = serialize(window)
-                writeStringToFile(bankDir, value)
+                writeStringToFile(bankDir, serialize(window))
             }
 
             StorageMode.DISK_WITH_CACHE ->
             {
-                val value = serialize(window)
-                writeStringToFile(bankDir, value)
+                writeStringToFile(bankDir, serialize(window))
                 bank[key] = window
-                enforceEvictionPolicy()
+                runBlocking {
+                    enforceEvictionPolicy()
+                }
             }
 
             StorageMode.REMOTE -> { /* Handled above */ }
-            }
+        }
 
         updateMetadata(key, mode)
     }
@@ -315,6 +474,75 @@ object ContextBank
         emplace(key, window, mode, skipRemote)
     }
 
+    /**
+     * Suspend-safe emplace path for internal coroutine code.
+     *
+     * @param key Map key to replace.
+     * @param window Context window to store.
+     * @param mode Storage mode controlling memory and disk persistence behavior.
+     * @param skipRemote If true, skip remote delegation even if configured.
+     */
+    suspend fun emplaceSuspend(
+        key: String,
+        window: ContextWindow,
+        mode: StorageMode,
+        skipRemote: Boolean = false,
+        useWriteBack: Boolean = true
+    )
+    {
+        val writeBackFunction = if(useWriteBack) writeBackFunctions[key] else null
+        if(writeBackFunction != null)
+        {
+            writeBackFunction(key, window)
+            return
+        }
+
+        if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        {
+            MemoryClient.emplaceContextWindow(key, window)
+            return
+        }
+
+        val storedWindow = window
+        val bankDir = "${TPipeConfig.getLorebookDir()}/${key}.bank"
+
+        getPageMutex(key).withLock {
+            when(mode)
+            {
+                StorageMode.MEMORY_ONLY ->
+                {
+                    bank[key] = storedWindow
+                }
+
+                StorageMode.MEMORY_AND_DISK ->
+                {
+                    bank[key] = storedWindow
+                    writeStringToFile(bankDir, serialize(storedWindow))
+                }
+
+                StorageMode.DISK_ONLY ->
+                {
+                    writeStringToFile(bankDir, serialize(storedWindow))
+                }
+
+                StorageMode.DISK_WITH_CACHE ->
+                {
+                    writeStringToFile(bankDir, serialize(storedWindow))
+                    bank[key] = storedWindow
+                }
+
+                StorageMode.REMOTE -> { /* Handled above */ }
+            }
+        }
+
+        updateMetadata(key, mode)
+
+        if(mode == StorageMode.DISK_WITH_CACHE)
+        {
+            enforceEvictionPolicy()
+        }
+    }
+
 
     /**
      * Safely emplace a context window back using the mutex. This is the recommended way to emplace when possible.
@@ -327,15 +555,8 @@ object ContextBank
      */
     suspend fun emplaceWithMutex(key: String, window: ContextWindow, mode: StorageMode, skipRemote: Boolean = false)
     {
-        val writeBackFunction = writeBackFunctions[key]
-        if(writeBackFunction != null)
-        {
-            writeBackFunction(key, window)
-            return
-        }
-
         bankMutex.withLock {
-            emplace(key, window, mode, skipRemote)
+            emplaceSuspend(key, window, mode, skipRemote, useWriteBack = true)
         }
     }
 
@@ -349,16 +570,9 @@ object ContextBank
      */
     suspend fun emplaceWithMutex(key: String, window: ContextWindow, persistToDisk: Boolean = false, skipRemote: Boolean = false)
     {
-        val writeBackFunction = writeBackFunctions[key]
-        if(writeBackFunction != null)
-        {
-            writeBackFunction(key, window)
-            return
-        }
-
         bankMutex.withLock {
             val mode = if(persistToDisk) StorageMode.MEMORY_AND_DISK else StorageMode.MEMORY_ONLY
-            emplace(key, window, mode, skipRemote)
+            emplaceSuspend(key, window, mode, skipRemote, useWriteBack = true)
         }
     }
 
@@ -369,15 +583,29 @@ object ContextBank
      */
     fun deletePersistingBankKey(key: String, skipRemote: Boolean = false) : Boolean
     {
+        return runBlocking {
+            deletePersistingBankKeySuspend(key, skipRemote)
+        }
+    }
+
+    /**
+     * Suspend-safe delete path for persisted context-bank files.
+     *
+     * @param key The key to delete.
+     * @param skipRemote If true, skip remote delegation even if configured.
+     * @return True if the delete succeeded.
+     */
+    suspend fun deletePersistingBankKeySuspend(key: String, skipRemote: Boolean = false) : Boolean
+    {
         if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
-            {
-            return runBlocking {
-                MemoryClient.deleteContextWindow(key)
-            }
-            }
+        {
+            return MemoryClient.deleteContextWindow(key)
+        }
 
         val bankDir = "${TPipeConfig.getLorebookDir()}/${key}.bank"
-        return deleteFile(bankDir)
+        return getPageMutex(key).withLock {
+            deleteFile(bankDir)
+        }
     }
 
     /**
@@ -389,8 +617,8 @@ object ContextBank
     suspend fun deletePersistingBankKeyWithMutex(key: String, skipRemote: Boolean = false) : Boolean
     {
         bankMutex.withLock {
-            return deletePersistingBankKey(key, skipRemote)
-            }
+            return deletePersistingBankKeySuspend(key, skipRemote)
+        }
     }
 
     /**
@@ -402,9 +630,7 @@ object ContextBank
      */
     fun evictFromMemory(key: String): Boolean
     {
-        val existed = bank.containsKey(key)
-        bank.remove(key)
-        return existed
+        return bank.remove(key) != null
     }
 
     /**
@@ -449,8 +675,22 @@ object ContextBank
      */
     fun configureCachePolicy(config: CacheConfig)
     {
-        cacheConfig = config
-        enforceEvictionPolicy()
+        runBlocking {
+            configureCachePolicySuspend(config)
+        }
+    }
+
+    /**
+     * Suspend-safe cache configuration path.
+     *
+     * @param config Cache configuration with memory limits and eviction policy.
+     */
+    suspend fun configureCachePolicySuspend(config: CacheConfig)
+    {
+        cacheMutex.withLock {
+            cacheConfig = config
+            enforceEvictionPolicyLocked()
+        }
     }
 
     /**
@@ -487,14 +727,26 @@ object ContextBank
      */
     fun clearCache()
     {
-        val diskWithCacheKeys = storageMetadata.values
-            .filter { it.storageMode == StorageMode.DISK_WITH_CACHE }
-            .map { it.key }
+        runBlocking {
+            clearCacheSuspend()
+        }
+    }
 
-        for(key in diskWithCacheKeys)
+    /**
+     * Suspend-safe cache clear path.
+     */
+    suspend fun clearCacheSuspend()
+    {
+        cacheMutex.withLock {
+            val diskWithCacheKeys = storageMetadata.values
+                .filter { it.storageMode == StorageMode.DISK_WITH_CACHE }
+                .map { it.key }
+
+            for(key in diskWithCacheKeys)
             {
-            bank.remove(key)
+                bank.remove(key)
             }
+        }
     }
 
     /**
@@ -540,7 +792,9 @@ object ContextBank
      */
     fun updateBankedContext(newContext: ContextWindow)
     {
-        bankedContextWindow = newContext
+        runBlocking {
+            updateBankedContextSuspend(newContext)
+        }
     }
 
     /**
@@ -548,9 +802,19 @@ object ContextBank
      */
     suspend fun updateBankedContextWithMutex(newContext: ContextWindow)
     {
-        bankMutex.withLock {
-            bankedContextWindow = newContext
-            }
+        updateBankedContextSuspend(newContext)
+    }
+
+    /**
+     * Suspend-safe banked context update used by internal coroutine code.
+     *
+     * @param newContext New banked context snapshot to store.
+     */
+    suspend fun updateBankedContextSuspend(newContext: ContextWindow)
+    {
+        swapMutex.withLock {
+            bankedContextWindow = newContext.deepCopy()
+        }
     }
 
 
@@ -564,10 +828,9 @@ object ContextBank
      */
     fun swapBank(key: String, copy: Boolean = true)
     {
-        val context = getContextFromBank(key, copy)
-
-        //Otherwise, the banked window becomes a reference or a deep copy.
-        bankedContextWindow = context
+        runBlocking {
+            swapBankSuspend(key, copy)
+        }
     }
 
     /**
@@ -577,10 +840,22 @@ object ContextBank
     suspend fun swapBankWithMutex(key: String, copy: Boolean = true)
     {
         bankMutex.withLock {
-            swapMutex.withLock {
-                swapBank(key, copy)
-            }
-            }
+            swapBankSuspend(key, copy)
+        }
+    }
+
+    /**
+     * Suspend-safe bank swap used by internal coroutine code.
+     *
+     * @param key Page key for the banked context window we want to pull into visibility.
+     * @param copy When true, store a snapshot instead of the shared reference.
+     */
+    suspend fun swapBankSuspend(key: String, copy: Boolean = true)
+    {
+        val context = getContextFromBankSuspend(key, copy)
+        swapMutex.withLock {
+            bankedContextWindow = context
+        }
     }
 
     /**
@@ -589,8 +864,8 @@ object ContextBank
     suspend fun getContextFromBankWithMutex(key: String, copy: Boolean = true, skipRemote: Boolean = false) : ContextWindow
     {
         bankMutex.withLock {
-            return getContextFromBank(key, copy, skipRemote)
-            }
+            return getContextFromBankSuspend(key, copy, skipRemote)
+        }
     }
 
     /**
@@ -599,8 +874,8 @@ object ContextBank
     suspend fun getPagedTodoListWithMutex(key: String, copy: Boolean = true, skipRemote: Boolean = false) : TodoList
     {
         todoMutex.withLock {
-            return getPagedTodoList(key, copy, skipRemote)
-            }
+            return getPagedTodoListSuspend(key, copy, skipRemote)
+        }
     }
 
 
@@ -615,69 +890,147 @@ object ContextBank
      */
     fun getContextFromBank(key: String, copy: Boolean = true, skipRemote: Boolean = false) : ContextWindow
     {
-        // Retrieval functions always take priority over all other storage modes.
-        if(retrievalFunctions.containsKey(key))
-            {
-            val function = retrievalFunctions[key]!!
-            val context = runBlocking {
-                function(key)
-            } ?: throw IllegalStateException("Retrieval function for key '$key' failed to return a context window.")
+        return runBlocking {
+            getContextFromBankSuspend(key, copy, skipRemote)
+        }
+    }
 
-            return if(copy) context.deepCopy() else context
-            }
+    /**
+     * Suspend-safe page retrieval path used by internal coroutine code.
+     *
+     * @param key The page key for the bank.
+     * @param copy If true, return a deep copy instead of the shared reference.
+     * @param skipRemote If true, skip remote delegation even if configured.
+     * @return The requested context window or an empty [ContextWindow].
+     */
+    suspend fun getContextFromBankSuspend(key: String, copy: Boolean = true, skipRemote: Boolean = false) : ContextWindow
+    {
+        retrievalFunctions[key]?.let { function ->
+            val context = function(key)
+                ?: throw IllegalStateException("Retrieval function for key '$key' failed to return a context window.")
+
+            return snapshotContextWindow(context, copy)
+        }
 
         val mode = getStorageMode(key)
         if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
-            {
-            return runBlocking {
-                MemoryClient.getContextWindow(key) ?: ContextWindow()
-            }
-            }
+        {
+            val remoteContext = MemoryClient.getContextWindow(key) ?: ContextWindow()
+            return snapshotContextWindow(remoteContext, copy)
+        }
 
-        if(ContextLock.isPageLocked(key))
-            {
+        if(ContextLock.isPageLockedSuspend(key, skipRemote))
+        {
             return ContextWindow()
-            }
+        }
 
         trackAccess(key)
-        var context: ContextWindow
 
-        if(bank.containsKey(key))
+        return getPageMutex(key).withLock {
+            snapshotContextWindow(loadContextWindowForKeyLocked(key, mode), copy)
+        }.also {
+            if(mode == StorageMode.DISK_WITH_CACHE)
             {
-            context = bank[key]!!
-            return if(copy) context.deepCopy() else context
+                enforceEvictionPolicy()
             }
+        }
+    }
 
-        val diskPath = "${TPipeConfig.getLorebookDir()}/${key}.bank"
-        if(File(diskPath).exists())
+    /**
+     * Mutate the shared in-memory context reference for a page while holding that page's mutex.
+     * This is intended for metadata-only mutations that should not immediately persist to disk.
+     *
+     * @param key The page key to mutate.
+     * @param skipRemote If true, skip remote delegation even if configured.
+     * @param block Mutation to apply while the page lock is held.
+     * @return The mutated shared context reference.
+     */
+    suspend fun withContextWindowReferenceSuspend(
+        key: String,
+        skipRemote: Boolean = false,
+        block: (ContextWindow) -> Unit
+    ): ContextWindow
+    {
+        return getPageMutex(key).withLock {
+            val mode = getStorageMode(key)
+            val context = if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
             {
-            val contextJson = readStringFromFile(diskPath)
-            context = deserialize<ContextWindow>(contextJson) ?: ContextWindow()
+                MemoryClient.getContextWindow(key) ?: ContextWindow()
+            }
+            else
+            {
+                loadContextWindowForKeyLocked(key, mode)
+            }
+            block(context)
+            context
+        }
+    }
+
+    /**
+     * Perform an atomic read-modify-write on a context window while holding the page's mutex.
+     *
+     * @param key The page key to mutate.
+     * @param mode Storage mode controlling persistence after the mutation.
+     * @param skipRemote If true, skip remote delegation even if configured.
+     * @param block Mutation to apply to the working snapshot before it is stored.
+     * @return The stored context window snapshot after mutation.
+     */
+    suspend fun mutateContextWindowSuspend(
+        key: String,
+        mode: StorageMode = getStorageMode(key),
+        skipRemote: Boolean = false,
+        block: (ContextWindow) -> Unit
+    ): ContextWindow
+    {
+        if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        {
+            val remoteContext = MemoryClient.getContextWindow(key) ?: ContextWindow()
+            block(remoteContext)
+            MemoryClient.emplaceContextWindow(key, remoteContext)
+            return remoteContext.deepCopy()
+        }
+
+        return getPageMutex(key).withLock {
+            val existingContext = loadContextWindowForKeyLocked(key, mode)
+
+            val workingContext = existingContext.deepCopy()
+            block(workingContext)
 
             when(mode)
             {
+                StorageMode.MEMORY_ONLY ->
+                {
+                    bank[key] = workingContext
+                }
+
+                StorageMode.MEMORY_AND_DISK ->
+                {
+                    bank[key] = workingContext
+                    writeStringToFile("${TPipeConfig.getLorebookDir()}/${key}.bank", serialize(workingContext))
+                }
+
                 StorageMode.DISK_ONLY ->
                 {
-                    // Don't cache
+                    writeStringToFile("${TPipeConfig.getLorebookDir()}/${key}.bank", serialize(workingContext))
                 }
 
                 StorageMode.DISK_WITH_CACHE ->
                 {
-                    bank[key] = context
-                    enforceEvictionPolicy()
+                    writeStringToFile("${TPipeConfig.getLorebookDir()}/${key}.bank", serialize(workingContext))
+                    bank[key] = workingContext
                 }
 
-                StorageMode.MEMORY_AND_DISK, StorageMode.MEMORY_ONLY ->
-                {
-                    bank[key] = context
-                }
                 StorageMode.REMOTE -> { /* Handled above */ }
             }
 
-            return if(copy) context.deepCopy() else context
+            updateMetadata(key, mode)
+            workingContext.deepCopy()
+        }.also {
+            if(mode == StorageMode.DISK_WITH_CACHE)
+            {
+                enforceEvictionPolicy()
             }
-
-        return ContextWindow()
+        }
     }
 
     /**
@@ -686,14 +1039,25 @@ object ContextBank
      */
     fun getPageKeys(skipRemote: Boolean = false) : List<String>
     {
+        return runBlocking {
+            getPageKeysSuspend(skipRemote)
+        }
+    }
+
+    /**
+     * Suspend-safe retrieval of page keys for internal coroutine code.
+     *
+     * @param skipRemote If true, skip remote keys even if configured.
+     * @return All visible page keys.
+     */
+    suspend fun getPageKeysSuspend(skipRemote: Boolean = false) : List<String>
+    {
         val localKeys = (bank.keys + retrievalFunctions.keys).distinct()
         if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
-            {
-            val remoteKeys = runBlocking {
-                MemoryClient.getPageKeys()
-            }
+        {
+            val remoteKeys = MemoryClient.getPageKeys()
             return (localKeys + remoteKeys).distinct()
-            }
+        }
         return localKeys
     }
 
@@ -703,14 +1067,25 @@ object ContextBank
      */
     fun getTodoListKeys(skipRemote: Boolean = false) : List<String>
     {
+        return runBlocking {
+            getTodoListKeysSuspend(skipRemote)
+        }
+    }
+
+    /**
+     * Suspend-safe retrieval of todo-list keys for internal coroutine code.
+     *
+     * @param skipRemote If true, skip remote keys even if configured.
+     * @return All visible todo-list keys.
+     */
+    suspend fun getTodoListKeysSuspend(skipRemote: Boolean = false) : List<String>
+    {
         val localKeys = todoList.keys.toList()
         if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
-            {
-            val remoteKeys = runBlocking {
-                MemoryClient.getTodoListKeys()
-            }
+        {
+            val remoteKeys = MemoryClient.getTodoListKeys()
             return (localKeys + remoteKeys).distinct()
-            }
+        }
         return localKeys
     }
 
@@ -720,7 +1095,9 @@ object ContextBank
      */
     fun clearBankedContext()
     {
-        bankedContextWindow = ContextWindow()
+        runBlocking {
+            updateBankedContextSuspend(ContextWindow())
+        }
     }
 
     /**
@@ -729,54 +1106,38 @@ object ContextBank
      */
     fun getPagedTodoList(key: String, copy: Boolean = true, skipRemote: Boolean = false) : TodoList
     {
+        return runBlocking {
+            getPagedTodoListSuspend(key, copy, skipRemote)
+        }
+    }
+
+    /**
+     * Suspend-safe todo-list retrieval path used by internal coroutine code.
+     *
+     * @param key Page key for the todo list.
+     * @param copy If true, return a deep copy instead of the shared reference.
+     * @param skipRemote If true, skip remote delegation even if configured.
+     * @return The requested todo list or an empty [TodoList].
+     */
+    suspend fun getPagedTodoListSuspend(key: String, copy: Boolean = true, skipRemote: Boolean = false) : TodoList
+    {
         if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
-            {
-            return runBlocking {
-                MemoryClient.getTodoList(key) ?: TodoList()
-            }
-            }
+        {
+            val remoteTodoList = MemoryClient.getTodoList(key) ?: TodoList()
+            return snapshotTodoList(remoteTodoList, copy)
+        }
 
         trackAccess(key)
         val mode = getStorageMode(key)
 
-        if(todoList.containsKey(key))
+        return getTodoMutex(key).withLock {
+            snapshotTodoList(loadTodoListForKeyLocked(key, mode), copy)
+        }.also {
+            if(mode == StorageMode.DISK_WITH_CACHE)
             {
-            val list = todoList[key]!!
-            return if(copy) list.deepCopy() else list
+                enforceTodoListEvictionPolicy()
             }
-
-        val diskPath = TPipeConfig.getTodoListDir()
-        val fullFilePath = "${diskPath}/${key}.todo"
-        val fileContents = readStringFromFile(fullFilePath)
-
-        if(fileContents.isNotEmpty())
-            {
-            val result = deserialize<TodoList>(fileContents) ?: TodoList()
-
-            when(mode)
-            {
-                StorageMode.DISK_ONLY ->
-                {
-                    // Don't cache
-                }
-
-                StorageMode.DISK_WITH_CACHE ->
-                {
-                    todoList[key] = result
-                    enforceTodoListEvictionPolicy()
-                }
-
-                StorageMode.MEMORY_AND_DISK, StorageMode.MEMORY_ONLY ->
-                {
-                    todoList[key] = result
-                }
-                StorageMode.REMOTE -> { /* Handled above */ }
-            }
-
-            return if(copy) result.deepCopy() else result
-            }
-
-        return TodoList()
+        }
     }
 
     /**
@@ -801,7 +1162,9 @@ object ContextBank
     )
     {
         val mode = if(persistToDisk) StorageMode.MEMORY_AND_DISK else StorageMode.MEMORY_ONLY
-        emplaceTodoList(key, todoList, mode, allowUpdatesOnly, allowCompletionsOnly, skipRemote)
+        runBlocking {
+            emplaceTodoListSuspend(key, todoList, mode, allowUpdatesOnly, allowCompletionsOnly, skipRemote)
+        }
     }
 
     /**
@@ -818,15 +1181,9 @@ object ContextBank
     )
     {
         todoMutex.withLock {
-            emplaceTodoList(
-                key,
-                todoList,
-                allowUpdatesOnly,
-                allowCompletionsOnly,
-                persistToDisk,
-                skipRemote
-            )
-            }
+            val mode = if(persistToDisk) StorageMode.MEMORY_AND_DISK else StorageMode.MEMORY_ONLY
+            emplaceTodoListSuspend(key, todoList, mode, allowUpdatesOnly, allowCompletionsOnly, skipRemote)
+        }
     }
 
     /**
@@ -848,59 +1205,87 @@ object ContextBank
         skipRemote: Boolean = false
     )
     {
-        if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
-            {
-            runBlocking {
-                MemoryClient.emplaceTodoList(key, todoList)
-            }
-            return
-            }
+        runBlocking {
+            emplaceTodoListSuspend(key, todoList, mode, allowUpdatesOnly, allowCompletionsOnly, skipRemote)
+        }
+    }
 
-        val bankedTasks = ContextBank.todoList[key]
-        val todoListToEmplace = if(bankedTasks == null) todoList
-        else applyTodoListWriteProtection(todoList, bankedTasks, allowUpdatesOnly, allowCompletionsOnly)
+    /**
+     * Suspend-safe todo-list emplace path used by internal coroutine code.
+     *
+     * @param key Bank key to write into.
+     * @param todoList TodoList to write into the page.
+     * @param mode Storage mode controlling memory and disk persistence behavior.
+     * @param allowUpdatesOnly If true, only existing tasks can be modified.
+     * @param allowCompletionsOnly If true, only isCompleted can be changed.
+     * @param skipRemote If true, skip remote delegation even if configured.
+     */
+    suspend fun emplaceTodoListSuspend(
+        key: String,
+        todoList: TodoList,
+        mode: StorageMode,
+        allowUpdatesOnly: Boolean = true,
+        allowCompletionsOnly: Boolean = false,
+        skipRemote: Boolean = false
+    )
+    {
+        if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        {
+            MemoryClient.emplaceTodoList(key, todoList)
+            return
+        }
 
         val todoPath = TPipeConfig.getTodoListDir()
         val fullFilePath = "${todoPath}/${key}.todo"
+        var todoListToEmplace = todoList
 
-        when(mode)
+        getTodoMutex(key).withLock {
+            val bankedTasks = ContextBank.todoList[key]
+            if(bankedTasks != null)
             {
-            StorageMode.MEMORY_ONLY ->
-            {
-                ContextBank.todoList[key] = todoListToEmplace
+                todoListToEmplace = applyTodoListWriteProtection(todoListToEmplace, bankedTasks.deepCopy(), allowUpdatesOnly, allowCompletionsOnly)
+            }
 
-                // Maintain backward compatibility: persist if file already exists
-                if(File(fullFilePath).exists())
+            when(mode)
+            {
+                StorageMode.MEMORY_ONLY ->
                 {
-                    val todoAsString = serialize(todoListToEmplace)
-                    writeStringToFile(fullFilePath, todoAsString)
+                    ContextBank.todoList[key] = todoListToEmplace
+
+                    // Maintain backward compatibility: persist if file already exists.
+                    if(File(fullFilePath).exists())
+                    {
+                        writeStringToFile(fullFilePath, serialize(todoListToEmplace))
+                    }
                 }
-            }
 
-            StorageMode.MEMORY_AND_DISK ->
-            {
-                ContextBank.todoList[key] = todoListToEmplace
-                val todoAsString = serialize(todoListToEmplace)
-                writeStringToFile(fullFilePath, todoAsString)
-            }
+                StorageMode.MEMORY_AND_DISK ->
+                {
+                    ContextBank.todoList[key] = todoListToEmplace
+                    writeStringToFile(fullFilePath, serialize(todoListToEmplace))
+                }
 
-            StorageMode.DISK_ONLY ->
-            {
-                val todoAsString = serialize(todoListToEmplace)
-                writeStringToFile(fullFilePath, todoAsString)
-            }
+                StorageMode.DISK_ONLY ->
+                {
+                    writeStringToFile(fullFilePath, serialize(todoListToEmplace))
+                }
 
-            StorageMode.DISK_WITH_CACHE ->
-            {
-                val todoAsString = serialize(todoListToEmplace)
-                writeStringToFile(fullFilePath, todoAsString)
-                ContextBank.todoList[key] = todoListToEmplace
-                enforceTodoListEvictionPolicy()
+                StorageMode.DISK_WITH_CACHE ->
+                {
+                    writeStringToFile(fullFilePath, serialize(todoListToEmplace))
+                    ContextBank.todoList[key] = todoListToEmplace
+                }
+
+                StorageMode.REMOTE -> { /* Handled above */ }
             }
-            StorageMode.REMOTE -> { /* Handled above */ }
-            }
+        }
 
         updateMetadata(key, mode)
+
+        if(mode == StorageMode.DISK_WITH_CACHE)
+        {
+            enforceTodoListEvictionPolicy()
+        }
     }
 
     /**
@@ -969,23 +1354,25 @@ object ContextBank
     /**
      * Enforce eviction policy for TodoList cache.
      */
-    private fun enforceTodoListEvictionPolicy()
+    private suspend fun enforceTodoListEvictionPolicy()
     {
-        if(cacheConfig.evictionPolicy == EvictionPolicy.MANUAL)
+        cacheMutex.withLock {
+            if(cacheConfig.evictionPolicy == EvictionPolicy.MANUAL)
             {
-            return
+                return@withLock
             }
 
-        while(todoList.size > cacheConfig.maxEntries)
+            while(todoList.size > cacheConfig.maxEntries)
             {
-            evictLeastValuableTodoList()
+                evictLeastValuableTodoListLocked()
             }
+        }
     }
 
     /**
      * Evict least valuable TodoList based on eviction policy.
      */
-    private fun evictLeastValuableTodoList()
+    private fun evictLeastValuableTodoListLocked()
     {
         val candidates = storageMetadata.values
             .filter { todoList.containsKey(it.key) }
@@ -1013,9 +1400,7 @@ object ContextBank
      */
     fun evictTodoListFromMemory(key: String): Boolean
     {
-        val existed = todoList.containsKey(key)
-        todoList.remove(key)
-        return existed
+        return todoList.remove(key) != null
     }
 
     /**
