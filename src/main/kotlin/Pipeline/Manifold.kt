@@ -53,6 +53,9 @@ data class TaskProgress(
  * then return back to the manager pipeline allowing it to decide which pipeline to use for the next step of the task.
  * This repeats until the task is considered to be completed and the Multimodal content object will be released as
  * the result.
+ *
+ * Manifold reuses its configured manager and worker pipeline instances across loop iterations. Build a fresh manifold
+ * for concurrent top-level runs rather than sharing one instance across simultaneous executions.
  */
 class Manifold : P2PInterface
 {
@@ -151,8 +154,8 @@ class Manifold : P2PInterface
     private var agentPipeNames = mutableListOf<String>("Agent caller pipe")
 
     /**
-     * If true the contents of the task will be truncated if it approaches the max tokens limit of the smallest
-     * context window supported by a given worker agent, or the manager agent.
+     * If true the manifold will truncate the working converse history if it approaches the smallest supported
+     * context window across the manager and worker pipelines.
      */
     private var autoTruncateContext = false
 
@@ -246,8 +249,8 @@ class Manifold : P2PInterface
 //=============================================Constructor==============================================================
 
     /**
-     * If true, the manifold will automatically truncate the context of the workers and agent to enusre it stays
-     * in safe token budgets.
+     * Enables automatic truncation of the manifold's working converse history to stay inside the shared context limit.
+     * This does not perform general worker-context summarization or cross-agent memory compression.
      */
     fun autoTruncateContext() : Manifold
     {

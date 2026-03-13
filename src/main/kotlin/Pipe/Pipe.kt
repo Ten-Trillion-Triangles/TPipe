@@ -425,6 +425,9 @@ object PipeTimeoutManager
  *
  * This class should not be addressed directly, but instead be inherited from for each supported api and sdk.
  * As such, many functions here are abstract and have no functionality.
+ *
+ * Pipe instances are mutable execution objects. Build separate instances for concurrent top-level runs rather than
+ * sharing the same instance across multiple simultaneous executions.
  */
 @kotlinx.serialization.Serializable
 abstract class Pipe : P2PInterface, ProviderInterface
@@ -770,6 +773,16 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     @kotlinx.serialization.Transient //Has to be transient due to an insane bug in kotlinx. todo: Replace kotlinx.
     private var originalContextWindowSize = 32000
+
+    /**
+     * Snapshot of the execution-time budget fields that are temporarily rewritten while truncation is in progress.
+     * These values must be restored after each run so repeated executions do not inherit mutated state.
+     */
+    private data class TokenBudgetExecutionSnapshot(
+        val maxTokens: Int,
+        val contextWindowSize: Int,
+        val tokenBudgetSettings: TokenBudgetSettings?
+    )
 
     /**
      * MiniBank object to handle the case where multiple page keys have been passed forward.
@@ -2287,10 +2300,50 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun setTokenBudget(budget: TokenBudgetSettings) : Pipe
     {
         truncateModuleContext() //Call to ensure our settings is bound.
-        tokenBudgetSettings = budget
+        tokenBudgetSettings = cloneTokenBudgetSettings(budget)
         setContextWindowSize(budget.contextWindowSize ?: contextWindowSize)
-        setTokenBudgetInternal(budget)
+        setTokenBudgetInternal(tokenBudgetSettings!!)
         return this
+    }
+
+    /**
+     * Creates a detached copy of token-budget settings so execution-time mutations do not leak back into the
+     * caller's original configuration object.
+     *
+     * @param budget The source settings to copy.
+     * @return A detached copy safe for internal mutation.
+     */
+    private fun cloneTokenBudgetSettings(budget: TokenBudgetSettings): TokenBudgetSettings
+    {
+        return budget.copy(
+            pageWeights = budget.pageWeights?.toMap()
+        )
+    }
+
+    /**
+     * Captures the mutable token-budget fields that execution may rewrite temporarily.
+     *
+     * @return Snapshot of the current execution-visible budget state.
+     */
+    private fun captureTokenBudgetExecutionSnapshot(): TokenBudgetExecutionSnapshot
+    {
+        return TokenBudgetExecutionSnapshot(
+            maxTokens = maxTokens,
+            contextWindowSize = contextWindowSize,
+            tokenBudgetSettings = tokenBudgetSettings?.let { cloneTokenBudgetSettings(it) }
+        )
+    }
+
+    /**
+     * Restores the mutable token-budget fields after runtime truncation has completed.
+     *
+     * @param snapshot Snapshot captured before execution-time budgeting began.
+     */
+    private fun restoreTokenBudgetExecutionSnapshot(snapshot: TokenBudgetExecutionSnapshot)
+    {
+        maxTokens = snapshot.maxTokens
+        contextWindowSize = snapshot.contextWindowSize
+        tokenBudgetSettings = snapshot.tokenBudgetSettings?.let { cloneTokenBudgetSettings(it) }
     }
 
     /**
@@ -4247,6 +4300,17 @@ abstract class Pipe : P2PInterface, ProviderInterface
     abstract fun truncateModuleContext(): Pipe
 
     /**
+     * Suspend-safe truncation entrypoint used during execution. Subclasses that need remote-aware lorebook
+     * selection should override this instead of relying on the legacy synchronous helper.
+     *
+     * @return This pipe instance after truncation has been applied.
+     */
+    open suspend fun truncateModuleContextSuspend(): Pipe
+    {
+        return truncateModuleContext()
+    }
+
+    /**
      * Iterates through all binary content in the multimodal object, converts any non-base64 content to base64,
      * and counts the total token cost of all binary content combined using Dictionary and truncation settings.
      *
@@ -4354,299 +4418,171 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     private suspend fun truncateToFitTokenBudget(content: MultimodalContent) : MultimodalContent
     {
-        val budget = tokenBudgetSettings
-        if(budget == null) return content //We can't truncate if this was never assigned.
+        val configuredBudget = tokenBudgetSettings ?: return content
+        val workingBudget = cloneTokenBudgetSettings(configuredBudget)
+        val executionSnapshot = captureTokenBudgetExecutionSnapshot()
 
-        setTokenBudgetInternal(budget)  //Required to get all our internal window sizes to be correct.
-
-        //Scratchpad for allowing us to restore the working context window space if we were to go negative.
-        var tempContextWindowSize = 0
-
-        /**
-         * Define how much space we actually have to supply external context.
-         * External context is anything that's not the system prompt, user prompt, or binary data.
-         */
-        var workingContextWindowSpace = contextWindowSize
-        tempContextWindowSize = workingContextWindowSpace //Copy in case we need to restore later.
-        val truncationSettings = getTruncationSettings()
-
-        /**
-         * Declare at the top level now. This ensures that we won't have to perform any potentially costly token
-         * counting for the user prompt anymore times than need be.
-         */
-        val userPrompt = content.text
-        var userPromptTokenCost = Dictionary.countTokens(userPrompt, truncationSettings)
-
-        /**
-         * Defines if user prompt space is dynamic or not. This is based on if a user prompt max size was ever
-         * assigned. If not, we will need to null back out the user prompt space definition to guard against
-         * unexpected throws and crashes when a second call is invoked. Since the usage of the available space
-         * must be calculated after all other cases are spent, not prior.
-         */
-        val isUserPromptSpaceDynamic = tokenBudgetSettings?.userPromptSize == null
-
-        /**
-         * Try to resolve the user prompt space if we're set to a dynamic state. If we're not this calculation
-         * will have been handled at [setTokenBudgetInternal] prior.
-         */
-        if(isUserPromptSpaceDynamic)
+        try
         {
-            //Define now. Null back out later after we resolve these steps.
-            tokenBudgetSettings?.userPromptSize = userPromptTokenCost
-            workingContextWindowSpace -= userPromptTokenCost //Subtract now to claim this space vs the context.
+            setTokenBudgetInternal(workingBudget)
 
-            /**
-             * We can truncate if we overflowed because we're already set to dynamic for the user prompt.
-             * This is implicitly allowing us to try to fit into the space that's there.
-             */
-            if(workingContextWindowSpace <= 0)
+            var tempContextWindowSize = 0
+            var workingContextWindowSpace = contextWindowSize
+            tempContextWindowSize = workingContextWindowSpace
+            val truncationSettings = getTruncationSettings()
+
+            val userPrompt = content.text
+            var userPromptTokenCost = Dictionary.countTokens(userPrompt, truncationSettings)
+            val isUserPromptSpaceDynamic = workingBudget.userPromptSize == null
+
+            if(isUserPromptSpaceDynamic)
             {
-                /**
-                 * We need to use this odd internal function to subtract because of kotlin language behavior
-                 * surrounding nullable types.
-                 */
-                tokenBudgetSettings?.userPromptSize = tokenBudgetSettings?.userPromptSize?.minus(
-                    workingContextWindowSpace.absoluteValue
-                )
+                workingBudget.userPromptSize = userPromptTokenCost
+                workingContextWindowSpace -= userPromptTokenCost
 
-                //Restore so we have a positive value again.
-                workingContextWindowSpace = tempContextWindowSize
-                userPromptTokenCost = tokenBudgetSettings?.userPromptSize ?: 0 //Reset and try again.
-
-                //Attempt to allocate the space again, after reducing the user prompt size by the overflow.
-                workingContextWindowSpace -= userPromptTokenCost.takeIf { workingContextWindowSpace > userPromptTokenCost } ?: throw Exception("userPromptTokenCost at: $userPromptTokenCost tokens has overflowed the window size of: $workingContextWindowSpace tokens.")
-                tempContextWindowSize = workingContextWindowSpace //Update since we were successful.
-            }
-        }
-
-        /**
-         * First we need to count up all the tokens and all the binary content stored here is using. This allows us
-         * to determine how much actual remaining space we have in our context window for external context.
-         * Binary data cannot be compressed any further, and semantic compression only works on text that's actually
-         * text. Base64 does not qualify this check, so we have to just chop out any binary token usage from our
-         * available space.
-         *
-         * When setting up the initial token budget. This data was not present, so now at this second stage we're
-         * able to account for it.
-         */
-        val binaryTokenCost = countBinaryTokens(content, truncationSettings)
-        workingContextWindowSpace -= binaryTokenCost //Determine the actual space we have left for context.
-
-        /**
-         * Most API's will fail if we overflow. Even if we did not, truncating binary data could be disastrous
-         * so we need to throw here and stop things on the spot.
-         */
-        if(workingContextWindowSpace <= 0)
-        {
-            /**
-             * If we allow re-allocation of the user prompt space, then we'll try to reduce the user prompt
-             * by the overflow ratio. We can assume if the user prompt space overflowed prior, because truncation
-             * is allowed, we already reduced the space to fix max window size, so we can eat again here.
-             * In this situation we can expect to have the context data completely chopped away outright.
-             */
-            if(tokenBudgetSettings!!.allowUserPromptTruncation || tokenBudgetSettings!!.compressUserPrompt)
-            {
-                val tempUserPromptCost = userPromptTokenCost //Save so that we can log if we fail.
-
-                //Again, subtract against our user prompt size because of overflow.
-                tokenBudgetSettings?.userPromptSize = userPromptTokenCost - binaryTokenCost
-                userPromptTokenCost = tokenBudgetSettings?.userPromptSize ?: 0
-
-                //If we overflow, and we don't allow for empty prompts or content we need to throw here.
-                if(userPromptTokenCost <= 0 && !allowEmptyUserPrompt && !allowEmptyContentObject)
+                if(workingContextWindowSpace <= 0)
                 {
-                    throw Exception("Unable to allocate user prompt space of: $tempUserPromptCost due to large binary content allocation of: $binaryTokenCost")
+                    workingBudget.userPromptSize = workingBudget.userPromptSize?.minus(
+                        workingContextWindowSpace.absoluteValue
+                    )
+
+                    workingContextWindowSpace = tempContextWindowSize
+                    userPromptTokenCost = workingBudget.userPromptSize ?: 0
+                    workingContextWindowSpace -= userPromptTokenCost.takeIf { workingContextWindowSpace > userPromptTokenCost }
+                        ?: throw Exception("userPromptTokenCost at: $userPromptTokenCost tokens has overflowed the window size of: $workingContextWindowSpace tokens.")
+                    tempContextWindowSize = workingContextWindowSpace
                 }
             }
 
-            throw Exception("Context window size is too small to fit the binary data. Please increase the context window size. " +
-                    "Context window size: ${tokenBudgetSettings?.contextWindowSize} Binary size: ${binaryTokenCost}")
-        }
+            val binaryTokenCost = countBinaryTokens(content, truncationSettings)
+            workingContextWindowSpace -= binaryTokenCost
 
-        /**
-         * Next we need to truncate the context window, or mini bank depending on which is populated.
-         * This will favor the mini bank over the context window. Beware that the mini bank cannot be
-         * truncated as a string so that setting will end up being ignored.
-         */
-        if(miniContextBank.isEmpty())
-        {
-            if(!budget.truncateContextWindowAsString)
+            if(workingContextWindowSpace <= 0)
             {
-                /**
-                 *  todo: Allow some kind of value to be passed to give the user more control over what
-                 *  handles key selection. This can act as a good in-between needing a custom truncation
-                 *  function at prevalidation, or pre-init functions. Maybe use the pipe metadata,
-                 *  or even the content metadata?
-                 */
+                if(workingBudget.allowUserPromptTruncation || workingBudget.compressUserPrompt)
+                {
+                    val tempUserPromptCost = userPromptTokenCost
+                    workingBudget.userPromptSize = userPromptTokenCost - binaryTokenCost
+                    userPromptTokenCost = workingBudget.userPromptSize ?: 0
 
-                //Standard select and truncate method. User prompt will be used to select lorebook keys.
-                contextWindow.selectAndTruncateContext(
-                    content.text,
-                    workingContextWindowSpace,
-                    budget.truncationMethod,
-                    truncationSettings,
-                    fillMode = loreBookFillMode,
-                    preserveTextMatches = budget.preserveTextMatches
-                )
+                    if(userPromptTokenCost <= 0 && !allowEmptyUserPrompt && !allowEmptyContentObject)
+                    {
+                        throw Exception("Unable to allocate user prompt space of: $tempUserPromptCost due to large binary content allocation of: $binaryTokenCost")
+                    }
+                }
+
+                throw Exception("Context window size is too small to fit the binary data. Please increase the context window size. " +
+                    "Context window size: ${workingBudget.contextWindowSize} Binary size: ${binaryTokenCost}")
+            }
+
+            if(miniContextBank.isEmpty())
+            {
+                if(!workingBudget.truncateContextWindowAsString)
+                {
+                    contextWindow.selectAndTruncateContextSuspend(
+                        content.text,
+                        workingContextWindowSpace,
+                        workingBudget.truncationMethod,
+                        truncationSettings,
+                        fillMode = loreBookFillMode,
+                        preserveTextMatches = workingBudget.preserveTextMatches
+                    )
+                }
+
+                else
+                {
+                    val asString = contextWindow.combineAndTruncateAsStringWithSettingsSuspend(
+                        content.text,
+                        workingContextWindowSpace,
+                        truncationSettings,
+                        workingBudget.truncationMethod
+                    )
+
+                    contextWindow.clear()
+                    contextWindow.contextElements.add(asString)
+                }
             }
 
             else
             {
-                //Combine and truncate the entire context window as a string. This is useful for certain providers.
-                val asString = contextWindow.combineAndTruncateAsStringWithSettings(
-                    content.text,
-                    workingContextWindowSpace,
-                    truncationSettings,
-                    budget.truncationMethod)
-
-                contextWindow.clear()
-                contextWindow.contextElements.add(asString)
-            }
-        }
-
-        /**
-         * Note: Combine and truncate as string is not supported with the mini bank object.
-         * So we can only use standard truncation methods for the mini bank contents.
-         */
-        else
-        {
-            truncateMiniBank(content, workingContextWindowSpace, budget, truncationSettings)
-        }
-
-        /**
-         * Check to see if the user prompt has exceeded the provided budget. If no budget has been provided
-         * we need to calculate how much remaining space in the original value we actually have and fill to
-         * that point.
-         */
-        val userPromptSpace = budget.userPromptSize
-
-        if(userPromptTokenCost > userPromptSpace!!)
-        {
-            /**
-             * Attempt to deploy compression. If we can compress and fit we pass, if even after compression
-             * we cannot fit we must fail out. The pipe will need to have the compression ledger added to
-             * the system prompt to ensure it can decompress the data. Ensure there is enough cluster slack
-             * to spend on either reasoning out the decompression, or addressing it directly in the output.
-             */
-            if(budget.compressUserPrompt)
-            {
-                //todo: Place compression call here.
+                truncateMiniBank(content, workingContextWindowSpace, workingBudget, truncationSettings)
             }
 
-            /**
-             * WARNING: User prompt truncation is an experimental feature that allows for possibly fitting the
-             * content into the given window. It's assuming the common strategy of supplying json as context,
-             * or providing json after the user prompt. Or providing user prompt data that doesn't include json
-             * code or other elements that are too risky to truncate. This may allow gains when there otherwise
-             * is no chance to fit into the budget and execute this pipe. However, this should be considered
-             * very carefully and generally avoided unless you're aiming to get maximum gains, and you're certain
-             * of the content of the prompt and are prepared for the consequences.
-             *
-             * Truncating a converse history however, is far safer and just clips out
-             * parts of the conversation that are unable to fit. If you're going to use user prompt truncation
-             * it's recommended to store all prompts in a converse history object.
-             */
-            else if(tokenBudgetSettings?.allowUserPromptTruncation == true)
+            val userPromptSpace = workingBudget.userPromptSize
+
+            if(userPromptTokenCost > userPromptSpace!!)
             {
-                /**
-                 * First test if the user prompt is stored using converse. If so we want to truncate
-                 * it using the converse truncation mode which will preserve the converse json structuring.
-                 */
-                val converseContent = deserialize<ConverseHistory>(content.text)
-                if(converseContent != null)
+                if(workingBudget.compressUserPrompt)
                 {
-                    /**
-                     * Required boilerplate to move the converse history to a context window.
-                     * Then use ContextWindow's helper function to truncate the converse
-                     * history structure safely.
-                     */
-                    val truncateWindow = ContextWindow()
-                    truncateWindow.converseHistory = converseContent
-                    truncateWindow.truncateConverseHistoryWithObject(
-                        budget.userPromptSize!!,
-                        0,
-                        budget.truncationMethod,
-                        truncationSettings)
-
-                    val newUserPrompt = serialize(truncateWindow.converseHistory, encodedefault = false)
-                    content.text = newUserPrompt
+                    //todo: Place compression call here.
                 }
 
-                /**
-                 * User prompt is not structured as a converse object. In this case, we need to treat as a string
-                 * regardless of the content contained. The option to preserve json is also available but
-                 * if preserved could cause us to fail to fit.
-                 */
-                else
+                else if(workingBudget.allowUserPromptTruncation)
                 {
-                    /**
-                     * First extract any json objects we can find. We'll come back to appending these again
-                     * later if we need them. This will be determined by [TokenBudgetSettings.preserveJsonInUserPrompt]
-                     */
-                    val jsonContentInUserPrompt = extractAllJsonObjects(content.text)
-
-                    /**
-                     * We need to separate this portion in the event we're extracting the non json portions and
-                     * separating the json for preservation.
-                     */
-                    var exteriorContent = extractNonJsonText(content.text)
-
-                    /**
-                     * We're preserving the json here so we only want to truncate the user prompt and then
-                     * check to ensure we're now under the limit. We're presuming the prompt was that was
-                     * non-json was supplied prior. Then json came after.
-                     */
-                    if(budget.preserveJsonInUserPrompt)
+                    val converseContent = deserialize<ConverseHistory>(content.text)
+                    if(converseContent != null)
                     {
-                        //Truncate the exterior content.
-                       exteriorContent = Dictionary.truncateWithSettings(
-                            exteriorContent,
-                            budget.userPromptSize!!,
-                            budget.truncationMethod,
-                            truncationSettings)
+                        val truncateWindow = ContextWindow()
+                        truncateWindow.converseHistory = converseContent
+                        truncateWindow.truncateConverseHistoryWithObject(
+                            workingBudget.userPromptSize!!,
+                            0,
+                            workingBudget.truncationMethod,
+                            truncationSettings
+                        )
 
-                        var mergedUserPrompt = ""
-                        mergedUserPrompt += exteriorContent //First add the non json portion.
-
-                        for(jsonObject in jsonContentInUserPrompt)
-                        {
-                            /**
-                             * Safe to use toString() here because it's already in the form of a json object
-                             * This means that the schema and formatting will be preserved unlike calling
-                             * toString() on a data class vs serializing it.
-                             */
-                            mergedUserPrompt += jsonObject.toString()
-                        }
-
-                        //Push back the now truncated user prompt.
-                        content.text = mergedUserPrompt
-
+                        val newUserPrompt = serialize(truncateWindow.converseHistory, encodedefault = false)
+                        content.text = newUserPrompt
                     }
 
-                    /**
-                     * Json preservation was not enabled. So we're just going try to truncate the entire thing.
-                     * Exercise caution when truncating fully as a string.
-                     */
                     else
                     {
-                        var fullUserPrompt = content.text
-                        fullUserPrompt = Dictionary.truncateWithSettings(
-                            fullUserPrompt,
-                            budget.userPromptSize!!,
-                            budget.truncationMethod,
-                            truncationSettings)
+                        val jsonContentInUserPrompt = extractAllJsonObjects(content.text)
+                        var exteriorContent = extractNonJsonText(content.text)
 
-                        content.text = fullUserPrompt
+                        if(workingBudget.preserveJsonInUserPrompt)
+                        {
+                            exteriorContent = Dictionary.truncateWithSettings(
+                                exteriorContent,
+                                workingBudget.userPromptSize!!,
+                                workingBudget.truncationMethod,
+                                truncationSettings
+                            )
+
+                            var mergedUserPrompt = ""
+                            mergedUserPrompt += exteriorContent
+
+                            for(jsonObject in jsonContentInUserPrompt)
+                            {
+                                mergedUserPrompt += jsonObject.toString()
+                            }
+
+                            content.text = mergedUserPrompt
+                        }
+
+                        else
+                        {
+                            var fullUserPrompt = content.text
+                            fullUserPrompt = Dictionary.truncateWithSettings(
+                                fullUserPrompt,
+                                workingBudget.userPromptSize!!,
+                                workingBudget.truncationMethod,
+                                truncationSettings
+                            )
+
+                            content.text = fullUserPrompt
+                        }
                     }
                 }
             }
+
+            return content
         }
 
-        //Null back out to avoid breakage in later runs. Since dynamic space can't be pre-computed.
-        if(isUserPromptSpaceDynamic) tokenBudgetSettings?.userPromptSize = null
-
-        contextWindowSize = originalContextWindowSize //Reset to prevent breakage of model contracts
-        return content
+        finally
+        {
+            restoreTokenBudgetExecutionSnapshot(executionSnapshot)
+        }
     }
 
 
@@ -4654,7 +4590,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * Apply budget-aware truncation to MiniBank pages.
      * Each page receives an allocated portion of the total budget.
      */
-    private fun truncateMiniBank(
+    private suspend fun truncateMiniBank(
         content: MultimodalContent,
         totalBudget: Int,
         budget: TokenBudgetSettings,
@@ -4680,7 +4616,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             val allocatedBudget = pageBudgets[pageKey] ?: 0
             if(allocatedBudget <= 0) continue
 
-            contextWindow.selectAndTruncateContext(
+            contextWindow.selectAndTruncateContextSuspend(
                 content.text,
                 allocatedBudget,
                 budget.truncationMethod,
@@ -4744,8 +4680,11 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * Executes the current pipe with multimodal content support. This is the primary execution method
      * that handles validation, transformation, and failure logic with full multimodal capabilities.
      *
-     * @param content Multimodal content containing text and/or binary data
-     * @return The multimodal result of the AI api call
+     * This execution path expects single-owner usage per instance. If you need concurrency, build a fresh pipe
+     * instance for each top-level run.
+     *
+     * @param content Multimodal content containing text and/or binary data.
+     * @return The multimodal result of the AI api call.
      */
     suspend fun execute(content: MultimodalContent): MultimodalContent = coroutineScope {
         var result = executeMultimodal(content)
@@ -5094,7 +5033,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         "contextWindowTruncation" to contextWindowTruncation.name
                     ))
 
-                truncateModuleContext() //Default to basic context truncation instead.
+                truncateModuleContextSuspend() //Default to basic context truncation instead.
             }
             
             // Build full prompt with correct ordering: userPrompt -> user content -> context

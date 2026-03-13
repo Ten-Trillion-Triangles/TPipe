@@ -17,6 +17,8 @@
 
 The `Pipe` class is the abstract base class for all TPipe implementations. It provides the foundation for text generation, configuration, and the builder pattern used throughout TPipe.
 
+`Pipe` instances are mutable execution objects. Build a fresh pipe for each concurrent top-level run rather than sharing the same instance across simultaneous executions.
+
 ## Basic Structure
 
 ```kotlin

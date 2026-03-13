@@ -1431,6 +1431,258 @@ open class BedrockPipe : Pipe()
 
         return this
     }
+
+    /**
+     * Suspend-safe context truncation used during execution so remote-aware lorebook selection can participate in
+     * provider-managed prompt assembly.
+     *
+     * @return This pipe instance for method chaining.
+     */
+    override suspend fun truncateModuleContextSuspend(): Pipe
+    {
+        trace(TraceEventType.CONTEXT_TRUNCATE, TracePhase.CONTEXT_PREPARATION,
+            metadata = mapOf(
+                "contextWindowSize" to contextWindowSize,
+                "truncateAsString" to truncateContextAsString,
+                "contextWindowTruncation" to contextWindowTruncation.name
+            ))
+
+        val modelId = model.ifEmpty { "anthropic.claude-3-sonnet-20240229-v1:0" }
+
+        when
+        {
+            modelId.contains("anthropic.claude") ->
+            {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("amazon.nova-micro") ->
+            {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("amazon.nova-lite") || modelId.contains("amazon.nova-pro") ->
+            {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("amazon.nova-premier") ->
+            {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("meta.llama") ->
+            {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("ai21.jamba") ->
+            {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("qwen") ->
+            {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = false
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 1
+            }
+            isKimiModel(modelId) ->
+            {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("minimax") ->
+            {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("deepseek") ->
+            {
+                when
+                {
+                    isDeepSeekR1(modelId) ->
+                    {
+                        contextWindowSize = 126000
+                        multiplyWindowSizeBy = 0
+                        contextWindowTruncation = ContextWindowSettings.TruncateTop
+                        countSubWordsInFirstWord = true
+                        favorWholeWords = true
+                        countOnlyFirstWordFound = false
+                        splitForNonWordChar = true
+                        alwaysSplitIfWholeWordExists = false
+                        countSubWordsIfSplit = false
+                        nonWordSplitCount = 2
+                    }
+
+                    isDeepSeekV31(modelId) ->
+                    {
+                        contextWindowSize = 128000
+                        multiplyWindowSizeBy = 0
+                        contextWindowTruncation = ContextWindowSettings.TruncateTop
+                        countSubWordsInFirstWord = true
+                        favorWholeWords = true
+                        countOnlyFirstWordFound = false
+                        splitForNonWordChar = true
+                        alwaysSplitIfWholeWordExists = false
+                        countSubWordsIfSplit = false
+                        nonWordSplitCount = 2
+                    }
+
+                    else ->
+                    {
+                        contextWindowSize = 126000
+                        multiplyWindowSizeBy = 0
+                        contextWindowTruncation = ContextWindowSettings.TruncateTop
+                    }
+                }
+            }
+            modelId.contains("writer.palmyra-x4") ->
+            {
+                contextWindowSize = 128000
+                multiplyWindowSizeBy = 0
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("writer.palmyra-x5") ->
+            {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("openai.gpt-oss") ->
+            {
+                contextWindowSize = 126000
+                multiplyWindowSizeBy = 0
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            isGlmModel(modelId) ->
+            {
+                multiplyWindowSizeBy = 0
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+        }
+
+        if(truncateContextAsString)
+        {
+            val truncationSettings = com.TTT.Pipe.TruncationSettings(
+                multiplyWindowSizeBy = multiplyWindowSizeBy,
+                countSubWordsInFirstWord = countSubWordsInFirstWord,
+                favorWholeWords = favorWholeWords,
+                countOnlyFirstWordFound = countOnlyFirstWordFound,
+                splitForNonWordChar = splitForNonWordChar,
+                alwaysSplitIfWholeWordExists = alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit = countSubWordsIfSplit,
+                nonWordSplitCount = nonWordSplitCount
+            )
+            val combinedContext = contextWindow.combineAndTruncateAsStringWithSettingsSuspend(
+                userPrompt,
+                contextWindowSize,
+                truncationSettings,
+                contextWindowTruncation,
+                multiplyWindowSizeBy
+            )
+            contextWindow.clear()
+            contextWindow.contextElements.add(combinedContext)
+        }
+
+        else
+        {
+            contextWindow.selectAndTruncateContextSuspend(
+                userPrompt,
+                contextWindowSize,
+                multiplyWindowSizeBy,
+                contextWindowTruncation,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount
+            )
+        }
+
+        return this
+    }
     
     /**
      * Builds request JSON for Amazon Nova models.

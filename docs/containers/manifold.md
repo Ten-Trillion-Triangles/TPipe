@@ -17,6 +17,8 @@
 
 Manifold provides manager-worker orchestration where a manager pipeline coordinates task execution. It uses a single `execute()` method that loops until task completion, with automatic converse history management and token truncation.
 
+`Manifold` instances reuse their configured manager and worker pipelines across loop iterations. Build a fresh manifold for concurrent top-level runs rather than sharing one manifold instance across simultaneous executions.
+
 ## Core Concepts
 
 ### TaskProgress
@@ -102,13 +104,15 @@ suspend fun execute(content: MultimodalContent): MultimodalContent {
 ## Context Management
 
 ### Auto Truncation
-Enable automatic context truncation to prevent overflow:
+Enable automatic converse-history truncation to prevent overflow:
 
 ```kotlin
 manifold.autoTruncateContext()
     .setContextWindowSize(8192)
     .setTruncationMethod(ContextWindowSettings.TRUNCATE_TOP)
 ```
+
+This built-in mode truncates the manifold's working converse history. It does not perform general worker-context summarization or cross-agent memory compression.
 
 ### Custom Truncation Function
 Provide custom truncation logic:

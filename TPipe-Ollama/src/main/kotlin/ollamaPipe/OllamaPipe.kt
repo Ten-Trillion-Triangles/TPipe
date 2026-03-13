@@ -621,6 +621,75 @@ class OllamaPipe : Pipe()
     }
 
     /**
+     * Suspend-safe context truncation used during execution so remote-aware lorebook selection can participate in
+     * provider-managed prompt assembly.
+     *
+     * @return This pipe instance.
+     */
+    override suspend fun truncateModuleContextSuspend(): Pipe
+    {
+        when
+        {
+            model.contains("llama") ->
+            {
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                splitForNonWordChar = true
+                nonWordSplitCount = 2
+            }
+            model.contains("deepseek") ->
+            {
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                splitForNonWordChar = true
+                nonWordSplitCount = 2
+            }
+        }
+
+        if(truncateContextAsString)
+        {
+            val truncationSettings = com.TTT.Pipe.TruncationSettings(
+                multiplyWindowSizeBy = multiplyWindowSizeBy,
+                countSubWordsInFirstWord = countSubWordsInFirstWord,
+                favorWholeWords = favorWholeWords,
+                countOnlyFirstWordFound = countOnlyFirstWordFound,
+                splitForNonWordChar = splitForNonWordChar,
+                alwaysSplitIfWholeWordExists = alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit = countSubWordsIfSplit,
+                nonWordSplitCount = nonWordSplitCount
+            )
+            val combinedContext = contextWindow.combineAndTruncateAsStringWithSettingsSuspend(
+                userPrompt,
+                contextWindowSize,
+                truncationSettings,
+                contextWindowTruncation,
+                multiplyWindowSizeBy
+            )
+            contextWindow.clear()
+            contextWindow.contextElements.add(combinedContext)
+        }
+
+        else
+        {
+            contextWindow.selectAndTruncateContextSuspend(
+                userPrompt,
+                contextWindowSize,
+                multiplyWindowSizeBy,
+                contextWindowTruncation,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount
+            )
+        }
+
+        return this
+    }
+
+    /**
      * Aborts the active generation job.
      */
     override suspend fun abort()

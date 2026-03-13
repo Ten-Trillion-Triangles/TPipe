@@ -17,6 +17,8 @@
 
 The Pipeline class orchestrates multiple AI model interactions by chaining Pipe instances together. Each pipe processes content and passes results to the next pipe, enabling complex multi-stage AI workflows.
 
+`Pipeline` instances are mutable orchestration objects. Build a fresh pipeline for each concurrent top-level run rather than sharing the same instance across simultaneous executions.
+
 ## What is a Pipeline?
 
 ### The Problem

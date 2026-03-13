@@ -32,6 +32,9 @@ import java.util.UUID
  * pass input and output to each other to control a series of AI models and api calls to them using a single
  * prediction model. Each AI is intended to make a single prediction, and it's return call operated upon, then
  * moved forward into the specified pipe.
+ *
+ * Pipeline instances are mutable orchestration objects. Build separate instances for concurrent top-level runs rather
+ * than sharing one pipeline instance across multiple simultaneous executions.
  */
 class Pipeline : P2PInterface
 {
@@ -1095,6 +1098,9 @@ class Pipeline : P2PInterface
     /**
      * Executes the pipeline with multimodal content support. Handles text and binary content
      * through the entire pipeline chain.
+     *
+     * This execution path expects single-owner usage per instance. If you need concurrency, build a fresh pipeline
+     * instance for each top-level run.
      *
      * @param initialContent The initial multimodal content to pass to the first pipe.
      * @return The generated multimodal content after all pipes have been executed.

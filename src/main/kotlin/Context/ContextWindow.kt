@@ -53,10 +53,13 @@ data class ContextWindow(
     var metaData = mutableMapOf<Any, Any>()
 
     /**
-     * Finds lorebook keys that match any substrings in the input text (case-insensitive)
-     * Includes matches from both main keys and alias keys
-     * @param text Input text to scan for matching keys
-     * @return List of matching lorebook keys
+     * Finds lorebook keys that match any substrings in the input text using local lock visibility only.
+     * Includes matches from both main keys and alias keys.
+     *
+     * Remote-aware callers should use [findMatchingLoreBookKeysSuspend].
+     *
+     * @param text Input text to scan for matching keys.
+     * @return List of matching lorebook keys.
      */
     fun findMatchingLoreBookKeys(text: String): List<String>
     {
@@ -87,6 +90,41 @@ data class ContextWindow(
             }
         }
         
+        return matchingKeys.toList()
+    }
+
+    /**
+     * Finds lorebook keys that match any substrings in the input text while honoring remote lock state.
+     * Includes matches from both main keys and alias keys.
+     *
+     * @param text Input text to scan for matching keys.
+     * @return List of matching lorebook keys.
+     */
+    suspend fun findMatchingLoreBookKeysSuspend(text: String): List<String>
+    {
+        val lowerText = text.lowercase()
+        val matchingKeys = mutableSetOf<String>()
+
+        loreBookKeys.forEach { (key, loreBook) ->
+            if(lowerText.contains(key.lowercase()))
+            {
+                if(canSelectLoreBookKeySuspend(key))
+                {
+                    matchingKeys.add(key)
+                }
+            }
+
+            loreBook.aliasKeys.forEach { alias ->
+                if(lowerText.contains(alias.lowercase()))
+                {
+                    if(canSelectLoreBookKeySuspend(key))
+                    {
+                        matchingKeys.add(key)
+                    }
+                }
+            }
+        }
+
         return matchingKeys.toList()
     }
 
@@ -138,19 +176,21 @@ data class ContextWindow(
 
 
     /**
-     * Selects lorebook context entries based on weight, hit count, and token budget.
+     * Selects lorebook context entries based on weight, hit count, and token budget using local lock visibility only.
      * Prioritizes highest weight entries first, then uses hit count as tiebreaker for equal weights.
-     * 
-     * @param text Input text to scan for matching lorebook keys
-     * @param maxTokens Maximum token budget for selected context
-     * @param countSubWordsInFirstWord Token counting parameter - count subwords in first word
-     * @param favorWholeWords Token counting parameter - prefer whole words over subwords
-     * @param countOnlyFirstWordFound Token counting parameter - only count first word match
-     * @param splitForNonWordChar Token counting parameter - split on non-word characters
-     * @param alwaysSplitIfWholeWordExists Token counting parameter - always split if whole word exists
-     * @param countSubWordsIfSplit Token counting parameter - count subwords after splitting
-     * @param nonWordSplitCount Token counting parameter - character count per token for non-words
-     * @return List of selected lorebook keys that fit within token budget
+     *
+     * Remote-aware callers should use [selectLoreBookContextSuspend].
+     *
+     * @param text Input text to scan for matching lorebook keys.
+     * @param maxTokens Maximum token budget for selected context.
+     * @param countSubWordsInFirstWord Token counting parameter - count subwords in first word.
+     * @param favorWholeWords Token counting parameter - prefer whole words over subwords.
+     * @param countOnlyFirstWordFound Token counting parameter - only count first word match.
+     * @param splitForNonWordChar Token counting parameter - split on non-word characters.
+     * @param alwaysSplitIfWholeWordExists Token counting parameter - always split if whole word exists.
+     * @param countSubWordsIfSplit Token counting parameter - count subwords after splitting.
+     * @param nonWordSplitCount Token counting parameter - character count per token for non-words.
+     * @return List of selected lorebook keys that fit within token budget.
      */
     fun selectLoreBookContext(
         text: String,
@@ -265,18 +305,143 @@ data class ContextWindow(
     }
 
     /**
-     * Selects lorebook entries using priority selection followed by weight-based filling.
+     * Selects lorebook context entries based on weight, hit count, and token budget while honoring remote lock state.
+     * Prioritizes highest weight entries first, then uses hit count as tiebreaker for equal weights.
      *
-     * @param text Input text used for matching lorebook keys
-     * @param maxTokens Maximum token budget available for lorebook entries
-     * @param countSubWordsInFirstWord Token counting parameter - count subwords in first word
-     * @param favorWholeWords Token counting parameter - prefer whole words over subwords
-     * @param countOnlyFirstWordFound Token counting parameter - only count first occurrence of each word
-     * @param splitForNonWordChar Token counting parameter - split on non-word characters
-     * @param alwaysSplitIfWholeWordExists Token counting parameter - always split when whole word exists
-     * @param countSubWordsIfSplit Token counting parameter - count subwords after splitting
-     * @param nonWordSplitCount Token counting parameter - token count for non-word characters
-     * @return Ordered list of lorebook keys that fit within the specified budget
+     * @param text Input text to scan for matching lorebook keys.
+     * @param maxTokens Maximum token budget for selected context.
+     * @param countSubWordsInFirstWord Token counting parameter - count subwords in first word.
+     * @param favorWholeWords Token counting parameter - prefer whole words over subwords.
+     * @param countOnlyFirstWordFound Token counting parameter - only count first word match.
+     * @param splitForNonWordChar Token counting parameter - split on non-word characters.
+     * @param alwaysSplitIfWholeWordExists Token counting parameter - always split if whole word exists.
+     * @param countSubWordsIfSplit Token counting parameter - count subwords after splitting.
+     * @param nonWordSplitCount Token counting parameter - character count per token for non-words.
+     * @return List of selected lorebook keys that fit within token budget.
+     */
+    suspend fun selectLoreBookContextSuspend(
+        text: String,
+        maxTokens: Int,
+        countSubWordsInFirstWord: Boolean = true,
+        favorWholeWords: Boolean = true,
+        countOnlyFirstWordFound: Boolean = false,
+        splitForNonWordChar: Boolean = true,
+        alwaysSplitIfWholeWordExists: Boolean = false,
+        countSubWordsIfSplit: Boolean = false,
+        nonWordSplitCount: Int = 4,
+        tokenCountingBias: Double = 0.0
+    ): List<String>
+    {
+        val matchingKeys = findMatchingLoreBookKeysSuspend(text)
+        val expandedKeys = mutableSetOf<String>()
+        val toProcess = mutableSetOf<String>()
+        toProcess.addAll(matchingKeys)
+
+        while(toProcess.isNotEmpty())
+        {
+            val currentKey = toProcess.first()
+            toProcess.remove(currentKey)
+
+            if(!expandedKeys.contains(currentKey))
+            {
+                expandedKeys.add(currentKey)
+
+                loreBookKeys[currentKey]?.linkedKeys?.forEach { linkedKey ->
+                    if(loreBookKeys.containsKey(linkedKey) && !expandedKeys.contains(linkedKey))
+                    {
+                        toProcess.add(linkedKey)
+                    }
+                }
+            }
+        }
+
+        val dependencyEligibleKeys = mutableSetOf<String>()
+        dependencyEligibleKeys.addAll(expandedKeys)
+
+        loreBookKeys.forEach { (key, loreBook) ->
+            if(!dependencyEligibleKeys.contains(key) && loreBook.requiredKeys.isNotEmpty())
+            {
+                val allDependenciesSatisfied = loreBook.requiredKeys.all { requiredKey ->
+                    expandedKeys.contains(requiredKey) ||
+                    expandedKeys.any { expandedKey ->
+                        expandedKey == requiredKey ||
+                            loreBookKeys[expandedKey]?.aliasKeys?.contains(requiredKey) == true ||
+                            loreBookKeys[requiredKey]?.aliasKeys?.contains(expandedKey) == true
+                    }
+                }
+
+                if(allDependenciesSatisfied)
+                {
+                    dependencyEligibleKeys.add(key)
+                }
+            }
+        }
+
+        val keyHitCounts = countAndSortKeyHits(dependencyEligibleKeys.toList()).toMap()
+        val dependencyStatus = checkKeyDependencies(dependencyEligibleKeys)
+        val eligibleKeys = dependencyEligibleKeys.filter { key ->
+            dependencyStatus[key] == true
+        }
+
+        val candidateKeys = loreBookKeys.filter { (key, _) -> key in eligibleKeys }
+            .map { (key, loreBook) ->
+                Triple(key, loreBook, keyHitCounts[key] ?: 0)
+            }
+
+        val unlockedCandidates = mutableListOf<Triple<String, LoreBook, Int>>()
+        for(candidate in candidateKeys)
+        {
+            if(canSelectLoreBookKeySuspend(candidate.first))
+            {
+                unlockedCandidates.add(candidate)
+            }
+        }
+
+        val candidates = unlockedCandidates.sortedWith(compareByDescending<Triple<String, LoreBook, Int>> { it.second.weight }
+            .thenByDescending { it.third })
+
+        val selected = mutableListOf<String>()
+        var usedTokens = 0
+
+        for((key, loreBook, _) in candidates)
+        {
+            val valueTokens = Dictionary.countTokens(
+                loreBook.value,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
+
+            if(usedTokens + valueTokens <= maxTokens)
+            {
+                selected.add(key)
+                usedTokens += valueTokens
+            }
+        }
+
+        return selected
+    }
+
+    /**
+     * Selects lorebook entries using priority selection followed by weight-based filling with local lock visibility only.
+     *
+     * Remote-aware callers should use [selectAndFillLoreBookContextSuspend].
+     *
+     * @param text Input text used for matching lorebook keys.
+     * @param maxTokens Maximum token budget available for lorebook entries.
+     * @param countSubWordsInFirstWord Token counting parameter - count subwords in first word.
+     * @param favorWholeWords Token counting parameter - prefer whole words over subwords.
+     * @param countOnlyFirstWordFound Token counting parameter - only count first occurrence of each word.
+     * @param splitForNonWordChar Token counting parameter - split on non-word characters.
+     * @param alwaysSplitIfWholeWordExists Token counting parameter - always split when whole word exists.
+     * @param countSubWordsIfSplit Token counting parameter - count subwords after splitting.
+     * @param nonWordSplitCount Token counting parameter - token count for non-word characters.
+     * @return Ordered list of lorebook keys that fit within the specified budget.
      */
     fun selectAndFillLoreBookContext(
         text: String,
@@ -366,6 +531,115 @@ data class ContextWindow(
 
         return selectedKeys
     }
+
+    /**
+     * Selects lorebook entries using priority selection followed by weight-based filling while honoring remote lock state.
+     *
+     * @param text Input text used for matching lorebook keys.
+     * @param maxTokens Maximum token budget available for lorebook entries.
+     * @param countSubWordsInFirstWord Token counting parameter - count subwords in first word.
+     * @param favorWholeWords Token counting parameter - prefer whole words over subwords.
+     * @param countOnlyFirstWordFound Token counting parameter - only count first occurrence of each word.
+     * @param splitForNonWordChar Token counting parameter - split on non-word characters.
+     * @param alwaysSplitIfWholeWordExists Token counting parameter - always split when whole word exists.
+     * @param countSubWordsIfSplit Token counting parameter - count subwords after splitting.
+     * @param nonWordSplitCount Token counting parameter - token count for non-word characters.
+     * @return Ordered list of lorebook keys that fit within the specified budget.
+     */
+    suspend fun selectAndFillLoreBookContextSuspend(
+        text: String,
+        maxTokens: Int,
+        countSubWordsInFirstWord: Boolean = true,
+        favorWholeWords: Boolean = true,
+        countOnlyFirstWordFound: Boolean = false,
+        splitForNonWordChar: Boolean = true,
+        alwaysSplitIfWholeWordExists: Boolean = false,
+        countSubWordsIfSplit: Boolean = false,
+        nonWordSplitCount: Int = 4,
+        tokenCountingBias: Double = 0.0
+    ): List<String>
+    {
+        if(maxTokens <= 0) return listOf()
+
+        val priorityKeys = selectLoreBookContextSuspend(
+            text,
+            maxTokens,
+            countSubWordsInFirstWord,
+            favorWholeWords,
+            countOnlyFirstWordFound,
+            splitForNonWordChar,
+            alwaysSplitIfWholeWordExists,
+            countSubWordsIfSplit,
+            nonWordSplitCount,
+            tokenCountingBias
+        )
+
+        val selectedKeys = priorityKeys.toMutableList()
+        val selectedSet = selectedKeys.toMutableSet()
+
+        var usedTokens = selectedKeys.sumOf { key ->
+            val loreBook = loreBookKeys[key]
+            if(loreBook == null) return@sumOf 0
+            Dictionary.countTokens(
+                loreBook.value,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
+        }
+
+        if(usedTokens >= maxTokens) return selectedKeys
+
+        val fillCandidates = mutableListOf<Pair<String, LoreBook>>()
+        for(key in loreBookKeys.keys.filter { it !in selectedSet })
+        {
+            if(canSelectLoreBookKeySuspend(key))
+            {
+                loreBookKeys[key]?.let { loreBook ->
+                    fillCandidates.add(key to loreBook)
+                }
+            }
+        }
+
+        fillCandidates.sortByDescending { (_, loreBook) -> loreBook.weight }
+
+        for((key, loreBook) in fillCandidates)
+        {
+            val dependencyStatus = checkKeyDependencies(selectedSet)
+            if(dependencyStatus[key] != true) continue
+
+            val tokenCost = Dictionary.countTokens(
+                loreBook.value,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
+
+            if(usedTokens + tokenCost <= maxTokens)
+            {
+                selectedKeys.add(key)
+                selectedSet.add(key)
+                usedTokens += tokenCost
+            }
+
+            if(usedTokens >= maxTokens)
+            {
+                break
+            }
+        }
+
+        return selectedKeys
+    }
     
     /**
      * Helper function to select a lorebook using settings instead of passing the raw inputs forward.
@@ -373,6 +647,30 @@ data class ContextWindow(
     fun selectLoreBookContextWithSettings(settings: TruncationSettings, text: String, maxTokens: Int) : List<String>
     {
        return selectLoreBookContext(
+            text,
+            maxTokens,
+            settings.countSubWordsInFirstWord,
+            settings.favorWholeWords,
+            settings.countOnlyFirstWordFound,
+            settings.splitForNonWordChar,
+            settings.alwaysSplitIfWholeWordExists,
+            settings.countSubWordsIfSplit,
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias
+        )
+    }
+
+    /**
+     * Helper to run remote-aware LoreBook selection using a [TruncationSettings] object.
+     *
+     * @param settings TruncationSettings containing tokenization configuration.
+     * @param text Input text used to match LoreBook keys.
+     * @param maxTokens Maximum tokens allocated for selected LoreBook context.
+     * @return Ordered list of LoreBook keys selected while honoring remote lock state.
+     */
+    suspend fun selectLoreBookContextWithSettingsSuspend(settings: TruncationSettings, text: String, maxTokens: Int) : List<String>
+    {
+        return selectLoreBookContextSuspend(
             text,
             maxTokens,
             settings.countSubWordsInFirstWord,
@@ -397,6 +695,30 @@ data class ContextWindow(
     fun selectAndFillLoreBookContextWithSettings(settings: TruncationSettings, text: String, maxTokens: Int): List<String>
     {
         return selectAndFillLoreBookContext(
+            text,
+            maxTokens,
+            settings.countSubWordsInFirstWord,
+            settings.favorWholeWords,
+            settings.countOnlyFirstWordFound,
+            settings.splitForNonWordChar,
+            settings.alwaysSplitIfWholeWordExists,
+            settings.countSubWordsIfSplit,
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias
+        )
+    }
+
+    /**
+     * Helper to run remote-aware select-and-fill LoreBook selection using a [TruncationSettings] object.
+     *
+     * @param settings TruncationSettings containing tokenization and fillMode configuration.
+     * @param text Input text used to match LoreBook keys.
+     * @param maxTokens Maximum tokens allocated for selected LoreBook context.
+     * @return Ordered list of LoreBook keys selected while honoring remote lock state.
+     */
+    suspend fun selectAndFillLoreBookContextWithSettingsSuspend(settings: TruncationSettings, text: String, maxTokens: Int): List<String>
+    {
+        return selectAndFillLoreBookContextSuspend(
             text,
             maxTokens,
             settings.countSubWordsInFirstWord,
@@ -730,6 +1052,43 @@ data class ContextWindow(
     }
 
     /**
+     * Wrapper for remote-aware context truncation using [TruncationSettings].
+     *
+     * @param text Input text to scan for matching lorebook keys.
+     * @param totalTokenBudget Total token budget to divide between lorebook and context elements.
+     * @param truncateSettings Truncation strategy for context elements.
+     * @param settings TruncationSettings containing all tokenization parameters.
+     * @param fillMode If true, fill the remaining lorebook budget by weight after priority selection.
+     * @param preserveTextMatches If true, preserve context/history entries that match the input text first.
+     */
+    suspend fun selectAndTruncateContextSuspend(
+        text: String,
+        totalTokenBudget: Int,
+        truncateSettings: com.TTT.Enums.ContextWindowSettings,
+        settings: com.TTT.Pipe.TruncationSettings,
+        fillMode: Boolean = false,
+        preserveTextMatches: Boolean = false
+    )
+    {
+        selectAndTruncateContextSuspend(
+            text,
+            totalTokenBudget,
+            settings.multiplyWindowSizeBy,
+            truncateSettings,
+            settings.countSubWordsInFirstWord,
+            settings.favorWholeWords,
+            settings.countOnlyFirstWordFound,
+            settings.splitForNonWordChar,
+            settings.alwaysSplitIfWholeWordExists,
+            settings.countSubWordsIfSplit,
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias,
+            fillMode,
+            preserveTextMatches
+        )
+    }
+
+    /**
      * Combined helper that manages token budget between lorebook, context elements, and conversation history.
      * Uses three-way split when converseHistory is present, falls back to two-way split when empty.
      * Truncates this context object in place by filtering lorebook keys, context elements, and conversation history.
@@ -974,6 +1333,364 @@ data class ContextWindow(
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
         }
     }
+
+    /**
+     * Combined helper that manages token budget between lorebook, context elements, and conversation history while
+     * honoring remote lock state for lorebook selection.
+     *
+     * @param text Input text to scan for matching lorebook keys.
+     * @param totalTokenBudget Total token budget to divide between components.
+     * @param multiplyWindowSizeBy Multiplier for window size calculation.
+     * @param truncateSettings Truncation strategy for context elements and conversation history.
+     * @param countSubWordsInFirstWord Token counting parameter.
+     * @param favorWholeWords Token counting parameter.
+     * @param countOnlyFirstWordFound Token counting parameter.
+     * @param splitForNonWordChar Token counting parameter.
+     * @param alwaysSplitIfWholeWordExists Token counting parameter.
+     * @param countSubWordsIfSplit Token counting parameter.
+     * @param nonWordSplitCount Token counting parameter.
+     * @param tokenCountingBias Token counting bias.
+     * @param fillMode If true, fill the remaining lorebook budget by weight after priority selection.
+     * @param preserveTextMatches If true, preserve context/history entries that match the input text first.
+     */
+    suspend fun selectAndTruncateContextSuspend(
+        text: String,
+        totalTokenBudget: Int,
+        multiplyWindowSizeBy: Int,
+        truncateSettings: com.TTT.Enums.ContextWindowSettings,
+        countSubWordsInFirstWord: Boolean = true,
+        favorWholeWords: Boolean = true,
+        countOnlyFirstWordFound: Boolean = false,
+        splitForNonWordChar: Boolean = true,
+        alwaysSplitIfWholeWordExists: Boolean = false,
+        countSubWordsIfSplit: Boolean = false,
+        nonWordSplitCount: Int = 4,
+        tokenCountingBias: Double = 0.0,
+        fillMode: Boolean = false,
+        preserveTextMatches: Boolean = false
+    )
+    {
+        if(totalTokenBudget == 0) return
+
+        var multipliedTokenBudget = totalTokenBudget
+        if(multiplyWindowSizeBy > 0)
+        {
+            multipliedTokenBudget = totalTokenBudget * multiplyWindowSizeBy
+        }
+
+        val hasContextElements = contextElements.isNotEmpty()
+        val hasConverseHistory = converseHistory.history.isNotEmpty()
+
+        if(fillMode)
+        {
+            if(multipliedTokenBudget <= 0) return
+
+            val selectedLorebookKeys = selectAndFillLoreBookContextSuspend(
+                text,
+                multipliedTokenBudget,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
+
+            val lorebookTokensUsed = selectedLorebookKeys.sumOf { key ->
+                val loreBook = loreBookKeys[key]
+                if(loreBook == null) return@sumOf 0
+                Dictionary.countTokens(
+                    loreBook.value,
+                    countSubWordsInFirstWord,
+                    favorWholeWords,
+                    countOnlyFirstWordFound,
+                    splitForNonWordChar,
+                    alwaysSplitIfWholeWordExists,
+                    countSubWordsIfSplit,
+                    nonWordSplitCount,
+                    tokenCountingBias
+                )
+            }
+
+            loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
+
+            val remainingBudget = multipliedTokenBudget - lorebookTokensUsed
+            if(remainingBudget <= 0) return
+
+            if(hasContextElements && hasConverseHistory)
+            {
+                val contextBudget = remainingBudget / 2
+                truncateContextElements(
+                    contextBudget,
+                    1,
+                    truncateSettings,
+                    countSubWordsInFirstWord,
+                    favorWholeWords,
+                    countOnlyFirstWordFound,
+                    splitForNonWordChar,
+                    alwaysSplitIfWholeWordExists,
+                    countSubWordsIfSplit,
+                    nonWordSplitCount,
+                    tokenCountingBias,
+                    inputText = text,
+                    preserveTextMatches = preserveTextMatches
+                )
+
+                val historyBudget = remainingBudget - contextBudget
+                truncateConverseHistory(
+                    historyBudget,
+                    1,
+                    truncateSettings,
+                    countSubWordsInFirstWord,
+                    favorWholeWords,
+                    countOnlyFirstWordFound,
+                    splitForNonWordChar,
+                    alwaysSplitIfWholeWordExists,
+                    countSubWordsIfSplit,
+                    nonWordSplitCount,
+                    tokenCountingBias,
+                    inputText = text,
+                    preserveTextMatches = preserveTextMatches
+                )
+            }
+
+            else if(hasContextElements)
+            {
+                truncateContextElements(
+                    remainingBudget,
+                    1,
+                    truncateSettings,
+                    countSubWordsInFirstWord,
+                    favorWholeWords,
+                    countOnlyFirstWordFound,
+                    splitForNonWordChar,
+                    alwaysSplitIfWholeWordExists,
+                    countSubWordsIfSplit,
+                    nonWordSplitCount,
+                    tokenCountingBias,
+                    inputText = text,
+                    preserveTextMatches = preserveTextMatches
+                )
+            }
+
+            else if(hasConverseHistory)
+            {
+                truncateConverseHistory(
+                    remainingBudget,
+                    1,
+                    truncateSettings,
+                    countSubWordsInFirstWord,
+                    favorWholeWords,
+                    countOnlyFirstWordFound,
+                    splitForNonWordChar,
+                    alwaysSplitIfWholeWordExists,
+                    countSubWordsIfSplit,
+                    nonWordSplitCount,
+                    tokenCountingBias,
+                    inputText = text,
+                    preserveTextMatches = preserveTextMatches
+                )
+            }
+
+            return
+        }
+
+        if(!hasContextElements && !hasConverseHistory)
+        {
+            val selectedLorebookKeys = selectLoreBookContextSuspend(
+                text,
+                multipliedTokenBudget,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
+            loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
+        }
+
+        else if(!hasContextElements && hasConverseHistory)
+        {
+            val halfBudget = multipliedTokenBudget / 2
+
+            truncateConverseHistory(
+                halfBudget,
+                1,
+                truncateSettings,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias,
+                inputText = text,
+                preserveTextMatches = preserveTextMatches
+            )
+
+            val conversationTokensUsed = countConverseHistoryTokens(
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
+
+            val lorebookBudget = multipliedTokenBudget - conversationTokensUsed
+            val selectedLorebookKeys = selectLoreBookContextSuspend(
+                text,
+                lorebookBudget,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
+
+            loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
+        }
+
+        else if(hasContextElements && !hasConverseHistory)
+        {
+            val halfBudget = multipliedTokenBudget / 2
+
+            truncateContextElements(
+                halfBudget,
+                1,
+                truncateSettings,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias,
+                inputText = text,
+                preserveTextMatches = preserveTextMatches
+            )
+
+            val contextTokensUsed = contextElements.sumOf { element ->
+                Dictionary.countTokens(
+                    element,
+                    countSubWordsInFirstWord,
+                    favorWholeWords,
+                    countOnlyFirstWordFound,
+                    splitForNonWordChar,
+                    alwaysSplitIfWholeWordExists,
+                    countSubWordsIfSplit,
+                    nonWordSplitCount,
+                    tokenCountingBias
+                )
+            }
+
+            val lorebookBudget = multipliedTokenBudget - contextTokensUsed
+            val selectedLorebookKeys = selectLoreBookContextSuspend(
+                text,
+                lorebookBudget,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
+
+            loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
+        }
+
+        else
+        {
+            val thirdBudget = multipliedTokenBudget / 3
+
+            truncateContextElements(
+                thirdBudget,
+                1,
+                truncateSettings,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias,
+                inputText = text,
+                preserveTextMatches = preserveTextMatches
+            )
+
+            truncateConverseHistory(
+                thirdBudget,
+                1,
+                truncateSettings,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias,
+                inputText = text,
+                preserveTextMatches = preserveTextMatches
+            )
+
+            val contextTokensUsed = contextElements.sumOf { element ->
+                Dictionary.countTokens(
+                    element,
+                    countSubWordsInFirstWord,
+                    favorWholeWords,
+                    countOnlyFirstWordFound,
+                    splitForNonWordChar,
+                    alwaysSplitIfWholeWordExists,
+                    countSubWordsIfSplit,
+                    nonWordSplitCount,
+                    tokenCountingBias
+                )
+            }
+
+            val conversationTokensUsed = countConverseHistoryTokens(
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
+
+            val lorebookBudget = multipliedTokenBudget - contextTokensUsed - conversationTokensUsed
+            val selectedLorebookKeys = selectLoreBookContextSuspend(
+                text,
+                lorebookBudget,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
+
+            loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
+        }
+    }
     
     /**
      * Combines lorebook values and context elements into a single string, then truncates using Dictionary.truncate
@@ -1059,6 +1776,54 @@ data class ContextWindow(
             loreBookKeys = loreBookKeys.filterKeys { it in selectedKeys }.toMutableMap()
         }
        return combineAndTruncateAsString(
+            text,
+            tokenBudget,
+            multiplyBy,
+            truncateMethod,
+            settings.countSubWordsInFirstWord,
+            settings.favorWholeWords,
+            settings.countOnlyFirstWordFound,
+            settings.splitForNonWordChar,
+            settings.alwaysSplitIfWholeWordExists,
+            settings.countSubWordsIfSplit,
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias
+        )
+    }
+
+    /**
+     * Helper function to simplify remote-aware combine-and-truncate behavior with settings.
+     *
+     * @param text Input text to scan for matching lorebook keys.
+     * @param tokenBudget Total token budget for the combined content.
+     * @param settings TruncationSettings for the combined string.
+     * @param truncateMethod Truncation strategy for the combined string.
+     * @param multiplyBy Multiplier for window size calculation.
+     * @param fillMode If true, fill the lorebook budget by weight after priority selection.
+     * @return Truncated combined string.
+     */
+    suspend fun combineAndTruncateAsStringWithSettingsSuspend(
+        text: String = "",
+        tokenBudget: Int = 0,
+        settings: TruncationSettings = TruncationSettings(),
+        truncateMethod: ContextWindowSettings = ContextWindowSettings.TruncateTop,
+        multiplyBy: Int = 0,
+        fillMode: Boolean = false
+    ) : String
+    {
+        if(fillMode)
+        {
+            val selectedKeys = selectAndFillLoreBookContextWithSettingsSuspend(settings, text, tokenBudget)
+            loreBookKeys = loreBookKeys.filterKeys { it in selectedKeys }.toMutableMap()
+        }
+
+        else
+        {
+            val selectedKeys = selectLoreBookContextWithSettingsSuspend(settings, text, tokenBudget)
+            loreBookKeys = loreBookKeys.filterKeys { it in selectedKeys }.toMutableMap()
+        }
+
+        return combineAndTruncateAsString(
             text,
             tokenBudget,
             multiplyBy,
@@ -1422,12 +2187,14 @@ data class ContextWindow(
     }
 
     /**
-     * Checks if a specific lorebook key can be selected based on ContextLock state.
-     * This method handles passthrough functions and respects lock states to determine
+     * Checks if a specific lorebook key can be selected based on local [ContextLock] state.
+     * This method handles passthrough functions and respects local lock states to determine
      * if a key should be available for selection during lorebook processing.
      *
-     * @param key The lorebook key to check for selection eligibility
-     * @return True if the key can be selected, false if it's locked and should be excluded
+     * Remote-aware callers should use [canSelectLoreBookKeySuspend].
+     *
+     * @param key The lorebook key to check for selection eligibility.
+     * @return True if the key can be selected, false if it's locked and should be excluded.
      */
     fun canSelectLoreBookKey(key: String): Boolean
     {
@@ -1450,6 +2217,32 @@ data class ContextWindow(
         }
         
         return !ContextLock.isKeyLocked(key)
+    }
+
+    /**
+     * Checks if a specific lorebook key can be selected while honoring remote [ContextLock] state.
+     *
+     * @param key The lorebook key to check for selection eligibility.
+     * @return True if the key can be selected, false if it's locked and should be excluded.
+     */
+    suspend fun canSelectLoreBookKeySuspend(key: String): Boolean
+    {
+        if(!isContextLocked()) return true
+
+        val bundle = ContextLock.getKeyBundle(key)
+        if(bundle?.passthroughFunction != null)
+        {
+            try
+            {
+                return bundle.passthroughFunction?.invoke() ?: false
+            }
+            catch(e: Exception)
+            {
+                return !bundle.isLocked
+            }
+        }
+
+        return !ContextLock.isKeyLockedSuspend(key)
     }
 
     /**

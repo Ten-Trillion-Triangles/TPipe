@@ -50,8 +50,8 @@ data class DistributionGridJudgement(
  * History of the task will be tracked using TPipe's ConverseHistory class.
  * @see com.TTT.Context.ConverseHistory
  *
- * Tokens will be counted overtime and will auto summarize the actions taken in the tasks to compress the tokens
- * under whatever is the lowest context window of the agents.
+ * Token compression, summarization, and execution orchestration are not implemented yet. At present this class only
+ * provides schema validation and the structural types needed for a later implementation pass.
  *
  * Each pipeline must support p2p, implement the p2p interface, and support the DistributionGrid data class
  * as json output at the ending point where they make a p2p call.
