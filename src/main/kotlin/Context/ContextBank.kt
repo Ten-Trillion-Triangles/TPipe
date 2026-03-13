@@ -24,6 +24,16 @@ import java.util.concurrent.ConcurrentHashMap
 typealias RetrievalFunction = suspend (String) -> ContextWindow?
 
 /**
+ * Type definition for a write back function that can be bound to a context bank key.
+ * This allows for custom logic to save context to external sources like databases or APIs.
+ *
+ * @param key The context bank key being written.
+ * @param window The context window to write.
+ * @return true if the write back was successful, false otherwise.
+ */
+typealias WriteBackFunction = suspend (String, ContextWindow) -> Boolean
+
+/**
  * Singleton that holds TPipe's global context window system. Each pipe has its own context window object which
  * allows the pipe to control and manipulate the context the llm sees when injecting data into a prompt. Pipes can then
  * write to this global context bank to update the global state of whatever job the pipeline is doing. The pipelines
@@ -94,6 +104,19 @@ object ContextBank
     private val retrievalFunctions = ConcurrentHashMap<String, RetrievalFunction>()
 
     /**
+     * Map of write back functions bound to specific context bank keys.
+     * When a key with a bound function is written, the function is executed to save the data.
+     * Uses ConcurrentHashMap for thread-safe access.
+     */
+    private val writeBackFunctions = ConcurrentHashMap<String, WriteBackFunction>()
+
+    /**
+     * Map of write back functions bound to specific context bank keys.
+     * When a key with a bound function is written, the function is executed to save the data.
+     * Uses ConcurrentHashMap for thread-safe access.
+     */
+
+    /**
      * Update or create storage metadata for a key.
      *
      * @param key The context bank key
@@ -133,22 +156,22 @@ object ContextBank
     private fun enforceEvictionPolicy()
     {
         if(cacheConfig.evictionPolicy == EvictionPolicy.MANUAL)
-        {
+            {
             return
-        }
+            }
 
         while(bank.size > cacheConfig.maxEntries)
-        {
+            {
             evictLeastValuable()
-        }
+            }
 
         var totalBytes = bank.values.sumOf { estimateSize(it) }
 
         while(totalBytes > cacheConfig.maxMemoryBytes && bank.isNotEmpty())
-        {
+            {
             val evictedSize = evictLeastValuable()
             totalBytes -= evictedSize
-        }
+            }
     }
 
     /**
@@ -164,24 +187,24 @@ object ContextBank
             .filter { it.storageMode == StorageMode.DISK_WITH_CACHE }
 
         if(candidates.isEmpty())
-        {
+            {
             return 0L
-        }
+            }
 
         val toEvict = when(cacheConfig.evictionPolicy)
-        {
+            {
             EvictionPolicy.LRU -> candidates.minByOrNull { it.lastAccessed }
             EvictionPolicy.LFU -> candidates.minByOrNull { it.accessCount }
             EvictionPolicy.FIFO -> candidates.minByOrNull { it.key }
             else -> null
-        }
+            }
 
         if(toEvict != null)
-        {
+            {
             val size = estimateSize(bank[toEvict.key])
             bank.remove(toEvict.key)
             return size
-        }
+            }
 
         return 0L
     }
@@ -234,17 +257,17 @@ object ContextBank
     fun emplace(key: String, window: ContextWindow, mode: StorageMode, skipRemote: Boolean = false)
     {
         if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
-        {
+            {
             runBlocking {
                 MemoryClient.emplaceContextWindow(key, window)
             }
             return
-        }
+            }
 
         val bankDir = "${TPipeConfig.getLorebookDir()}/${key}.bank"
 
         when(mode)
-        {
+            {
             StorageMode.MEMORY_ONLY ->
             {
                 bank[key] = window
@@ -272,7 +295,7 @@ object ContextBank
             }
 
             StorageMode.REMOTE -> { /* Handled above */ }
-        }
+            }
 
         updateMetadata(key, mode)
     }
@@ -304,6 +327,13 @@ object ContextBank
      */
     suspend fun emplaceWithMutex(key: String, window: ContextWindow, mode: StorageMode, skipRemote: Boolean = false)
     {
+        val writeBackFunction = writeBackFunctions[key]
+        if(writeBackFunction != null)
+        {
+            writeBackFunction(key, window)
+            return
+        }
+
         bankMutex.withLock {
             emplace(key, window, mode, skipRemote)
         }
@@ -319,6 +349,13 @@ object ContextBank
      */
     suspend fun emplaceWithMutex(key: String, window: ContextWindow, persistToDisk: Boolean = false, skipRemote: Boolean = false)
     {
+        val writeBackFunction = writeBackFunctions[key]
+        if(writeBackFunction != null)
+        {
+            writeBackFunction(key, window)
+            return
+        }
+
         bankMutex.withLock {
             val mode = if(persistToDisk) StorageMode.MEMORY_AND_DISK else StorageMode.MEMORY_ONLY
             emplace(key, window, mode, skipRemote)
@@ -333,11 +370,11 @@ object ContextBank
     fun deletePersistingBankKey(key: String, skipRemote: Boolean = false) : Boolean
     {
         if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
-        {
+            {
             return runBlocking {
                 MemoryClient.deleteContextWindow(key)
             }
-        }
+            }
 
         val bankDir = "${TPipeConfig.getLorebookDir()}/${key}.bank"
         return deleteFile(bankDir)
@@ -353,7 +390,7 @@ object ContextBank
     {
         bankMutex.withLock {
             return deletePersistingBankKey(key, skipRemote)
-        }
+            }
     }
 
     /**
@@ -381,7 +418,7 @@ object ContextBank
     {
         bankMutex.withLock {
             return evictFromMemory(key)
-        }
+            }
     }
 
     /**
@@ -401,7 +438,7 @@ object ContextBank
     {
         bankMutex.withLock {
             evictAllFromMemory()
-        }
+            }
     }
 
     /**
@@ -429,12 +466,12 @@ object ContextBank
 
         val totalAccesses = storageMetadata.values.sumOf { it.accessCount }
         val cacheHitRate = if(totalAccesses == 0) 0.0 else
-        {
+            {
             val hits = storageMetadata.values
                 .filter { bank.containsKey(it.key) }
                 .sumOf { it.accessCount }
             hits.toDouble() / totalAccesses.toDouble()
-        }
+            }
 
         return CacheStatistics(
             memoryEntries = memoryEntries,
@@ -455,9 +492,9 @@ object ContextBank
             .map { it.key }
 
         for(key in diskWithCacheKeys)
-        {
+            {
             bank.remove(key)
-        }
+            }
     }
 
     /**
@@ -494,7 +531,7 @@ object ContextBank
     {
         bankMutex.withLock {
             setStorageMode(key, mode)
-        }
+            }
     }
 
 
@@ -513,7 +550,7 @@ object ContextBank
     {
         bankMutex.withLock {
             bankedContextWindow = newContext
-        }
+            }
     }
 
 
@@ -543,7 +580,7 @@ object ContextBank
             swapMutex.withLock {
                 swapBank(key, copy)
             }
-        }
+            }
     }
 
     /**
@@ -553,7 +590,7 @@ object ContextBank
     {
         bankMutex.withLock {
             return getContextFromBank(key, copy, skipRemote)
-        }
+            }
     }
 
     /**
@@ -563,7 +600,7 @@ object ContextBank
     {
         todoMutex.withLock {
             return getPagedTodoList(key, copy, skipRemote)
-        }
+            }
     }
 
 
@@ -580,40 +617,40 @@ object ContextBank
     {
         // Retrieval functions always take priority over all other storage modes.
         if(retrievalFunctions.containsKey(key))
-        {
+            {
             val function = retrievalFunctions[key]!!
             val context = runBlocking {
                 function(key)
             } ?: throw IllegalStateException("Retrieval function for key '$key' failed to return a context window.")
 
             return if(copy) context.deepCopy() else context
-        }
+            }
 
         val mode = getStorageMode(key)
         if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
-        {
+            {
             return runBlocking {
                 MemoryClient.getContextWindow(key) ?: ContextWindow()
             }
-        }
+            }
 
         if(ContextLock.isPageLocked(key))
-        {
+            {
             return ContextWindow()
-        }
+            }
 
         trackAccess(key)
         var context: ContextWindow
 
         if(bank.containsKey(key))
-        {
+            {
             context = bank[key]!!
             return if(copy) context.deepCopy() else context
-        }
+            }
 
         val diskPath = "${TPipeConfig.getLorebookDir()}/${key}.bank"
         if(File(diskPath).exists())
-        {
+            {
             val contextJson = readStringFromFile(diskPath)
             context = deserialize<ContextWindow>(contextJson) ?: ContextWindow()
 
@@ -638,7 +675,7 @@ object ContextBank
             }
 
             return if(copy) context.deepCopy() else context
-        }
+            }
 
         return ContextWindow()
     }
@@ -651,12 +688,12 @@ object ContextBank
     {
         val localKeys = (bank.keys + retrievalFunctions.keys).distinct()
         if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
-        {
+            {
             val remoteKeys = runBlocking {
                 MemoryClient.getPageKeys()
             }
             return (localKeys + remoteKeys).distinct()
-        }
+            }
         return localKeys
     }
 
@@ -668,12 +705,12 @@ object ContextBank
     {
         val localKeys = todoList.keys.toList()
         if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
-        {
+            {
             val remoteKeys = runBlocking {
                 MemoryClient.getTodoListKeys()
             }
             return (localKeys + remoteKeys).distinct()
-        }
+            }
         return localKeys
     }
 
@@ -693,27 +730,27 @@ object ContextBank
     fun getPagedTodoList(key: String, copy: Boolean = true, skipRemote: Boolean = false) : TodoList
     {
         if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
-        {
+            {
             return runBlocking {
                 MemoryClient.getTodoList(key) ?: TodoList()
             }
-        }
+            }
 
         trackAccess(key)
         val mode = getStorageMode(key)
 
         if(todoList.containsKey(key))
-        {
+            {
             val list = todoList[key]!!
             return if(copy) list.deepCopy() else list
-        }
+            }
 
         val diskPath = TPipeConfig.getTodoListDir()
         val fullFilePath = "${diskPath}/${key}.todo"
         val fileContents = readStringFromFile(fullFilePath)
 
         if(fileContents.isNotEmpty())
-        {
+            {
             val result = deserialize<TodoList>(fileContents) ?: TodoList()
 
             when(mode)
@@ -737,7 +774,7 @@ object ContextBank
             }
 
             return if(copy) result.deepCopy() else result
-        }
+            }
 
         return TodoList()
     }
@@ -789,7 +826,7 @@ object ContextBank
                 persistToDisk,
                 skipRemote
             )
-        }
+            }
     }
 
     /**
@@ -812,12 +849,12 @@ object ContextBank
     )
     {
         if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
-        {
+            {
             runBlocking {
                 MemoryClient.emplaceTodoList(key, todoList)
             }
             return
-        }
+            }
 
         val bankedTasks = ContextBank.todoList[key]
         val todoListToEmplace = if(bankedTasks == null) todoList
@@ -827,7 +864,7 @@ object ContextBank
         val fullFilePath = "${todoPath}/${key}.todo"
 
         when(mode)
-        {
+            {
             StorageMode.MEMORY_ONLY ->
             {
                 ContextBank.todoList[key] = todoListToEmplace
@@ -861,7 +898,7 @@ object ContextBank
                 enforceTodoListEvictionPolicy()
             }
             StorageMode.REMOTE -> { /* Handled above */ }
-        }
+            }
 
         updateMetadata(key, mode)
     }
@@ -879,7 +916,7 @@ object ContextBank
         val validTaskNumbers = mutableListOf<Int>()
 
         if(allowUpdatesOnly)
-        {
+            {
             for(task in todoList.tasks.tasks)
             {
                 if(bankedTasks.find(task.taskNumber) != null)
@@ -887,33 +924,33 @@ object ContextBank
                     validTaskNumbers.add(task.taskNumber)
                 }
             }
-        }
+            }
 
         var todoListToEmplace = TodoList()
 
         if(validTaskNumbers.isNotEmpty())
-        {
+            {
             for(number in validTaskNumbers)
             {
                 val task = todoList.find(number)
                 if(task != null) todoListToEmplace.tasks.tasks.add(task)
             }
-        }
+            }
         else
-        {
+            {
             todoListToEmplace = todoList
-        }
+            }
 
         if(allowCompletionsOnly)
-        {
+            {
             for(task in todoListToEmplace.tasks.tasks)
             {
                 bankedTasks.find(task.taskNumber)?.isComplete = task.isComplete
             }
             return bankedTasks
-        }
+            }
         else
-        {
+            {
             for(task in todoListToEmplace.tasks.tasks)
             {
                 if(bankedTasks.tasks.tasks.contains(task))
@@ -926,7 +963,7 @@ object ContextBank
                 }
             }
             return bankedTasks
-        }
+            }
     }
 
     /**
@@ -935,14 +972,14 @@ object ContextBank
     private fun enforceTodoListEvictionPolicy()
     {
         if(cacheConfig.evictionPolicy == EvictionPolicy.MANUAL)
-        {
+            {
             return
-        }
+            }
 
         while(todoList.size > cacheConfig.maxEntries)
-        {
+            {
             evictLeastValuableTodoList()
-        }
+            }
     }
 
     /**
@@ -957,12 +994,12 @@ object ContextBank
         if(candidates.isEmpty()) return
 
         val toEvict = when(cacheConfig.evictionPolicy)
-        {
+            {
             EvictionPolicy.LRU -> candidates.minByOrNull { it.lastAccessed }
             EvictionPolicy.LFU -> candidates.minByOrNull { it.accessCount }
             EvictionPolicy.FIFO -> candidates.minByOrNull { it.key }
             else -> null
-        }
+            }
 
         toEvict?.let { todoList.remove(it.key) }
     }
@@ -992,7 +1029,7 @@ object ContextBank
     {
         todoMutex.withLock {
             return evictTodoListFromMemory(key)
-        }
+            }
     }
 
     /**
@@ -1012,7 +1049,7 @@ object ContextBank
     {
         todoMutex.withLock {
             evictAllTodoListsFromMemory()
-        }
+            }
     }
 
     /**
@@ -1032,7 +1069,7 @@ object ContextBank
         // but we provide a helper for standard Netty hosting.
         io.ktor.server.engine.embeddedServer(io.ktor.server.netty.Netty, port = port) {
             module()
-        }.start(wait = false)
+            }.start(wait = false)
     }
 
     /**
@@ -1080,6 +1117,37 @@ object ContextBank
         retrievalFunctions.clear()
     }
 
+
+    /**
+     * Register a write back function for a specific context bank key.
+     * When this key is written via emplaceWithMutex, the write back function will be executed to save the context window.
+     * write back function always wins and overrides local and disk data.
+     *
+     * @param key The context bank key to bind the function to.
+     * @param function The [WriteBackFunction] to execute for this key.
+     */
+    fun registerWriteBackFunction(key: String, function: WriteBackFunction)
+    {
+        writeBackFunctions[key] = function
+    }
+
+    /**
+     * Remove a registered write back function for a specific key.
+     *
+     * @param key The context bank key to remove the write back function from.
+     */
+    fun removeWriteBackFunction(key: String)
+    {
+        writeBackFunctions.remove(key)
+    }
+
+    /**
+     * Clear all registered write back functions.
+     */
+    fun clearWriteBackFunctions()
+    {
+        writeBackFunctions.clear()
+    }
     /**
      * Perform a fetch-merge-save operation on a remote context window.
      * This helps resolve versioning conflicts by pulling the latest remote state and merging it locally before pushing back.
