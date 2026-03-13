@@ -3,11 +3,8 @@ package com.TTT.Context
 import com.TTT.Config.TPipeConfig
 import com.TTT.module
 import com.TTT.Util.deepCopy
-import com.TTT.Util.deleteFile
 import com.TTT.Util.deserialize
-import com.TTT.Util.readStringFromFile
 import com.TTT.Util.serialize
-import com.TTT.Util.writeStringToFile
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -185,7 +182,7 @@ object ContextBank
             return ContextWindow()
         }
 
-        val context = deserialize<ContextWindow>(readStringFromFile(diskPath)) ?: ContextWindow()
+        val context = deserialize<ContextWindow>(MemoryPersistence.readMemoryFile(diskPath)) ?: ContextWindow()
 
         when(mode)
         {
@@ -216,7 +213,7 @@ object ContextBank
     {
         todoList[key]?.let { return it }
 
-        val fileContents = readStringFromFile("${TPipeConfig.getTodoListDir()}/${key}.todo")
+        val fileContents = MemoryPersistence.readMemoryFile("${TPipeConfig.getTodoListDir()}/${key}.todo")
         if(fileContents.isEmpty())
         {
             return TodoList()
@@ -419,7 +416,7 @@ object ContextBank
         if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
         {
             runBlocking {
-                MemoryClient.emplaceContextWindow(key, window)
+                MemoryClient.emplaceContextWindow(key, window).requireValue("store remote context window '$key'")
             }
             return
         }
@@ -436,17 +433,17 @@ object ContextBank
             StorageMode.MEMORY_AND_DISK ->
             {
                 bank[key] = window
-                writeStringToFile(bankDir, serialize(window))
+                MemoryPersistence.writeMemoryFile(bankDir, serialize(window))
             }
 
             StorageMode.DISK_ONLY ->
             {
-                writeStringToFile(bankDir, serialize(window))
+                MemoryPersistence.writeMemoryFile(bankDir, serialize(window))
             }
 
             StorageMode.DISK_WITH_CACHE ->
             {
-                writeStringToFile(bankDir, serialize(window))
+                MemoryPersistence.writeMemoryFile(bankDir, serialize(window))
                 bank[key] = window
                 runBlocking {
                     enforceEvictionPolicy()
@@ -499,7 +496,7 @@ object ContextBank
 
         if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
         {
-            MemoryClient.emplaceContextWindow(key, window)
+            MemoryClient.emplaceContextWindow(key, window).requireValue("store remote context window '$key'")
             return
         }
 
@@ -517,17 +514,17 @@ object ContextBank
                 StorageMode.MEMORY_AND_DISK ->
                 {
                     bank[key] = storedWindow
-                    writeStringToFile(bankDir, serialize(storedWindow))
+                    MemoryPersistence.writeMemoryFile(bankDir, serialize(storedWindow))
                 }
 
                 StorageMode.DISK_ONLY ->
                 {
-                    writeStringToFile(bankDir, serialize(storedWindow))
+                    MemoryPersistence.writeMemoryFile(bankDir, serialize(storedWindow))
                 }
 
                 StorageMode.DISK_WITH_CACHE ->
                 {
-                    writeStringToFile(bankDir, serialize(storedWindow))
+                    MemoryPersistence.writeMemoryFile(bankDir, serialize(storedWindow))
                     bank[key] = storedWindow
                 }
 
@@ -599,12 +596,26 @@ object ContextBank
     {
         if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
         {
-            return MemoryClient.deleteContextWindow(key)
+            return when(val deleteResult = MemoryClient.deleteContextWindow(key))
+            {
+                is MemoryOperationResult.Success -> true
+                is MemoryOperationResult.Failure ->
+                {
+                    if(deleteResult.error.errorType == MemoryErrorType.notFound)
+                    {
+                        false
+                    }
+                    else
+                    {
+                        throw MemoryRemoteException("delete persisted remote context window '$key'", deleteResult)
+                    }
+                }
+            }
         }
 
         val bankDir = "${TPipeConfig.getLorebookDir()}/${key}.bank"
         return getPageMutex(key).withLock {
-            deleteFile(bankDir)
+            MemoryPersistence.deleteMemoryFile(bankDir)
         }
     }
 
@@ -618,6 +629,120 @@ object ContextBank
     {
         bankMutex.withLock {
             return deletePersistingBankKeySuspend(key, skipRemote)
+        }
+    }
+
+    /**
+     * Check whether a context page currently exists in memory, as a retrieval binding, or on disk.
+     *
+     * @param key Page key to inspect.
+     * @return True when the page exists locally.
+     */
+    suspend fun contextWindowExistsSuspend(key: String): Boolean
+    {
+        return getPageMutex(key).withLock {
+            if(bank.containsKey(key) || retrievalFunctions.containsKey(key))
+            {
+                return@withLock true
+            }
+
+            File("${TPipeConfig.getLorebookDir()}/${key}.bank").exists()
+        }
+    }
+
+    /**
+     * Check whether a todo list currently exists in memory or on disk.
+     *
+     * @param key Todo key to inspect.
+     * @return True when the todo list exists locally.
+     */
+    suspend fun todoListExistsSuspend(key: String): Boolean
+    {
+        return getTodoMutex(key).withLock {
+            if(todoList.containsKey(key))
+            {
+                return@withLock true
+            }
+
+            File("${TPipeConfig.getTodoListDir()}/${key}.todo").exists()
+        }
+    }
+
+    /**
+     * Fully remove a context window from remote or local storage.
+     * This clears persisted state, in-memory cache, and storage metadata together.
+     *
+     * @param key Page key to remove.
+     * @param skipRemote If true, skip remote delegation even if configured.
+     * @return True when the page existed and was removed, false otherwise.
+     */
+    suspend fun deleteContextWindowSuspend(key: String, skipRemote: Boolean = false): Boolean
+    {
+        if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        {
+            return when(val deleteResult = MemoryClient.deleteContextWindow(key))
+            {
+                is MemoryOperationResult.Success -> deleteContextWindowSuspend(key, skipRemote = true)
+                is MemoryOperationResult.Failure ->
+                {
+                    if(deleteResult.error.errorType == MemoryErrorType.notFound)
+                    {
+                        deleteContextWindowSuspend(key, skipRemote = true)
+                    }
+                    else
+                    {
+                        throw MemoryRemoteException("delete remote context window '$key'", deleteResult)
+                    }
+                }
+            }
+        }
+
+        return getPageMutex(key).withLock {
+            val filePath = "${TPipeConfig.getLorebookDir()}/${key}.bank"
+            val existedInMemory = bank.remove(key) != null
+            val existedOnDisk = MemoryPersistence.deleteMemoryFile(filePath)
+            val existedAsRetrievalBinding = retrievalFunctions.remove(key) != null
+            writeBackFunctions.remove(key)
+            storageMetadata.remove(key)
+            existedInMemory || existedOnDisk || existedAsRetrievalBinding
+        }
+    }
+
+    /**
+     * Fully remove a todo list from remote or local storage.
+     * This clears persisted state, in-memory cache, and storage metadata together.
+     *
+     * @param key Todo key to remove.
+     * @param skipRemote If true, skip remote delegation even if configured.
+     * @return True when the todo list existed and was removed, false otherwise.
+     */
+    suspend fun deleteTodoListSuspend(key: String, skipRemote: Boolean = false): Boolean
+    {
+        if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        {
+            return when(val deleteResult = MemoryClient.deleteTodoList(key))
+            {
+                is MemoryOperationResult.Success -> deleteTodoListSuspend(key, skipRemote = true)
+                is MemoryOperationResult.Failure ->
+                {
+                    if(deleteResult.error.errorType == MemoryErrorType.notFound)
+                    {
+                        deleteTodoListSuspend(key, skipRemote = true)
+                    }
+                    else
+                    {
+                        throw MemoryRemoteException("delete remote todo list '$key'", deleteResult)
+                    }
+                }
+            }
+        }
+
+        return getTodoMutex(key).withLock {
+            val filePath = "${TPipeConfig.getTodoListDir()}/${key}.todo"
+            val existedInMemory = todoList.remove(key) != null
+            val existedOnDisk = MemoryPersistence.deleteMemoryFile(filePath)
+            storageMetadata.remove(key)
+            existedInMemory || existedOnDisk
         }
     }
 
@@ -915,8 +1040,21 @@ object ContextBank
         val mode = getStorageMode(key)
         if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
         {
-            val remoteContext = MemoryClient.getContextWindow(key) ?: ContextWindow()
-            return snapshotContextWindow(remoteContext, copy)
+            return when(val remoteResult = MemoryClient.getContextWindow(key))
+            {
+                is MemoryOperationResult.Success -> snapshotContextWindow(remoteResult.value, copy)
+                is MemoryOperationResult.Failure ->
+                {
+                    if(remoteResult.error.errorType == MemoryErrorType.notFound)
+                    {
+                        ContextWindow()
+                    }
+                    else
+                    {
+                        throw MemoryRemoteException("fetch remote context window '$key'", remoteResult)
+                    }
+                }
+            }
         }
 
         if(ContextLock.isPageLockedSuspend(key, skipRemote))
@@ -955,7 +1093,7 @@ object ContextBank
             val mode = getStorageMode(key)
             val context = if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
             {
-                MemoryClient.getContextWindow(key) ?: ContextWindow()
+                MemoryClient.getContextWindow(key).requireValue("fetch remote context window '$key'")
             }
             else
             {
@@ -984,9 +1122,23 @@ object ContextBank
     {
         if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
         {
-            val remoteContext = MemoryClient.getContextWindow(key) ?: ContextWindow()
+            val remoteContext = when(val remoteResult = MemoryClient.getContextWindow(key))
+            {
+                is MemoryOperationResult.Success -> remoteResult.value
+                is MemoryOperationResult.Failure ->
+                {
+                    if(remoteResult.error.errorType == MemoryErrorType.notFound)
+                    {
+                        ContextWindow()
+                    }
+                    else
+                    {
+                        throw MemoryRemoteException("fetch remote context window '$key' for mutation", remoteResult)
+                    }
+                }
+            }
             block(remoteContext)
-            MemoryClient.emplaceContextWindow(key, remoteContext)
+            MemoryClient.emplaceContextWindow(key, remoteContext).requireValue("store remote context window '$key'")
             return remoteContext.deepCopy()
         }
 
@@ -1006,17 +1158,17 @@ object ContextBank
                 StorageMode.MEMORY_AND_DISK ->
                 {
                     bank[key] = workingContext
-                    writeStringToFile("${TPipeConfig.getLorebookDir()}/${key}.bank", serialize(workingContext))
+                    MemoryPersistence.writeMemoryFile("${TPipeConfig.getLorebookDir()}/${key}.bank", serialize(workingContext))
                 }
 
                 StorageMode.DISK_ONLY ->
                 {
-                    writeStringToFile("${TPipeConfig.getLorebookDir()}/${key}.bank", serialize(workingContext))
+                    MemoryPersistence.writeMemoryFile("${TPipeConfig.getLorebookDir()}/${key}.bank", serialize(workingContext))
                 }
 
                 StorageMode.DISK_WITH_CACHE ->
                 {
-                    writeStringToFile("${TPipeConfig.getLorebookDir()}/${key}.bank", serialize(workingContext))
+                    MemoryPersistence.writeMemoryFile("${TPipeConfig.getLorebookDir()}/${key}.bank", serialize(workingContext))
                     bank[key] = workingContext
                 }
 
@@ -1055,7 +1207,7 @@ object ContextBank
         val localKeys = (bank.keys + retrievalFunctions.keys).distinct()
         if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
-            val remoteKeys = MemoryClient.getPageKeys()
+            val remoteKeys = MemoryClient.getPageKeys().requireValue("list remote context keys")
             return (localKeys + remoteKeys).distinct()
         }
         return localKeys
@@ -1083,7 +1235,7 @@ object ContextBank
         val localKeys = todoList.keys.toList()
         if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
-            val remoteKeys = MemoryClient.getTodoListKeys()
+            val remoteKeys = MemoryClient.getTodoListKeys().requireValue("list remote todo keys")
             return (localKeys + remoteKeys).distinct()
         }
         return localKeys
@@ -1123,8 +1275,21 @@ object ContextBank
     {
         if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
         {
-            val remoteTodoList = MemoryClient.getTodoList(key) ?: TodoList()
-            return snapshotTodoList(remoteTodoList, copy)
+            return when(val remoteResult = MemoryClient.getTodoList(key))
+            {
+                is MemoryOperationResult.Success -> snapshotTodoList(remoteResult.value, copy)
+                is MemoryOperationResult.Failure ->
+                {
+                    if(remoteResult.error.errorType == MemoryErrorType.notFound)
+                    {
+                        TodoList()
+                    }
+                    else
+                    {
+                        throw MemoryRemoteException("fetch remote todo list '$key'", remoteResult)
+                    }
+                }
+            }
         }
 
         trackAccess(key)
@@ -1231,7 +1396,7 @@ object ContextBank
     {
         if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
         {
-            MemoryClient.emplaceTodoList(key, todoList)
+            MemoryClient.emplaceTodoList(key, todoList).requireValue("store remote todo list '$key'")
             return
         }
 
@@ -1255,24 +1420,24 @@ object ContextBank
                     // Maintain backward compatibility: persist if file already exists.
                     if(File(fullFilePath).exists())
                     {
-                        writeStringToFile(fullFilePath, serialize(todoListToEmplace))
+                        MemoryPersistence.writeMemoryFile(fullFilePath, serialize(todoListToEmplace))
                     }
                 }
 
                 StorageMode.MEMORY_AND_DISK ->
                 {
                     ContextBank.todoList[key] = todoListToEmplace
-                    writeStringToFile(fullFilePath, serialize(todoListToEmplace))
+                    MemoryPersistence.writeMemoryFile(fullFilePath, serialize(todoListToEmplace))
                 }
 
                 StorageMode.DISK_ONLY ->
                 {
-                    writeStringToFile(fullFilePath, serialize(todoListToEmplace))
+                    MemoryPersistence.writeMemoryFile(fullFilePath, serialize(todoListToEmplace))
                 }
 
                 StorageMode.DISK_WITH_CACHE ->
                 {
-                    writeStringToFile(fullFilePath, serialize(todoListToEmplace))
+                    MemoryPersistence.writeMemoryFile(fullFilePath, serialize(todoListToEmplace))
                     ContextBank.todoList[key] = todoListToEmplace
                 }
 
@@ -1543,13 +1708,24 @@ object ContextBank
      */
     suspend fun fetchMergeSaveRemoteContext(key: String, localWindow: ContextWindow): Boolean
     {
-        val remoteWindow = MemoryClient.getContextWindow(key) ?: return MemoryClient.emplaceContextWindow(key, localWindow)
+        val remoteWindow = when(val remoteResult = MemoryClient.getContextWindow(key))
+        {
+            is MemoryOperationResult.Success -> remoteResult.value
+            is MemoryOperationResult.Failure ->
+            {
+                if(remoteResult.error.errorType == MemoryErrorType.notFound)
+                {
+                    return MemoryClient.emplaceContextWindow(key, localWindow) is MemoryOperationResult.Success
+                }
+                throw MemoryRemoteException("fetch remote context window '$key' for merge-save", remoteResult)
+            }
+        }
 
         // Merge the remote window into the local window (or vice-versa, depending on strategy)
         // Here we merge remote into local to preserve local changes but gain remote updates
         localWindow.merge(remoteWindow)
         localWindow.version = maxOf(localWindow.version, remoteWindow.version) + 1
 
-        return MemoryClient.emplaceContextWindow(key, localWindow)
+        return MemoryClient.emplaceContextWindow(key, localWindow) is MemoryOperationResult.Success
     }
 }

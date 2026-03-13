@@ -113,11 +113,8 @@ object ContextLock
     {
         if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
-            val addedRemotely = MemoryClient.addLock(LockRequest(key, pageKeys, isPageKey, lockState))
-            if(!addedRemotely)
-            {
-                return
-            }
+            MemoryClient.addLock(LockRequest(key, pageKeys, isPageKey, lockState))
+                .requireSuccess("add remote lock '$key'")
         }
 
         val affectedPages = if(pageKeys.isEmpty())
@@ -209,10 +206,16 @@ object ContextLock
     {
         if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
-            val removedRemotely = MemoryClient.removeLock(key)
-            if(!removedRemotely)
+            when(val removeResult = MemoryClient.removeLock(key))
             {
-                return
+                is MemoryOperationResult.Success -> Unit
+                is MemoryOperationResult.Failure ->
+                {
+                    if(removeResult.error.errorType != MemoryErrorType.notFound)
+                    {
+                        throw MemoryRemoteException("remove remote lock '$key'", removeResult)
+                    }
+                }
             }
         }
 
@@ -339,10 +342,28 @@ object ContextLock
     {
         if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
-            val updatedRemotely = MemoryClient.updateLockState(key, lockState)
-            if(!updatedRemotely)
+            when(val updateResult = MemoryClient.updateLockState(key, lockState))
             {
-                return
+                is MemoryOperationResult.Success -> Unit
+                is MemoryOperationResult.Failure ->
+                {
+                    if(updateResult.error.errorType == MemoryErrorType.notFound)
+                    {
+                        val localBundle = locks[normalizeKey(key)] ?: return
+                        MemoryClient.addLock(
+                            LockRequest(
+                                key = key,
+                                pageKeys = localBundle.pages.joinToString(","),
+                                isPageKey = localBundle.isPageKey,
+                                lockState = lockState
+                            )
+                        ).requireSuccess("recreate remote lock '$key'")
+                    }
+                    else
+                    {
+                        throw MemoryRemoteException("update remote lock '$key'", updateResult)
+                    }
+                }
             }
         }
 
@@ -410,7 +431,7 @@ object ContextLock
 
         if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
-            return MemoryClient.isKeyLocked(key)
+            return MemoryClient.isKeyLocked(key).requireValue("check remote key lock '$key'")
         }
 
         return false
@@ -447,7 +468,7 @@ object ContextLock
 
         if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
-            return MemoryClient.isPageLocked(pageKey)
+            return MemoryClient.isPageLocked(pageKey).requireValue("check remote page lock '$pageKey'")
         }
 
         return false
@@ -495,7 +516,7 @@ object ContextLock
     {
         if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
         {
-            return locks.keys + MemoryClient.getLockKeys()
+            return locks.keys + MemoryClient.getLockKeys().requireValue("list remote lock keys")
         }
 
         return locks.keys

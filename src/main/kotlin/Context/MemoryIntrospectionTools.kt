@@ -74,6 +74,7 @@ object MemoryIntrospectionTools
         if(mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally)
         {
             return MemoryClient.queryLorebook(pageKey, query, minWeight, requiredKeys, aliasKeys, extractRegex)
+                .requireValue("query remote lorebook '$pageKey'")
         }
 
         val window = ContextBank.getContextFromBankSuspend(pageKey)
@@ -117,6 +118,7 @@ object MemoryIntrospectionTools
         if(mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally)
         {
             return MemoryClient.simulateLorebookTrigger(pageKey, text)
+                .requireValue("simulate remote lorebook trigger '$pageKey'")
         }
 
         val window = ContextBank.getContextFromBankSuspend(pageKey)
