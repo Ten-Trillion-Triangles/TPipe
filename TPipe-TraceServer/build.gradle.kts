@@ -28,23 +28,10 @@ dependencies {
 
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("io.ktor:ktor-server-tests:2.3.11")
-    testImplementation("com.microsoft.playwright:playwright:1.42.0")
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.2")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.2")
 }
 
 tasks.withType<Test> {
     useJUnitPlatform()
-
-    environment("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1") // We already have it from node script or we'll bypass validation
-    environment("PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS", "true")
-
-    // Download Playwright browsers automatically on test run
-    doFirst {
-        javaexec {
-            mainClass.set("com.microsoft.playwright.CLI")
-            classpath = sourceSets["test"].runtimeClasspath
-            args = listOf("install", "chromium")
-        }
-    }
 }
