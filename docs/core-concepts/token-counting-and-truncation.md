@@ -254,6 +254,8 @@ TPipe-Tuner\tuner.bat --test-string "Hello world! This is a test." --expected-to
 # macOS (double-click tuner.command and enter arguments when prompted)
 ```
 
+If you omit `--test-string` or pass an empty value, TPipe-Tuner now falls back to the built-in universal stress-test paragraph (the same text described in the TPipe-Tuner instructions and stored inside `TunerApp.kt`), so only `--expected-tokens` is required for quick runs.
+
 **Step 3: Review the output**
 
 ```
