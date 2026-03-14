@@ -22,7 +22,8 @@ dependencies {
     implementation("io.ktor:ktor-server-cors:2.3.11")
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.11")
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
+    // Explicitly align coroutines version with what Ktor 2.3.11 expects to avoid LockFreeLinkedListHead runtime exception
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
     testImplementation("org.jetbrains.kotlin:kotlin-test")
