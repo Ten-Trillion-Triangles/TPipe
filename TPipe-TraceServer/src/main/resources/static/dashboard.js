@@ -3,7 +3,7 @@ class TraceDashboard {
         this.traces = [];
         this.activeTraceId = null;
         this.ws = null;
-        this.authKey = localStorage.getItem('tpipe_auth') || '';
+        this.sessionToken = localStorage.getItem('tpipe_session') || '';
         this.baseUrl = window.location.origin;
         this.isConnected = false;
 
@@ -19,24 +19,47 @@ class TraceDashboard {
             statusText: document.getElementById('connectionStatusText')
         };
 
-        if (this.authKey) {
-            this.elements.authInput.value = this.authKey;
+        if (this.sessionToken) {
             // Delay auth test to ensure DOM is ready
-            setTimeout(() => this.authenticate(), 100);
+            setTimeout(() => this.fetchTraces(), 100);
         } else {
             this.elements.authOverlay.style.display = 'flex';
         }
     }
 
-    authenticate() {
-        this.authKey = this.elements.authInput.value;
-        localStorage.setItem('tpipe_auth', this.authKey);
+    login() {
+        const key = this.elements.authInput.value;
 
-        fetch(`${this.baseUrl}/api/traces`, {
-            headers: { 'Authorization': this.authKey }
+        fetch(`${this.baseUrl}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: key })
         })
         .then(res => {
-            if (res.status === 401) throw new Error('Unauthorized');
+            if (!res.ok) throw new Error('Invalid credentials');
+            return res.json();
+        })
+        .then(data => {
+            this.sessionToken = data.token;
+            localStorage.setItem('tpipe_session', this.sessionToken);
+            this.elements.authOverlay.style.display = 'none';
+            this.fetchTraces();
+        })
+        .catch(err => {
+            console.error('Login failed:', err);
+            alert('Login Failed: ' + err.message);
+        });
+    }
+
+    fetchTraces() {
+        fetch(`${this.baseUrl}/api/traces`, {
+            headers: { 'Authorization': `Bearer ${this.sessionToken}` }
+        })
+        .then(res => {
+            if (res.status === 401) {
+                this.logout();
+                throw new Error('Unauthorized');
+            }
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             return res.json();
         })
@@ -47,15 +70,22 @@ class TraceDashboard {
             this.connectWebSocket();
         })
         .catch(err => {
-            console.error('Auth failed:', err);
-            this.elements.authOverlay.style.display = 'flex';
-            if(err.message === 'Unauthorized') {
-                 alert('Invalid Authorization Key');
-            } else {
-                 console.warn('Failed to connect to API. Is server running?');
+            console.error('Fetch traces failed:', err);
+            if (err.message !== 'Unauthorized') {
+                this.updateStatus('Disconnected', 'var(--accent-red)');
             }
-            this.updateStatus('Disconnected', 'var(--accent-red)');
         });
+    }
+
+    logout() {
+        this.sessionToken = '';
+        localStorage.removeItem('tpipe_session');
+        this.elements.authOverlay.style.display = 'flex';
+        this.updateStatus('Disconnected', 'var(--accent-red)');
+        if (this.ws) {
+            this.ws.close();
+            this.ws = null;
+        }
     }
 
     connectWebSocket() {
@@ -64,7 +94,7 @@ class TraceDashboard {
         }
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        this.ws = new WebSocket(`${protocol}//${window.location.host}/ws/traces`);
+        this.ws = new WebSocket(`${protocol}//${window.location.host}/ws/traces?token=${this.sessionToken}`);
 
         this.ws.onopen = () => {
             this.isConnected = true;
@@ -74,7 +104,6 @@ class TraceDashboard {
         this.ws.onmessage = (event) => {
             try {
                 const newTrace = JSON.parse(event.data);
-                // Prepend to array
                 this.traces.unshift(newTrace);
                 this.renderTraceList();
             } catch (e) {
@@ -82,12 +111,18 @@ class TraceDashboard {
             }
         };
 
-        this.ws.onclose = () => {
+        this.ws.onclose = (event) => {
             this.isConnected = false;
             this.updateStatus('Disconnected', 'var(--accent-red)');
+
+            if (event.code === 1008) { // Policy Violation (Unauthorized)
+                 this.logout();
+                 return;
+            }
+
             // Attempt reconnect after 3s
             setTimeout(() => {
-                if(this.authKey && this.elements.authOverlay.style.display === 'none') {
+                if(this.sessionToken && this.elements.authOverlay.style.display === 'none') {
                     this.connectWebSocket();
                 }
             }, 3000);
@@ -149,10 +184,13 @@ class TraceDashboard {
         this.elements.contentHeader.textContent = `Loading trace ${id}...`;
 
         fetch(`${this.baseUrl}/api/traces/${id}`, {
-            headers: { 'Authorization': this.authKey }
+            headers: { 'Authorization': `Bearer ${this.sessionToken}` }
         })
         .then(res => {
-            if (res.status === 401) throw new Error('Unauthorized');
+            if (res.status === 401) {
+                this.logout();
+                throw new Error('Unauthorized');
+            }
             if (!res.ok) throw new Error('Trace not found');
             return res.json();
         })
@@ -161,7 +199,6 @@ class TraceDashboard {
 
             this.elements.traceFrame.style.display = 'block';
 
-            // Using srcdoc if available, fallback to document.write
             if ('srcdoc' in this.elements.traceFrame) {
                 this.elements.traceFrame.srcdoc = trace.htmlContent;
             } else {
@@ -177,10 +214,6 @@ class TraceDashboard {
             this.elements.traceFrame.style.display = 'none';
             this.elements.emptyState.style.display = 'flex';
             this.elements.emptyState.innerHTML = `<div class="empty-icon">❌</div><div>${err.message}</div>`;
-
-            if (err.message === 'Unauthorized') {
-                this.elements.authOverlay.style.display = 'flex';
-            }
         });
     }
 }

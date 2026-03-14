@@ -38,6 +38,7 @@ object RemoteTraceDispatcher {
                 connection.requestMethod = "POST"
                 connection.setRequestProperty("Content-Type", "application/json")
 
+                // Agents use standard auth header configuration
                 RemoteTraceConfig.authHeader?.let {
                     connection.setRequestProperty("Authorization", it)
                 }

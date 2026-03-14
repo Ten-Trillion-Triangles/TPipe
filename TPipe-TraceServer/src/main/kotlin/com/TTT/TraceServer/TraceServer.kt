@@ -19,6 +19,7 @@ import kotlinx.serialization.encodeToString
 import java.time.Duration
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.ContentType
+import java.util.UUID
 
 /**
  * Main entry point for standalone execution.
@@ -85,7 +86,7 @@ fun Application.traceServerModule() {
             if (html != null) {
                 call.respondText(html, ContentType.Text.Html)
             } else {
-                call.respondText("Dashboard not found (index.html missing from static resources)", status = HttpStatusCode.NotFound)
+                call.respondText("Dashboard not found", status = HttpStatusCode.NotFound)
             }
         }
 
@@ -94,25 +95,50 @@ fun Application.traceServerModule() {
             if (js != null) {
                 call.respondText(js, ContentType.Application.JavaScript)
             } else {
-                call.respondText("Script not found (dashboard.js missing from static resources)", status = HttpStatusCode.NotFound)
+                call.respondText("Script not found", status = HttpStatusCode.NotFound)
+            }
+        }
+
+        post("/api/auth/login") {
+            // Human client login flow
+            if (TraceServerRegistry.clientAuthMechanism == null) {
+                // No client auth required, return anonymous session
+                call.respond(AuthResponse(TraceServerRegistry.createSession()))
+                return@post
+            }
+
+            try {
+                val req = call.receive<AuthRequest>()
+                if (TraceServerRegistry.clientAuthMechanism?.invoke(req.key) == true) {
+                    call.respond(AuthResponse(TraceServerRegistry.createSession()))
+                } else {
+                    call.respond(HttpStatusCode.Unauthorized, "Invalid credentials")
+                }
+            } catch (e: Exception) {
+                call.respond(HttpStatusCode.BadRequest, "Invalid request format")
             }
         }
 
         get("/api/traces") {
-            val auth = call.request.headers["Authorization"]
-            if (TraceServerRegistry.globalAuthMechanism?.invoke(auth) == false) {
-                call.respond(HttpStatusCode.Unauthorized, "Unauthorized")
+            // Check client session token
+            val token = call.request.headers["Authorization"]?.removePrefix("Bearer ")
+
+            // Allow if no auth required OR session is valid
+            if (TraceServerRegistry.clientAuthMechanism != null && !TraceServerRegistry.validateSession(token)) {
+                call.respond(HttpStatusCode.Unauthorized, "Session expired or unauthorized")
                 return@get
             }
+
             call.respond(TraceServerRegistry.getAllSummaries())
         }
 
         get("/api/traces/{id}") {
-            val auth = call.request.headers["Authorization"]
-            if (TraceServerRegistry.globalAuthMechanism?.invoke(auth) == false) {
-                call.respond(HttpStatusCode.Unauthorized, "Unauthorized")
+            val token = call.request.headers["Authorization"]?.removePrefix("Bearer ")
+            if (TraceServerRegistry.clientAuthMechanism != null && !TraceServerRegistry.validateSession(token)) {
+                call.respond(HttpStatusCode.Unauthorized, "Session expired or unauthorized")
                 return@get
             }
+
             val id = call.parameters["id"]
             val trace = TraceServerRegistry.traces[id]
             if (trace != null) {
@@ -123,9 +149,10 @@ fun Application.traceServerModule() {
         }
 
         post("/api/traces") {
+            // Check Agent auth mechanism for submitting traces
             val auth = call.request.headers["Authorization"]
-            if (TraceServerRegistry.globalAuthMechanism?.invoke(auth) == false) {
-                call.respond(HttpStatusCode.Unauthorized, "Unauthorized")
+            if (TraceServerRegistry.agentAuthMechanism?.invoke(auth) == false) {
+                call.respond(HttpStatusCode.Unauthorized, "Unauthorized Agent")
                 return@post
             }
 
@@ -154,6 +181,13 @@ fun Application.traceServerModule() {
         }
 
         webSocket("/ws/traces") {
+            // Validate connection query parameter for session token if auth is enabled
+            val token = call.request.queryParameters["token"]
+            if (TraceServerRegistry.clientAuthMechanism != null && !TraceServerRegistry.validateSession(token)) {
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Unauthorized"))
+                return@webSocket
+            }
+
             TraceServerRegistry.connections += this
             try {
                 for (frame in incoming) {
