@@ -4,15 +4,15 @@ import com.TTT.Context.Dictionary
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenBudgetSettings
 import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.test.Test
 
 class TokenAccuracyTest {
 
     @Test
     fun testTokenCountingAccuracyWhenEnabled() = runBlocking {
-        val pipe = TestTokenPipe("Test-Pipe")
+        val pipe = MockTokenPipe("Test-Pipe")
             .setTokenBudget(TokenBudgetSettings(
                 contextWindowSize = 10000,
                 userPromptSize = 2000,
@@ -33,7 +33,7 @@ class TokenAccuracyTest {
 
     @Test
     fun testTokenCountingWhenDisabled() = runBlocking {
-        val pipe = TestTokenPipe("Test-Pipe")
+        val pipe = MockTokenPipe("Test-Pipe")
             .setTokenBudget(TokenBudgetSettings(
                 contextWindowSize = 10000,
                 userPromptSize = 2000,
