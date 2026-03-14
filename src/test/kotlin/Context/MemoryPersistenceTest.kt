@@ -1,5 +1,6 @@
 package com.TTT.Context
 
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -32,8 +33,7 @@ class MemoryPersistenceTest
      * Verifies that memory persistence round-trips through the atomic write helper.
      */
     @Test
-    fun writeMemoryFileRoundTripsContent()
-    {
+    fun writeMemoryFileRoundTripsContent() = runBlocking {
         val filePath = File(tempDirectory, "round-trip.bank")
         MemoryPersistence.writeMemoryFile(filePath.absolutePath, "first")
         MemoryPersistence.writeMemoryFile(filePath.absolutePath, "second")
@@ -45,8 +45,7 @@ class MemoryPersistenceTest
      * Verifies that a reader blocks behind an exclusive lock held by another JVM process.
      */
     @Test
-    fun readMemoryFileWaitsForExclusiveLockFromAnotherJvm()
-    {
+    fun readMemoryFileWaitsForExclusiveLockFromAnotherJvm() = runBlocking {
         val filePath = File(tempDirectory, "blocking-read.bank")
         MemoryPersistence.writeMemoryFile(filePath.absolutePath, "locked content")
 

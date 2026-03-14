@@ -1,5 +1,7 @@
 package com.TTT.Context
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.AtomicMoveNotSupportedException
@@ -27,81 +29,90 @@ internal object MemoryPersistence
      * @param filePath Path of the `.bank` or `.todo` file to read.
      * @return File contents, or an empty string when the file does not exist.
      */
-    fun readMemoryFile(filePath: String): String
+    suspend fun readMemoryFile(filePath: String): String
     {
-        val targetPath = Path.of(filePath)
-        val parentPath = targetPath.parent ?: return ""
-        if(!Files.exists(parentPath))
-        {
-            return ""
-        }
-
-        return withLock(targetPath, shared = true) {
-            if(!Files.exists(targetPath) || !Files.isRegularFile(targetPath) || !Files.isReadable(targetPath))
+        return withContext(Dispatchers.IO) {
+            val targetPath = Path.of(filePath)
+            val parentPath = targetPath.parent ?: return@withContext ""
+            if(!Files.exists(parentPath))
             {
-                return@withLock ""
+                return@withContext ""
             }
 
-            Files.readString(targetPath)
+            withLock(targetPath, shared = true) {
+                if(!Files.exists(targetPath) || !Files.isRegularFile(targetPath) || !Files.isReadable(targetPath))
+                {
+                    return@withLock ""
+                }
+
+                Files.readString(targetPath)
+            }
         }
     }
 
     /**
      * Write a memory file using temp-file replacement under an exclusive sidecar lock.
+     * The blocking file-lock and filesystem work is isolated onto `Dispatchers.IO`.
      *
      * @param filePath Path of the `.bank` or `.todo` file to write.
      * @param content Serialized file contents.
      */
-    fun writeMemoryFile(filePath: String, content: String)
+    suspend fun writeMemoryFile(filePath: String, content: String)
     {
-        val targetPath = Path.of(filePath)
-        ensureParentDirectory(targetPath)
+        withContext(Dispatchers.IO) {
+            val targetPath = Path.of(filePath)
+            ensureParentDirectory(targetPath)
 
-        withLock(targetPath, shared = false) {
-            val tempPath = createTempPath(targetPath)
+            withLock(targetPath, shared = false) {
+                val tempPath = createTempPath(targetPath)
 
-            try
-            {
-                writeTempFile(tempPath, content)
-                moveTempFile(tempPath, targetPath)
-                forceDirectorySync(targetPath.parent)
-            }
-            finally
-            {
-                Files.deleteIfExists(tempPath)
+                try
+                {
+                    writeTempFile(tempPath, content)
+                    moveTempFile(tempPath, targetPath)
+                    forceDirectorySync(targetPath.parent)
+                }
+                finally
+                {
+                    Files.deleteIfExists(tempPath)
+                }
             }
         }
     }
 
     /**
      * Delete a memory file while holding its exclusive sidecar lock.
+     * The blocking file-lock and filesystem work is isolated onto `Dispatchers.IO`.
      *
      * @param filePath Path of the `.bank` or `.todo` file to delete.
      * @return True when the file existed and was deleted, false otherwise.
      */
-    fun deleteMemoryFile(filePath: String): Boolean
+    suspend fun deleteMemoryFile(filePath: String): Boolean
     {
-        val targetPath = Path.of(filePath)
-        val parentPath = targetPath.parent ?: return false
-        if(!Files.exists(parentPath))
-        {
-            return false
-        }
-
-        return withLock(targetPath, shared = false) {
-            if(!Files.exists(targetPath))
+        return withContext(Dispatchers.IO) {
+            val targetPath = Path.of(filePath)
+            val parentPath = targetPath.parent ?: return@withContext false
+            if(!Files.exists(parentPath))
             {
-                return@withLock false
+                return@withContext false
             }
 
-            Files.delete(targetPath)
-            forceDirectorySync(parentPath)
-            true
+            withLock(targetPath, shared = false) {
+                if(!Files.exists(targetPath))
+                {
+                    return@withLock false
+                }
+
+                Files.delete(targetPath)
+                forceDirectorySync(parentPath)
+                true
+            }
         }
     }
 
     /**
      * Hold a shared or exclusive lock for a memory file's sidecar lock file while running [block].
+     * Callers should invoke this from an IO dispatcher because `FileChannel.lock(...)` blocks the thread.
      *
      * @param targetPath Path of the managed memory file.
      * @param shared True for readers, false for writers and deletes.

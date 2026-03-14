@@ -172,7 +172,7 @@ object ContextBank
      * @param mode The storage mode for the page.
      * @return The loaded or cached context window.
      */
-    private fun loadContextWindowForKeyLocked(key: String, mode: StorageMode): ContextWindow
+    private suspend fun loadContextWindowForKeyLocked(key: String, mode: StorageMode): ContextWindow
     {
         bank[key]?.let { return it }
 
@@ -209,7 +209,7 @@ object ContextBank
      * @param mode The storage mode for the todo list.
      * @return The loaded or cached todo list.
      */
-    private fun loadTodoListForKeyLocked(key: String, mode: StorageMode): TodoList
+    private suspend fun loadTodoListForKeyLocked(key: String, mode: StorageMode): TodoList
     {
         todoList[key]?.let { return it }
 
@@ -433,17 +433,23 @@ object ContextBank
             StorageMode.MEMORY_AND_DISK ->
             {
                 bank[key] = window
-                MemoryPersistence.writeMemoryFile(bankDir, serialize(window))
+                runBlocking {
+                    MemoryPersistence.writeMemoryFile(bankDir, serialize(window))
+                }
             }
 
             StorageMode.DISK_ONLY ->
             {
-                MemoryPersistence.writeMemoryFile(bankDir, serialize(window))
+                runBlocking {
+                    MemoryPersistence.writeMemoryFile(bankDir, serialize(window))
+                }
             }
 
             StorageMode.DISK_WITH_CACHE ->
             {
-                MemoryPersistence.writeMemoryFile(bankDir, serialize(window))
+                runBlocking {
+                    MemoryPersistence.writeMemoryFile(bankDir, serialize(window))
+                }
                 bank[key] = window
                 runBlocking {
                     enforceEvictionPolicy()
