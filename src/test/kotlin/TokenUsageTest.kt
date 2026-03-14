@@ -3,22 +3,22 @@ package com.TTT
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Pipe.MultimodalContent
 import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotNull
-import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class TokenUsageTest {
 
     @Test
     fun testComprehensiveTokenUsageEnabled() = runBlocking {
-        val nestedReasoning = TestTokenPipe("Reasoning-Level-2").enableComprehensiveTokenTracking()
-        val primaryReasoning = TestTokenPipe("Reasoning-Level-1").enableComprehensiveTokenTracking().apply {
+        val nestedReasoning = MockTokenPipe("Reasoning-Level-2").enableComprehensiveTokenTracking()
+        val primaryReasoning = MockTokenPipe("Reasoning-Level-1").enableComprehensiveTokenTracking().apply {
             setReasoningPipe(nestedReasoning)
         }
-        val validatorPipe = TestTokenPipe("Validator").enableComprehensiveTokenTracking()
-        val mainPipe = TestTokenPipe("Main-Pipe")
+        val validatorPipe = MockTokenPipe("Validator").enableComprehensiveTokenTracking()
+        val mainPipe = MockTokenPipe("Main-Pipe")
             .setReasoningPipe(primaryReasoning)
             .setValidatorPipe(validatorPipe)
             .enableComprehensiveTokenTracking()
@@ -43,9 +43,9 @@ class TokenUsageTest {
 
     @Test
     fun testComprehensiveTokenUsageDisabled() = runBlocking {
-        val mainPipe = TestTokenPipe("Main-Pipe")
-            .setReasoningPipe(TestTokenPipe("Reasoning"))
-            .setValidatorPipe(TestTokenPipe("Validator"))
+        val mainPipe = MockTokenPipe("Main-Pipe")
+            .setReasoningPipe(MockTokenPipe("Reasoning"))
+            .setValidatorPipe(MockTokenPipe("Validator"))
             // Comprehensive tracking intentionally disabled
 
         val pipeline = Pipeline()

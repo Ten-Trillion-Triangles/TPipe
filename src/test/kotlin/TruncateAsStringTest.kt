@@ -8,29 +8,29 @@ import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipe.TruncationSettings
 import kotlin.test.Test
 
-class TruncateAsStringTest {
+private class TestPipeForTruncateAsString : Pipe() {
+    override fun truncateModuleContext(): Pipe = this
+    override suspend fun generateText(promptInjector: String): String = "test"
 
-    class TestPipe : Pipe() {
-        override fun truncateModuleContext(): Pipe = this
-        override suspend fun generateText(promptInjector: String): String = "test"
-        
-        fun setTestMiniBank(miniBank: MiniBank) {
-            this.miniContextBank = miniBank
-        }
-        
-        fun testWithTokenBudget(budget: TokenBudgetSettings, pageKeys: List<String>): Map<String, Int> {
-            // Set the token budget which should apply truncateContextWindowAsString setting
-            this.setTokenBudget(budget)
-            
-            // Use the internal allocation method that respects the budget settings
-            val truncationSettings = this.getTruncationSettings()
-            return calculateSizeBasedPriorityFill(budget.contextWindowSize ?: 1000, pageKeys, truncationSettings)
-        }
+    fun setTestMiniBank(miniBank: MiniBank) {
+        this.miniContextBank = miniBank
     }
+
+    fun testWithTokenBudget(budget: TokenBudgetSettings, pageKeys: List<String>): Map<String, Int> {
+        // Set the token budget which should apply truncateContextWindowAsString setting
+        this.setTokenBudget(budget)
+        
+        // Use the internal allocation method that respects the budget settings
+        val truncationSettings = this.getTruncationSettings()
+        return calculateSizeBasedPriorityFill(budget.contextWindowSize ?: 1000, pageKeys, truncationSettings)
+    }
+}
+
+class TruncateAsStringTest {
 
     @Test
     fun testTruncateAsStringVsElements() {
-        val pipe = TestPipe()
+        val pipe = TestPipeForTruncateAsString()
         val miniBank = MiniBank()
         
         // Create contexts - same as before
