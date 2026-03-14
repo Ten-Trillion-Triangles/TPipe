@@ -19,11 +19,42 @@ import kotlinx.serialization.encodeToString
 import java.time.Duration
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.ContentType
-import java.io.File
 
-fun main() {
-    embeddedServer(Netty, port = 8081, host = "0.0.0.0", module = Application::traceServerModule)
-        .start(wait = true)
+/**
+ * Main entry point for standalone execution.
+ * Supports command line arguments like:
+ * --port 8081
+ * --host 0.0.0.0
+ */
+fun main(args: Array<String>) {
+    var port = TraceServerConfig.port
+    var host = TraceServerConfig.host
+
+    for (i in args.indices) {
+        if (args[i] == "--port" && i + 1 < args.size) {
+            port = args[i + 1].toIntOrNull() ?: port
+        }
+        if (args[i] == "--host" && i + 1 < args.size) {
+            host = args[i + 1]
+        }
+    }
+
+    startTraceServer(port, host, wait = true)
+}
+
+/**
+ * Starts the TraceServer programmatically.
+ * @param port The port to host the server on. Defaults to [TraceServerConfig.port].
+ * @param host The host to bind to. Defaults to [TraceServerConfig.host].
+ * @param wait Whether to block the thread waiting for the server to stop. Default is false.
+ */
+fun startTraceServer(
+    port: Int = TraceServerConfig.port,
+    host: String = TraceServerConfig.host,
+    wait: Boolean = false
+) {
+    embeddedServer(Netty, port = port, host = host, module = Application::traceServerModule)
+        .start(wait = wait)
 }
 
 fun Application.traceServerModule() {
@@ -50,8 +81,6 @@ fun Application.traceServerModule() {
 
     routing {
         get("/") {
-            // In dev environment, resources might be on disk. In prod, they are in JAR.
-            // We'll read from classpath.
             val html = object {}.javaClass.classLoader.getResource("static/index.html")?.readText()
             if (html != null) {
                 call.respondText(html, ContentType.Text.Html)
