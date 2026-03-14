@@ -1,10 +1,15 @@
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
+    application
 }
 
 repositories {
     mavenCentral()
+}
+
+application {
+    mainClass.set("com.TTT.TraceServer.TraceServerDemoKt")
 }
 
 dependencies {
