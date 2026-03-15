@@ -89,6 +89,9 @@ object PipeTracer
     fun exportTrace(pipelineId: String, format: TraceFormat): String {
         val trace = getTrace(pipelineId)
         val visualizer = TraceVisualizer()
+        if (RemoteTraceConfig.dispatchAutomatically) {
+            RemoteTraceDispatcher.dispatchTrace(pipelineId)
+        }
         return when(format) {
             TraceFormat.JSON -> exportAsJson(trace)
             TraceFormat.HTML -> visualizer.generateHtmlReport(trace)
