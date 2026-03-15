@@ -61,10 +61,9 @@ object PcpStdioHost
         val authMechanism = P2PRegistry.globalAuthMechanism
         if(authMechanism != null)
         {
-            // For Stdio PCP, we don't have a clear transport auth body,
-            // but we can pass an empty string or handle it via a specific convention if needed.
-            // For now, we'll assume standalone PCP over Stdio might need auth too.
-            val isAuthorized = authMechanism("")
+            // For Stdio PCP, we extract the auth token from the first request's callParams.
+            val authBody = requests.firstOrNull()?.callParams?.get("authBody") ?: ""
+            val isAuthorized = authMechanism(authBody)
             if(!isAuthorized)
             {
                 return PcpExecutionResult(

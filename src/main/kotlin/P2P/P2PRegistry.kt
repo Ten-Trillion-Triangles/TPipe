@@ -69,8 +69,13 @@ object P2PRegistry
     var requestTemplates = mutableMapOf<Any, P2PRequest>()
 
     /**
-     * Global authentication mechanism for external P2P calls arriving via HTTP or Stdio.
-     * Allows developers to hook into their own authentication systems.
+     * Universal transport-level authentication gatekeeper for all TPipe hosted services.
+     * This hook allows developers to integrate custom authentication logic.
+     *
+     * The `authBody` parameter value originates from various sources depending on the transport layer:
+     * - **Remote Memory & Trace Server:** Extracted from the HTTP `Authorization` header.
+     * - **P2P HTTP/Stdio:** Extracted from `P2PRequest.transport.transportAuthBody`.
+     * - **PCP Stdio:** Extracted from the `authBody` key within `PcPRequest.callParams`.
      */
     var globalAuthMechanism: (suspend (authBody: String) -> Boolean)? = null
 

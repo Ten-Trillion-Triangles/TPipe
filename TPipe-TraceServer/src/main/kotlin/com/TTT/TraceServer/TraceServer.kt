@@ -1,6 +1,7 @@
 package com.TTT.TraceServer
 
 import io.ktor.server.application.*
+import com.TTT.P2P.P2PRegistry
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import io.ktor.server.routing.*
@@ -167,7 +168,11 @@ fun Application.traceServerModule()
         post("/api/traces") {
             // Check Agent auth mechanism for submitting traces
             val auth = call.request.headers["Authorization"]
-            if(TraceServerRegistry.agentAuthMechanism?.invoke(auth) == false)
+            val isAuthorized = TraceServerRegistry.agentAuthMechanism?.invoke(auth)
+                ?: P2PRegistry.globalAuthMechanism?.invoke(auth ?: "")
+                ?: true
+
+            if(!isAuthorized)
             {
                 call.respond(HttpStatusCode.Unauthorized, "Unauthorized Agent")
                 return@post
