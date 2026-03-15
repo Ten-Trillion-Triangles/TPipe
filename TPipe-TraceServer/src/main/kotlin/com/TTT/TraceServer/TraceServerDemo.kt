@@ -8,7 +8,8 @@ import com.TTT.Debug.RemoteTraceConfig
 import com.TTT.Debug.RemoteTraceDispatcher
 import kotlin.concurrent.thread
 
-fun main(args: Array<String>) {
+fun main(args: Array<String>)
+{
     println("--- Starting TPipe Trace Dashboard Demo ---")
     println("Setting up Auth Mechanism (Key = demo123)")
 
@@ -76,7 +77,8 @@ fun main(args: Array<String>) {
     println("🔑 When prompted for an Authentication Key, enter: demo123")
     println("================================================================")
 
-    while (true) {
+    while(true)
+    {
         Thread.sleep(1000)
     }
 }

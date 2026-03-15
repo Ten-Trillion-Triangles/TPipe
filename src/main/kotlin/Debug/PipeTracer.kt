@@ -5,28 +5,40 @@ import kotlinx.serialization.json.Json
 import java.util.concurrent.ConcurrentHashMap
 import java.util.Collections
 
-object PipeTracer
-{
+object PipeTracer {
     private val traces = ConcurrentHashMap<String, MutableList<TraceEvent>>()
     private var isEnabled = false
     private var maxTraceHistory = 1000
     
+    /**
+     * Globally enables tracing for all pipelines.
+     */
     fun enable()
     {
         isEnabled = true
     }
     
+    /**
+     * Globally disables tracing for all pipelines.
+     */
     fun disable()
     {
         isEnabled = false
     }
     
+    /**
+     * Initializes a new trace history for a given pipeline ID.
+     */
     fun startTrace(pipelineId: String)
     {
         if(!isEnabled) return
         traces[pipelineId] = Collections.synchronizedList(mutableListOf())
     }
     
+    /**
+     * Adds a new trace event to the history of a given pipeline.
+     * Maintains the maximum history limit by removing oldest events.
+     */
     fun addEvent(pipelineId: String, event: TraceEvent)
     {
         if(!isEnabled) return
@@ -44,14 +56,22 @@ object PipeTracer
         }
     }
     
-    fun getTrace(pipelineId: String): List<TraceEvent> {
+    /**
+     * Returns a snapshot of the trace history for a given pipeline.
+     */
+    fun getTrace(pipelineId: String): List<TraceEvent>
+    {
         val list = traces[pipelineId] ?: return emptyList()
         synchronized(list) {
             return list.toList()
         }
     }
     
-    fun getAllTraces(): Map<String, List<TraceEvent>> {
+    /**
+     * Returns a map containing all traces for all pipelines.
+     */
+    fun getAllTraces(): Map<String, List<TraceEvent>>
+    {
         return traces.mapValues { entry ->
             synchronized(entry.value) {
                 entry.value.toList()
@@ -59,17 +79,27 @@ object PipeTracer
         }
     }
     
+    /**
+     * Clears the trace history for a given pipeline.
+     */
     fun clearTrace(pipelineId: String)
     {
         traces.remove(pipelineId)
     }
     
+    /**
+     * Replaces the entire trace history for a pipeline with a new list of events.
+     */
     fun replaceTrace(pipelineId: String, events: List<TraceEvent>)
     {
         if(!isEnabled) return
         traces[pipelineId] = Collections.synchronizedList(events.toMutableList())
     }
     
+    /**
+     * Merges new events into the existing trace history for a pipeline,
+     * ensuring uniqueness and proper chronological ordering.
+     */
     fun mergeTrace(pipelineId: String, newEvents: List<TraceEvent>)
     {
         if(!isEnabled) return
@@ -86,13 +116,20 @@ object PipeTracer
         }
     }
     
-    fun exportTrace(pipelineId: String, format: TraceFormat): String {
+    /**
+     * Exports the trace history for a pipeline in the specified format.
+     * Triggers automatic remote dispatch if configured.
+     */
+    fun exportTrace(pipelineId: String, format: TraceFormat): String
+    {
         val trace = getTrace(pipelineId)
         val visualizer = TraceVisualizer()
-        if (RemoteTraceConfig.dispatchAutomatically) {
+        if(RemoteTraceConfig.dispatchAutomatically)
+        {
             RemoteTraceDispatcher.dispatchTrace(pipelineId)
         }
-        return when(format) {
+        return when(format)
+        {
             TraceFormat.JSON -> exportAsJson(trace)
             TraceFormat.HTML -> visualizer.generateHtmlReport(trace)
             TraceFormat.MARKDOWN -> exportAsMarkdown(trace)
@@ -100,7 +137,12 @@ object PipeTracer
         }
     }
     
-    fun getFailureAnalysis(pipelineId: String): FailureAnalysis {
+    /**
+     * Analyzes the trace history of a pipeline to identify failures,
+     * trace execution paths, and suggest potential fixes.
+     */
+    fun getFailureAnalysis(pipelineId: String): FailureAnalysis
+    {
         val trace = getTrace(pipelineId)
         val failureEvent = trace.firstOrNull { it.eventType == TraceEventType.PIPE_FAILURE || it.eventType == TraceEventType.API_CALL_FAILURE }
         val lastSuccess = trace.lastOrNull { it.eventType == TraceEventType.PIPE_SUCCESS || it.eventType == TraceEventType.API_CALL_SUCCESS }
@@ -138,7 +180,8 @@ object PipeTracer
         )
     }
     
-    private fun exportAsJson(trace: List<TraceEvent>): String {
+    private fun exportAsJson(trace: List<TraceEvent>): String
+    {
         return try {
             Json.encodeToString(trace)
         }
@@ -150,14 +193,16 @@ object PipeTracer
     
 
     
-    private fun exportAsMarkdown(trace: List<TraceEvent>): String {
+    private fun exportAsMarkdown(trace: List<TraceEvent>): String
+    {
         val md = StringBuilder()
         md.append("# TPipe Trace Report\n\n")
         md.append("| Timestamp | Pipe | Event | Phase | Status |\n")
         md.append("|-----------|------|-------|-------|--------|\n")
         
         trace.forEach { event ->
-            val status = when(event.eventType) {
+            val status = when(event.eventType)
+            {
                 TraceEventType.PIPE_SUCCESS, TraceEventType.API_CALL_SUCCESS, TraceEventType.VALIDATION_SUCCESS -> "✅ SUCCESS"
                 TraceEventType.PIPE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE -> "❌ FAILURE"
                 else -> "ℹ️ INFO"

@@ -15,15 +15,23 @@ data class TracePayload(val pipelineId: String, val htmlContent: String, val nam
 
 object RemoteTraceDispatcher {
 
-    fun dispatchTrace(pipelineId: String, name: String = pipelineId, status: String = "SUCCESS") {
+    /**
+     * Dispatches a trace summary and detailed HTML report for a pipeline ID 
+     * to a remote TraceServer.
+     * @param pipelineId The ID of the pipeline being traced.
+     * @param name Optional display name for the trace.
+     * @param status Final execution status (e.g. SUCCESS, FAILURE).
+     */
+    fun dispatchTrace(pipelineId: String, name: String = pipelineId, status: String = "SUCCESS")
+    {
         val baseUrl = RemoteTraceConfig.remoteServerUrl ?: return
 
         // Ensure valid remote URL before doing the expensive HTML export
-        val urlString = if (baseUrl.endsWith("/")) baseUrl.dropLast(1) else baseUrl
+        val urlString = if(baseUrl.endsWith("/")) baseUrl.dropLast(1) else baseUrl
 
         val htmlContent = try {
             PipeTracer.exportTrace(pipelineId, TraceFormat.HTML)
-        } catch (e: Exception) {
+        } catch(e: Exception) {
             e.printStackTrace()
             return
         }
@@ -50,10 +58,11 @@ object RemoteTraceDispatcher {
                 }
 
                 val responseCode = connection.responseCode
-                if (responseCode != 200) {
+                if(responseCode != 200)
+                {
                     println("Failed to dispatch trace $pipelineId to remote server. Status code: $responseCode")
                 }
-            } catch (e: Exception) {
+            } catch(e: Exception) {
                 println("Error dispatching trace $pipelineId: ${e.message}")
             }
         }

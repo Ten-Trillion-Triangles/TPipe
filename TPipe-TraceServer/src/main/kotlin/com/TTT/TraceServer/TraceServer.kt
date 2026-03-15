@@ -27,15 +27,19 @@ import java.util.UUID
  * --port 8081
  * --host 0.0.0.0
  */
-fun main(args: Array<String>) {
+fun main(args: Array<String>)
+{
     var port = TraceServerConfig.port
     var host = TraceServerConfig.host
 
-    for (i in args.indices) {
-        if (args[i] == "--port" && i + 1 < args.size) {
+    for(i in args.indices)
+    {
+        if(args[i] == "--port" && i + 1 < args.size)
+        {
             port = args[i + 1].toIntOrNull() ?: port
         }
-        if (args[i] == "--host" && i + 1 < args.size) {
+        if(args[i] == "--host" && i + 1 < args.size)
+        {
             host = args[i + 1]
         }
     }
@@ -53,12 +57,18 @@ fun startTraceServer(
     port: Int = TraceServerConfig.port,
     host: String = TraceServerConfig.host,
     wait: Boolean = false
-) {
+)
+{
     embeddedServer(Netty, port = port, host = host, module = Application::traceServerModule)
         .start(wait = wait)
 }
 
-fun Application.traceServerModule() {
+/**
+ * Configures the Ktor application with WebSockets, JSON content negotiation,
+ * CORS, and the trace server routing.
+ */
+fun Application.traceServerModule()
+{
     install(WebSockets) {
         pingPeriod = Duration.ofSeconds(15)
         timeout = Duration.ofSeconds(15)
@@ -83,7 +93,8 @@ fun Application.traceServerModule() {
     routing {
         get("/") {
             val html = object {}.javaClass.classLoader.getResource("static/index.html")?.readText()
-            if (html != null) {
+            if(html != null)
+            {
                 call.respondText(html, ContentType.Text.Html)
             } else {
                 call.respondText("Dashboard not found", status = HttpStatusCode.NotFound)
@@ -92,7 +103,8 @@ fun Application.traceServerModule() {
 
         get("/dashboard.js") {
             val js = object {}.javaClass.classLoader.getResource("static/dashboard.js")?.readText()
-            if (js != null) {
+            if(js != null)
+            {
                 call.respondText(js, ContentType.Application.JavaScript)
             } else {
                 call.respondText("Script not found", status = HttpStatusCode.NotFound)
@@ -101,7 +113,8 @@ fun Application.traceServerModule() {
 
         post("/api/auth/login") {
             // Human client login flow
-            if (TraceServerRegistry.clientAuthMechanism == null) {
+            if(TraceServerRegistry.clientAuthMechanism == null)
+            {
                 // No client auth required, return anonymous session
                 call.respond(AuthResponse(TraceServerRegistry.createSession()))
                 return@post
@@ -109,7 +122,8 @@ fun Application.traceServerModule() {
 
             try {
                 val req = call.receive<AuthRequest>()
-                if (TraceServerRegistry.clientAuthMechanism?.invoke(req.key) == true) {
+                if(TraceServerRegistry.clientAuthMechanism?.invoke(req.key) == true)
+                {
                     call.respond(AuthResponse(TraceServerRegistry.createSession()))
                 } else {
                     call.respond(HttpStatusCode.Unauthorized, "Invalid credentials")
@@ -124,7 +138,8 @@ fun Application.traceServerModule() {
             val token = call.request.headers["Authorization"]?.removePrefix("Bearer ")
 
             // Allow if no auth required OR session is valid
-            if (TraceServerRegistry.clientAuthMechanism != null && !TraceServerRegistry.validateSession(token)) {
+            if(TraceServerRegistry.clientAuthMechanism != null && !TraceServerRegistry.validateSession(token))
+            {
                 call.respond(HttpStatusCode.Unauthorized, "Session expired or unauthorized")
                 return@get
             }
@@ -134,14 +149,16 @@ fun Application.traceServerModule() {
 
         get("/api/traces/{id}") {
             val token = call.request.headers["Authorization"]?.removePrefix("Bearer ")
-            if (TraceServerRegistry.clientAuthMechanism != null && !TraceServerRegistry.validateSession(token)) {
+            if(TraceServerRegistry.clientAuthMechanism != null && !TraceServerRegistry.validateSession(token))
+            {
                 call.respond(HttpStatusCode.Unauthorized, "Session expired or unauthorized")
                 return@get
             }
 
             val id = call.parameters["id"]
             val trace = TraceServerRegistry.traces[id]
-            if (trace != null) {
+            if(trace != null)
+            {
                 call.respond(trace)
             } else {
                 call.respond(HttpStatusCode.NotFound, "Trace not found")
@@ -151,7 +168,8 @@ fun Application.traceServerModule() {
         post("/api/traces") {
             // Check Agent auth mechanism for submitting traces
             val auth = call.request.headers["Authorization"]
-            if (TraceServerRegistry.agentAuthMechanism?.invoke(auth) == false) {
+            if(TraceServerRegistry.agentAuthMechanism?.invoke(auth) == false)
+            {
                 call.respond(HttpStatusCode.Unauthorized, "Unauthorized Agent")
                 return@post
             }
@@ -165,7 +183,8 @@ fun Application.traceServerModule() {
 
             synchronized(TraceServerRegistry.connections) {
                 val iter = TraceServerRegistry.connections.iterator()
-                while (iter.hasNext()) {
+                while(iter.hasNext())
+                {
                     val session = iter.next()
                     GlobalScope.launch {
                         try {
@@ -183,14 +202,16 @@ fun Application.traceServerModule() {
         webSocket("/ws/traces") {
             // Validate connection query parameter for session token if auth is enabled
             val token = call.request.queryParameters["token"]
-            if (TraceServerRegistry.clientAuthMechanism != null && !TraceServerRegistry.validateSession(token)) {
+            if(TraceServerRegistry.clientAuthMechanism != null && !TraceServerRegistry.validateSession(token))
+            {
                 close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Unauthorized"))
                 return@webSocket
             }
 
             TraceServerRegistry.connections += this
             try {
-                for (frame in incoming) {
+                for(frame in incoming)
+                {
                     // Just keeping the connection open
                 }
             } catch (e: ClosedReceiveChannelException) {
