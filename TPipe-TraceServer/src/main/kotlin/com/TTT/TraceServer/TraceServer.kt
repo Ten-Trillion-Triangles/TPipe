@@ -16,10 +16,9 @@ import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.GlobalScope
 import kotlinx.serialization.encodeToString
-import java.time.Duration
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.ContentType
-import java.util.UUID
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Main entry point for standalone execution.
@@ -70,8 +69,8 @@ fun startTraceServer(
 fun Application.traceServerModule()
 {
     install(WebSockets) {
-        pingPeriod = Duration.ofSeconds(15)
-        timeout = Duration.ofSeconds(15)
+        pingPeriod = 15.seconds
+        timeout = 15.seconds
         maxFrameSize = Long.MAX_VALUE
         masking = false
     }

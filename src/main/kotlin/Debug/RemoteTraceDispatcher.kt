@@ -6,7 +6,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection
 import java.net.URL
-import java.io.OutputStream
 import kotlinx.serialization.encodeToString
 import kotlinx.coroutines.Dispatchers
 
@@ -30,7 +29,7 @@ object RemoteTraceDispatcher {
         val urlString = if(baseUrl.endsWith("/")) baseUrl.dropLast(1) else baseUrl
 
         val htmlContent = try {
-            PipeTracer.exportTrace(pipelineId, TraceFormat.HTML)
+            PipeTracer.exportTraceWithoutDispatch(pipelineId, TraceFormat.HTML)
         } catch(e: Exception) {
             e.printStackTrace()
             return

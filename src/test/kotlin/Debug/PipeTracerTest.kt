@@ -1,14 +1,30 @@
 package com.TTT.Debug
 
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Assertions.*
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class PipeTracerTest {
     
-    @BeforeEach
+    @BeforeTest
     fun setup() {
         PipeTracer.enable()
+        RemoteTraceConfig.remoteServerUrl = null
+        RemoteTraceConfig.authHeader = null
+        RemoteTraceConfig.dispatchAutomatically = false
+    }
+
+    @AfterTest
+    fun tearDown() {
+        RemoteTraceConfig.remoteServerUrl = null
+        RemoteTraceConfig.authHeader = null
+        RemoteTraceConfig.dispatchAutomatically = false
     }
     
     @Test
@@ -98,5 +114,75 @@ class PipeTracerTest {
         assertEquals(failureEvent, analysis.failurePoint)
         assertEquals("Test failure", analysis.failureReason)
         assertTrue(analysis.suggestedFixes.isNotEmpty())
+    }
+
+    @Test
+    fun testExportTraceAutoDispatchPostsOnceWithoutRecursion() {
+        val pipelineId = "remote-dispatch-pipeline"
+        PipeTracer.startTrace(pipelineId)
+        PipeTracer.addEvent(pipelineId, TraceEvent(
+            timestamp = System.currentTimeMillis(),
+            pipeId = "test-pipe",
+            pipeName = "RemoteDispatchPipe",
+            eventType = TraceEventType.PIPE_SUCCESS,
+            phase = TracePhase.CLEANUP,
+            content = null,
+            contextSnapshot = null
+        ))
+
+        val postLatch = CountDownLatch(1)
+        var requestCount = 0
+        var authHeader: String? = null
+        var requestBody = ""
+        val server = HttpServer.create(InetSocketAddress(0), 0).apply {
+            createContext("/api/traces") { exchange ->
+                requestCount++
+                authHeader = exchange.requestHeaders.getFirst("Authorization")
+                requestBody = exchange.requestBody.bufferedReader().readText()
+                exchange.sendResponseHeaders(200, 0)
+                exchange.responseBody.use { it.write(ByteArray(0)) }
+                postLatch.countDown()
+            }
+            start()
+        }
+
+        try {
+            RemoteTraceConfig.remoteServerUrl = "http://127.0.0.1:${server.address.port}"
+            RemoteTraceConfig.authHeader = "Bearer test-token"
+            RemoteTraceConfig.dispatchAutomatically = true
+
+            val consoleOutput = PipeTracer.exportTrace(pipelineId, TraceFormat.CONSOLE)
+
+            assertTrue(consoleOutput.contains("RemoteDispatchPipe"))
+            assertTrue(postLatch.await(5, TimeUnit.SECONDS), "Expected one trace POST to be dispatched")
+            assertEquals(1, requestCount)
+            assertEquals("Bearer test-token", authHeader)
+            assertTrue(requestBody.contains("\"pipelineId\":\"$pipelineId\""))
+            assertTrue(requestBody.contains("\"htmlContent\""))
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun testExportTraceWithAutoDispatchAndNoRemoteUrlStillReturnsLocalTrace() {
+        val pipelineId = "no-remote-url-pipeline"
+        PipeTracer.startTrace(pipelineId)
+        PipeTracer.addEvent(pipelineId, TraceEvent(
+            timestamp = System.currentTimeMillis(),
+            pipeId = "test-pipe",
+            pipeName = "LocalOnlyPipe",
+            eventType = TraceEventType.PIPE_SUCCESS,
+            phase = TracePhase.CLEANUP,
+            content = null,
+            contextSnapshot = null
+        ))
+
+        RemoteTraceConfig.dispatchAutomatically = true
+
+        val consoleOutput = PipeTracer.exportTrace(pipelineId, TraceFormat.CONSOLE)
+
+        assertTrue(consoleOutput.contains("LocalOnlyPipe"))
+        assertTrue(consoleOutput.contains("PIPE_SUCCESS"))
     }
 }

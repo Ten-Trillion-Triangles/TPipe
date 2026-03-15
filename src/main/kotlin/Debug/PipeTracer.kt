@@ -122,12 +122,23 @@ object PipeTracer {
      */
     fun exportTrace(pipelineId: String, format: TraceFormat): String
     {
-        val trace = getTrace(pipelineId)
-        val visualizer = TraceVisualizer()
+        val exportedTrace = exportTraceInternal(pipelineId, format)
         if(RemoteTraceConfig.dispatchAutomatically)
         {
             RemoteTraceDispatcher.dispatchTrace(pipelineId)
         }
+        return exportedTrace
+    }
+
+    internal fun exportTraceWithoutDispatch(pipelineId: String, format: TraceFormat): String
+    {
+        return exportTraceInternal(pipelineId, format)
+    }
+
+    private fun exportTraceInternal(pipelineId: String, format: TraceFormat): String
+    {
+        val trace = getTrace(pipelineId)
+        val visualizer = TraceVisualizer()
         return when(format)
         {
             TraceFormat.JSON -> exportAsJson(trace)
