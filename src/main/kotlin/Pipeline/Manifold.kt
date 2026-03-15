@@ -19,7 +19,10 @@ import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Pipe.deepCopy
 import com.TTT.Pipe.toTokenBudgetSettings
+import com.TTT.Pipe.toTruncationSettings
 import com.TTT.PipeContextProtocol.Transport
 import com.TTT.Util.extractJson
 import com.TTT.Util.serialize
@@ -27,7 +30,6 @@ import com.TTT.Debug.*
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Pipe.Pipe
 import com.TTT.Util.examplePromptFor
-import com.TTT.Util.getLowestContextWindowSize
 import kotlinx.coroutines.channels.Channel
 import org.slf4j.helpers.NOP_FallbackServiceProvider
 import java.util.UUID
@@ -154,8 +156,7 @@ class Manifold : P2PInterface
     private var agentPipeNames = mutableListOf<String>("Agent caller pipe")
 
     /**
-     * If true the manifold will truncate the working converse history if it approaches the smallest supported
-     * context window across the manager and worker pipelines.
+     * If true the manifold applies its built-in manager-history budget control before manager execution.
      */
     private var autoTruncateContext = false
 
@@ -165,10 +166,15 @@ class Manifold : P2PInterface
     private var truncationMethod = ContextWindowSettings.TruncateTop
 
     /**
-     * Defaults to 32K but will be adjusted to whatever the lowest context window of the workers, or of any pipe
-     * in the manager pipe or worker pipes.
+     * Optional explicit manager budget override for the shared conversation history maintained between loop turns.
      */
-    private var contextWindowSize = 32000
+    private var managerTokenBudget: TokenBudgetSettings? = null
+
+    /**
+     * Compatibility context-window override used when manager history control is inferred from legacy truncation
+     * settings rather than an explicit [TokenBudgetSettings].
+     */
+    private var managerContextWindowOverride: Int? = null
 
     /**
      * Optional human in the loop funciton that allows for custom handling of context and context overflow.
@@ -268,13 +274,97 @@ class Manifold : P2PInterface
     }
 
     /**
-     * Defines the maximum context window size. This is automatically set to the lowest pipe's context window size
-     * to prevent an overflow that would crash the manifold.
+     * Define a compatibility context-window override for the built-in manager-history truncation path.
+     * This only applies when no explicit manager token budget is configured.
+     *
+     * @param size Legacy manager-history context-window override.
+     * @return This manifold for chaining.
      */
     fun setContextWindowSize(size: Int) : Manifold
     {
-        contextWindowSize = size
+        managerContextWindowOverride = size
         return this
+    }
+
+    /**
+     * Define the token budget used for the manager-facing shared conversation history maintained by this manifold.
+     * This automatically enables the built-in manager budget-control path.
+     *
+     * @param budget Token budget to apply to manager shared-history truncation.
+     * @return This manifold for chaining.
+     */
+    fun setManagerTokenBudget(budget: TokenBudgetSettings) : Manifold
+    {
+        managerTokenBudget = budget.deepCopy()
+        autoTruncateContext = true
+        return this
+    }
+
+    /**
+     * Read the explicit manager token budget configured on this manifold, if any.
+     *
+     * @return Copy of the explicitly configured manager token budget, or null when manager budgeting is inferred.
+     */
+    fun getManagerTokenBudget() : TokenBudgetSettings?
+    {
+        return managerTokenBudget?.deepCopy()
+    }
+
+    /**
+     * Determine whether built-in manager-history budget control is enabled.
+     *
+     * @return True when manager shared-history control will run before manager execution.
+     */
+    fun isManagerBudgetControlEnabled() : Boolean
+    {
+        return autoTruncateContext
+    }
+
+    /**
+     * Resolve the effective manager token budget after compatibility fallbacks are applied.
+     * This is primarily useful for validation and testing.
+     *
+     * @return Effective manager token budget, or null when no built-in manager budgeting is configured.
+     */
+    internal fun getEffectiveManagerTokenBudget() : TokenBudgetSettings?
+    {
+        return resolveManagerBudgetConfiguration()?.budget?.deepCopy()
+    }
+
+    /**
+     * Estimate the manager-facing token budget available for shared conversation history after static reservations.
+     *
+     * @return Effective manager-history token budget, or null when no built-in manager budgeting is configured.
+     */
+    internal fun getEffectiveManagerHistoryTokenBudget() : Int?
+    {
+        return resolveManagerBudgetConfiguration()?.historyTokenBudget
+    }
+
+    /**
+     * Determine whether all registered worker pipelines have some configured overflow-protection path.
+     *
+     * @return True when every registered worker pipeline reports prompt-overflow protection.
+     */
+    fun workersHaveOverflowProtection() : Boolean
+    {
+        return workerPipelines.all { pipeline ->
+            pipeline.hasContextOverflowProtectionConfigured()
+        }
+    }
+
+    /**
+     * List the worker pipeline names that currently lack prompt-overflow protection.
+     *
+     * @return Worker pipeline names with one or more unprotected pipes.
+     */
+    fun getWorkersWithoutOverflowProtection() : List<String>
+    {
+        return workerPipelines.filter { pipeline ->
+            !pipeline.hasContextOverflowProtectionConfigured()
+        }.map { pipeline ->
+            pipeline.pipelineName.ifEmpty { "<unnamed worker pipeline>" }
+        }
     }
 
     /**
@@ -677,6 +767,18 @@ class Manifold : P2PInterface
                 ?.applySystemPrompt()
         }
 
+        validateWorkerPipelineOverflowProtection()
+
+        if(!autoTruncateContext && contextTruncationFunction == null)
+        {
+            throw Exception("No method of managing manager shared history was found. Configure Manifold manager budget control or supply a context truncation function.")
+        }
+
+        if(autoTruncateContext && resolveManagerBudgetConfiguration() == null)
+        {
+            throw Exception("Manager budget control is enabled, but no effective manager budget could be resolved.")
+        }
+
         //Activate all the worker pipes to ensure they are ready to make llm calls.
         for(workerPipe in workerPipelines)
         {
@@ -696,30 +798,135 @@ class Manifold : P2PInterface
             workerPipe.init(true)
         }
 
-        /**
-         * Finally, we need to determine what the maximum token budget for context, and prompts will be. This is
-         * determined by whatever pipe has the smallest context window assigned. Since if we overflow for any it
-         * will bring down the agent, and that will break the manifold.
-         */
-        if(!autoTruncateContext && contextTruncationFunction == null)
+    }
+
+//============================================= Budget Helpers =========================================================
+
+    /**
+     * Internal budget-resolution data used to drive manager shared-history truncation.
+     *
+     * @param budget Effective manager token budget after compatibility fallbacks are applied.
+     * @param historyTokenBudget Token allotment available for shared converse history.
+     */
+    private data class ResolvedManagerBudget(
+        val budget: TokenBudgetSettings,
+        val historyTokenBudget: Int
+    )
+
+    /**
+     * Resolve the first manager pipe because it is the pipe that consumes [workingContentObject] directly.
+     *
+     * @return First manager pipe, or null when the manager pipeline is empty.
+     */
+    private fun getPrimaryManagerPipe() : Pipe?
+    {
+        return managerPipeline.getPipes().firstOrNull()
+    }
+
+    /**
+     * Resolve the manager budget that should govern the shared conversation history kept by this manifold.
+     *
+     * @return Effective manager budget and history space, or null when no built-in manager budgeting is configured.
+     */
+    private fun resolveManagerBudgetConfiguration() : ResolvedManagerBudget?
+    {
+        val managerPipe = getPrimaryManagerPipe() ?: return null
+        val effectiveBudget = when
         {
-            throw Exception("No method of managing context was found. This means that context can overflow" +
-                    " and bring down the entire Manifold if misconfigured.")
+            managerTokenBudget != null -> managerTokenBudget!!.deepCopy()
+            managerPipe.copyTokenBudgetSettings() != null -> managerPipe.copyTokenBudgetSettings()!!.deepCopy()
+            autoTruncateContext || managerContextWindowOverride != null -> {
+                managerPipe.getTruncationSettings().toTokenBudgetSettings(
+                    contextWindowSize = managerContextWindowOverride ?: managerPipe.getConfiguredContextWindowSize()
+                )
+            }
+            else -> return null
         }
 
-        var smallestWorkerSize = Int.MAX_VALUE
-        for(pipeline in workerPipelines)
-        {
-            val contextSize = getLowestContextWindowSize(pipeline.getPipes())
-            if(contextSize < smallestWorkerSize) smallestWorkerSize = contextSize
+        val historyTokenBudget = estimateManagerHistoryTokenBudget(managerPipe, effectiveBudget)
+        return ResolvedManagerBudget(effectiveBudget, historyTokenBudget)
+    }
+
+    /**
+     * Estimate the token space available for the manager-facing shared conversation history after static reservations.
+     *
+     * @param managerPipe Primary manager pipe that consumes the shared history.
+     * @param effectiveBudget Effective budget resolved for the manager.
+     * @return Token space that can safely be used for shared manager history.
+     */
+    private fun estimateManagerHistoryTokenBudget(managerPipe: Pipe, effectiveBudget: TokenBudgetSettings) : Int
+    {
+        effectiveBudget.userPromptSize?.let { explicitUserPromptSize ->
+            if(explicitUserPromptSize <= 0)
+            {
+                throw IllegalArgumentException("Manager token budget leaves no room for shared history because userPromptSize is $explicitUserPromptSize.")
+            }
+            return explicitUserPromptSize
         }
 
-        var smallestManagerContextSize = getLowestContextWindowSize(managerPipeline.getPipes())
+        val truncationSettings = effectiveBudget.toTruncationSettings(managerPipe)
+        val systemPromptTokens = Dictionary.countTokens(managerPipe.getSystemPromptText(), truncationSettings)
+        var availableHistoryBudget = effectiveBudget.contextWindowSize ?: managerPipe.getConfiguredContextWindowSize()
+        availableHistoryBudget -= systemPromptTokens
+        availableHistoryBudget -= effectiveBudget.maxTokens ?: managerPipe.getConfiguredMaxTokens()
+        availableHistoryBudget -= effectiveBudget.reasoningBudget ?: 0
 
-        //Whichever is lower wins becoming the max context size we should allow when passing prompts.
-        contextWindowSize =
-            if(smallestManagerContextSize < smallestWorkerSize) smallestManagerContextSize else smallestWorkerSize
+        if(availableHistoryBudget <= 0)
+        {
+            throw IllegalArgumentException(
+                "Manager budget leaves no room for shared history after reserving output and system prompt tokens."
+            )
+        }
 
+        return availableHistoryBudget
+    }
+
+    /**
+     * Validate that every registered worker pipeline has a configured overflow-protection path.
+     */
+    private fun validateWorkerPipelineOverflowProtection()
+    {
+        val unprotectedWorkers = workerPipelines.filter { pipeline ->
+            !pipeline.hasContextOverflowProtectionConfigured()
+        }
+        if(unprotectedWorkers.isEmpty())
+        {
+            return
+        }
+
+        val workerDescriptions = unprotectedWorkers.joinToString { pipeline ->
+            val pipelineName = pipeline.pipelineName.ifEmpty { "<unnamed worker pipeline>" }
+            val pipeNames = pipeline.getPipesWithoutContextOverflowProtection().joinToString { pipe ->
+                pipe.pipeName.ifEmpty { "<unnamed pipe>" }
+            }
+            "$pipelineName [$pipeNames]"
+        }
+        throw Exception("Worker pipelines require token budgeting or auto truncation before Manifold execution: $workerDescriptions")
+    }
+
+    /**
+     * Apply the built-in manager-history budget control to [workingContentObject] before the manager runs.
+     */
+    private fun applyBuiltInManagerBudgetControl()
+    {
+        val resolvedBudget = resolveManagerBudgetConfiguration() ?: return
+        val converseHistory = extractJson<ConverseHistory>(workingContentObject.text) ?: return
+        val truncationSettings = resolvedBudget.budget.toTruncationSettings(getPrimaryManagerPipe())
+        val usedTokens = Dictionary.countTokens(serialize(converseHistory, encodedefault = false), truncationSettings)
+        if(usedTokens <= resolvedBudget.historyTokenBudget)
+        {
+            return
+        }
+
+        val holdingWindow = ContextWindow()
+        holdingWindow.converseHistory = converseHistory
+        holdingWindow.truncateConverseHistoryWithObject(
+            resolvedBudget.historyTokenBudget,
+            0,
+            truncationMethod,
+            truncationSettings
+        )
+        workingContentObject.text = serialize(holdingWindow.converseHistory, encodedefault = false)
     }
 
 //=================================================Execution============================================================
@@ -814,56 +1021,14 @@ class Manifold : P2PInterface
                       metadata = mapOf("managerPipeline" to managerPipeline.pipelineName))
             }
 
-            /**
-             * Automatically truncate the converse history if enabled. This prevents context window overflow and
-             * protects from a pipeline crashing and bringing down the manifold unexpectedly. This will be ran
-             * in favor of truncation function if both are enabled.
-             */
-            if(autoTruncateContext)
-            {
-                //Get the truncation settings for accurate dictionary parsing.
-                val pipeTruncationSettings = managerPipeline.getPipes()[0].getTruncationSettings()
-
-                //Get the converse history thus far. May be empty which will just return nothing in that case.
-                var converseHistory = extractJson<ConverseHistory>(workingContentObject.text) ?: ConverseHistory()
-
-                //Required boilerplate.
-                val holdingWindow = ContextWindow()
-                holdingWindow.converseHistory = converseHistory
-
-                val multiPageConfigured = pipeTruncationSettings.multiPageBudgetStrategy != null ||
-                        pipeTruncationSettings.pageWeights != null ||
-                        pipeTruncationSettings.fillMode
-                val budgetSettings = if(multiPageConfigured) {
-                    pipeTruncationSettings.toTokenBudgetSettings(contextWindowSize = contextWindowSize)
-                } else null
-
-                val usedTokens = Dictionary.countTokens(converseHistory.toString(), pipeTruncationSettings)
-                val maxWindowSize = budgetSettings?.contextWindowSize ?: contextWindowSize
-
-                if(usedTokens > maxWindowSize)
-                {
-                    /**
-                     * Truncate into the given context window size, which is based on which pipe in the pipelines
-                     * that are being ran in this manifold has the smallest context window.
-                     */
-                    holdingWindow.truncateConverseHistoryWithObject(
-                        maxWindowSize,
-                        0,
-                        truncationMethod,
-                        pipeTruncationSettings)
-
-                    //Save back to our converseHistory object for the next stage.
-                    converseHistory = holdingWindow.converseHistory
-                    val newJson = serialize(converseHistory, encodedefault = false)
-                    workingContentObject.text = newJson
-                }
-            }
-
-            //Attempt to run the provided contextTruncation function instead if we aren't auto-truncating.
-            else if(contextTruncationFunction != null)
+            if(contextTruncationFunction != null)
             {
                 contextTruncationFunction?.invoke(workingContentObject)
+            }
+
+            else if(autoTruncateContext)
+            {
+                applyBuiltInManagerBudgetControl()
             }
 
             //Get the result of the manager pipeline's execution and assessment of task status.

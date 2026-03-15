@@ -13,6 +13,7 @@ import com.TTT.Enums.ContextWindowSettings
 import com.TTT.P2P.AgentRequest
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.TruncationSettings
+import com.TTT.Pipe.deepCopy
 import com.TTT.Pipeline.TaskProgress
 import ollamaPipe.OllamaPipe
 
@@ -118,7 +119,7 @@ object ManifoldDefaults
     fun buildDefaultManagerPipeline(bedrockConfig: BedrockConfiguration): Pipeline
     {
         val managerPipeline = BedrockDefaults.createManagerPipeline(bedrockConfig)
-        assignManagerPipelineDefaults(managerPipeline)
+        assignManagerPipelineDefaults(managerPipeline, bedrockConfig.manifoldMemory)
         return managerPipeline
     }
     
@@ -133,12 +134,22 @@ object ManifoldDefaults
     fun buildDefaultManagerPipeline(ollamaConfig: OllamaConfiguration): Pipeline
     {
         val managerPipeline = OllamaDefaults.createManagerPipeline(ollamaConfig)
-        assignManagerPipelineDefaults(managerPipeline)
+        assignManagerPipelineDefaults(managerPipeline, ollamaConfig.manifoldMemory)
         return managerPipeline
     }
 
 
-    fun assignManagerPipelineDefaults(pipeline: Pipeline) : Pipeline
+    /**
+     * Apply the standard manager-pipeline prompt and memory defaults used by `TPipe-Defaults`.
+     *
+     * @param pipeline Pipeline to configure.
+     * @param memoryConfiguration Optional manifold memory configuration to apply to the manager pipes.
+     * @return The same pipeline instance after configuration.
+     */
+    fun assignManagerPipelineDefaults(
+        pipeline: Pipeline,
+        memoryConfiguration: ManifoldMemoryConfiguration = ManifoldMemoryConfiguration()
+    ) : Pipeline
     {
         //Get the 2 pipes this pipeline is supposed to have by default.
         val allPipes = pipeline.getPipes()
@@ -162,9 +173,9 @@ object ManifoldDefaults
             .setTopP(.65)
             .requireJsonPromptInjection()
             .setMaxTokens(32000)
-            .setContextWindowSize(108000)
-            .autoTruncateContext()
-            .setContextWindowSettings(ContextWindowSettings.TruncateTop)
+            .apply {
+                applyManagerPipeMemoryDefaults(this, memoryConfiguration)
+            }
             .setSystemPrompt("""Your job is to examine a given task and determine if it has been completed or not.
                 |You will be given a json ConverseHistory object that contains the conversion between the user,
                 |the system assistant, and the agents the system assistant has called to work on completing the job
@@ -221,9 +232,9 @@ object ManifoldDefaults
             .setTopP(.7)
             .requireJsonPromptInjection()
             .setMaxTokens(32000)
-            .setContextWindowSize(108000)
-            .setContextWindowSettings(ContextWindowSettings.TruncateTop)
-            .autoTruncateContext()
+            .apply {
+                applyManagerPipeMemoryDefaults(this, memoryConfiguration)
+            }
             .pullPipelineContext()
             .setPreInvokeFunction { content ->
                 // Directly extract TaskProgress from the content of the entryPipe
@@ -280,5 +291,69 @@ object ManifoldDefaults
             """.trimMargin())
         return pipeline
 
+    }
+
+    /**
+     * Apply defaults-module manager-memory settings to a created [Manifold].
+     *
+     * @param manifold Manifold instance to configure.
+     * @param memoryConfiguration Manager-memory settings to apply.
+     * @return The same manifold instance after configuration.
+     */
+    fun applyManifoldMemoryConfiguration(
+        manifold: Manifold,
+        memoryConfiguration: ManifoldMemoryConfiguration
+    ) : Manifold
+    {
+        if(memoryConfiguration.managerTruncationMethod != null)
+        {
+            manifold.setTruncationMethod(memoryConfiguration.managerTruncationMethod!!)
+        }
+
+        if(memoryConfiguration.managerContextWindowSize != null)
+        {
+            manifold.setContextWindowSize(memoryConfiguration.managerContextWindowSize!!)
+        }
+
+        if(memoryConfiguration.enableManagerBudgetControl || memoryConfiguration.managerTokenBudget != null)
+        {
+            manifold.autoTruncateContext()
+        }
+
+        if(memoryConfiguration.managerTokenBudget != null)
+        {
+            manifold.setManagerTokenBudget(memoryConfiguration.managerTokenBudget!!.deepCopy())
+        }
+
+        return manifold
+    }
+
+    /**
+     * Apply manager-memory defaults to a configured manager pipe.
+     *
+     * @param pipe Pipe that consumes manager shared-history content.
+     * @param memoryConfiguration Defaults-module memory settings to apply.
+     * @param defaultContextWindowSize Legacy context-window fallback used when no explicit manager token budget is supplied.
+     */
+    private fun applyManagerPipeMemoryDefaults(
+        pipe: Pipe,
+        memoryConfiguration: ManifoldMemoryConfiguration,
+        defaultContextWindowSize: Int = 108000
+    )
+    {
+        val resolvedTruncationMethod = memoryConfiguration.managerTruncationMethod ?: ContextWindowSettings.TruncateTop
+        pipe.setContextWindowSettings(resolvedTruncationMethod)
+
+        if(memoryConfiguration.managerTokenBudget != null)
+        {
+            pipe.setTokenBudget(memoryConfiguration.managerTokenBudget!!.deepCopy())
+            return
+        }
+
+        pipe.setContextWindowSize(memoryConfiguration.managerContextWindowSize ?: defaultContextWindowSize)
+        if(memoryConfiguration.enableManagerBudgetControl)
+        {
+            pipe.autoTruncateContext()
+        }
     }
 }

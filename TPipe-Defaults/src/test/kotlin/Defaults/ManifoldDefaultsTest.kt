@@ -1,5 +1,6 @@
 package Defaults
 
+import com.TTT.Pipe.TokenBudgetSettings
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.test.assertFalse
@@ -72,5 +73,48 @@ class ManifoldDefaultsTest
         assertEquals(2, configured.getPipes().size)
         assertEquals("entry pipe", configured.getPipes()[0].pipeName)
         assertEquals("Agent caller pipe", configured.getPipes()[1].pipeName)
+    }
+
+    @Test
+    fun `assignManagerPipelineDefaults applies manager token budget when provided`()
+    {
+        val pipeline = Pipeline().apply {
+            add(BedrockMultimodalPipe())
+            add(BedrockMultimodalPipe())
+        }
+        val memoryConfiguration = ManifoldMemoryConfiguration(
+            managerTokenBudget = TokenBudgetSettings(
+                contextWindowSize = 8192,
+                userPromptSize = 2048,
+                maxTokens = 512
+            )
+        )
+
+        val configured = ManifoldDefaults.assignManagerPipelineDefaults(pipeline, memoryConfiguration)
+
+        assertEquals(8192, configured.getPipes()[0].copyTokenBudgetSettings()!!.contextWindowSize)
+        assertEquals(8192, configured.getPipes()[1].copyTokenBudgetSettings()!!.contextWindowSize)
+    }
+
+    @Test
+    fun `withBedrock applies manifold memory configuration to returned manifold`()
+    {
+        val configuration = BedrockConfiguration(
+            region = "us-east-1",
+            model = "claude-3-sonnet",
+            manifoldMemory = ManifoldMemoryConfiguration(
+                managerTokenBudget = TokenBudgetSettings(
+                    contextWindowSize = 6144,
+                    userPromptSize = 1536,
+                    maxTokens = 256
+                )
+            )
+        )
+
+        val manifold = ManifoldDefaults.withBedrock(configuration)
+
+        assertTrue(manifold.isManagerBudgetControlEnabled())
+        assertEquals(6144, manifold.getManagerPipeline().getPipes()[0].copyTokenBudgetSettings()!!.contextWindowSize)
+        assertEquals(1536, manifold.getManagerTokenBudget()!!.userPromptSize)
     }
 }

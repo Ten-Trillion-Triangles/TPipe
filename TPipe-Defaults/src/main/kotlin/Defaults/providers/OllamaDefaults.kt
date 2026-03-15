@@ -23,6 +23,7 @@ internal object OllamaDefaults
         
         return Manifold().apply {
             setManagerPipeline(managerPipeline)
+            Defaults.ManifoldDefaults.applyManifoldMemoryConfiguration(this, config.manifoldMemory)
         }
     }
     

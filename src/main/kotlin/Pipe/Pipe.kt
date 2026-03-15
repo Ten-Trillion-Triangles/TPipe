@@ -273,6 +273,16 @@ fun TokenBudgetSettings.toTruncationSettings(pipe: Pipe? = null): TruncationSett
     return settings
 }
 
+/**
+ * Create a stable copy of [TokenBudgetSettings] so callers can inspect or reuse a budget without sharing mutable state.
+ *
+ * @return Copy of the token budget settings with map values detached.
+ */
+fun TokenBudgetSettings.deepCopy(): TokenBudgetSettings
+{
+    return copy(pageWeights = pageWeights?.toMap())
+}
+
 //============================================Enum classes==============================================================
 
 /**
@@ -3919,6 +3929,66 @@ abstract class Pipe : P2PInterface, ProviderInterface
         returnVar.pageWeights = tokenBudgetSettings?.pageWeights
 
         return returnVar
+    }
+
+    /**
+     * Return a detached copy of the current token-budget settings, if any are configured.
+     *
+     * @return Copy of the configured token budget settings, or null when token budgeting is disabled.
+     */
+    fun copyTokenBudgetSettings() : TokenBudgetSettings?
+    {
+        return tokenBudgetSettings?.deepCopy()
+    }
+
+    /**
+     * Determine whether legacy automatic truncation is enabled for this pipe.
+     *
+     * @return True when the pipe is configured to run its built-in truncation path.
+     */
+    fun isAutoTruncateContextEnabled() : Boolean
+    {
+        return autoTruncateContext
+    }
+
+    /**
+     * Determine whether this pipe has any configured overflow-protection path for prompt assembly.
+     *
+     * @return True when either token budgeting or legacy auto truncation is configured.
+     */
+    fun hasContextOverflowProtectionConfigured() : Boolean
+    {
+        return tokenBudgetSettings != null || autoTruncateContext
+    }
+
+    /**
+     * Read the configured context-window size for this pipe.
+     *
+     * @return Current context-window size in tokens.
+     */
+    fun getConfiguredContextWindowSize() : Int
+    {
+        return contextWindowSize
+    }
+
+    /**
+     * Read the configured maximum output token count for this pipe.
+     *
+     * @return Current max-token setting.
+     */
+    fun getConfiguredMaxTokens() : Int
+    {
+        return maxTokens
+    }
+
+    /**
+     * Read the current system prompt text bound to this pipe.
+     *
+     * @return Current system prompt string.
+     */
+    fun getSystemPromptText() : String
+    {
+        return systemPrompt
     }
     
     /**

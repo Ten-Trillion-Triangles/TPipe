@@ -24,6 +24,7 @@ internal object BedrockDefaults
         
         return Manifold().apply {
             setManagerPipeline(managerPipeline)
+            ManifoldDefaults.applyManifoldMemoryConfiguration(this, config.manifoldMemory)
         }
     }
     

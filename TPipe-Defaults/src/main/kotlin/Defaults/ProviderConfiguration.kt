@@ -1,5 +1,7 @@
 package Defaults
 
+import com.TTT.Enums.ContextWindowSettings
+import com.TTT.Pipe.TokenBudgetSettings
 import env.bedrockEnv
 
 /**
@@ -17,6 +19,21 @@ sealed class ProviderConfiguration
 }
 
 /**
+ * Configuration surface for Manifold-specific manager-memory behavior in `TPipe-Defaults`.
+ *
+ * @param enableManagerBudgetControl If true, enable built-in manager shared-history control on created manifolds.
+ * @param managerTokenBudget Optional explicit token budget for manager shared-history control.
+ * @param managerContextWindowSize Optional compatibility context-window override when explicit manager token budgeting is not supplied.
+ * @param managerTruncationMethod Optional truncation method for the manager shared-history path.
+ */
+data class ManifoldMemoryConfiguration(
+    var enableManagerBudgetControl: Boolean = true,
+    var managerTokenBudget: TokenBudgetSettings? = null,
+    var managerContextWindowSize: Int? = null,
+    var managerTruncationMethod: ContextWindowSettings? = null
+)
+
+/**
  * Configuration for AWS Bedrock provider with region, credentials, and model settings.
  *
  * @param region AWS region for Bedrock API calls (required)
@@ -28,6 +45,7 @@ sealed class ProviderConfiguration
  * @param secretKey AWS secret key (optional if using profile or IAM)
  * @param sessionToken AWS session token for temporary credentials (optional)
  * @param profileName AWS profile name to use (optional)
+ * @param manifoldMemory Manifold manager-memory defaults applied by `TPipe-Defaults`
  */
 data class BedrockConfiguration(
     var region: String,
@@ -38,7 +56,8 @@ data class BedrockConfiguration(
     var accessKey: String? = null,
     var secretKey: String? = null,
     var sessionToken: String? = null,
-    var profileName: String? = null
+    var profileName: String? = null,
+    var manifoldMemory: ManifoldMemoryConfiguration = ManifoldMemoryConfiguration()
 ) : ProviderConfiguration() 
 {
     override fun validate(): Boolean = region.isNotBlank() && model.isNotBlank() && pipeCount > 0
@@ -61,6 +80,7 @@ data class BedrockConfiguration(
  * @param port Ollama server port
  * @param timeout Connection timeout in milliseconds
  * @param useHttps Whether to use HTTPS for connections
+ * @param manifoldMemory Manifold manager-memory defaults applied by `TPipe-Defaults`
  */
 data class OllamaConfiguration(
     val model: String,
@@ -68,7 +88,8 @@ data class OllamaConfiguration(
     val host: String = "localhost",
     val port: Int = 11434,
     val timeout: Long = 30000,
-    val useHttps: Boolean = false
+    val useHttps: Boolean = false,
+    val manifoldMemory: ManifoldMemoryConfiguration = ManifoldMemoryConfiguration()
 ) : ProviderConfiguration() 
 {
     override fun validate(): Boolean = host.isNotBlank() && model.isNotBlank() && port > 0 && pipeCount > 0

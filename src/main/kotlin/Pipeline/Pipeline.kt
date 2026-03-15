@@ -263,6 +263,30 @@ class Pipeline : P2PInterface
     }
 
     /**
+     * Determine whether every pipe in this pipeline has some configured overflow-protection path for prompt assembly.
+     *
+     * @return True when all registered pipes have either token budgeting or legacy auto truncation configured.
+     */
+    fun hasContextOverflowProtectionConfigured() : Boolean
+    {
+        return pipes.all { pipe ->
+            pipe.hasContextOverflowProtectionConfigured()
+        }
+    }
+
+    /**
+     * Return the pipes that currently lack token-budget or auto-truncation protection.
+     *
+     * @return Pipes that have no configured overflow-protection path.
+     */
+    fun getPipesWithoutContextOverflowProtection() : List<Pipe>
+    {
+        return pipes.filter { pipe ->
+            !pipe.hasContextOverflowProtectionConfigured()
+        }
+    }
+
+    /**
      * This is already a pipeline so all it will do here is just return itself from the interface. However, we still
      * want to implement this so that in the even this is used on this class, it still works as expected and
      * doesn't end up causing an unexpected failure.
