@@ -6,10 +6,12 @@ class TraceDashboard {
         this.sessionToken = localStorage.getItem('tpipe_session') || '';
         this.baseUrl = window.location.origin;
         this.isConnected = false;
+        this.searchQuery = '';
 
         this.elements = {
             authOverlay: document.getElementById('authOverlay'),
             authInput: document.getElementById('authKey'),
+            searchInput: document.getElementById('searchInput'),
             traceList: document.getElementById('traceList'),
             traceCount: document.getElementById('traceCount'),
             traceFrame: document.getElementById('trace-frame'),
@@ -18,6 +20,13 @@ class TraceDashboard {
             liveIndicator: document.getElementById('liveIndicator'),
             statusText: document.getElementById('connectionStatusText')
         };
+
+        if (this.elements.searchInput) {
+            this.elements.searchInput.addEventListener('input', (e) => {
+                this.searchQuery = e.target.value.toLowerCase();
+                this.renderTraceList();
+            });
+        }
 
         if (this.sessionToken) {
             // Delay auth test to ensure DOM is ready
@@ -144,15 +153,22 @@ class TraceDashboard {
     }
 
     renderTraceList() {
-        this.elements.traceCount.textContent = this.traces.length;
+        const filteredTraces = this.traces.filter(trace => {
+            if (!this.searchQuery) return true;
+            return trace.name.toLowerCase().includes(this.searchQuery) ||
+                   trace.id.toLowerCase().includes(this.searchQuery) ||
+                   trace.status.toLowerCase().includes(this.searchQuery);
+        });
 
-        if (this.traces.length === 0) {
+        this.elements.traceCount.textContent = filteredTraces.length;
+
+        if (filteredTraces.length === 0) {
             this.elements.traceList.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted); font-size: 0.85rem;">No traces found</div>';
             return;
         }
 
         let html = '';
-        for(const trace of this.traces) {
+        for(const trace of filteredTraces) {
             const shortId = trace.id.substring(0, 8);
             let statusClass = 'status-PENDING';
             if (trace.status === 'SUCCESS') statusClass = 'status-SUCCESS';
