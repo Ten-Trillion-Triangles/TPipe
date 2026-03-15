@@ -1,5 +1,6 @@
 package com.TTT.P2P
 
+import com.TTT.Config.AuthRegistry
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.Dictionary
@@ -596,7 +597,15 @@ object P2PRegistry
             fullRequest = request.buildRequestFromRegistry(request.agentName)
         }
 
-        //todo: Only tpipe is supported as a transport. All others will throw for now.
+        /**
+         * Bind the auth values if they were supplied or can be resolved.
+         */
+        val resolvedHttpAuth = httpAuthBody.ifEmpty { AuthRegistry.getToken(fullRequest.transport.transportAddress) }
+        val resolvedP2pAuth = p2pAuthBody.ifEmpty { AuthRegistry.getToken(request.agentName) }
+
+        if(resolvedHttpAuth.isNotEmpty()) fullRequest.transport.transportAuthBody = resolvedHttpAuth
+        if(resolvedP2pAuth.isNotEmpty()) fullRequest.authBody = resolvedP2pAuth
+
         return externalP2PCall(fullRequest)
     }
 
@@ -612,6 +621,11 @@ object P2PRegistry
         {
             Transport.Http ->
             {
+                if(request.transport.transportAuthBody.isEmpty())
+                {
+                    request.transport.transportAuthBody = AuthRegistry.getToken(request.transport.transportAddress)
+                }
+
                 val jsonPayload = serialize(request)
                 val requestHeaders = mutableMapOf("Content-Type" to "application/json")
                 if(request.transport.transportAuthBody.isNotEmpty())
@@ -641,6 +655,11 @@ object P2PRegistry
             }
             Transport.Stdio ->
             {
+                if(request.transport.transportAuthBody.isEmpty())
+                {
+                    request.transport.transportAuthBody = AuthRegistry.getToken(request.transport.transportAddress)
+                }
+
                 val executionMode = request.pcpRequest?.stdioContextOptions?.executionMode ?: StdioExecutionMode.ONE_SHOT
                 val jsonPayload = serialize(request)
 

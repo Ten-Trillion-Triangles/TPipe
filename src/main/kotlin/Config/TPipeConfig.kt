@@ -1,5 +1,6 @@
 package com.TTT.Config
 
+import com.TTT.Config.AuthRegistry
 import com.TTT.Util.getHomeFolder
 import java.io.File
 
@@ -66,4 +67,16 @@ object TPipeConfig
     var remoteMemoryAuthToken = ""
     var useRemoteMemoryGlobally = false
     var enforceMemoryVersioning = false
+
+    /**
+     * Helper to register a remote service authentication token.
+     * Delegates to [AuthRegistry.registerToken].
+     *
+     * @param address Service URL, program path, or agent name.
+     * @param token Authentication token or secret.
+     */
+    fun addRemoteAuth(address: String, token: String)
+    {
+        AuthRegistry.registerToken(address, token)
+    }
 }

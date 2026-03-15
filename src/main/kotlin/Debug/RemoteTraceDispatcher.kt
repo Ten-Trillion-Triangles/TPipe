@@ -1,5 +1,6 @@
 package com.TTT.Debug
 
+import com.TTT.Config.AuthRegistry
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -38,6 +39,10 @@ object RemoteTraceDispatcher {
         val payload = TracePayload(pipelineId, htmlContent, name, status)
         val jsonPayload = Json.encodeToString(TracePayload.serializer(), payload)
 
+        // Resolve auth token automatically if not manually set
+        val resolvedAuthHeader = RemoteTraceConfig.authHeader 
+            ?: AuthRegistry.getToken(baseUrl).takeIf { it.isNotEmpty() }?.let { "Bearer $it" }
+
         GlobalScope.launch(Dispatchers.IO) {
             try {
                 val url = URL("$urlString/api/traces")
@@ -46,7 +51,7 @@ object RemoteTraceDispatcher {
                 connection.setRequestProperty("Content-Type", "application/json")
 
                 // Agents use standard auth header configuration
-                RemoteTraceConfig.authHeader?.let {
+                resolvedAuthHeader?.let {
                     connection.setRequestProperty("Authorization", it)
                 }
 

@@ -1,5 +1,6 @@
 package com.TTT.PipeContextProtocol
 
+import com.TTT.Config.AuthRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -114,7 +115,19 @@ class StdioExecutor : PcpExecutor
             StdioContextOptions()
         }
         val mergedOptions = mergeContextOptions(request.stdioContextOptions, contextOption)
-        val secureRequest = request.copy(stdioContextOptions = mergedOptions)
+
+        // Resolve auth token automatically if not manually set in callParams
+        val finalCallParams = request.callParams.toMutableMap()
+        if(!finalCallParams.containsKey("authBody"))
+        {
+            val token = AuthRegistry.getToken(mergedOptions.command)
+            if(token.isNotEmpty())
+            {
+                finalCallParams["authBody"] = token
+            }
+        }
+
+        val secureRequest = request.copy(stdioContextOptions = mergedOptions, callParams = finalCallParams)
 
         return when(secureRequest.stdioContextOptions.executionMode)
         {

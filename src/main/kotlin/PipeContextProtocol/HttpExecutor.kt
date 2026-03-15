@@ -1,5 +1,6 @@
 package com.TTT.PipeContextProtocol
 
+import com.TTT.Config.AuthRegistry
 import com.TTT.Util.HttpAuth
 import com.TTT.Util.httpRequest
 import java.net.URL
@@ -56,6 +57,17 @@ class HttpExecutor : PcpExecutor
         }
 
         val mergedOptions = mergeContextOptions(request.httpContextOptions, matchingOption)
+
+        // Resolve auth token automatically if not manually set
+        if(mergedOptions.authType.isEmpty() || mergedOptions.authType.uppercase() == HttpConstants.AUTH_TYPE_NONE)
+        {
+            val token = AuthRegistry.getToken(mergedOptions.baseUrl)
+            if(token.isNotEmpty())
+            {
+                mergedOptions.authType = HttpConstants.AUTH_TYPE_BEARER
+                mergedOptions.authCredentials["token"] = token
+            }
+        }
 
         if(mergedOptions.baseUrl.isEmpty())
         {

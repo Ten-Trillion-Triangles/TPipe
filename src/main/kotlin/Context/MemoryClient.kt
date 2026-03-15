@@ -1,5 +1,6 @@
 package com.TTT.Context
 
+import com.TTT.Config.AuthRegistry
 import com.TTT.Config.TPipeConfig
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
@@ -25,7 +26,10 @@ import java.util.concurrent.atomic.AtomicReference
 object MemoryClient
 {
     private fun getBaseUrl() = TPipeConfig.remoteMemoryUrl.removeSuffix("/")
-    private fun getAuthToken() = TPipeConfig.remoteMemoryAuthToken
+    private fun getAuthToken(): String {
+        val registeredToken = AuthRegistry.getToken(getBaseUrl())
+        return registeredToken.ifEmpty { TPipeConfig.remoteMemoryAuthToken }
+    }
     private const val MAX_RETRIES = 3
     private const val RETRY_DELAY_MS = 100L
     private const val CACHE_TTL_MS = 1000L
