@@ -112,4 +112,27 @@ class AuthAutomationTest {
         
         assertEquals("pcp-token", finalCallParams["authBody"])
     }
+
+    @Test
+    fun testNoAuthFlow() {
+        AuthRegistry.clear()
+        TPipeConfig.remoteMemoryAuthToken = ""
+        
+        // Memory Client
+        val memMethod = MemoryClient::class.java.getDeclaredMethod("getAuthToken")
+        memMethod.isAccessible = true
+        assertEquals("", memMethod.invoke(MemoryClient))
+        
+        // P2P
+        val p2pToken = AuthRegistry.getToken("SomeAgent")
+        assertEquals("", p2pToken)
+        
+        // PCP
+        val pcpToken = AuthRegistry.getToken("some-command")
+        assertEquals("", pcpToken)
+        
+        // Trace
+        val traceToken = AuthRegistry.getToken("http://localhost:8081")
+        assertEquals("", traceToken)
+    }
 }

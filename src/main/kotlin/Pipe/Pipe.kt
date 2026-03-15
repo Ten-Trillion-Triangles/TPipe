@@ -5240,22 +5240,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
 
 
-            //Perform comprehensive token tracking if enabled.
+            //Count input tokens for basic tracking so pipeline counters are always populated.
+            countTokens(true, processedContent)
+
             if(comprehensiveTokenTracking)
             {
-                //Count input tokens for basic tracking.
-                countTokens(true, processedContent)
-
-                //Count actual input tokens after all truncation and processing.
                 val actualInputTokens = countActualInputTokens(processedContent)
-                
-                //Store the actual input token count in our usage tracking.
                 pipeTokenUsage.inputTokens = actualInputTokens
-                
-                //Recalculate totals to include any child pipe usage.
                 pipeTokenUsage.recalculateTotals()
-                
-                //Trace the context preparation with actual token counts.
                 trace(TraceEventType.CONTEXT_PREPARED, TracePhase.CONTEXT_PREPARATION, processedContent,
                     metadata = mapOf("actualInputTokens" to actualInputTokens))
             }
@@ -5273,6 +5265,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
             catch(e: Exception)
             {
                 trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, processedContent, error = e)
+            }
+
+            if(comprehensiveTokenTracking)
+            {
+                reasoningPipe?.let { pipe ->
+                    pipeTokenUsage.addChildUsage("reasoning-${pipe.pipeName}", pipe.getTokenUsage())
+                }
             }
 
             /**
@@ -6047,15 +6046,6 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
             //Copy back now that we've reduced it to fit our budget.
            contentCopy.modelReasoning = newContextWindow.contextElements.first()
-        }
-
-        //Track reasoning pipe token usage if comprehensive tracking is enabled.
-        if(comprehensiveTokenTracking)
-        {
-            reasoningPipe?.let { pipe ->
-                //Add the reasoning pipe's token usage to our child pipe tracking.
-                pipeTokenUsage.addChildUsage("reasoning-${pipe.pipeName}", pipe.getTokenUsage())
-            }
         }
 
         return contentCopy
