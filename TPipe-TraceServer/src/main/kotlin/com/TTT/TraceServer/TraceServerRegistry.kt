@@ -16,8 +16,18 @@ data class TracePayload(val pipelineId: String, val htmlContent: String, val nam
 {
 }
 
+enum class AuthMode {
+    KEY,
+    CREDENTIALS,
+    BOTH
+}
+
 @Serializable
-data class AuthRequest(val key: String)
+data class AuthRequest(
+    val key: String? = null,
+    val username: String? = null,
+    val password: String? = null
+)
 {
 }
 
@@ -34,10 +44,15 @@ object TraceServerRegistry {
     var agentAuthMechanism: (suspend (authHeader: String?) -> Boolean)? = null
 
     /**
-     * Authentication mechanism for Human Clients (Dashboard).
-     * Validates the login payload (e.g. key/password) and returns true if authorized.
+     * Configures which authentication UI is displayed by the client dashboard.
      */
-    var clientAuthMechanism: (suspend (key: String) -> Boolean)? = null
+    var authMode: AuthMode = AuthMode.KEY
+
+    /**
+     * Authentication mechanism for Human Clients (Dashboard).
+     * Validates the login payload as a JSON string and returns true if authorized.
+     */
+    var clientAuthMechanism: (suspend (requestJson: String) -> Boolean)? = null
 
     // Active client sessions (token -> expirationTimeMillis)
     val clientSessions = ConcurrentHashMap<String, Long>()

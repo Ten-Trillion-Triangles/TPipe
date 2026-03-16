@@ -7,10 +7,14 @@ class TraceDashboard {
         this.baseUrl = window.location.origin;
         this.isConnected = false;
         this.searchQuery = '';
+        this.authMode = 'KEY'; // Default
+        this.activeAuthTab = 'key';
 
         this.elements = {
             authOverlay: document.getElementById('authOverlay'),
             authInput: document.getElementById('authKey'),
+            authUsername: document.getElementById('authUsername'),
+            authPassword: document.getElementById('authPassword'),
             searchInput: document.getElementById('searchInput'),
             traceList: document.getElementById('traceList'),
             traceCount: document.getElementById('traceCount'),
@@ -30,19 +34,90 @@ class TraceDashboard {
 
         if (this.sessionToken) {
             // Delay auth test to ensure DOM is ready
-            setTimeout(() => this.fetchTraces(), 100);
+            setTimeout(() => {
+                this.fetchAuthConfig();
+                this.fetchTraces();
+            }, 100);
         } else {
             this.elements.authOverlay.style.display = 'flex';
+            this.fetchAuthConfig();
         }
     }
 
+    fetchAuthConfig() {
+        fetch(`${this.baseUrl}/api/auth/config`)
+            .then(res => res.json())
+            .then(data => {
+                this.authMode = data.mode;
+                this.configureAuthUI();
+            })
+            .catch(err => console.error('Failed to fetch auth config:', err));
+    }
+
+    configureAuthUI() {
+        const tabsContainer = document.getElementById('authTabsContainer');
+        const keyView = document.getElementById('authKeyView');
+        const credentialsView = document.getElementById('authCredentialsView');
+
+        if (this.authMode === 'BOTH') {
+            tabsContainer.style.display = 'flex';
+            this.switchAuthTab('key');
+        } else if (this.authMode === 'CREDENTIALS') {
+            tabsContainer.style.display = 'none';
+            this.switchAuthTab('credentials');
+        } else {
+            // Default KEY
+            tabsContainer.style.display = 'none';
+            this.switchAuthTab('key');
+        }
+    }
+
+    switchAuthTab(tab) {
+        this.activeAuthTab = tab;
+        const keyView = document.getElementById('authKeyView');
+        const credentialsView = document.getElementById('authCredentialsView');
+        const tabKey = document.getElementById('tabKey');
+        const tabCredentials = document.getElementById('tabCredentials');
+
+        if (tab === 'key') {
+            keyView.classList.add('active');
+            credentialsView.classList.remove('active');
+            if (tabKey) tabKey.classList.add('active');
+            if (tabCredentials) tabCredentials.classList.remove('active');
+        } else if (tab === 'credentials') {
+            credentialsView.classList.add('active');
+            keyView.classList.remove('active');
+            if (tabCredentials) tabCredentials.classList.add('active');
+            if (tabKey) tabKey.classList.remove('active');
+        }
+    }
+
+    handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const contents = e.target.result;
+            this.elements.authInput.value = contents.trim();
+        };
+        reader.readAsText(file);
+    }
+
     login() {
-        const key = this.elements.authInput.value;
+        let payload;
+        if (this.activeAuthTab === 'key') {
+            payload = { key: this.elements.authInput.value };
+        } else {
+            payload = {
+                username: this.elements.authUsername.value,
+                password: this.elements.authPassword.value
+            };
+        }
 
         fetch(`${this.baseUrl}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key: key })
+            body: JSON.stringify(payload)
         })
         .then(res => {
             if (!res.ok) throw new Error('Invalid credentials');

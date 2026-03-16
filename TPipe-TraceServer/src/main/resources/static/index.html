@@ -236,6 +236,48 @@
             text-align: center;
         }
 
+        .auth-tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .auth-tab {
+            flex: 1;
+            padding: 10px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-weight: 600;
+            border-bottom: 2px solid transparent;
+        }
+
+        .auth-tab.active {
+            color: var(--accent-blue);
+            border-bottom-color: var(--accent-blue);
+        }
+
+        .auth-view {
+            display: none;
+        }
+
+        .auth-view.active {
+            display: block;
+        }
+
+        .auth-input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        .auth-input-group .auth-input {
+            margin: 0;
+            flex: 1;
+        }
+
         .auth-input {
             width: 100%;
             padding: 10px;
@@ -245,6 +287,26 @@
             color: white;
             border-radius: 4px;
             box-sizing: border-box;
+        }
+
+        .auth-file-btn {
+            width: 40px;
+            height: 40px;
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            color: var(--accent-blue);
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+
+        .auth-file-btn:hover {
+            background-color: rgba(56, 189, 248, 0.1);
         }
 
         .auth-btn {
@@ -264,7 +326,25 @@
     <div id="authOverlay" class="auth-overlay">
         <div class="auth-box">
             <h2 style="margin-top:0;color:var(--accent-blue);">Authentication Required</h2>
-            <input type="password" id="authKey" class="auth-input" placeholder="Enter Authorization Key" />
+
+            <div id="authTabsContainer" class="auth-tabs" style="display: none;">
+                <button id="tabKey" class="auth-tab active" onclick="app.switchAuthTab('key')">Key</button>
+                <button id="tabCredentials" class="auth-tab" onclick="app.switchAuthTab('credentials')">Credentials</button>
+            </div>
+
+            <div id="authKeyView" class="auth-view active">
+                <div class="auth-input-group">
+                    <input type="password" id="authKey" class="auth-input" placeholder="Enter Authorization Key" />
+                    <button class="auth-file-btn" onclick="document.getElementById('authFileInput').click()">+</button>
+                    <input type="file" id="authFileInput" style="display: none;" accept=".txt,.key,text/plain" onchange="app.handleFileUpload(event)" />
+                </div>
+            </div>
+
+            <div id="authCredentialsView" class="auth-view">
+                <input type="text" id="authUsername" class="auth-input" placeholder="Username" style="margin-bottom: 10px;" />
+                <input type="password" id="authPassword" class="auth-input" placeholder="Password" style="margin-top: 0; margin-bottom: 15px;" />
+            </div>
+
             <button class="auth-btn" onclick="app.login()">Connect</button>
         </div>
     </div>
