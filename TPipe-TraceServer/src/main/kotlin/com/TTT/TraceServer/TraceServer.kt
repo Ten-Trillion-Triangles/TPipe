@@ -111,6 +111,11 @@ fun Application.traceServerModule()
             }
         }
 
+        get("/api/auth/config") {
+            val mode = TraceServerRegistry.authMode.name
+            call.respond(mapOf("mode" to mode))
+        }
+
         post("/api/auth/login") {
             // Human client login flow
             if(TraceServerRegistry.clientAuthMechanism == null)
@@ -121,8 +126,8 @@ fun Application.traceServerModule()
             }
 
             try {
-                val req = call.receive<AuthRequest>()
-                if(TraceServerRegistry.clientAuthMechanism?.invoke(req.key) == true)
+                val reqJson = call.receiveText()
+                if(TraceServerRegistry.clientAuthMechanism?.invoke(reqJson) == true)
                 {
                     call.respond(AuthResponse(TraceServerRegistry.createSession()))
                 } else {
