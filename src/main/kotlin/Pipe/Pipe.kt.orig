@@ -110,7 +110,7 @@ data class TruncationSettings(
  * If the user prompt is not allowed to be truncated, an error will be thrown.
  *
  * @param multiPageBudgetStrategy Determines how token budgeting allocates empty space, and leftover reserve area.
- * Options: EQUAL_SPLIT (equal allocation), WEIGHTED_SPLIT (user-defined weights), 
+ * Options: EQUAL_SPLIT (equal allocation), WEIGHTED_SPLIT (user-defined weights),
  * PRIORITY_FILL (key index order), DYNAMIC_FILL (priority + redistribution),
  * DYNAMIC_SIZE_FILL (size-based priority + redistribution - protects smaller contexts)
  *
@@ -128,10 +128,6 @@ data class TokenBudgetSettings(
     var userPromptSize: Int? = null, //Assume 12K tokens
     var maxTokens: Int? = null, //Assume 20K tokens
     var reasoningBudget: Int? = null, //Assume 8K tokens
-    var subtractReasoningBudgetFromMaxTokens: Boolean = true,
-    var subtractReasoningBudgetFromMaxTokens: Boolean = true,
-    var subtractReasoningBudgetFromMaxTokens: Boolean = true,
-    var subtractReasoningBudgetFromMaxTokens: Boolean = true,
     var subtractReasoningBudgetFromMaxTokens: Boolean = true,
     var subtractReasoningBudgetFromMaxTokens: Boolean = true,
     var subtractReasoningBudgetFromMaxTokens: Boolean = true,
@@ -180,7 +176,7 @@ data class TokenUsage(
     {
         //Store the child pipe's token usage in our tracking map.
         childPipeTokens[pipeName] = usage
-        
+
         //Immediately recalculate totals to ensure accuracy.
         recalculateTotals()
     }
@@ -194,7 +190,7 @@ data class TokenUsage(
     {
         //Calculate total input tokens from this pipe plus all child pipe totals.
         totalInputTokens = inputTokens + childPipeTokens.values.sumOf { it.totalInputTokens }
-        
+
         //Calculate total output tokens from this pipe plus all child pipe totals.
         totalOutputTokens = outputTokens + childPipeTokens.values.sumOf { it.totalOutputTokens }
     }
@@ -209,7 +205,7 @@ data class TokenUsage(
     {
         val breakdown = StringBuilder()
         breakdown.append("Parent Pipe: $inputTokens input, $outputTokens output\n")
-        
+
         if(childPipeTokens.isNotEmpty())
         {
             breakdown.append("Child Pipes:\n")
@@ -217,7 +213,7 @@ data class TokenUsage(
                 breakdown.append("  $name: ${usage.totalInputTokens} input, ${usage.totalOutputTokens} output\n")
             }
         }
-        
+
         breakdown.append("Total: $totalInputTokens input, $totalOutputTokens output")
         return breakdown.toString()
     }
@@ -391,26 +387,26 @@ object PipeTimeoutManager
     fun handleTimeoutSignal(pipe: Pipe, content: MultimodalContent): MultimodalContent
     {
         val attempts = getRetryCount(pipe)
-        
+
         return if(attempts < pipe.maxRetryAttempts && pipe.timeoutStrategy == PipeTimeoutStrategy.Retry)
         {
             incrementRetryCount(pipe)
             pipe.timeoutTrace(TraceEventType.PIPE_RETRY, TracePhase.EXECUTION, metadata = mapOf("attempt" to getRetryCount(pipe)))
-            
+
             val snapshot = content.getSnapshot()
             if(snapshot != null)
             {
                 snapshot.repeatPipe = true
                 snapshot
-            } 
-            else 
+            }
+            else
             {
                 // If no snapshot, we can't safely retry, so we fail.
                 pipe.timeoutTrace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, error = Exception("Timeout retry failed: No snapshot available to restore state."))
                 content.terminate()
                 content
             }
-        } 
+        }
         else if(pipe.timeoutStrategy == PipeTimeoutStrategy.CustomLogic)
         {
             // Custom logic is handled by the pipe's own retry function if set.
@@ -418,7 +414,7 @@ object PipeTimeoutManager
             // or we could potentially invoke it here.
             content
         }
-        else 
+        else
         {
             pipe.timeoutTrace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, error = Exception("Pipe timed out after ${attempts} retries."))
             content.terminate()
@@ -457,13 +453,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
     @kotlinx.serialization.Transient
     private var p2pDescriptor: P2PDescriptor? = null
-    
+
     @kotlinx.serialization.Transient
     private var p2pTransport: P2PTransport? = null
-    
+
     @kotlinx.serialization.Transient
     private var p2pRequirements: P2PRequirements? = null
-    
+
     @kotlinx.serialization.Transient
     private var containerObject: Any? = null
 
@@ -520,7 +516,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * This will be in the exact state it was in prior to the llm hang.
      */
     protected var pipeRetryFunction: (suspend (pipe: Pipe, content: MultimodalContent) -> Boolean)? = null
-    
+
     /**
      * Sets the custom retry function for this pipe.
      */
@@ -529,7 +525,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         this.pipeRetryFunction = func
     }
 
-    
+
     /**
      * Reference to the parent pipeline that this pipe is a part of. Required to communicate with the parent on actions
      * such as failure or success.
@@ -648,7 +644,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     @Serializable
     protected var userPrompt = ""
-    
+
     /**
      * Multimodal input content that can contain text and binary data. This replaces the string-only
      * mechanisms and allows for comprehensive multimodal pipeline processing.
@@ -936,7 +932,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
         protected var useModelReasoning = false
 
-    
+
 
         /**
 
@@ -952,7 +948,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
         protected var streamModelReasoning: Boolean = true
 
-    
+
 
         /**
 
@@ -1009,7 +1005,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Presence penalty for OpenAI-compatible models. Encourages topic diversity.
      * Range: -2.0 to 2.0. Positive values encourage new topics.
-     * 
+     *
      * @see https://platform.openai.com/docs/api-reference/chat/create#chat-create-presence_penalty
      */
     @Serializable
@@ -1018,7 +1014,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Seed for deterministic generation. If set, model will attempt to generate
      * the same output for the same input. Not all models support this feature.
-     * 
+     *
      * @see https://platform.openai.com/docs/api-reference/chat/create#chat-create-seed
      */
     @Serializable
@@ -1027,7 +1023,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Logit bias for token probability manipulation. Maps token IDs to bias values.
      * Range: -100 to 100. Positive values increase likelihood, negative decrease.
-     * 
+     *
      * @see https://platform.openai.com/docs/api-reference/chat/create#chat-create-logit_bias
      */
     @Serializable
@@ -1036,7 +1032,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Number of completions to generate. Most models only support n=1.
      * Higher values increase cost proportionally.
-     * 
+     *
      * @see https://platform.openai.com/docs/api-reference/chat/create#chat-create-n
      */
     @Serializable
@@ -1045,7 +1041,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * User identifier for tracking and abuse monitoring. Helps OpenAI monitor
      * for abuse and provides better support.
-     * 
+     *
      * @see https://platform.openai.com/docs/api-reference/chat/create#chat-create-user
      */
     @Serializable
@@ -1182,7 +1178,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     @kotlinx.serialization.Transient
     private var isExecutingAsReasoningPipe = false
-    
+
     /**
      * Flag to prevent duplicate reasoning content in the same execution cycle.
      */
@@ -1394,10 +1390,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         //Enable the comprehensive tracking flag.
         comprehensiveTokenTracking = true
-        
+
         //Initialize a fresh TokenUsage object to start clean tracking.
         pipeTokenUsage = TokenUsage()
-        
+
         return this
     }
 
@@ -1412,10 +1408,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         //Disable the comprehensive tracking flag.
         comprehensiveTokenTracking = false
-        
+
         //Clear stored usage data to free memory.
         pipeTokenUsage = TokenUsage()
-        
+
         return this
     }
 
@@ -1430,7 +1426,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Checks if this pipe is configured as a reasoning pipe for its parent.
      * A reasoning pipe is one that has been assigned to a parent pipe using setReasoningPipe().
-     * 
+     *
      * @return True if this pipe is the reasoning pipe of its parent, false otherwise
      */
     fun isReasoningPipe(): Boolean
@@ -1529,15 +1525,15 @@ abstract class Pipe : P2PInterface, ProviderInterface
      *
      * @return This Pipe object for method chaining.
      */
-    fun setSystemPrompt(prompt: String): Pipe 
+    fun setSystemPrompt(prompt: String): Pipe
     {
         this.systemPrompt = prompt
         rawSystemPrompt = prompt
 
         // Detect merged mode
-        val hasPcpTools = !pcpContext.tpipeOptions.isEmpty() || 
-                          !pcpContext.httpOptions.isEmpty() || 
-                          !pcpContext.stdioOptions.isEmpty() || 
+        val hasPcpTools = !pcpContext.tpipeOptions.isEmpty() ||
+                          !pcpContext.httpOptions.isEmpty() ||
+                          !pcpContext.stdioOptions.isEmpty() ||
                           pcpContext.pythonOptions.availablePackages.isNotEmpty()
 
         val hasJsonOutput = !this.supportsNativeJson && jsonOutput.isNotEmpty()
@@ -1550,19 +1546,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
         {
             val pcpAsJson = serialize(pcpContext, false)
             val pcpRequestExample = examplePromptFor(PcPRequest::class)
-            
+
             val mergedInstructions = """\n\nYou must return your output in Json format matching this schema:
                 |${jsonOutput}
                 |
-                |All variables in the json output must have valid values that match their declared types. 
-                |Never use null as a value - instead provide appropriate default values: empty strings for text fields, 
+                |All variables in the json output must have valid values that match their declared types.
+                |Never use null as a value - instead provide appropriate default values: empty strings for text fields,
                 |empty arrays for lists, empty objects for nested structures, 0 for numbers, and false for booleans.
                 |
                 |You may also take actions using the Pipe Context Protocol if needed.
                 |Available tools:
                 |${pcpAsJson}
                 |
-                |Each tool's parameters include an "isRequired" field - you MUST provide all parameters where isRequired is true, 
+                |Each tool's parameters include an "isRequired" field - you MUST provide all parameters where isRequired is true,
                 |while parameters where isRequired is false are optional and may be omitted.
                 |
                 |If you wish to call any tools, return an array of the following json:
@@ -1570,7 +1566,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 |
                 |Tool calls are optional - only include them if you need to use a tool.
             """.trimMargin()
-            
+
             systemPrompt = systemPrompt + mergedInstructions
         }
 
@@ -1586,8 +1582,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 |The Pipe Context Protocol is a standardized way to communicate with user's machine. The protocol is as follows:
                 |${pcpAsJson}
                 |
-                |The above Pipe Context Protocol json defines each tool you can call and what it can do. Each tool's parameters 
-                |include an "isRequired" field - you MUST provide all parameters where isRequired is true, while parameters 
+                |The above Pipe Context Protocol json defines each tool you can call and what it can do. Each tool's parameters
+                |include an "isRequired" field - you MUST provide all parameters where isRequired is true, while parameters
                 |where isRequired is false are optional and may be omitted.
                 |
                 |If you wish to call or use any tools provided to you return an array of the following json for each tool you wish to call:
@@ -1602,21 +1598,21 @@ abstract class Pipe : P2PInterface, ProviderInterface
         if(!this.supportsNativeJson)
         {
             var jsonRequirements = ""
-            
+
             if(jsonInput.isNotEmpty())
             {
-                jsonRequirements += """\n\n The user will provide input in the form of Json. 
+                jsonRequirements += """\n\n The user will provide input in the form of Json.
                     |The json input is as follows: ${jsonInput}
                 """.trimMargin()
             }
-            
+
             if(jsonOutput.isNotEmpty())
             {
                 jsonRequirements += """\n\n You must return your output only in Json format. You may not generate
-                    |any text that is not in json format. You may not generate any text before, or after the json output. 
-                    |All variables in the json output must have valid values that match their declared types. 
-                    |Never use null as a value - instead provide appropriate default values: empty strings for text fields, 
-                    |empty arrays for lists, empty objects for nested structures, 0 for numbers, and false for booleans. 
+                    |any text that is not in json format. You may not generate any text before, or after the json output.
+                    |All variables in the json output must have valid values that match their declared types.
+                    |Never use null as a value - instead provide appropriate default values: empty strings for text fields,
+                    |empty arrays for lists, empty objects for nested structures, 0 for numbers, and false for booleans.
                     |
                     |The json output schema is as follows: ${jsonOutput}
                     |
@@ -1625,7 +1621,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     |CRITICAL: Every field must contain a valid value of the correct type - never use null values.
                 """.trimMargin()
             }
-            
+
             systemPrompt = systemPrompt + jsonRequirements
         }
 
@@ -1691,7 +1687,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         {
             var jsonRequirements = ""
 
-            val defaultJsonInput = """\n\n The user will provide input in the form of Json. 
+            val defaultJsonInput = """\n\n The user will provide input in the form of Json.
                     |The json input is as follows: ${jsonInput}
                 """.trimMargin()
 
@@ -1709,10 +1705,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
             if(jsonOutput.isNotEmpty())
             {
                 val defaultJsonOutput = """\n\n You must return your output only in Json format. You may not generate
-                    |any text that is not in json format. You may not generate any text before, or after the json output. 
-                    |All variables in the json output must have valid values that match their declared types. 
-                    |Never use null as a value - instead provide appropriate default values: empty strings for text fields, 
-                    |empty arrays for lists, empty objects for nested structures, 0 for numbers, and false for booleans. 
+                    |any text that is not in json format. You may not generate any text before, or after the json output.
+                    |All variables in the json output must have valid values that match their declared types.
+                    |Never use null as a value - instead provide appropriate default values: empty strings for text fields,
+                    |empty arrays for lists, empty objects for nested structures, 0 for numbers, and false for booleans.
                     |
                     |The json output schema is as follows: ${jsonOutput}
                     |
@@ -1734,9 +1730,9 @@ abstract class Pipe : P2PInterface, ProviderInterface
         //todo: Add support for a custom pcp instruction set. Low prio vs other options.
 
         // Detect prompt injection mode
-        val hasPcpTools = !pcpContext.tpipeOptions.isEmpty() || 
-                          !pcpContext.httpOptions.isEmpty() || 
-                          !pcpContext.stdioOptions.isEmpty() || 
+        val hasPcpTools = !pcpContext.tpipeOptions.isEmpty() ||
+                          !pcpContext.httpOptions.isEmpty() ||
+                          !pcpContext.stdioOptions.isEmpty() ||
                           pcpContext.pythonOptions.availablePackages.isNotEmpty()
 
         val hasJsonOutput = !this.supportsNativeJson && jsonOutput.isNotEmpty()
@@ -1751,14 +1747,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
         {
             val pcpAsJson = serialize(pcpContext, false)
             val pcpRequestExample = examplePromptFor(PcPRequest::class)
-            
+
             val defaultMergedInstructions = """
                 |
                 |You must return your output in Json format matching this schema:
                 |${jsonOutput}
                 |
-                |All variables in the json output must have valid values that match their declared types. 
-                |Never use null as a value - instead provide appropriate default values: empty strings for text fields, 
+                |All variables in the json output must have valid values that match their declared types.
+                |Never use null as a value - instead provide appropriate default values: empty strings for text fields,
                 |empty arrays for lists, empty objects for nested structures, 0 for numbers, and false for booleans.
                 |
                 |You may also take actions using the Pipe Context Protocol if needed.
@@ -1770,7 +1766,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 |
                 |Tool calls are optional - only include them if you need to use a tool.
             """.trimMargin()
-            
+
             // Allow custom override
             val actualMergedInstructions = mergedPcpJsonInstructions.ifEmpty { defaultMergedInstructions }
             systemPrompt = systemPrompt + actualMergedInstructions
@@ -1803,7 +1799,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             // Allow custom override
             val actualPcpInstructions = pcpDescription.ifEmpty { defaultPcpInstructions }
             systemPrompt = systemPrompt + actualPcpInstructions
-            
+
             // Add Kotlin-specific security boundaries if Kotlin is configured
             if(pcpContext.kotlinOptions.allowTpipeIntrospection ||
                 pcpContext.kotlinOptions.allowHostApplicationAccess ||
@@ -1811,13 +1807,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 pcpContext.kotlinOptions.blockedImports.isNotEmpty())
             {
                 val kotlinInstructions = PcpInstructionGenerator.generateKotlinInstructions(
-                    pcpContext.kotlinOptions, 
+                    pcpContext.kotlinOptions,
                     pcpContext
                 )
                 val kotlinGuide = PcpInstructionGenerator.generateCodeExecutionGuide(pcpContext.kotlinOptions)
                 systemPrompt = systemPrompt + "\n\n" + kotlinInstructions + "\n\n" + kotlinGuide
             }
-            
+
             // Add Python-specific security boundaries if Python is configured
             if(pcpContext.pythonOptions.availablePackages.isNotEmpty() ||
                 pcpContext.pythonOptions.workingDirectory.isNotEmpty() ||
@@ -1830,7 +1826,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 val pythonGuide = PcpInstructionGenerator.generatePythonCodeExecutionGuide()
                 systemPrompt = systemPrompt + "\n\n" + pythonInstructions + "\n\n" + pythonGuide
             }
-            
+
             // Add JavaScript-specific security boundaries if JavaScript is configured
             if(pcpContext.javascriptOptions.allowedModules.isNotEmpty() ||
                 pcpContext.javascriptOptions.workingDirectory.isNotEmpty() ||
@@ -1956,7 +1952,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         this.userPrompt = prompt
         return this
     }
-    
+
     /**
      * Sets the multimodal input content for this pipe. This replaces string-only mechanisms
      * and allows for comprehensive multimodal processing including text and binary data.
@@ -2386,7 +2382,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * Smaller contexts are protected and get full allocation first.
      * Larger contexts are truncated as needed to fit budget.
      * Includes intelligent redistribution of unused budget.
-     * 
+     *
      * @return This Pipe object for method chaining
      */
     fun enableDynamicSizeFill(): Pipe
@@ -2767,14 +2763,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
         }
 
         val sortedKeys = pageKeys.sortedBy { contextSizes[it] ?: 0 }
-        
+
         // Allocate budget in size order (smallest first gets protected, largest gets truncated)
         val allocations = mutableMapOf<String, Int>()
         var remainingBudget = totalBudget
 
         for(pageKey in sortedKeys)
         {
-            if(remainingBudget <= 0) 
+            if(remainingBudget <= 0)
             {
                 allocations[pageKey] = 0
                 continue
@@ -3286,7 +3282,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Sets the presence penalty for encouraging topic diversity.
      * Higher values make the model less likely to talk about existing topics.
-     * 
+     *
      * @param penalty Penalty value between -2.0 and 2.0
      * @return This Pipe object for method chaining
      * @throws IllegalArgumentException if penalty is outside valid range
@@ -3304,7 +3300,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Sets the seed for deterministic generation. When set, the model will
      * attempt to generate the same output for the same input.
-     * 
+     *
      * @param seed Integer seed value, or null to disable deterministic generation
      * @return This Pipe object for method chaining
      */
@@ -3317,7 +3313,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Sets logit bias to modify the likelihood of specific tokens appearing.
      * Maps token IDs to bias values between -100 and 100.
-     * 
+     *
      * @param bias Map of token IDs to bias values
      * @return This Pipe object for method chaining
      * @throws IllegalArgumentException if any bias value is outside valid range
@@ -3337,7 +3333,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Sets the number of completions to generate for each input.
      * Most models only support n=1. Higher values increase cost proportionally.
-     * 
+     *
      * @param completions Number of completions to generate (minimum 1)
      * @return This Pipe object for method chaining
      * @throws IllegalArgumentException if completions is less than 1
@@ -3355,7 +3351,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Sets the user identifier for tracking and abuse monitoring.
      * This helps OpenAI monitor for abuse and provide better support.
-     * 
+     *
      * @param userId User identifier string
      * @return This Pipe object for method chaining
      */
@@ -3368,7 +3364,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Convenience method to reduce repetition using both frequency and presence penalties.
      * Sets repetitionPenalty (mapped to frequency_penalty) and presencePenalty to the same value.
-     * 
+     *
      * @param penalty Penalty value between 0.0 and 2.0 (higher = less repetition)
      * @return This Pipe object for method chaining
      */
@@ -3382,7 +3378,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Convenience method to enable deterministic generation with a random seed.
      * Uses current timestamp as seed if no seed is provided.
-     * 
+     *
      * @param seed Optional seed value (uses timestamp if null)
      * @return This Pipe object for method chaining
      */
@@ -3395,7 +3391,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
     /**
      * Convenience method to disable deterministic generation.
-     * 
+     *
      * @return This Pipe object for method chaining
      */
     fun disableDeterministicGeneration(): Pipe
@@ -3407,7 +3403,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Convenience method to ban specific words/phrases from generation.
      * Uses helper function to convert text to approximate token IDs.
-     * 
+     *
      * @param bannedWords List of words/phrases to ban
      * @return This Pipe object for method chaining
      */
@@ -3421,7 +3417,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Convenience method to encourage specific words/phrases in generation.
      * Uses helper function to convert text to approximate token IDs.
-     * 
+     *
      * @param encouragedWords List of words/phrases to encourage
      * @param bias Positive bias value (default 1.0)
      * @return This Pipe object for method chaining
@@ -3435,7 +3431,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
     /**
      * Convenience method to clear all logit bias settings.
-     * 
+     *
      * @return This Pipe object for method chaining
      */
     fun clearLogitBias(): Pipe
@@ -3595,7 +3591,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
 
-    
+
     /**
      * Legacy validator function for backward compatibility with string-based validation.
      */
@@ -3688,13 +3684,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
         postGenerateFunction = func
         return this
     }
-    
+
     /**
      * Legacy transformation function for backward compatibility with string-based transformation.
      */
     fun setStringTransformationFunction(func: (json: String) -> String): Pipe
     {
-        this.transformationFunction = { content -> 
+        this.transformationFunction = { content ->
             val result = MultimodalContent(func(content.text), content.binaryContent.toMutableList(), content.terminatePipeline)
             result
         }
@@ -3716,7 +3712,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
 
-    
+
     /**
      * Legacy failure function for backward compatibility with string-based failure handling.
      */
@@ -3847,10 +3843,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Process LLM response for PCP requests and execute them with context validation.
      * This is the main integration point between Pipe and PCP execution.
-     * 
+     *
      * @param llmResponse The raw LLM response containing potential PCP requests
      * @return PcpExecutionResult with execution results and any errors
-     * 
+     *
      * @since This method enforces context restrictions and security policies.
      * Ensure pcpContext is properly configured before calling.
      */
@@ -3858,7 +3854,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         val parser = PcpResponseParser()
         val parseResult = parser.extractPcpRequests(llmResponse)
-        
+
         if(!parseResult.success)
         {
             return PcpExecutionResult(
@@ -3868,7 +3864,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 executionTimeMs = 0
             )
         }
-        
+
         // Execute with actual pipe context and apply introspection leash if enabled
         val config = memoryIntrospectionConfig
         return if(config != null)
@@ -3998,7 +3994,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         return systemPrompt
     }
-    
+
     /**
      * Extracts reasoning content from the last response if available.
      * @return The reasoning content or empty string if not available
@@ -4056,8 +4052,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
         // Auto-capture errors for failure event types
         // Only capture if no error exists yet, or if this error has an exception (more specific)
         if(eventType == TraceEventType.PIPE_FAILURE ||
-            eventType == TraceEventType.API_CALL_FAILURE || 
-            eventType == TraceEventType.VALIDATION_FAILURE || 
+            eventType == TraceEventType.API_CALL_FAILURE ||
+            eventType == TraceEventType.VALIDATION_FAILURE ||
             eventType == TraceEventType.TRANSFORMATION_FAILURE)
         {
             if(lastError == null || (error != null && lastError?.exception == null))
@@ -4071,15 +4067,15 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 )
             }
         }
-        
+
         if(!tracingEnabled) return
-        
+
         // Check if this event should be traced based on detail level
         if(!EventPriorityMapper.shouldTrace(eventType, traceConfig.detailLevel)) return
-        
+
         // Build metadata based on detail level
         val enhancedMetadata = buildMetadataForLevel(metadata, traceConfig.detailLevel, eventType, error, content, phase)
-        
+
         val event = TraceEvent(
             timestamp = System.currentTimeMillis(),
             pipeId = pipeId,
@@ -4091,7 +4087,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             metadata = if(traceConfig.includeMetadata) enhancedMetadata else emptyMap(),
             error = error
         )
-        
+
         activeTraceIds.forEach { pipelineId ->
             PipeTracer.addEvent(pipelineId, event)
         }
@@ -4179,15 +4175,15 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     private fun buildMetadataForLevel(
-        baseMetadata: Map<String, Any>, 
-        detailLevel: TraceDetailLevel, 
+        baseMetadata: Map<String, Any>,
+        detailLevel: TraceDetailLevel,
         eventType: TraceEventType,
         error: Throwable?,
         content: MultimodalContent? = null,
         phase: TracePhase? = null
     ): Map<String, Any> {
         val metadata = baseMetadata.toMutableMap()
-        
+
         when(detailLevel)
         {
             TraceDetailLevel.MINIMAL -> {
@@ -4197,7 +4193,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     metadata["error"] = error.message ?: "Unknown error"
                 }
             }
-            
+
             TraceDetailLevel.NORMAL -> {
                 // Basic pipe information
                 metadata["model"] = model.ifEmpty { "not_set" }
@@ -4208,7 +4204,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     metadata["errorType"] = error::class.simpleName ?: "Unknown"
                 }
             }
-            
+
             TraceDetailLevel.VERBOSE -> {
                 // Standard metadata plus function bindings
                 metadata["pipeClass"] = this::class.qualifiedName ?: "UnknownPipe"
@@ -4223,7 +4219,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     metadata["errorType"] = error::class.simpleName ?: "Unknown"
                 }
             }
-            
+
             TraceDetailLevel.DEBUG -> {
                 // Everything including function details and model reasoning
                 metadata["pipeClass"] = this::class.qualifiedName ?: "UnknownPipe"
@@ -4246,7 +4242,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 }
             }
         }
-        
+
         // Add model reasoning metadata when available (for models with native reasoning support)
         if(eventType == TraceEventType.API_CALL_SUCCESS && content != null && content.modelReasoning.isNotEmpty())
         {
@@ -4255,7 +4251,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             metadata["reasoningEnabled"] = useModelReasoning
             metadata["reasoningLength"] = content.modelReasoning.length
         }
-        
+
         // Add reasoning pipe metadata only once per execution to avoid duplication (for reasoning pipes)
         if(isExecutingAsReasoningPipe && !reasoningContentAlreadyTraced && eventType == TraceEventType.API_CALL_SUCCESS && content != null)
         {
@@ -4263,10 +4259,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
             metadata["isReasoningPipe"] = true
             reasoningContentAlreadyTraced = true
         }
-        
+
         return metadata
     }
-    
+
     private fun shouldIncludeContent(detailLevel: TraceDetailLevel): Boolean {
         return when(detailLevel) {
             TraceDetailLevel.MINIMAL -> false
@@ -4341,17 +4337,17 @@ abstract class Pipe : P2PInterface, ProviderInterface
          if(branchPipe?.pipeName?.isEmpty() == true) branchPipe?.pipeName = "$pipeName->branch pipe"
          if(transformationPipe?.pipeName?.isEmpty() == true) transformationPipe?.pipeName = "$pipeName->transformation pipe"
          if(reasoningPipe?.pipeName?.isEmpty() == true) reasoningPipe?.pipeName = "$pipeName->reasoning pipe"
-         
+
          // THEN initialize them
          validatorPipe?.init()
          validatorPipe?.pipelineRef = pipelineRef
-         
+
          branchPipe?.init()
          branchPipe?.pipelineRef = pipelineRef
-         
+
          transformationPipe?.init()
          transformationPipe?.pipelineRef = pipelineRef
-         
+
          reasoningPipe?.init()
          reasoningPipe?.pipelineRef = pipelineRef
 
@@ -4726,7 +4722,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * @return Returns the text generated from the api call.
      */
     abstract suspend fun generateText(promptInjector : String = ""): String
-    
+
     /**
      * Runs a call to generate content from a loaded AI api system with multimodal support.
      * This method supports both text and binary content (images, documents, etc.).
@@ -4753,7 +4749,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         val result = execute(content)
         result.text
     }
-    
+
     /**
      * Executes the current pipe with multimodal content support. This is the primary execution method
      * that handles validation, transformation, and failure logic with full multimodal capabilities.
@@ -4772,7 +4768,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         }
         return@coroutineScope result
     }
-    
+
     /**
      * Attempts to abort the current LLM call by cancelling the active execution job.
      * Child classes can override this to perform additional provider-specific cleanup.
@@ -4936,7 +4932,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         }
 
 
-        
+
             if(readFromGlobalContext)
             {
                 //Pull from context bank if no page keys are set.
@@ -5113,7 +5109,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
                 truncateModuleContextSuspend() //Default to basic context truncation instead.
             }
-            
+
             // Build full prompt with correct ordering: userPrompt -> user content -> context
             // Note: userPrompt already merged into baseContent before truncation
             var fullPrompt = baseContent.text
@@ -5158,7 +5154,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 baseContent.context.clear()
                 baseContent.miniBankContext.clear()
             }
-            
+
             /**
              * Context can be auto-injected after user content to maintain proper ordering
              */
@@ -5220,7 +5216,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             }
 
             // Trace the full prompt input
-            trace(TraceEventType.PIPE_START, TracePhase.EXECUTION, processedContent, 
+            trace(TraceEventType.PIPE_START, TracePhase.EXECUTION, processedContent,
                   metadata = mapOf("fullPrompt" to fullPrompt))
 
             /**Bind this pipe's context window into the multimodal object context window to make it visible to
@@ -5311,7 +5307,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 if(e is CancellationException && PipeTimeoutManager.isTimeout(this@Pipe))
                 {
                     val result = PipeTimeoutManager.handleTimeoutSignal(this@Pipe, inputContent)
-                    
+
                     if(timeoutStrategy == PipeTimeoutStrategy.CustomLogic)
                     {
                         pipeRetryFunction?.invoke(this@Pipe, inputContent)
@@ -5324,7 +5320,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         return@coroutineScope result
                     }
                 }
-                
+
                 // Trace API call failure to capture error
                 trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, processedContent, error = e)
                 exceptionFunction?.invoke(processedContent, e)
@@ -5370,7 +5366,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             {
                 //Store the output token count in our usage tracking.
                 pipeTokenUsage.outputTokens = outputTokens
-                
+
                 //Recalculate totals to include any child pipe usage.
                 pipeTokenUsage.recalculateTotals()
 
@@ -5382,7 +5378,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         "totalOutputTokens" to pipeTokenUsage.totalOutputTokens
                     ))
             }
-            
+
             else
             {
                 //Trace API call success with basic token count for backward compatibility.
@@ -5623,7 +5619,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                             branchPipe?.execute(generatedContent) ?: generatedContent
                         }
                         var branchResult = branchPipeResult.await()
-                        
+
                         //Track branch pipe token usage if comprehensive tracking is enabled.
                         if(comprehensiveTokenTracking)
                         {
@@ -5632,10 +5628,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
                                 pipeTokenUsage.addChildUsage("branch-${pipe.pipeName}", pipe.getTokenUsage())
                             }
                         }
-                        
+
                         branchResult.currentPipe = inputContent.currentPipe
                         branchResult.metadata = generatedContent.metadata
-                        
+
                         //If branch pipe allows continuation, continue pipeline.
                         if(!branchResult.shouldTerminate())
                         {
@@ -5657,7 +5653,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                                     branchResult = transformPipeResult.await()
                                     branchResult.currentPipe = inputContent.currentPipe
                                     branchResult.metadata = metadataBackup
-                                    
+
                                     //Track transformation pipe token usage if comprehensive tracking is enabled.
                                     if(comprehensiveTokenTracking)
                                     {
@@ -5672,7 +5668,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                                     // Continue with branch result if transformation pipe fails
                                 }
                             }
-                            
+
                             //Apply transformation function if set.
                             if(transformationFunction != null)
                             {
@@ -5682,7 +5678,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                                 trace(TraceEventType.TRANSFORMATION_SUCCESS, TracePhase.TRANSFORMATION, branchResult,
                                       metadata = mapOf("outputText" to branchResult.text))
                             }
-                            
+
                             //Merge in context window changes if enabled.
                             if(updatePipelineContextOnExit)
                             {
@@ -5692,7 +5688,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
                             trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, branchResult,
                                   metadata = mapOf("outputText" to branchResult.text))
-                            
+
                             if(!branchResult.repeatPipe)
                             {
                                 PipeTimeoutManager.clearRetryCount(this@Pipe)
@@ -5700,7 +5696,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
                             return@coroutineScope embedContentIntoInternalConverse(branchResult).takeIf { wrapContentWithConverseHistory } ?: branchResult
                         }
-                        
+
                         generatedContent = branchResult
                     }
                     catch(e: Exception)
@@ -5722,7 +5718,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     var failureResult = branchResult.await()
                     failureResult.currentPipe = inputContent.currentPipe
                     failureResult.metadata = generatedContent.metadata
-                    
+
                     //If failure function allows continuation, continue pipeline.
                     if(!failureResult.shouldTerminate())
                     {
@@ -5769,7 +5765,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             val failedContent = MultimodalContent()
             failedContent.pipeError = lastError
             return@coroutineScope failedContent
-            
+
         }
         catch(e: Exception)
         {
@@ -6237,7 +6233,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * Counts the actual tokens consumed by this pipe after all truncation and budgeting is completed.
      * This method provides accurate post-processing token counts that reflect the actual content
      * sent to the AI model, including system prompts, user content, context windows, and binary content.
-     * 
+     *
      * @param content The MultimodalContent object containing the processed input data
      * @return The total number of input tokens actually consumed by this pipe
      */
@@ -6249,7 +6245,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
         //Count tokens from the system prompt.
         totalTokens += Dictionary.countTokens(systemPrompt, truncationSettings)
-        
+
         //Count tokens from the main user content text.
         totalTokens += Dictionary.countTokens(content.text, truncationSettings)
 
@@ -6260,7 +6256,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             val contextJson = serialize(contextWindow)
             totalTokens += Dictionary.countTokens(contextJson, truncationSettings)
         }
-        
+
         else
         {
             //Use minibank context for token counting.
@@ -6270,16 +6266,16 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
         //Count tokens from any binary content (images, files, etc.).
         totalTokens += countBinaryTokens(content, truncationSettings)
-        
+
         //Count tokens from model reasoning content.
         totalTokens += Dictionary.countTokens(content.modelReasoning, truncationSettings)
 
         //Update pipeline reference with input token count for backward compatibility.
         pipelineRef?.inputTokensSpent = totalTokens
-        
+
         return totalTokens
     }
-    
+
     /**
      * Constructs a PipeSettings object populated with all current pipe configuration values.
      * @return PipeSettings object containing all current pipe settings
@@ -6434,17 +6430,17 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
         val response = P2PResponse()
-        
+
         // Execute the pipe with the request prompt
         val content = MultimodalContent()
         content.text = request.prompt.text
         content.binaryContent = request.prompt.binaryContent
-        
+
         val result = execute(content)
-        
+
         response.output?.text = result.text
         response.output?.binaryContent = result.binaryContent
-        
+
         return response
     }
 
@@ -6453,7 +6449,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
          * Helper function to convert text tokens to token IDs for logit bias.
          * This is a simplified implementation - production code should use
          * the actual tokenizer for the specific model.
-         * 
+         *
          * @param tokens List of text tokens to convert
          * @return Map of estimated token IDs to 1.0 bias (encourage these tokens)
          */
@@ -6462,19 +6458,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
             // This is a placeholder implementation
             // In production, this should use the actual tokenizer
             val biasMap = mutableMapOf<Int, Double>()
-            
+
             tokens.forEachIndexed { index, token ->
                 // Simple hash-based token ID estimation (NOT ACCURATE)
                 val tokenId = token.hashCode().absoluteValue % 50000
                 biasMap[tokenId] = 1.0
             }
-            
+
             return biasMap
         }
-        
+
         /**
          * Helper function to ban specific tokens by setting their bias to -100.
-         * 
+         *
          * @param tokens List of text tokens to ban
          * @return Map of estimated token IDs to -100.0 bias (ban these tokens)
          */
@@ -6482,10 +6478,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
         {
             return createLogitBiasForTokens(tokens).mapValues { -100.0 }
         }
-        
+
         /**
          * Helper function to encourage specific tokens by setting their bias to positive values.
-         * 
+         *
          * @param tokens List of text tokens to encourage
          * @param bias Positive bias value (default 1.0)
          * @return Map of estimated token IDs to positive bias values
@@ -6496,7 +6492,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             {
                 throw IllegalArgumentException("Bias must be between 0.0 and 100.0, got: $bias")
             }
-            
+
             return createLogitBiasForTokens(tokens).mapValues { bias }
         }
     }
