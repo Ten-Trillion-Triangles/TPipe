@@ -14,6 +14,7 @@
   - [ReasoningBuilder](#reasoningbuilder)
   - [ReasoningPrompts](#reasoningprompts)
   - [Enums](#enums)
+- [Manifold DSL Integration](#manifold-dsl-integration)
 
 ## Overview
 
@@ -366,6 +367,53 @@ data class ReasoningSettings(
     var focusPoints: MutableMap<Int, String> = mutableMapOf()
 )
 ```
+
+---
+
+## Manifold DSL Integration
+
+TPipe-Defaults provides extension functions that bridge the defaults module into the [Manifold DSL](../containers/manifold.md#dsl-builder). This lets you use `defaults { bedrock(...) }` or `defaults { ollama(...) }` inside a `manifold { }` block to configure the manager pipeline and history policy from provider defaults.
+
+### `ManifoldDsl.defaults(block)`
+
+Entry point for defaults-backed configuration inside the manifold DSL.
+
+```kotlin
+import com.TTT.Pipeline.manifold
+import Defaults.BedrockConfiguration
+import Defaults.defaults
+
+val builtManifold = manifold {
+    defaults {
+        bedrock(BedrockConfiguration(
+            region = "us-east-1",
+            model = "anthropic.claude-3-haiku-20240307-v1:0"
+        ))
+    }
+
+    worker("my-worker") {
+        description("Does work.")
+        pipeline(workerPipeline)
+    }
+}
+```
+
+**Behavior:** The `defaults` block creates a `DefaultsManifoldDsl` receiver that exposes `bedrock(...)` and `ollama(...)` methods. Each method:
+
+1. Validates the provider configuration
+2. Builds the default manager pipeline via `ManifoldDefaults.buildDefaultManagerPipeline(...)`
+3. Configures the `manager { }` block with the built pipeline and the standard `"Agent caller pipe"` dispatch name
+4. Configures the `history { }` block with the provider's `ManifoldMemoryConfiguration` (truncation method, context window size, token budget)
+
+### `HistoryDsl.applyDefaults(memoryConfiguration)`
+
+Applies a `ManifoldMemoryConfiguration` to the DSL history block. This mirrors the memory settings that `ManifoldDefaults.withBedrock(...)` or `ManifoldDefaults.withOllama(...)` would apply when using the non-DSL path.
+
+The applied settings include:
+- `managerTruncationMethod` → `defaultsTruncationMethod(...)`
+- `managerContextWindowSize` → `defaultsContextWindowSize(...)`
+- `enableManagerBudgetControl` → `autoTruncate()`
+- `managerTokenBudget` → `managerTokenBudget(...)`
 
 ## Key Behaviors
 

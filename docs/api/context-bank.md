@@ -8,9 +8,11 @@
   - [Bank Management](#bank-management)
   - [Context Swapping](#context-swapping)
   - [Thread-Safe Operations](#thread-safe-operations)
+  - [Suspend Methods](#other-suspend-methods)
   - [Utilities](#utilities)
   - [TodoList Integration](#todolist-integration)
   - [Retrieval Functions](#retrieval-functions)
+  - [Write Back Functions](#write-back-functions)
 
 ## Overview
 
@@ -269,16 +271,75 @@ Thread-safe context window swapping operation.
 
 ### Thread-Safe Operations
 
-All mutex-protected operations follow these patterns:
+ContextBank provides two tiers of thread-safe access:
 
-**Single Mutex Operations:**
+**Legacy mutex methods** use the global `bankMutex` and are suitable for simple concurrent access:
+
 - **`emplaceWithMutex()`**: Uses `bankMutex` for bank modifications
 - **`updateBankedContextWithMutex()`**: Uses `bankMutex` for banked context updates
+- **`swapBankWithMutex()`**: Uses both `bankMutex` and `swapMutex` for context swapping
 
-**Dual Mutex Operations:**
-- **`swapBankWithMutex()`**: Uses both `bankMutex` and `swapMutex` for comprehensive safety during context swapping
+**Suspend methods** use per-page mutexes so that operations on unrelated page keys can proceed concurrently without blocking each other. These are the recommended approach for coroutine-based code:
 
-**Mutex Ordering:** When multiple mutexes are required, they are acquired in consistent order (`bankMutex` then `swapMutex`) to prevent deadlocks.
+#### `getContextFromBankSuspend(key: String, copy: Boolean = true, skipRemote: Boolean = false): ContextWindow`
+
+Suspend-safe retrieval of a context window. Acquires the page-level mutex for `key` only, so reads on other keys are not blocked.
+
+```kotlin
+val context = ContextBank.getContextFromBankSuspend("user-profile")
+```
+
+#### `emplaceSuspend(key: String, window: ContextWindow, mode: StorageMode, skipRemote: Boolean = false)`
+
+Suspend-safe storage with explicit storage mode. Acquires the page-level mutex for `key`.
+
+```kotlin
+ContextBank.emplaceSuspend("user-profile", updatedContext, StorageMode.MEMORY_AND_DISK)
+```
+
+#### `mutateContextWindowSuspend(key: String, mode: StorageMode, skipRemote: Boolean, block: (ContextWindow) -> Unit): ContextWindow`
+
+Atomic read-modify-write on a context window. Loads the current value, applies `block`, and stores the result — all while holding the page mutex. This prevents lost updates when multiple coroutines modify the same key.
+
+```kotlin
+val updated = ContextBank.mutateContextWindowSuspend("session-state", StorageMode.MEMORY_AND_DISK) { window ->
+    window.addText("New session event at ${System.currentTimeMillis()}")
+}
+```
+
+#### `withContextWindowReferenceSuspend(key: String, skipRemote: Boolean, block: (ContextWindow) -> Unit): ContextWindow`
+
+Similar to `mutateContextWindowSuspend` but intended for metadata-only mutations that should not immediately persist to disk. The block receives the shared reference and can modify it in place while the page mutex is held.
+
+```kotlin
+ContextBank.withContextWindowReferenceSuspend("counters") { window ->
+    val count = (window.metadata["requestCount"] as? Int ?: 0) + 1
+    window.metadata["requestCount"] = count
+}
+```
+
+#### Other Suspend Methods
+
+| Method | Description |
+|--------|-------------|
+| `getBankedContextWindowSuspend(copy)` | Suspend-safe access to the active banked context |
+| `updateBankedContextSuspend(newContext)` | Suspend-safe update of the active banked context |
+| `swapBankSuspend(key, copy)` | Suspend-safe context window swapping |
+| `deletePersistingBankKeySuspend(key)` | Suspend-safe deletion of a persisted bank key |
+| `deleteContextWindowSuspend(key)` | Suspend-safe deletion of a context window |
+| `deleteTodoListSuspend(key)` | Suspend-safe deletion of a todo list |
+| `contextWindowExistsSuspend(key)` | Suspend-safe existence check for a context window |
+| `todoListExistsSuspend(key)` | Suspend-safe existence check for a todo list |
+| `getPageKeysSuspend(skipRemote)` | Suspend-safe listing of all page keys |
+| `getTodoListKeysSuspend(skipRemote)` | Suspend-safe listing of all todo list keys |
+| `getPagedTodoListSuspend(key, copy)` | Suspend-safe retrieval of a todo list |
+| `emplaceTodoListSuspend(key, todoList, ...)` | Suspend-safe storage of a todo list |
+| `configureCachePolicySuspend(config)` | Suspend-safe cache policy configuration |
+| `clearCacheSuspend()` | Suspend-safe cache clearing |
+
+**When to use which:**
+- Use `*WithMutex()` methods when calling from blocking code or simple coroutine contexts
+- Use `*Suspend()` methods when calling from coroutine-heavy code where per-page concurrency matters (e.g., manifold workers operating on different page keys simultaneously)
 
 ---
 
@@ -571,10 +632,139 @@ ContextBank.registerRetrievalFunction("resilient-data") { key ->
 
 ---
 
+### Write Back Functions
+
+Write back functions are the write-side complement to retrieval functions. When a context bank key with a bound write back function is written via `emplace` or `emplaceWithMutex`, the function executes to persist the data to an external destination such as a database, API, or remote service.
+
+#### `WriteBackFunction` Type
+
+```kotlin
+typealias WriteBackFunction = suspend (String, ContextWindow) -> Boolean
+```
+
+A suspending function that receives the context bank key and the context window being written, and returns `true` if the write succeeded.
+
+**Parameters:**
+- **`key`**: The context bank key being written
+- **`window`**: The context window to persist
+
+**Returns:** `true` if the write back was successful, `false` otherwise
+
+#### `registerWriteBackFunction(key: String, function: WriteBackFunction)`
+
+Binds a write back function to a specific context bank key.
+
+**Parameters:**
+- **`key`**: The context bank key to bind the function to
+- **`function`**: The suspending function that will persist the context window
+
+**Behavior:**
+- The function is called after the context window is stored locally
+- Write back functions are stored in a `ConcurrentHashMap` and are thread-safe
+- Write back functions are not persisted across application restarts
+
+**Example:**
+```kotlin
+import com.TTT.Context.ContextBank
+import com.TTT.Context.ContextWindow
+
+// Register a write back function that saves to a database
+ContextBank.registerWriteBackFunction("user-profile") { key, window ->
+    try
+    {
+        database.save(key, serialize(window))
+        true
+    }
+    catch (e: Exception)
+    {
+        println("Failed to write back $key: ${e.message}")
+        false
+    }
+}
+
+// When this key is written, the write back function fires automatically
+val context = ContextWindow()
+context.addText("Updated profile data")
+ContextBank.emplaceWithMutex("user-profile", context, persistToDisk = true)
+```
+
+#### `removeWriteBackFunction(key: String)`
+
+Removes a write back function binding from a key.
+
+**Parameters:**
+- **`key`**: The context bank key to unbind
+
+**Example:**
+```kotlin
+ContextBank.removeWriteBackFunction("user-profile")
+```
+
+#### `clearWriteBackFunctions()`
+
+Removes all registered write back functions.
+
+```kotlin
+ContextBank.clearWriteBackFunctions()
+```
+
+#### Write Back Function Use Cases
+
+**Database Sync:**
+```kotlin
+ContextBank.registerWriteBackFunction("session-state") { key, window ->
+    database.upsert("context_windows", key, serialize(window))
+    true
+}
+```
+
+**Remote Memory Sync:**
+```kotlin
+ContextBank.registerWriteBackFunction("shared-context") { key, window ->
+    val result = MemoryClient.putContextWindow(key, window)
+    result is MemoryOperationResult.Success
+}
+```
+
+**Audit Logging:**
+```kotlin
+ContextBank.registerWriteBackFunction("sensitive-data") { key, window ->
+    auditLog.record("context_write", key, System.currentTimeMillis())
+    true
+}
+```
+
+#### Retrieval + Write Back Pattern
+
+Combine retrieval and write back functions for full bidirectional sync with an external store:
+
+```kotlin
+// Read from database on cache miss
+ContextBank.registerRetrievalFunction("synced-context") { key ->
+    database.load(key)?.let { deserialize<ContextWindow>(it) }
+}
+
+// Write back to database on every update
+ContextBank.registerWriteBackFunction("synced-context") { key, window ->
+    database.save(key, serialize(window))
+    true
+}
+```
+
+---
+
 ## Key Behaviors
 
 ### Thread Safety Model
-ContextBank provides both thread-safe and non-thread-safe variants of operations. Non-mutex methods offer better performance but require careful usage in single-threaded contexts. Mutex methods ensure safety in concurrent environments at the cost of synchronization overhead.
+ContextBank provides three tiers of thread-safe access:
+
+1. **Non-mutex methods** (e.g., `emplace()`, `getContextFromBank()`) — fastest, but require external synchronization in concurrent environments
+2. **Legacy mutex methods** (e.g., `emplaceWithMutex()`) — use the global `bankMutex` for simple thread safety
+3. **Suspend methods** (e.g., `emplaceSuspend()`, `mutateContextWindowSuspend()`) — use per-page mutexes so operations on unrelated keys proceed concurrently
+
+The suspend methods are the recommended approach for coroutine-based code. They use `ConcurrentHashMap`-backed per-page locks internally, meaning two coroutines writing to different page keys will never block each other.
+
+Disk persistence uses atomic temp-file replacement with sidecar lock files (`MemoryPersistence`) to prevent corruption from concurrent writes or crashes during file I/O.
 
 ### Copy vs Reference Strategy
 Most operations offer choice between copying (safe but slower) and direct references (fast but potentially unsafe). Copying uses serialization for deep copying, ensuring complete isolation between contexts.

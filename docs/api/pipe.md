@@ -23,6 +23,7 @@
   - [Protocols](#protocols)
   - [Tracing](#tracing)
   - [Getters](#getters)
+  - [Pipe State Inspection](#pipe-state-inspection)
   - [Execution](#execution)
 
 ## Overview
@@ -1045,6 +1046,95 @@ Clears the stored error information.
 Direct access to the complete error object containing exception, event type, phase, pipe name, pipe ID, and timestamp.
 
 > ℹ️ **Note:** Errors are automatically captured when trace events with failure types are logged. The error persists until explicitly cleared or the pipe executes successfully.
+
+---
+
+### Pipe State Inspection
+
+These methods allow you to read the current configuration state of a pipe without modifying it. They are useful for validation logic, DSL builders, and debugging.
+
+#### `copyTokenBudgetSettings(): TokenBudgetSettings?`
+
+Returns a detached copy of the current token budget settings, or `null` if token budgeting is not configured.
+
+**Behavior:** The returned copy is safe to inspect or reuse without affecting the pipe's internal state. Map values (like `pageWeights`) are also copied.
+
+```kotlin
+val budget = pipe.copyTokenBudgetSettings()
+if (budget != null)
+{
+    println("Context window: ${budget.contextWindowSize}")
+    println("Max tokens: ${budget.maxTokens}")
+}
+```
+
+#### `isAutoTruncateContextEnabled(): Boolean`
+
+Returns `true` when legacy automatic truncation is enabled for this pipe.
+
+```kotlin
+if (pipe.isAutoTruncateContextEnabled())
+{
+    println("Legacy auto-truncation is active")
+}
+```
+
+#### `hasContextOverflowProtectionConfigured(): Boolean`
+
+Returns `true` when the pipe has any overflow protection path configured — either token budgeting or legacy auto truncation.
+
+**Behavior:** This is the method the Manifold DSL uses to validate that worker pipes have overflow protection before startup.
+
+```kotlin
+if (!pipe.hasContextOverflowProtectionConfigured())
+{
+    throw IllegalStateException("Pipe needs overflow protection before use in a manifold")
+}
+```
+
+#### `getConfiguredContextWindowSize(): Int`
+
+Returns the current context window size in tokens.
+
+```kotlin
+val windowSize = pipe.getConfiguredContextWindowSize()
+println("Context window: $windowSize tokens")
+```
+
+#### `getConfiguredMaxTokens(): Int`
+
+Returns the current maximum output token count.
+
+```kotlin
+val maxTokens = pipe.getConfiguredMaxTokens()
+println("Max output tokens: $maxTokens")
+```
+
+#### `getSystemPromptText(): String`
+
+Returns the current system prompt text bound to this pipe.
+
+```kotlin
+val prompt = pipe.getSystemPromptText()
+println("System prompt length: ${prompt.length} chars")
+```
+
+#### `truncateModuleContextSuspend(): Pipe`
+
+Suspend-safe truncation entry point. Subclasses that need remote-aware lorebook selection (e.g., loading lorebook data from a remote MemoryServer) should override this instead of the synchronous `truncateModuleContext()`.
+
+**Behavior:** The default implementation delegates to `truncateModuleContext()`. Provider modules can override this to perform async operations during truncation.
+
+```kotlin
+// Called internally during pipe execution when autoTruncateContext is enabled
+// Override in custom provider modules:
+override suspend fun truncateModuleContextSuspend(): Pipe
+{
+    // Perform async lorebook loading, then truncate
+    loadRemoteLorebook()
+    return truncateModuleContext()
+}
+```
 
 ---
 

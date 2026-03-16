@@ -9,6 +9,7 @@
 - [Pipeline Tracing](#pipeline-tracing)
 - [Advanced Tracing Patterns](#advanced-tracing-patterns)
 - [Recursive Tracing Propagation](#recursive-tracing-propagation)
+- [Remote Trace Dispatch](#remote-trace-dispatch)
 - [Performance Analysis](#performance-analysis)
 - [Best Practices](#best-practices)
 
@@ -781,6 +782,101 @@ val traceReport = pipeline.getTraceReport(TraceFormat.HTML)
 - **Chronological ordering** maintained across all nesting levels
 - **Cycle protection** prevents infinite recursion
 - **Unified trace reports** for complex structures
+
+## Remote Trace Dispatch
+
+TPipe can automatically push trace reports to a remote [TraceServer](../advanced-concepts/trace-server.md) so you can view execution traces from a centralized web dashboard instead of inspecting local files or console output.
+
+### RemoteTraceConfig
+
+`RemoteTraceConfig` is a singleton that controls where and how traces are dispatched:
+
+```kotlin
+import com.TTT.Debug.RemoteTraceConfig
+
+// Point at your running TraceServer instance
+RemoteTraceConfig.remoteServerUrl = "http://localhost:8081"
+
+// Enable automatic dispatch on every exportTrace() call
+RemoteTraceConfig.dispatchAutomatically = true
+
+// Optional: set auth header for agent authentication
+RemoteTraceConfig.authHeader = "Bearer my-agent-secret"
+```
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `remoteServerUrl` | `String?` | `null` | TraceServer URL. Dispatch is skipped when null. |
+| `dispatchAutomatically` | `Boolean` | `false` | When true, `PipeTracer.exportTrace()` also dispatches remotely. |
+| `authHeader` | `String?` | `null` | Manual `Authorization` header. When null, resolved from `AuthRegistry`. |
+
+### How Automatic Dispatch Works
+
+When `dispatchAutomatically` is `true`, every call to `PipeTracer.exportTrace(pipelineId, format)` does two things:
+
+1. Returns the formatted trace string as usual (JSON, HTML, Markdown, or Console)
+2. Fires an async HTTP POST to `remoteServerUrl/api/traces` with the HTML version of the trace
+
+The HTTP call runs on `Dispatchers.IO` and does not block the calling coroutine or thread.
+
+### Authentication Resolution
+
+`RemoteTraceDispatcher` resolves the `Authorization` header in this order:
+
+1. **Explicit header** — uses `RemoteTraceConfig.authHeader` if set
+2. **AuthRegistry lookup** — calls `AuthRegistry.getToken(remoteServerUrl)` and wraps it as `"Bearer <token>"`
+3. **No auth** — sends the request without an `Authorization` header
+
+This means you can register your TraceServer token once via `TPipeConfig.addRemoteAuth()` and all remote services (TraceServer, MemoryServer, PCP executors) will resolve it automatically:
+
+```kotlin
+import com.TTT.Config.TPipeConfig
+
+TPipeConfig.addRemoteAuth("http://localhost:8081", "my-agent-secret")
+```
+
+See [TPipeConfig API — AuthRegistry](../api/tpipe-config.md#authregistry) for details on the unified authentication model.
+
+### Manual Dispatch
+
+You can dispatch a trace at any point without enabling automatic dispatch:
+
+```kotlin
+import com.TTT.Debug.RemoteTraceDispatcher
+
+RemoteTraceDispatcher.dispatchTrace(
+    pipelineId = "my-pipeline-run",
+    name = "Research Task",
+    status = "SUCCESS"
+)
+```
+
+### End-to-End Example
+
+```kotlin
+import com.TTT.Debug.RemoteTraceConfig
+import com.TTT.Debug.TraceConfig
+import com.TTT.Debug.TraceFormat
+import com.TTT.Debug.PipeTracer
+
+// Configure remote dispatch
+RemoteTraceConfig.remoteServerUrl = "http://trace-dashboard:8081"
+RemoteTraceConfig.dispatchAutomatically = true
+RemoteTraceConfig.authHeader = "Bearer agent-token"
+
+// Build and run a traced pipeline
+val pipeline = Pipeline()
+    .enableTracing(TraceConfig(enabled = true))
+    .add(myPipe)
+
+pipeline.init()
+val result = runBlocking { pipeline.execute("Hello") }
+
+// This exports locally AND dispatches to TraceServer
+val html = PipeTracer.exportTrace(pipeline.pipelineId, TraceFormat.HTML)
+```
+
+For full TraceServer setup including server configuration, dashboard authentication, and WebSocket streaming, see **[TraceServer - Remote Trace Dashboard](../advanced-concepts/trace-server.md)**.
 
 ## Next Steps
 

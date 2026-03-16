@@ -76,6 +76,9 @@ Complex features and protocol integration:
 - [Remote Memory](docs/advanced-concepts/remote-memory.md) - Distributed memory hosting and access
 - [Memory Introspection](docs/advanced-concepts/memory-introspection.md) - Agent memory access control
 
+#### Tracing and Monitoring
+- [TraceServer - Remote Trace Dashboard](docs/advanced-concepts/trace-server.md) - Real-time web dashboard for viewing agent traces
+
 #### P2P Agent Communication
 - [P2P Overview](docs/advanced-concepts/p2p/p2p-overview.md) - Distributed agent communication
 - [P2P Descriptors and Transport](docs/advanced-concepts/p2p/p2p-descriptors-and-transport.md) - Agent discovery and addressing
@@ -153,7 +156,9 @@ println(result.text)
 - **Multi-provider AI support** (AWS Bedrock, Ollama, extensible architecture)
 - **Kotlin and JavaScript scripting** in PCP alongside Python and native functions
 - **Comprehensive debugging** with detailed tracing and monitoring
+- **Remote trace dashboard** with TraceServer for centralized real-time trace viewing
 - **Multi-Stream and Independent Tracing** for parallel pipelines and complex orchestration
+- **Unified authentication** with AuthRegistry for automatic credential injection across remote services
 - **Cross-region inference** with automatic profile binding for AWS Bedrock
 - **Service tier optimization** for AWS Bedrock (Reserved, Priority, Standard, Flex)
 - **Content safety with AWS Bedrock Guardrails** for automatic content moderation and policy enforcement

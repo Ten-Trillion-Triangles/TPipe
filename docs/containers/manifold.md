@@ -99,13 +99,114 @@ val builtManifold = manifold {
 }
 ```
 
-The DSL removes the normal `setManagerPipeline(...)`, `addWorkerPipeline(...)`, and `init()` ceremony from the common path. It also fails early when:
+The DSL removes the normal `setManagerPipeline(...)`, `addWorkerPipeline(...)`, and `init()` ceremony from the common path. The returned manifold is fully initialized and ready for `execute(...)`.
 
-- no manager is configured
-- no workers are configured
-- a worker lacks overflow protection
-- the manager cannot emit `AgentRequest`
-- duplicate worker names would cause routing conflicts
+### DSL Blocks
+
+The `manifold { }` builder supports these top-level blocks:
+
+| Block | Required | Description |
+|-------|----------|-------------|
+| `manager { }` | Yes (or `defaults { }`) | Configures the manager pipeline |
+| `worker("name") { }` | Yes (at least one) | Registers a worker agent |
+| `defaults { }` | Alternative to `manager { }` | Uses TPipe-Defaults to build the manager |
+| `history { }` | Optional | Configures manager shared-history truncation |
+| `validation { }` | Optional | Hooks for worker output validation and transformation |
+| `tracing { }` | Optional | Enables tracing for the manifold and child pipelines |
+
+Each block can only appear once (except `worker`, which can appear multiple times).
+
+### validation { }
+
+The `validation` block attaches optional hooks that run between manager and worker turns. These are the same hooks available via `setValidatorFunction(...)`, `setFailureFunction(...)`, and `setTransformationFunction(...)` on the Manifold API, but declared inline:
+
+```kotlin
+val builtManifold = manifold {
+    defaults {
+        bedrock(BedrockConfiguration(region = "us-east-1", model = "anthropic.claude-3-haiku-20240307-v1:0"))
+    }
+
+    worker("research-worker") {
+        description("Researches topics.")
+        pipeline(researchPipeline)
+    }
+
+    validation {
+        // Runs after each worker returns. Return false to trigger the failure handler.
+        validator { content, agent ->
+            content.text.isNotBlank() && !content.terminatePipeline
+        }
+
+        // Runs when the validator returns false. Return false to terminate the manifold.
+        failure { content, agent ->
+            println("Worker ${agent.pipelineName} failed validation")
+            false
+        }
+
+        // Transforms worker output before it is appended to shared history.
+        transformer { content ->
+            content
+        }
+    }
+}
+```
+
+### tracing { }
+
+The `tracing` block enables tracing for the manifold and propagates the configuration to all manager and worker pipelines:
+
+```kotlin
+val builtManifold = manifold {
+    defaults {
+        bedrock(BedrockConfiguration(region = "us-east-1", model = "anthropic.claude-3-haiku-20240307-v1:0"))
+    }
+
+    worker("research-worker") {
+        description("Researches topics.")
+        pipeline(researchPipeline)
+    }
+
+    tracing {
+        enabled()
+
+        // Optional: supply a custom TraceConfig
+        config(TraceConfig(
+            enabled = true,
+            detailLevel = TraceDetailLevel.DEBUG,
+            includeMetadata = true
+        ))
+    }
+}
+```
+
+When tracing is enabled through the DSL, all child pipelines share the manifold's trace ID so their events appear in a single correlated trace report.
+
+### Early Validation Rules
+
+The DSL validates your configuration at build time and throws `IllegalArgumentException` with a descriptive message when something is wrong. This catches mistakes before any LLM calls are made.
+
+**Manager validation:**
+- A `manager { }` or `defaults { }` block is required
+- The manager pipeline must contain at least one pipe
+- At least one manager pipe must emit `AgentRequest` JSON output
+- If multiple pipes emit `AgentRequest`, you must call `agentDispatchPipe("pipeName")` to disambiguate
+- Unnamed `AgentRequest` pipes require an explicit `agentDispatchPipe(...)` declaration
+
+**Worker validation:**
+- At least one `worker { }` block is required
+- Worker agent names must be unique
+- Worker routing identities (from custom descriptors) must be unique
+- Worker P2P transport identities must be unique
+- Every pipe in every worker pipeline must have overflow protection configured (token budgeting or legacy auto truncation)
+- Workers with custom P2P descriptors must use `Transport.Tpipe` for local manifold workers
+- Custom local TPipe descriptors must have matching `agentName` and `transportAddress`
+- Each worker pipeline must contain at least one pipe
+
+**History validation:**
+- Manager shared-history control must be configured through one of: `history { }` block, manager pipe overflow protection (auto-inferred), or explicit `setManagerTokenBudget(...)`
+
+**P2P validation:**
+- Custom `P2PDescriptor` and `P2PRequirements` must be supplied as a pair — providing one without the other is rejected
 
 ## Startup Checklist
 

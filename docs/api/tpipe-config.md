@@ -4,6 +4,7 @@
 - [Overview](#overview)
 - [Public Properties](#public-properties)
 - [Public Functions](#public-functions)
+- [AuthRegistry](#authregistry)
 - [Usage Examples](#usage-examples)
 - [Integration Points](#integration-points)
 
@@ -186,6 +187,126 @@ val todoPath = TPipeConfig.getTodoDir()
 ```
 
 **Purpose:** Alias for `getTodoListDir()`. Provides the same path for todo list storage.
+
+---
+
+### `addRemoteAuth(address: String, token: String)`
+
+Convenience helper that delegates to `AuthRegistry.registerToken()`.
+
+**Parameters:**
+- `address`: Service URL, program path, or agent name
+- `token`: Authentication token or secret
+
+**Example:**
+```kotlin
+// Register auth for a TraceServer
+TPipeConfig.addRemoteAuth("http://trace-server:8081", "my-agent-secret")
+
+// Register auth for a MemoryServer
+TPipeConfig.addRemoteAuth("http://memory-server:8080", "memory-token")
+```
+
+**Purpose:** Single entry point for registering authentication tokens that TPipe's remote services resolve automatically. See [AuthRegistry](#authregistry) below for the full lookup behavior.
+
+---
+
+## AuthRegistry
+
+`AuthRegistry` is a singleton that stores authentication tokens for remote services. When TPipe components need to authenticate with a remote endpoint — TraceServer, MemoryServer, PCP HTTP executors — they query `AuthRegistry` to resolve the correct token automatically.
+
+```kotlin
+import com.TTT.Config.AuthRegistry
+```
+
+### Why AuthRegistry Exists
+
+Before `AuthRegistry`, each remote integration required its own auth configuration:
+- `RemoteTraceConfig.authHeader` for TraceServer
+- `TPipeConfig.remoteMemoryAuthToken` for MemoryServer
+- Manual headers for PCP HTTP calls
+
+`AuthRegistry` unifies this into a single registry. Register a token once, and every TPipe component that connects to that address resolves it automatically.
+
+### Public Functions
+
+#### `registerToken(address: String, token: String)`
+
+Stores an authentication token for a service address.
+
+**Parameters:**
+- `address`: Service URL, program path, or agent name. Stored lowercase and trimmed.
+- `token`: Authentication token or secret.
+
+```kotlin
+AuthRegistry.registerToken("http://trace-server:8081", "trace-secret")
+AuthRegistry.registerToken("http://memory-server:8080", "memory-secret")
+```
+
+#### `getToken(address: String): String`
+
+Retrieves a token for a given address. Tries exact match first, then falls back to longest-prefix matching.
+
+**Returns:** The token if found, or an empty string if no match exists.
+
+**Prefix matching** is useful for URL-based lookups where you register a base URL and want all sub-paths to resolve:
+
+```kotlin
+AuthRegistry.registerToken("http://api.example.com", "api-token")
+
+// Exact match
+AuthRegistry.getToken("http://api.example.com")           // → "api-token"
+
+// Prefix match — the registered URL is a prefix of the lookup
+AuthRegistry.getToken("http://api.example.com/api/traces") // → "api-token"
+
+// No match
+AuthRegistry.getToken("http://other-server.com")           // → ""
+```
+
+#### `removeToken(address: String)`
+
+Removes a token for a given address.
+
+```kotlin
+AuthRegistry.removeToken("http://trace-server:8081")
+```
+
+#### `clear()`
+
+Removes all stored tokens.
+
+```kotlin
+AuthRegistry.clear()
+```
+
+### Integration Points
+
+`AuthRegistry` is queried automatically by these TPipe components:
+
+| Component | When | How |
+|-----------|------|-----|
+| `RemoteTraceDispatcher` | Dispatching traces to TraceServer | Falls back to `AuthRegistry.getToken(remoteServerUrl)` when `RemoteTraceConfig.authHeader` is null |
+| `MemoryClient` | Connecting to remote MemoryServer | Resolves token for the configured `remoteMemoryUrl` |
+| `PCP HttpExecutor` | Making HTTP tool calls | Resolves token for the target URL |
+| `PCP StdioExecutor` | Launching stdio processes | Resolves token for the program path |
+
+### Thread Safety
+
+`AuthRegistry` uses `ConcurrentHashMap` internally and is safe for concurrent reads and writes from multiple threads or coroutines.
+
+### Recommended Usage
+
+Use `TPipeConfig.addRemoteAuth()` as the primary entry point — it delegates to `AuthRegistry.registerToken()` and keeps your auth setup alongside other TPipeConfig calls:
+
+```kotlin
+// Register all remote service tokens at startup
+TPipeConfig.addRemoteAuth("http://trace-server:8081", "trace-secret")
+TPipeConfig.addRemoteAuth("http://memory-server:8080", "memory-secret")
+TPipeConfig.addRemoteAuth("http://api.example.com", "api-token")
+
+// All TPipe remote components now resolve auth automatically
+```
 
 ## Usage Examples
 
