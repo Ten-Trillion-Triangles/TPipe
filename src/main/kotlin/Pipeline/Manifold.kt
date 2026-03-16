@@ -127,6 +127,7 @@ class Manifold : P2PInterface
 
     private var managerPipeline: Pipeline = Pipeline()
     private var workerPipelines: MutableList<Pipeline> = mutableListOf()
+    private val workerPipelinesByAgentName = mutableMapOf<String, Pipeline>()
 
     /**
      * Most critical property in this class. This is the content object that will be worked on by every llm agent
@@ -271,6 +272,16 @@ class Manifold : P2PInterface
     {
         truncationMethod = method
         return this
+    }
+
+    /**
+     * Read the truncation method currently configured for the manifold's built-in manager shared-history control.
+     *
+     * @return Current manager-history truncation method.
+     */
+    fun getTruncationMethod() : ContextWindowSettings
+    {
+        return truncationMethod
     }
 
     /**
@@ -428,6 +439,22 @@ class Manifold : P2PInterface
     }
 
     /**
+     * Replace the registered manager pipe names that should receive the local worker agent list during manifold
+     * startup instead of appending to the existing defaults.
+     *
+     * @param names Pipe names that should receive the worker agent list.
+     * @return This manifold for chaining.
+     */
+    fun setP2pAgentNames(names: List<String>) : Manifold
+    {
+        require(names.isNotEmpty()) { "At least one manager dispatch pipe name is required." }
+
+        agentPipeNames.clear()
+        agentPipeNames.addAll(names.distinct())
+        return this
+    }
+
+    /**
      * Assign the manager pipeline to this Manifold. The manager pipeline is the controller that determines the
      * progression of the task, and which worker pipeline must be called to perform a specific specialized action
      * to work towards completing the task.
@@ -547,6 +574,9 @@ class Manifold : P2PInterface
          * the user supplied a descriptor or requirements that makes the pipeline global.
          */
         managerPipeline.setContainerObject(this)
+        managerPipeline.setP2pTransport(descriptor.transport)
+        managerPipeline.setP2pDescription(descriptor)
+        managerPipeline.setP2pRequirements(requirements)
 
         P2PRegistry.remove(managerPipeline) //Remove to ensure we aren't double registered.
 
@@ -671,6 +701,10 @@ class Manifold : P2PInterface
              * failure if we don't have any agents registered.
              */
             pipeline.setContainerObject(this)
+            pipeline.setP2pTransport(transport)
+            pipeline.setP2pDescription(workerDescriptor)
+            pipeline.setP2pRequirements(requirements)
+            workerPipelinesByAgentName[resolvedAgentName] = pipeline
 
             /**
              * Register the worker pipeline with the P2PRegistry using generated settings.
@@ -680,6 +714,16 @@ class Manifold : P2PInterface
         }
 
         P2PRegistry.remove(pipeline) //Remove to ensure we aren't double registered.
+
+        /**
+         * Custom worker descriptors still need to remain local to this manifold so init() can discover them via the
+         * registry before it activates worker pipelines.
+         */
+        pipeline.setContainerObject(this)
+        pipeline.setP2pTransport(descriptor.transport)
+        pipeline.setP2pDescription(descriptor)
+        pipeline.setP2pRequirements(requirements)
+        workerPipelinesByAgentName[descriptor.agentName] = pipeline
 
         /**
          * Register using assigned settings. None of them can be null otherwise we would not hit here.
@@ -1263,7 +1307,10 @@ class Manifold : P2PInterface
                     agentRequest.content = ""
                 }
 
-                val response = P2PRegistry.sendP2pRequest(agentRequest)
+                val response = P2PRegistry.sendP2pRequest(
+                    agentRequest,
+                    returnAddressOverride = managerPipeline.getP2pTransport()
+                )
 
                 //In the event a rejection occurs we'll need to exit the manifold.
                 val rejection = response.rejection
@@ -1321,8 +1368,9 @@ class Manifold : P2PInterface
                         metadata = mapOf("validatorFunction" to workerValidatorFunction.toString()))
 
                     //Get the worker pipeline that just executed
-                    val workerPipeline = workerPipelines.find { 
-                        it.getP2pDescription()?.agentName == agentRequest.agentName 
+                    val workerPipeline = workerPipelinesByAgentName[agentRequest.agentName] ?: workerPipelines.find { pipeline ->
+                        pipeline.getP2pDescription()?.agentName == agentRequest.agentName ||
+                            pipeline.getP2pTransport()?.transportAddress == agentRequest.agentName
                     }
 
                     //Handle branch failure state if our validation function did not pass.

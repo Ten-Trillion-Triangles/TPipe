@@ -23,6 +23,25 @@ class TestP2PInterface(
     }
 }
 
+class CapturingP2PInterface(
+    private val transport: P2PTransport,
+    private val descriptor: P2PDescriptor,
+    private val requirements: P2PRequirements,
+    private val container: Any? = null
+) : P2PInterface {
+    var lastRequest: P2PRequest? = null
+
+    override fun getP2pTransport(): P2PTransport? = transport
+    override fun getP2pDescription(): P2PDescriptor? = descriptor
+    override fun getP2pRequirements(): P2PRequirements? = requirements
+    override fun getContainerObject(): Any? = container
+
+    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse {
+        lastRequest = request
+        return P2PResponse(output = MultimodalContent().apply { addText("Success") })
+    }
+}
+
 class P2PRegistryRequirementsTest {
 
     @BeforeTest
@@ -216,6 +235,142 @@ class P2PRegistryRequirementsTest {
         val (result, rejection) = P2PRegistry.checkAgentRequirements(request, requirements, pipe)
         assertFalse(result, "Should reject strategy mismatch")
         assertEquals(P2PError.configuration, rejection?.errorType)
+    }
+
+    @Test
+    fun testSendP2pRequestPreservesWorkerTemplateWhenReturnAddressOverrideIsApplied()
+    {
+        runBlocking {
+            val managerTransport = P2PTransport(transportMethod = Transport.Tpipe, transportAddress = "manager-return")
+            val workerTransport = P2PTransport(transportMethod = Transport.Tpipe, transportAddress = "templated-worker")
+
+            val workerDescriptor = P2PDescriptor(
+                agentName = "templated-worker",
+                agentDescription = "Templated worker",
+                transport = workerTransport,
+                requiresAuth = false,
+                usesConverse = true,
+                allowsAgentDuplication = true,
+                allowsCustomContext = false,
+                allowsCustomAgentJson = false,
+                recordsInteractionContext = false,
+                recordsPromptContent = false,
+                allowsExternalContext = false,
+                contextProtocol = ContextProtocol.pcp,
+                requestTemplate = P2PRequest().apply {
+                    authBody = "expected-auth"
+                    outputSchema = CustomJsonSchema()
+                }
+            )
+            val workerRequirements = P2PRequirements(
+                allowExternalConnections = false,
+                requireConverseInput = true,
+                allowAgentDuplication = true,
+                authMechanism = { authBody -> authBody == "expected-auth" }
+            )
+            val workerAgent = CapturingP2PInterface(workerTransport, workerDescriptor, workerRequirements)
+
+            try {
+                P2PRegistry.register(TestP2PInterface(transport = managerTransport), managerTransport,
+                    P2PDescriptor("manager", "Manager", managerTransport, false, true, false, false, false, false, false, false, ContextProtocol.pcp),
+                    P2PRequirements(allowExternalConnections = true)
+                )
+                P2PRegistry.register(workerAgent, workerTransport, workerDescriptor, workerRequirements)
+
+                val response = P2PRegistry.sendP2pRequest(
+                    request = AgentRequest(
+                        agentName = "templated-worker",
+                        promptSchema = InputSchema.json,
+                        prompt = """{"history":[{"role":"user","content":{"text":"hello","binaryContent":[],"terminatePipeline":false}}]}"""
+                    ),
+                    returnAddressOverride = managerTransport
+                )
+
+                assertNotNull(response.output)
+                assertEquals("Success", response.output?.text)
+                assertNotNull(workerAgent.lastRequest)
+                assertEquals("expected-auth", workerAgent.lastRequest!!.authBody)
+                assertEquals(managerTransport, workerAgent.lastRequest!!.returnAddress)
+                assertNotNull(workerAgent.lastRequest!!.outputSchema)
+                assertEquals("", workerDescriptor.requestTemplate!!.returnAddress.transportAddress)
+            } finally {
+                P2PRegistry.remove(workerTransport)
+                P2PRegistry.remove(managerTransport)
+            }
+        }
+    }
+
+    @Test
+    fun testReturnAddressOverrideDoesNotMutateSharedWorkerTemplate()
+    {
+        runBlocking {
+            val managerTransportA = P2PTransport(transportMethod = Transport.Tpipe, transportAddress = "manager-a")
+            val managerTransportB = P2PTransport(transportMethod = Transport.Tpipe, transportAddress = "manager-b")
+            val workerTransport = P2PTransport(transportMethod = Transport.Tpipe, transportAddress = "templated-worker")
+
+            val sharedTemplate = P2PRequest().apply {
+                authBody = "expected-auth"
+            }
+            val workerDescriptor = P2PDescriptor(
+                agentName = "templated-worker",
+                agentDescription = "Templated worker",
+                transport = workerTransport,
+                requiresAuth = false,
+                usesConverse = true,
+                allowsAgentDuplication = false,
+                allowsCustomContext = false,
+                allowsCustomAgentJson = false,
+                recordsInteractionContext = false,
+                recordsPromptContent = false,
+                allowsExternalContext = false,
+                contextProtocol = ContextProtocol.pcp,
+                requestTemplate = sharedTemplate
+            )
+            val workerRequirements = P2PRequirements(
+                allowExternalConnections = false,
+                requireConverseInput = true,
+                authMechanism = { authBody -> authBody == "expected-auth" }
+            )
+            val workerAgent = CapturingP2PInterface(workerTransport, workerDescriptor, workerRequirements)
+
+            try {
+                P2PRegistry.register(TestP2PInterface(transport = managerTransportA), managerTransportA,
+                    P2PDescriptor("manager-a", "Manager A", managerTransportA, false, true, false, false, false, false, false, false, ContextProtocol.pcp),
+                    P2PRequirements(allowExternalConnections = true)
+                )
+                P2PRegistry.register(TestP2PInterface(transport = managerTransportB), managerTransportB,
+                    P2PDescriptor("manager-b", "Manager B", managerTransportB, false, true, false, false, false, false, false, false, ContextProtocol.pcp),
+                    P2PRequirements(allowExternalConnections = true)
+                )
+                P2PRegistry.register(workerAgent, workerTransport, workerDescriptor, workerRequirements)
+
+                val request = AgentRequest(
+                    agentName = "templated-worker",
+                    promptSchema = InputSchema.json,
+                    prompt = """{"history":[{"role":"user","content":{"text":"hello","binaryContent":[],"terminatePipeline":false}}]}"""
+                )
+
+                val responseA = P2PRegistry.sendP2pRequest(
+                    request = request,
+                    returnAddressOverride = managerTransportA
+                )
+                assertNotNull(responseA.output)
+                assertEquals(managerTransportA, workerAgent.lastRequest!!.returnAddress)
+                assertEquals("", sharedTemplate.returnAddress.transportAddress)
+
+                val responseB = P2PRegistry.sendP2pRequest(
+                    request = request,
+                    returnAddressOverride = managerTransportB
+                )
+                assertNotNull(responseB.output)
+                assertEquals(managerTransportB, workerAgent.lastRequest!!.returnAddress)
+                assertEquals("", sharedTemplate.returnAddress.transportAddress)
+            } finally {
+                P2PRegistry.remove(workerTransport)
+                P2PRegistry.remove(managerTransportA)
+                P2PRegistry.remove(managerTransportB)
+            }
+        }
     }
 
     @Test

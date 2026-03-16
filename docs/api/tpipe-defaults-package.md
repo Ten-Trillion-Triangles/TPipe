@@ -130,6 +130,10 @@ Validates Ollama configuration parameters.
 
 Central factory for creating pre-configured Manifold instances with provider-specific defaults.
 
+For the actual startup sequence after creating a manifold, see [Manifold - Multi-Agent Orchestration](../containers/manifold.md). `ManifoldDefaults` creates the manager side, but you still need worker pipelines and `init()` before execution.
+
+If you want `TPipe-Defaults` to configure the manager and manager-memory policy inside the new Kotlin manifold DSL, use `manifold { defaults { bedrock(...) } }` or `manifold { defaults { ollama(...) } }`.
+
 ```kotlin
 object ManifoldDefaults
 ```

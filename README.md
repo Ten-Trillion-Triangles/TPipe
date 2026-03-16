@@ -51,6 +51,8 @@ Advanced pipeline orchestration and multi-agent systems:
 
 - [Container Overview](docs/containers/container-overview.md) - Introduction to TPipe containers
 - [Manifold - Multi-Agent Orchestration](docs/containers/manifold.md) - Coordinating multiple AI agents
+- [Manifold DSL Builder](docs/containers/manifold.md#dsl-builder) - Build and initialize manifolds in one Kotlin DSL block
+- [Manifold Setup Checklist](docs/containers/manifold.md#startup-checklist) - Required manager, worker, memory, and `init()` steps before startup
 - [Connector - Pipeline Branching](docs/containers/connector.md) - Conditional pipeline routing
 - [Splitter - Parallel Processing](docs/containers/splitter.md) - Concurrent pipeline execution
 - [Junction - Pipeline Merging](docs/containers/junction.md) - Combining pipeline results

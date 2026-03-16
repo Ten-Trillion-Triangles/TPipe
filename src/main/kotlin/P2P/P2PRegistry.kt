@@ -467,7 +467,13 @@ object P2PRegistry
      * @param template p2p request template to use. Allows the agent to generate a simplified request, and the other remaining
      * required components to be auto generated based on the template.
      */
-    suspend fun sendP2pRequest(request: AgentRequest, httpAuthBody: String = "", p2pAuthBody: String = "", template: P2PRequest? = null) : P2PResponse
+    suspend fun sendP2pRequest(
+        request: AgentRequest,
+        httpAuthBody: String = "",
+        p2pAuthBody: String = "",
+        template: P2PRequest? = null,
+        returnAddressOverride: P2PTransport? = null
+    ) : P2PResponse
     {
 
         /**
@@ -535,23 +541,12 @@ object P2PRegistry
                 //Declare full request object first.
                 var fullRequest: P2PRequest? = null
 
-                //Pull from provided template if not null.
-                if(template != null)
-                {
-                    fullRequest = request.buildP2PRequest(template)
-                }
-
-                //Pull from its internal template if provided.
-               else if(fullDescriptor.requestTemplate != null)
-                {
-                    fullRequest = request.buildP2PRequest(fullDescriptor.requestTemplate)
-                }
-
-                //Otherwise pull from the registry.
-                else
-                {
-                    fullRequest = request.buildRequestFromRegistry(fullDescriptor.agentName)
-                }
+                fullRequest = buildRequestForAgent(
+                    request = request,
+                    descriptor = fullDescriptor,
+                    template = template,
+                    returnAddressOverride = returnAddressOverride
+                )
 
                 /**
                  * Bind the auth values if they were supplied. This is important because the agent may have a
@@ -579,23 +574,12 @@ object P2PRegistry
         fullDescriptor = agentDescriptor
         var fullRequest: P2PRequest? = null
 
-        //Build from supplied template if valid.
-        if(template != null)
-        {
-            fullRequest = request.buildP2PRequest(template)
-        }
-
-        //Build from provided template if supplied.
-      else if(fullDescriptor.requestTemplate != null)
-        {
-            fullRequest = request.buildP2PRequest(fullDescriptor.requestTemplate)
-        }
-
-        else
-        {
-            //Otherwise, attempt to build using the registry.
-            fullRequest = request.buildRequestFromRegistry(request.agentName)
-        }
+        fullRequest = buildRequestForAgent(
+            request = request,
+            descriptor = fullDescriptor,
+            template = template,
+            returnAddressOverride = returnAddressOverride
+        )
 
         /**
          * Bind the auth values if they were supplied or can be resolved.
@@ -607,6 +591,34 @@ object P2PRegistry
         if(resolvedP2pAuth.isNotEmpty()) fullRequest.authBody = resolvedP2pAuth
 
         return externalP2PCall(fullRequest)
+    }
+
+    /**
+     * Build the full request for an agent using the normal template precedence, then layer a caller return path on top
+     * without replacing worker-owned request-template fields.
+     */
+    private fun buildRequestForAgent(
+        request: AgentRequest,
+        descriptor: P2PDescriptor,
+        template: P2PRequest? = null,
+        returnAddressOverride: P2PTransport? = null
+    ) : P2PRequest
+    {
+        val baseRequest = when
+        {
+            template != null -> request.buildP2PRequest(template)
+            descriptor.requestTemplate != null -> request.buildP2PRequest(descriptor.requestTemplate)
+            else -> request.buildRequestFromRegistry(descriptor.agentName)
+        }
+
+        val fullRequest = baseRequest.deepCopy<P2PRequest>()
+
+        if(fullRequest.returnAddress.transportAddress.isEmpty() && returnAddressOverride != null)
+        {
+            fullRequest.returnAddress = returnAddressOverride
+        }
+
+        return fullRequest
     }
 
     /**

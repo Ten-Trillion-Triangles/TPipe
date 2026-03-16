@@ -1,28 +1,30 @@
 # Manifold
 
-> 💡 **Tip:** The **Manifold** orchestrates multiple specialized Agents (pipes). It is a complex switching yard that reads PCP function calls and routes the water to the correct downstream agent dynamically.
+> 💡 **Tip:** The **Manifold** orchestrates multiple specialized agents by keeping a shared conversation history, letting a manager pipeline choose the next worker, and looping until the task is explicitly complete.
 
 
 ## Table of Contents
 - [Core Concepts](#core-concepts)
-- [Basic Usage](#basic-usage)
-- [Key Methods](#key-methods)
-- [Task Execution Flow](#task-execution-flow)
+- [DSL Builder](#dsl-builder)
+- [Startup Checklist](#startup-checklist)
+- [Fastest Working Setup](#fastest-working-setup)
+- [Manual Setup](#manual-setup)
+- [Execution Flow](#execution-flow)
+- [What Manifold Automates](#what-manifold-automates)
 - [Context Management](#context-management)
 - [Tracing Support](#tracing-support)
-- [P2P Integration](#p2p-integration)
-- [Complete Example](#complete-example)
-- [Important Notes](#important-notes)
+- [Common Startup Failures](#common-startup-failures)
 - [Best Practices](#best-practices)
 
-Manifold provides manager-worker orchestration where a manager pipeline coordinates task execution. It uses a single `execute()` method that loops until task completion, with automatic converse history management and token truncation.
+Manifold provides manager-worker orchestration where a manager pipeline coordinates task execution across one or more worker pipelines. It wraps the shared task state in `ConverseHistory`, routes worker calls through TPipe's P2P layer, and keeps looping until the manager or runtime sets `passPipeline` or `terminatePipeline`.
 
 `Manifold` instances reuse their configured manager and worker pipelines across loop iterations. Build a fresh manifold for concurrent top-level runs rather than sharing one manifold instance across simultaneous executions.
 
 ## Core Concepts
 
 ### TaskProgress
-Tracks task state and progression:
+
+The default manager contract uses a `TaskProgress` object to decide whether the overall job is done:
 
 ```kotlin
 @Serializable
@@ -34,272 +36,464 @@ data class TaskProgress(
 )
 ```
 
+When `isTaskComplete` becomes `true`, the manifold exits its loop cleanly.
+
 ### Manager Pipeline
-The manager pipeline must:
-- Accept converse history format
-- Make P2P calls to worker agents
-- Set `terminatePipeline` or `passPipeline` when complete
 
-## Basic Usage
+The manager pipeline is the controller for the whole manifold. In practice it must:
+
+- Accept the manifold's shared `ConverseHistory`
+- Contain at least one pipe capable of producing `AgentRequest` JSON
+- Decide whether the task is complete or which worker should run next
+- Eventually cause `passPipeline`, `terminatePipeline`, or `TaskProgress.isTaskComplete` to end the loop
+
+The default `TPipe-Defaults` manager pipeline uses two pipes:
+
+1. An entry pipe that reads `ConverseHistory` and emits `TaskProgress`
+2. An agent-caller pipe that reads `TaskProgress` and emits `AgentRequest`
+
+### Worker Pipelines
+
+Worker pipelines are the specialized agents the manager delegates to. Each worker must:
+
+- Be added to the manifold before startup
+- Be able to accept converse input from the manager
+- Have prompt overflow protection configured on every pipe via token budgeting or legacy auto truncation
+
+## DSL Builder
+
+If you want the manifold assembled, validated, and initialized in one place, prefer the Kotlin DSL:
 
 ```kotlin
-val manifold = Manifold()
-    .setManagerPipeline(orchestratorPipeline)
-    .autoTruncateContext()
+import Defaults.BedrockConfiguration
+import Defaults.defaults
+import com.TTT.Pipeline.Pipeline
+import com.TTT.Pipeline.manifold
+import bedrockPipe.BedrockMultimodalPipe
+
+val researchWorker = BedrockMultimodalPipe()
+    .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+    .setRegion("us-east-1")
+    .setPipeName("research worker")
     .setContextWindowSize(8192)
+    .autoTruncateContext()
 
-val result = manifold.execute(initialTask)
-```
+val builtManifold = manifold {
+    defaults {
+        bedrock(
+            BedrockConfiguration(
+                region = "us-east-1",
+                model = "anthropic.claude-3-haiku-20240307-v1:0"
+            )
+        )
+    }
 
-## Key Methods
-
-```kotlin
-class Manifold {
-    // Manager pipeline setup
-    fun setManagerPipeline(pipeline: Pipeline, descriptor: P2PDescriptor? = null, requirements: P2PRequirements? = null): Manifold
-    
-    // Context management
-    fun autoTruncateContext(): Manifold
-    fun setTruncationMethod(method: ContextWindowSettings): Manifold
-    fun setContextWindowSize(size: Int): Manifold
-    fun setContextTruncationFunction(func: suspend (content: MultimodalContent) -> Unit): Manifold
-    
-    // Validation
-    fun setValidatorFunction(func: suspend (content: MultimodalContent, agent: Pipeline) -> Boolean): Manifold
-    
-    // Execution
-    suspend fun execute(content: MultimodalContent): MultimodalContent
+    worker("research-worker") {
+        description("Researches and summarizes requested information.")
+        skill("research", "Investigates the user's request.")
+        pipeline {
+            pipelineName = "research-worker-pipeline"
+            add(researchWorker)
+        }
+    }
 }
 ```
 
-## Task Execution Flow
+The DSL removes the normal `setManagerPipeline(...)`, `addWorkerPipeline(...)`, and `init()` ceremony from the common path. It also fails early when:
 
-The `execute()` method handles the complete orchestration:
+- no manager is configured
+- no workers are configured
+- a worker lacks overflow protection
+- the manager cannot emit `AgentRequest`
+- duplicate worker names would cause routing conflicts
 
-1. **Converse History Setup**: Converts input to converse format if needed
-2. **Manager Loop**: Executes manager pipeline repeatedly
-3. **P2P Coordination**: Manager makes calls to worker agents
-4. **Termination**: Continues until `terminatePipeline` or `passPipeline` is set
+## Startup Checklist
+
+Before calling `execute(...)`, make sure all of the following are true:
+
+- A manager pipeline has been assigned with `setManagerPipeline(...)`
+- The manager has at least one pipe that emits `AgentRequest`
+- At least one worker pipeline has been added with `addWorkerPipeline(...)`
+- The manifold has a manager-history control path:
+  `setManagerTokenBudget(...)`, manager pipe token budget, `autoTruncateContext()` with context window settings, or `setContextTruncationFunction(...)`
+- Every worker pipeline has overflow protection configured
+- `init()` has been called
+
+If any of these are missing, `init()` or the first execution loop can fail.
+
+## Fastest Working Setup
+
+This is the shortest setup path when you want `TPipe-Defaults` to build the manager pipeline for you. You still need to add worker pipelines and call `init()`.
+
+```kotlin
+import Defaults.BedrockConfiguration
+import Defaults.ManifoldDefaults
+import com.TTT.Pipeline.Manifold
+import com.TTT.Pipeline.Pipeline
+import com.TTT.Pipe.MultimodalContent
+import bedrockPipe.BedrockMultimodalPipe
+import kotlinx.coroutines.runBlocking
+
+fun buildResearchWorker(): Pipeline
+{
+    val workerPipe = BedrockMultimodalPipe()
+        .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+        .setRegion("us-east-1")
+        .setPipeName("research worker")
+        .setSystemPrompt("Research the request and return a concise answer.")
+        .setContextWindowSize(8192)
+        .autoTruncateContext()
+
+    return Pipeline().apply {
+        pipelineName = "research-worker"
+        add(workerPipe)
+    }
+}
+
+fun main() = runBlocking {
+    val manifold = ManifoldDefaults.withBedrock(
+        BedrockConfiguration(
+            region = "us-east-1",
+            model = "anthropic.claude-3-haiku-20240307-v1:0"
+        )
+    )
+
+    manifold
+        .addWorkerPipeline(
+            buildResearchWorker(),
+            agentName = "research-worker",
+            agentDescription = "Researches and summarizes requested information."
+        )
+        .init()
+
+    val task = MultimodalContent().apply {
+        addText("Investigate the issue and explain the fix.")
+    }
+
+    val result = manifold.execute(task)
+    println(result.text)
+}
+```
+
+### Why This Works
+
+- `ManifoldDefaults.withBedrock(...)` creates a manager pipeline with the expected `TaskProgress` and `AgentRequest` flow
+- `addWorkerPipeline(...)` registers the worker locally for manifold routing
+- The worker pipe uses legacy auto truncation, so worker startup passes overflow validation
+- `init()` discovers local workers and injects the worker list into the manager's agent-calling pipe
+
+## Manual Setup
+
+Use the manual path when you want full control over prompts, pipe layout, or provider choices.
+
+```kotlin
+import com.TTT.P2P.P2PSkills
+import com.TTT.Pipeline.Manifold
+import com.TTT.Pipeline.Pipeline
+import com.TTT.Pipeline.TaskProgress
+import com.TTT.Pipe.Pipe
+import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.P2P.AgentRequest
+import com.TTT.Context.ConverseHistory
+
+fun buildManagerPipeline(taskAnalyzer: Pipe, agentCaller: Pipe): Pipeline
+{
+    taskAnalyzer
+        .setPipeName("task analyzer")
+        .setJsonInput(ConverseHistory())
+        .setJsonOutput(TaskProgress())
+
+    agentCaller
+        .setPipeName("agent dispatcher")
+        .setJsonInput(TaskProgress())
+        .setJsonOutput(AgentRequest())
+
+    return Pipeline().apply {
+        pipelineName = "custom-manager"
+        add(taskAnalyzer)
+        add(agentCaller)
+    }
+}
+
+fun buildWorkerPipeline(workerPipe: Pipe): Pipeline
+{
+    workerPipe
+        .setPipeName("implementation worker")
+        .setTokenBudget(
+            TokenBudgetSettings(
+                contextWindowSize = 8192,
+                userPromptSize = 4096,
+                maxTokens = 1024
+            )
+        )
+
+    return Pipeline().apply {
+        pipelineName = "implementation-worker"
+        add(workerPipe)
+    }
+}
+
+suspend fun buildManifold(taskAnalyzer: Pipe, agentCaller: Pipe, workerPipe: Pipe): Manifold
+{
+    val manifold = Manifold()
+    val managerPipeline = buildManagerPipeline(taskAnalyzer, agentCaller)
+    val workerPipeline = buildWorkerPipeline(workerPipe)
+
+    manifold
+        .setManagerPipeline(managerPipeline)
+        .setManagerTokenBudget(
+            TokenBudgetSettings(
+                contextWindowSize = 12000,
+                userPromptSize = 6000,
+                maxTokens = 1200
+            )
+        )
+        .addWorkerPipeline(
+            workerPipeline,
+            agentName = "implementation-worker",
+            agentDescription = "Executes the manager's requested implementation step.",
+            agentSkills = listOf(
+                P2PSkills("implementation", "Performs implementation tasks from the manager.")
+            )
+        )
+
+    // Required when your custom agent-calling pipe does not use the default name "Agent caller pipe".
+    manifold.addP2pAgentNames("agent dispatcher")
+
+    manifold.init()
+    return manifold
+}
+```
+
+### Manual Path Rules
+
+- At least one manager pipe must emit `AgentRequest`, or `setManagerPipeline(...)` throws
+- If you use a custom manager pipe name for agent dispatch, call `addP2pAgentNames(...)`
+- Do not skip worker overflow protection
+- Do not skip `init()`
+
+## Execution Flow
+
+The runtime loop works like this:
+
+1. `execute(...)` ensures the manager has access to P2P agent descriptors
+2. Non-converse input is wrapped into a fresh `ConverseHistory`
+3. The manifold applies manager-history truncation if configured
+4. The manager pipeline runs against the shared working content
+5. If the manager marks `TaskProgress.isTaskComplete`, the loop exits
+6. Otherwise the manifold extracts `AgentRequest`, routes it to a worker, and appends the worker response back into `ConverseHistory`
+7. The loop repeats until `passPipeline` or `terminatePipeline` is set
 
 ```kotlin
 suspend fun execute(content: MultimodalContent): MultimodalContent {
-    // Convert to converse history if needed
-    val isConverseHistory = extractJson<ConverseHistory>(content.text)
-    if (isConverseHistory == null) {
-        val newConverseHistory = ConverseHistory()
-        newConverseHistory.add(ConverseRole.user, content)
-        content.text = serialize(newConverseHistory)
+    hasP2P(managerPipeline)
+
+    val initialHistory = extractJson<ConverseHistory>(content.text)
+        ?: ConverseHistory().apply {
+            add(ConverseRole.user, content)
+        }
+
+    workingContentObject.text = serialize(initialHistory)
+
+    while(!workingContentObject.terminatePipeline && !workingContentObject.passPipeline) {
+        applyBuiltInManagerBudgetControl()
+
+        val managerResult = managerPipeline.execute(workingContentObject)
+        val currentHistory = extractJson<ConverseHistory>(workingContentObject.text)
+        val latestSystemMessage = currentHistory?.history
+            ?.lastOrNull { it.role == ConverseRole.system }
+            ?.content
+            ?.text
+        val taskProgress = latestSystemMessage?.let { extractJson<TaskProgress>(it) }
+        if(taskProgress?.isTaskComplete == true) {
+            workingContentObject.passPipeline = true
+            break
+        }
+
+        val agentRequest = extractJson<AgentRequest>(managerResult.text) ?: break
+        val response = P2PRegistry.sendP2pRequest(agentRequest)
+        appendAgentResponseToConverseHistory(response.output)
     }
-    
-    // Execute manager loop
-    while (!workingContentObject.terminatePipeline && !workingContentObject.passPipeline) {
-        // Manager decides next action and calls workers via P2P
-        workingContentObject = managerPipeline.execute(workingContentObject)
-    }
-    
+
     return workingContentObject
 }
 ```
 
+## What Manifold Automates
+
+Manifold is not just a loop. It also owns several setup and runtime chores that you would otherwise need to write by hand.
+
+### P2P Registration Defaults
+
+When you call `setManagerPipeline(...)` or `addWorkerPipeline(...)` without custom descriptors or requirements, manifold creates secure local-only P2P settings for those pipelines and registers them with `P2PRegistry`.
+
+### Local Agent Discovery
+
+During `init()`, the manifold collects local worker descriptors from `P2PRegistry.listLocalAgents(this)`, removes the manager from that list, converts the descriptors into `AgentDescriptor` objects, and stores them for manager use.
+
+### Agent List Injection
+
+During `init()`, manifold injects the discovered worker list into each manager pipe named in `agentPipeNames`. If no named pipe is found, it falls back to the last manager pipe and re-applies that pipe's system prompt.
+
+This is why the default manager setup works without manual agent list wiring.
+
+### Shared Converse History
+
+The manifold keeps a single `workingContentObject` that acts as the shared task state. Manager decisions and worker outputs are appended to that history so the next manager turn can reason over the full task progression.
+
+### Manager History Budget Control
+
+If built-in manager budget control is enabled, manifold truncates the shared converse history before each manager run. This protects the manager-facing history only. It does not summarize worker-local context or perform global swarm memory compression.
+
+### Tracing Propagation
+
+If tracing is enabled on the manifold, `init()` propagates the tracing configuration to manager and worker pipelines and gives them the manifold trace ID so their events can be correlated.
+
 ## Context Management
 
-### Auto Truncation
-Enable automatic converse-history truncation to prevent overflow:
+### Built-In Manager History Control
+
+Enable automatic converse-history truncation on the manager-facing shared history:
 
 ```kotlin
-manifold.autoTruncateContext()
+manifold
+    .autoTruncateContext()
     .setContextWindowSize(8192)
-    .setTruncationMethod(ContextWindowSettings.TRUNCATE_TOP)
 ```
 
-This built-in mode truncates the manifold's working converse history. It does not perform general worker-context summarization or cross-agent memory compression.
+For tighter control, prefer an explicit manager token budget:
+
+```kotlin
+manifold.setManagerTokenBudget(
+    TokenBudgetSettings(
+        contextWindowSize = 12000,
+        userPromptSize = 6000,
+        maxTokens = 1200
+    )
+)
+```
 
 ### Custom Truncation Function
-Provide custom truncation logic:
+
+Provide custom manager-history logic when you need to own truncation yourself:
 
 ```kotlin
 manifold.setContextTruncationFunction { content ->
-    // Custom truncation implementation
-    println("Truncating content: ${content.text.length} characters")
+    println("Custom manager-history truncation for ${content.text.length} characters")
 }
 ```
 
-### Validation Function
-Add custom validation for worker outputs:
+### Worker Overflow Protection
+
+Every worker pipeline must declare overflow protection before `init()`:
 
 ```kotlin
-manifold.setValidatorFunction { content, agent ->
-    // Return true if content is valid, false otherwise
-    content.text.isNotBlank() && !content.terminatePipeline
-}
+workerPipe
+    .setContextWindowSize(8192)
+    .autoTruncateContext()
+```
+
+or
+
+```kotlin
+workerPipe.setTokenBudget(
+    TokenBudgetSettings(
+        contextWindowSize = 8192,
+        userPromptSize = 4096,
+        maxTokens = 1024
+    )
+)
+```
+
+### Validation And Transformation Hooks
+
+You can inspect or alter outputs between manager and worker turns:
+
+```kotlin
+manifold
+    .setValidatorFunction { content, agent ->
+        content.text.isNotBlank() && !content.terminatePipeline
+    }
+    .setTransformationFunction { content ->
+        content
+    }
 ```
 
 ## Tracing Support
 
-Manifold emits comprehensive tracing events:
+Manifold emits orchestration-aware tracing events and propagates tracing to child pipelines:
 
 ```kotlin
-// Trace events include:
-// - MANIFOLD_START/END/SUCCESS/FAILURE
-// - MANAGER_DECISION/TASK_ANALYSIS/AGENT_SELECTION
-// - TASK_PROGRESS_UPDATE/COMPLETION_CHECK
-// - AGENT_DISPATCH/RESPONSE
-// - MANIFOLD_LOOP_ITERATION
-// - CONVERSE_HISTORY_UPDATE
-```
-
-## P2P Integration
-
-Manifold requires P2P-enabled manager pipeline:
-
-```kotlin
-// Manager must have P2P agents configured
-private fun hasP2P(pipeline: Pipeline?) {
-    // Validates that pipeline can make P2P calls
-}
-
-override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
-    return execute(request.prompt)?.let { result ->
-        P2PResponse(output = result)
-    }
-}
-```
-
-## Complete Example
-
-```kotlin
-class ProjectManagementSystem {
-    private val manifold = Manifold()
-    
-    init {
-        setupManifold()
-    }
-    
-    private fun setupManifold() {
-        // Create manager pipeline with P2P capabilities
-        val manager = Pipeline()
-            .addPipe(taskPlannerPipe)
-            .addPipe(workerSelectorPipe)
-            .addPipe(progressEvaluatorPipe)
-        
-        // Register worker agents in P2P system
-        val codeWorker = Pipeline().addPipe(codeGenerationPipe)
-        codeWorker.setP2pDescription(P2PDescriptor(
-            agentName = "code-developer",
-            agentDescription = "Generates and reviews code",
-            transport = P2PTransport(Transport.Tpipe, "code-developer"),
-            requiresAuth = false,
-            usesConverse = true,
-            allowsAgentDuplication = false,
-            allowsCustomContext = false,
-            allowsCustomAgentJson = false,
-            recordsInteractionContext = false,
-            recordsPromptContent = false,
-            allowsExternalContext = false,
-            contextProtocol = ContextProtocol.none
-        ))
-        P2PRegistry.register(codeWorker)
-        
-        val docWorker = Pipeline().addPipe(documentationPipe)
-        docWorker.setP2pDescription(P2PDescriptor(
-            agentName = "documentation-writer",
-            agentDescription = "Creates technical documentation",
-            transport = P2PTransport(Transport.Tpipe, "documentation-writer"),
-            requiresAuth = false,
-            usesConverse = true,
-            allowsAgentDuplication = false,
-            allowsCustomContext = false,
-            allowsCustomAgentJson = false,
-            recordsInteractionContext = false,
-            recordsPromptContent = false,
-            allowsExternalContext = false,
-            contextProtocol = ContextProtocol.none
-        ))
-        P2PRegistry.register(docWorker)
-        
-        // Configure manifold using builder methods
-        manifold.setManagerPipeline(manager)
-            .autoTruncateContext()
-            .setContextWindowSize(16000)
-            .setTruncationMethod(ContextWindowSettings.TRUNCATE_TOP)
-            .setValidatorFunction { content, agent ->
-                // Validate worker outputs
-                content.text.isNotBlank() && !content.terminatePipeline
-            }
-    }
-    
-    suspend fun executeProject(requirements: String): ProjectResult {
-        val initialTask = MultimodalContent().apply {
-            addText(requirements)
-        }
-        
-        val result = manifold.execute(initialTask)
-        
-        return ProjectResult(
-            finalOutput = result.text,
-            conversationHistory = extractJson<ConverseHistory>(result.text),
-            completed = result.passPipeline || result.terminatePipeline
-        )
-    }
-    
-    fun setupP2PAgent() {
-        manifold.setP2pDescription(P2PDescriptor(
-            agentName = "project-manager",
-            agentDescription = "Manages complex multi-step software projects",
-            transport = P2PTransport(Transport.Tpipe, "project-manager"),
-            requiresAuth = true,
-            usesConverse = true,
-            allowsAgentDuplication = false,
-            allowsCustomContext = true,
-            allowsCustomAgentJson = false,
-            recordsInteractionContext = true,
-            recordsPromptContent = false,
-            allowsExternalContext = true,
-            contextProtocol = ContextProtocol.pcp,
-            agentSkills = mutableListOf(
-                P2PSkills("task-orchestration", "Coordinate multi-step project tasks"),
-                P2PSkills("worker-management", "Select and manage specialized workers"),
-                P2PSkills("progress-tracking", "Monitor and evaluate task progress")
-            )
-        ))
-        
-        manifold.setP2pRequirements(P2PRequirements(
-            allowExternalConnections = true,
-            requireConverseInput = true
-        ))
-        
-        manifold.setP2pTransport(P2PTransport(Transport.Tpipe, "project-manager"))
-        
-        P2PRegistry.register(manifold)
-    }
-}
-
-data class ProjectResult(
-    val finalOutput: String,
-    val conversationHistory: ConverseHistory?,
-    val completed: Boolean
+manifold.enableTracing(
+    TraceConfig(
+        enabled = true,
+        includeMetadata = true,
+        detailLevel = TraceDetailLevel.NORMAL
+    )
 )
 ```
 
-## Important Notes
+Common event families include:
 
-- **Manager pipeline required**: Must be set before execution
-- **P2P dependency**: Manager must be able to make P2P calls to workers
-- **Converse format**: Input is automatically converted to converse history
-- **Loop termination**: Manager must set termination flags to exit
-- **Context management**: Auto-truncation prevents context overflow
-- **Tracing support**: Comprehensive events for debugging
+- `MANIFOLD_START`, `MANIFOLD_END`, `MANIFOLD_SUCCESS`, `MANIFOLD_FAILURE`
+- `MANIFOLD_LOOP_ITERATION`, `MANAGER_TASK_ANALYSIS`, `MANAGER_DECISION`
+- `AGENT_DISPATCH`, `AGENT_RESPONSE`, `P2P_REQUEST_FAILURE`
+- `CONVERSE_HISTORY_UPDATE`
+- `VALIDATION_START`, `VALIDATION_FAILURE`, `TRANSFORMATION_START`
+
+## Common Startup Failures
+
+### `One or more manager or worker pipelines are empty. Cannot start the manifold.`
+
+Cause:
+- The manager has no pipes, or no worker pipelines were added
+
+Fix:
+- Build the manager pipeline first
+- Add at least one worker pipeline before calling `init()`
+
+### `No pipe in the manager pipeline can make agent calls.`
+
+Cause:
+- No manager pipe emits `AgentRequest`
+
+Fix:
+- Ensure at least one manager pipe is configured with `setJsonOutput(AgentRequest())`
+
+### `No method of managing manager shared history was found.`
+
+Cause:
+- No manager budget-control path was configured
+
+Fix:
+- Configure `setManagerTokenBudget(...)`, manager pipe token budgeting, `autoTruncateContext()` plus context window settings, or `setContextTruncationFunction(...)`
+
+### `Worker pipelines require token budgeting or auto truncation before Manifold execution`
+
+Cause:
+- At least one worker pipeline has no overflow protection
+
+Fix:
+- Add token budgeting or legacy auto truncation to every pipe in every worker pipeline
+
+### Manager loops forever
+
+Cause:
+- The manager never emits a completion state or valid next agent handoff
+
+Fix:
+- Make sure your manager prompt clearly defines task completion and agent dispatch expectations
+- If you use a custom manager pipeline, validate both the `TaskProgress` and `AgentRequest` outputs during testing
 
 ## Best Practices
 
-- **Design clear termination criteria** in manager pipeline
-- **Enable auto-truncation** for long-running tasks
-- **Register worker agents** in P2P system before execution
-- **Use converse history** for proper conversation tracking
-- **Monitor loop iterations** to prevent infinite loops
-- **Handle P2P failures** gracefully in manager pipeline
-- **Enable tracing** for debugging complex workflows
-- **Validate manager pipeline** has P2P capabilities before execution
+- Start with `TPipe-Defaults` unless you need a custom manager contract
+- Treat `init()` as mandatory manifold startup, not optional prewarming
+- Keep the manager focused on orchestration and delegate specialized work to workers
+- Give every worker explicit overflow protection before adding it to the manifold
+- Use `addP2pAgentNames(...)` only when custom manager pipe names break the default `"Agent caller pipe"` convention
+- Enable tracing while developing custom manager prompts or agent-routing behavior
+- Build a fresh manifold per concurrent top-level task
 
 ---
 
