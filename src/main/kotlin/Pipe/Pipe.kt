@@ -1561,6 +1561,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 |[${pcpRequestExample}]
                 |
                 |Tool calls are optional - only include them if you need to use a tool.
+                |
+                |IMPORTANT - How to pass arguments when calling tools:
+                |The 'params' field inside each tool definition describes the function's expected parameters (names, types, descriptions).
+                |It is for reference only. Do NOT place argument values inside 'params' when making a call.
+                |
+                |To call a TPipe function, set 'tPipeContextOptions.functionName' to the function name and pass argument values using one of:
+                |- 'callParams': A map of named arguments. Example: {"paramName": "value", "otherParam": "value2"}
+                |- 'argumentsOrFunctionParams': A list of positional arguments in the order defined by the function signature. Example: ["value1", "value2"]
+                |'callParams' is preferred. If both are provided, 'callParams' values override positional arguments.
+                |
+                |To call a stdio command, populate 'stdioContextOptions' with the command and arguments.
+                |To call an HTTP endpoint, populate 'httpContextOptions' with the URL, method, and request body.
+                |To execute Python, Kotlin, or JavaScript code, populate the respective context options ('pythonContextOptions', 'kotlinContextOptions', or 'javascriptContextOptions').
             """.trimMargin()
             
             systemPrompt = systemPrompt + mergedInstructions
@@ -1586,6 +1599,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 |${pcpRequestAsJson}
                 |
                 |When returning any json requests for tools. You must always follow the json schema exactly.
+                |
+                |IMPORTANT - How to pass arguments when calling tools:
+                |The 'params' field inside each tool definition describes the function's expected parameters (names, types, descriptions).
+                |It is for reference only. Do NOT place argument values inside 'params' when making a call.
+                |
+                |To call a TPipe function, set 'tPipeContextOptions.functionName' to the function name and pass argument values using one of:
+                |- 'callParams': A map of named arguments. Example: {"paramName": "value", "otherParam": "value2"}
+                |- 'argumentsOrFunctionParams': A list of positional arguments in the order defined by the function signature. Example: ["value1", "value2"]
+                |'callParams' is preferred. If both are provided, 'callParams' values override positional arguments.
+                |
+                |To call a stdio command, populate 'stdioContextOptions' with the command and arguments.
+                |To call an HTTP endpoint, populate 'httpContextOptions' with the URL, method, and request body.
+                |To execute Python, Kotlin, or JavaScript code, populate the respective context options ('pythonContextOptions', 'kotlinContextOptions', or 'javascriptContextOptions').
             """.trimMargin()
 
             systemPrompt = systemPrompt + pcpContextRequirement
@@ -1761,6 +1787,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 |[${pcpRequestExample}]
                 |
                 |Tool calls are optional - only include them if you need to use a tool.
+                |
+                |IMPORTANT - How to pass arguments when calling tools:
+                |The 'params' field inside each tool definition describes the function's expected parameters (names, types, descriptions).
+                |It is for reference only. Do NOT place argument values inside 'params' when making a call.
+                |
+                |To call a TPipe function, set 'tPipeContextOptions.functionName' to the function name and pass argument values using one of:
+                |- 'callParams': A map of named arguments. Example: {"paramName": "value", "otherParam": "value2"}
+                |- 'argumentsOrFunctionParams': A list of positional arguments in the order defined by the function signature. Example: ["value1", "value2"]
+                |'callParams' is preferred. If both are provided, 'callParams' values override positional arguments.
+                |
+                |To call a stdio command, populate 'stdioContextOptions' with the command and arguments.
+                |To call an HTTP endpoint, populate 'httpContextOptions' with the URL, method, and request body.
+                |To execute Python, Kotlin, or JavaScript code, populate the respective context options ('pythonContextOptions', 'kotlinContextOptions', or 'javascriptContextOptions').
             """.trimMargin()
             
             // Allow custom override
@@ -1790,6 +1829,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 |${pcpRequestAsJson}
                 |
                 |When returning any json requests for tools. You must always follow the json schema exactly.
+                |
+                |IMPORTANT - How to pass arguments when calling tools:
+                |The 'params' field inside each tool definition describes the function's expected parameters (names, types, descriptions).
+                |It is for reference only. Do NOT place argument values inside 'params' when making a call.
+                |
+                |To call a TPipe function, set 'tPipeContextOptions.functionName' to the function name and pass argument values using one of:
+                |- 'callParams': A map of named arguments. Example: {"paramName": "value", "otherParam": "value2"}
+                |- 'argumentsOrFunctionParams': A list of positional arguments in the order defined by the function signature. Example: ["value1", "value2"]
+                |'callParams' is preferred. If both are provided, 'callParams' values override positional arguments.
+                |
+                |To call a stdio command, populate 'stdioContextOptions' with the command and arguments.
+                |To call an HTTP endpoint, populate 'httpContextOptions' with the URL, method, and request body.
+                |To execute Python, Kotlin, or JavaScript code, populate the respective context options ('pythonContextOptions', 'kotlinContextOptions', or 'javascriptContextOptions').
             """.trimMargin()
 
             // Allow custom override

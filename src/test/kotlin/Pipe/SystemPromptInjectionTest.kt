@@ -38,6 +38,9 @@ class SystemPromptInjectionTest
         assertTrue(prompt.contains("You are a test assistant."))
         assertTrue(prompt.contains("Pipe Context Protocol"))
         assertTrue(prompt.contains("testFunction"))
+        assertTrue(prompt.contains("IMPORTANT - How to pass arguments when calling tools"))
+        assertTrue(prompt.contains("callParams"))
+        assertTrue(prompt.contains("argumentsOrFunctionParams"))
     }
 
     @Test
@@ -222,6 +225,9 @@ class SystemPromptInjectionTest
         assertTrue(prompt.contains("You may also take actions using the Pipe Context Protocol"))
         assertTrue(prompt.contains("searchDatabase"))
         assertTrue(prompt.contains("Tool calls are optional"))
+        assertTrue(prompt.contains("IMPORTANT - How to pass arguments when calling tools"))
+        assertTrue(prompt.contains("callParams"))
+        assertTrue(prompt.contains("argumentsOrFunctionParams"))
     }
 
     @Test
