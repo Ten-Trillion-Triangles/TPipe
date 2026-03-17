@@ -48,6 +48,7 @@ val mainPipe = BedrockPipe()
     .setReasoningPipe(reasoningPipe)
     .setTokenBudget(TokenBudgetSettings(
         reasoningBudget = 2000  // Token budget for reasoning
+        // By default, reasoningBudget subtracts from maxTokens. Use subtractReasoningFromInput = true to subtract from the context window instead.
     ))
 ```
 
@@ -94,6 +95,14 @@ val problemSolvingPipe = BedrockPipe()
     .setReasoningPipe(structuredReasoningPipe)
     .setTokenBudget(TokenBudgetSettings(reasoningBudget = 1500))
 ```
+
+### Managing the Reasoning Budget
+When allocating a `reasoningBudget` inside `TokenBudgetSettings`, TPipe by default subtracts this amount from `maxTokens` (the output budget).
+
+If you are injecting reasoning into the system prompt (`ReasoningInjector.SystemPrompt`), user prompt (`ReasoningInjector.BeforeUserPrompt`), or context (`ReasoningInjector.AsContext`), you might prefer this space to be subtracted from the available context window rather than the final output capability.
+
+To achieve this, set `subtractReasoningFromInput = true` in your `TokenBudgetSettings`. This guarantees the allocated reasoning block has reserved space during prompt truncation, without decreasing your `maxTokens` capability.
+
 
 ### Explicit Chain-of-Thought Reasoning
 ```kotlin

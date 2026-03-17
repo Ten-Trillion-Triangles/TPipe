@@ -128,6 +128,7 @@ data class TokenBudgetSettings(
     var userPromptSize: Int? = null, //Assume 12K tokens
     var maxTokens: Int? = null, //Assume 20K tokens
     var reasoningBudget: Int? = null, //Assume 8K tokens
+    var subtractReasoningFromInput: Boolean = false,
     var contextWindowSize: Int? = null, //Assume 32K tokens total
     var allowUserPromptTruncation: Boolean = false,
     var preserveJsonInUserPrompt: Boolean = true,
@@ -2538,18 +2539,30 @@ abstract class Pipe : P2PInterface, ProviderInterface
          * overflowing the max tokens (which would be a pipe failure if such an overflow occurred).
          */
         val reasoningBudget = budget.reasoningBudget ?: 0
-        if(reasoningBudget > maxTokens) throw IllegalArgumentException("Reasoning tokens cannot be greater " +
-                "than the overall max token budget for llm output.")
 
-        /**
-         * Subtract max token output to ensure we are keeping both model reasoning, and token output constrained
-         * to the defined token budget.
-         */
-        maxTokensFromSettings -= reasoningBudget
+        if(!budget.subtractReasoningFromInput)
+        {
+            if(reasoningBudget > maxTokensFromSettings) throw IllegalArgumentException("Reasoning tokens cannot be greater " +
+                    "than the overall max token budget for llm output.")
+
+            /**
+             * Subtract max token output to ensure we are keeping both model reasoning, and token output constrained
+             * to the defined token budget.
+             */
+            maxTokensFromSettings -= reasoningBudget
+        }
+        else
+        {
+            if(reasoningBudget > workingTokenWindowSize) throw IllegalArgumentException("Reasoning tokens cannot be greater " +
+                    "than the input token budget.")
+
+            workingTokenWindowSize -= reasoningBudget
+        }
 
         /**
          * Now after saving this back to the pipe we have our true max tokens which also ensure reasoning is accounted
          * for either being 0 for not being set, or being subtracted correctly from the max token value.
+         * If subtractReasoningFromInput is true, maxTokens remains unchanged by reasoning.
          */
         maxTokens = maxTokensFromSettings
 

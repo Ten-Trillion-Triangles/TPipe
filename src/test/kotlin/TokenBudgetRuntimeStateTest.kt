@@ -165,4 +165,45 @@ class TokenBudgetRuntimeStateTest
         assertEquals(expectedContextWindowSize, sharedPipe.readContextWindowSize())
         assertEquals(expectedBudgetSettings, sharedPipe.readTokenBudgetSettings())
     }
+
+    @Test
+    fun testSubtractReasoningFromInputTrue()
+    {
+        val pipe = InspectableBudgetPipe("Test")
+            .setSystemPrompt("test")
+            .setPromptMode(com.TTT.Enums.PromptMode.singlePrompt)
+            .setMaxTokens(128)
+            .setContextWindowSize(200)
+            .setTokenBudget(
+                TokenBudgetSettings(
+                    maxTokens = 128,
+                    reasoningBudget = 32,
+                    subtractReasoningFromInput = true,
+                    contextWindowSize = 200
+                )
+            ) as InspectableBudgetPipe
+
+        assertEquals(128, pipe.readMaxTokens(), "Reasoning tokens should not be subtracted from maxTokens when subtractReasoningFromInput is true")
+        assertEquals(39, pipe.readContextWindowSize(), "Reasoning tokens should be subtracted from the input window when subtractReasoningFromInput is true")
+    }
+
+    @Test
+    fun testSubtractReasoningFromInputExceedsWindow()
+    {
+        val exception = org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            InspectableBudgetPipe("Test")
+                .setSystemPrompt("test")
+                .setMaxTokens(128)
+                .setContextWindowSize(200)
+                .setTokenBudget(
+                    TokenBudgetSettings(
+                        maxTokens = 128,
+                        reasoningBudget = 250,
+                        subtractReasoningFromInput = true,
+                        contextWindowSize = 200
+                    )
+                )
+        }
+        kotlin.test.assertTrue(exception.message!!.contains("Reasoning tokens cannot be greater than the input token budget"))
+    }
 }
