@@ -49,6 +49,8 @@ enum class BedrockPriorityTier
     Flex
 }
 
+private const val QWEN_TUNED_TOKEN_COUNTING_BIAS = -0.036641221374045754
+
 
 /**
  * AWS Bedrock provider implementation for TPipe framework.
@@ -1281,14 +1283,16 @@ open class BedrockPipe : Pipe()
                 nonWordSplitCount = 2
             }
             modelId.contains("qwen") -> {
+                // Tuned with TPipe-Tuner's built-in stress string at an exact 631-token target.
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = false
                 countOnlyFirstWordFound = false
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 1
+                countSubWordsIfSplit = false
+                nonWordSplitCount = 2
+                tokenCountingBias = QWEN_TUNED_TOKEN_COUNTING_BIAS
             }
             isKimiModel(modelId) -> {
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
@@ -1425,7 +1429,8 @@ open class BedrockPipe : Pipe()
                 splitForNonWordChar,
                 alwaysSplitIfWholeWordExists,
                 countSubWordsIfSplit,
-                nonWordSplitCount
+                nonWordSplitCount,
+                tokenCountingBias
             )
         }
 
@@ -1519,14 +1524,16 @@ open class BedrockPipe : Pipe()
             }
             modelId.contains("qwen") ->
             {
+                // Tuned with TPipe-Tuner's built-in stress string at an exact 631-token target.
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = false
                 countOnlyFirstWordFound = false
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 1
+                countSubWordsIfSplit = false
+                nonWordSplitCount = 2
+                tokenCountingBias = QWEN_TUNED_TOKEN_COUNTING_BIAS
             }
             isKimiModel(modelId) ->
             {
@@ -1651,7 +1658,8 @@ open class BedrockPipe : Pipe()
                 splitForNonWordChar = splitForNonWordChar,
                 alwaysSplitIfWholeWordExists = alwaysSplitIfWholeWordExists,
                 countSubWordsIfSplit = countSubWordsIfSplit,
-                nonWordSplitCount = nonWordSplitCount
+                nonWordSplitCount = nonWordSplitCount,
+                tokenCountingBias = tokenCountingBias
             )
             val combinedContext = contextWindow.combineAndTruncateAsStringWithSettingsSuspend(
                 userPrompt,
@@ -1677,7 +1685,8 @@ open class BedrockPipe : Pipe()
                 splitForNonWordChar,
                 alwaysSplitIfWholeWordExists,
                 countSubWordsIfSplit,
-                nonWordSplitCount
+                nonWordSplitCount,
+                tokenCountingBias
             )
         }
 
