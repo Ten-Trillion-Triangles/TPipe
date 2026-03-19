@@ -267,6 +267,7 @@ Optimal Bias Applied: 0.1667 resulting in 7 tokens (Diff: 0)
 
 ================ OPTIMAL CONFIGURATION ================
 {
+    "multiplyWindowSizeBy": 0,
     "countSubWordsInFirstWord": true,
     "favorWholeWords": true,
     "countOnlyFirstWordFound": false,
@@ -274,7 +275,11 @@ Optimal Bias Applied: 0.1667 resulting in 7 tokens (Diff: 0)
     "alwaysSplitIfWholeWordExists": false,
     "countSubWordsIfSplit": false,
     "nonWordSplitCount": 4,
-    "tokenCountingBias": 0.1667
+    "tokenCountingBias": 0.1667,
+    "fillMode": false,
+    "fillAndSplitMode": false,
+    "multiPageBudgetStrategy": null,
+    "pageWeights": null
 }
 =======================================================
 ```

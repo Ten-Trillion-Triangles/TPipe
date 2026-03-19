@@ -258,7 +258,10 @@ fun main(args: Array<String>) {
     }
 
     // 5. Output JSON schema configuration
-    val json = Json { prettyPrint = true }
+    val json = Json {
+        prettyPrint = true
+        encodeDefaults = true
+    }
     val jsonString = json.encodeToString(finalConfig)
 
     println("\n================ OPTIMAL CONFIGURATION ================")

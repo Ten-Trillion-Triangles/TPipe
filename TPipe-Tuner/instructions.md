@@ -28,12 +28,13 @@ As an LLM agent, when you are tasked with "tuning TPipe for a specific LLM model
    ```
 
 3. **Read the Output**
-   The application will run for a few seconds (or 1-2 minutes for large inputs) scanning combinations and applying bias. It will print the exact optimal configuration in a JSON block at the end of the output.
+   The application will run for a few seconds (or 1-2 minutes for large inputs) scanning combinations and applying bias. It will print the exact optimal configuration in a JSON block at the end of the output, including every `TruncationSettings` field even when the value matches the default.
 
    **Sample Output:**
    ```json
    ================ OPTIMAL CONFIGURATION ================
    {
+       "multiplyWindowSizeBy": 0,
        "countSubWordsInFirstWord": true,
        "favorWholeWords": true,
        "countOnlyFirstWordFound": false,
@@ -41,7 +42,11 @@ As an LLM agent, when you are tasked with "tuning TPipe for a specific LLM model
        "alwaysSplitIfWholeWordExists": false,
        "countSubWordsIfSplit": false,
        "nonWordSplitCount": 4,
-       "tokenCountingBias": 0.05
+       "tokenCountingBias": 0.05,
+       "fillMode": false,
+       "fillAndSplitMode": false,
+       "multiPageBudgetStrategy": null,
+       "pageWeights": null
    }
    =======================================================
    ```
