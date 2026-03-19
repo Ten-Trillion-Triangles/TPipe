@@ -18,6 +18,15 @@ package com.TTT.Pipeline
  *
  * Once a decision has been made a planning pipeline can be called to plan out what to do, and act on the decision
  * that was made.
+ *
+ * There are several configurations on how to manage discussions with actions that are definable:
+ *
+ * Vote -> Act -> Verify -> Repeat
+ * * Act -> Vote -> Verify -> Repeat
+ * Vote -> Plan -> Act -> Verify -> Repeat
+ * Plan -> Vote -> Act -> Verify -> Repeat
+ * Vote -> Plan -> Output instructions as prompt -> Exit
+ * Plan -> Vote -> Adjust -> Output instructions as prompt -> Exit
  */
 class Junction
 {
