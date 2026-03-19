@@ -1031,6 +1031,7 @@ data class ContextWindow(
         truncateSettings: com.TTT.Enums.ContextWindowSettings,
         settings: com.TTT.Pipe.TruncationSettings,
         fillMode: Boolean = false,
+        fillAndSplitMode: Boolean = false,
         preserveTextMatches: Boolean = false
     ) {
         selectAndTruncateContext(
@@ -1047,6 +1048,7 @@ data class ContextWindow(
             settings.nonWordSplitCount,
             settings.tokenCountingBias,
             fillMode,
+            fillAndSplitMode,
             preserveTextMatches
         )
     }
@@ -1067,6 +1069,7 @@ data class ContextWindow(
         truncateSettings: com.TTT.Enums.ContextWindowSettings,
         settings: com.TTT.Pipe.TruncationSettings,
         fillMode: Boolean = false,
+        fillAndSplitMode: Boolean = false,
         preserveTextMatches: Boolean = false
     )
     {
@@ -1084,6 +1087,7 @@ data class ContextWindow(
             settings.nonWordSplitCount,
             settings.tokenCountingBias,
             fillMode,
+            fillAndSplitMode,
             preserveTextMatches
         )
     }
@@ -1118,6 +1122,7 @@ data class ContextWindow(
         nonWordSplitCount: Int = 4,
         tokenCountingBias: Double = 0.0,
         fillMode: Boolean = false,
+        fillAndSplitMode: Boolean = false,
         preserveTextMatches: Boolean = false
     ) {
 
@@ -1132,13 +1137,16 @@ data class ContextWindow(
         val hasContextElements = contextElements.isNotEmpty()
         val hasConverseHistory = converseHistory.history.isNotEmpty()
 
-        if(fillMode)
+        if(fillMode || fillAndSplitMode)
         {
             if(multipliedTokenBudget <= 0) return
 
+            val hasRestContent = hasContextElements || hasConverseHistory
+            val lorebookBudget = if(fillAndSplitMode && hasRestContent) multipliedTokenBudget / 2 else multipliedTokenBudget
+
             val selectedLorebookKeys = selectAndFillLoreBookContext(
                 text,
-                multipliedTokenBudget,
+                lorebookBudget,
                 countSubWordsInFirstWord,
                 favorWholeWords,
                 countOnlyFirstWordFound,
@@ -1167,7 +1175,11 @@ data class ContextWindow(
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
 
-            val remainingBudget = multipliedTokenBudget - lorebookTokensUsed
+            val remainingBudget = if(fillAndSplitMode && hasRestContent)
+                multipliedTokenBudget - lorebookBudget
+            else
+                multipliedTokenBudget - lorebookTokensUsed
+
             if(remainingBudget <= 0) return
 
             if(hasContextElements && hasConverseHistory)
@@ -1367,6 +1379,7 @@ data class ContextWindow(
         nonWordSplitCount: Int = 4,
         tokenCountingBias: Double = 0.0,
         fillMode: Boolean = false,
+        fillAndSplitMode: Boolean = false,
         preserveTextMatches: Boolean = false
     )
     {
@@ -1381,13 +1394,16 @@ data class ContextWindow(
         val hasContextElements = contextElements.isNotEmpty()
         val hasConverseHistory = converseHistory.history.isNotEmpty()
 
-        if(fillMode)
+        if(fillMode || fillAndSplitMode)
         {
             if(multipliedTokenBudget <= 0) return
 
+            val hasRestContent = hasContextElements || hasConverseHistory
+            val lorebookBudget = if(fillAndSplitMode && hasRestContent) multipliedTokenBudget / 2 else multipliedTokenBudget
+
             val selectedLorebookKeys = selectAndFillLoreBookContextSuspend(
                 text,
-                multipliedTokenBudget,
+                lorebookBudget,
                 countSubWordsInFirstWord,
                 favorWholeWords,
                 countOnlyFirstWordFound,
@@ -1416,7 +1432,11 @@ data class ContextWindow(
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
 
-            val remainingBudget = multipliedTokenBudget - lorebookTokensUsed
+            val remainingBudget = if(fillAndSplitMode && hasRestContent)
+                multipliedTokenBudget - lorebookBudget
+            else
+                multipliedTokenBudget - lorebookTokensUsed
+
             if(remainingBudget <= 0) return
 
             if(hasContextElements && hasConverseHistory)

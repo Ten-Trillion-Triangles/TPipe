@@ -60,6 +60,7 @@ data class TruncationSettings(
          var nonWordSplitCount: Int = 4,
          var tokenCountingBias: Double = 0.0,
          var fillMode: Boolean = false,
+         var fillAndSplitMode: Boolean = false,
          var multiPageBudgetStrategy: MultiPageBudgetStrategy? = null,
          var pageWeights: Map<String, Double>? = null)
 
@@ -903,6 +904,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     @Serializable
     protected var loreBookFillMode = false
+
+    /**
+     * When true, lorebook selection uses the select-and-fill strategy and reserves a split budget for the rest of
+     * the top-level context window during truncation.
+     */
+    @Serializable
+    protected var loreBookFillAndSplitMode = false
 
     /**
      * If true when merging context windows we will replace the converse history with the incoming converse history.
@@ -3112,13 +3120,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * Enable automatic context and lorebook selection, and truncation when this pipe executes.
      * @param fillMode If true, enables select-and-fill lorebook selection during context truncation. When active,
      * split budgets are applied after priority lorebook selection has filled with top-weighted entries.
+     * @param fillAndSplitMode If true, enables fill mode and reserves a split budget for the non-lorebook context.
      * @return This Pipe object for method chaining
      */
-    fun autoTruncateContext(fillMode: Boolean = false) : Pipe
+    fun autoTruncateContext(fillMode: Boolean = false, fillAndSplitMode: Boolean = false) : Pipe
     {
         autoTruncateContext = true
 
-        if(fillMode)
+        if(fillAndSplitMode)
+        {
+            enableLoreBookFillAndSplitMode()
+        }
+
+        else if(fillMode)
         {
             enableLoreBookFillMode()
         }
@@ -3167,6 +3181,17 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun enableLoreBookFillMode(): Pipe
     {
         loreBookFillMode = true
+        return this
+    }
+
+    /**
+     * Enables select-and-fill lorebook selection and reserves a split budget for the rest of the top-level context
+     * window during truncation.
+     */
+    fun enableLoreBookFillAndSplitMode(): Pipe
+    {
+        loreBookFillMode = true
+        loreBookFillAndSplitMode = true
         return this
     }
 
@@ -3990,6 +4015,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         returnVar.countSubWordsInFirstWord = countSubWordsInFirstWord
 
         returnVar.fillMode = loreBookFillMode
+        returnVar.fillAndSplitMode = loreBookFillAndSplitMode
         returnVar.multiPageBudgetStrategy = tokenBudgetSettings?.multiPageBudgetStrategy
         returnVar.pageWeights = tokenBudgetSettings?.pageWeights
 
@@ -4620,6 +4646,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         workingBudget.truncationMethod,
                         truncationSettings,
                         fillMode = loreBookFillMode,
+                        fillAndSplitMode = loreBookFillAndSplitMode,
                         preserveTextMatches = workingBudget.preserveTextMatches
                     )
                 }
@@ -6369,6 +6396,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
             autoTruncateContext = autoTruncateContext,
             emplaceLorebook = emplaceLorebook,
             appendLoreBook = appendLoreBook,
+            loreBookFillMode = loreBookFillMode,
+            loreBookFillAndSplitMode = loreBookFillAndSplitMode,
             useModelReasoning = useModelReasoning,
             modelReasoningSettingsV2 = modelReasoningSettingsV2,
             modelReasoningSettingsV3 = modelReasoningSettingsV3,

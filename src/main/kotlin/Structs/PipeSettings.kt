@@ -35,6 +35,8 @@ data class PipeSettings(
     var autoTruncateContext: Boolean = false,
     var emplaceLorebook: Boolean = true,
     var appendLoreBook: Boolean = false,
+    var loreBookFillMode: Boolean = false,
+    var loreBookFillAndSplitMode: Boolean = false,
     var useModelReasoning: Boolean = false,
     var modelReasoningSettingsV2: Int = 5000,
     var modelReasoningSettingsV3: String = "",

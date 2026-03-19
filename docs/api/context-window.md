@@ -149,7 +149,7 @@ Truncates context elements to fit token budget.
 **Behavior:** Uses Dictionary truncation with specified method (TruncateTop, TruncateBottom, TruncateMiddle) and tokenizer configuration parameters.
 - When `preserveTextMatches = true`, context elements matching words from `inputText` are kept before the default truncation ordering is applied.
 
-#### `selectAndTruncateContext(text: String, totalTokenBudget: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, fillMode: Boolean = false, preserveTextMatches: Boolean = false)`
+#### `selectAndTruncateContext(text: String, totalTokenBudget: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, fillMode: Boolean = false, fillAndSplitMode: Boolean = false, preserveTextMatches: Boolean = false)`
 Selects and truncates context with automatic budget allocation.
 
 **Behavior:** Intelligent budget allocation based on available content types:
@@ -161,6 +161,7 @@ Selects and truncates context with automatic budget allocation.
 
 **Additional Parameters:**
 - `fillMode: Boolean = false` — when true, `selectAndTruncateContext` first runs the select-and-fill LoreBook flow (`selectAndFillLoreBookContext`) using the full budget, then splits the remaining tokens between context elements and conversation history.
+- `fillAndSplitMode: Boolean = false` — when true, `selectAndTruncateContext` reserves half of the available top-level budget for lorebook selection and half for the remaining context/history split. If both context elements and conversation history exist, the remainder is still split 50/50 between them.
 - `preserveTextMatches: Boolean = false` — when true, context elements and conversation history that include words from `text` are preserved before applying the usual truncation ordering.
 
 #### `combineAndTruncateAsString(text: String, totalTokenBudget: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4): String`

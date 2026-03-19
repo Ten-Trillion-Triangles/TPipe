@@ -460,13 +460,14 @@ Automatically injects context into user prompt.
 
 **Behavior:** Context is injected as text into the user prompt during execution. The instruction parameter explains how to interpret the context.
 
-#### `autoTruncateContext(fillMode: Boolean = false): Pipe`
-Enables automatic context truncation with optional fill mode selection.
+#### `autoTruncateContext(fillMode: Boolean = false, fillAndSplitMode: Boolean = false): Pipe`
+Enables automatic context truncation with optional fill or fill-and-split selection.
 
 **Parameters:**
 - `fillMode`: If true, enables select-and-fill lorebook selection during context truncation. When active, split budgets are applied after priority lorebook selection has filled with top-weighted entries.
+- `fillAndSplitMode`: If true, enables fill mode and reserves a split budget for the rest of the top-level context. This keeps lorebook selection weighted first, then partitions the remaining context between lorebooks and the rest of the context window.
 
-**Behavior:** Context is automatically truncated during execution based on `contextWindowSize` and `contextWindowTruncation` settings. Essential for preventing token overflow. When `fillMode` is true, lorebook entries are prioritized and filled first before remaining budget is split between other context components.
+**Behavior:** Context is automatically truncated during execution based on `contextWindowSize` and `contextWindowTruncation` settings. Essential for preventing token overflow. When `fillMode` is true, lorebook entries are prioritized and filled first before remaining budget is split between other context components. When `fillAndSplitMode` is true, the top-level context window reserves half of the budget for lorebook entries and half for the remaining context, while still preserving the existing context-elements vs conversation-history split.
 
 #### `enableTextMatchingPreservation(): Pipe`
 Ensures context elements and conversation history entries containing words from the latest prompt survive truncation before other content is considered.
@@ -620,6 +621,7 @@ Returns the current truncation settings bundled with any multi-page configuratio
 **Behavior:**
 - Includes all token counting flags (multipliers, split rules, etc.)
 - Mirrors the current `loreBookFillMode` state through the returned `fillMode` flag
+- Mirrors the current fill-and-split state through the returned `fillAndSplitMode` flag
 - Surfaces any multi-page budget strategy and page weights pulled from `tokenBudgetSettings`
 
 **Integration:** Useful for passing a single settings object into the new helper functions such as `selectAndFillLoreBookContextWithSettings()` or string-based truncation helpers.
