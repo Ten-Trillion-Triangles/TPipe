@@ -1175,10 +1175,7 @@ data class ContextWindow(
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
 
-            val remainingBudget = if(fillAndSplitMode && hasRestContent)
-                multipliedTokenBudget - lorebookBudget
-            else
-                multipliedTokenBudget - lorebookTokensUsed
+            val remainingBudget = multipliedTokenBudget - lorebookTokensUsed
 
             if(remainingBudget <= 0) return
 
@@ -1432,10 +1429,7 @@ data class ContextWindow(
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
 
-            val remainingBudget = if(fillAndSplitMode && hasRestContent)
-                multipliedTokenBudget - lorebookBudget
-            else
-                multipliedTokenBudget - lorebookTokensUsed
+            val remainingBudget = multipliedTokenBudget - lorebookTokensUsed
 
             if(remainingBudget <= 0) return
 

@@ -161,7 +161,7 @@ Selects and truncates context with automatic budget allocation.
 
 **Additional Parameters:**
 - `fillMode: Boolean = false` — when true, `selectAndTruncateContext` first runs the select-and-fill LoreBook flow (`selectAndFillLoreBookContext`) using the full budget, then splits the remaining tokens between context elements and conversation history.
-- `fillAndSplitMode: Boolean = false` — when true, `selectAndTruncateContext` reserves half of the available top-level budget for lorebook selection and half for the remaining context/history split. If both context elements and conversation history exist, the remainder is still split 50/50 between them.
+- `fillAndSplitMode: Boolean = false` — when true, `selectAndTruncateContext` reserves half of the available top-level budget for lorebook selection and half for the remaining context/history split. If the lorebook side underfills its half, the unused budget is reclaimed and passed to the remaining context/history split. If both context elements and conversation history exist, the remainder is still split 50/50 between them.
 - `preserveTextMatches: Boolean = false` — when true, context elements and conversation history that include words from `text` are preserved before applying the usual truncation ordering.
 
 #### `combineAndTruncateAsString(text: String, totalTokenBudget: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4): String`

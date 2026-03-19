@@ -465,9 +465,9 @@ Enables automatic context truncation with optional fill or fill-and-split select
 
 **Parameters:**
 - `fillMode`: If true, enables select-and-fill lorebook selection during context truncation. When active, split budgets are applied after priority lorebook selection has filled with top-weighted entries.
-- `fillAndSplitMode`: If true, enables fill mode and reserves a split budget for the rest of the top-level context. This keeps lorebook selection weighted first, then partitions the remaining context between lorebooks and the rest of the context window.
+- `fillAndSplitMode`: If true, enables fill mode and reserves a split budget for the rest of the top-level context. This keeps lorebook selection weighted first, then redistributes any unused lorebook budget to the rest of the context window.
 
-**Behavior:** Context is automatically truncated during execution based on `contextWindowSize` and `contextWindowTruncation` settings. Essential for preventing token overflow. When `fillMode` is true, lorebook entries are prioritized and filled first before remaining budget is split between other context components. When `fillAndSplitMode` is true, the top-level context window reserves half of the budget for lorebook entries and half for the remaining context, while still preserving the existing context-elements vs conversation-history split.
+**Behavior:** Context is automatically truncated during execution based on `contextWindowSize` and `contextWindowTruncation` settings. Essential for preventing token overflow. When `fillMode` is true, lorebook entries are prioritized and filled first before remaining budget is split between other context components. When `fillAndSplitMode` is true, the top-level context window reserves half of the budget for lorebook entries and half for the remaining context, but any unused lorebook space is reclaimed and handed to the rest of the context window while still preserving the existing context-elements vs conversation-history split.
 
 #### `enableTextMatchingPreservation(): Pipe`
 Ensures context elements and conversation history entries containing words from the latest prompt survive truncation before other content is considered.
