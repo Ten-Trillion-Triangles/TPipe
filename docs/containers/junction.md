@@ -1,250 +1,199 @@
 # Junction
 
-> 💡 **Tip:** The **Junction** is where multiple parallel pipes merge back into one Mainline. It collects the water from multiple upstream sources and presents a unified output.
-
+> 💡 **Tip:** Junction is TPipe's harness for collaborative decision-making and workflow handoff. It coordinates P2P-capable participants, gathers their opinions, tallies votes, and can chain plan, act, verify, adjust, and output phases when configured.
 
 ## Table of Contents
 - [Current Status](#current-status)
-- [Intended Design](#intended-design)
-- [Planned Discussion Strategies](#planned-discussion-strategies)
-- [Expected Data Structures](#expected-data-structures)
-- [Planned Features](#planned-features)
-- [Implementation Requirements](#implementation-requirements)
-- [Planned Usage Example](#planned-usage-example)
-- [Development Priority](#development-priority)
-- [Contributing](#contributing)
-
-Junction is a planned container for democratic discussion and voting patterns between multiple specialist agents. Currently stubbed, it will enable collaborative decision-making through structured debate rounds.
+- [What Junction Is](#what-junction-is)
+- [Core API](#core-api)
+- [Discussion Models](#discussion-models)
+- [Execution Flow](#execution-flow)
+- [Discussion Strategies](#discussion-strategies)
+- [Tracing and Control](#tracing-and-control)
+- [Usage Example](#usage-example)
+- [Implementation Notes](#implementation-notes)
 
 ## Current Status
 
-⚠️ **Junction is currently a stub implementation** - only the class structure exists. This documentation describes the intended design and planned features.
+`Junction` is implemented in `src/main/kotlin/Pipeline/Junction.kt` and now acts as a real `P2PInterface` harness.
+
+The discussion-harness requirements live in [`md/junction-harness-requirements.md`](../../md/junction-harness-requirements.md), the completed discussion rollout is tracked in [`md/junction-harness-implementation-tracker.md`](../../md/junction-harness-implementation-tracker.md), and the workflow extension has its own requirements and tracker in [`md/junction-workflow-extension-requirements.md`](../../md/junction-workflow-extension-requirements.md) and [`md/junction-workflow-extension-tracker.md`](../../md/junction-workflow-extension-tracker.md).
+
+It now supports:
+- accept any `P2PInterface` as moderator or participant
+- support nested containers such as `Manifold`
+- run a bounded discussion loop with strategy, round, and threshold controls
+- support all three original orchestration strategies with distinct runtime semantics
+- reject direct and indirect container cycles before execution
+- emit structured trace events
+- return a serialized `DiscussionDecision`
+- run workflow recipes for plan/vote/act/verify/adjust/output handoff chains
+- return a serialized `JunctionWorkflowOutcome` when a workflow recipe is selected
+
+## What Junction Is
+
+Junction is TPipe's decision harness for collaborative discussion.
+
+It sits above normal pipe sequencing and below future consensus-driven orchestration layers. In practice, it:
+- accepts a topic as `MultimodalContent`
+- dispatches the prompt to participants through P2P
+- gathers `ParticipantOpinion` entries
+- tallies votes into `VotingResult` records
+- optionally asks the moderator for a `ModeratorDirective`
+- stops when consensus, intervention, or the round limit ends the discussion
+
+In discussion-only mode, the harness intentionally stops at decision production and does not attempt to execute follow-up plan/act workflows.
+
+When a workflow recipe is selected, the harness becomes a full workflow runner instead of a discussion-only loop. The discussion path remains the default.
+
+## Core API
+
+### Registration
 
 ```kotlin
-class Junction {
-    // Currently empty - implementation pending
-}
+val junction = Junction()
+    .setModerator(moderatorHarness)
+    .addParticipant("security", securityHarness)
+    .addParticipant("performance", performanceHarness)
+    .addParticipant("ux", uxHarness)
 ```
 
-## Intended Design
+Moderator and participant types are `P2PInterface`, so this can be a pipeline adapter, `Manifold`, `Connector`, `Splitter`, or another container that exposes P2P behavior.
 
-### Core Concept
-Junction will orchestrate democratic discussions where multiple specialist agents:
-- Present their perspectives on a problem
-- Debate and refine solutions through multiple rounds
-- Reach consensus through voting or moderator intervention
+### Configuration
 
-### Planned Components
-
-#### Moderator Pipeline
-Controls discussion flow and makes final decisions:
 ```kotlin
-// Planned API
-val moderator = Pipeline()
-    .addPipe(discussionModerationPipe)
-    .addPipe(consensusEvaluatorPipe)
-    .addPipe(finalDecisionPipe)
-
-junction.setModerator(moderator)
-```
-
-#### Participant Agents
-Specialist agents with distinct viewpoints:
-```kotlin
-// Planned API
 junction
-    .addParticipant("security-expert", securityPipeline)
-    .addParticipant("performance-expert", performancePipeline)
-    .addParticipant("usability-expert", usabilityPipeline)
-    .addParticipant("cost-analyst", costPipeline)
-```
-
-## Planned Discussion Strategies
-
-### Simultaneous Opinion Strategy
-All agents present views simultaneously, then iterate:
-
-```kotlin
-// Planned implementation
-junction.setStrategy(DiscussionStrategy.SIMULTANEOUS)
+    .setStrategy(DiscussionStrategy.SIMULTANEOUS)
     .setRounds(3)
     .setVotingThreshold(0.75)
-
-// Round 1: All agents give initial opinions
-// Round 2: Agents respond to others' opinions  
-// Round 3: Final positions and voting
-```
-
-### Conversational Strategy
-Agents choose who to engage with each round:
-
-```kotlin
-// Planned implementation
-junction.setStrategy(DiscussionStrategy.CONVERSATIONAL)
-    .setMaxRounds(5)
     .setModeratorIntervention(true)
-
-// Agents select discussion partners dynamically
-// Moderator intervenes when progress stalls
+    .setMaxNestedDepth(8)
+    .enableTracing()
 ```
 
-### Round-Robin Strategy
-Structured turn-taking discussion:
+### Execution
 
 ```kotlin
-// Planned implementation
-junction.setStrategy(DiscussionStrategy.ROUND_ROBIN)
-    .setTurnsPerRound(2)
+val result = junction.execute(
+    MultimodalContent(text = "Should we ship the new API?")
+)
+```
+
+`conductDiscussion(...)` is also available as a semantic alias for `execute(...)`.
+
+## Discussion Models
+
+The harness uses a small set of serializable models in `src/main/kotlin/Pipeline/JunctionModels.kt`:
+
+- `DiscussionStrategy`
+- `ParticipantOpinion`
+- `VotingResult`
+- `ModeratorDirective`
+- `DiscussionState`
+- `DiscussionDecision`
+
+The final response is stored as:
+- `MultimodalContent.text` containing serialized `DiscussionDecision`
+- `metadata["junctionDecision"]`
+- `metadata["junctionState"]`
+
+## Execution Flow
+
+The runtime flow is:
+
+1. `init()` validates the moderator, participants, round limit, threshold, and nested-depth guard.
+2. `execute(...)` copies the input content and derives the topic.
+3. The harness iterates through rounds until consensus or the round limit is reached.
+4. Each round dispatches participant requests through P2P.
+5. Participant responses are parsed into `ParticipantOpinion`.
+6. Votes are tallied into `VotingResult`.
+7. The moderator may return a `ModeratorDirective` to continue, stop, or refine the next round.
+8. The final `DiscussionDecision` is serialized back into the returned `MultimodalContent`.
+
+## Discussion Strategies
+
+### Simultaneous
+
+All selected participants are dispatched in parallel, then the harness aggregates their opinions.
+
+### Round Robin
+
+Participants are dispatched in stable order within the round.
+
+### Conversational
+
+The harness honors `selectedParticipants` from the current state when present. If the selected list is empty or invalid, it falls back to the registered participant set.
+
+## Workflow Recipes
+
+Junction can also run built-in workflow recipes when you want the harness to handle action-oriented orchestration without hand-wiring a custom class.
+
+The supported recipes are:
+
+- `Vote -> Act -> Verify -> Repeat`
+- `Act -> Vote -> Verify -> Repeat`
+- `Vote -> Plan -> Act -> Verify -> Repeat`
+- `Plan -> Vote -> Act -> Verify -> Repeat`
+- `Vote -> Plan -> Output instructions as prompt -> Exit`
+- `Plan -> Vote -> Adjust -> Output instructions as prompt -> Exit`
+
+Workflow participants are still `P2PInterface` instances, so the planner, actor, verifier, adjuster, output handler, and moderator can each be pipelines or nested containers such as `Manifold`.
+
+The workflow API exposes:
+
+- `conductWorkflow(...)` for recipe execution
+- `setWorkflowRecipe(...)` and the recipe-specific helpers
+- `setPlanner(...)`, `setActor(...)`, `setVerifier(...)`, `setAdjuster(...)`, and `setOutputHandler(...)`
+
+Workflow results are serialized as `JunctionWorkflowOutcome` and stored in both the returned content text and metadata.
+
+## Tracing and Control
+
+Junction supports tracing and runtime control hooks:
+
+- `enableTracing(config)`
+- `disableTracing()`
+- `getTraceReport(format)`
+- `getFailureAnalysis()`
+- `getTraceId()`
+- `pause()`
+- `resume()`
+- `isPaused()`
+- `canPause()`
+
+Trace events use dedicated `JUNCTION_*` entries so the harness is visible in the trace system alongside `PIPE_*`, `MANIFOLD_*`, and `SPLITTER_*` events.
+
+Pause and resume are checkpointed between rounds and before the next participant dispatch.
+
+## Usage Example
+
+```kotlin
+val moderator = buildModeratorHarness()
+val security = buildSecurityHarness()
+val performance = buildPerformanceHarness()
+
+val junction = Junction()
+    .setModerator("moderator", moderator)
+    .addParticipant("security", security)
+    .addParticipant("performance", performance)
+    .setStrategy(DiscussionStrategy.CONVERSATIONAL)
     .setRounds(4)
+    .setVotingThreshold(0.8)
+    .enableTracing()
 
-// Each agent speaks in order for set number of turns
-// Moderator evaluates after each complete round
-```
-
-## Expected Data Structures
-
-### Discussion State
-```kotlin
-// Planned data structure
-@Serializable
-data class DiscussionState(
-    var currentRound: Int = 1,
-    var maxRounds: Int = 5,
-    var topic: String = "",
-    var participantOpinions: MutableMap<String, String> = mutableMapOf(),
-    var votes: MutableMap<String, String> = mutableMapOf(),
-    var consensusReached: Boolean = false,
-    var finalDecision: String = ""
+val result = junction.conductDiscussion(
+    MultimodalContent(text = "Should we make this change?")
 )
 ```
 
-### Voting Result
-```kotlin
-// Planned data structure
-@Serializable
-data class VotingResult(
-    var option: String = "",
-    var votes: Int = 0,
-    var percentage: Double = 0.0,
-    var supporters: List<String> = listOf()
-)
-```
+The returned content contains a structured decision payload, not just free-form prose.
 
-## Planned Features
+## Implementation Notes
 
-### Consensus Mechanisms
-- **Vote threshold**: Require X% agreement to conclude
-- **Moderator override**: Allow moderator to make final call
-- **Time limits**: Force decisions after max rounds
-- **Weighted voting**: Give some agents more influence
+- Nested containers are first-class participants because `Junction` speaks to `P2PInterface`, not to pipelines directly.
+- The harness performs real cycle detection before execution and uses max-nested-depth as a secondary guard.
+- The moderator is optional at configuration time but required before `init()` succeeds.
+- The implementation is deterministic in the sense that it always returns a decision artifact, even if it falls back to the best available vote or topic text.
 
-### Discussion Management
-- **Topic focus**: Keep discussion on track
-- **Conflict resolution**: Handle disagreements
-- **Information sharing**: Distribute relevant context
-- **Progress tracking**: Monitor consensus building
-
-### Integration Points
-- **P2P support**: Register as collaborative agent
-- **Tracing**: Track discussion flow and decisions
-- **Human-in-the-loop**: Allow human moderator intervention
-- **Context management**: Share relevant information
-
-## Implementation Requirements
-
-### Core TODOs
-1. **Discussion orchestration engine**
-2. **Voting and consensus mechanisms** 
-3. **Moderator intervention logic**
-4. **Round management system**
-5. **Opinion aggregation and analysis**
-6. **P2P interface implementation**
-7. **Tracing and monitoring support**
-
-### Technical Requirements
-- **Async coordination** for simultaneous discussions
-- **State management** for multi-round conversations
-- **Conflict resolution** algorithms
-- **Context sharing** between participants
-- **Decision validation** and finalization
-
-## Planned Usage Example
-
-```kotlin
-// Future API design
-class ProductDecisionSystem {
-    private val junction = Junction()
-    
-    init {
-        setupJunction()
-    }
-    
-    private fun setupJunction() {
-        val moderator = Pipeline()
-            .addPipe(discussionModerationPipe)
-            .addPipe(consensusEvaluatorPipe)
-        
-        junction
-            .setModerator(moderator)
-            .addParticipant("security", securityExpertPipeline)
-            .addParticipant("performance", performanceExpertPipeline)
-            .addParticipant("ux", uxExpertPipeline)
-            .addParticipant("business", businessAnalystPipeline)
-            .setStrategy(DiscussionStrategy.SIMULTANEOUS)
-            .setRounds(3)
-            .setVotingThreshold(0.8)
-            .enableTracing()
-    }
-    
-    suspend fun makeProductDecision(proposal: String): ProductDecision {
-        val discussion = MultimodalContent().apply {
-            addText("Product proposal: $proposal")
-        }
-        
-        val result = junction.conductDiscussion(discussion)
-        
-        return ProductDecision(
-            proposal = proposal,
-            decision = extractDecision(result),
-            consensus = extractConsensus(result),
-            participantViews = extractViews(result),
-            votingResults = extractVotes(result)
-        )
-    }
-}
-
-data class ProductDecision(
-    val proposal: String,
-    val decision: String,
-    val consensus: Double,
-    val participantViews: Map<String, String>,
-    val votingResults: List<VotingResult>
-)
-```
-
-## Development Priority
-
-Junction is planned for future implementation after core container types are stable. Priority areas:
-
-1. **Core orchestration** - Basic discussion management
-2. **Voting mechanisms** - Consensus and decision making  
-3. **Moderator logic** - Intervention and guidance
-4. **P2P integration** - Agent registration and discovery
-5. **Advanced strategies** - Sophisticated discussion patterns
-
-## Contributing
-
-If you're interested in implementing Junction:
-
-1. **Review existing containers** for patterns and interfaces
-2. **Design discussion orchestration** algorithms
-3. **Implement voting and consensus** mechanisms
-4. **Add comprehensive tracing** support
-5. **Create test scenarios** for various discussion types
-6. **Document usage patterns** and best practices
-
-Junction represents an advanced collaborative AI pattern that could enable sophisticated multi-agent decision making once implemented.
-
----
-
-**Previous:** [← DistributionGrid](distributiongrid.md) | **Next:** [Cross-Cutting Topics →](cross-cutting-topics.md)
+**Next:** [Container Overview →](container-overview.md)

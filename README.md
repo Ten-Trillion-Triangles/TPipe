@@ -55,7 +55,7 @@ Advanced pipeline orchestration and multi-agent systems:
 - [Manifold Setup Checklist](docs/containers/manifold.md#startup-checklist) - Required manager, worker, memory, and `init()` steps before startup
 - [Connector - Pipeline Branching](docs/containers/connector.md) - Conditional pipeline routing
 - [Splitter - Parallel Processing](docs/containers/splitter.md) - Concurrent pipeline execution
-- [Junction - Pipeline Merging](docs/containers/junction.md) - Combining pipeline results
+- [Junction - Discussion and Workflow Harness](docs/containers/junction.md) - Multi-agent discussion, voting, and workflow handoff
 - [MultiConnector - Advanced Routing](docs/containers/multiconnector.md) - Complex routing patterns
 - [DistributionGrid - Load Balancing](docs/containers/distributiongrid.md) - Distributed processing
 - [Cross-Cutting Topics](docs/containers/cross-cutting-topics.md) - Shared container concepts

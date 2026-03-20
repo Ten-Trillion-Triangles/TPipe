@@ -1,15 +1,33 @@
 package com.TTT.Debug
 
+/**
+ * Produces text and HTML reports from trace streams, with special handling for harness-level orchestration
+ * traces such as Junction and Manifold.
+ */
 class TraceVisualizer
 {
-    
+    /**
+     * Render a human-readable flow chart for a trace stream.
+     *
+     * Junction and other harness traces get a dedicated heading so their orchestration steps are easy to
+     * distinguish from ordinary pipe traces.
+     *
+     * @param trace The trace events to render.
+     * @return A formatted textual flow chart.
+     */
     fun generateFlowChart(trace: List<TraceEvent>): String {
         val flowChart = StringBuilder()
         
-        // Detect if this is a Manifold trace
+        // Detect whether the trace belongs to a container harness so the visualizer can pick the correct
+        // heading and event symbols for Junction's discussion/workflow lifecycle.
         val isManifoldTrace = trace.any { it.eventType.name.startsWith("MANIFOLD_") }
+        val isJunctionTrace = trace.any { it.eventType.name.startsWith("JUNCTION_") }
         
-        if(isManifoldTrace)
+        if(isJunctionTrace)
+        {
+            flowChart.append("=== Junction Discussion Flow ===\n")
+        }
+        else if(isManifoldTrace)
         {
             flowChart.append("=== Manifold Orchestration Flow ===\n")
         }
@@ -39,11 +57,32 @@ class TraceVisualizer
                 TraceEventType.MANIFOLD_FAILURE -> "❌"
                 TraceEventType.MANIFOLD_LOOP_ITERATION -> "🔄"
                 
+                // Junction orchestration events
+                TraceEventType.JUNCTION_START -> "🧭"
+                TraceEventType.JUNCTION_END -> "🏁"
+                TraceEventType.JUNCTION_SUCCESS -> "✅"
+                TraceEventType.JUNCTION_FAILURE -> "❌"
+                TraceEventType.JUNCTION_PAUSE -> "⏸️"
+                TraceEventType.JUNCTION_RESUME -> "▶️"
+                TraceEventType.JUNCTION_ROUND_START -> "🗣️"
+                TraceEventType.JUNCTION_ROUND_END -> "🔚"
+                TraceEventType.JUNCTION_VOTE_TALLY -> "🗳️"
+                TraceEventType.JUNCTION_CONSENSUS_CHECK -> "📏"
+                TraceEventType.JUNCTION_PARTICIPANT_DISPATCH -> "📤"
+                TraceEventType.JUNCTION_PARTICIPANT_RESPONSE -> "📥"
+                TraceEventType.JUNCTION_WORKFLOW_START -> "⚙️"
+                TraceEventType.JUNCTION_WORKFLOW_END -> "🏁"
+                TraceEventType.JUNCTION_WORKFLOW_SUCCESS -> "✅"
+                TraceEventType.JUNCTION_WORKFLOW_FAILURE -> "❌"
+                TraceEventType.JUNCTION_PHASE_START -> "🧩"
+                TraceEventType.JUNCTION_PHASE_END -> "🔁"
+                TraceEventType.JUNCTION_HANDOFF -> "📦"
+
                 // Manager decision events
                 TraceEventType.MANAGER_DECISION -> "🧠"
                 TraceEventType.MANAGER_TASK_ANALYSIS -> "🔍"
                 TraceEventType.MANAGER_AGENT_SELECTION -> "👆"
-                
+
                 // Agent communication events
                 TraceEventType.AGENT_DISPATCH -> "📤"
                 TraceEventType.AGENT_RESPONSE -> "📥"
@@ -69,6 +108,12 @@ class TraceVisualizer
         return flowChart.toString()
     }
     
+    /**
+     * Render a time-ordered execution timeline for a trace stream.
+     *
+     * @param trace The trace events to render.
+     * @return A formatted timeline string.
+     */
     fun generateTimeline(trace: List<TraceEvent>): String {
         val timeline = StringBuilder()
         timeline.append("=== Execution Timeline ===\n")
@@ -88,6 +133,12 @@ class TraceVisualizer
         return timeline.toString()
     }
     
+    /**
+     * Render a compact console-friendly summary of the supplied trace events.
+     *
+     * @param trace The trace events to render.
+     * @return A textual console summary.
+     */
     fun generateConsoleOutput(trace: List<TraceEvent>): String {
         val output = StringBuilder()
         output.append("=== TPipe Execution Trace ===\n")
@@ -115,10 +166,25 @@ class TraceVisualizer
         return output.toString()
     }
     
+    /**
+     * Render an HTML report for the supplied trace stream.
+     *
+     * Junction traces use a custom report path so workflow phases, handoff events, and discussion rounds can
+     * be grouped into a harness-aware presentation.
+     *
+     * @param trace The trace events to render.
+     * @return An HTML report string.
+     */
     fun generateHtmlReport(trace: List<TraceEvent>): String {
+        // Junction traces are rendered with their own report layout because the harness can emit both
+        // discussion and workflow phase events, and those need to be grouped differently from plain pipes.
+        val isJunctionTrace = trace.any { it.eventType.name.startsWith("JUNCTION_") }
         val isManifoldTrace = trace.any { it.eventType.name.startsWith("MANIFOLD_") }
         
-        return if(isManifoldTrace) {
+        return if(isJunctionTrace) {
+            generateJunctionHtmlReport(trace)
+        }
+        else if(isManifoldTrace) {
             generateManifoldHtmlReport(trace)
         }
         else
@@ -494,6 +560,16 @@ class TraceVisualizer
             </html>
         """.trimIndent()
     }
+
+    /**
+     * Generates HTML report for Junction discussion traces by reusing the orchestration layout with Junction labels.
+     */
+    private fun generateJunctionHtmlReport(trace: List<TraceEvent>): String
+    {
+        return generateManifoldHtmlReport(trace)
+            .replace("Manifold", "Junction")
+            .replace("manifold", "junction")
+    }
     
     /**
      * Generates standard HTML report for non-Manifold traces.
@@ -679,6 +755,7 @@ class TraceVisualizer
     private fun mapManifoldNodeName(event: TraceEvent): String {
         return when {
             event.eventType.name.startsWith("MANIFOLD_") -> MANIFOLD_NODE_NAME
+            event.eventType.name.startsWith("JUNCTION_") -> JUNCTION_NODE_NAME
             event.eventType.name.startsWith("MANAGER_") -> MANAGER_NODE_NAME
             event.eventType in listOf(TraceEventType.AGENT_DISPATCH, TraceEventType.AGENT_RESPONSE) ->
                 "$AGENT_NODE_PREFIX${event.metadata["agentName"] ?: "Unknown"}"
@@ -989,6 +1066,7 @@ class TraceVisualizer
 
     companion object {
         private const val MANIFOLD_NODE_NAME = "Manifold"
+        private const val JUNCTION_NODE_NAME = "Junction"
         private const val MANAGER_NODE_NAME = "Manager"
         private const val AGENT_NODE_PREFIX = "Agent: "
     }

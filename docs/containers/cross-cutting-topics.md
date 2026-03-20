@@ -36,6 +36,17 @@ SPLITTER_PARALLEL_AWAIT, SPLITTER_RESULT_COLLECTION
 // P2P Events
 P2P_REQUEST_START, P2P_REQUEST_SUCCESS, P2P_REQUEST_FAILURE
 P2P_TRANSPORT_SEND, P2P_TRANSPORT_RECEIVE, PCP_CONTEXT_TRANSFER
+
+// Junction Events
+JUNCTION_START, JUNCTION_END, JUNCTION_SUCCESS, JUNCTION_FAILURE
+JUNCTION_PAUSE, JUNCTION_RESUME
+JUNCTION_ROUND_START, JUNCTION_ROUND_END
+JUNCTION_VOTE_TALLY, JUNCTION_CONSENSUS_CHECK
+JUNCTION_PARTICIPANT_DISPATCH, JUNCTION_PARTICIPANT_RESPONSE
+JUNCTION_WORKFLOW_START, JUNCTION_WORKFLOW_END
+JUNCTION_WORKFLOW_SUCCESS, JUNCTION_WORKFLOW_FAILURE
+JUNCTION_PHASE_START, JUNCTION_PHASE_END
+JUNCTION_HANDOFF
 ```
 
 ### Tracing Implementation Status
@@ -47,7 +58,7 @@ P2P_TRANSPORT_SEND, P2P_TRANSPORT_RECEIVE, PCP_CONTEXT_TRANSFER
 | Splitter | ✅ Yes | `enableTracing(config)` |
 | Manifold | ✅ Yes | Built-in tracing |
 | DistributionGrid | ❌ No | Stub implementation |
-| Junction | ❌ No | Stub implementation |
+| Junction | ✅ Yes | `enableTracing(config)` |
 
 ### Enabling Tracing
 ```kotlin
@@ -90,6 +101,10 @@ class MultiConnector : P2PInterface {
     }
 }
 
+// Junction - Coordinates discussion rounds across P2P participants.
+// The real implementation keeps moderator and participant bindings internally
+// and exposes them through the P2PInterface contract.
+
 // Splitter - Executes all pipelines, returns aggregated result
 class Splitter : P2PInterface {
     override suspend fun executeLocal(content: MultimodalContent): MultimodalContent {
@@ -106,7 +121,6 @@ class Splitter : P2PInterface {
 ```
 
 ### Non-P2P Containers
-- **Junction**: Plain class, no P2P interface
 - **DistributionGrid**: Has P2P interface but methods not implemented
 
 ## Container State Management
@@ -316,7 +330,7 @@ return coroutineScope {
 | **Splitter** | ✅ Complete | `addContent()`, `addPipeline()`, `executePipelines()` | ✅ | ✅ |
 | **Manifold** | ✅ Complete | `execute()`, manager pipeline required | ✅ | ✅ |
 | **DistributionGrid** | ⚠️ Stub | Only `setEntryPipeline()` | ⚠️ | ❌ |
-| **Junction** | ⚠️ Stub | Empty class | ❌ | ❌ |
+| **Junction** | ✅ Complete | `execute()`, `conductDiscussion()` | ✅ | ✅ |
 
 ## Best Practices Based on Actual APIs
 

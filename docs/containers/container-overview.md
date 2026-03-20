@@ -13,7 +13,7 @@
 - [Implementation Status](#implementation-status)
 - [Example: Basic Container Pattern](#example-basic-container-pattern)
 
-Containers are specialized classes that orchestrate multiple pipelines, providing higher-level coordination patterns beyond simple pipe composition. Most containers implement `P2PInterface`, though some like Junction are still in development.
+Containers are specialized classes that orchestrate multiple pipelines, providing higher-level coordination patterns beyond simple pipe composition. Most containers implement `P2PInterface`, including `Junction` as a discussion and workflow harness and `Manifold` as an agent harness.
 
 ## Container vs Pipeline
 
@@ -41,7 +41,7 @@ class Connector : P2PInterface {
 }
 ```
 
-**Note**: Junction is currently a stub class without P2P implementation.
+**Note**: Junction is now a real `P2PInterface` harness and can host nested P2P containers as participants or moderators, including workflow phase roles for plan, vote, act, verify, adjust, and output handoff recipes.
 
 ## Container References
 
@@ -75,7 +75,7 @@ fun enableTracing(config: TraceConfig = TraceConfig()) {
 ### Orchestration Containers
 - **Manifold**: Manager-worker task coordination
 - **DistributionGrid**: Decentralized agent swarm (stub implementation)
-- **Junction**: Democratic discussion (stub implementation)
+- **Junction**: Democratic discussion, voting, and workflow harness
 
 ## When to Use Containers
 
@@ -99,7 +99,7 @@ fun enableTracing(config: TraceConfig = TraceConfig()) {
 | Splitter | ✅ Complete | ✅ Yes | ✅ Yes |
 | Manifold | ✅ Complete | ✅ Yes | ✅ Yes |
 | DistributionGrid | ⚠️ Stub | ✅ Yes | ❌ No |
-| Junction | ⚠️ Stub | ❌ No | ❌ No |
+| Junction | ✅ Complete | ✅ Yes | ✅ Yes |
 
 ## Example: Basic Container Pattern
 

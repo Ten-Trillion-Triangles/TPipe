@@ -1,5 +1,11 @@
 package com.TTT.Debug
 
+/**
+ * Central event vocabulary used by the trace system.
+ *
+ * Junction, Manifold, Splitter, and ordinary pipe events all share this enum so the visualizer, priority
+ * mapper, and failure analysis tooling can treat each orchestration layer consistently.
+ */
 enum class TraceEventType {
     // Existing Pipe Events
     PIPE_START,
@@ -88,5 +94,30 @@ enum class TraceEventType {
     // Parallel Execution Events
     SPLITTER_PARALLEL_START,
     SPLITTER_PARALLEL_AWAIT,
-    SPLITTER_RESULT_COLLECTION
+    SPLITTER_RESULT_COLLECTION,
+
+    // Junction Orchestration Events
+    //
+    // Junction gets its own trace family because the harness is a multi-stage orchestrator rather than a
+    // single pipe. These events let the visualizer group discussion rounds, workflow phases, and handoff
+    // boundaries separately from the lower-level pipe and P2P events they may wrap.
+    JUNCTION_START,
+    JUNCTION_END,
+    JUNCTION_SUCCESS,
+    JUNCTION_FAILURE,
+    JUNCTION_PAUSE,
+    JUNCTION_RESUME,
+    JUNCTION_ROUND_START,
+    JUNCTION_ROUND_END,
+    JUNCTION_VOTE_TALLY,
+    JUNCTION_CONSENSUS_CHECK,
+    JUNCTION_PARTICIPANT_DISPATCH,
+    JUNCTION_PARTICIPANT_RESPONSE,
+    JUNCTION_WORKFLOW_START,
+    JUNCTION_WORKFLOW_END,
+    JUNCTION_WORKFLOW_SUCCESS,
+    JUNCTION_WORKFLOW_FAILURE,
+    JUNCTION_PHASE_START,
+    JUNCTION_PHASE_END,
+    JUNCTION_HANDOFF
 }

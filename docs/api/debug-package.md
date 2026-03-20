@@ -265,6 +265,17 @@ enum class TraceEventType {
     MANAGER_DECISION, MANAGER_TASK_ANALYSIS, MANAGER_AGENT_SELECTION,
     AGENT_DISPATCH, AGENT_RESPONSE, AGENT_REQUEST_VALIDATION,
     
+    // Junction Events
+    JUNCTION_START, JUNCTION_END, JUNCTION_SUCCESS, JUNCTION_FAILURE,
+    JUNCTION_PAUSE, JUNCTION_RESUME,
+    JUNCTION_ROUND_START, JUNCTION_ROUND_END,
+    JUNCTION_VOTE_TALLY, JUNCTION_CONSENSUS_CHECK,
+    JUNCTION_PARTICIPANT_DISPATCH, JUNCTION_PARTICIPANT_RESPONSE,
+    JUNCTION_WORKFLOW_START, JUNCTION_WORKFLOW_END,
+    JUNCTION_WORKFLOW_SUCCESS, JUNCTION_WORKFLOW_FAILURE,
+    JUNCTION_PHASE_START, JUNCTION_PHASE_END,
+    JUNCTION_HANDOFF,
+
     // P2P Events
     P2P_REQUEST_START, P2P_REQUEST_SUCCESS, P2P_REQUEST_FAILURE,
     
@@ -287,8 +298,8 @@ FailureAnalysis provides context-aware diagnostics with specific suggestions bas
 ### Multi-Format Export
 TraceVisualizer supports multiple output formats optimized for different use cases - JSON for programmatic analysis, HTML for interactive debugging, console for development workflows.
 
-### Manifold-Aware Visualization
-Special handling for Manifold orchestration traces with agent interaction analysis, task progression tracking, and manager-worker communication visualization.
+### Manifold- and Junction-Aware Visualization
+Special handling for Manifold orchestration traces and Junction discussion traces with agent interaction analysis, task progression tracking, vote aggregation, and manager-worker or moderator-participant communication visualization.
 
 ### Performance Optimization
 Tracing system designed for minimal performance impact with configurable detail levels and efficient event storage. Can be completely disabled for production use.

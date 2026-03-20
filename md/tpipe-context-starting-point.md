@@ -238,9 +238,16 @@ Treat this as a structural placeholder, not a finished orchestration runtime.
 
 ### Junction
 
-`Junction` is currently a stub.
+`Junction` is now a real harness.
 
-The docs and source describe intended democratic discussion / voting behavior, but there is no implementation yet. It should be treated as design intent only.
+It started as a discussion/voting container, but it now supports both the original discussion flow and the planned workflow recipes that chain plan, vote, act, verify, adjust, and output phases.
+
+Keep these Junction records handy:
+
+- [`md/junction-harness-requirements.md`](./junction-harness-requirements.md) for the discussion-harness contract
+- [`md/junction-harness-implementation-tracker.md`](./junction-harness-implementation-tracker.md) for the completed discussion rollout
+- [`md/junction-workflow-extension-requirements.md`](./junction-workflow-extension-requirements.md) for the workflow extension contract
+- [`md/junction-workflow-extension-tracker.md`](./junction-workflow-extension-tracker.md) for the workflow extension status
 
 ## P2P And Tracing
 
@@ -682,7 +689,7 @@ This makes the pipeline the boundary between temporary execution state and persi
 
 - The repository is in a strong “working core + some stubbed advanced containers” state.
 - `Pipe`, `Pipeline`, `ContextBank`, `ContextWindow`, `MiniBank`, `Connector`, `Splitter`, `MultiConnector`, and `Manifold` are real implementation surfaces.
-- `DistributionGrid` and `Junction` are not yet full runtimes.
+- `DistributionGrid` is still a placeholder, but `Junction` is now a full runtime harness with discussion and workflow recipes.
 - The docs are broad and sometimes describe aspirational behavior, so source files should be treated as the final word for anything operationally important.
 
 ## Practical Takeaways
@@ -691,4 +698,5 @@ This makes the pipeline the boundary between temporary execution state and persi
 - Use `ContextWindow` for local context and `ContextBank` for global/shared memory.
 - Use `MiniBank` when you need multiple page keys preserved independently.
 - Use `Connector` for one-key branching, `Splitter` for fan-out, `MultiConnector` for nested routing, and `Manifold` for manager-worker loops.
-- Do not rely on `DistributionGrid` or `Junction` as production-ready execution containers yet.
+- Do not rely on `DistributionGrid` as production-ready execution container yet.
+- Use `Junction` when you need a P2P-aware harness that can handle discussion-only or plan/vote/act/verify/adjust/output recipes.

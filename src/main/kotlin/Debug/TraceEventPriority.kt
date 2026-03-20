@@ -1,5 +1,8 @@
 package com.TTT.Debug
 
+/**
+ * Coarse trace visibility buckets used by the event filter.
+ */
 enum class TraceEventPriority {
     CRITICAL,    // MINIMAL level events
     STANDARD,    // NORMAL level events  
@@ -7,18 +10,32 @@ enum class TraceEventPriority {
     INTERNAL     // DEBUG level events
 }
 
+/**
+ * Maps trace event types to the visibility level expected by the trace viewer.
+ */
 object EventPriorityMapper
 {
+    /**
+     * Map a trace event to the display priority used by the trace filters.
+     *
+     * Harness lifecycle markers stay visible at normal trace detail levels, while phase plumbing and internal
+     * bookkeeping are progressively gated behind more verbose views.
+     *
+     * @param eventType The event to classify.
+     * @return The priority bucket that controls trace visibility.
+     */
     fun getPriority(eventType: TraceEventType): TraceEventPriority {
         return when(eventType) {
             // Existing CRITICAL events
             TraceEventType.PIPE_FAILURE,
             TraceEventType.API_CALL_FAILURE,
             TraceEventType.PIPELINE_TERMINATION,
-            // New Manifold CRITICAL events
+            // New Manifold / Junction CRITICAL events
             TraceEventType.MANIFOLD_FAILURE,
             TraceEventType.P2P_COMMUNICATION_FAILURE,
             TraceEventType.AGENT_REQUEST_INVALID,
+            TraceEventType.JUNCTION_FAILURE,
+            TraceEventType.JUNCTION_WORKFLOW_FAILURE,
             // New Splitter CRITICAL events
             TraceEventType.SPLITTER_FAILURE -> TraceEventPriority.CRITICAL
             
@@ -27,10 +44,22 @@ object EventPriorityMapper
             TraceEventType.PIPE_SUCCESS,
             TraceEventType.API_CALL_START,
             TraceEventType.API_CALL_SUCCESS,
-            // New Manifold STANDARD events
+            // New Manifold / Junction STANDARD events
+            //
+            // Harness-level lifecycle markers stay at STANDARD priority so they appear in normal trace output
+            // without drowning out detailed phase-by-phase events.
             TraceEventType.MANIFOLD_START,
             TraceEventType.MANIFOLD_END,
             TraceEventType.MANIFOLD_SUCCESS,
+            TraceEventType.JUNCTION_START,
+            TraceEventType.JUNCTION_END,
+            TraceEventType.JUNCTION_SUCCESS,
+            TraceEventType.JUNCTION_PAUSE,
+            TraceEventType.JUNCTION_RESUME,
+            TraceEventType.JUNCTION_WORKFLOW_START,
+            TraceEventType.JUNCTION_WORKFLOW_END,
+            TraceEventType.JUNCTION_WORKFLOW_SUCCESS,
+            TraceEventType.JUNCTION_HANDOFF,
             TraceEventType.MANAGER_DECISION,
             TraceEventType.AGENT_DISPATCH,
             TraceEventType.AGENT_RESPONSE,
@@ -44,6 +73,9 @@ object EventPriorityMapper
             TraceEventType.SPLITTER_PIPELINE_COMPLETION -> TraceEventPriority.STANDARD
             
             // Existing DETAILED events
+            //
+            // Phase transitions, vote tallies, and request plumbing are intentionally more verbose than the
+            // top-level lifecycle markers because they are the events you need when diagnosing a broken harness.
             TraceEventType.POST_GENERATE,
             TraceEventType.VALIDATION_START,
             TraceEventType.VALIDATION_SUCCESS,
@@ -54,7 +86,7 @@ object EventPriorityMapper
             TraceEventType.CONTEXT_PULL,
             TraceEventType.PRE_INVOKE,
             TraceEventType.CONTEXT_TRUNCATE,
-            // New Manifold DETAILED events
+            // New Manifold / Junction DETAILED events
             TraceEventType.MANAGER_TASK_ANALYSIS,
             TraceEventType.MANAGER_AGENT_SELECTION,
             TraceEventType.TASK_PROGRESS_UPDATE,
@@ -65,6 +97,14 @@ object EventPriorityMapper
             TraceEventType.P2P_TRANSPORT_SEND,
             TraceEventType.P2P_TRANSPORT_RECEIVE,
             TraceEventType.PCP_CONTEXT_TRANSFER,
+            TraceEventType.JUNCTION_ROUND_START,
+            TraceEventType.JUNCTION_ROUND_END,
+            TraceEventType.JUNCTION_VOTE_TALLY,
+            TraceEventType.JUNCTION_CONSENSUS_CHECK,
+            TraceEventType.JUNCTION_PARTICIPANT_DISPATCH,
+            TraceEventType.JUNCTION_PARTICIPANT_RESPONSE,
+            TraceEventType.JUNCTION_PHASE_START,
+            TraceEventType.JUNCTION_PHASE_END,
             // New Splitter DETAILED events
             TraceEventType.SPLITTER_CONTENT_DISTRIBUTION,
             TraceEventType.SPLITTER_PIPELINE_DISPATCH,
@@ -72,6 +112,8 @@ object EventPriorityMapper
             TraceEventType.SPLITTER_COMPLETION_CALLBACK -> TraceEventPriority.DETAILED
             
             // Existing INTERNAL events
+            //
+            // Internal events are noisy bookkeeping details and should only surface at DEBUG detail levels.
             TraceEventType.PIPE_END,
             TraceEventType.BRANCH_PIPE_TRIGGERED,
             // New Manifold INTERNAL events
@@ -89,6 +131,13 @@ object EventPriorityMapper
         }
     }
     
+    /**
+     * Decide whether a trace event should be emitted for the requested detail level.
+     *
+     * @param eventType The event being evaluated.
+     * @param detailLevel The requested trace verbosity.
+     * @return True when the event belongs in the requested output stream.
+     */
     fun shouldTrace(eventType: TraceEventType, detailLevel: TraceDetailLevel): Boolean {
         val priority = getPriority(eventType)
         return when(detailLevel) {
