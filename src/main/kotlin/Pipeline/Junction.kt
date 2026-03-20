@@ -450,6 +450,27 @@ class Junction : P2PInterface
     }
 
     /**
+     * Clear only the runtime state that belongs to the currently executing harness run.
+     *
+     * This preserves the Junction configuration, binding graph, trace configuration, and workflow recipe while
+     * releasing per-run data such as round logs, vote state, workflow phase results, and pause tokens.
+     */
+    fun clearRuntimeState()
+    {
+        resetRuntimeState()
+    }
+
+    /**
+     * Clear the accumulated trace history for this Junction instance.
+     *
+     * The trace configuration remains untouched so the harness can keep tracing after a manual clear.
+     */
+    fun clearTrace()
+    {
+        PipeTracer.clearTrace(junctionId)
+    }
+
+    /**
      * Request a pause at the next safe checkpoint.
      *
      * The harness checks this flag between rounds and before the next participant dispatch.
@@ -893,6 +914,9 @@ class Junction : P2PInterface
      */
     suspend fun execute(content: MultimodalContent): MultimodalContent
     {
+        // Every execution starts from a clean runtime snapshot so repeated runs cannot inherit stale pause
+        // state, round counters, workflow cycles, or queued resume signals.
+        resetRuntimeState()
         init()
 
         // Discussion-only execution and workflow execution share the same harness entrypoint, but the workflow
@@ -937,7 +961,7 @@ class Junction : P2PInterface
         )
 
         workingContent.metadata["junctionId"] = junctionId
-        workingContent.metadata["junctionState"] = discussionState
+        workingContent.metadata["junctionState"] = discussionState.deepCopy()
 
         while(discussionState.currentRound < discussionState.maxRounds && !discussionState.consensusReached)
         {
@@ -1067,8 +1091,8 @@ class Junction : P2PInterface
         )
 
         workingContent.text = serialize(decision)
-        workingContent.metadata["junctionState"] = discussionState
-        workingContent.metadata["junctionDecision"] = decision
+        workingContent.metadata["junctionState"] = discussionState.deepCopy()
+        workingContent.metadata["junctionDecision"] = decision.deepCopy()
         workingContent.passPipeline = true
 
         if(tracingEnabled)
@@ -1150,7 +1174,7 @@ class Junction : P2PInterface
         workflowState.handoffOnly = workflowState.handoffOnly || actorBinding == null
 
         workingContent.metadata["junctionId"] = junctionId
-        workingContent.metadata["junctionWorkflowState"] = workflowState
+        workingContent.metadata["junctionWorkflowState"] = workflowState.deepCopy()
 
         while(workflowState.currentCycle < workflowState.maxCycles && !workflowState.completed)
         {
@@ -1228,8 +1252,8 @@ class Junction : P2PInterface
         val finalOutput = finalizeWorkflowOutput(workingContent)
         val outcome = buildWorkflowOutcome(topic, finalOutput)
         finalOutput.text = serialize(outcome)
-        finalOutput.metadata["junctionWorkflowState"] = workflowState
-        finalOutput.metadata["junctionWorkflowOutcome"] = outcome
+        finalOutput.metadata["junctionWorkflowState"] = workflowState.deepCopy()
+        finalOutput.metadata["junctionWorkflowOutcome"] = outcome.deepCopy()
 
         if(workflowState.completed)
         {
@@ -2610,6 +2634,41 @@ class Junction : P2PInterface
         }
 
         return metadata
+    }
+
+    private fun resetRuntimeState()
+    {
+        // Preserve configuration and bindings, but ensure transient run state cannot leak from one execution
+        // into the next.
+        isPaused = false
+        while(resumeSignal.tryReceive().isSuccess)
+        {
+            // Drain any queued resume tokens left behind by a prior run.
+        }
+
+        discussionState = discussionState.copy(
+            topic = "",
+            currentRound = 0,
+            consensusReached = false,
+            finalDecision = "",
+            moderatorNotes = "",
+            selectedParticipants = mutableListOf(),
+            participantOpinions = mutableMapOf(),
+            voteResults = mutableListOf(),
+            roundLog = mutableListOf()
+        )
+
+        workflowState = JunctionWorkflowState(
+            recipe = workflowRecipe,
+            currentCycle = 0,
+            maxCycles = discussionState.maxRounds,
+            phaseOrder = workflowRecipe.phases().toMutableList(),
+            completed = false,
+            handoffOnly = workflowRecipe.endsWithHandoff(),
+            repeatRequested = false,
+            verificationPassed = true,
+            discussionDecision = DiscussionDecision()
+        )
     }
 
     private fun shouldIncludeContent(detailLevel: TraceDetailLevel): Boolean
