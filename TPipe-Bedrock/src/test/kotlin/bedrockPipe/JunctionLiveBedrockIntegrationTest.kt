@@ -1051,8 +1051,13 @@ class JunctionLiveBedrockIntegrationTest
             val workingRequest = request.deepCopy<P2PRequest>()
             workingRequest.prompt.addText(roleBehavior.promptHint(roleName, requestCount))
 
-            val rawResponse = pipeline.executeP2PRequest(workingRequest)
-            val rawOutput = rawResponse?.output?.text.orEmpty()
+            val workingContent = workingRequest.prompt.deepCopy()
+            workingRequest.context?.let { context ->
+                workingContent.context = context.deepCopy()
+            }
+
+            val rawResult = pipeline.execute(workingContent)
+            val rawOutput = rawResult.text
             val normalized = roleBehavior.normalizeOutput(roleName, requestCount, rawOutput)
 
             return P2PResponse(output = normalized)

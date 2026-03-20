@@ -19,12 +19,15 @@
 
 The discussion-harness requirements live in [`md/junction-harness-requirements.md`](../../md/junction-harness-requirements.md), the completed discussion rollout is tracked in [`md/junction-harness-implementation-tracker.md`](../../md/junction-harness-implementation-tracker.md), and the workflow extension has its own requirements and tracker in [`md/junction-workflow-extension-requirements.md`](../../md/junction-workflow-extension-requirements.md) and [`md/junction-workflow-extension-tracker.md`](../../md/junction-workflow-extension-tracker.md).
 
+Junction's memory-governance work is tracked in [`md/junction-memory-governance-parity.md`](../../md/junction-memory-governance-parity.md).
+
 It now supports:
 - accept any `P2PInterface` as moderator or participant
 - support nested containers such as `Manifold`
 - run a bounded discussion loop with strategy, round, and threshold controls
 - support all three original orchestration strategies with distinct runtime semantics
 - reject direct and indirect container cycles before execution
+- resolve outbound memory with deterministic budgeting and optional summarization for older history tails
 - emit structured trace events
 - return a serialized `DiscussionDecision`
 - run workflow recipes for plan/vote/act/verify/adjust/output handoff chains

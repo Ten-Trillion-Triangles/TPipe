@@ -212,6 +212,14 @@ class JunctionDsl
     }
 
     /**
+     * Configure the outbound memory policy used by the Junction harness.
+     */
+    fun memoryPolicy(block: JunctionMemoryPolicy.() -> Unit)
+    {
+        junction.memoryPolicy(block)
+    }
+
+    /**
      * Configure the planner role for workflow-oriented Junction execution.
      */
     fun planner(

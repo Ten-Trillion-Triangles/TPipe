@@ -10,6 +10,9 @@ import com.TTT.Debug.TraceEventType
 import com.TTT.Debug.TraceFormat
 import com.TTT.Debug.TracePhase
 import com.TTT.Context.ContextWindow
+import com.TTT.Context.Dictionary
+import com.TTT.Context.MiniBank
+import com.TTT.Enums.ContextWindowSettings
 import com.TTT.P2P.ContextProtocol
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PInterface
@@ -20,6 +23,7 @@ import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.TruncationSettings
 import com.TTT.PipeContextProtocol.Transport
 import com.TTT.Util.deepCopy
 import com.TTT.Util.deserialize
@@ -100,6 +104,7 @@ class Junction : P2PInterface
     private val resumeSignal = Channel<Unit>(1)
     private var moderatorInterventionEnabled = true
     private var defaultMaxNestedDepth = 8
+    private var junctionMemoryPolicy = JunctionMemoryPolicy()
 
 //----------------------------------------------P2P Interface------------------------------------------------------------
 
@@ -422,6 +427,42 @@ class Junction : P2PInterface
         defaultMaxNestedDepth = depth
         discussionState.maxNestedDepth = depth
         return this
+    }
+
+    /**
+     * Set the memory policy that governs outbound prompt compaction.
+     *
+     * @param policy The policy to apply to future participant and workflow requests.
+     * @return This Junction object for method chaining.
+     */
+    fun setMemoryPolicy(policy: JunctionMemoryPolicy): Junction
+    {
+        junctionMemoryPolicy = policy.copy()
+        return this
+    }
+
+    /**
+     * Configure the memory policy inline.
+     *
+     * @param block Mutable configuration block for the outbound memory policy.
+     * @return This Junction object for method chaining.
+     */
+    fun memoryPolicy(block: JunctionMemoryPolicy.() -> Unit): Junction
+    {
+        val policy = JunctionMemoryPolicy()
+        policy.block()
+        junctionMemoryPolicy = policy
+        return this
+    }
+
+    /**
+     * Read back the current memory policy.
+     *
+     * @return A copy of the active memory policy.
+     */
+    fun getMemoryPolicy(): JunctionMemoryPolicy
+    {
+        return junctionMemoryPolicy.copy()
     }
 
     /**
@@ -961,6 +1002,7 @@ class Junction : P2PInterface
         )
 
         workingContent.metadata["junctionId"] = junctionId
+        workingContent.metadata["junctionMemoryPolicy"] = junctionMemoryPolicy.copy()
         workingContent.metadata["junctionState"] = discussionState.deepCopy()
 
         while(discussionState.currentRound < discussionState.maxRounds && !discussionState.consensusReached)
@@ -1093,6 +1135,7 @@ class Junction : P2PInterface
         workingContent.text = serialize(decision)
         workingContent.metadata["junctionState"] = discussionState.deepCopy()
         workingContent.metadata["junctionDecision"] = decision.deepCopy()
+        workingContent.metadata["junctionMemoryPolicy"] = junctionMemoryPolicy.copy()
         workingContent.passPipeline = true
 
         if(tracingEnabled)
@@ -1174,6 +1217,7 @@ class Junction : P2PInterface
         workflowState.handoffOnly = workflowState.handoffOnly || actorBinding == null
 
         workingContent.metadata["junctionId"] = junctionId
+        workingContent.metadata["junctionMemoryPolicy"] = junctionMemoryPolicy.copy()
         workingContent.metadata["junctionWorkflowState"] = workflowState.deepCopy()
 
         while(workflowState.currentCycle < workflowState.maxCycles && !workflowState.completed)
@@ -1254,6 +1298,7 @@ class Junction : P2PInterface
         finalOutput.text = serialize(outcome)
         finalOutput.metadata["junctionWorkflowState"] = workflowState.deepCopy()
         finalOutput.metadata["junctionWorkflowOutcome"] = outcome.deepCopy()
+        finalOutput.metadata["junctionMemoryPolicy"] = junctionMemoryPolicy.copy()
 
         if(workflowState.completed)
         {
@@ -1348,6 +1393,692 @@ class Junction : P2PInterface
 
 //----------------------------------------------Internal Helpers---------------------------------------------------------
 
+    /**
+     * Resolve the token-counting settings Junction should use when compacting one outbound request.
+     *
+     * The binding can contribute its own budgeting preferences, but Junction always clones those settings so
+     * request shaping never mutates shared configuration.
+     *
+     * @param binding The target binding whose token-counting settings should be honored, if present.
+     * @return A copy of the token-counting settings to use for this request.
+     */
+    private fun resolveMemoryTruncationSettings(binding: JunctionBinding?): TruncationSettings
+    {
+        return binding?.requirements?.tokenCountingSettings?.copy() ?: TruncationSettings()
+    }
+
+    /**
+     * Resolve the safe outbound token ceiling for one binding.
+     *
+     * Junction budgets against the smallest safe value across its own policy and the participant's advertised
+     * limits so a loosely configured harness never pushes an oversized prompt downstream.
+     *
+     * @param binding The participant or workflow binding being targeted.
+     * @return The smallest safe token ceiling available for the request.
+     */
+    private fun resolveOutboundBudget(binding: JunctionBinding?): Int
+    {
+        val policyBudget = junctionMemoryPolicy.outboundTokenBudget.takeIf { it > 0 } ?: Int.MAX_VALUE
+        val descriptorBudget = binding?.descriptor?.contextWindowSize?.takeIf { it > 0 } ?: Int.MAX_VALUE
+        val requirementsBudget = binding?.requirements?.maxTokens?.takeIf { it > 0 } ?: Int.MAX_VALUE
+        return minOf(policyBudget, descriptorBudget, requirementsBudget)
+    }
+
+    /**
+     * Truncate a text block to the requested budget using TPipe's dictionary-backed token accounting.
+     *
+     * Junction uses this helper for all prompt compaction so the outbound envelope is deterministic and does
+     * not depend on a language model to remain safe.
+     *
+     * @param text Text to compact.
+     * @param tokenBudget Maximum tokens allowed for the returned text.
+     * @param settings Token-counting settings to reuse for the estimate.
+     * @param preserveStart Whether the front or back of the text should be preserved first.
+     * @return The compacted text or an empty string when nothing useful can be kept.
+     */
+    private fun budgetText(
+        text: String,
+        tokenBudget: Int,
+        settings: TruncationSettings,
+        preserveStart: Boolean = true
+    ): String
+    {
+        if(text.isBlank() || tokenBudget <= 0)
+        {
+            return ""
+        }
+
+        val method = if(preserveStart) ContextWindowSettings.TruncateBottom else ContextWindowSettings.TruncateTop
+        return Dictionary.truncate(
+            text,
+            tokenBudget,
+            1,
+            method,
+            settings.countSubWordsInFirstWord,
+            settings.favorWholeWords,
+            settings.countOnlyFirstWordFound,
+            settings.splitForNonWordChar,
+            settings.alwaysSplitIfWholeWordExists,
+            settings.countSubWordsIfSplit,
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias
+        )
+    }
+
+    /**
+     * Estimate the token cost of a text block using the same settings Junction uses for compaction.
+     *
+     * @param text Text to inspect.
+     * @param settings Token-counting settings to apply.
+     * @return Approximate token count for the text.
+     */
+    private fun countBudgetedTokens(text: String, settings: TruncationSettings): Int
+    {
+        if(text.isBlank())
+        {
+            return 0
+        }
+
+        return Dictionary.countTokens(
+            text,
+            settings.countSubWordsInFirstWord,
+            settings.favorWholeWords,
+            settings.countOnlyFirstWordFound,
+            settings.splitForNonWordChar,
+            settings.alwaysSplitIfWholeWordExists,
+            settings.countSubWordsIfSplit,
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias
+        )
+    }
+
+    /**
+     * Render a compact section label and its lines as a single prompt block.
+     *
+     * Empty sections are dropped so the outbound envelope does not spend budget on boilerplate.
+     *
+     * @param title Section title to prepend.
+     * @param lines Lines of content to include under the title.
+     * @return A compact block or an empty string if all input lines are blank.
+     */
+    private fun buildSectionText(title: String, lines: List<String>): String
+    {
+        val filtered = lines.filter { line -> line.isNotBlank() }
+        if(filtered.isEmpty())
+        {
+            return ""
+        }
+
+        return buildString {
+            appendLine("$title:")
+            filtered.forEach { line ->
+                appendLine("- $line")
+            }
+        }.trim()
+    }
+
+    /**
+     * Build the optional summary block for older history tails.
+     *
+     * Summarization is only a support mechanism here. The output is still bounded by deterministic budgeting
+     * and falls back to the raw tail when the summarizer produces nothing useful.
+     *
+     * @param summaryLabel Human-readable label for the summary section.
+     * @param summarySeed Older-history content used as the basis for optional summarization.
+     * @param summaryBudget Token budget reserved for the summary.
+     * @param settings Token-counting settings to reuse for the summary.
+     * @return A compact summary section or an empty string if no safe summary exists.
+     */
+    private fun buildSummaryText(
+        summaryLabel: String,
+        summarySeed: String,
+        summaryBudget: Int,
+        settings: TruncationSettings
+    ): String
+    {
+        if(summarySeed.isBlank() || summaryBudget <= 0)
+        {
+            return ""
+        }
+
+        val trimmedSeed = summarySeed.take(junctionMemoryPolicy.maxSummaryCharacters)
+        val summarized = if(junctionMemoryPolicy.enableSummarization && junctionMemoryPolicy.summarizer != null)
+        {
+            runCatching { junctionMemoryPolicy.summarizer?.invoke(trimmedSeed).orEmpty() }
+                .getOrDefault("")
+                .ifBlank { trimmedSeed }
+        }
+        else
+        {
+            trimmedSeed
+        }
+
+        val summarySection = buildSectionText(summaryLabel, listOf(summarized))
+        return budgetText(summarySection, summaryBudget, settings, preserveStart = true)
+    }
+
+    /**
+     * Build the compact [ContextWindow] that will be handed to a downstream participant.
+     *
+     * The sections are staged first and then truncated together so the final prompt stays within the same
+     * resolved budget as the envelope that owns it.
+     *
+     * @param sections Ordered prompt sections to include.
+     * @param budget Token ceiling for the assembled prompt window.
+     * @param settings Token-counting and truncation settings to reuse.
+     * @param inputText Original caller content used to preserve explicit text matches.
+     * @return A compact context window containing the budgeted sections.
+     */
+    private fun buildContextWindowForPrompt(
+        sections: List<String>,
+        budget: Int,
+        settings: TruncationSettings,
+        inputText: String
+    ): ContextWindow
+    {
+        val promptWindow = ContextWindow()
+        sections.filter { it.isNotBlank() }.forEach { section ->
+            promptWindow.contextElements.add(section)
+        }
+
+        if(promptWindow.contextElements.isEmpty())
+        {
+            return promptWindow
+        }
+
+        promptWindow.truncateContextElements(
+            budget,
+            1,
+            ContextWindowSettings.TruncateBottom,
+            settings.countSubWordsInFirstWord,
+            settings.favorWholeWords,
+            settings.countOnlyFirstWordFound,
+            settings.splitForNonWordChar,
+            settings.alwaysSplitIfWholeWordExists,
+            settings.countSubWordsIfSplit,
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias,
+            inputText = inputText,
+            preserveTextMatches = true
+        )
+
+        return promptWindow
+    }
+
+    /**
+     * Convert the compact sections into a [MiniBank] for receivers that expect page-based prompt context.
+     *
+     * @param sections Named section payloads to place into the mini bank.
+     * @return A mini bank mirroring the compact prompt sections.
+     */
+    private fun buildMiniBankFromSections(sections: Map<String, String>): MiniBank
+    {
+        val miniBank = MiniBank()
+        sections.forEach { (key, text) ->
+            if(text.isBlank())
+            {
+                return@forEach
+            }
+
+            miniBank.contextMap[key] = ContextWindow().apply {
+                contextElements.add(text)
+            }
+        }
+
+        return miniBank
+    }
+
+    /**
+     * Build a complete outbound memory envelope for one participant or workflow binding.
+     *
+     * This is the core governance step for Junction: it resolves the request budget, allocates it across the
+     * critical/recent/summary sections, optionally summarizes older history, and returns a compact payload
+     * that can be sent downstream without leaking the full live harness state.
+     *
+     * @param roleName Logical role name the envelope is being built for.
+     * @param roleKind High-level role category used for tracing and diagnostics.
+     * @param binding Binding that will receive the request, if one exists.
+     * @param workingContent Current run content that seeded the request.
+     * @param criticalLines Live state that must survive compaction.
+     * @param recentLines Near-term context that should usually be preserved verbatim.
+     * @param summarySeed Older-history text that may be summarized as a secondary support mechanism.
+     * @param summaryLabel Human-readable label for the summary section.
+     * @return A fully budgeted memory envelope ready to render into a prompt.
+     * @throws IllegalStateException If the resolved budget cannot safely hold Junction's minimum critical state.
+     */
+    private fun budgetEnvelope(
+        roleName: String,
+        roleKind: JunctionMemoryRole,
+        binding: JunctionBinding?,
+        workingContent: MultimodalContent,
+        criticalLines: List<String>,
+        recentLines: List<String>,
+        summarySeed: String,
+        summaryLabel: String
+    ): JunctionMemoryEnvelope
+    {
+        val settings = resolveMemoryTruncationSettings(binding)
+        val resolvedBudget = resolveOutboundBudget(binding)
+        val availableBudget = resolvedBudget - junctionMemoryPolicy.safetyReserveTokens
+
+        if(availableBudget < junctionMemoryPolicy.minimumCriticalBudget)
+        {
+            val reason = "Junction memory budget $availableBudget is below the minimum critical budget of ${junctionMemoryPolicy.minimumCriticalBudget}."
+            trace(
+                TraceEventType.JUNCTION_FAILURE,
+                TracePhase.ORCHESTRATION,
+                workingContent,
+                metadata = mapOf(
+                    "roleName" to roleName,
+                    "roleKind" to roleKind.name,
+                    "resolvedBudget" to resolvedBudget,
+                    "availableBudget" to availableBudget,
+                    "reason" to reason
+                )
+            )
+            throw IllegalStateException(reason)
+        }
+
+        var criticalBudget = maxOf(junctionMemoryPolicy.minimumCriticalBudget, availableBudget / 2)
+        criticalBudget = minOf(criticalBudget, availableBudget)
+        var recentBudget = maxOf(0, availableBudget - criticalBudget)
+        if(recentBudget > 0)
+        {
+            recentBudget = minOf(recentBudget, maxOf(junctionMemoryPolicy.minimumRecentBudget, availableBudget / 3))
+        }
+        val summaryBudget = maxOf(0, availableBudget - criticalBudget - recentBudget)
+
+        val criticalRaw = buildSectionText("Critical state", criticalLines)
+        val criticalText = budgetText(criticalRaw, criticalBudget, settings, preserveStart = true)
+        val recentRaw = buildSectionText("Recent history", recentLines)
+        val recentText = budgetText(recentRaw, recentBudget, settings, preserveStart = true)
+        val summaryText = buildSummaryText(summaryLabel, summarySeed, summaryBudget, settings)
+
+        val sections = mutableListOf<JunctionMemorySection>()
+        sections.add(
+            JunctionMemorySection(
+                name = "critical",
+                tokenBudget = criticalBudget,
+                text = criticalText,
+                truncated = countBudgetedTokens(criticalText, settings) < countBudgetedTokens(criticalRaw, settings),
+                tokenCount = countBudgetedTokens(criticalText, settings)
+            )
+        )
+        if(recentText.isNotBlank())
+        {
+            sections.add(
+                JunctionMemorySection(
+                    name = "recent",
+                    tokenBudget = recentBudget,
+                    text = recentText,
+                    truncated = countBudgetedTokens(recentText, settings) < countBudgetedTokens(recentRaw, settings),
+                    tokenCount = countBudgetedTokens(recentText, settings)
+                )
+            )
+        }
+        if(summaryText.isNotBlank())
+        {
+            sections.add(
+                JunctionMemorySection(
+                    name = "summary",
+                    tokenBudget = summaryBudget,
+                    text = summaryText,
+                    truncated = countBudgetedTokens(summaryText, settings) < countBudgetedTokens(summarySeed, settings),
+                    tokenCount = countBudgetedTokens(summaryText, settings)
+                )
+            )
+        }
+
+        val promptWindow = buildContextWindowForPrompt(
+            listOf(
+                criticalText,
+                recentText,
+                summaryText
+            ),
+            availableBudget,
+            settings,
+            workingContent.text
+        )
+
+        val promptText = promptWindow.contextElements.joinToString("\n\n")
+        val miniBank = buildMiniBankFromSections(
+            linkedMapOf(
+                "critical" to criticalText,
+                "recent" to recentText,
+                "summary" to summaryText
+            )
+        )
+
+        val compacted = sections.any { section ->
+            if(section.name == "summary")
+            {
+                countBudgetedTokens(section.text, settings) < countBudgetedTokens(summarySeed, settings)
+            }
+            else
+            {
+                section.truncated
+            }
+        } || promptText.length < criticalRaw.length + recentRaw.length + summaryText.length
+
+        return JunctionMemoryEnvelope(
+            roleName = roleName,
+            roleKind = roleKind,
+            resolvedBudget = resolvedBudget,
+            availableBudget = availableBudget,
+            safetyReserveTokens = junctionMemoryPolicy.safetyReserveTokens,
+            criticalBudget = criticalBudget,
+            recentBudget = recentBudget,
+            summaryBudget = summaryBudget,
+            summarizationUsed = junctionMemoryPolicy.enableSummarization && junctionMemoryPolicy.summarizer != null && summarySeed.isNotBlank(),
+            compacted = compacted,
+            sections = sections,
+            contextWindow = promptWindow,
+            miniBank = miniBank
+        )
+    }
+
+    /**
+     * Build the live discussion facts that must survive compaction for a participant.
+     *
+     * These are the "do not lose" lines: topic, round, voting state, consensus status, and the current
+     * content excerpt that grounds the participant in the caller's request.
+     *
+     * @param workingContent The current discussion payload.
+     * @param roundNumber The round being executed.
+     * @param binding The participant binding receiving the request.
+     * @return Compact critical-state lines for the outbound envelope.
+     */
+    private fun buildDiscussionCriticalLines(
+        workingContent: MultimodalContent,
+        roundNumber: Int,
+        binding: JunctionBinding
+    ): List<String>
+    {
+        val currentVoteSummary = discussionState.voteResults.firstOrNull()?.let { result ->
+            "${result.option} (${result.percentage * 100.0}% / weight ${result.weight})"
+        }.orEmpty()
+
+        return listOf(
+            "Role: ${binding.roleName}",
+            "Topic: ${discussionState.topic}",
+            "Round: $roundNumber of ${discussionState.maxRounds}",
+            "Strategy: ${discussionState.strategy.name}",
+            "Consensus threshold: ${discussionState.consensusThreshold}",
+            "Consensus reached: ${discussionState.consensusReached}",
+            "Final decision: ${discussionState.finalDecision.ifBlank { "<pending>" }}",
+            "Moderator notes: ${discussionState.moderatorNotes.ifBlank { "<none>" }}",
+            "Selected participants: ${discussionState.selectedParticipants.joinToString().ifBlank { "<all>" }}",
+            "Current vote leader: ${currentVoteSummary.ifBlank { "<none>" }}",
+            "Latest content excerpt: ${compactContentExcerpt(workingContent.text, binding)}"
+        )
+    }
+
+    /**
+     * Build the near-term discussion history that should usually remain visible without summarization.
+     *
+     * The returned lines are intentionally short and ordered so the participant can recover the recent voting
+     * context without Junction forwarding the full round log.
+     *
+     * @return A bounded list of recent discussion lines.
+     */
+    private fun buildDiscussionRecentLines(): List<String>
+    {
+        val recentLogs = discussionState.roundLog
+            .takeLast(junctionMemoryPolicy.recentDiscussionEntries)
+            .reversed()
+            .map { entry -> "Log: $entry" }
+
+        val recentOpinions = discussionState.participantOpinions.values
+            .sortedWith(compareBy<ParticipantOpinion> { it.roundNumber }.thenBy { it.participantName })
+            .takeLast(junctionMemoryPolicy.recentOpinionCount)
+            .reversed()
+            .map { opinion ->
+                "Opinion from ${opinion.participantName} (round ${opinion.roundNumber}): ${opinion.vote.ifBlank { opinion.opinion }}"
+            }
+
+        val recentVotes = discussionState.voteResults
+            .takeLast(junctionMemoryPolicy.recentOpinionCount)
+            .reversed()
+            .map { result ->
+                "Vote ${result.option}: ${result.percentage * 100.0}% support, supporters=${result.supporters.joinToString()}"
+            }
+
+        return recentLogs + recentOpinions + recentVotes
+    }
+
+    /**
+     * Build the older discussion tail that may be summarized when extra budget is available.
+     *
+     * This text is not the source of truth. It is only the seed for optional summarization when the harness
+     * can afford to provide a more compact long-range memory hint.
+     *
+     * @return Older discussion context suitable for optional summarization.
+     */
+    private fun buildDiscussionSummarySeed(): String
+    {
+        val omittedLogs = discussionState.roundLog.dropLast(junctionMemoryPolicy.recentDiscussionEntries)
+        val omittedOpinions = discussionState.participantOpinions.values
+            .sortedWith(compareBy<ParticipantOpinion> { it.roundNumber }.thenBy { it.participantName })
+            .dropLast(junctionMemoryPolicy.recentOpinionCount)
+
+        return buildString {
+            if(omittedLogs.isNotEmpty())
+            {
+                appendLine("Omitted discussion logs: ${omittedLogs.size}")
+                omittedLogs.takeLast(5).forEach { appendLine(it) }
+            }
+            if(omittedOpinions.isNotEmpty())
+            {
+                appendLine("Omitted participant opinions: ${omittedOpinions.size}")
+                omittedOpinions.takeLast(5).forEach { opinion ->
+                    appendLine("${opinion.participantName}: ${opinion.vote.ifBlank { opinion.opinion }}")
+                }
+            }
+            if(discussionState.voteResults.isNotEmpty())
+            {
+                appendLine("Latest vote tally:")
+                discussionState.voteResults.forEach { result ->
+                    appendLine("${result.option}: ${result.percentage * 100.0}% support")
+                }
+            }
+        }.trim()
+    }
+
+    /**
+     * Build the live workflow facts that must survive compaction for a workflow role.
+     *
+     * The section keeps the current recipe, cycle, discussion state, and phase-specific instruction visible so
+     * the downstream container can act without inheriting the whole accumulated history.
+     *
+     * @param workingContent Current workflow payload.
+     * @param phase Workflow phase being executed.
+     * @param cycleNumber Current workflow cycle.
+     * @param binding Binding that will receive the phase request, if any.
+     * @return Critical workflow lines for the outbound envelope.
+     */
+    private fun buildWorkflowCriticalLines(
+        workingContent: MultimodalContent,
+        phase: JunctionWorkflowPhase,
+        cycleNumber: Int,
+        binding: JunctionBinding?
+    ): List<String>
+    {
+        return buildList {
+            add("Role: ${binding?.roleName ?: phase.name.lowercase()}")
+            add("Phase: ${phase.name}")
+            add("Cycle: $cycleNumber of ${workflowState.maxCycles}")
+            add("Workflow recipe: ${workflowState.recipe.name}")
+            add("Topic: ${discussionState.topic}")
+            add("Discussion round: ${discussionState.currentRound} of ${discussionState.maxRounds}")
+            add("Consensus reached: ${discussionState.consensusReached}")
+            add("Current decision: ${discussionState.finalDecision.ifBlank { "<pending>" }}")
+            add("Workflow status: completed=${workflowState.completed}, repeatRequested=${workflowState.repeatRequested}, verificationPassed=${workflowState.verificationPassed}")
+            add("Latest content excerpt: ${compactContentExcerpt(workingContent.text, binding)}")
+            add(
+                when(phase)
+                {
+                    JunctionWorkflowPhase.PLAN -> "Plan current actions and dependencies."
+                    JunctionWorkflowPhase.VOTE -> "Vote against the current decision and verify whether consensus exists."
+                    JunctionWorkflowPhase.ACT -> "Carry out the action or emit safe handoff instructions."
+                    JunctionWorkflowPhase.VERIFY -> "Verify the current workflow output and request repetition if needed."
+                    JunctionWorkflowPhase.ADJUST -> "Adjust the current plan based on the latest vote and verification state."
+                    JunctionWorkflowPhase.OUTPUT -> "Produce the final handoff or output artifact."
+                }
+            )
+        }
+    }
+
+    /**
+     * Build the near-term workflow history that should stay visible without summarization.
+     *
+     * This captures the latest phase results and logs so a planner or verifier can continue without losing
+     * the immediate execution story.
+     *
+     * @return A bounded list of recent workflow lines.
+     */
+    private fun buildWorkflowRecentLines(): List<String>
+    {
+        val recentLogs = workflowState.roundLog
+            .takeLast(junctionMemoryPolicy.recentPhaseResultCount)
+            .reversed()
+            .map { entry -> "Log: $entry" }
+
+        val recentPhaseResults = workflowState.phaseResults
+            .takeLast(junctionMemoryPolicy.recentPhaseResultCount)
+            .reversed()
+            .map { result ->
+                "Phase ${result.phase.name} cycle ${result.cycleNumber}: ${result.text.ifBlank { result.instructions }}"
+            }
+
+        return recentLogs + recentPhaseResults
+    }
+
+    /**
+     * Build the older workflow tail that may be summarized when extra budget remains.
+     *
+     * The seed includes omitted logs, omitted phase results, and cached phase text so a summarizer can retain
+     * the important arc of the workflow without replaying the full trace.
+     *
+     * @return Older workflow context suitable for optional summarization.
+     */
+    private fun buildWorkflowSummarySeed(): String
+    {
+        val omittedPhaseResults = workflowState.phaseResults.dropLast(junctionMemoryPolicy.recentPhaseResultCount)
+        val omittedLogs = workflowState.roundLog.dropLast(junctionMemoryPolicy.recentPhaseResultCount)
+
+        return buildString {
+            if(omittedLogs.isNotEmpty())
+            {
+                appendLine("Omitted workflow logs: ${omittedLogs.size}")
+                omittedLogs.takeLast(5).forEach { appendLine(it) }
+            }
+            if(omittedPhaseResults.isNotEmpty())
+            {
+                appendLine("Omitted phase results: ${omittedPhaseResults.size}")
+                omittedPhaseResults.takeLast(5).forEach { result ->
+                    appendLine("${result.phase.name} cycle ${result.cycleNumber}: ${result.notes.ifBlank { result.text }}")
+                }
+            }
+            if(workflowState.planText.isNotBlank())
+            {
+                appendLine("Plan cache: ${workflowState.planText}")
+            }
+            if(workflowState.actText.isNotBlank())
+            {
+                appendLine("Action cache: ${workflowState.actText}")
+            }
+            if(workflowState.verifyText.isNotBlank())
+            {
+                appendLine("Verification cache: ${workflowState.verifyText}")
+            }
+            if(workflowState.adjustText.isNotBlank())
+            {
+                appendLine("Adjustment cache: ${workflowState.adjustText}")
+            }
+        }.trim()
+    }
+
+    /**
+     * Produce a short excerpt of the live content so the role keeps enough grounding without receiving the
+     * entire working payload.
+     *
+     * @param text Raw content to excerpt.
+     * @param binding Binding that defines the relevant token-counting behavior.
+     * @return A compact excerpt suitable for inclusion in the critical section.
+     */
+    private fun compactContentExcerpt(text: String, binding: JunctionBinding?): String
+    {
+        val settings = resolveMemoryTruncationSettings(binding)
+        val excerptBudget = maxOf(junctionMemoryPolicy.minimumCriticalBudget / 2, 128)
+        return budgetText(text, excerptBudget, settings, preserveStart = true)
+    }
+
+    /**
+     * Convert an envelope into trace metadata so the debugger can explain how the request was compacted.
+     *
+     * @param envelope The envelope that was built for the outbound request.
+     * @return A compact trace-safe metadata map.
+     */
+    private fun envelopeMetadata(envelope: JunctionMemoryEnvelope): Map<String, Any>
+    {
+        return mapOf(
+            "memoryRole" to envelope.roleKind.name,
+            "memoryRoleName" to envelope.roleName,
+            "resolvedBudget" to envelope.resolvedBudget,
+            "availableBudget" to envelope.availableBudget,
+            "safetyReserveTokens" to envelope.safetyReserveTokens,
+            "criticalBudget" to envelope.criticalBudget,
+            "recentBudget" to envelope.recentBudget,
+            "summaryBudget" to envelope.summaryBudget,
+            "summarizationUsed" to envelope.summarizationUsed,
+            "compacted" to envelope.compacted,
+            "sections" to envelope.sections.map { section ->
+                mapOf(
+                    "name" to section.name,
+                    "tokenBudget" to section.tokenBudget,
+                    "tokenCount" to section.tokenCount,
+                    "truncated" to section.truncated
+                )
+            }
+        )
+    }
+
+    /**
+     * Render the compact memory envelope into a [MultimodalContent] prompt.
+     *
+     * The returned content carries deep-copied context objects so downstream code sees a stable snapshot
+     * rather than a live alias back into Junction's working state.
+     *
+     * @param envelope The compact memory envelope to render.
+     * @param workingContent Source content used to preserve binary payloads.
+     * @return A prompt ready to send through P2P.
+     * @throws IllegalStateException If the envelope could not produce any usable prompt text.
+     */
+    private fun buildPromptFromEnvelope(envelope: JunctionMemoryEnvelope, workingContent: MultimodalContent): MultimodalContent
+    {
+        val promptText = envelope.contextWindow.contextElements.joinToString("\n\n")
+        if(promptText.isBlank())
+        {
+            throw IllegalStateException("Junction could not build a compact prompt for ${envelope.roleName}.")
+        }
+
+        return MultimodalContent(
+            text = promptText,
+            binaryContent = workingContent.binaryContent.toMutableList(),
+            terminatePipeline = false,
+            context = envelope.contextWindow.deepCopy(),
+            miniBankContext = envelope.miniBank.deepCopy()
+        )
+    }
+
+    /**
+     * Return every currently registered binding in a stable order.
+     *
+     * The ordered view keeps uniqueness checks, trace metadata, and graph validation aligned across both the
+     * discussion and workflow sides of the harness.
+     *
+     * @return A flat list of all registered Junction bindings.
+     */
     private fun allBindings(): List<JunctionBinding>
     {
         // A single ordered view of every binding makes it easier to keep uniqueness checks, trace metadata,
@@ -1363,11 +2094,24 @@ class Junction : P2PInterface
         return bindings
     }
 
+    /**
+     * Return the set of all registered binding names.
+     *
+     * @return Stable names for every configured binding.
+     */
     private fun allBindingNames(): Set<String>
     {
         return allBindings().map { binding -> binding.roleName }.toSet()
     }
 
+    /**
+     * Attach Junction as the container object when the participant is not already owned by another harness.
+     *
+     * This preserves nested harness ancestry while still giving standalone participants a Junction parent for
+     * cycle detection and trace reasoning.
+     *
+     * @param component The P2P-capable component being bound.
+     */
     private fun bindContainerReference(component: P2PInterface)
     {
         // Preserve an existing container owner if the component already belongs to a larger harness graph;
@@ -1378,6 +2122,20 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Normalize and register one workflow binding.
+     *
+     * Workflow roles share the same binding model as discussion roles so the harness can synthesize descriptors,
+     * requirements, and trace output consistently for any P2P participant.
+     *
+     * @param roleName Logical role name to register.
+     * @param component Participant or container that will execute the role.
+     * @param kind High-level workflow role category.
+     * @param descriptor Optional explicit descriptor.
+     * @param requirements Optional explicit requirements.
+     * @param description Human-readable description used when synthesizing a descriptor.
+     * @return The registered binding object.
+     */
     private fun registerWorkflowBinding(
         roleName: String,
         component: P2PInterface,
@@ -1447,6 +2205,11 @@ class Junction : P2PInterface
         return binding
     }
 
+    /**
+     * Validate the discussion participant graph before execution begins.
+     *
+     * @throws IllegalStateException If a participant ancestry chain contains a cycle or exceeds the depth cap.
+     */
     private fun validateParticipantGraphs()
     {
         // Validate discussion participants and the moderator together so any container ancestry problem is
@@ -1456,6 +2219,14 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Validate the workflow participant graph before execution begins.
+     *
+     * Workflow bindings are checked separately because each recipe can wire different containers into the
+     * planner, actor, verifier, adjuster, and output phases.
+     *
+     * @throws IllegalStateException If a workflow ancestry chain contains a cycle or exceeds the depth cap.
+     */
     private fun validateWorkflowGraphs()
     {
         // Workflow bindings are checked separately because a recipe can bind different P2P containers for the
@@ -1466,6 +2237,18 @@ class Junction : P2PInterface
             }
     }
 
+    /**
+     * Execute one workflow phase, using a configured binding when available and a synthesized fallback when not.
+     *
+     * The fallback path is intentional: some recipes are meant to hand off instructions or keep running even
+     * when a phase role has not been configured yet. That keeps Junction usable as a harness instead of forcing
+     * every recipe to be fully populated.
+     *
+     * @param phase Workflow phase to execute.
+     * @param workingContent Current workflow payload.
+     * @param cycleNumber Active workflow cycle number.
+     * @return A structured phase result, either from a bound participant or from a synthesized fallback.
+     */
     private suspend fun executeWorkflowPhase(
         phase: JunctionWorkflowPhase,
         workingContent: MultimodalContent,
@@ -1590,6 +2373,16 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Execute the vote phase by synthesizing a structured vote result from the current discussion state.
+     *
+     * Vote is intentionally local because it is derived from the participant opinions Junction already
+     * collected. The result is still routed through the same workflow-state cache so later phases can inspect it.
+     *
+     * @param workingContent Current workflow payload.
+     * @param cycleNumber Active workflow cycle number.
+     * @return Structured vote-phase result.
+     */
     private suspend fun runVoteWorkflowPhase(
         workingContent: MultimodalContent,
         cycleNumber: Int
@@ -1635,6 +2428,21 @@ class Junction : P2PInterface
         )
     }
 
+    /**
+     * Execute a workflow phase through a bound P2P participant, or fall back to a safe synthesized result.
+     *
+     * When a binding is present, Junction renders the phase prompt through the compact memory envelope,
+     * dispatches the request, and normalizes the response back into a structured result. When no binding is
+     * available, the caller receives the default result instead of a hard failure so recipe variants can remain
+     * handoff-friendly.
+     *
+     * @param phase Workflow phase being executed.
+     * @param binding Bound participant responsible for the phase, if configured.
+     * @param workingContent Current workflow payload.
+     * @param cycleNumber Active workflow cycle number.
+     * @param defaultResult Safe fallback result to use when no binding exists or the call fails.
+     * @return Structured phase result for the workflow engine.
+     */
     private suspend fun runWorkflowBindingPhase(
         phase: JunctionWorkflowPhase,
         binding: JunctionBinding?,
@@ -1655,6 +2463,23 @@ class Junction : P2PInterface
             returnAddress = p2pTransport ?: P2PTransport(),
             prompt = buildWorkflowPhasePrompt(binding, phase, workingContent, cycleNumber)
         )
+        val envelope = request.prompt.metadata["junctionMemoryEnvelope"] as? JunctionMemoryEnvelope
+        request.context = request.prompt.context.deepCopy()
+
+        trace(
+            TraceEventType.JUNCTION_PARTICIPANT_DISPATCH,
+            TracePhase.AGENT_COMMUNICATION,
+            workingContent,
+            metadata = buildMap {
+                put("participant", binding.roleName)
+                put("phase", phase.name)
+                put("cycle", cycleNumber)
+                if(envelope != null)
+                {
+                    putAll(envelopeMetadata(envelope))
+                }
+            }
+        )
 
         return try
         {
@@ -1662,6 +2487,21 @@ class Junction : P2PInterface
             // state, then Junction tries to deserialize the response back into a phase result.
             val response = binding.component.executeP2PRequest(request)
             val output = response?.output?.text.orEmpty()
+            trace(
+                TraceEventType.JUNCTION_PARTICIPANT_RESPONSE,
+                TracePhase.AGENT_COMMUNICATION,
+                response?.output,
+                metadata = buildMap {
+                    put("participant", binding.roleName)
+                    put("phase", phase.name)
+                    put("cycle", cycleNumber)
+                    put("hasRejection", response?.rejection != null)
+                    if(envelope != null)
+                    {
+                        putAll(envelopeMetadata(envelope))
+                    }
+                }
+            )
             val parsed = deserialize<JunctionWorkflowPhaseResult>(output)
             val result = parsed?.copy(
                 phase = phase,
@@ -1737,6 +2577,15 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Build the prompt for one workflow phase by attaching the compact memory envelope to the working content.
+     *
+     * @param binding Target workflow binding.
+     * @param phase Phase being executed.
+     * @param workingContent Current workflow payload.
+     * @param cycleNumber Active workflow cycle number.
+     * @return A prompt ready to dispatch through P2P.
+     */
     private fun buildWorkflowPhasePrompt(
         binding: JunctionBinding,
         phase: JunctionWorkflowPhase,
@@ -1744,65 +2593,28 @@ class Junction : P2PInterface
         cycleNumber: Int
     ): MultimodalContent
     {
-        // The prompt intentionally includes both the discussion state and the workflow state so a bound P2P
-        // container can make a phase decision without needing to reconstruct Junction's internal state machine.
-        val promptText = buildString {
-            appendLine("You are the Junction ${phase.name.lowercase()} role.")
-            appendLine("Return a JSON object matching JunctionWorkflowPhaseResult.")
-            appendLine("Phase: ${phase.name}")
-            appendLine("Cycle: $cycleNumber")
-            appendLine("Workflow recipe: ${workflowRecipe.name}")
-            appendLine("Role name: ${binding.roleName}")
-            appendLine("Topic:")
-            appendLine(discussionState.topic)
-            appendLine("Current discussion state:")
-            appendLine(serialize(discussionState))
-            appendLine("Current workflow state:")
-            appendLine(serialize(workflowState))
-            appendLine("Latest content:")
-            appendLine(workingContent.text)
-
-            when(phase)
-            {
-                JunctionWorkflowPhase.PLAN ->
-                {
-                    appendLine("Plan the next actions. Summarize the approach and any dependencies.")
-                }
-
-                JunctionWorkflowPhase.ACT ->
-                {
-                    appendLine("Carry out the action or produce safe handoff instructions if side effects are not configured.")
-                }
-
-                JunctionWorkflowPhase.VERIFY ->
-                {
-                    appendLine("Verify the current workflow state. Set passed to true or false and request repeat when needed.")
-                }
-
-                JunctionWorkflowPhase.ADJUST ->
-                {
-                    appendLine("Refine the plan or action based on the current vote and verification state.")
-                }
-
-                JunctionWorkflowPhase.OUTPUT ->
-                {
-                    appendLine("Produce the final handoff instructions or output artifact for the caller.")
-                }
-
-                JunctionWorkflowPhase.VOTE ->
-                {
-                    appendLine("Vote is handled by the participants and should not be emitted here.")
-                }
-            }
-        }
-
-        return MultimodalContent(
-            text = promptText,
-            binaryContent = workingContent.binaryContent.toMutableList(),
-            terminatePipeline = false
-        )
+        val envelope = buildWorkflowMemoryEnvelope(binding, phase, workingContent, cycleNumber)
+        val prompt = buildPromptFromEnvelope(envelope, workingContent)
+        prompt.metadata["junctionMemoryEnvelope"] = envelope.deepCopy()
+        return prompt
     }
 
+    /**
+     * Build a structured fallback workflow result.
+     *
+     * This keeps the recipe engine moving when a phase is intentionally unbound or a safe local response is
+     * better than failing the whole harness.
+     *
+     * @param phase Workflow phase being represented.
+     * @param cycleNumber Active workflow cycle number.
+     * @param participantName Name to record as the phase owner.
+     * @param text Primary text content for the phase result.
+     * @param passed Whether the phase should be treated as successful.
+     * @param repeatRequested Whether the recipe should repeat after this phase.
+     * @param terminateRequested Whether the recipe should stop immediately after this phase.
+     * @param notes Human-readable explanation for the fallback.
+     * @return A normalized phase result.
+     */
     private fun buildDefaultWorkflowPhaseResult(
         phase: JunctionWorkflowPhase,
         cycleNumber: Int,
@@ -1828,6 +2640,12 @@ class Junction : P2PInterface
         )
     }
 
+    /**
+     * Build the fallback plan text used when no planner is configured.
+     *
+     * @param cycleNumber Workflow cycle number for the synthesized plan.
+     * @return A simple planning summary.
+     */
     private fun buildDefaultPlanText(cycleNumber: Int): String
     {
         return buildString {
@@ -1837,6 +2655,12 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Build the fallback act text used when no actor is configured.
+     *
+     * @param cycleNumber Workflow cycle number for the synthesized action.
+     * @return A simple action summary.
+     */
     private fun buildDefaultActText(cycleNumber: Int): String
     {
         return buildString {
@@ -1845,6 +2669,11 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Build the fallback verify text used when no verifier is configured.
+     *
+     * @return A simple verification summary.
+     */
     private fun buildDefaultVerifyText(): String
     {
         return buildString {
@@ -1853,6 +2682,11 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Build the fallback adjust text used when no adjuster is configured.
+     *
+     * @return A simple adjustment summary.
+     */
     private fun buildDefaultAdjustText(): String
     {
         return buildString {
@@ -1861,11 +2695,159 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Build the compact discussion envelope for a participant request.
+     *
+     * @param binding Participant binding that will receive the request.
+     * @param workingContent Current discussion payload.
+     * @param roundNumber Active discussion round number.
+     * @return A memory envelope tailored to a discussion participant.
+     */
+    private fun buildParticipantMemoryEnvelope(
+        binding: JunctionBinding,
+        workingContent: MultimodalContent,
+        roundNumber: Int
+    ): JunctionMemoryEnvelope
+    {
+        val criticalLines = buildDiscussionCriticalLines(workingContent, roundNumber, binding)
+        val recentLines = buildDiscussionRecentLines()
+        val summarySeed = buildDiscussionSummarySeed()
+        return budgetEnvelope(
+            roleName = binding.roleName,
+            roleKind = JunctionMemoryRole.DISCUSSION_PARTICIPANT,
+            binding = binding,
+            workingContent = workingContent,
+            criticalLines = criticalLines,
+            recentLines = recentLines,
+            summarySeed = summarySeed,
+            summaryLabel = "Older discussion summary"
+        )
+    }
+
+    /**
+     * Build the compact discussion envelope for the moderator.
+     *
+     * The moderator receives a slightly richer snapshot because it needs the current vote tally and the
+     * participant opinions that produced it, but the envelope is still bounded by the same deterministic budget.
+     *
+     * @param workingContent Current discussion payload.
+     * @param opinions Participant opinions collected this round.
+     * @param voteResults Weighted vote tally for the round.
+     * @return A memory envelope tailored to the moderator.
+     */
+    private fun buildModeratorMemoryEnvelope(
+        workingContent: MultimodalContent,
+        opinions: List<ParticipantOpinion>,
+        voteResults: List<VotingResult>
+    ): JunctionMemoryEnvelope
+    {
+        val binding = moderatorBinding ?: throw IllegalStateException("Junction moderator is not configured.")
+        val opinionLines = opinions
+            .sortedWith(compareBy<ParticipantOpinion> { it.roundNumber }.thenBy { it.participantName })
+            .reversed()
+            .map { opinion ->
+                "${opinion.participantName} voted ${opinion.vote.ifBlank { opinion.opinion }} with confidence ${opinion.confidence}"
+            }
+        val voteLines = voteResults.map { result ->
+            "${result.option}: ${result.percentage * 100.0}% support from ${result.supporters.joinToString()}"
+        }
+        val criticalLines = buildList {
+            add("Role: ${binding.roleName}")
+            add("Topic: ${discussionState.topic}")
+            add("Round: ${discussionState.currentRound} of ${discussionState.maxRounds}")
+            add("Strategy: ${discussionState.strategy.name}")
+            add("Consensus threshold: ${discussionState.consensusThreshold}")
+            add("Consensus reached: ${discussionState.consensusReached}")
+            add("Final decision: ${discussionState.finalDecision.ifBlank { "<pending>" }}")
+            add("Moderator notes: ${discussionState.moderatorNotes.ifBlank { "<none>" }}")
+            add("Current vote tally:")
+            addAll(voteLines.take(4))
+            add("Current participant opinions:")
+            addAll(opinionLines.take(4))
+            add("Latest content excerpt: ${compactContentExcerpt(workingContent.text, binding)}")
+        }
+
+        val recentLines = buildList {
+            addAll(discussionState.roundLog.takeLast(junctionMemoryPolicy.recentDiscussionEntries).reversed().map { "Log: $it" })
+            addAll(opinionLines.take(junctionMemoryPolicy.recentOpinionCount))
+        }
+
+        return budgetEnvelope(
+            roleName = binding.roleName,
+            roleKind = JunctionMemoryRole.DISCUSSION_MODERATOR,
+            binding = binding,
+            workingContent = workingContent,
+            criticalLines = criticalLines,
+            recentLines = recentLines,
+            summarySeed = buildString {
+                if(discussionState.roundLog.size > junctionMemoryPolicy.recentDiscussionEntries)
+                {
+                    appendLine("Older round log entries omitted: ${discussionState.roundLog.size - junctionMemoryPolicy.recentDiscussionEntries}")
+                }
+                if(opinionLines.size > junctionMemoryPolicy.recentOpinionCount)
+                {
+                    appendLine("Older participant opinions omitted: ${opinionLines.size - junctionMemoryPolicy.recentOpinionCount}")
+                }
+                if(voteLines.isNotEmpty())
+                {
+                    appendLine("Current vote tally:")
+                    voteLines.forEach { appendLine(it) }
+                }
+            }.trim(),
+            summaryLabel = "Older moderator summary"
+        )
+    }
+
+    /**
+     * Build the compact memory envelope for one workflow phase.
+     *
+     * @param binding Workflow binding receiving the phase request.
+     * @param phase Workflow phase being executed.
+     * @param workingContent Current workflow payload.
+     * @param cycleNumber Active workflow cycle number.
+     * @return A memory envelope tailored to the workflow role.
+     */
+    private fun buildWorkflowMemoryEnvelope(
+        binding: JunctionBinding,
+        phase: JunctionWorkflowPhase,
+        workingContent: MultimodalContent,
+        cycleNumber: Int
+    ): JunctionMemoryEnvelope
+    {
+        val criticalLines = buildWorkflowCriticalLines(workingContent, phase, cycleNumber, binding)
+        val recentLines = buildWorkflowRecentLines()
+        val summarySeed = buildWorkflowSummarySeed()
+        return budgetEnvelope(
+            roleName = binding.roleName,
+            roleKind = when(phase)
+            {
+                JunctionWorkflowPhase.PLAN -> JunctionMemoryRole.WORKFLOW_PLANNER
+                JunctionWorkflowPhase.ACT -> JunctionMemoryRole.WORKFLOW_ACTOR
+                JunctionWorkflowPhase.VERIFY -> JunctionMemoryRole.WORKFLOW_VERIFIER
+                JunctionWorkflowPhase.ADJUST -> JunctionMemoryRole.WORKFLOW_ADJUSTER
+                JunctionWorkflowPhase.OUTPUT -> JunctionMemoryRole.WORKFLOW_OUTPUT
+                JunctionWorkflowPhase.VOTE -> JunctionMemoryRole.DISCUSSION_PARTICIPANT
+            },
+            binding = binding,
+            workingContent = workingContent,
+            criticalLines = criticalLines,
+            recentLines = recentLines,
+            summarySeed = summarySeed,
+            summaryLabel = "Older workflow summary"
+        )
+    }
+
+    /**
+     * Build the fallback workflow summary when no explicit output handler is configured.
+     *
+     * @return A bounded human-readable workflow summary.
+     */
     private fun buildWorkflowSummaryText(): String
     {
         // When no explicit output handler is configured, Junction synthesizes a human-readable summary from the
         // phase cache so the caller still receives a usable handoff artifact.
-        return buildString {
+        val settings = resolveMemoryTruncationSettings(outputBinding ?: plannerBinding ?: actorBinding ?: verifierBinding ?: adjusterBinding)
+        val rawSummary = buildString {
             appendLine("Workflow summary for ${discussionState.topic.ifBlank { "the current topic" }}")
             appendLine("Recipe: ${workflowRecipe.name}")
             if(workflowState.planText.isNotBlank())
@@ -1893,9 +2875,24 @@ class Junction : P2PInterface
                 appendLine("Adjustment:")
                 appendLine(workflowState.adjustText)
             }
-        }
+        }.trim()
+
+        return budgetText(
+            rawSummary,
+            maxOf(junctionMemoryPolicy.minimumCriticalBudget, junctionMemoryPolicy.outboundTokenBudget / 2),
+            settings,
+            preserveStart = true
+        )
     }
 
+    /**
+     * Cache one workflow phase result into Junction's live workflow state.
+     *
+     * The state is kept both as structured data and as a concise log so the final workflow outcome can be
+     * reconstructed without replaying the entire trace.
+     *
+     * @param result Phase result to cache.
+     */
     private fun recordWorkflowPhaseResult(result: JunctionWorkflowPhaseResult)
     {
         // Phase results are cached into the workflow state as both machine-readable output and a concise log so
@@ -1950,6 +2947,12 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Decide whether the workflow should run another cycle.
+     *
+     * @param cycleResults Results from the cycle that just completed.
+     * @return True when the recipe should loop again.
+     */
     private fun shouldRepeatWorkflowCycle(cycleResults: List<JunctionWorkflowPhaseResult>): Boolean
     {
         // Repeat only when the recipe is designed to repeat and no phase explicitly asked to terminate.
@@ -1971,6 +2974,15 @@ class Junction : P2PInterface
         return !workflowState.verificationPassed || !discussionState.consensusReached
     }
 
+    /**
+     * Finish a workflow run by emitting the final output or handoff artifact.
+     *
+     * Handoff recipes stop early because they are intended to return instructions rather than force a second
+     * output dispatch that could hide the caller's next step.
+     *
+     * @param workingContent Current workflow payload.
+     * @return The final content object to return to the caller.
+     */
     private suspend fun finalizeWorkflowOutput(workingContent: MultimodalContent): MultimodalContent
     {
         // Handoff recipes stop here because they are meant to return instructions, not force an extra output
@@ -2052,6 +3064,11 @@ class Junction : P2PInterface
         return workingContent
     }
 
+    /**
+     * Build the final discussion decision from the live discussion state.
+     *
+     * @return A structured discussion decision payload.
+     */
     private fun buildDiscussionDecision(): DiscussionDecision
     {
         return DiscussionDecision(
@@ -2068,6 +3085,20 @@ class Junction : P2PInterface
         )
     }
 
+    /**
+     * Build the final workflow outcome from the live workflow state and returned content.
+     *
+     * @param topic Topic that seeded the workflow.
+     * @param finalContent Final content returned to the caller.
+     * @return Structured workflow outcome for the harness result.
+     */
+    /**
+     * Build the final workflow outcome from the current workflow state and the returned content.
+     *
+     * @param topic Topic that seeded the workflow.
+     * @param finalContent Final content returned to the caller.
+     * @return Structured workflow outcome for the harness result.
+     */
     private fun buildWorkflowOutcome(
         topic: String,
         finalContent: MultimodalContent
@@ -2086,6 +3117,16 @@ class Junction : P2PInterface
         )
     }
 
+    /**
+     * Validate a container ancestry chain with identity-based cycle detection.
+     *
+     * Junction cares about object-graph recursion, not class reuse, so the check uses identity tracking and
+     * fails fast when it sees the same container twice or the chain becomes too deep to be safe.
+     *
+     * @param label Friendly label used in the error message.
+     * @param component The starting P2P component to validate.
+     * @throws IllegalStateException When the ancestry graph contains a cycle or exceeds the nesting limit.
+     */
     private fun validateContainerAncestry(
         label: String,
         component: P2PInterface
@@ -2125,6 +3166,12 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Render a human-readable container description for diagnostics and trace errors.
+     *
+     * @param container Object to describe.
+     * @return A stable readable label for the container.
+     */
     private fun describeContainer(container: Any): String
     {
         return when(container)
@@ -2144,6 +3191,21 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Build and normalize one binding so Junction can talk to any P2PInterface uniformly.
+     *
+     * The helper synthesizes missing descriptor and requirement objects instead of forcing every caller to
+     * preconfigure them, which keeps the harness usable with nested containers and lightweight test doubles.
+     *
+     * @param roleName Logical role name to register.
+     * @param component Component that will execute the role.
+     * @param kind Binding category used for trace and default descriptor synthesis.
+     * @param descriptor Optional explicit descriptor.
+     * @param requirements Optional explicit requirements.
+     * @param description Human-readable description for synthesized descriptors.
+     * @param weight Vote weight used when the binding participates in discussion.
+     * @return A fully normalized binding record.
+     */
     private fun buildBinding(
         roleName: String,
         component: P2PInterface,
@@ -2241,6 +3303,13 @@ class Junction : P2PInterface
         )
     }
 
+    /**
+     * Resolve the most useful role name available for a participant.
+     *
+     * @param component Component to inspect.
+     * @param fallback Name to use when the component does not advertise one.
+     * @return A stable role name for tracing and binding registration.
+     */
     private fun resolveRoleName(component: P2PInterface, fallback: String): String
     {
         val descriptorName = component.getP2pDescription()?.agentName.orEmpty()
@@ -2252,6 +3321,14 @@ class Junction : P2PInterface
         return component::class.simpleName?.takeIf { it.isNotBlank() } ?: fallback
     }
 
+    /**
+     * Resolve the participant set that should speak in the current round.
+     *
+     * Conversational mode honors moderator-selected participants when available, but Junction falls back to the
+     * full registered participant list if the selection is empty or invalid so the discussion does not dead-end.
+     *
+     * @return The participant bindings to use for the current round.
+     */
     private fun resolveRoundParticipants(): List<JunctionBinding>
     {
         // Conversational strategy uses the moderator-selected subset when one is present, but falls back to
@@ -2266,6 +3343,17 @@ class Junction : P2PInterface
         return if(filtered.isEmpty()) participantBindings.toList() else filtered
     }
 
+    /**
+     * Run one discussion round across the selected participants.
+     *
+     * Simultaneous mode fans out through coroutines, while the sequential modes stay ordered so pause
+     * checkpoints and moderator-driven speaker selection remain deterministic.
+     *
+     * @param roundParticipants Bindings that will speak this round.
+     * @param workingContent Current discussion payload.
+     * @param roundNumber Round number being executed.
+     * @return Participant opinions collected for the round.
+     */
     private suspend fun runParticipantRound(
         roundParticipants: List<JunctionBinding>,
         workingContent: MultimodalContent,
@@ -2311,25 +3399,41 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Dispatch one participant request and normalize the response into a participant opinion.
+     *
+     * Failures are converted into neutral opinions so one broken participant does not tear down the entire
+     * harness, but the failure is still traced for inspection.
+     *
+     * @param binding Participant binding to dispatch.
+     * @param workingContent Current discussion payload.
+     * @param roundNumber Active round number.
+     * @return A participant opinion derived from the response or a neutral fallback.
+     */
     private suspend fun dispatchParticipant(
         binding: JunctionBinding,
         workingContent: MultimodalContent,
         roundNumber: Int
     ): ParticipantOpinion
     {
+        val request = buildParticipantRequest(binding, workingContent, roundNumber)
+        val envelope = request.prompt.metadata["junctionMemoryEnvelope"] as? JunctionMemoryEnvelope
+
         // Dispatch and response events are traced separately so the visualizer can show both the outbound
         // request and the eventual participant reply for every round.
         trace(
             TraceEventType.JUNCTION_PARTICIPANT_DISPATCH,
             TracePhase.AGENT_COMMUNICATION,
             workingContent,
-            metadata = mapOf(
-                "participant" to binding.roleName,
-                "round" to roundNumber
-            )
+            metadata = buildMap {
+                put("participant", binding.roleName)
+                put("round", roundNumber)
+                if(envelope != null)
+                {
+                    putAll(envelopeMetadata(envelope))
+                }
+            }
         )
-
-        val request = buildParticipantRequest(binding, workingContent, roundNumber)
 
         return try
         {
@@ -2375,40 +3479,43 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Build the outbound discussion request for one participant.
+     *
+     * @param binding Participant binding to dispatch.
+     * @param workingContent Current discussion payload.
+     * @param roundNumber Active round number.
+     * @return A fully formed P2P request with compact memory attached.
+     */
     private fun buildParticipantRequest(
         binding: JunctionBinding,
         workingContent: MultimodalContent,
         roundNumber: Int
     ): P2PRequest
     {
-        // The participant prompt always includes the latest state snapshot so each participant can answer in
-        // the context of the same round, even if its own harness has deeper internal logic.
-        val promptText = buildString {
-            appendLine("You are participant '${binding.roleName}' in a TPipe Junction discussion.")
-            appendLine("Return a JSON object matching the ParticipantOpinion shape.")
-            appendLine("Vote using a short option string. Explain your reasoning clearly.")
-            appendLine("Round: $roundNumber")
-            appendLine("Topic:")
-            appendLine(discussionState.topic)
-            appendLine("Current discussion state:")
-            appendLine(serialize(discussionState))
-            appendLine("Latest content:")
-            appendLine(workingContent.text)
-        }
-
-        val prompt = MultimodalContent(
-            text = promptText,
-            binaryContent = workingContent.binaryContent.toMutableList(),
-            terminatePipeline = false
-        )
+        val envelope = buildParticipantMemoryEnvelope(binding, workingContent, roundNumber)
+        val prompt = buildPromptFromEnvelope(envelope, workingContent)
+        prompt.metadata["junctionMemoryEnvelope"] = envelope.deepCopy()
 
         return P2PRequest(
             transport = binding.transport,
             returnAddress = p2pTransport ?: P2PTransport(),
-            prompt = prompt
+            prompt = prompt,
+            context = prompt.context.deepCopy()
         )
     }
 
+    /**
+     * Parse a participant response into a structured opinion.
+     *
+     * Plain-text fallbacks are accepted so a partially cooperative participant can still contribute to the
+     * discussion without needing perfect JSON output.
+     *
+     * @param participantName Name to stamp onto the opinion if the response leaves it blank.
+     * @param roundNumber Round number to stamp onto the opinion if the response leaves it blank.
+     * @param output Raw response text from the participant.
+     * @return A structured participant opinion.
+     */
     private fun parseParticipantOpinion(
         participantName: String,
         roundNumber: Int,
@@ -2432,6 +3539,15 @@ class Junction : P2PInterface
         )
     }
 
+    /**
+     * Tally participant opinions into weighted vote results.
+     *
+     * Blank votes are ignored so noisy participants do not create meaningless tallies, and weights are read
+     * from the registered binding so the discussion contract stays consistent with the harness setup.
+     *
+     * @param opinions Participant opinions to tally.
+     * @return Weighted vote results ordered from strongest to weakest.
+     */
     private fun tallyVotes(opinions: List<ParticipantOpinion>): List<VotingResult>
     {
         // Votes are weighted by the registered participant binding, and blank opinions are ignored so a noisy
@@ -2466,11 +3582,28 @@ class Junction : P2PInterface
         return tallies.values.sortedByDescending { result -> result.weight }
     }
 
+    /**
+     * Normalize a raw vote string so vote tallying can compare options consistently.
+     *
+     * @param value Raw vote text.
+     * @return Trimmed vote string with normalized whitespace.
+     */
     private fun normalizeVote(value: String): String
     {
         return value.trim().replace(Regex("\\s+"), " ")
     }
 
+    /**
+     * Ask the moderator for guidance or fall back to a safe default directive.
+     *
+     * The moderator is advisory, so a failure here does not tear down the discussion. Junction instead
+     * preserves the current vote state and keeps the loop recoverable.
+     *
+     * @param workingContent Current discussion payload.
+     * @param opinions Participant opinions collected this round.
+     * @param voteResults Weighted vote tally for the round.
+     * @return Moderator guidance or a deterministic fallback directive.
+     */
     private suspend fun resolveModeratorDirective(
         workingContent: MultimodalContent,
         opinions: List<ParticipantOpinion>,
@@ -2486,12 +3619,42 @@ class Junction : P2PInterface
             returnAddress = p2pTransport ?: P2PTransport(),
             prompt = prompt
         )
+        val envelope = prompt.metadata["junctionMemoryEnvelope"] as? JunctionMemoryEnvelope
+        request.context = request.prompt.context.deepCopy()
+
+        trace(
+            TraceEventType.JUNCTION_PARTICIPANT_DISPATCH,
+            TracePhase.AGENT_COMMUNICATION,
+            workingContent,
+            metadata = buildMap {
+                put("participant", binding.roleName)
+                put("round", discussionState.currentRound)
+                if(envelope != null)
+                {
+                    putAll(envelopeMetadata(envelope))
+                }
+            }
+        )
 
         return try
         {
             val response = binding.component.executeP2PRequest(request)
             val output = response?.output?.text.orEmpty()
             val parsed = deserialize<ModeratorDirective>(output)
+            trace(
+                TraceEventType.JUNCTION_PARTICIPANT_RESPONSE,
+                TracePhase.AGENT_COMMUNICATION,
+                response?.output,
+                metadata = buildMap {
+                    put("participant", binding.roleName)
+                    put("round", discussionState.currentRound)
+                    put("hasRejection", response?.rejection != null)
+                    if(envelope != null)
+                    {
+                        putAll(envelopeMetadata(envelope))
+                    }
+                }
+            )
             parsed ?: buildDefaultDirective(voteResults)
         }
         catch(e: Exception)
@@ -2501,37 +3664,32 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Build the outbound moderator prompt from the current discussion state.
+     *
+     * @param workingContent Current discussion payload.
+     * @param opinions Participant opinions collected this round.
+     * @param voteResults Weighted vote tally for the round.
+     * @return A prompt ready to dispatch to the moderator binding.
+     */
     private fun buildModeratorPrompt(
         workingContent: MultimodalContent,
         opinions: List<ParticipantOpinion>,
         voteResults: List<VotingResult>
     ): MultimodalContent
     {
-        // Moderator prompts include the raw participant opinions and vote tally so a moderator harness can
-        // make an informed override decision without reconstructing the round from traces.
-        val promptText = buildString {
-            appendLine("You are the Junction moderator.")
-            appendLine("Decide whether discussion should continue or terminate.")
-            appendLine("Return a JSON object matching the ModeratorDirective shape.")
-            appendLine("Topic:")
-            appendLine(discussionState.topic)
-            appendLine("Current state:")
-            appendLine(serialize(discussionState))
-            appendLine("Latest participant opinions:")
-            appendLine(serialize(opinions))
-            appendLine("Vote tally:")
-            appendLine(serialize(voteResults))
-            appendLine("Latest content:")
-            appendLine(workingContent.text)
-        }
-
-        return MultimodalContent(
-            text = promptText,
-            binaryContent = workingContent.binaryContent.toMutableList(),
-            terminatePipeline = false
-        )
+        val envelope = buildModeratorMemoryEnvelope(workingContent, opinions, voteResults)
+        val prompt = buildPromptFromEnvelope(envelope, workingContent)
+        prompt.metadata["junctionMemoryEnvelope"] = envelope.deepCopy()
+        return prompt
     }
 
+    /**
+     * Build the fallback moderator directive used when no moderator is available or the moderator fails.
+     *
+     * @param voteResults Current vote tally for the round.
+     * @return A deterministic directive that keeps the harness moving safely.
+     */
     private fun buildDefaultDirective(voteResults: List<VotingResult>): ModeratorDirective
     {
         // The fallback directive mirrors what a minimal moderator would do: continue only when the harness has
@@ -2546,6 +3704,14 @@ class Junction : P2PInterface
         )
     }
 
+    /**
+     * Honor a pending pause request only at a safe checkpoint.
+     *
+     * Junction deliberately waits between rounds or before a new dispatch so it never suspends in the middle
+     * of a state merge, a vote tally, or a workflow phase transition.
+     *
+     * @param content Current content snapshot used for pause/resume tracing.
+     */
     private suspend fun awaitPauseCheckpoint(content: MultimodalContent)
     {
         // Pause is only honored at safe checkpoints so the harness never suspends in the middle of a response
@@ -2579,6 +3745,18 @@ class Junction : P2PInterface
         )
     }
 
+    /**
+     * Emit a Junction-specific trace event when tracing is enabled.
+     *
+     * Junction keeps its own event family so the visualizer can distinguish harness orchestration from the
+     * lower-level pipe and P2P traces that it may be wrapping.
+     *
+     * @param eventType Junction event type to record.
+     * @param phase Trace phase for the event.
+     * @param content Optional content snapshot to attach.
+     * @param metadata Additional compact metadata for the event.
+     * @param error Optional error to record alongside the event.
+     */
     private fun trace(
         eventType: TraceEventType,
         phase: TracePhase,
@@ -2614,6 +3792,13 @@ class Junction : P2PInterface
         PipeTracer.addEvent(junctionId, event)
     }
 
+    /**
+     * Build the compact metadata payload used by Junction trace events.
+     *
+     * @param baseMetadata Event-specific metadata to merge into the trace record.
+     * @param error Optional error to serialize into the trace record.
+     * @return A trace-safe metadata snapshot.
+     */
     private fun buildMetadata(baseMetadata: Map<String, Any>, error: Throwable?): Map<String, Any>
     {
         // Every Junction event carries a compact runtime snapshot so the trace viewer and failure analysis can
@@ -2636,6 +3821,12 @@ class Junction : P2PInterface
         return metadata
     }
 
+    /**
+     * Reset only the per-run runtime state of the harness.
+     *
+     * Configuration, bindings, and trace settings stay intact so a reused Junction instance behaves like a
+     * fresh run without losing its setup.
+     */
     private fun resetRuntimeState()
     {
         // Preserve configuration and bindings, but ensure transient run state cannot leak from one execution
@@ -2671,6 +3862,12 @@ class Junction : P2PInterface
         )
     }
 
+    /**
+     * Decide whether a trace event should carry the full content snapshot.
+     *
+     * @param detailLevel Active trace detail level.
+     * @return True when full content should be attached.
+     */
     private fun shouldIncludeContent(detailLevel: TraceDetailLevel): Boolean
     {
         return when(detailLevel)
@@ -2682,6 +3879,12 @@ class Junction : P2PInterface
         }
     }
 
+    /**
+     * Decide whether a trace event should carry the context snapshot.
+     *
+     * @param detailLevel Active trace detail level.
+     * @return True when context should be attached.
+     */
     private fun shouldIncludeContext(detailLevel: TraceDetailLevel): Boolean
     {
         return when(detailLevel)

@@ -1334,6 +1334,390 @@ class JunctionTest
             }
         }
     }
+
+    /**
+     * Verifies that discussion requests are compacted with a bounded outbound envelope and that optional
+     * summarization only applies to older history tails.
+     */
+    @Test
+    fun discussionMemoryPolicyCompactsOutboundRequests()
+    {
+        runBlocking {
+            val moderator = RecordingP2PInterface(
+                name = "moderator",
+                responseSequence = mutableListOf(
+                    serialize(
+                        ModeratorDirective(
+                            continueDiscussion = true,
+                            selectedParticipants = mutableListOf(),
+                            finalDecision = "Proceed",
+                            nextRoundPrompt = "",
+                            notes = "Continue into the second round."
+                        )
+                    ),
+                    serialize(
+                        ModeratorDirective(
+                            continueDiscussion = false,
+                            selectedParticipants = mutableListOf(),
+                            finalDecision = "Proceed",
+                            nextRoundPrompt = "",
+                            notes = "Consensus can now close the discussion."
+                        )
+                    )
+                )
+            )
+            val first = RecordingP2PInterface(
+                name = "first",
+                responseSequence = mutableListOf(
+                    serialize(
+                        ParticipantOpinion(
+                            participantName = "first",
+                            roundNumber = 1,
+                            opinion = "Proceed",
+                            vote = "Proceed",
+                            confidence = 1.0,
+                            reasoning = "Round one says proceed."
+                        )
+                    ),
+                    serialize(
+                        ParticipantOpinion(
+                            participantName = "first",
+                            roundNumber = 2,
+                            opinion = "Proceed",
+                            vote = "Proceed",
+                            confidence = 1.0,
+                            reasoning = "Round two still says proceed."
+                        )
+                    )
+                )
+            )
+            val second = RecordingP2PInterface(
+                name = "second",
+                responseSequence = mutableListOf(
+                    serialize(
+                        ParticipantOpinion(
+                            participantName = "second",
+                            roundNumber = 1,
+                            opinion = "Hold",
+                            vote = "Hold",
+                            confidence = 1.0,
+                            reasoning = "Round one says hold."
+                        )
+                    ),
+                    serialize(
+                        ParticipantOpinion(
+                            participantName = "second",
+                            roundNumber = 2,
+                            opinion = "Hold",
+                            vote = "Hold",
+                            confidence = 1.0,
+                            reasoning = "Round two still says hold."
+                        )
+                    )
+                )
+            )
+
+            first.setP2pDescription(first.getP2pDescription()!!.copy(contextWindowSize = 192))
+            first.setP2pRequirements(first.getP2pRequirements()!!.copy(maxTokens = 192))
+            second.setP2pDescription(second.getP2pDescription()!!.copy(contextWindowSize = 192))
+            second.setP2pRequirements(second.getP2pRequirements()!!.copy(maxTokens = 192))
+
+            val junction = Junction()
+                .setModerator(moderator)
+                .addParticipants(
+                    "first" to first,
+                    "second" to second
+                )
+                .roundRobin()
+                .setRounds(2)
+                .setVotingThreshold(0.75)
+                .memoryPolicy {
+                    outboundTokenBudget = 512
+                    safetyReserveTokens = 32
+                    minimumCriticalBudget = 64
+                    minimumRecentBudget = 32
+                    recentDiscussionEntries = 1
+                    recentOpinionCount = 1
+                    enableSummarization = true
+                    summarizer = { text -> "SUMMARY:$text" }
+                }
+
+            val result = junction.execute(
+                MultimodalContent(
+                    text = buildString {
+                        repeat(40) {
+                            append("This discussion point is intentionally long to force compaction. ")
+                        }
+                    }
+                )
+            )
+            val decision = deserialize<DiscussionDecision>(result.text)
+            val envelope = first.lastRequest?.prompt?.metadata?.get("junctionMemoryEnvelope") as? JunctionMemoryEnvelope
+
+            assertNotNull(decision)
+            assertEquals("Proceed", decision.decision)
+            assertEquals(2, decision.roundsExecuted)
+            assertNotNull(envelope)
+            assertEquals(192, envelope.resolvedBudget)
+            assertEquals(JunctionMemoryRole.DISCUSSION_PARTICIPANT, envelope.roleKind)
+            assertTrue(envelope.summarizationUsed)
+            assertTrue(envelope.sections.any { section -> section.name == "summary" && section.text.contains("SUMMARY:") })
+            assertTrue(first.lastRequest?.context?.contextElements?.any { it.contains("SUMMARY:") } == true)
+            assertTrue(first.lastRequest?.prompt?.context?.contextElements?.any { it.contains("SUMMARY:") } == true)
+            assertEquals(2, first.requestCount)
+            assertEquals(2, second.requestCount)
+            assertEquals(2, moderator.requestCount)
+        }
+    }
+
+    /**
+     * Verifies that workflow requests are also compacted with bounded outbound envelopes and optional summary
+     * support for older phase history.
+     */
+    @Test
+    fun workflowMemoryPolicyCompactsOutboundRequests()
+    {
+        runBlocking {
+            val planner = RecordingP2PInterface(
+                name = "planner",
+                responseSequence = mutableListOf(
+                    serialize(
+                        JunctionWorkflowPhaseResult(
+                            phase = JunctionWorkflowPhase.PLAN,
+                            cycleNumber = 1,
+                            participantName = "planner",
+                            text = "Plan cycle one.",
+                            instructions = "Plan cycle one.",
+                            passed = true,
+                            notes = "Planning first cycle."
+                        )
+                    ),
+                    serialize(
+                        JunctionWorkflowPhaseResult(
+                            phase = JunctionWorkflowPhase.PLAN,
+                            cycleNumber = 2,
+                            participantName = "planner",
+                            text = "Plan cycle two.",
+                            instructions = "Plan cycle two.",
+                            passed = true,
+                            notes = "Planning second cycle."
+                        )
+                    )
+                )
+            )
+            val actor = RecordingP2PInterface(
+                name = "actor",
+                responseSequence = mutableListOf(
+                    serialize(
+                        JunctionWorkflowPhaseResult(
+                            phase = JunctionWorkflowPhase.ACT,
+                            cycleNumber = 1,
+                            participantName = "actor",
+                            text = "Act cycle one.",
+                            instructions = "Act cycle one.",
+                            passed = true,
+                            notes = "Acting first cycle."
+                        )
+                    ),
+                    serialize(
+                        JunctionWorkflowPhaseResult(
+                            phase = JunctionWorkflowPhase.ACT,
+                            cycleNumber = 2,
+                            participantName = "actor",
+                            text = "Act cycle two.",
+                            instructions = "Act cycle two.",
+                            passed = true,
+                            notes = "Acting second cycle."
+                        )
+                    )
+                )
+            )
+            val verifier = RecordingP2PInterface(
+                name = "verifier",
+                responseSequence = mutableListOf(
+                    serialize(
+                        JunctionWorkflowPhaseResult(
+                            phase = JunctionWorkflowPhase.VERIFY,
+                            cycleNumber = 1,
+                            participantName = "verifier",
+                            text = "Repeat required.",
+                            instructions = "Repeat required.",
+                            passed = false,
+                            repeatRequested = true,
+                            notes = "First cycle still needs work."
+                        )
+                    ),
+                    serialize(
+                        JunctionWorkflowPhaseResult(
+                            phase = JunctionWorkflowPhase.VERIFY,
+                            cycleNumber = 2,
+                            participantName = "verifier",
+                            text = "Verification complete.",
+                            instructions = "Verification complete.",
+                            passed = true,
+                            repeatRequested = false,
+                            notes = "Second cycle is ready."
+                        )
+                    )
+                )
+            )
+            val participant = RecordingP2PInterface(
+                name = "participant",
+                responseSequence = mutableListOf(
+                    serialize(
+                        ParticipantOpinion(
+                            participantName = "participant",
+                            roundNumber = 1,
+                            opinion = "Proceed",
+                            vote = "Proceed",
+                            confidence = 1.0,
+                            reasoning = "Round one says proceed."
+                        )
+                    ),
+                    serialize(
+                        ParticipantOpinion(
+                            participantName = "participant",
+                            roundNumber = 2,
+                            opinion = "Proceed",
+                            vote = "Proceed",
+                            confidence = 1.0,
+                            reasoning = "Round two still says proceed."
+                        )
+                    )
+                )
+            )
+            val moderator = RecordingP2PInterface(
+                name = "moderator",
+                responseSequence = mutableListOf(
+                    serialize(
+                        ModeratorDirective(
+                            continueDiscussion = true,
+                            selectedParticipants = mutableListOf(),
+                            finalDecision = "Proceed",
+                            nextRoundPrompt = "",
+                            notes = "Continue into the second cycle."
+                        )
+                    ),
+                    serialize(
+                        ModeratorDirective(
+                            continueDiscussion = false,
+                            selectedParticipants = mutableListOf(),
+                            finalDecision = "Proceed",
+                            nextRoundPrompt = "",
+                            notes = "The workflow can now stop."
+                        )
+                    )
+                )
+            )
+
+            planner.setP2pDescription(planner.getP2pDescription()!!.copy(contextWindowSize = 256))
+            planner.setP2pRequirements(planner.getP2pRequirements()!!.copy(maxTokens = 256))
+
+            val junction = Junction()
+                .setModerator(moderator)
+                .addParticipant("participant", participant)
+                .setPlanner(planner)
+                .setActor(actor)
+                .setVerifier(verifier)
+                .planVoteActVerifyRepeat()
+                .roundRobin()
+                .setRounds(2)
+                .setVotingThreshold(0.5)
+                .memoryPolicy {
+                    outboundTokenBudget = 1024
+                    safetyReserveTokens = 32
+                    minimumCriticalBudget = 64
+                    minimumRecentBudget = 32
+                    recentPhaseResultCount = 1
+                    enableSummarization = true
+                    summarizer = { text -> "SUMMARY:$text" }
+                }
+
+            val result = junction.execute(
+                MultimodalContent(
+                    text = buildString {
+                        repeat(20) {
+                            append("This workflow content is intentionally long to force compaction. ")
+                        }
+                    }
+                )
+            )
+            val outcome = deserialize<JunctionWorkflowOutcome>(result.text)
+            val envelope = planner.lastRequest?.prompt?.metadata?.get("junctionMemoryEnvelope") as? JunctionMemoryEnvelope
+
+            assertNotNull(outcome)
+            assertEquals(JunctionWorkflowRecipe.PLAN_VOTE_ACT_VERIFY_REPEAT, outcome.recipe)
+            assertEquals(2, outcome.cyclesExecuted)
+            assertNotNull(envelope)
+            assertEquals(256, envelope.resolvedBudget)
+            assertEquals(JunctionMemoryRole.WORKFLOW_PLANNER, envelope.roleKind)
+            assertTrue(envelope.summarizationUsed)
+            assertTrue(envelope.sections.any { section -> section.name == "summary" && section.text.contains("SUMMARY:") })
+            assertTrue(planner.lastRequest?.context?.contextElements?.any { it.contains("SUMMARY:") } == true)
+            assertEquals(2, planner.requestCount)
+            assertEquals(2, actor.requestCount)
+            assertEquals(2, verifier.requestCount)
+            assertEquals(2, participant.requestCount)
+            assertEquals(0, moderator.requestCount)
+        }
+    }
+
+    /**
+     * Verifies that Junction fails fast when a request cannot be made safe enough to dispatch.
+     */
+    @Test
+    fun memoryPolicyFailsFastWhenOutboundBudgetIsTooSmall()
+    {
+        runBlocking {
+            val moderator = RecordingP2PInterface(
+                name = "moderator",
+                responseText = serialize(
+                    ModeratorDirective(
+                        continueDiscussion = false,
+                        selectedParticipants = mutableListOf(),
+                        finalDecision = "Stop",
+                        nextRoundPrompt = "",
+                        notes = "Fallback moderator."
+                    )
+                )
+            )
+            val participant = RecordingP2PInterface(
+                name = "participant",
+                responseText = serialize(
+                    ParticipantOpinion(
+                        participantName = "participant",
+                        roundNumber = 1,
+                        opinion = "Stop",
+                        vote = "Stop",
+                        confidence = 1.0,
+                        reasoning = "Does not matter because the request should never dispatch."
+                    )
+                )
+            )
+
+            val junction = Junction()
+                .setModerator(moderator)
+                .addParticipant("participant", participant)
+                .setRounds(1)
+                .setVotingThreshold(0.5)
+                .memoryPolicy {
+                    outboundTokenBudget = 100
+                    safetyReserveTokens = 20
+                    minimumCriticalBudget = 128
+                    minimumRecentBudget = 64
+                }
+
+            assertFailsWith<IllegalStateException> {
+                junction.execute(
+                    MultimodalContent(
+                        text = "This prompt should never reach a downstream participant because the budget is too small."
+                    )
+                )
+            }
+            assertEquals(0, participant.requestCount)
+            assertEquals(0, moderator.requestCount)
+        }
+    }
 }
 
 /**
