@@ -3,7 +3,6 @@
 > 💡 **Tip:** Junction is TPipe's harness for collaborative decision-making and workflow handoff. It coordinates P2P-capable participants, gathers their opinions, tallies votes, and can chain plan, act, verify, adjust, and output phases when configured.
 
 ## Table of Contents
-- [Current Status](#current-status)
 - [What Junction Is](#what-junction-is)
 - [Core API](#core-api)
 - [Discussion Models](#discussion-models)
@@ -13,31 +12,11 @@
 - [Usage Example](#usage-example)
 - [Implementation Notes](#implementation-notes)
 
-## Current Status
-
-`Junction` is implemented in `src/main/kotlin/Pipeline/Junction.kt` and now acts as a real `P2PInterface` harness.
-
-The discussion-harness requirements live in [`md/junction-harness-requirements.md`](../../md/junction-harness-requirements.md), the completed discussion rollout is tracked in [`md/junction-harness-implementation-tracker.md`](../../md/junction-harness-implementation-tracker.md), and the workflow extension has its own requirements and tracker in [`md/junction-workflow-extension-requirements.md`](../../md/junction-workflow-extension-requirements.md) and [`md/junction-workflow-extension-tracker.md`](../../md/junction-workflow-extension-tracker.md).
-
-Junction's memory-governance work is tracked in [`md/junction-memory-governance-parity.md`](../../md/junction-memory-governance-parity.md).
-
-It now supports:
-- accept any `P2PInterface` as moderator or participant
-- support nested containers such as `Manifold`
-- run a bounded discussion loop with strategy, round, and threshold controls
-- support all three original orchestration strategies with distinct runtime semantics
-- reject direct and indirect container cycles before execution
-- resolve outbound memory with deterministic budgeting and optional summarization for older history tails
-- emit structured trace events
-- return a serialized `DiscussionDecision`
-- run workflow recipes for plan/vote/act/verify/adjust/output handoff chains
-- return a serialized `JunctionWorkflowOutcome` when a workflow recipe is selected
-
 ## What Junction Is
 
-Junction is TPipe's decision harness for collaborative discussion.
+Junction is TPipe's harness for collaborative discussion and workflow handoff.
 
-It sits above normal pipe sequencing and below future consensus-driven orchestration layers. In practice, it:
+It sits above normal pipe sequencing and coordinates P2P-capable participants. In practice, it:
 - accepts a topic as `MultimodalContent`
 - dispatches the prompt to participants through P2P
 - gathers `ParticipantOpinion` entries
@@ -47,7 +26,7 @@ It sits above normal pipe sequencing and below future consensus-driven orchestra
 
 In discussion-only mode, the harness intentionally stops at decision production and does not attempt to execute follow-up plan/act workflows.
 
-When a workflow recipe is selected, the harness becomes a full workflow runner instead of a discussion-only loop. The discussion path remains the default.
+When a workflow recipe is selected, the harness runs plan, vote, act, verify, adjust, and output phases through the same P2P binding model. The discussion path remains the default.
 
 ## Core API
 

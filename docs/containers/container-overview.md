@@ -41,7 +41,7 @@ class Connector : P2PInterface {
 }
 ```
 
-**Note**: Junction is now a real `P2PInterface` harness and can host nested P2P containers as participants or moderators, including workflow phase roles for plan, vote, act, verify, adjust, and output handoff recipes.
+**Note**: Junction is a `P2PInterface` harness and can host nested P2P containers as participants or moderators, including workflow phase roles for plan, vote, act, verify, adjust, and output handoff recipes.
 
 ## Container References
 
