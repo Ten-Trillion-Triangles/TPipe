@@ -459,7 +459,7 @@ class TraceVisualizer
     private fun generateManifoldHtmlReport(trace: List<TraceEvent>): String {
         val nodes = buildManifoldNodes(trace)
         val mermaidGraph = generateManifoldMermaidGraph(nodes, trace)
-        val orchestrationTable = generateOrchestrationTable(trace)
+        val orchestrationTable = generateOrchestrationTable(trace, ::mapManifoldNodeName)
         val agentInteractionTable = generateAgentInteractionTable(trace)
         val javascript = TraceInteractivity.generateJavaScript(nodes)
         
@@ -566,9 +566,118 @@ class TraceVisualizer
      */
     private fun generateJunctionHtmlReport(trace: List<TraceEvent>): String
     {
-        return generateManifoldHtmlReport(trace)
-            .replace("Manifold", "Junction")
-            .replace("manifold", "junction")
+        val nodes = buildJunctionNodes(trace)
+        val mermaidGraph = generateJunctionMermaidGraph(nodes, trace)
+        val stateRibbon = buildJunctionStateRibbon(trace)
+        val orchestrationTable = generateOrchestrationTable(trace, ::mapJunctionNodeName)
+        val participantInteractionTable = generateParticipantInteractionTable(trace)
+        val javascript = TraceInteractivity.generateJavaScript(nodes)
+
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>TPipe Junction Execution Analysis</title>
+                <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+                <style>
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 24px; background: #f1f5f9; color: #1e293b; }
+                    .container { max-width: 1200px; margin: 0 auto; background: white; padding: 28px; border-radius: 14px; box-shadow: 0 22px 50px rgba(15,23,42,0.16); }
+                    h1 { color: #0f172a; text-align: center; margin-bottom: 28px; font-size: 2rem; letter-spacing: -0.02em; }
+                    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 18px; margin: 18px 0 34px; }
+                    .summary-card { background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%); border-radius: 14px; padding: 18px 20px; border: 1px solid rgba(99,102,241,0.18); box-shadow: inset 0 1px 0 rgba(255,255,255,0.7); }
+                    .summary-card h3 { margin: 0 0 8px; font-size: 0.8rem; letter-spacing: 0.12em; color: #475569; text-transform: uppercase; }
+                    .summary-card .value { font-size: 1.75rem; font-weight: 600; color: #0f172a; }
+                    .summary-card .subtext { font-size: 0.92rem; color: #64748b; margin-top: 8px; line-height: 1.4; }
+                    .state-ribbon { margin: 22px 0 30px; padding: 20px 22px; border-radius: 14px; border: 1px solid rgba(245,158,11,0.22); background: linear-gradient(135deg, rgba(255,251,235,0.95) 0%, rgba(255,247,237,0.95) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.75); }
+                    .state-ribbon h2 { margin-top: 0; margin-bottom: 16px; font-size: 1.15rem; color: #92400e; }
+                    .state-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+                    .state-card { background: rgba(255,255,255,0.88); border-radius: 12px; padding: 16px 18px; border: 1px solid rgba(245,158,11,0.18); box-shadow: 0 8px 18px rgba(15,23,42,0.06); }
+                    .state-card h3 { margin: 0 0 8px; font-size: 0.78rem; letter-spacing: 0.12em; color: #b45309; text-transform: uppercase; }
+                    .state-card .value { font-size: 1rem; font-weight: 600; color: #0f172a; line-height: 1.45; word-break: break-word; }
+                    .state-card .subtext { font-size: 0.85rem; color: #64748b; margin-top: 6px; line-height: 1.35; }
+                    .junction-section { margin: 28px 0; padding: 22px; border-radius: 14px; border: 1px solid rgba(148,163,184,0.22); background: #f8fafc; box-shadow: inset 0 1px 0 rgba(255,255,255,0.9); }
+                    .junction-section h2 { margin-top: 0; margin-bottom: 18px; font-size: 1.25rem; color: #1e293b; }
+                    .orchestration { border-left: 5px solid #6366f1; }
+                    .participant-interaction { border-left: 5px solid #10b981; }
+                    .mermaid { text-align: center; background: white; padding: 24px; border-radius: 12px; border: 1px solid rgba(148,163,184,0.25); box-shadow: 0 10px 20px rgba(15,23,42,0.08); }
+                    .event-feed { display: flex; flex-direction: column; gap: 18px; }
+                    .event-card { position: relative; padding: 20px 22px; border-radius: 14px; border: 1px solid rgba(148,163,184,0.25); background: white; box-shadow: 0 8px 18px rgba(15,23,42,0.08); transition: transform 0.18s ease, box-shadow 0.18s ease; }
+                    .event-card:hover { transform: translateY(-2px); box-shadow: 0 14px 26px rgba(15,23,42,0.12); }
+                    .event-card.highlighted { border-color: #facc15; box-shadow: 0 0 0 3px rgba(250,204,21,0.35); }
+                    .event-card.success { border-left: 4px solid rgba(16,185,129,0.8); }
+                    .event-card.failure { border-left: 4px solid rgba(239,68,68,0.85); }
+                    .event-card.warning { border-left: 4px solid rgba(251,191,36,0.9); }
+                    .event-card.info { border-left: 4px solid rgba(79,70,229,0.8); }
+                    .event-header { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; margin-bottom: 16px; }
+                    .event-time { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #64748b; padding: 4px 10px; border-radius: 9999px; background: rgba(226,232,240,0.6); border: 1px solid rgba(148,163,184,0.35); }
+                    .event-type-badge { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 9999px; font-weight: 600; font-size: 0.88rem; text-transform: capitalize; }
+                    .event-type-badge.success { background: rgba(220,252,231,0.9); color: #166534; }
+                    .event-type-badge.failure { background: rgba(254,226,226,0.9); color: #991b1b; }
+                    .event-type-badge.warning { background: rgba(254,243,199,0.9); color: #92400e; }
+                    .event-type-badge.info { background: rgba(224,231,255,0.95); color: #3730a3; }
+                    .badge-icon { font-size: 1rem; }
+                    .phase-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 9999px; border: 1px solid rgba(148,163,184,0.35); background: rgba(148,163,184,0.15); font-size: 0.85rem; color: #475569; letter-spacing: 0.02em; }
+                    .node-tag { padding: 6px 11px; border-radius: 999px; background: rgba(59,130,246,0.12); color: #1d4ed8; font-size: 0.88rem; font-weight: 500; }
+                    .event-body { display: grid; gap: 18px; }
+                    .event-section h4 { margin: 0 0 8px; font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #475569; }
+                    .metadata-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+                    .metadata-item { padding: 10px 12px; border-radius: 10px; background: rgba(148,163,184,0.1); border: 1px solid rgba(148,163,184,0.18); }
+                    .metadata-item strong { display: block; font-size: 0.75rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+                    .metadata-item span { color: #0f172a; font-weight: 500; word-break: break-word; font-size: 0.92rem; }
+                    .empty-state { margin: 0; color: #94a3b8; font-size: 0.9rem; font-style: italic; }
+                    details.event-details { border: 1px solid rgba(148,163,184,0.25); border-radius: 10px; background: rgba(248,250,252,0.8); padding: 12px 14px; }
+                    details.event-details summary { cursor: pointer; font-weight: 600; color: #334155; font-size: 0.95rem; list-style: none; display: flex; align-items: center; gap: 8px; }
+                    details.event-details summary::before { content: "⤵"; transition: transform 0.2s ease; font-size: 0.9rem; }
+                    details.event-details[open] summary::before { transform: rotate(-180deg); }
+                    .content-preview { margin: 14px 4px 6px; border-radius: 10px; background: white; border: 1px solid rgba(148,163,184,0.25); padding: 14px; }
+                    .content-preview pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: 'JetBrains Mono', monospace; font-size: 0.84rem; line-height: 1.5; color: #0f172a; }
+                    .context-chip { display: inline-flex; margin-top: 10px; padding: 6px 10px; border-radius: 9999px; background: rgba(167,139,250,0.15); color: #6b21a8; font-weight: 600; font-size: 0.84rem; }
+                    .error-block { margin: 0; padding: 12px 14px; background: rgba(254,226,226,0.75); border-radius: 10px; color: #991b1b; border: 1px solid rgba(248,113,113,0.35); font-family: 'JetBrains Mono', monospace; font-size: 0.84rem; white-space: pre-wrap; }
+                    table { width: 100%; border-collapse: collapse; }
+                    th { background-color: #0f172a; color: #e2e8f0; padding: 12px 18px; font-weight: 600; font-size: 0.92rem; text-align: left; letter-spacing: 0.04em; }
+                    td { background: white; padding: 14px 18px; border-bottom: 1px solid rgba(148,163,184,0.25); font-size: 0.92rem; vertical-align: top; }
+                    tr:last-child td { border-bottom: none; }
+                    .trace-item { cursor: pointer; }
+                    .trace-item.highlighted { background-color: rgba(250,204,21,0.18) !important; }
+                    .flash-highlight { animation: flashEffect 2s ease-in-out; }
+                    @keyframes flashEffect { 0%, 100% { background-color: inherit; } 50% { background-color: rgba(250,204,21,0.35); } }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>🎯 TPipe Junction Execution Analysis</h1>
+
+                    ${buildJunctionSummary(trace)}
+
+                    $stateRibbon
+
+                    <div class="junction-section orchestration">
+                        <h2>📊 Orchestration Flow</h2>
+                        <div class="mermaid">$mermaidGraph</div>
+                    </div>
+
+                    <div class="junction-section orchestration">
+                        <h2>🎯 Orchestration Timeline</h2>
+                        $orchestrationTable
+                    </div>
+
+                    <div class="junction-section participant-interaction">
+                        <h2>🤖 Participant Interactions</h2>
+                        $participantInteractionTable
+                    </div>
+                </div>
+
+                <script>
+                    mermaid.initialize({
+                        startOnLoad: true,
+                        theme: 'default',
+                        flowchart: { useMaxWidth: true, htmlLabels: true }
+                    });
+                </script>
+                $javascript
+            </body>
+            </html>
+        """.trimIndent()
     }
     
     /**
@@ -615,7 +724,11 @@ class TraceVisualizer
     /**
      * Generates Mermaid flow graph for Manifold orchestration.
      */
-    private fun generateManifoldMermaidGraph(nodes: List<TraceNode>, trace: List<TraceEvent>): String {
+    private fun generateManifoldMermaidGraph(
+        nodes: List<TraceNode>,
+        trace: List<TraceEvent>,
+        nodeNameMapper: (TraceEvent) -> String = ::mapManifoldNodeName
+    ): String {
         val graph = StringBuilder()
         graph.append("graph TD\n")
 
@@ -639,7 +752,7 @@ class TraceVisualizer
 
         var previousNodeId: String? = null
         trace.forEach { event ->
-            val label = mapManifoldNodeName(event)
+            val label = nodeNameMapper(event)
             val node = nodeMap[label] ?: return@forEach
             if(previousNodeId != null && previousNodeId != node.nodeId)
             {
@@ -658,14 +771,17 @@ class TraceVisualizer
     /**
      * Generates orchestration timeline table.
      */
-    private fun generateOrchestrationTable(trace: List<TraceEvent>): String {
+    private fun generateOrchestrationTable(
+        trace: List<TraceEvent>,
+        nodeNameMapper: (TraceEvent) -> String = ::mapManifoldNodeName
+    ): String {
         val feed = StringBuilder()
         feed.append("<div class=\"event-feed\">")
 
         val startTime = trace.firstOrNull()?.timestamp ?: 0L
         trace.forEach { event ->
             val elapsed = event.timestamp - startTime
-            val pipeName = mapManifoldNodeName(event)
+            val pipeName = nodeNameMapper(event)
             val severity = classifyEventSeverity(event)
             val phaseHtml = formatPhase(event.phase)
             val eventBadge = formatEventBadge(event, severity)
@@ -694,6 +810,274 @@ class TraceVisualizer
         }
         feed.append("</div>")
         return feed.toString()
+    }
+
+    private fun buildJunctionSummary(trace: List<TraceEvent>): String {
+        if(trace.isEmpty()) return ""
+
+        val totalEvents = trace.size
+        val failureCount = trace.count { classifyEventSeverity(it) == EventSeverity.FAILURE }
+        val successCount = trace.count { classifyEventSeverity(it) == EventSeverity.SUCCESS }
+        val start = trace.first().timestamp
+        val end = trace.last().timestamp
+        val durationMs = (end - start).coerceAtLeast(0L)
+        val participantNames = trace.filter {
+            it.eventType == TraceEventType.JUNCTION_PARTICIPANT_DISPATCH || it.eventType == TraceEventType.JUNCTION_PARTICIPANT_RESPONSE
+        }
+            .mapNotNull { event ->
+                event.metadata["participant"]?.toString()?.takeIf { name -> name.isNotBlank() }
+            }
+            .distinct()
+        val duration = formatDuration(durationMs)
+        val participantSummary = if(participantNames.isEmpty()) "No participant interactions" else participantNames.joinToString(", ") { escapeHtml(it) }
+
+        return """
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <h3>Total Events</h3>
+                    <div class="value">$totalEvents</div>
+                    <div class="subtext">Across ${trace.map { it.phase }.distinct().size} phases</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Execution Time</h3>
+                    <div class="value">$duration</div>
+                    <div class="subtext">Rounds/cycles traced in sequence</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Outcome</h3>
+                    <div class="value">${successCount} ✓ / $failureCount ✕</div>
+                    <div class="subtext">Success vs failure events</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Participants Touched</h3>
+                    <div class="value">${participantNames.size}</div>
+                    <div class="subtext">$participantSummary</div>
+                </div>
+            </div>
+        """.trimIndent()
+    }
+
+    private fun buildJunctionStateRibbon(trace: List<TraceEvent>): String {
+        if(trace.isEmpty()) return ""
+
+        val latestEvent = trace.last()
+        val latestDispatch = trace.lastOrNull { it.eventType == TraceEventType.JUNCTION_PARTICIPANT_DISPATCH }
+        val latestResponse = trace.lastOrNull { it.eventType == TraceEventType.JUNCTION_PARTICIPANT_RESPONSE }
+        val currentPath = buildJunctionPathPreview(trace)
+        val currentParticipant = latestEvent.metadata["participant"]?.toString()?.takeIf { it.isNotBlank() }
+            ?: latestEvent.metadata["agentName"]?.toString()?.takeIf { it.isNotBlank() }
+            ?: "Junction"
+
+        val stateCards = listOf(
+            stateCard(
+                title = "Current Event",
+                value = latestEvent.eventType.name.lowercase().replace('_', ' '),
+                subtext = latestEvent.pipeName
+            ),
+            stateCard(
+                title = "Current Phase",
+                value = latestEvent.phase.name.lowercase().replaceFirstChar { it.titlecase() },
+                subtext = "Harness checkpoint"
+            ),
+            stateCard(
+                title = "Strategy",
+                value = latestEvent.metadata["strategy"]?.toString().orEmpty().ifBlank { "Unknown" },
+                subtext = "Discussion mode"
+            ),
+            stateCard(
+                title = "Round / Cycle",
+                value = buildRoundCycleLabel(latestEvent),
+                subtext = "Latest harness step"
+            ),
+            stateCard(
+                title = "Consensus",
+                value = latestEvent.metadata["consensusReached"]?.toString().orEmpty().ifBlank { "Unknown" },
+                subtext = "Current decision status"
+            ),
+            stateCard(
+                title = "Current Path",
+                value = currentPath,
+                subtext = "Recent harness flow"
+            ),
+            stateCard(
+                title = "Latest Participant",
+                value = currentParticipant,
+                subtext = "Most recent dispatch/response"
+            ),
+            stateCard(
+                title = "Latest Dispatch",
+                value = formatPreview(latestDispatch?.content?.text),
+                subtext = latestDispatch?.metadata?.get("phase")?.toString().orEmpty().ifBlank { "No dispatch yet" }
+            ),
+            stateCard(
+                title = "Latest Response",
+                value = formatPreview(latestResponse?.content?.text),
+                subtext = latestResponse?.metadata?.get("phase")?.toString().orEmpty().ifBlank { "No response yet" }
+            )
+        )
+
+        return """
+            <div class="state-ribbon">
+                <h2>🧭 Harness State</h2>
+                <div class="state-grid">
+                    ${stateCards.joinToString("")}
+                </div>
+            </div>
+        """.trimIndent()
+    }
+
+    private fun stateCard(title: String, value: String, subtext: String): String {
+        return """
+            <div class="state-card">
+                <h3>${escapeHtml(title)}</h3>
+                <div class="value">${escapeHtml(value.ifBlank { "—" })}</div>
+                <div class="subtext">${escapeHtml(subtext.ifBlank { "—" })}</div>
+            </div>
+        """.trimIndent()
+    }
+
+    private fun buildRoundCycleLabel(event: TraceEvent): String {
+        val round = event.metadata["round"]?.toString()?.takeIf { it.isNotBlank() }
+        val maxRounds = event.metadata["maxRounds"]?.toString()?.takeIf { it.isNotBlank() }
+        val cycle = event.metadata["cycle"]?.toString()?.takeIf { it.isNotBlank() }
+        val parts = mutableListOf<String>()
+        if(round != null)
+        {
+            parts.add("Round $round")
+        }
+        if(cycle != null)
+        {
+            parts.add("Cycle $cycle")
+        }
+        if(maxRounds != null)
+        {
+            parts.add("of $maxRounds")
+        }
+        return if(parts.isEmpty()) "Unknown" else parts.joinToString(" ")
+    }
+
+    private fun buildJunctionPathPreview(trace: List<TraceEvent>): String {
+        val path = trace
+            .map { mapJunctionNodeName(it) }
+            .fold(mutableListOf<String>()) { acc, label ->
+                if(acc.lastOrNull() != label)
+                {
+                    acc.add(label)
+                }
+                acc
+            }
+            .takeLast(6)
+
+        return if(path.isEmpty()) "Junction" else path.joinToString(" → ")
+    }
+
+    private fun buildJunctionNodes(trace: List<TraceEvent>): List<TraceNode> {
+        val nodeGroups = linkedMapOf<String, MutableList<TraceEvent>>()
+
+        trace.forEach { event ->
+            val label = mapJunctionNodeName(event)
+            val events = nodeGroups.getOrPut(label) { mutableListOf() }
+            events.add(event)
+        }
+
+        return nodeGroups.entries.mapIndexed { index, (label, events) ->
+            TraceNode(
+                nodeId = "node-${sanitizeNodeId(label)}-$index",
+                pipeName = label,
+                eventIds = events.map { it.id },
+                status = when {
+                    events.any { it.eventType.name.contains("FAILURE") } -> NodeStatus.FAILURE
+                    events.any { it.eventType.name.contains("SUCCESS") } -> NodeStatus.SUCCESS
+                    else -> NodeStatus.INFO
+                }
+            )
+        }
+    }
+
+    private fun mapJunctionNodeName(event: TraceEvent): String {
+        return when {
+            event.eventType == TraceEventType.JUNCTION_PARTICIPANT_DISPATCH ||
+                event.eventType == TraceEventType.JUNCTION_PARTICIPANT_RESPONSE -> {
+                val participant = event.metadata["participant"]?.toString()?.takeIf { it.isNotBlank() }
+                    ?: event.metadata["agentName"]?.toString()?.takeIf { it.isNotBlank() }
+                    ?: "Unknown"
+                "Participant: $participant"
+            }
+            event.eventType.name.startsWith("JUNCTION_") -> JUNCTION_NODE_NAME
+            else -> event.pipeName
+        }
+    }
+
+    private fun generateJunctionMermaidGraph(nodes: List<TraceNode>, trace: List<TraceEvent>): String {
+        return generateManifoldMermaidGraph(nodes, trace, ::mapJunctionNodeName)
+    }
+
+    private fun generateParticipantInteractionTable(trace: List<TraceEvent>): String {
+        val participantStats = mutableMapOf<String, ParticipantInteractionStats>()
+
+        trace.filter {
+            it.eventType in listOf(TraceEventType.JUNCTION_PARTICIPANT_DISPATCH, TraceEventType.JUNCTION_PARTICIPANT_RESPONSE)
+        }.forEach { event ->
+            val participant = event.metadata["participant"]?.toString()?.takeIf { it.isNotBlank() }
+                ?: event.metadata["agentName"]?.toString()?.takeIf { it.isNotBlank() }
+                ?: "Unknown"
+            val stats = participantStats.getOrPut(participant) { ParticipantInteractionStats() }
+            when(event.eventType)
+            {
+                TraceEventType.JUNCTION_PARTICIPANT_DISPATCH ->
+                {
+                    stats.dispatches++
+                    stats.latestDispatch = event.content?.text.orEmpty()
+                }
+                TraceEventType.JUNCTION_PARTICIPANT_RESPONSE ->
+                {
+                    stats.responses++
+                    stats.latestResponse = event.content?.text.orEmpty()
+                }
+                else -> {}
+            }
+        }
+
+        val table = StringBuilder()
+        table.append("<table><tr><th>🤖 Participant</th><th>📤 Dispatches</th><th>📥 Responses</th><th>📝 Latest Dispatch</th><th>💬 Latest Response</th><th>✅ Success Rate</th></tr>")
+
+        participantStats.forEach { (participant, stats) ->
+            val dispatches = stats.dispatches
+            val responses = stats.responses
+            val successRate = if(dispatches > 0) (responses * 100 / dispatches) else 0
+            val participantHtml = escapeHtml(participant)
+            table.append(
+                "<tr class=\"trace-item agent-row\" data-pipe=\"Participant: $participantHtml\">" +
+                    "<td>$participantHtml</td>" +
+                    "<td>$dispatches</td>" +
+                    "<td>$responses</td>" +
+                    "<td>${formatPreview(stats.latestDispatch)}</td>" +
+                    "<td>${formatPreview(stats.latestResponse)}</td>" +
+                    "<td>$successRate%</td>" +
+                "</tr>"
+            )
+        }
+
+        table.append("</table>")
+        return table.toString()
+    }
+
+    private data class ParticipantInteractionStats(
+        var dispatches: Int = 0,
+        var responses: Int = 0,
+        var latestDispatch: String = "",
+        var latestResponse: String = ""
+    )
+
+    private fun formatPreview(text: String?, limit: Int = 120): String {
+        val trimmed = text?.trim().orEmpty()
+        if(trimmed.isBlank())
+        {
+            return "—"
+        }
+
+        val preview = if(trimmed.length > limit) "${trimmed.take(limit)}…" else trimmed
+        return escapeHtml(preview)
     }
     
     /**
@@ -786,7 +1170,7 @@ class TraceVisualizer
         return "<div class=\"metadata-grid\">$items</div>"
     }
 
-    private fun formatContentSummary(event: TraceEvent): String {
+    private fun formatContentSummary(event: TraceEvent, summaryLabel: String): String {
         val parts = mutableListOf<String>()
         event.content?.text?.takeIf { it.isNotBlank() }?.let { text ->
             val preview = if(text.length > 220) "${text.take(220)}…" else text
@@ -797,7 +1181,7 @@ class TraceVisualizer
         }
         if(parts.isEmpty()) return "<p class=\"empty-state\">No content captured for this event.</p>"
         val inner = parts.joinToString("")
-        return "<details class=\"event-details\"><summary>Content &amp; Context</summary>$inner</details>"
+        return "<details class=\"event-details\"><summary>${escapeHtml(summaryLabel)}</summary>$inner</details>"
     }
 
     private fun buildMetadataSection(event: TraceEvent): String {
@@ -811,13 +1195,35 @@ class TraceVisualizer
     }
 
     private fun buildContentSection(event: TraceEvent): String {
-        val body = formatContentSummary(event)
+        val body = formatContentSummary(event, contentSummaryLabel(event))
         return """
             <section class="event-section">
-                <h4>Content &amp; Context</h4>
+                <h4>${escapeHtml(contentSectionHeading(event))}</h4>
                 $body
             </section>
         """.trimIndent()
+    }
+
+    private fun contentSummaryLabel(event: TraceEvent): String {
+        return when(event.eventType)
+        {
+            TraceEventType.JUNCTION_PARTICIPANT_RESPONSE,
+            TraceEventType.AGENT_RESPONSE -> "Response & Context"
+            TraceEventType.JUNCTION_PARTICIPANT_DISPATCH,
+            TraceEventType.AGENT_DISPATCH -> "Prompt & Context"
+            else -> "Content & Context"
+        }
+    }
+
+    private fun contentSectionHeading(event: TraceEvent): String {
+        return when(event.eventType)
+        {
+            TraceEventType.JUNCTION_PARTICIPANT_RESPONSE,
+            TraceEventType.AGENT_RESPONSE -> "Response & Context"
+            TraceEventType.JUNCTION_PARTICIPANT_DISPATCH,
+            TraceEventType.AGENT_DISPATCH -> "Prompt & Context"
+            else -> "Content & Context"
+        }
     }
 
     private fun buildErrorSection(event: TraceEvent): String {

@@ -178,6 +178,59 @@ class FillAndSplitModeTest
         }
     }
 
+    @Test
+    fun fillAndSplitModeReclaimsUnusedLorebookBudgetForHistoryOnlyWindow()
+    {
+        val fillAndSplitWindow = buildUnderfilledHistoryWindow()
+        val halfBudgetBaseline = buildUnderfilledHistoryWindow()
+        val prompt = "alpha"
+        val budget = 20
+
+        halfBudgetBaseline.loreBookKeys = halfBudgetBaseline.loreBookKeys.filterKeys {
+            it in halfBudgetBaseline.selectAndFillLoreBookContext(
+                text = prompt,
+                maxTokens = budget / 2,
+                countSubWordsInFirstWord = true,
+                favorWholeWords = false,
+                countOnlyFirstWordFound = false,
+                splitForNonWordChar = true,
+                alwaysSplitIfWholeWordExists = false,
+                countSubWordsIfSplit = false,
+                nonWordSplitCount = 2
+            )
+        }.toMutableMap()
+
+        halfBudgetBaseline.truncateConverseHistory(
+            maxTokens = budget / 2,
+            multiplyWindowSizeBy = 1,
+            truncateSettings = ContextWindowSettings.TruncateBottom,
+            countSubWordsInFirstWord = true,
+            favorWholeWords = false,
+            countOnlyFirstWordFound = false,
+            splitForNonWordChar = true,
+            alwaysSplitIfWholeWordExists = false,
+            countSubWordsIfSplit = false,
+            nonWordSplitCount = 2
+        )
+
+        fillAndSplitWindow.selectAndTruncateContext(
+            text = prompt,
+            totalTokenBudget = budget,
+            multiplyWindowSizeBy = 0,
+            truncateSettings = ContextWindowSettings.TruncateBottom,
+            fillMode = true,
+            fillAndSplitMode = true
+        )
+
+        val fillAndSplitTokens = totalTokens(fillAndSplitWindow)
+        val baselineTokens = totalTokens(halfBudgetBaseline)
+
+        assertTrue(
+            fillAndSplitTokens > baselineTokens,
+            "Expected fillAndSplit to retain more tokens than the half-budget baseline for history-only windows, but got $fillAndSplitTokens <= $baselineTokens"
+        )
+    }
+
     private fun buildWindow(): ContextWindow
     {
         val window = ContextWindow()
@@ -224,6 +277,36 @@ class FillAndSplitModeTest
 
         window.contextElements.addAll(
             List(20) { "context-$it" }
+        )
+
+        return window
+    }
+
+    private fun buildUnderfilledHistoryWindow(): ContextWindow
+    {
+        val window = ContextWindow()
+
+        window.addLoreBookEntry(
+            "alpha",
+            "alpha",
+            10
+        )
+
+        window.converseHistory.add(
+            ConverseRole.user,
+            MultimodalContent("history entry one keeps the conversation grounded")
+        )
+        window.converseHistory.add(
+            ConverseRole.assistant,
+            MultimodalContent("history entry two keeps the conversation grounded")
+        )
+        window.converseHistory.add(
+            ConverseRole.user,
+            MultimodalContent("history entry three keeps the conversation grounded")
+        )
+        window.converseHistory.add(
+            ConverseRole.assistant,
+            MultimodalContent("history entry four keeps the conversation grounded")
         )
 
         return window
