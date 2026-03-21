@@ -235,11 +235,15 @@ token-budget configuration without overwriting the other budget fields. Use this
 legend-backed prompt reduction before truncation.
 
 #### `enableSemanticDecompression(): Pipe`
-Reserves the semantic decompression hook for future system-prompt injection.
+Reserves the semantic decompression hook for system-prompt injection.
 
-**Behavior:** Flips the internal flag that `applySystemPrompt()` checks before inserting decompression guidance.
-This does not inject the actual instructions yet; it only enables the hook so the decompression legend can be
-described later.
+**Behavior:** Flips the internal flag that `applySystemPrompt()` checks before prepending the decompression
+prelude. When semantic compression is also enabled, TPipe inserts a short instruction block at the very top of
+the rebuilt system prompt that tells the model that the user prompt was compressed using TPipe Semantic
+Compression, explains that the compressed text should be reconstructed as closely as possible to the original
+intent and data, explains the `Legend:` / `code: phrase` format and the blank-line boundary, instructs it to
+read the legend first, expand repeated proper-noun codes, restore omitted glue words and syntax as faithfully
+as possible, preserve quoted spans, and then continue with the rest of the prompt.
 
 #### `compressPrompt(prompt: String, settings: SemanticCompressionSettings = SemanticCompressionSettings()): SemanticCompressionResult`
 Compresses a prompt string using TPipe's semantic compression rules.
@@ -266,7 +270,9 @@ Copies system prompt to user prompt for models that handle user prompts better.
 #### `applySystemPrompt(): Pipe`
 Rebuilds system prompt with all injections and configurations.
 
-**Behavior:** Critical function that reconstructs the system prompt by injecting JSON schemas, PCP context, P2P agents, and custom instructions. Must be called after changing JSON schemas or protocol settings to take effect.
+**Behavior:** Critical function that reconstructs the system prompt by injecting the semantic decompression
+prelude, JSON schemas, PCP context, P2P agents, context instructions, todo lists, and custom footer text in a
+stable order. Must be called after changing JSON schemas or protocol settings to take effect.
 
 ---
 
@@ -439,8 +445,8 @@ Common contractions are expanded before function-word stripping, and the audit h
 surface recurring prompt boilerplate that should be added to the lexicon next.
 
 **Fluent Builders:** Call `enableSemanticCompression()` to turn this path on from the `Pipe` API, and call
-`enableSemanticDecompression()` to reserve the future system-prompt hook that will explain how the compressed
-prompt should be expanded again.
+`enableSemanticDecompression()` to prepend the decompression prelude that explains how the compressed prompt
+should be expanded again before the rest of the system prompt is processed.
 
 **Dynamic Allocation Process:**
 1. **Automatic Sizing**: TPipe counts tokens in the actual user prompt and allocates that exact amount

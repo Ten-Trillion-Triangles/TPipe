@@ -17,6 +17,7 @@ object bedrockEnv
     private val modelToInferenceMap = mutableMapOf<String, String>()
     
     private var configLoaded = false
+    private var inferenceConfigFileOverride: File? = null
 
     /**
      * Internal stores for aws public and secret keys. This allows for programmatic key retrieval instead
@@ -44,15 +45,50 @@ object bedrockEnv
     {
         return Pair<String, String>(publicKey, secretKey)
     }
+
+    /**
+     * Overrides the inference-profile config file used by [loadInferenceConfig].
+     *
+     * This exists so tests can point Bedrock at a temp fixture instead of depending on the developer's
+     * real `~/.aws/inference.txt` file. Pass null to return to the default user-home location.
+     *
+     * @param configFile Alternate inference config file or null to restore the default location.
+     */
+    fun setInferenceConfigFile(configFile: File?)
+    {
+        inferenceConfigFileOverride = configFile
+    }
+
+    /**
+     * Clears the loaded inference map and any test override path.
+     *
+     * This keeps Bedrock config resolution deterministic across tests and prevents stale mappings from
+     * surviving between runs.
+     */
+    fun resetInferenceConfig()
+    {
+        modelToInferenceMap.clear()
+        configLoaded = false
+        inferenceConfigFileOverride = null
+    }
+
+    private fun resolveInferenceConfigFile(): File
+    {
+        return inferenceConfigFileOverride ?: File(System.getProperty("user.home"), ".aws/inference.txt")
+    }
     
     /**
-     * Loads inference configuration from ~/.aws/inference.txt file.
-     * Creates default configuration file if it doesn't exist.
+     * Loads inference configuration from the configured inference file.
+     *
+     * The default source is `~/.aws/inference.txt`, but tests can override that path with
+     * [setInferenceConfigFile] so they do not depend on a developer's real home directory.
+     * Creates the config file if it does not exist.
      * File format: modelId=inferenceProfileId
      */
     fun loadInferenceConfig()
     {
-        val configFile = File(System.getProperty("user.home"), ".aws/inference.txt")
+        val configFile = resolveInferenceConfigFile()
+        modelToInferenceMap.clear()
         if(!configFile.exists())
         {
             createDefaultInferenceConfig(configFile)
@@ -341,7 +377,7 @@ object bedrockEnv
         
         if(configLoaded)
         {
-            val configFile = File(System.getProperty("user.home"), ".aws/inference.txt")
+            val configFile = resolveInferenceConfigFile()
             val content = modelToInferenceMap.entries.sortedBy { it.key }
                 .joinToString("\n") { "${it.key}=${it.value}" }
             

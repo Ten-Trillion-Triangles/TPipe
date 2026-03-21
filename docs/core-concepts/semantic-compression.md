@@ -63,6 +63,14 @@ structured content such as JSON, XML, or code, TPipe leaves the existing budget 
 The phrase and stop-word tables come from checked-in resource files and may be extended with the settings
 object when a caller needs additional domain-specific coverage.
 
+When `enableSemanticDecompression()` is also enabled, `applySystemPrompt()` prepends a short decompression
+prelude at the very top of the rebuilt system prompt. That prelude tells the model that the user prompt was
+compressed using TPipe Semantic Compression, explains that the compressed text is meant to be reconstructed
+as closely as possible to the original intent and data, explains that the legend starts with `Legend:` and
+contains `code: phrase` lines until the first blank line, and instructs the model to read the legend first,
+expand the 2-character codes, restore omitted glue words and syntax as faithfully as possible, preserve quoted
+spans verbatim, and then continue with the rest of the system instructions.
+
 ## Usage
 
 ```kotlin

@@ -1,5 +1,6 @@
 package com.TTT.Pipe
 
+import com.TTT.Util.buildSemanticDecompressionInstructions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -98,6 +99,32 @@ class SemanticCompressionBuilderTest
         assertTrue(pipe.isSemanticDecompressionEnabled(), "Decompression should be tracked independently")
         assertEquals("Base system prompt", pipe.currentSystemPrompt(), "No decompression text should be injected yet")
         assertTrue(pipe.currentBudget() == null, "Decompression alone should not create token budgeting")
+    }
+
+    @Test
+    fun semanticDecompressionPreludeIsPrependedWhenCompressionIsEnabled()
+    {
+        val pipe = InspectableSemanticCompressionPipe()
+
+        pipe.enableSemanticCompression()
+        pipe.enableSemanticDecompression()
+        pipe.setSystemPrompt("Base system prompt")
+        pipe.applySystemPrompt()
+
+        val prompt = pipe.currentSystemPrompt()
+        val prelude = buildSemanticDecompressionInstructions()
+
+        assertTrue(prompt.startsWith(prelude), "Decompression instructions should sit at the very top of the system prompt")
+        assertTrue(prompt.contains("TPipe Semantic Compression"), "Prelude should name the compression scheme explicitly")
+        assertTrue(prompt.contains("near-lossless representation"), "Prelude should explain that decompression should restore the original content closely")
+        assertTrue(prompt.contains("original intent, meaning, data, and contents"), "Prelude should explain what must be restored")
+        assertTrue(prompt.contains("do not assume prior knowledge"), "Prelude should warn the model not to assume familiarity")
+        assertTrue(prompt.contains("Legend:"), "Prelude should explain the legend heading")
+        assertTrue(prompt.contains("code: phrase"), "Prelude should explain the legend entry format")
+        assertTrue(prompt.contains("first blank line"), "Prelude should explain where the legend block ends")
+        assertTrue(prompt.contains("restore omitted articles, conjunctions, prepositions, auxiliaries, and punctuation"), "Prelude should explain how missing glue words are rebuilt")
+        assertTrue(prompt.contains("faithfully as possible"), "Prelude should tell the model to restore the prompt faithfully")
+        assertTrue(prompt.contains("Base system prompt"), "Original system prompt should still follow the prelude")
     }
 
     @Test

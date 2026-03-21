@@ -35,6 +35,49 @@ data class SemanticCompressionResult(
     val legendMap: Map<String, String>
 )
 
+/**
+ * Builds the system-prompt prelude that teaches the model how to read a semantic-compressed prompt.
+ *
+ * This prelude is intentionally generic and stable so it can be prepended ahead of any other system prompt
+ * injection. It tells the model that the user prompt was compressed by TPipe Semantic Compression, explains
+ * that the goal is near-lossless semantic restoration of the original intent and data, and gives an exact
+ * decompression order before the rest of the system prompt continues.
+ *
+ * @return A system-prompt prelude that describes how to decompress semantic-compressed text.
+ */
+fun buildSemanticDecompressionInstructions(): String
+{
+    return """
+        |The user prompt has been compressed using TPipe Semantic Compression.
+        |This is a TPipe-specific, legend-backed prompt reduction format, so do not assume prior knowledge of it.
+        |The compressed text is a near-lossless representation of the original prompt and should be reconstructed
+        |so that the original intent, meaning, data, and contents are restored as closely as possible.
+        |Some surface words may differ from the original text, but the meaning should remain the same.
+        |The compression removed common function words, common phrases, Unicode characters, and most punctuation
+        |outside quoted text, while repeated proper nouns were replaced with short codes that must be expanded back.
+        |Use inference to restore omitted articles, conjunctions, prepositions, auxiliaries, and punctuation when
+        |doing so preserves the original meaning and wording as closely as possible.
+        |
+        |Do this first before following any other instructions:
+        |
+        |1. Read the legend at the top of the prompt first.
+        |2. Treat the legend as a decoding table, not as prose to summarize.
+        |3. The legend begins with `Legend:` and continues with `code: phrase` lines.
+        |4. The legend block ends at the first blank line after those mapping lines.
+        |5. Build a map from each 2-character ASCII code to the phrase on the same line.
+        |6. Read the compressed body after the legend block.
+        |7. Replace matching codes in the compressed body using the legend map.
+        |8. Replace codes only in unquoted text.
+        |9. Leave quoted text exactly as written.
+        |10. Restore the prompt as faithfully as possible, not as a summary.
+        |11. Do not invent unrelated meaning or rewrite quoted spans.
+        |12. After the compressed prompt has been reconstructed, continue with the rest of the system prompt.
+        |
+        |The goal is to recover the original text's intent and content as closely as possible before any other
+        |system instructions are followed.
+    """.trimMargin()
+}
+
 private data class ProperNounCandidate(
     val phrase: String,
     var count: Int = 0,

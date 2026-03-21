@@ -1,6 +1,7 @@
 package com.TTT.Pipe
 
 import com.TTT.PipeContextProtocol.*
+import com.TTT.Util.buildSemanticDecompressionInstructions
 import kotlin.test.*
 
 /**
@@ -392,6 +393,40 @@ class SystemPromptInjectionTest
         
         // Both should produce same result after applySystemPrompt
         assertEquals(prompt1, prompt2)
+    }
+
+    @Test
+    fun `Semantic decompression prelude stays ahead of merged injections`()
+    {
+        val pipe = createTestPipe()
+        val prelude = buildSemanticDecompressionInstructions()
+
+        val pcpContext = PcpContext()
+        pcpContext.addTPipeOption(TPipeContextOptions().apply {
+            functionName = "testFunction"
+        })
+
+        pipe.setPcPContext(pcpContext)
+        pipe.requireJsonPromptInjection()
+        pipe.setJsonOutput("""{"result": "string"}""")
+        pipe.enableSemanticCompression()
+        pipe.enableSemanticDecompression()
+        pipe.setSystemPrompt("You are a test assistant.")
+        pipe.applySystemPrompt()
+
+        val prompt = pipe.getPrompt()
+
+        assertTrue(prompt.startsWith(prelude), "The decompression prelude must be the first injected block")
+        assertTrue(prompt.contains("TPipe Semantic Compression"), "The prelude should explain that the prompt was compressed")
+        assertTrue(prompt.contains("near-lossless representation"), "The prelude should explain that reconstruction should preserve meaning")
+        assertTrue(prompt.contains("original intent, meaning, data, and contents"), "The prelude should state what needs to be restored")
+        assertTrue(prompt.contains("Legend:"), "The prelude should explain how the legend is introduced")
+        assertTrue(prompt.contains("code: phrase"), "The prelude should explain the legend line format")
+        assertTrue(prompt.contains("first blank line"), "The prelude should define the legend boundary")
+        assertTrue(prompt.contains("restore omitted articles, conjunctions, prepositions, auxiliaries, and punctuation"), "The prelude should explain how to infer missing glue words")
+        assertTrue(prompt.indexOf("You are a test assistant.") > prompt.indexOf(prelude))
+        assertTrue(prompt.contains("You must return your output in Json format"))
+        assertTrue(prompt.contains("Pipe Context Protocol"))
     }
 
     // ==================== HELPER CLASS ====================

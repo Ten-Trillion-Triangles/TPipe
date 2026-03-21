@@ -25,6 +25,7 @@ repositories {
 
 dependencies {
     testImplementation(kotlin("test"))
+    testImplementation(project(":TPipe-Defaults"))
     implementation(project(":"))
     
     // AWS SDK for Bedrock

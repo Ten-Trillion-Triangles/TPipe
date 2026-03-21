@@ -38,6 +38,7 @@ import com.TTT.Util.examplePromptFor
 import com.TTT.Util.extractAllJsonObjects
 import com.TTT.Util.extractNonJsonText
 import com.TTT.Util.removeFromFirstOccurrence
+import com.TTT.Util.buildSemanticDecompressionInstructions
 import com.TTT.Util.semanticCompress
 import com.TTT.Util.SemanticCompressionResult
 import com.TTT.Util.SemanticCompressionSettings
@@ -599,8 +600,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
     protected var copySystemToUserPrompt = false
 
     /**
-     * If true, applySystemPrompt will reserve a semantic decompression hook so future system-prompt instructions
-     * can explain how to rebuild compressed prompt text.
+     * If true, applySystemPrompt will prepend a semantic decompression prelude ahead of the rebuilt system prompt.
+     *
+     * The prelude teaches the model how to read a legend-backed compressed prompt before continuing with the
+     * rest of the system instructions.
      */
     @Serializable
     protected var semanticDecompressionEnabled = false
@@ -1666,11 +1669,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             systemPrompt = systemPrompt + jsonRequirements
         }
 
-        if(semanticDecompressionEnabled && tokenBudgetSettings?.compressUserPrompt == true)
-        {
-            // Reserved hook for the future semantic decompression instructions.
-            // The actual legend expansion guidance will be injected in a later pass.
-        }
+        applySemanticDecompressionPrelude()
 
         return this
     }
@@ -1705,7 +1704,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Enable the future semantic decompression hook in system-prompt application.
      *
-     * This only flips the flag used by [applySystemPrompt]; it does not inject decompression instructions yet.
+     * This only flips the flag used by [applySystemPrompt]; the actual decompression prelude is injected at the
+     * top of the rebuilt system prompt when semantic compression is also enabled.
      *
      * @return This Pipe object for method chaining.
      */
@@ -1713,6 +1713,20 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         semanticDecompressionEnabled = true
         return this
+    }
+
+    /**
+     * Prepends the semantic decompression prelude when semantic compression is active.
+     *
+     * The prelude is intentionally added ahead of the rebuilt system prompt so the model sees the decompression
+     * contract before any of the other system instructions or protocol injections.
+     */
+    private fun applySemanticDecompressionPrelude()
+    {
+        if(semanticDecompressionEnabled && tokenBudgetSettings?.compressUserPrompt == true)
+        {
+            systemPrompt = buildSemanticDecompressionInstructions() + "\n\n" + systemPrompt
+        }
     }
 
     /**
@@ -2010,6 +2024,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
         {
             systemPrompt = "$systemPrompt \n\n $footerPrompt"
         }
+
+        applySemanticDecompressionPrelude()
 
         return this
     }
