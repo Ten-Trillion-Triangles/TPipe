@@ -127,9 +127,10 @@ class QwenSemanticCompressionRoundTripTest
             setSystemPrompt(
                 buildSemanticDecompressionInstructions() + "\n\n" + """
                     You are a reconstruction agent for a TPipe semantic-compressed prompt.
-                    Rebuild the original text as faithfully as possible.
+                    Rebuild the original text into normal, fully readable English.
+                    Restore omitted grammar, glue words, and syntax wherever needed to recover the original meaning.
                     Preserve quoted spans exactly.
-                    Return only the reconstructed text with no summary and no commentary.
+                    Return only the reconstructed text with no summary, no commentary, and no compressed style.
                 """.trimIndent()
             )
             enableTracing(traceConfig)
@@ -160,9 +161,33 @@ class QwenSemanticCompressionRoundTripTest
                     result.text.contains("North Harbor Systems"),
                     "The reconstructed output should preserve the original proper-noun content"
                 )
+                assertFalse(
+                    result.text.contains("CONTINUE FROM PREVIOUS THINKING"),
+                    "The decompressed answer should not echo the reasoning scaffold"
+                )
+                assertFalse(
+                    result.text.contains("USER PROMPT:"),
+                    "The decompressed answer should not leak prompt-injection markers"
+                )
+                assertFalse(
+                    result.text.contains("Legend:"),
+                    "The decompressed answer should not echo the semantic-compression legend"
+                )
                 assertTrue(
                     result.text.contains("\"The flag stays off until the rehearsal is over.\""),
                     "Quoted text should survive semantic compression and decompression exactly"
+                )
+
+                val originalScore = reconstructionSimilarityScore(originalPrompt, result.text)
+                val compressedScore = reconstructionSimilarityScore(originalPrompt, compressedPrompt)
+                println("Reconstruction similarity score: output=$originalScore compressed=$compressedScore")
+                assertTrue(
+                    originalScore > compressedScore + 0.10,
+                    "The reconstructed output should be materially closer to the original fixture than the compressed prompt"
+                )
+                assertTrue(
+                    originalScore >= 0.60,
+                    "The reconstructed output should recover most of the original token sequence"
                 )
 
                 val recompressed = semanticCompress(result.text)
@@ -250,5 +275,41 @@ class QwenSemanticCompressionRoundTripTest
             On the final review, Aster Ridge Labs asked for a short status note that kept the exact intent, the
             original names, the quoted instruction, and the full list of checks that had already been approved.
         """.trimIndent()
+    }
+
+    private fun reconstructionSimilarityScore(reference: String, candidate: String): Double
+    {
+        val referenceTokens = tokenize(reference)
+        val candidateTokens = tokenize(candidate)
+        if(referenceTokens.isEmpty())
+        {
+            return 0.0
+        }
+
+        val dp = Array(referenceTokens.size + 1) { IntArray(candidateTokens.size + 1) }
+
+        for(i in referenceTokens.indices)
+        {
+            for(j in candidateTokens.indices)
+            {
+                dp[i + 1][j + 1] = if(referenceTokens[i] == candidateTokens[j])
+                {
+                    dp[i][j] + 1
+                }
+                else
+                {
+                    maxOf(dp[i][j + 1], dp[i + 1][j])
+                }
+            }
+        }
+
+        return dp[referenceTokens.size][candidateTokens.size].toDouble() / referenceTokens.size.toDouble()
+    }
+
+    private fun tokenize(text: String): List<String>
+    {
+        return Regex("[A-Za-z0-9']+").findAll(text)
+            .map { it.value.lowercase() }
+            .toList()
     }
 }

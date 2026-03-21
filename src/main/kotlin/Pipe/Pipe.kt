@@ -6337,12 +6337,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     |Your prior reasoning is provided below. Extend and build upon this analysis:
                 """.trimMargin()
 
-                val reasoningCombo = "${injectionMessage} ${reasoningOutput}"
-
                 val secondaryInjectionMessage = """USER PROMPT:"""
 
-                //Combine reasoning then a notification of the user prompt, and then the user prompt.
-                content.text  = "$injectionMessage $secondaryInjectionMessage ${content.text}"
+                // Combine the reasoning output first, then the user prompt marker, then the original user prompt.
+                content.text = "$injectionMessage $reasoningOutput $secondaryInjectionMessage ${content.text}"
             }
 
             "BeforeUserPromptWithConverse" -> {

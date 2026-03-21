@@ -50,13 +50,15 @@ fun buildSemanticDecompressionInstructions(): String
     return """
         |The user prompt has been compressed using TPipe Semantic Compression.
         |This is a TPipe-specific, legend-backed prompt reduction format, so do not assume prior knowledge of it.
-        |The compressed text is a near-lossless representation of the original prompt and should be reconstructed
-        |so that the original intent, meaning, data, and contents are restored as closely as possible.
-        |Some surface words may differ from the original text, but the meaning should remain the same.
+        |The compressed text is a loss-minimized encoding of the original prompt, and your job is to reconstruct the original text as completely and faithfully as possible.
+        |The output should read like normal human English again, not like a compressed note, fragment list, or summary.
+        |Some surface words may differ from the original text, but the original intent, meaning, data, and contents
+        |must be restored as closely as possible.
         |The compression removed common function words, common phrases, Unicode characters, and most punctuation
         |outside quoted text, while repeated proper nouns were replaced with short codes that must be expanded back.
-        |Use inference to restore omitted articles, conjunctions, prepositions, auxiliaries, and punctuation when
-        |doing so preserves the original meaning and wording as closely as possible.
+        |Use inference to restore omitted articles, conjunctions, prepositions, auxiliaries, and punctuation so the
+        |final reconstruction matches the original meaning, structure, and wording as closely as possible.
+        |Do not leave the text compressed, and do not preserve the compressed style in the final output.
         |
         |Do this first before following any other instructions:
         |
@@ -71,7 +73,8 @@ fun buildSemanticDecompressionInstructions(): String
         |9. Leave quoted text exactly as written.
         |10. Restore the prompt as faithfully as possible, not as a summary.
         |11. Do not invent unrelated meaning or rewrite quoted spans.
-        |12. After the compressed prompt has been reconstructed, continue with the rest of the system prompt.
+        |12. After the compressed prompt has been reconstructed, continue with the rest of the system prompt
+        |    using the reconstructed text as the basis for any remaining instructions.
         |
         |The goal is to recover the original text's intent and content as closely as possible before any other
         |system instructions are followed.
