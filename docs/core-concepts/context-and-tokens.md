@@ -5,6 +5,7 @@
 - [Token Budgets - Predictable Resource Allocation](#token-budgets---predictable-resource-allocation)
 - [Truncation - Intelligent Content Reduction](#truncation---intelligent-content-reduction)
 - [Advanced Truncation Control](#advanced-truncation-control)
+- [Semantic Compression - Legend-Backed Prompt Reduction](#semantic-compression---legend-backed-prompt-reduction)
 - [Practical Implementation Patterns](#practical-implementation-patterns)
 - [Error Prevention and Handling](#error-prevention-and-handling)
 - [Token Counting and Optimization](#token-counting-and-optimization)
@@ -158,6 +159,40 @@ If user prompt was larger (e.g., 25,000 tokens):
 - You want to maximize context space utilization
 - You prefer automatic space optimization over strict limits
 - You're building flexible applications that handle diverse input types
+
+## Semantic Compression - Legend-Backed Prompt Reduction
+
+TPipe can reduce prompt token usage before truncation by semantically compressing natural-language text.
+The compressor removes function words, common filler phrases, and repeated proper nouns while leaving quoted
+spans untouched and returning a legend that maps the short codes back to their original values.
+
+```kotlin
+val compression = pipe.compressPrompt("""
+    Alice Johnson and Alice Johnson are going to review the launch proposal in order to help the team.
+    "Quoted text stays untouched."
+""".trimIndent())
+
+val promptForLLM = if(compression.legend.isNotEmpty())
+{
+    "${compression.legend}\n\n${compression.compressedText}"
+}
+else
+{
+    compression.compressedText
+}
+```
+
+**When to use it**
+- Natural-language prompts that repeat names, roles, or filler phrases
+- Long system prompts that can be safely rewritten as plain English
+- Prompt budgets where you want to preserve meaning before falling back to truncation
+
+**When not to use it**
+- JSON, XML, code blocks, schemas, or other machine-readable payloads
+- Prompts where quoted text must be preserved exactly as written
+
+**Behavior:** `TokenBudgetSettings.compressUserPrompt` triggers the same compressor in the user-prompt budget path.
+If the compressed result still exceeds the budget, TPipe continues through the existing truncation or failure logic.
 
 ### Overflow Handling in Dynamic Allocation
 

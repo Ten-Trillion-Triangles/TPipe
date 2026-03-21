@@ -27,6 +27,7 @@ Essential TPipe features organized by complexity:
 - [Context and Tokens - Token Management](docs/core-concepts/context-and-tokens.md) - Managing token usage and limits
 - [Token Counting, Truncation, and Tokenizer Tuning](docs/core-concepts/token-counting-and-truncation.md) - Advanced token handling
 - [Automatic Context Injection](docs/core-concepts/automatic-context-injection.md) - Seamless context integration
+- [Semantic Compression - Prompt Token Reduction](docs/core-concepts/semantic-compression.md) - Legend-backed prompt compression for natural language
 
 #### Global Context Management
 - [ContextBank - Global Context Integration](docs/core-concepts/context-bank-integration.md) - Global context repository

@@ -38,6 +38,9 @@ import com.TTT.Util.examplePromptFor
 import com.TTT.Util.extractAllJsonObjects
 import com.TTT.Util.extractNonJsonText
 import com.TTT.Util.removeFromFirstOccurrence
+import com.TTT.Util.semanticCompress
+import com.TTT.Util.SemanticCompressionResult
+import com.TTT.Util.SemanticCompressionSettings
 import com.TTT.Util.serialize
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CancellationException
@@ -2008,6 +2011,26 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun setUserPrompt(prompt: String): Pipe {
         this.userPrompt = prompt
         return this
+    }
+
+    /**
+     * Compresses a prompt string using TPipe's semantic compression rules without mutating the pipe state.
+     *
+     * This helper is intentionally opt-in so callers can compress raw system prompts or other reusable prompt
+     * fragments before they are assembled into a pipe. It delegates to the same deterministic compressor used
+     * by the user-prompt budget path.
+     *
+     * @param prompt The prompt text to compress.
+     * @param settings Optional semantic compression settings for legend sizing and extra phrase/stop-word tables.
+     *
+     * @return The compressed prompt text and its legend.
+     */
+    fun compressPrompt(
+        prompt: String,
+        settings: SemanticCompressionSettings = SemanticCompressionSettings()
+    ): SemanticCompressionResult
+    {
+        return semanticCompress(prompt, settings)
     }
     
     /**
@@ -4676,64 +4699,98 @@ abstract class Pipe : P2PInterface, ProviderInterface
             {
                 if(workingBudget.compressUserPrompt)
                 {
-                    //todo: Place compression call here.
-                }
-
-                else if(workingBudget.allowUserPromptTruncation)
-                {
-                    val converseContent = deserialize<ConverseHistory>(content.text)
-                    if(converseContent != null)
+                    if(shouldBypassSemanticCompression(content.text))
                     {
-                        val truncateWindow = ContextWindow()
-                        truncateWindow.converseHistory = converseContent
-                        truncateWindow.truncateConverseHistoryWithObject(
-                            workingBudget.userPromptSize!!,
-                            0,
-                            workingBudget.truncationMethod,
-                            truncationSettings
-                        )
-
-                        val newUserPrompt = serialize(truncateWindow.converseHistory, encodedefault = false)
-                        content.text = newUserPrompt
+                        content.metadata["semanticCompressionSkipped"] = "structured-content"
                     }
 
                     else
                     {
-                        val jsonContentInUserPrompt = extractAllJsonObjects(content.text)
-                        var exteriorContent = extractNonJsonText(content.text)
-
-                        if(workingBudget.preserveJsonInUserPrompt)
+                        val compressionResult = compressPrompt(content.text)
+                        val compressedPrompt = if(compressionResult.legend.isNotEmpty())
                         {
-                            exteriorContent = Dictionary.truncateWithSettings(
-                                exteriorContent,
+                            "${compressionResult.legend}\n\n${compressionResult.compressedText}"
+                        }
+                        else
+                        {
+                            compressionResult.compressedText
+                        }
+
+                        content.text = compressedPrompt
+                        userPromptTokenCost = Dictionary.countTokens(content.text, truncationSettings)
+
+                        content.metadata["semanticCompressionApplied"] = true
+                        content.metadata["semanticCompressionLegend"] = compressionResult.legend
+                        content.metadata["semanticCompressionLegendMap"] = compressionResult.legendMap
+                        content.metadata["semanticCompressionTokenCost"] = userPromptTokenCost
+                    }
+                }
+
+                if(userPromptTokenCost > userPromptSpace!!)
+                {
+                    if(workingBudget.allowUserPromptTruncation)
+                    {
+                        val converseContent = deserialize<ConverseHistory>(content.text)
+                        if(converseContent != null)
+                        {
+                            val truncateWindow = ContextWindow()
+                            truncateWindow.converseHistory = converseContent
+                            truncateWindow.truncateConverseHistoryWithObject(
                                 workingBudget.userPromptSize!!,
+                                0,
                                 workingBudget.truncationMethod,
                                 truncationSettings
                             )
 
-                            var mergedUserPrompt = ""
-                            mergedUserPrompt += exteriorContent
-
-                            for(jsonObject in jsonContentInUserPrompt)
-                            {
-                                mergedUserPrompt += jsonObject.toString()
-                            }
-
-                            content.text = mergedUserPrompt
+                            val newUserPrompt = serialize(truncateWindow.converseHistory, encodedefault = false)
+                            content.text = newUserPrompt
                         }
 
                         else
                         {
-                            var fullUserPrompt = content.text
-                            fullUserPrompt = Dictionary.truncateWithSettings(
-                                fullUserPrompt,
-                                workingBudget.userPromptSize!!,
-                                workingBudget.truncationMethod,
-                                truncationSettings
-                            )
+                            val jsonContentInUserPrompt = extractAllJsonObjects(content.text)
+                            var exteriorContent = extractNonJsonText(content.text)
 
-                            content.text = fullUserPrompt
+                            if(workingBudget.preserveJsonInUserPrompt)
+                            {
+                                exteriorContent = Dictionary.truncateWithSettings(
+                                    exteriorContent,
+                                    workingBudget.userPromptSize!!,
+                                    workingBudget.truncationMethod,
+                                    truncationSettings
+                                )
+
+                                var mergedUserPrompt = ""
+                                mergedUserPrompt += exteriorContent
+
+                                for(jsonObject in jsonContentInUserPrompt)
+                                {
+                                    mergedUserPrompt += jsonObject.toString()
+                                }
+
+                                content.text = mergedUserPrompt
+                            }
+
+                            else
+                            {
+                                var fullUserPrompt = content.text
+                                fullUserPrompt = Dictionary.truncateWithSettings(
+                                    fullUserPrompt,
+                                    workingBudget.userPromptSize!!,
+                                    workingBudget.truncationMethod,
+                                    truncationSettings
+                                )
+
+                                content.text = fullUserPrompt
+                            }
                         }
+                    }
+                    else
+                    {
+                        throw Exception(
+                            "User prompt still exceeds the allotted budget after semantic compression. " +
+                                "Enable allowUserPromptTruncation or increase the prompt budget."
+                        )
                     }
                 }
             }
@@ -4745,6 +4802,46 @@ abstract class Pipe : P2PInterface, ProviderInterface
         {
             restoreTokenBudgetExecutionSnapshot(executionSnapshot)
         }
+    }
+
+    /**
+     * Determines whether semantic compression should be bypassed because the prompt is structured content.
+     *
+     * Semantic compression is intended for natural-language prompts. JSON, XML, code fences, and other
+     * machine-readable fragments should continue to use TPipe's existing budgeting and truncation paths.
+     *
+     * @param prompt Raw user prompt text.
+     *
+     * @return True when the prompt appears too structured for semantic compression.
+     */
+    internal fun shouldBypassSemanticCompression(prompt: String): Boolean
+    {
+        val trimmed = prompt.trim()
+
+        if(trimmed.isEmpty())
+        {
+            return true
+        }
+
+        if(trimmed.contains("```"))
+        {
+            return true
+        }
+
+        if(trimmed.startsWith("{") || trimmed.startsWith("["))
+        {
+            if(extractAllJsonObjects(trimmed).isNotEmpty())
+            {
+                return true
+            }
+        }
+
+        if(Regex("<[A-Za-z!/][^>]*>").containsMatchIn(trimmed))
+        {
+            return true
+        }
+
+        return false
     }
 
 

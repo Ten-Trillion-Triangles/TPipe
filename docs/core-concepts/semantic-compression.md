@@ -1,0 +1,77 @@
+# Semantic Compression
+
+## Overview
+
+Semantic compression is TPipe's legend-backed prompt reduction strategy for natural-language text. It is
+designed to lower token usage before truncation while preserving the meaning of the prompt as much as possible.
+
+The compressor is deterministic and safe to use for repeated prompts because it does not rely on an external
+LLM or probabilistic summarizer. It:
+
+- preserves quoted spans exactly as written
+- normalizes compressible text to ASCII
+- removes common function words and prompt filler phrases
+- replaces repeated proper nouns with 2-character codes
+- strips punctuation and syntactic noise except colons
+
+## How It Works
+
+### 1. Quote Preservation
+
+Any text inside quotation marks is copied through unchanged. This allows examples, literal instructions, and
+important quoted strings to survive compression without accidental rewriting.
+
+### 2. ASCII Normalization
+
+All compressible text is converted to ASCII so the compressed prompt stays portable and easy to tokenize.
+This pass is applied only to text outside quotes.
+
+### 3. Function Word Removal
+
+Common English function words and filler phrases are removed from the compressible spans.
+This is where most of the token savings come from for long natural-language prompts.
+
+### 4. Proper Noun Legend
+
+Repeated proper nouns are assigned deterministic 2-character codes. The compressor returns both the compressed
+text and a legend so the LLM can reconstruct the original names if needed.
+
+### 5. Punctuation Reduction
+
+After the semantic cleanup, punctuation is reduced to the minimum useful surface form. Quotes and colons are
+preserved because they are useful for legends and instructions.
+
+## TPipe Integration
+
+TPipe exposes semantic compression in two places:
+
+- [`Pipe.compressPrompt(...)`](../api/pipe.md) for explicit opt-in compression of prompt text
+- `TokenBudgetSettings.compressUserPrompt` for the existing user-prompt budget path
+
+When `compressUserPrompt` is enabled, TPipe tries semantic compression before truncation. If the prompt is
+structured content such as JSON, XML, or code, TPipe leaves the existing budget and truncation logic in place.
+
+## Usage
+
+```kotlin
+val compression = pipe.compressPrompt("""
+    Alice Johnson and Alice Johnson are going to review the launch proposal in order to help the team.
+    "Quoted text stays untouched."
+""".trimIndent())
+
+val compressedPrompt = if(compression.legend.isNotEmpty())
+{
+    "${compression.legend}\n\n${compression.compressedText}"
+}
+else
+{
+    compression.compressedText
+}
+```
+
+## Best Practices
+
+- Use semantic compression for plain-language prompts that repeat names or verbose filler.
+- Do not apply it to JSON, XML, code fences, or other machine-readable content.
+- Keep quoted examples in quotes if they must survive compression exactly.
+- Treat the legend as part of the final prompt so the LLM can expand short codes back into the original names.

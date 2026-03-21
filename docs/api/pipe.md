@@ -227,6 +227,13 @@ Sets the system prompt for the AI model.
 #### `setUserPrompt(prompt: String): Pipe`
 Sets the user prompt prefix.
 
+#### `compressPrompt(prompt: String, settings: SemanticCompressionSettings = SemanticCompressionSettings()): SemanticCompressionResult`
+Compresses a prompt string using TPipe's semantic compression rules.
+
+**Behavior:** Returns a compressed prompt body plus a legend that maps the short codes back to the original
+repeated proper nouns. Quoted spans are preserved verbatim, and the helper does not mutate pipe state. This
+is the public opt-in wrapper around the same compressor used by `TokenBudgetSettings.compressUserPrompt`.
+
 #### `setMiddlePrompt(prompt: String): Pipe`
 Sets prompt injected between input and output JSON schemas in the system prompt.
 
@@ -410,6 +417,8 @@ Sets advanced token budgeting configuration with support for dynamic user prompt
 **Behavior:** Enables sophisticated token management with separate budgets for user prompt, system prompt, reasoning, and output. Automatically truncates content to fit within specified limits. Overrides simple `contextWindowSize` when set.
 
 **Dynamic User Prompt Allocation:** When `TokenBudgetSettings.userPromptSize` is set to `null`, TPipe automatically calculates the required space based on the actual token count of the user prompt. This enables optimal space utilization by allocating exactly what's needed for the user input and maximizing remaining space for context.
+
+**Semantic Compression:** When `TokenBudgetSettings.compressUserPrompt` is `true`, TPipe will attempt semantic compression on the natural-language user prompt before truncation. This is designed for human language prompts only; structured payloads such as JSON, code, XML, or schema fragments are left to the standard budget and truncation path.
 
 **Dynamic Allocation Process:**
 1. **Automatic Sizing**: TPipe counts tokens in the actual user prompt and allocates that exact amount
