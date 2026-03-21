@@ -1,0 +1,205 @@
+# Additional boilerplate, discourse phrases, and prompt filler for broader semantic-compression coverage.
+
+at a glance
+at a high level
+at all
+at first glance
+at present
+at the moment
+at this juncture
+at this stage
+as a reminder
+as a general rule
+as a matter of course
+as a practical matter
+as a quick reminder
+as far as i can tell
+as far as i know
+as far as i am concerned
+as far as it goes
+as follows
+as needed
+as noted
+as requested
+as required
+as soon as feasible
+as soon as possible
+as such
+as usual
+at the same time
+by and large
+by default
+by design
+by the way
+for all intents and purposes
+for clarity
+for completeness
+for context
+for example
+for instance
+for now
+for reference
+for review
+for the avoidance of doubt
+for the sake of clarity
+for the sake of completeness
+for the sake of argument
+for the time being
+from time to time
+in a nutshell
+in addition
+in addition to
+in any case
+in any event
+in brief
+in closing
+in conclusion
+in detail
+in due course
+in effect
+in essence
+in fact
+in general
+in light of
+in most cases
+in other words
+in particular
+in practice
+in principle
+in relation to
+in respect of
+in short
+in simple terms
+in summary
+in the meantime
+in the case of
+in the context of
+in the course of
+in the event of
+in the event that
+in the final analysis
+in the first place
+in the interest of
+in the long run
+in the same way
+in the same breath
+in the meantime
+in the process of
+in the spirit of
+in the usual course
+in view of
+in writing
+just in case
+more or less
+not to mention
+of course
+on balance
+on average
+on the basis of
+on the whole
+on top of that
+once again
+one by one
+or rather
+rather than
+so to speak
+that said
+that is
+that is to say
+the fact that
+the point is
+the reason is
+the reality is
+the thing is
+the truth is
+to be clear
+to be fair
+to be honest
+to be specific
+to be precise
+to be sure
+to put it bluntly
+to put it simply
+to the best of my knowledge
+to the extent possible
+to the extent that
+to summarize
+under the circumstances
+up to a point
+with that said
+with regard to
+with respect to
+with the exception of
+with the goal of
+with the intention of
+when it comes to
+whether or not
+all things considered
+first and foremost
+from the standpoint of
+from the point of view of
+in practical terms
+in real terms
+in broad terms
+in plain language
+in plain english
+in simple language
+in the interest of
+in the context of
+in the course of
+in the event of
+in the event that
+for the most part
+under normal circumstances
+where appropriate
+where possible
+where necessary
+where applicable
+if applicable
+if needed
+if necessary
+if possible
+if at all possible
+as appropriate
+as needed
+as required
+as requested
+as discussed
+as noted
+as mentioned
+as shown
+as described
+as a result
+because of
+due to
+thanks to
+in response to
+in support of
+in view of
+in comparison with
+in accordance with
+in the same vein
+in the same manner
+in the same direction
+in a way
+in summary
+in short
+in brief
+in conclusion
+for the record
+for the time being
+for the foreseeable future
+for better or worse
+more importantly
+most importantly
+that being said
+with that in mind
+keep in mind
+bear in mind
+please note
+note that
+important to note
+worth noting
+it should be noted
+it is worth noting
+it is important to note

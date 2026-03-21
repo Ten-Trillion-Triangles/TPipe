@@ -227,6 +227,20 @@ Sets the system prompt for the AI model.
 #### `setUserPrompt(prompt: String): Pipe`
 Sets the user prompt prefix.
 
+#### `enableSemanticCompression(): Pipe`
+Enables automatic semantic compression for the user prompt.
+
+**Behavior:** Turns on the `TokenBudgetSettings.compressUserPrompt` path, creating or updating the pipe's
+token-budget configuration without overwriting the other budget fields. Use this when you want TPipe to apply
+legend-backed prompt reduction before truncation.
+
+#### `enableSemanticDecompression(): Pipe`
+Reserves the semantic decompression hook for future system-prompt injection.
+
+**Behavior:** Flips the internal flag that `applySystemPrompt()` checks before inserting decompression guidance.
+This does not inject the actual instructions yet; it only enables the hook so the decompression legend can be
+described later.
+
 #### `compressPrompt(prompt: String, settings: SemanticCompressionSettings = SemanticCompressionSettings()): SemanticCompressionResult`
 Compresses a prompt string using TPipe's semantic compression rules.
 
@@ -419,6 +433,14 @@ Sets advanced token budgeting configuration with support for dynamic user prompt
 **Dynamic User Prompt Allocation:** When `TokenBudgetSettings.userPromptSize` is set to `null`, TPipe automatically calculates the required space based on the actual token count of the user prompt. This enables optimal space utilization by allocating exactly what's needed for the user input and maximizing remaining space for context.
 
 **Semantic Compression:** When `TokenBudgetSettings.compressUserPrompt` is `true`, TPipe will attempt semantic compression on the natural-language user prompt before truncation. This is designed for human language prompts only; structured payloads such as JSON, code, XML, or schema fragments are left to the standard budget and truncation path.
+The default compressor lexicon is resource-backed, with stop-word and phrase tables loaded from
+`src/main/resources/semantic-compression/` and merged with any caller-provided additions.
+Common contractions are expanded before function-word stripping, and the audit helper can be used to
+surface recurring prompt boilerplate that should be added to the lexicon next.
+
+**Fluent Builders:** Call `enableSemanticCompression()` to turn this path on from the `Pipe` API, and call
+`enableSemanticDecompression()` to reserve the future system-prompt hook that will explain how the compressed
+prompt should be expanded again.
 
 **Dynamic Allocation Process:**
 1. **Automatic Sizing**: TPipe counts tokens in the actual user prompt and allocates that exact amount

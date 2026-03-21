@@ -321,6 +321,115 @@ private val COMMON_CAPITALIZED_SENTENCE_WORDS = setOf(
 
 private val TOKEN_PATTERN = Regex("[A-Za-z0-9]+")
 
+private object SemanticCompressionLexicon
+{
+    private const val RESOURCE_ROOT = "/semantic-compression"
+    private val STOP_WORD_RESOURCE_FILES = listOf(
+        "stopwords-en.txt",
+        "stopwords-extra-en.txt"
+    )
+    private val COMMON_PHRASE_RESOURCE_FILES = listOf(
+        "common-phrases-en.txt",
+        "common-phrases-extra-en.txt"
+    )
+
+    val stopWords: Set<String> by lazy {
+        STOP_WORD_RESOURCE_FILES
+            .flatMap { loadWordList(it) }
+            .map { it.lowercase() }
+            .toSet()
+    }
+
+    val commonPhrases: List<String> by lazy {
+        COMMON_PHRASE_RESOURCE_FILES
+            .flatMap { loadWordList(it) }
+            .distinct()
+    }
+
+    val properNounConnectors: Set<String> by lazy {
+        loadWordSet("proper-noun-connectors.txt")
+    }
+
+    val commonCapitalizedSentenceWords: Set<String> by lazy {
+        loadWordSet("capitalized-sentence-words.txt")
+    }
+
+    val contractions: Map<String, String> by lazy {
+        loadKeyValueMap("contractions-en.txt")
+    }
+
+    fun buildPhrasePattern(phrases: Collection<String>): Regex?
+    {
+        val normalizedPhrases = phrases
+            .map { normalizePhrase(it) }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sortedWith(
+                compareByDescending<String> { phraseTokenCount(it) }
+                    .thenByDescending { it.length }
+            )
+
+        if(normalizedPhrases.isEmpty())
+        {
+            return null
+        }
+
+        val alternation = normalizedPhrases.joinToString("|") { Regex.escape(it) }
+        return Regex("\\b(?:$alternation)\\b", RegexOption.IGNORE_CASE)
+    }
+
+    private fun loadWordList(resourceName: String): List<String>
+    {
+        return loadResourceLines(resourceName)
+            .map { normalizePhrase(it) }
+            .filter { it.isNotBlank() }
+    }
+
+    private fun loadWordSet(resourceName: String): Set<String>
+    {
+        return loadWordList(resourceName)
+            .map { it.lowercase() }
+            .toSet()
+    }
+
+    private fun loadKeyValueMap(resourceName: String): Map<String, String>
+    {
+        return loadResourceLines(resourceName)
+            .mapNotNull { entry ->
+                val separatorIndex = entry.indexOf('=')
+                if(separatorIndex <= 0 || separatorIndex >= entry.lastIndex)
+                {
+                    return@mapNotNull null
+                }
+
+                val key = entry.substring(0, separatorIndex).trim().lowercase()
+                val value = entry.substring(separatorIndex + 1).trim()
+
+                if(key.isBlank() || value.isBlank())
+                {
+                    return@mapNotNull null
+                }
+
+                key to value
+            }
+            .toMap()
+    }
+
+    private fun loadResourceLines(resourceName: String): List<String>
+    {
+        val resourcePath = "$RESOURCE_ROOT/$resourceName"
+        val stream = SemanticCompressionLexicon::class.java.getResourceAsStream(resourcePath)
+            ?: return emptyList()
+
+        return stream.bufferedReader().useLines { lines ->
+            lines.map { it.trim() }
+                .filter { it.isNotBlank() }
+                .filterNot { it.startsWith("#") }
+                .toList()
+        }
+    }
+}
+
 /**
  * Compresses natural-language prompt text using deterministic semantic stripping and legend generation.
  *
@@ -346,11 +455,22 @@ fun semanticCompress(
     val quoteSpans = mutableListOf<QuoteSpan>()
     val maskedInput = maskQuotedSpans(input, quoteSpans)
     val asciiMaskedInput = normalizeAscii(maskedInput)
-
-    val stopWords = DEFAULT_STOP_WORDS + settings.additionalStopWords
-    val properNounCandidates = collectProperNounCandidates(
+    val expandedContractions = expandContractions(
         asciiMaskedInput,
-        stopWords
+        SemanticCompressionLexicon.contractions
+    )
+
+    val stopWords = DEFAULT_STOP_WORDS +
+        SemanticCompressionLexicon.stopWords +
+        settings.additionalStopWords
+    val allPhrases = DEFAULT_COMMON_PHRASES +
+        SemanticCompressionLexicon.commonPhrases +
+        settings.additionalCommonPhrases
+    val properNounCandidates = collectProperNounCandidates(
+        expandedContractions,
+        stopWords,
+        PROPER_NOUN_CONNECTORS + SemanticCompressionLexicon.properNounConnectors,
+        COMMON_CAPITALIZED_SENTENCE_WORDS + SemanticCompressionLexicon.commonCapitalizedSentenceWords
     )
     val selectedCandidates = properNounCandidates
         .filter { it.count >= 2 }
@@ -362,11 +482,11 @@ fun semanticCompress(
         }
         .toMap()
 
-    var compressed = asciiMaskedInput
+    var compressed = expandedContractions
     compressed = replaceProperNouns(compressed, phraseToCode)
     compressed = removeCommonPhrases(
         compressed,
-        DEFAULT_COMMON_PHRASES + settings.additionalCommonPhrases
+        SemanticCompressionLexicon.buildPhrasePattern(allPhrases)
     )
     compressed = removeStopWords(
         compressed,
@@ -534,29 +654,43 @@ private fun removeStopWords(
 
 private fun removeCommonPhrases(
     input: String,
-    phrases: List<String>
+    phrasePattern: Regex?
 ): String
 {
-    var result = input
-
-    val normalizedPhrases = phrases
-        .map { normalizePhrase(it) }
-        .filter { it.isNotBlank() }
-        .distinct()
-        .sortedByDescending { phraseTokenCount(it) }
-
-    for(phrase in normalizedPhrases)
+    if(phrasePattern == null)
     {
-        val pattern = Regex("\\b${Regex.escape(phrase)}\\b", RegexOption.IGNORE_CASE)
-        result = pattern.replace(result, " ")
+        return input
     }
 
-    return result
+    return phrasePattern.replace(input, " ")
 }
 
 private fun normalizePhrase(phrase: String): String
 {
     return collapseWhitespace(removePunctuation(normalizeAscii(phrase)))
+}
+
+private fun expandContractions(
+    input: String,
+    contractions: Map<String, String>
+): String
+{
+    if(contractions.isEmpty())
+    {
+        return input
+    }
+
+    var result = input
+    val keys = contractions.keys.sortedByDescending { it.length }
+
+    for(key in keys)
+    {
+        val replacement = contractions[key] ?: continue
+        val pattern = Regex("\\b${Regex.escape(key)}\\b", RegexOption.IGNORE_CASE)
+        result = pattern.replace(result, replacement)
+    }
+
+    return result
 }
 
 private fun phraseTokenCount(phrase: String): Int
@@ -583,13 +717,29 @@ private fun replaceProperNouns(
 
 private fun collectProperNounCandidates(
     input: String,
-    stopWords: Set<String>
+    stopWords: Set<String>,
+    connectors: Set<String>,
+    commonCapitalizedSentenceWords: Set<String>
 ): List<ProperNounCandidate>
 {
     val candidates = linkedMapOf<String, ProperNounCandidate>()
-    val regex = Regex(
-        "\\b(?:[A-Z][A-Za-z0-9]*|[A-Z]{2,}|[0-9]+)(?:\\s+(?:of|the|and|de|van|von|la|le|di|da|del|du|dos|das|al|bin|binti|ben|[A-Z][A-Za-z0-9]*|[A-Z]{2,}|[0-9]+))*\\b"
-    )
+    val connectorAlternation = connectors
+        .map { normalizePhrase(it) }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .sortedByDescending { it.length }
+        .joinToString("|") { Regex.escape(it) }
+
+    val repeatedTokenAlternation = buildString {
+        append("[A-Z][A-Za-z0-9]*|[A-Z]{2,}|[0-9]+")
+        if(connectorAlternation.isNotBlank())
+        {
+            append("|")
+            append(connectorAlternation)
+        }
+    }
+
+    val regex = Regex("\\b(?:[A-Z][A-Za-z0-9]*|[A-Z]{2,}|[0-9]+)(?:\\s+(?:$repeatedTokenAlternation))*\\b")
 
     regex.findAll(input).forEach { match ->
         val phrase = collapseWhitespace(match.value)
@@ -630,7 +780,7 @@ private fun collectProperNounCandidates(
             val looksLikeName = words.size > 1 ||
                 words.any { it.firstOrNull()?.isUpperCase() == true } ||
                 words.any { it.any { char -> char.isDigit() } } ||
-                phrase !in COMMON_CAPITALIZED_SENTENCE_WORDS
+                phrase !in commonCapitalizedSentenceWords
 
             repeatedEnough && looksLikeName
         }

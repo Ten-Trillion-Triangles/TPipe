@@ -1,0 +1,145 @@
+# Common English boilerplate, discourse, and prompt filler phrases.
+# The compressor normalizes, deduplicates, and longest-match sorts these entries.
+
+at the end of the day
+at the same time
+at this point
+at this point in time
+at least
+at most
+at a minimum
+at a maximum
+as a matter of fact
+as a result
+as a rule
+as far as
+as far as i can tell
+as far as i know
+as long as
+as needed
+as requested
+as required
+as appropriate
+as follows
+as soon as possible
+as well as
+because of
+by contrast
+by means of
+by the way
+due to
+due to the fact that
+for example
+for instance
+for now
+for the most part
+for the record
+for the sake of
+for the time being
+for better or worse
+from time to time
+from the standpoint of
+in addition
+in addition to
+in accordance with
+in and of itself
+in any case
+in comparison with
+in fact
+in general
+in light of
+in light of that
+in lieu of
+in most cases
+in some cases
+in order to
+in order that
+in other words
+in particular
+in practical terms
+in practice
+in regard to
+in relation to
+in respect of
+in respect to
+in short
+in spite of
+in summary
+in terms of
+in the case of
+in the context of
+in the course of
+in the event of
+in the event that
+in the end
+in the first place
+in the final analysis
+in the interest of
+in the long run
+in the meantime
+in the process of
+in the same way
+in view of
+in writing
+just in case
+more or less
+on balance
+on the basis of
+on the other hand
+on the whole
+on top of that
+once again
+one by one
+or rather
+rather than
+so that
+that is to say
+the fact that
+the reason why
+to be honest
+to put it simply
+to the best of my knowledge
+to the extent that
+to the extent possible
+to the point where
+to a certain extent
+to a degree
+to some extent
+under the circumstances
+up to a point
+with respect to
+with regard to
+with the exception of
+with the goal of
+with the intention of
+with that said
+when it comes to
+whether or not
+all things considered
+for the purpose of
+on the assumption that
+as soon as feasible
+if at all possible
+if possible
+if necessary
+if needed
+in practical use
+in real terms
+in simple terms
+in summary
+in brief
+in conclusion
+for reference
+for context
+for clarity
+for completeness
+for comparison
+for verification
+for review
+for discussion
+for alignment
+for planning
+for implementation
+for testing
+for debugging
+for validation

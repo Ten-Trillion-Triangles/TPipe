@@ -599,6 +599,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
     protected var copySystemToUserPrompt = false
 
     /**
+     * If true, applySystemPrompt will reserve a semantic decompression hook so future system-prompt instructions
+     * can explain how to rebuild compressed prompt text.
+     */
+    @Serializable
+    protected var semanticDecompressionEnabled = false
+
+    /**
      * raw system prompt before injection is applied.
      */
     @Serializable
@@ -1655,8 +1662,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     |CRITICAL: Every field must contain a valid value of the correct type - never use null values.
                 """.trimMargin()
             }
-            
+
             systemPrompt = systemPrompt + jsonRequirements
+        }
+
+        if(semanticDecompressionEnabled && tokenBudgetSettings?.compressUserPrompt == true)
+        {
+            // Reserved hook for the future semantic decompression instructions.
+            // The actual legend expansion guidance will be injected in a later pass.
         }
 
         return this
@@ -1671,6 +1684,34 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun copySystemPromptToUserPrompt() : Pipe
     {
         copySystemToUserPrompt = true
+        return this
+    }
+
+    /**
+     * Enable automatic semantic compression for the user prompt.
+     *
+     * This merges with any existing token-budget configuration instead of replacing it, so callers can opt in
+     * without losing the rest of their budgeting settings.
+     *
+     * @return This Pipe object for method chaining.
+     */
+    fun enableSemanticCompression(): Pipe
+    {
+        tokenBudgetSettings = tokenBudgetSettings?.copy(compressUserPrompt = true)
+            ?: TokenBudgetSettings(compressUserPrompt = true)
+        return this
+    }
+
+    /**
+     * Enable the future semantic decompression hook in system-prompt application.
+     *
+     * This only flips the flag used by [applySystemPrompt]; it does not inject decompression instructions yet.
+     *
+     * @return This Pipe object for method chaining.
+     */
+    fun enableSemanticDecompression(): Pipe
+    {
+        semanticDecompressionEnabled = true
         return this
     }
 

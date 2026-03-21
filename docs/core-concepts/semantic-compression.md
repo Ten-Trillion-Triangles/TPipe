@@ -14,6 +14,14 @@ LLM or probabilistic summarizer. It:
 - replaces repeated proper nouns with 2-character codes
 - strips punctuation and syntactic noise except colons
 
+The built-in stop-word, phrase, connector, and sentence-filler tables are loaded from resource files under
+`src/main/resources/semantic-compression/`, so the lexicon can grow without turning the compressor into a
+hardcoded constant block. Caller-supplied additions still merge on top of those base tables.
+
+TPipe also keeps a small audit helper, `auditSemanticCompressionCorpus(...)`, so teams can surface recurring
+residual phrases from their own prompt corpora and decide which choke points should be added to the checked-in
+lexicon next.
+
 ## How It Works
 
 ### 1. Quote Preservation
@@ -47,9 +55,13 @@ TPipe exposes semantic compression in two places:
 
 - [`Pipe.compressPrompt(...)`](../api/pipe.md) for explicit opt-in compression of prompt text
 - `TokenBudgetSettings.compressUserPrompt` for the existing user-prompt budget path
+- `Pipe.enableSemanticCompression()` for fluent opt-in from the pipe API
+- `Pipe.enableSemanticDecompression()` for reserving the future system-prompt decompression hook
 
 When `compressUserPrompt` is enabled, TPipe tries semantic compression before truncation. If the prompt is
 structured content such as JSON, XML, or code, TPipe leaves the existing budget and truncation logic in place.
+The phrase and stop-word tables come from checked-in resource files and may be extended with the settings
+object when a caller needs additional domain-specific coverage.
 
 ## Usage
 
