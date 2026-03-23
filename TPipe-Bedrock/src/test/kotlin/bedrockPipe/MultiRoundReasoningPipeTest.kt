@@ -111,7 +111,8 @@ class MultiRoundReasoningPipeTest
                 focusPoints = mutableMapOf(
                     1 to "FOCUS-ROUND-1 :: analyze the timing relationship between the chrome llama juggling and the lemon moon orbit",
                     2 to "FOCUS-ROUND-2 :: count the exact objects and verify there are seven glowing turnips and one kazoo-powered rover"
-                )
+                ),
+                reinforceSystemPrompt = true
             )
 
             try
@@ -129,6 +130,11 @@ class MultiRoundReasoningPipeTest
                 assertTrue(
                     runtime.reasoningPipe.pipeMetadata["focusPoints"] is Map<*, *>,
                     "The official Bedrock reasoning builder should preserve the round-indexed focus map"
+                )
+                assertEquals(
+                    true,
+                    runtime.reasoningPipe.pipeMetadata["reinforceSystemPrompt"],
+                    "The multi-round focus test should enable system-prompt reinforcement"
                 )
 
                 runtime.pipeline.init(initPipes = true)
@@ -237,13 +243,15 @@ class MultiRoundReasoningPipeTest
         caseName: String,
         inputText: String,
         reasoningRounds: Int,
-        focusPoints: MutableMap<Int, String>
+        focusPoints: MutableMap<Int, String>,
+        reinforceSystemPrompt: Boolean = false
     ): LiveReasoningRuntime
     {
         val reasoningPipe = buildExplicitCotReasoningPipe(
             reasoningPipeName = "$caseName-reasoning",
             reasoningRounds = reasoningRounds,
-            focusPoints = focusPoints
+            focusPoints = focusPoints,
+            reinforceSystemPrompt = reinforceSystemPrompt
         )
 
         val mainPipe = BedrockPipe().apply {
@@ -279,7 +287,8 @@ class MultiRoundReasoningPipeTest
     private fun buildExplicitCotReasoningPipe(
         reasoningPipeName: String,
         reasoningRounds: Int,
-        focusPoints: MutableMap<Int, String>
+        focusPoints: MutableMap<Int, String>,
+        reinforceSystemPrompt: Boolean = false
     ): BedrockMultimodalPipe
     {
         return (ReasoningBuilder.reasonWithBedrock(
@@ -295,7 +304,8 @@ class MultiRoundReasoningPipeTest
                 duration = ReasoningDuration.Med,
                 reasoningInjector = ReasoningInjector.BeforeUserPrompt,
                 numberOfRounds = reasoningRounds,
-                focusPoints = focusPoints
+                focusPoints = focusPoints,
+                reinforceSystemPrompt = reinforceSystemPrompt
             ),
             pipeSettings = PipeSettings(
                 pipeName = reasoningPipeName,
@@ -427,19 +437,19 @@ class MultiRoundReasoningPipeTest
             ?: error("Round 1 reasoning payload should deserialize to ConverseHistory")
         assertHistoryPrefix(
             history = roundOneHistory,
-            expectedRoles = listOf(ConverseRole.developer, ConverseRole.user, ConverseRole.agent),
+            expectedRoles = listOf(ConverseRole.developer, ConverseRole.user, ConverseRole.system, ConverseRole.agent),
             label = "Round 1 converse history"
         )
         assertTrue(
-            roundOneHistory.history[1].content.text.contains(expectedFocusMarkers[0]),
-            "Round 1 user turn should include the first focus marker"
+            roundOneHistory.history[2].content.text.contains(expectedFocusMarkers[0]),
+            "Round 1 reinforced system turn should include the first focus marker"
         )
         assertExplicitReasoningPayload(
-            reasoningContent = roundOneHistory.history[2].content.text,
+            reasoningContent = roundOneHistory.history[3].content.text,
             label = "Round 1 agent turn"
         )
         assertRoundFocusTheme(
-            reasoningContent = roundOneHistory.history[2].content.text,
+            reasoningContent = roundOneHistory.history[3].content.text,
             requiredTerms = listOf("timing", "correlation", "orbit"),
         )
 
@@ -450,6 +460,7 @@ class MultiRoundReasoningPipeTest
             expectedRoles = listOf(
                 ConverseRole.developer,
                 ConverseRole.user,
+                ConverseRole.system,
                 ConverseRole.agent,
                 ConverseRole.system,
                 ConverseRole.agent
@@ -457,23 +468,23 @@ class MultiRoundReasoningPipeTest
             label = "Round 2 converse history"
         )
         assertTrue(
-            roundTwoHistory.history[1].content.text.contains(expectedFocusMarkers[0]),
-            "Round 2 history should retain the first focus marker in the earlier user turn"
+            roundTwoHistory.history[2].content.text.contains(expectedFocusMarkers[0]),
+            "Round 2 history should retain the first focus marker in the earlier reinforced system turn"
         )
         assertExplicitReasoningPayload(
-            reasoningContent = roundTwoHistory.history[2].content.text,
+            reasoningContent = roundTwoHistory.history[3].content.text,
             label = "Round 2 carried-forward round 1 agent turn"
         )
         assertTrue(
-            roundTwoHistory.history[3].content.text.contains(expectedFocusMarkers[1]),
-            "Round 2 history should include the second focus marker in the system turn"
+            roundTwoHistory.history[4].content.text.contains(expectedFocusMarkers[1]),
+            "Round 2 history should include the second focus marker in the reinforced system turn"
         )
         assertExplicitReasoningPayload(
-            reasoningContent = roundTwoHistory.history[4].content.text,
+            reasoningContent = roundTwoHistory.history[5].content.text,
             label = "Round 2 agent turn"
         )
         assertRoundFocusTheme(
-            reasoningContent = roundTwoHistory.history[4].content.text,
+            reasoningContent = roundTwoHistory.history[5].content.text,
             requiredTerms = listOf("count", "verify", "seven", "one"),
         )
 

@@ -5504,7 +5504,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     var reasoningResult = executeReasoningPipe(processedContent)
                     reasoningResult.modelReasoning = removeFromFirstOccurrence(reasoningResult.modelReasoning, "##Final Answer##")
                     processedContent.modelReasoning = reasoningResult.modelReasoning
-                    injectTPipeReasoning(processedContent)
+                    injectTPipeReasoning(processedContent) //Required step to transform json into llm thought streams.
                     processedContent = truncateToFitTokenBudget(processedContent) //Invoke again to account for injection overflow.
                 }
             }
@@ -6090,17 +6090,26 @@ abstract class Pipe : P2PInterface, ProviderInterface
              * System prompt must be copied from this pipe to the user prompt we're passing to our target reasoning
              * pipe.
              */
-            val systemConverseData = ConverseData(ConverseRole.developer, MultimodalContent("$rawSystemPrompt ${getMiddlePromptForReasoning()} ${getFooterPromptForReasoning()}"))
+            val systemConverseData = ConverseData(
+                ConverseRole.developer,
+                MultimodalContent(
+                    "$rawSystemPrompt ${getMiddlePromptForReasoning()} ${getFooterPromptForReasoning()}"))
 
             val newHistory = ConverseHistory()
             newHistory.add(systemConverseData)
 
-            if (converseSchemaRef != null && !converseSchemaRef.isEmpty()) {
+            //Jokes on me for not commenting why we're doing this....
+            if(converseSchemaRef != null && !converseSchemaRef.isEmpty())
+            {
                 // We have an existing ConverseHistory, append its items
-                for (item in converseSchemaRef.history) {
+                for (item in converseSchemaRef.history)
+                {
                     newHistory.add(item)
                 }
-            } else {
+            }
+
+            else
+            {
                 //Now we can add the user's original prompt.
                 val converseData = ConverseData(ConverseRole.user, content)
 
@@ -6253,10 +6262,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
              * step of the reasoning process.
              */
             val result = reasoningPipe?.let { pipe ->
+                //We have to propagate again to prevent any gaps where tracing can just "fall through".
                 if(tracingEnabled)
                 {
                     pipe.propagateTracingRecursively()
                 }
+
                 pipe.isExecutingAsReasoningPipe = true
                 pipe.reasoningContentAlreadyTraced = false
                 val pipeResult = pipe.executeMultimodal(contentCopy)
