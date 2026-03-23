@@ -268,7 +268,7 @@ Applies reasoning configuration to existing pipe.
 - **System Prompt Assignment**: Sets reasoning-specific prompts based on method
 - **JSON Configuration**: Configures appropriate input/output objects for reasoning type
 - **Settings Application**: Applies temperature, tokens, context window settings
-- **Multi-Round Support**: Uses ConverseHistory internally for round separation, then resolves each completed round into the flattened thought stream before parent injection
+- **Multi-Round Support**: Uses `roundDirectives` as the canonical blind/merge configuration. Blind rounds are isolated by the harness, merge rounds synthesize the accumulated flattened thought stream, and legacy `focusPoints` remains available only when no round directives are supplied
 - **Metadata Binding**: Stores reasoning configuration in pipe metadata
 
 **`reasonWithBedrock(bedrockConfig: BedrockConfiguration, reasoningSettings: ReasoningSettings, pipeSettings: PipeSettings): Pipe`**
@@ -364,8 +364,29 @@ data class ReasoningSettings(
     var roleCharacter: String = "You are a helpful assistant.",
     var reasoningInjector: ReasoningInjector = ReasoningInjector.SystemPrompt,
     var numberOfRounds: Int = 1,
-    var focusPoints: MutableMap<Int, String> = mutableMapOf()
+    var focusPoints: MutableMap<Int, String> = mutableMapOf(),
+    var roundDirectives: MutableMap<Int, ReasoningRoundDirective> = mutableMapOf()
 )
+```
+
+### ReasoningRoundDirective
+
+Round-scoped configuration for multi-round reasoning.
+
+```kotlin
+data class ReasoningRoundDirective(
+    var focusPoint: String = "",
+    var mode: ReasoningRoundMode = ReasoningRoundMode.Blind
+)
+```
+
+### ReasoningRoundMode
+
+```kotlin
+enum class ReasoningRoundMode {
+    Blind,
+    Merge
+}
 ```
 
 ---

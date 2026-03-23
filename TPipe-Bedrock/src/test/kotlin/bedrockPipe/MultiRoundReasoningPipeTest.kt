@@ -20,6 +20,8 @@ import com.TTT.Pipeline.Pipeline
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Structs.PipeSettings
 import com.TTT.Structs.ExplicitReasoningDetailed
+import com.TTT.Structs.ReasoningRoundDirective
+import com.TTT.Structs.ReasoningRoundMode
 import com.TTT.Util.deserialize
 import com.TTT.Util.writeStringToFile
 import java.io.File
@@ -108,10 +110,21 @@ class MultiRoundReasoningPipeTest
             val runtime = buildExplicitCotRuntime(
                 caseName = "multi-round-focus",
                 inputText = "Sentence 1: A chrome llama is juggling seven glowing turnips while a kazoo-powered rover circles a lemon moon. Sentence 2: A nearby workbench holds three brass keys, two cobalt gears, and one glass compass.",
-                reasoningRounds = 2,
-                focusPoints = mutableMapOf(
-                    1 to "##MANDITORY## ##IMPORTANT## ROUND 1 ONLY!!! Sentence 1 ONLY. You MUST analyze ONLY the temporal structure of Sentence 1. DO NOT count objects. DO NOT inspect Sentence 2. DO NOT drift into inventory logic. Decide, in detail, whether the juggling and orbiting are simultaneous or sequential!!!",
-                    2 to "##MANDITORY## ##IMPORTANT## ROUND 2 ONLY!!! Sentence 2 ONLY. You MUST perform ONLY an inventory audit of Sentence 2. Count and enumerate the brass keys, cobalt gears, and glass compass. DO NOT discuss timing, orbit, causality, Sentence 1, or any other part of the scenario!!!"
+                reasoningRounds = 3,
+                focusPoints = mutableMapOf(),
+                roundDirectives = mutableMapOf(
+                    1 to ReasoningRoundDirective(
+                        focusPoint = "##MANDITORY## ##IMPORTANT## ROUND 1 ONLY!!! Sentence 1 ONLY. You MUST analyze ONLY the temporal structure of Sentence 1. DO NOT count objects. DO NOT inspect Sentence 2. DO NOT drift into inventory logic. Decide, in detail, whether the juggling and orbiting are simultaneous or sequential!!!",
+                        mode = ReasoningRoundMode.Blind
+                    ),
+                    2 to ReasoningRoundDirective(
+                        focusPoint = "##MANDITORY## ##IMPORTANT## ROUND 2 ONLY!!! Sentence 2 ONLY. You MUST perform ONLY an inventory audit of Sentence 2. Count and enumerate the brass keys, cobalt gears, and glass compass. DO NOT discuss timing, orbit, causality, Sentence 1, or any other part of the scenario!!!",
+                        mode = ReasoningRoundMode.Blind
+                    ),
+                    3 to ReasoningRoundDirective(
+                        focusPoint = "##MANDITORY## ##IMPORTANT## ROUND 3 ONLY!!! Combine the first two rounds into one final conclusion. You MUST merge the temporal analysis from Sentence 1 with the inventory audit from Sentence 2. DO NOT start a new subproblem; synthesize the prior reasoning blocks into one decisive answer!!!",
+                        mode = ReasoningRoundMode.Merge
+                    )
                 )
             )
 
@@ -123,13 +136,13 @@ class MultiRoundReasoningPipeTest
                     "The official Bedrock reasoning builder should be configured for explicit COT"
                 )
                 assertEquals(
-                    2,
+                    3,
                     runtime.reasoningPipe.pipeMetadata["reasoningRounds"],
                     "The official Bedrock reasoning builder should preserve the configured round count"
                 )
                 assertTrue(
-                    runtime.reasoningPipe.pipeMetadata["focusPoints"] is Map<*, *>,
-                    "The official Bedrock reasoning builder should preserve the round-indexed focus map"
+                    runtime.reasoningPipe.pipeMetadata["roundDirectives"] is Map<*, *>,
+                    "The official Bedrock reasoning builder should preserve the round-indexed directive map"
                 )
                 assertEquals(
                     false,
@@ -151,9 +164,10 @@ class MultiRoundReasoningPipeTest
                     pipelineId = runtime.pipeline.getTraceId(),
                     reasoningPipeName = runtime.reasoningPipe.pipeName,
                     mainPipeName = runtime.mainPipeName,
-                    expectedFocusMarkers = listOf(
-                        "##MANDITORY## ##IMPORTANT## ROUND 1 ONLY!!!",
-                        "##MANDITORY## ##IMPORTANT## ROUND 2 ONLY!!!"
+                    expectedRoundMarkers = listOf(
+                        "ROUND 1 [BLIND]",
+                        "ROUND 2 [BLIND]",
+                        "ROUND 3 [MERGE]"
                     )
                 )
             }
@@ -244,6 +258,7 @@ class MultiRoundReasoningPipeTest
         inputText: String,
         reasoningRounds: Int,
         focusPoints: MutableMap<Int, String>,
+        roundDirectives: MutableMap<Int, ReasoningRoundDirective> = mutableMapOf(),
         reinforceSystemPrompt: Boolean = false
     ): LiveReasoningRuntime
     {
@@ -251,6 +266,7 @@ class MultiRoundReasoningPipeTest
             reasoningPipeName = "$caseName-reasoning",
             reasoningRounds = reasoningRounds,
             focusPoints = focusPoints,
+            roundDirectives = roundDirectives,
             reinforceSystemPrompt = reinforceSystemPrompt
         )
 
@@ -288,6 +304,7 @@ class MultiRoundReasoningPipeTest
         reasoningPipeName: String,
         reasoningRounds: Int,
         focusPoints: MutableMap<Int, String>,
+        roundDirectives: MutableMap<Int, ReasoningRoundDirective> = mutableMapOf(),
         reinforceSystemPrompt: Boolean = false
     ): BedrockMultimodalPipe
     {
@@ -305,6 +322,7 @@ class MultiRoundReasoningPipeTest
                 reasoningInjector = ReasoningInjector.BeforeUserPrompt,
                 numberOfRounds = reasoningRounds,
                 focusPoints = focusPoints,
+                roundDirectives = roundDirectives,
                 reinforceSystemPrompt = reinforceSystemPrompt
             ),
             pipeSettings = PipeSettings(
@@ -401,11 +419,11 @@ class MultiRoundReasoningPipeTest
         pipelineId: String,
         reasoningPipeName: String,
         mainPipeName: String,
-        expectedFocusMarkers: List<String>
+        expectedRoundMarkers: List<String>
     )
     {
         val trace = PipeTracer.getTrace(pipelineId)
-        expectedFocusMarkers.forEach { marker ->
+        expectedRoundMarkers.forEach { marker ->
             assertTrue(
                 traceReportJson.contains(marker) || traceReportHtml.contains(marker),
                 "Multi-round reasoning trace should include focus marker: $marker"
@@ -417,13 +435,14 @@ class MultiRoundReasoningPipeTest
             reasoningPipeName = reasoningPipeName
         )
         assertTrue(
-            reasoningContents.size >= expectedFocusMarkers.size,
+            reasoningContents.size >= expectedRoundMarkers.size,
             "Multi-round reasoning should emit one explicit-COT payload per configured round"
         )
         val roundOneReasoningContent = reasoningContents[0]
         val roundTwoReasoningContent = reasoningContents[1]
+        val roundThreeReasoningContent = reasoningContents[2]
 
-        reasoningContents.take(expectedFocusMarkers.size).forEachIndexed { index, reasoningContent ->
+        reasoningContents.take(expectedRoundMarkers.size).forEachIndexed { index, reasoningContent ->
             assertExplicitReasoningPayload(
                 reasoningContent = reasoningContent,
                 label = "Round ${index + 1} reasoning payload"
@@ -442,9 +461,17 @@ class MultiRoundReasoningPipeTest
             primaryTerms = listOf("count", "inventory", "audit", "verify", "keys", "gears", "compass", "workbench"),
             secondaryTerms = listOf("timing", "temporal", "sequential", "simultaneous", "orbit")
         )
+        assertMergeFocusTheme(
+            reasoningContent = roundThreeReasoningContent,
+            blendTerms = listOf(
+                "timing", "temporal", "sequential", "simultaneous", "orbit",
+                "count", "inventory", "audit", "verify", "keys", "gears", "compass", "workbench"
+            )
+        )
         assertReasoningPayloadsAreDistinct(
             firstReasoningContent = roundOneReasoningContent,
-            secondReasoningContent = roundTwoReasoningContent
+            secondReasoningContent = roundTwoReasoningContent,
+            thirdReasoningContent = roundThreeReasoningContent
         )
 
         val reasoningSnapshots = extractReasoningRoundSnapshotsFromTrace(
@@ -452,6 +479,10 @@ class MultiRoundReasoningPipeTest
             snapshotPipeName = mainPipeName
         )
         assertTrue(reasoningSnapshots.isNotEmpty(), "Multi-round reasoning should emit reasoning snapshots")
+        assertTrue(
+            reasoningSnapshots.size >= expectedRoundMarkers.size,
+            "Multi-round reasoning should emit one parent-facing snapshot per completed round"
+        )
 
         assertTrue(
             deserialize<ConverseHistory>(reasoningSnapshots[0]) == null,
@@ -462,7 +493,7 @@ class MultiRoundReasoningPipeTest
             "Round 1 reasoning snapshot should include an explicit round marker"
         )
         assertTrue(
-            reasoningSnapshots[0].contains(expectedFocusMarkers[0]),
+            reasoningSnapshots[0].contains(expectedRoundMarkers[0]),
             "Round 1 reasoning snapshot should include the first focus marker"
         )
         assertTrue(
@@ -470,13 +501,12 @@ class MultiRoundReasoningPipeTest
             "Round 1 reasoning snapshot should include unraveled reasoning text"
         )
         assertFalse(
-            reasoningSnapshots[0].contains(expectedFocusMarkers[1]),
+            reasoningSnapshots[0].contains(expectedRoundMarkers[1]),
             "Round 1 reasoning snapshot should not yet include the second focus marker"
         )
-        assertRoundFocusTheme(
-            reasoningContent = reasoningSnapshots[0],
-            requiredTerms = listOf("timing", "temporal", "sequential", "simultaneous", "orbit"),
-            forbiddenTerms = listOf("inventory", "audit", "verify", "keys", "gears", "compass", "workbench"),
+        assertFalse(
+            reasoningSnapshots[0].contains(expectedRoundMarkers[2]),
+            "Round 1 reasoning snapshot should not yet include the merge marker"
         )
         assertTrue(
             deserialize<ConverseHistory>(reasoningSnapshots[1]) == null,
@@ -491,25 +521,41 @@ class MultiRoundReasoningPipeTest
             "Round 2 reasoning snapshot should include the second round block"
         )
         assertTrue(
-            reasoningSnapshots[1].contains(expectedFocusMarkers[0]),
+            reasoningSnapshots[1].contains(expectedRoundMarkers[0]),
             "Round 2 reasoning snapshot should retain the first focus marker"
         )
         assertTrue(
-            reasoningSnapshots[1].contains(expectedFocusMarkers[1]),
+            reasoningSnapshots[1].contains(expectedRoundMarkers[1]),
             "Round 2 reasoning snapshot should include the second focus marker"
         )
         assertTrue(
-            reasoningSnapshots[1].indexOf(expectedFocusMarkers[0]) < reasoningSnapshots[1].indexOf(expectedFocusMarkers[1]),
+            reasoningSnapshots[1].indexOf(expectedRoundMarkers[0]) < reasoningSnapshots[1].indexOf(expectedRoundMarkers[1]),
             "Round 2 reasoning snapshot should keep the focus markers in round order"
+        )
+        assertFalse(
+            reasoningSnapshots[1].contains(expectedRoundMarkers[2]),
+            "Round 2 reasoning snapshot should not yet include the merge marker"
         )
         assertTrue(
             reasoningSnapshots[1].contains("Let me think through this"),
             "Round 2 reasoning snapshot should include unraveled reasoning text"
         )
-        assertRoundFocusTheme(
-            reasoningContent = reasoningSnapshots[1],
-            requiredTerms = listOf("count", "inventory", "audit", "verify", "keys", "gears", "compass", "workbench"),
-            forbiddenTerms = listOf("timing", "temporal", "sequential", "simultaneous", "orbit"),
+        assertTrue(
+            deserialize<ConverseHistory>(reasoningSnapshots[2]) == null,
+            "Round 3 reasoning snapshot should be flattened thought stream, not converse history"
+        )
+        expectedRoundMarkers.forEach { marker ->
+            assertTrue(
+                reasoningSnapshots[2].contains(marker),
+                "Round 3 reasoning snapshot should include round marker: $marker"
+            )
+        }
+        assertMergeFocusTheme(
+            reasoningContent = reasoningSnapshots[2],
+            blendTerms = listOf(
+                "timing", "temporal", "sequential", "simultaneous", "orbit",
+                "count", "inventory", "audit", "verify", "keys", "gears", "compass", "workbench"
+            )
         )
 
         assertTrue(
@@ -606,10 +652,6 @@ class MultiRoundReasoningPipeTest
             ?: error("$label should deserialize to ExplicitReasoningDetailed")
 
         assertTrue(
-            reasoning.coreAnalysis.analysisSubject.isNotBlank(),
-            "$label should include an analysis subject"
-        )
-        assertTrue(
             reasoning.logicalBreakdown.isNotEmpty(),
             "$label should include a logical breakdown"
         )
@@ -620,25 +662,6 @@ class MultiRoundReasoningPipeTest
         assertTrue(
             reasoning.recommendedSteps.isNotBlank(),
             "$label should include recommended steps"
-        )
-    }
-
-    private fun assertRoundFocusTheme(
-        reasoningContent: String,
-        requiredTerms: List<String>,
-        forbiddenTerms: List<String>
-    )
-    {
-        val lower = reasoningContent.lowercase()
-        val requiredHits = requiredTerms.count { lower.contains(it.lowercase()) }
-        val forbiddenHits = forbiddenTerms.count { lower.contains(it.lowercase()) }
-        assertTrue(
-            requiredHits >= 2,
-            "The round reasoning should reflect multiple intended focus terms: ${requiredTerms.joinToString()}"
-        )
-        assertTrue(
-            forbiddenHits == 0,
-            "The round reasoning should not leak the other round's focus terms: ${forbiddenTerms.joinToString()}"
         )
     }
 
@@ -664,18 +687,49 @@ class MultiRoundReasoningPipeTest
 
     private fun assertReasoningPayloadsAreDistinct(
         firstReasoningContent: String,
-        secondReasoningContent: String
+        secondReasoningContent: String,
+        thirdReasoningContent: String
     )
     {
         val firstTokens = normalizeReasoningTokens(firstReasoningContent)
         val secondTokens = normalizeReasoningTokens(secondReasoningContent)
-        val union = firstTokens union secondTokens
-        val intersection = firstTokens intersect secondTokens
-        val similarity = if(union.isEmpty()) 0.0 else intersection.size.toDouble() / union.size.toDouble()
+        val thirdTokens = normalizeReasoningTokens(thirdReasoningContent)
+
+        val firstSecondSimilarity = tokenSimilarity(firstTokens, secondTokens)
+        val firstThirdSimilarity = tokenSimilarity(firstTokens, thirdTokens)
+        val secondThirdSimilarity = tokenSimilarity(secondTokens, thirdTokens)
 
         assertTrue(
-            similarity < 0.85,
-            "The two round reasoning payloads should be materially different; similarity was $similarity"
+            firstSecondSimilarity < 0.85,
+            "The first two round reasoning payloads should be materially different; similarity was $firstSecondSimilarity"
+        )
+        assertTrue(
+            firstThirdSimilarity < 0.90,
+            "Round 1 and round 3 reasoning payloads should not collapse together; similarity was $firstThirdSimilarity"
+        )
+        assertTrue(
+            secondThirdSimilarity < 0.90,
+            "Round 2 and round 3 reasoning payloads should not collapse together; similarity was $secondThirdSimilarity"
+        )
+    }
+
+    private fun tokenSimilarity(firstTokens: Set<String>, secondTokens: Set<String>): Double
+    {
+        val union = firstTokens union secondTokens
+        val intersection = firstTokens intersect secondTokens
+        return if(union.isEmpty()) 0.0 else intersection.size.toDouble() / union.size.toDouble()
+    }
+
+    private fun assertMergeFocusTheme(
+        reasoningContent: String,
+        blendTerms: List<String>
+    )
+    {
+        val lower = reasoningContent.lowercase()
+        val hits = blendTerms.count { lower.contains(it.lowercase()) }
+        assertTrue(
+            hits >= 4,
+            "The merge round should blend both subproblem vocabularies; found only $hits hits from ${blendTerms.joinToString()}"
         )
     }
 

@@ -31,6 +31,10 @@ import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Structs.PipeSettings
+import com.TTT.Structs.ReasoningRoundDirective
+import com.TTT.Structs.ReasoningRoundMode
+import com.TTT.Structs.composeBlindReasoningRoundPrompt
+import com.TTT.Structs.composeMergeReasoningRoundPrompt
 import com.TTT.Structs.extractReasoningContent
 import com.TTT.Structs.extractReasoningStream
 import com.TTT.Util.deepCopy
@@ -6078,14 +6082,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
          */
         val converseSchemaRef = deserialize<ConverseHistory>(converseSchema)
 
-        /**
-         * We use converse mode either when the incoming payload is already a history object or when
-         * multi-round reasoning needs to keep carrying prior turns forward between rounds.
-         */
-        var usingConverse = converseSchemaRef?.isEmpty() != true ||  rounds > 1
-
         val reasoningMethod = reasoningPipe?.pipeMetadata["reasoningMethod"] as? String ?: ""
         val reasoningStream = StringBuilder(contentCopy.modelReasoning)
+        val roundDirectives = resolveReasoningRoundDirectives()
+        val usingDirectiveRounds = roundDirectives.isNotEmpty()
+        var usingConverse = !usingDirectiveRounds && (converseSchemaRef?.isEmpty() != true ||  rounds > 1)
+        val originalUserPrompt = extractOriginalReasoningPrompt(converseSchemaRef, content)
 
 
         if(usingConverse)
@@ -6146,6 +6148,16 @@ abstract class Pipe : P2PInterface, ProviderInterface
         }
 
         /**
+         * Mode-driven multi-round reasoning bypasses the converse-history transport layer entirely. Each round will
+         * build its own prompt envelope so blind rounds stay isolated and merge rounds can synthesize the flattened
+         * reasoning stream from earlier rounds.
+         */
+        else if(usingDirectiveRounds)
+        {
+            contentCopy.text = originalUserPrompt
+        }
+
+        /**
          * Directly combine the system prompt to the user prompt in this case as a "developer prompt". We need to
          * do this because the reasoning pipe actually doesn't know the full rules of its own request otherwise.
          */
@@ -6189,11 +6201,16 @@ abstract class Pipe : P2PInterface, ProviderInterface
         for(round in 1..rounds)
         {
             /**
-             * Resolve the focus target for this specific round. ReasoningBuilder stores focus points as a
-             * round-indexed map, but we also accept the legacy string shape so older callers do not silently lose
-             * their focus instructions.
+             * Resolve the focus target and round directive for this specific round. New mode-driven runs use the
+             * directive map, while older focus-point-only callers keep the legacy behavior.
              */
-            val focusTarget = resolveReasoningFocusTarget(round)
+            val roundDirective = if(usingDirectiveRounds) roundDirectives[round] else null
+            if(usingDirectiveRounds && roundDirective == null)
+            {
+                throw Exception("Round $round is missing a round directive while blind/merge reasoning is enabled.")
+            }
+
+            val focusTarget = roundDirective?.focusPoint ?: resolveReasoningFocusTarget(round)
 
             /**
              * Any rounds past 1 will require us to keep appending the converse history as we go along.
@@ -6203,11 +6220,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
             val firstRound = round == 1
 
             /**
-             * Now we need to adress focus targets. These are values that can be assigned at each round to force
-             * the model to focus on a specific part of the task. We need to handle both standard appends and
-             * converse history appends as need be.
+             * Legacy converse-history rounds still use the old focus-point append behavior. The mode-driven path
+             * handles focus directly in the round prompt envelope, so it intentionally skips this injection branch.
              */
-            if(focusTarget.isNotEmpty())
+            if(focusTarget.isNotEmpty() && !usingDirectiveRounds)
             {
                 val focusMessage = """Please pay special attention to, and focus your time on: $focusTarget"""
 
@@ -6265,6 +6281,23 @@ abstract class Pipe : P2PInterface, ProviderInterface
              * into the reasoning block of the copied content. The loop will continue until we've cleared every
              * step of the reasoning process.
              */
+            val roundInputContent = if(usingDirectiveRounds)
+            {
+                val mode = roundDirective!!.mode
+                buildDirectiveReasoningRoundContent(
+                    originalContent = content,
+                    round = round,
+                    focusTarget = focusTarget,
+                    mode = mode,
+                    accumulatedReasoning = reasoningStream.toString(),
+                    originalUserPrompt = originalUserPrompt
+                )
+            }
+            else
+            {
+                contentCopy
+            }
+
             val result = reasoningPipe?.let { pipe ->
                 //We have to propagate again to prevent any gaps where tracing can just "fall through".
                 if(tracingEnabled)
@@ -6274,12 +6307,38 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
                 pipe.isExecutingAsReasoningPipe = true
                 pipe.reasoningContentAlreadyTraced = false
-                val pipeResult = pipe.executeMultimodal(contentCopy)
+                val pipeResult = pipe.executeMultimodal(roundInputContent)
                 pipe.isExecutingAsReasoningPipe = false
                 pipeResult
             } ?: content
 
-            if(usingConverse)
+            if(usingDirectiveRounds)
+            {
+                val roundMode = roundDirective!!.mode
+                val normalizedRoundText = extractReasoningStream(reasoningMethod, result)
+                val roundStreamBlock = formatReasoningRoundBlock(round, focusTarget, normalizedRoundText, roundMode.name)
+
+                if(reasoningStream.isNotEmpty())
+                {
+                    reasoningStream.append("\n\n")
+                }
+                reasoningStream.append(roundStreamBlock)
+                contentCopy.modelReasoning = reasoningStream.toString()
+                contentCopy.text = roundInputContent.text
+
+                // Emit the post-append state so traces show the carried-forward reasoning stream for this round.
+                trace(
+                    TraceEventType.API_CALL_SUCCESS,
+                    TracePhase.VALIDATION,
+                    contentCopy,
+                    metadata = mapOf(
+                        "reasoningRound" to round,
+                        "reasoningMode" to roundMode.name,
+                        "focusTarget" to focusTarget
+                    )
+                )
+            }
+            else if(usingConverse)
             {
                 val updatedHistory = deserialize<ConverseHistory>(contentCopy.text)
                     ?: throw Exception("Converse history cannot be empty when multi-round reasoning is using converse mode.")
@@ -6351,10 +6410,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * Format one multi-round reasoning block so the internal history and the parent-facing stream use the same
      * round boundary. The focus label is kept in plain text so later rounds and the parent pipe can read it.
      */
-    private fun formatReasoningRoundBlock(round: Int, focusTarget: String, reasoningText: String): String
+    private fun formatReasoningRoundBlock(
+        round: Int,
+        focusTarget: String,
+        reasoningText: String,
+        modeLabel: String = ""
+    ): String
     {
         return buildString {
             append("ROUND $round")
+            if(modeLabel.isNotBlank())
+            {
+                append(" [${modeLabel.uppercase()}]")
+            }
             if(focusTarget.isNotBlank())
             {
                 append("\nFOCUS: $focusTarget")
@@ -6362,6 +6430,95 @@ abstract class Pipe : P2PInterface, ProviderInterface
             append("\n\n")
             append(reasoningText.trim())
         }
+    }
+
+    /**
+     * Resolves the round directive map used by the new blind/merge multi-round path.
+     *
+     * The reasoning builder stores the canonical map in pipe metadata so the runtime can decide, round by round,
+     * whether to isolate the prompt or merge prior thought blocks back in.
+     */
+    private fun resolveReasoningRoundDirectives(): Map<Int, ReasoningRoundDirective>
+    {
+        val directiveMetadata = reasoningPipe?.pipeMetadata?.get("roundDirectives") ?: pipeMetadata["roundDirectives"]
+
+        return when(directiveMetadata)
+        {
+            is Map<*, *> -> {
+                directiveMetadata.entries.mapNotNull { entry ->
+                    val round = when(val key = entry.key)
+                    {
+                        is Int -> key
+                        is String -> key.toIntOrNull()
+                        else -> null
+                    } ?: return@mapNotNull null
+
+                    val directive = entry.value as? ReasoningRoundDirective ?: return@mapNotNull null
+                    round to directive
+                }.toMap()
+            }
+
+            else -> emptyMap()
+        }
+    }
+
+    /**
+     * Extracts the original user prompt from either a plain-text payload or a converse-history payload.
+     *
+     * Blind rounds should not inherit earlier reasoning, so the runtime pulls only the first user turn when the
+     * incoming payload is already wrapped in a converse history.
+     */
+    private fun extractOriginalReasoningPrompt(
+        converseSchemaRef: ConverseHistory?,
+        content: MultimodalContent
+    ) : String
+    {
+        if(converseSchemaRef == null)
+        {
+            return content.text
+        }
+
+        return converseSchemaRef.history.firstOrNull { it.role == ConverseRole.user }
+            ?.content
+            ?.text
+            ?: content.text
+    }
+
+    /**
+     * Build the per-round input envelope used by blind and merge mode.
+     *
+     * Blind rounds receive only the original prompt and the current focus. Merge rounds receive the flattened stream
+     * from earlier rounds so they can synthesize the separate blocks into one conclusion.
+     */
+    private fun buildDirectiveReasoningRoundContent(
+        originalContent: MultimodalContent,
+        round: Int,
+        focusTarget: String,
+        mode: ReasoningRoundMode,
+        accumulatedReasoning: String,
+        originalUserPrompt: String
+    ) : MultimodalContent
+    {
+        val prompt = when(mode)
+        {
+            ReasoningRoundMode.Blind -> composeBlindReasoningRoundPrompt(
+                round = round,
+                originalUserPrompt = originalUserPrompt,
+                focusPoint = focusTarget
+            )
+
+            ReasoningRoundMode.Merge -> composeMergeReasoningRoundPrompt(
+                round = round,
+                originalUserPrompt = originalUserPrompt,
+                accumulatedReasoning = accumulatedReasoning,
+                focusPoint = focusTarget
+            )
+        }
+
+        return MultimodalContent(
+            text = prompt,
+            binaryContent = originalContent.binaryContent.deepCopy()
+        )
     }
 
     /**

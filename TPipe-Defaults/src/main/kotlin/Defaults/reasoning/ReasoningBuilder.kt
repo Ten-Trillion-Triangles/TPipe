@@ -20,6 +20,7 @@ import com.TTT.Structs.MethodActorResponse
 import com.TTT.Structs.MultiPhasePlan
 import com.TTT.Structs.PipeSettings
 import com.TTT.Structs.ProcessFocusedResult
+import com.TTT.Structs.ReasoningRoundDirective
 import com.TTT.Structs.StructuredCot
 import kotlin.reflect.KClass
 
@@ -120,9 +121,9 @@ enum class ReasoningDuration
  * @param numberOfRounds Defines a set of rounds or steps that the reasoning occurs in. Each round will divide
  * into the assigned number of tokens allotted for model reasoning. Reasoning rounds allows for the strategy and the
  * focus to be changed each round.
- * @param focusPoints Maps a round number to a request in string form of instructions you want the pipe to focus
- * reasoning on specifically. This allows for specific aspects of a task to be thought about for longer, or for
- * a dedicated amount of time over other portions of the task.
+ * @param focusPoints Legacy round-to-focus map kept for compatibility with older multi-round callers.
+ * @param roundDirectives Canonical round configuration for blind/merge reasoning. Each directive binds the
+ * focus point and execution mode for that round.
  * @param injectMiddlePrompt If true, the middle prompt of the system prompt will be visible to the reasoning pipe.
  * @param injectFooterPrompt If true, the footer prompt of the system prompt will be visible to the reasoning pipe.
  * @param reinforceSystemPrompt If true, the system prompt will be placed again at the end of the reasoning generation
@@ -136,6 +137,7 @@ data class ReasoningSettings(
     var reasoningInjector: ReasoningInjector = ReasoningInjector.SystemPrompt,
     var numberOfRounds: Int = 1,
     var focusPoints: MutableMap<Int, String> = mutableMapOf(),
+    var roundDirectives: MutableMap<Int, ReasoningRoundDirective> = mutableMapOf(),
     var injectMiddlePrompt: Boolean = false,
     var injectFooterPrompt: Boolean = false,
     var reinforceSystemPrompt: Boolean = false
@@ -262,14 +264,16 @@ object ReasoningBuilder
 
         if(settings.numberOfRounds > 1)
         {
-            /**
-             * Multi-round reasoning uses converse history only as the transport layer between rounds.
-             * The runtime normalizes each completed round back into the visible thought stream before the
-             * parent pipe receives it, so later rounds still see clear separation without leaking a raw
-             * history blob into the injected reasoning payload.
-             */
-            targetPipe.setJsonInput(ConverseHistory())
-                .requireJsonPromptInjection()
+            if(settings.roundDirectives.isEmpty())
+            {
+                /**
+                 * Legacy multi-round reasoning still uses converse history as the transport layer between
+                 * rounds. The runtime will normalize each completed round back into the visible thought stream
+                 * before the parent pipe receives it, so the final injected reasoning remains readable.
+                 */
+                targetPipe.setJsonInput(ConverseHistory())
+                    .requireJsonPromptInjection()
+            }
         }
 
         else
@@ -287,6 +291,7 @@ object ReasoningBuilder
          */
         targetPipe.pipeMetadata["reasoningRounds"] = settings.numberOfRounds
         targetPipe.pipeMetadata["focusPoints"] = settings.focusPoints
+        targetPipe.pipeMetadata["roundDirectives"] = settings.roundDirectives
 
         //Beware, we have to use .toString to evade a circular reference problem.
         targetPipe.pipeMetadata["injectionMethod"] = settings.reasoningInjector.toString()

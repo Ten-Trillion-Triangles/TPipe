@@ -339,20 +339,42 @@ val contextSettings = ReasoningSettings(
 ## Multi-Round Reasoning with Focus Points
 
 ### What are Focus Points?
-Focus points are specific instructions that guide the reasoning pipe's attention during each round of multi-round reasoning. They allow you to direct the AI's reasoning toward particular aspects of a problem, ensuring comprehensive coverage of important areas.
+Focus points are specific instructions that guide the reasoning pipe's attention during each round of multi-round reasoning. In the modern round-directive flow, each round can also declare a mode:
+
+- `Blind`: the harness withholds prior round content and gives the model only the original user prompt plus that round's focus point.
+- `Merge`: the harness supplies the accumulated flattened thought stream and asks the model to synthesize it into one conclusion.
 
 **How focus points work**:
 - Each round gets a specific focus area to concentrate on
-- The AI dedicates reasoning time to that particular aspect
+- Blind rounds stay isolated from earlier round content in the harness
+- Merge rounds receive prior round output as a single flattened stream for synthesis
 - Enables systematic exploration of complex problems
 - Ensures important considerations aren't overlooked
 
 ### Progressive Multi-Round Analysis
 ```kotlin
+import com.TTT.Structs.ReasoningRoundDirective
+import com.TTT.Structs.ReasoningRoundMode
+
 val focusPoints = mutableMapOf<Int, String>()
 focusPoints[1] = "risk assessment and potential challenges"
 focusPoints[2] = "cost analysis and resource requirements"  
 focusPoints[3] = "timeline and implementation strategy"
+
+val roundDirectives = mutableMapOf(
+    1 to ReasoningRoundDirective(
+        focusPoint = "risk assessment and potential challenges",
+        mode = ReasoningRoundMode.Blind
+    ),
+    2 to ReasoningRoundDirective(
+        focusPoint = "cost analysis and resource requirements",
+        mode = ReasoningRoundMode.Blind
+    ),
+    3 to ReasoningRoundDirective(
+        focusPoint = "timeline and implementation strategy",
+        mode = ReasoningRoundMode.Merge
+    )
+)
 
 val multiRoundSettings = ReasoningSettings(
     reasoningMethod = ReasoningMethod.StructuredCot,
@@ -360,16 +382,17 @@ val multiRoundSettings = ReasoningSettings(
     duration = ReasoningDuration.Long,
     reasoningInjector = ReasoningInjector.SystemPrompt,
     numberOfRounds = 3,
-    focusPoints = focusPoints
+    focusPoints = focusPoints,          // legacy compatibility
+    roundDirectives = roundDirectives   // canonical blind/merge config
 )
 ```
 
 **What happens in each round**:
-- **Round 1**: AI focuses specifically on "risk assessment and potential challenges"
-- **Round 2**: AI focuses on "cost analysis and resource requirements" while building on Round 1
-- **Round 3**: AI focuses on "timeline and implementation strategy" while incorporating insights from previous rounds
+- **Round 1**: Blind mode sees only the original user prompt plus "risk assessment and potential challenges"
+- **Round 2**: Blind mode sees only the original user prompt plus "cost analysis and resource requirements"
+- **Round 3**: Merge mode sees the accumulated flattened round stream plus "timeline and implementation strategy"
 
-After each round completes, TPipe normalizes that round through the same `unravel()` path used by single-round reasoning, then appends the flattened block to one cumulative thought stream. `ConverseHistory` remains an internal transport scaffold for round separation; the parent pipe receives the resolved stream, not a serialized history blob.
+After each round completes, TPipe normalizes that round through the same `unravel()` path used by single-round reasoning, then appends the flattened block to one cumulative thought stream. The reasoning pipe still sees the round-by-round separation scaffold, but the parent pipe receives the resolved stream, not a serialized history blob. When `roundDirectives` is empty, the legacy `focusPoints` path remains available for older callers.
 
 ### Focus Point Examples by Domain
 
