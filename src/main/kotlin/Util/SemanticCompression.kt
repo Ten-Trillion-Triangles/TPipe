@@ -326,8 +326,6 @@ private val DEFAULT_COMMON_PHRASES = listOf(
 
 private val PROPER_NOUN_CONNECTORS = setOf(
     "of",
-    "the",
-    "and",
     "de",
     "van",
     "von",
@@ -345,7 +343,6 @@ private val PROPER_NOUN_CONNECTORS = setOf(
     "ben",
     "y",
     "e",
-    "&"
 )
 
 private val COMMON_CAPITALIZED_SENTENCE_WORDS = setOf(
@@ -372,11 +369,13 @@ private object SemanticCompressionLexicon
     private const val RESOURCE_ROOT = "/semantic-compression"
     private val STOP_WORD_RESOURCE_FILES = listOf(
         "stopwords-en.txt",
-        "stopwords-extra-en.txt"
+        "stopwords-extra-en.txt",
+        "stopwords-note-ext.txt"
     )
     private val COMMON_PHRASE_RESOURCE_FILES = listOf(
         "common-phrases-en.txt",
-        "common-phrases-extra-en.txt"
+        "common-phrases-extra-en.txt",
+        "common-phrases-note-ext.txt"
     )
 
     val stopWords: Set<String> by lazy {
@@ -480,8 +479,8 @@ private object SemanticCompressionLexicon
  * Compresses natural-language prompt text using deterministic semantic stripping and legend generation.
  *
  * Quoted spans are preserved verbatim and are not compressed. Unquoted text is normalized to ASCII, function
- * words and common phrases are stripped, repeated proper nouns are replaced with 2-character codes, and
- * punctuation is reduced to the smallest useful surface form.
+ * words and common phrases are stripped, repeated proper nouns are replaced with 2-character codes in AA/AB/AC
+ * order, and punctuation is reduced to the smallest useful surface form.
  *
  * @param input Prompt text to compress.
  * @param settings Optional compression settings controlling legend size and extension phrase/stop-word tables.
@@ -519,8 +518,10 @@ fun semanticCompress(
         COMMON_CAPITALIZED_SENTENCE_WORDS + SemanticCompressionLexicon.commonCapitalizedSentenceWords
     )
     val selectedCandidates = properNounCandidates
-        .filter { it.count >= 2 }
-        .take(settings.maxLegendEntries)
+        .filter { candidate ->
+            candidate.count >= properNounReplacementThreshold(candidate.phrase)
+        }
+        .take(settings.maxLegendEntries.coerceIn(0, 676))
 
     val phraseToCode = selectedCandidates
         .mapIndexed { index, candidate ->
@@ -769,60 +770,44 @@ private fun collectProperNounCandidates(
 ): List<ProperNounCandidate>
 {
     val candidates = linkedMapOf<String, ProperNounCandidate>()
-    val connectorAlternation = connectors
-        .map { normalizePhrase(it) }
-        .filter { it.isNotBlank() }
-        .distinct()
-        .sortedByDescending { it.length }
-        .joinToString("|") { Regex.escape(it) }
+    val tokenMatches = TOKEN_PATTERN.findAll(input)
+        .map { match -> match.value to match.range.first }
+        .toList()
+    val connectorSet = connectors.map { it.lowercase() }.toSet()
+    var index = 0
 
-    val repeatedTokenAlternation = buildString {
-        append("[A-Z][A-Za-z0-9]*|[A-Z]{2,}|[0-9]+")
-        if(connectorAlternation.isNotBlank())
+    while(index < tokenMatches.size)
+    {
+        val (token, _) = tokenMatches[index]
+
+        if(!isProperNounToken(token, connectorSet))
         {
-            append("|")
-            append(connectorAlternation)
-        }
-    }
-
-    val regex = Regex("\\b(?:[A-Z][A-Za-z0-9]*|[A-Z]{2,}|[0-9]+)(?:\\s+(?:$repeatedTokenAlternation))*\\b")
-
-    regex.findAll(input).forEach { match ->
-        val phrase = collapseWhitespace(match.value)
-        val lowerPhrase = phrase.lowercase()
-
-        if(phrase.isBlank())
-        {
-            return@forEach
+            index++
+            continue
         }
 
-        if(phrase.length < 2)
+        val runTokens = mutableListOf<Pair<String, Int>>()
+
+        while(index < tokenMatches.size && isProperNounToken(tokenMatches[index].first, connectorSet))
         {
-            return@forEach
+            runTokens.add(tokenMatches[index])
+            index++
         }
 
-        if(lowerPhrase in stopWords)
-        {
-            return@forEach
-        }
-
-        if(phrase !in candidates)
-        {
-            candidates[phrase] = ProperNounCandidate(
-                phrase = phrase,
-                count = 0,
-                firstIndex = match.range.first
-            )
-        }
-
-        candidates[phrase]?.count = candidates[phrase]?.count?.plus(1) ?: 1
+        collectProperNounRunCandidates(
+            runTokens = trimConnectorEdges(runTokens, connectorSet),
+            candidates = candidates,
+            stopWords = stopWords,
+            commonCapitalizedSentenceWords = commonCapitalizedSentenceWords,
+            connectorSet = connectorSet
+        )
     }
 
     return candidates.values
         .filter { candidate ->
             val phrase = candidate.phrase
             val words = phrase.split(" ").filter { it.isNotBlank() }
-            val repeatedEnough = candidate.count >= 2
+            val repeatedEnough = candidate.count >= properNounReplacementThreshold(phrase)
             val looksLikeName = words.size > 1 ||
                 words.any { it.firstOrNull()?.isUpperCase() == true } ||
                 words.any { it.any { char -> char.isDigit() } } ||
@@ -837,11 +822,175 @@ private fun collectProperNounCandidates(
         )
 }
 
+private fun collectProperNounRunCandidates(
+    runTokens: List<Pair<String, Int>>,
+    candidates: MutableMap<String, ProperNounCandidate>,
+    stopWords: Set<String>,
+    commonCapitalizedSentenceWords: Set<String>,
+    connectorSet: Set<String>
+)
+{
+    if(runTokens.size < 2)
+    {
+        return
+    }
+
+    var cursor = 0
+
+    while(cursor < runTokens.size)
+    {
+        val remaining = trimConnectorEdges(runTokens.drop(cursor), connectorSet)
+
+        if(remaining.size < 2)
+        {
+            return
+        }
+
+        val repeatedPrefix = findRepeatedPrefix(remaining)
+
+        if(repeatedPrefix != null)
+        {
+            val (unitSize, repeatCount) = repeatedPrefix
+            if(unitSize <= 1)
+            {
+                return
+            }
+
+            registerProperNounCandidate(
+                unitTokens = remaining.take(unitSize),
+                repeatCount = repeatCount,
+                candidates = candidates,
+                stopWords = stopWords,
+                commonCapitalizedSentenceWords = commonCapitalizedSentenceWords
+            )
+            cursor += unitSize * repeatCount
+            continue
+        }
+
+        registerProperNounCandidate(
+            unitTokens = remaining,
+            repeatCount = 1,
+            candidates = candidates,
+            stopWords = stopWords,
+            commonCapitalizedSentenceWords = commonCapitalizedSentenceWords
+        )
+        return
+    }
+}
+
+private fun registerProperNounCandidate(
+    unitTokens: List<Pair<String, Int>>,
+    repeatCount: Int,
+    candidates: MutableMap<String, ProperNounCandidate>,
+    stopWords: Set<String>,
+    commonCapitalizedSentenceWords: Set<String>
+)
+{
+    if(unitTokens.size < 2)
+    {
+        return
+    }
+
+    val phrase = collapseWhitespace(unitTokens.joinToString(" ") { it.first })
+    val lowerPhrase = phrase.lowercase()
+
+    if(phrase.isBlank() || phrase.length < 2)
+    {
+        return
+    }
+
+    if(lowerPhrase in stopWords)
+    {
+        return
+    }
+
+    if(phrase in commonCapitalizedSentenceWords)
+    {
+        return
+    }
+
+    val count = repeatCount.coerceAtLeast(1)
+    val firstIndex = unitTokens.first().second
+
+    candidates[phrase] = candidates[phrase]?.let { existing ->
+        existing.count += count
+        existing
+    } ?: ProperNounCandidate(
+        phrase = phrase,
+        count = count,
+        firstIndex = firstIndex
+    )
+}
+
+private fun trimConnectorEdges(
+    tokens: List<Pair<String, Int>>,
+    connectorSet: Set<String>
+): List<Pair<String, Int>>
+{
+    var start = 0
+    var end = tokens.size
+
+    while(start < end && tokens[start].first.lowercase() in connectorSet)
+    {
+        start++
+    }
+
+    while(end > start && tokens[end - 1].first.lowercase() in connectorSet)
+    {
+        end--
+    }
+
+    return tokens.subList(start, end)
+}
+
+private fun findRepeatedPrefix(
+    tokens: List<Pair<String, Int>>
+): Pair<Int, Int>?
+{
+    val values = tokens.map { it.first }
+
+    for(unitSize in 2..(values.size / 2))
+    {
+        if(values.size < unitSize * 2)
+        {
+            continue
+        }
+
+        val unit = values.subList(0, unitSize)
+        var repeatCount = 1
+
+        while(repeatCount * unitSize + unitSize <= values.size &&
+            values.subList(repeatCount * unitSize, repeatCount * unitSize + unitSize) == unit)
+        {
+            repeatCount++
+        }
+
+        if(repeatCount >= 2)
+        {
+            return unitSize to repeatCount
+        }
+    }
+
+    return null
+}
+
+private fun isProperNounToken(
+    token: String,
+    connectorSet: Set<String>
+): Boolean
+{
+    val lower = token.lowercase()
+    return lower in connectorSet ||
+        token.firstOrNull()?.isUpperCase() == true ||
+        token.any { it.isDigit() }
+}
+
 private fun toLegendCode(index: Int): String
 {
-    val alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     val base = alphabet.length
-    val first = alphabet[(index / base) % base]
+    require(index in 0 until base * base)
+    val first = alphabet[index / base]
     val second = alphabet[index % base]
     return "$first$second"
 }
@@ -862,4 +1011,27 @@ private fun buildLegendText(legendMap: Map<String, String>): String
             append('\n')
         }
     }.trimEnd()
+}
+
+private fun properNounReplacementThreshold(phrase: String): Int
+{
+    val tokenCount = phrase.split(" ").count { it.isNotBlank() }
+    return when
+    {
+        tokenCount <= 1 -> Int.MAX_VALUE
+        tokenCount == 2 -> 6
+        tokenCount == 3 -> 4
+        tokenCount in 4..5 -> 3
+        else -> 2
+    }
+}
+
+internal fun semanticCompressionStopWords(): Set<String>
+{
+    return DEFAULT_STOP_WORDS + SemanticCompressionLexicon.stopWords
+}
+
+internal fun semanticCompressionCommonPhrases(): Set<String>
+{
+    return (DEFAULT_COMMON_PHRASES + SemanticCompressionLexicon.commonPhrases).toSet()
 }

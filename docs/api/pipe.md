@@ -249,8 +249,11 @@ as possible, preserve quoted spans, and then continue with the rest of the promp
 Compresses a prompt string using TPipe's semantic compression rules.
 
 **Behavior:** Returns a compressed prompt body plus a legend that maps the short codes back to the original
-repeated proper nouns. Quoted spans are preserved verbatim, and the helper does not mutate pipe state. This
-is the public opt-in wrapper around the same compressor used by `TokenBudgetSettings.compressUserPrompt`.
+repeated proper nouns. Quoted spans are preserved verbatim, the legend codes advance as `AA`, `AB`, `AC`, and
+the proper-noun thresholds follow the semantic-compression spec: single tokens never code, 2-token names need 6
+repeats, 3-token names need 4, 4- and 5-token names need 3, and 6+ token names need 2. The helper does not
+mutate pipe state. This is the public opt-in wrapper around the same compressor used by
+`TokenBudgetSettings.compressUserPrompt`.
 
 #### `setMiddlePrompt(prompt: String): Pipe`
 Sets prompt injected between input and output JSON schemas in the system prompt.

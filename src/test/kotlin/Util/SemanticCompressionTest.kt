@@ -24,6 +24,7 @@ class SemanticCompressionTest
             Alice Johnson will prepare the deck in addition to a status update for Alice Johnson, and Bob Smith
             will gather the final review notes, the risk list, and the implementation checklist before the next
             meeting so that the team can move quickly without repeating the same boilerplate instructions.
+            Alice Johnson will confirm the final checklist before the review call.
         """.trimIndent()
 
         val result = semanticCompress(input)
@@ -108,6 +109,8 @@ class SemanticCompressionTest
             or with respect to, because those phrases add noise without changing the actual meaning. The group
             also wants to preserve the important facts about the launch timeline, the owner assignments, and
             the review sequence so the prompt still reads like a useful working document after compression.
+            Alice Johnson will also review the final copy, and Alice Johnson will sign off on the release note.
+            Alice Johnson will approve the handoff checklist before the release goes out.
 
             "Quoted text should stay exactly as it is, even when it contains Alice Johnson, Bob Smith, and in the meantime."
 
@@ -142,6 +145,80 @@ class SemanticCompressionTest
             compressedTokens <= (rawTokens * 0.8).toInt(),
             "The expanded lexicon should deliver a meaningful reduction on an essay-sized prompt"
         )
+    }
+
+    @Test
+    fun semanticCompressionUsesResearchNoteLegendThresholds()
+    {
+        assertTrue(
+            semanticCompress("Alice " .repeat(10).trim()).legend.isEmpty(),
+            "Single-token proper nouns should never be legend-coded"
+        )
+
+        assertTrue(
+            semanticCompress(
+                "Alice Johnson ".repeat(5).trim()
+            ).legend.isEmpty(),
+            "Two-token proper nouns should not be coded before the six-occurrence threshold"
+        )
+
+        assertTrue(
+            semanticCompress(
+                "Alice Johnson ".repeat(6).trim()
+            ).legend.contains("AA: Alice Johnson"),
+            "Two-token proper nouns should code once they reach the six-occurrence threshold"
+        )
+
+        assertTrue(
+            semanticCompress(
+                "Alpha Beta Gamma ".repeat(3).trim()
+            ).legend.isEmpty(),
+            "Three-token proper nouns should not be coded before the four-occurrence threshold"
+        )
+
+        assertTrue(
+            semanticCompress(
+                "Alpha Beta Gamma ".repeat(4).trim()
+            ).legend.contains("AA: Alpha Beta Gamma"),
+            "Three-token proper nouns should code at four occurrences"
+        )
+
+        assertTrue(
+            semanticCompress(
+                "Alpha Beta Gamma Delta ".repeat(2).trim()
+            ).legend.isEmpty(),
+            "Four-token proper nouns should not be coded before the three-occurrence threshold"
+        )
+
+        assertTrue(
+            semanticCompress(
+                "Alpha Beta Gamma Delta ".repeat(3).trim()
+            ).legend.contains("AA: Alpha Beta Gamma Delta"),
+            "Four-token proper nouns should code at three occurrences"
+        )
+
+        assertTrue(
+            semanticCompress(
+                "One Two Three Four Five Six ".repeat(2).trim()
+            ).legend.contains("AA: One Two Three Four Five Six"),
+            "Six-token proper nouns should code at two occurrences"
+        )
+    }
+
+    @Test
+    fun semanticCompressionLegendCodesStartAtAaAndAdvanceDeterministically()
+    {
+        val input = buildString {
+            repeat(6) { append("Alice Johnson ") }
+            repeat(6) { append("Bob Smith ") }
+        }.trim()
+
+        val result = semanticCompress(input)
+        val legendLines = result.legend.lines()
+
+        assertTrue(result.legend.startsWith("Legend:"), "Legend should still begin with the expected header")
+        assertTrue(legendLines.any { it.startsWith("AA: Alice Johnson") }, "First legend entry should use AA")
+        assertTrue(legendLines.any { it.startsWith("AB: Bob Smith") }, "Second legend entry should use AB")
     }
 
     @Test

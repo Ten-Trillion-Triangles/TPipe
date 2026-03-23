@@ -1,7 +1,5 @@
 # Lower-case connectors that can appear inside multi-word proper nouns.
 of
-the
-and
 de
 de
 de'
@@ -38,4 +36,3 @@ l
 op
 ten
 ter
-&

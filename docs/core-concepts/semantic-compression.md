@@ -11,7 +11,7 @@ LLM or probabilistic summarizer. It:
 - preserves quoted spans exactly as written
 - normalizes compressible text to ASCII
 - removes common function words and prompt filler phrases
-- replaces repeated proper nouns with 2-character codes
+- replaces repeated proper nouns with 2-character codes that advance as `AA`, `AB`, `AC`, and so on
 - strips punctuation and syntactic noise except colons
 
 The built-in stop-word, phrase, connector, and sentence-filler tables are loaded from resource files under
@@ -41,7 +41,9 @@ This is where most of the token savings come from for long natural-language prom
 
 ### 4. Proper Noun Legend
 
-Repeated proper nouns are assigned deterministic 2-character codes. The compressor returns both the compressed
+Repeated proper nouns are assigned deterministic 2-character codes. Single-token proper nouns are not replaced;
+2-token sequences need 6 repeats, 3-token sequences need 4 repeats, 4- and 5-token sequences need 3 repeats, and
+6+ token sequences need 2 repeats before they are eligible for a code. The compressor returns both the compressed
 text and a legend so the LLM can reconstruct the original names if needed.
 
 ### 5. Punctuation Reduction
