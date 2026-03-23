@@ -263,9 +263,10 @@ object ReasoningBuilder
         if(settings.numberOfRounds > 1)
         {
             /**
-             * Multi-round reasoning should keep the explicit reasoning schema as the visible output while
-             * using converse history only as the input transport. The runtime will wrap each round back into
-             * the outer history so later rounds can see previous turns without hiding the reasoning payload.
+             * Multi-round reasoning uses converse history only as the transport layer between rounds.
+             * The runtime normalizes each completed round back into the visible thought stream before the
+             * parent pipe receives it, so later rounds still see clear separation without leaking a raw
+             * history blob into the injected reasoning payload.
              */
             targetPipe.setJsonInput(ConverseHistory())
                 .requireJsonPromptInjection()

@@ -268,7 +268,7 @@ Applies reasoning configuration to existing pipe.
 - **System Prompt Assignment**: Sets reasoning-specific prompts based on method
 - **JSON Configuration**: Configures appropriate input/output objects for reasoning type
 - **Settings Application**: Applies temperature, tokens, context window settings
-- **Multi-Round Support**: Configures ConverseHistory for multi-round reasoning
+- **Multi-Round Support**: Uses ConverseHistory internally for round separation, then resolves each completed round into the flattened thought stream before parent injection
 - **Metadata Binding**: Stores reasoning configuration in pipe metadata
 
 **`reasonWithBedrock(bedrockConfig: BedrockConfiguration, reasoningSettings: ReasoningSettings, pipeSettings: PipeSettings): Pipe`**

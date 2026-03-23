@@ -369,6 +369,8 @@ val multiRoundSettings = ReasoningSettings(
 - **Round 2**: AI focuses on "cost analysis and resource requirements" while building on Round 1
 - **Round 3**: AI focuses on "timeline and implementation strategy" while incorporating insights from previous rounds
 
+After each round completes, TPipe normalizes that round through the same `unravel()` path used by single-round reasoning, then appends the flattened block to one cumulative thought stream. `ConverseHistory` remains an internal transport scaffold for round separation; the parent pipe receives the resolved stream, not a serialized history blob.
+
 ### Focus Point Examples by Domain
 
 #### Business Strategy Focus Points

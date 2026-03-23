@@ -2,7 +2,10 @@ package com.TTT.Structs
 
 import com.TTT.Pipe.BinaryContent
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Context.ConverseHistory
+import com.TTT.Context.ConverseRole
 import com.TTT.Util.extractJson
+import com.TTT.Util.deserialize
 
 //=======================================Explicit chain of thought======================================================
 
@@ -492,4 +495,53 @@ fun extractReasoningContent(method: String, content: MultimodalContent) : String
     }
 
     return resultJson
+}
+
+/**
+ * Normalize a reasoning payload into the visible thought stream used by the parent pipe.
+ *
+ * Multi-round reasoning may carry the transport history as a [ConverseHistory] wrapper. This helper unwraps
+ * that transport and then applies the same schema-specific unraveling logic that single-round reasoning uses.
+ * If the payload is already plain text, it is returned as-is instead of being converted into a scaffold.
+ */
+fun extractReasoningStream(method: String, content: MultimodalContent) : String
+{
+    val normalizedText = unwrapReasoningHistoryText(content.text)
+    if(normalizedText.isBlank()) return normalizedText
+
+    val hasExpectedSchema = when(method)
+    {
+        "BestIdea" -> normalizedText.contains("\"problemAnalysis\"")
+        "ComprehensivePlan" -> normalizedText.contains("\"taskAnalysis\"")
+        "RolePlay" -> normalizedText.contains("\"characterAnalysis\"")
+        "ExplicitCot" -> normalizedText.contains("\"coreAnalysis\"")
+        "StructuredCot" -> normalizedText.contains("\"componentIdentification\"")
+        "processFocusedCot" -> normalizedText.contains("\"question\"")
+        "ChainOfDraft" -> normalizedText.contains("\"problemAnalysis\"")
+        else -> false
+    }
+
+    if(!hasExpectedSchema) return normalizedText
+
+    return when(method)
+    {
+        "BestIdea" -> extractJson<BestIdeaResponse>(normalizedText)?.unravel() ?: normalizedText
+        "ComprehensivePlan" -> extractJson<MultiPhasePlan>(normalizedText)?.unravel() ?: normalizedText
+        "RolePlay" -> extractJson<MethodActorResponse>(normalizedText)?.unravel() ?: normalizedText
+        "ExplicitCot" -> extractJson<ExplicitReasoningDetailed>(normalizedText)?.unravel() ?: normalizedText
+        "StructuredCot" -> extractJson<StructuredCot>(normalizedText)?.unravel() ?: normalizedText
+        "processFocusedCot" -> extractJson<ProcessFocused>(normalizedText)?.unravel() ?: normalizedText
+        "ChainOfDraft" -> extractJson<ChainOfDraftResponse>(normalizedText)?.unravel() ?: normalizedText
+        else -> normalizedText
+    }
+}
+
+private fun unwrapReasoningHistoryText(text: String): String
+{
+    val history = deserialize<ConverseHistory>(text) ?: return text
+    val lastVisibleTurn = history.history.lastOrNull {
+        it.role == ConverseRole.agent || it.role == ConverseRole.assistant || it.role == ConverseRole.user
+    } ?: return text
+
+    return unwrapReasoningHistoryText(lastVisibleTurn.content.text)
 }

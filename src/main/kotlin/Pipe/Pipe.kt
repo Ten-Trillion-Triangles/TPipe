@@ -32,6 +32,7 @@ import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Structs.PipeSettings
 import com.TTT.Structs.extractReasoningContent
+import com.TTT.Structs.extractReasoningStream
 import com.TTT.Util.deepCopy
 import com.TTT.Util.deserialize
 import com.TTT.Util.examplePromptFor
@@ -6083,6 +6084,9 @@ abstract class Pipe : P2PInterface, ProviderInterface
          */
         var usingConverse = converseSchemaRef?.isEmpty() != true ||  rounds > 1
 
+        val reasoningMethod = reasoningPipe?.pipeMetadata["reasoningMethod"] as? String ?: ""
+        val reasoningStream = StringBuilder(contentCopy.modelReasoning)
+
 
         if(usingConverse)
         {
@@ -6275,27 +6279,31 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 pipeResult
             } ?: content
 
-            /**
-             * Multi-round reasoning must preserve role-wrapped converse history so the next round can see every
-             * prior turn. The round payload itself should remain the visible reasoning response, so if an older
-             * caller still returns converse-history we unwrap the meaningful turn before appending it.
-             */
             if(usingConverse)
             {
                 val updatedHistory = deserialize<ConverseHistory>(contentCopy.text)
                     ?: throw Exception("Converse history cannot be empty when multi-round reasoning is using converse mode.")
 
+                val normalizedRoundText = extractReasoningStream(reasoningMethod, result)
+                val roundStreamBlock = formatReasoningRoundBlock(round, focusTarget, normalizedRoundText)
+
                 updatedHistory.add(
                     ConverseData(
                         ConverseRole.agent,
-                        MultimodalContent(text = unwrapReasoningRoundText(result.text))
+                        MultimodalContent(text = roundStreamBlock)
                     )
                 )
                 val updatedHistoryJson = serialize(updatedHistory, encodedefault = false)
                 contentCopy.text = updatedHistoryJson
-                contentCopy.modelReasoning = updatedHistoryJson
 
-                // Emit the post-append history so traces show the actual carried-forward round state.
+                if(reasoningStream.isNotEmpty())
+                {
+                    reasoningStream.append("\n\n")
+                }
+                reasoningStream.append(roundStreamBlock)
+                contentCopy.modelReasoning = reasoningStream.toString()
+
+                // Emit the post-append state so traces show the carried-forward reasoning stream for this round.
                 trace(
                     TraceEventType.API_CALL_SUCCESS,
                     TracePhase.VALIDATION,
@@ -6314,7 +6322,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             }
         }
 
-        if(reasoningBudget > 0 && !usingConverse)
+        if(reasoningBudget > 0)
         {
             //Required boilerplate to truncate the reasoning data if it has overflowed the budget.
             val newContextWindow = ContextWindow()
@@ -6340,23 +6348,20 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
-     * Preserve the visible reasoning payload for multi-round runs.
-     * If a legacy round result still comes back as converse history, unwrap the terminal non-system turn so
-     * we do not nest one history object inside another.
+     * Format one multi-round reasoning block so the internal history and the parent-facing stream use the same
+     * round boundary. The focus label is kept in plain text so later rounds and the parent pipe can read it.
      */
-    private fun unwrapReasoningRoundText(resultText: String): String
+    private fun formatReasoningRoundBlock(round: Int, focusTarget: String, reasoningText: String): String
     {
-        val history = deserialize<ConverseHistory>(resultText) ?: return resultText
-        val lastAgentTurn = history.history.lastOrNull {
-            it.role == ConverseRole.agent || it.role == ConverseRole.assistant
+        return buildString {
+            append("ROUND $round")
+            if(focusTarget.isNotBlank())
+            {
+                append("\nFOCUS: $focusTarget")
+            }
+            append("\n\n")
+            append(reasoningText.trim())
         }
-        if(lastAgentTurn != null)
-        {
-            return lastAgentTurn.content.text
-        }
-
-        val lastUserTurn = history.history.lastOrNull { it.role == ConverseRole.user }
-        return lastUserTurn?.content?.text ?: resultText
     }
 
     /**
