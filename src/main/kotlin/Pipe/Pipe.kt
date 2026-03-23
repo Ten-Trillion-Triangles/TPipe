@@ -6086,6 +6086,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         val reasoningStream = StringBuilder(contentCopy.modelReasoning)
         val roundDirectives = resolveReasoningRoundDirectives()
         val usingDirectiveRounds = roundDirectives.isNotEmpty()
+        val decorateReasoningRounds = rounds > 1
         var usingConverse = !usingDirectiveRounds && (converseSchemaRef?.isEmpty() != true ||  rounds > 1)
         val originalUserPrompt = extractOriginalReasoningPrompt(converseSchemaRef, content)
 
@@ -6223,7 +6224,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
              * Legacy converse-history rounds still use the old focus-point append behavior. The mode-driven path
              * handles focus directly in the round prompt envelope, so it intentionally skips this injection branch.
              */
-            if(focusTarget.isNotEmpty() && !usingDirectiveRounds)
+            if(focusTarget.isNotEmpty() && !usingDirectiveRounds && decorateReasoningRounds)
             {
                 val focusMessage = """Please pay special attention to, and focus your time on: $focusTarget"""
 
@@ -6316,7 +6317,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
             {
                 val roundMode = roundDirective!!.mode
                 val normalizedRoundText = extractReasoningStream(reasoningMethod, result)
-                val roundStreamBlock = formatReasoningRoundBlock(round, focusTarget, normalizedRoundText, roundMode.name)
+                val roundStreamBlock = if(decorateReasoningRounds)
+                {
+                    formatReasoningRoundBlock(round, focusTarget, normalizedRoundText, roundMode.name)
+                }
+                else
+                {
+                    normalizedRoundText
+                }
 
                 if(reasoningStream.isNotEmpty())
                 {
@@ -6344,7 +6352,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     ?: throw Exception("Converse history cannot be empty when multi-round reasoning is using converse mode.")
 
                 val normalizedRoundText = extractReasoningStream(reasoningMethod, result)
-                val roundStreamBlock = formatReasoningRoundBlock(round, focusTarget, normalizedRoundText)
+                val roundStreamBlock = if(decorateReasoningRounds)
+                {
+                    formatReasoningRoundBlock(round, focusTarget, normalizedRoundText)
+                }
+                else
+                {
+                    normalizedRoundText
+                }
 
                 updatedHistory.add(
                     ConverseData(

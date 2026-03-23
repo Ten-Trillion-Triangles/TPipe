@@ -781,12 +781,16 @@ class MultiRoundReasoningPipeTest
             label = "Converse-history reasoning"
         )
         assertTrue(
-            reasoningHistory.history.last().content.text.contains("ROUND 1"),
-            "The outer converse history should wrap the flattened inner reasoning block"
+            reasoningHistory.history.last().content.text.isNotBlank(),
+            "The outer converse history should preserve a visible unraveled reasoning stream"
         )
-        assertTrue(
-            reasoningHistory.history.last().content.text.contains("Let me think through this"),
-            "The outer converse history should preserve the unraveled reasoning stream"
+        assertFalse(
+            reasoningHistory.history.last().content.text.contains("ROUND 1"),
+            "The outer converse history should not add a round label in single-round nested mode"
+        )
+        assertFalse(
+            reasoningHistory.history.last().content.text.contains("FOCUS:"),
+            "The outer converse history should not add a focus label in single-round nested mode"
         )
         assertFalse(
             reasoningHistory.history.last().content.text.contains("\"coreAnalysis\""),

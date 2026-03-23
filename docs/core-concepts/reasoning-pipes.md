@@ -394,6 +394,8 @@ val multiRoundSettings = ReasoningSettings(
 
 After each round completes, TPipe normalizes that round through the same `unravel()` path used by single-round reasoning, then appends the flattened block to one cumulative thought stream. The reasoning pipe still sees the round-by-round separation scaffold, but the parent pipe receives the resolved stream, not a serialized history blob. When `roundDirectives` is empty, the legacy `focusPoints` path remains available for older callers.
 
+Single-round nested reasoning does not add the `ROUND N` / `FOCUS:` wrapper at runtime. Those labels are reserved for true multi-round flows so the injected reasoning stays plain text when a pipe is only doing one pass.
+
 ### Focus Point Examples by Domain
 
 #### Business Strategy Focus Points
@@ -643,6 +645,8 @@ val solution = runBlocking {
 ## Nested Reasoning Pipes
 
 TPipe supports unlimited nesting of reasoning pipes, enabling sophisticated multi-layered reasoning architectures for complex problem-solving scenarios.
+
+Nested single-round reasoning follows the same plain-text unravel path as any other single-round reasoning pipe. It does not emit multi-round `ROUND N` headers unless the nested layer itself is configured for multiple rounds.
 
 ### Creating Nested Reasoning Structures
 
