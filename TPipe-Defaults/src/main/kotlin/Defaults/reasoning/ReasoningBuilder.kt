@@ -263,13 +263,11 @@ object ReasoningBuilder
         if(settings.numberOfRounds > 1)
         {
             /**
-             * Require converse history so it can see its prior steps as we go along. Internally at the
-             * execution stage of the pipe itself, we'll adress this and quietly wrap the user's request into
-             * the converse history block as needed. This only matters if we're doing multiple rounds of
-             * reasoning. Otherwise, we won't stomp over whatever was assigned as json input and output.
+             * Multi-round reasoning should keep the explicit reasoning schema as the visible output while
+             * using converse history only as the input transport. The runtime will wrap each round back into
+             * the outer history so later rounds can see previous turns without hiding the reasoning payload.
              */
-            targetPipe.setJsonOutput(ConverseHistory())
-                .setJsonInput(ConverseHistory())
+            targetPipe.setJsonInput(ConverseHistory())
                 .requireJsonPromptInjection()
         }
 

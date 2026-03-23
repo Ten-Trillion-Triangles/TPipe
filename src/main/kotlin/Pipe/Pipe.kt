@@ -6041,7 +6041,11 @@ abstract class Pipe : P2PInterface, ProviderInterface
         val contentCopy = content.deepCopy()
         val reasoningBudget = tokenBudgetSettings?.reasoningBudget ?: 0 //Declare our budget. 0 is unlimited.
         var budgetPerRound = 0 //Divided by reasoningBudget / number of reasoning rounds.
-        var rounds = pipeMetadata["reasoningRounds"] as? Int //Get now. We'll need this many times forward alas.
+        var rounds = reasoningPipe?.pipeMetadata?.get("reasoningRounds") as? Int
+        if(rounds == null)
+        {
+            rounds = pipeMetadata["reasoningRounds"] as? Int
+        }
         if(rounds == null) rounds = 1 //Define to address behavior of Any to Any maps in kotlin. We can't be less than 1.
 
         //Define budget if applicable. Otherwise, set to 0 and treat as unlimited.
@@ -6074,9 +6078,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
         val converseSchemaRef = deserialize<ConverseHistory>(converseSchema)
 
         /**
-         * We're certain that the schema is converse so we need to assign the first step of this process as
-         * "user". Then we'll work our way forward treating the focus data as "system" and reasoning as
-         * "assistant".
+         * We use converse mode either when the incoming payload is already a history object or when
+         * multi-round reasoning needs to keep carrying prior turns forward between rounds.
          */
         var usingConverse = converseSchemaRef?.isEmpty() != true ||  rounds > 1
 
@@ -6173,12 +6176,11 @@ abstract class Pipe : P2PInterface, ProviderInterface
         for(round in 1..rounds)
         {
             /**
-             * Get our focus target if there is one. This allows us to help push reasoning to target a specific area.
-             * This is very useful for forcing models to actually pay attention to instructions or put more effort
-             * into points that are more critical.
+             * Resolve the focus target for this specific round. ReasoningBuilder stores focus points as a
+             * round-indexed map, but we also accept the legacy string shape so older callers do not silently lose
+             * their focus instructions.
              */
-            var focusTarget = pipeMetadata["focusPoints"] as? String
-            if(focusTarget == null) focusTarget = ""
+            val focusTarget = resolveReasoningFocusTarget(round)
 
             /**
              * Any rounds past 1 will require us to keep appending the converse history as we go along.
@@ -6263,16 +6265,45 @@ abstract class Pipe : P2PInterface, ProviderInterface
             } ?: content
 
             /**
-             * TPipe reasoning now stores the output as json to further coercee misbehaving models. This data needs
-             * to be turned back to a fully structured string formatted to be a proper stream of model reasoning.
-             * The assumption is that [ReasoningBuilder.assignDefaults] was correctly invoked. Prior. If not the
-             * output of the reasoning pipe will become empty.
+             * Multi-round reasoning must preserve role-wrapped converse history so the next round can see every
+             * prior turn. The round payload itself should remain the visible reasoning response, so if an older
+             * caller still returns converse-history we unwrap the meaningful turn before appending it.
              */
-            result.text = extractReasoningContent(reasoningPipe?.pipeMetadata["reasoningMethod"] as? String ?: "", result)
-            contentCopy.modelReasoning += " ${result.text}"
+            if(usingConverse)
+            {
+                val updatedHistory = deserialize<ConverseHistory>(contentCopy.text)
+                    ?: throw Exception("Converse history cannot be empty when multi-round reasoning is using converse mode.")
+
+                updatedHistory.add(
+                    ConverseData(
+                        ConverseRole.agent,
+                        MultimodalContent(text = unwrapReasoningRoundText(result.text))
+                    )
+                )
+                val updatedHistoryJson = serialize(updatedHistory, encodedefault = false)
+                contentCopy.text = updatedHistoryJson
+                contentCopy.modelReasoning = updatedHistoryJson
+
+                // Emit the post-append history so traces show the actual carried-forward round state.
+                trace(
+                    TraceEventType.API_CALL_SUCCESS,
+                    TracePhase.VALIDATION,
+                    contentCopy,
+                    metadata = mapOf(
+                        "reasoningRound" to round,
+                        "reasoningMode" to "converse-history",
+                        "focusTarget" to focusTarget
+                    )
+                )
+            }
+            else
+            {
+                result.text = extractReasoningContent(reasoningPipe?.pipeMetadata["reasoningMethod"] as? String ?: "", result)
+                contentCopy.modelReasoning += " ${result.text}"
+            }
         }
 
-        if(reasoningBudget > 0)
+        if(reasoningBudget > 0 && !usingConverse)
         {
             //Required boilerplate to truncate the reasoning data if it has overflowed the budget.
             val newContextWindow = ContextWindow()
@@ -6295,6 +6326,50 @@ abstract class Pipe : P2PInterface, ProviderInterface
         }
 
         return contentCopy
+    }
+
+    /**
+     * Preserve the visible reasoning payload for multi-round runs.
+     * If a legacy round result still comes back as converse history, unwrap the terminal non-system turn so
+     * we do not nest one history object inside another.
+     */
+    private fun unwrapReasoningRoundText(resultText: String): String
+    {
+        val history = deserialize<ConverseHistory>(resultText) ?: return resultText
+        val lastAgentTurn = history.history.lastOrNull {
+            it.role == ConverseRole.agent || it.role == ConverseRole.assistant
+        }
+        if(lastAgentTurn != null)
+        {
+            return lastAgentTurn.content.text
+        }
+
+        val lastUserTurn = history.history.lastOrNull { it.role == ConverseRole.user }
+        return lastUserTurn?.content?.text ?: resultText
+    }
+
+    /**
+     * Resolves the focus target for one reasoning round.
+     *
+     * Focus metadata is expected to be a map keyed by round number. Some older call sites may still store a single
+     * string, so we preserve that as a round-1 fallback instead of dropping the focus instruction entirely.
+     */
+    private fun resolveReasoningFocusTarget(round: Int): String
+    {
+        val focusMetadata = reasoningPipe?.pipeMetadata?.get("focusPoints") ?: pipeMetadata["focusPoints"]
+
+        return when(focusMetadata)
+        {
+            is Map<*, *> -> {
+                focusMetadata[round]?.toString()
+                    ?: focusMetadata[round.toString()]?.toString()
+                    ?: ""
+            }
+
+            is String -> if(round == 1) focusMetadata else ""
+
+            else -> ""
+        }
     }
 
 

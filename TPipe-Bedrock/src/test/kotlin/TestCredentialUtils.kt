@@ -21,6 +21,14 @@ object TestCredentialUtils
     fun requireAwsCredentials() 
     {
         val allowTest = System.getenv("AllowTest")
-        assumeTrue(hasAwsCredentials() && allowTest == "true", "Skipping test - AWS credentials not found in credential chain")
+        assumeTrue(allowTest == "true", "Skipping test - AllowTest flag not enabled")
+
+        if(!hasAwsCredentials())
+        {
+            println(
+                "Warning: AWS credentials were not resolved from the credential chain preflight, " +
+                    "but AllowTest=true so the live SDK call will proceed and resolve shared file/profile credentials."
+            )
+        }
     }
 }
