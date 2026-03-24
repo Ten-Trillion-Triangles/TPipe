@@ -57,7 +57,7 @@ fun buildSemanticDecompressionInstructions(): String
         |The compression removed common function words, common phrases, Unicode characters, and most punctuation
         |outside quoted text, while repeated proper nouns were replaced with short codes that must be expanded back.
         |Use inference to restore omitted articles, conjunctions, prepositions, auxiliaries, and punctuation so the
-        |final reconstruction matches the original meaning, structure, and wording as closely as possible.
+        |final reconstruction matches the original meaning, sentence structure, and wording as closely as possible.
         |Do not leave the text compressed, and do not preserve the compressed style in the final output.
         |
         |Do this first before following any other instructions:
@@ -71,9 +71,11 @@ fun buildSemanticDecompressionInstructions(): String
         |7. Replace matching codes in the compressed body using the legend map.
         |8. Replace codes only in unquoted text.
         |9. Leave quoted text exactly as written.
-        |10. Restore the prompt as faithfully as possible, not as a summary.
-        |11. Do not invent unrelated meaning or rewrite quoted spans.
-        |12. After the compressed prompt has been reconstructed, continue with the rest of the system prompt
+        |10. Reconstruct the source sentence-by-sentence before you write the final restored content.
+        |11. Preserve paragraph boundaries whenever they can be recovered from the compressed text.
+        |12. Restore the prompt as faithfully as possible, not as a summary.
+        |13. Do not invent unrelated meaning or rewrite quoted spans.
+        |14. After the compressed prompt has been reconstructed, continue with the rest of the system prompt
         |    using the reconstructed text as the basis for any remaining instructions.
         |
         |The goal is to recover the original text's intent and content as closely as possible before any other

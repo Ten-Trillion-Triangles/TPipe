@@ -309,7 +309,7 @@ Prompt for comprehensive planning approach.
 Prompt for character-based reasoning.
 
 **`semanticDecompressionPrompt(depth: ReasoningDepth = ReasoningDepth.Med, duration: ReasoningDuration = ReasoningDuration.Med): String`**
-Prompt for legend-backed semantic decompression reasoning.
+Prompt for legend-backed semantic decompression reasoning with structured quote, sentence, and paragraph reconstruction.
 
 **`selectDepth(depth: ReasoningDepth): String`**
 Returns depth-specific reasoning instructions.
@@ -330,7 +330,7 @@ enum class ReasoningMethod {
     StructuredCot,      // Phase-based framework
     processFocusedCot,  // Methodological focus
     RolePlay,           // Character-based reasoning
-    SemanticDecompression // Legend-backed prompt reconstruction
+    SemanticDecompression // Legend-backed prompt reconstruction with structured restoration fields
 }
 ```
 

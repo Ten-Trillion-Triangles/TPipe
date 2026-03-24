@@ -78,7 +78,9 @@ spans verbatim, and then continue with the rest of the system instructions.
 The dedicated `ReasoningMethod.SemanticDecompression` path is the official nested reasoning implementation for
 that decompression work. The runtime injects the compression legend map into the reasoning pipe when this method
 is active, so the reasoning model can decode the short codes deterministically before the parent pipe consumes
-the flattened reasoning stream.
+the flattened reasoning stream. The structured response now also carries sentence-by-sentence and
+paragraph-by-paragraph reconstruction fields so the trace can show whether the model truly restored the source
+form rather than only paraphrasing it.
 
 ## Usage
 

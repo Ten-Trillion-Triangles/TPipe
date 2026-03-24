@@ -298,7 +298,7 @@ val decompressionReasoningPipe = reasonWithBedrock(
 )
 ```
 
-**What it does**: Uses the official semantic-decompression reasoning schema to inspect legend-backed compressed prompts, expand the short codes, identify the parent task, and produce structured decompression reasoning that the parent pipe can unwrap into plain thought-stream text.
+**What it does**: Uses the official semantic-decompression reasoning schema to inspect legend-backed compressed prompts, expand the short codes, identify the parent task, and produce structured decompression reasoning with quote, sentence, and paragraph reconstruction fields that the parent pipe can unwrap into plain thought-stream text.
 
 **Best for**: Semantic-compression round trips, legend expansion, prompt reconstruction, and live regressions that need to prove the decompression reasoning path is wired end-to-end.
 

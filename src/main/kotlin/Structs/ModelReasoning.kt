@@ -495,6 +495,9 @@ data class DecompressionStrategy(
  * @param legendAnalysis The pipe's understanding of the legend mappings.
  * @param taskIdentification What the parent pipe is being asked to do.
  * @param keyDataPoints Critical information extracted and decompressed from the prompt.
+ * @param quoteSpans Quoted spans recovered exactly as written so surface-form fidelity stays visible.
+ * @param restoredSentences Sentence-by-sentence reconstruction of the decompressed text.
+ * @param restoredParagraphs Paragraph-level reconstruction of the decompressed text.
  * @param decompressionStrategy How the pipe decided what to decompress and why.
  * @param restoredContent The decompressed/restored text (partial or full depending on the task).
  */
@@ -503,6 +506,9 @@ data class SemanticDecompressionResponse(
     var legendAnalysis: LegendAnalysis = LegendAnalysis(),
     var taskIdentification: TaskIdentification = TaskIdentification(),
     var keyDataPoints: List<String> = listOf(),
+    var quoteSpans: List<String> = listOf(),
+    var restoredSentences: List<String> = listOf(),
+    var restoredParagraphs: List<String> = listOf(),
     var decompressionStrategy: DecompressionStrategy = DecompressionStrategy(),
     var restoredContent: String = ""
 )
@@ -525,6 +531,21 @@ data class SemanticDecompressionResponse(
         {
             append("Key data points extracted: ")
             keyDataPoints.forEach { append("$it. ") }
+        }
+
+        if(quoteSpans.isNotEmpty())
+        {
+            append("Quoted spans preserved: ${quoteSpans.joinToString(" | ")}. ")
+        }
+
+        if(restoredSentences.isNotEmpty())
+        {
+            append("Restored sentences: ${restoredSentences.joinToString(" | ")}. ")
+        }
+
+        if(restoredParagraphs.isNotEmpty())
+        {
+            append("Restored paragraphs: ${restoredParagraphs.joinToString(" || ")}. ")
         }
 
         append("Decompression approach: ${decompressionStrategy.approach}. ")
