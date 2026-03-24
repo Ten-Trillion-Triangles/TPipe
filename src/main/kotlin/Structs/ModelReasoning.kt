@@ -447,6 +447,105 @@ data class ChainOfDraftResponse(
     }
 }
 
+//==========================================Semantic Decompression reasoning==========================================
+
+/**
+ * The reasoning pipe's analysis of the legend mappings present in the compressed prompt.
+ *
+ * @param codesFound The 2-character legend codes discovered in the compressed text.
+ * @param mappings Human-readable summary of each code-to-phrase mapping.
+ */
+@kotlinx.serialization.Serializable
+data class LegendAnalysis(
+    var codesFound: List<String> = listOf(),
+    var mappings: List<String> = listOf()
+)
+
+/**
+ * Identification of the task the parent pipe is being asked to perform, extracted from the compressed content.
+ *
+ * @param taskDescription What the parent pipe is being asked to do.
+ * @param taskType The category of task (e.g., summarization, analysis, generation, decompression).
+ * @param requiresFullDecompression Whether the task demands complete restoration of the original text.
+ */
+@kotlinx.serialization.Serializable
+data class TaskIdentification(
+    var taskDescription: String = "",
+    var taskType: String = "",
+    var requiresFullDecompression: Boolean = false
+)
+
+/**
+ * The reasoning pipe's strategy for how it approached decompression of the compressed content.
+ *
+ * @param approach Description of the decompression approach taken.
+ * @param legendExpansionNotes Notes on how legend codes were expanded.
+ * @param inferenceNotes Notes on how omitted function words and syntax were restored.
+ */
+@kotlinx.serialization.Serializable
+data class DecompressionStrategy(
+    var approach: String = "",
+    var legendExpansionNotes: String = "",
+    var inferenceNotes: String = ""
+)
+
+/**
+ * Response structure for the SemanticDecompression reasoning method.
+ *
+ * @param legendAnalysis The pipe's understanding of the legend mappings.
+ * @param taskIdentification What the parent pipe is being asked to do.
+ * @param keyDataPoints Critical information extracted and decompressed from the prompt.
+ * @param decompressionStrategy How the pipe decided what to decompress and why.
+ * @param restoredContent The decompressed/restored text (partial or full depending on the task).
+ */
+@kotlinx.serialization.Serializable
+data class SemanticDecompressionResponse(
+    var legendAnalysis: LegendAnalysis = LegendAnalysis(),
+    var taskIdentification: TaskIdentification = TaskIdentification(),
+    var keyDataPoints: List<String> = listOf(),
+    var decompressionStrategy: DecompressionStrategy = DecompressionStrategy(),
+    var restoredContent: String = ""
+)
+{
+    fun unravel(): String = buildString {
+        if(legendAnalysis.mappings.isNotEmpty())
+        {
+            append("Legend mappings found: ${legendAnalysis.mappings.joinToString(", ")}. ")
+        }
+
+        append("Task identified: ${taskIdentification.taskDescription}. ")
+        append("Task type: ${taskIdentification.taskType}. ")
+
+        if(taskIdentification.requiresFullDecompression)
+        {
+            append("This task requires full decompression of the original content. ")
+        }
+
+        if(keyDataPoints.isNotEmpty())
+        {
+            append("Key data points extracted: ")
+            keyDataPoints.forEach { append("$it. ") }
+        }
+
+        append("Decompression approach: ${decompressionStrategy.approach}. ")
+
+        if(decompressionStrategy.legendExpansionNotes.isNotEmpty())
+        {
+            append("Legend expansion: ${decompressionStrategy.legendExpansionNotes}. ")
+        }
+
+        if(decompressionStrategy.inferenceNotes.isNotEmpty())
+        {
+            append("Inference notes: ${decompressionStrategy.inferenceNotes}. ")
+        }
+
+        if(restoredContent.isNotEmpty())
+        {
+            append("Restored content: $restoredContent")
+        }
+    }
+}
+
 /**
  * Extract from the data classes, and fully unravel the content to be usable as model reasoning.
  */
@@ -492,6 +591,12 @@ fun extractReasoningContent(method: String, content: MultimodalContent) : String
             resultJson = asObject.unravel()
         }
 
+        "SemanticDecompression" ->
+        {
+            val asObject = extractJson<SemanticDecompressionResponse>(content.text) ?: SemanticDecompressionResponse()
+            resultJson = asObject.unravel()
+        }
+
     }
 
     return resultJson
@@ -518,6 +623,7 @@ fun extractReasoningStream(method: String, content: MultimodalContent) : String
         "StructuredCot" -> normalizedText.contains("\"componentIdentification\"")
         "processFocusedCot" -> normalizedText.contains("\"question\"")
         "ChainOfDraft" -> normalizedText.contains("\"problemAnalysis\"")
+        "SemanticDecompression" -> normalizedText.contains("\"legendAnalysis\"")
         else -> false
     }
 
@@ -532,6 +638,7 @@ fun extractReasoningStream(method: String, content: MultimodalContent) : String
         "StructuredCot" -> extractJson<StructuredCot>(normalizedText)?.unravel() ?: normalizedText
         "processFocusedCot" -> extractJson<ProcessFocused>(normalizedText)?.unravel() ?: normalizedText
         "ChainOfDraft" -> extractJson<ChainOfDraftResponse>(normalizedText)?.unravel() ?: normalizedText
+        "SemanticDecompression" -> extractJson<SemanticDecompressionResponse>(normalizedText)?.unravel() ?: normalizedText
         else -> normalizedText
     }
 }

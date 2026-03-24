@@ -59,6 +59,8 @@ TPipe exposes semantic compression in two places:
 - `TokenBudgetSettings.compressUserPrompt` for the existing user-prompt budget path
 - `Pipe.enableSemanticCompression()` for fluent opt-in from the pipe API
 - `Pipe.enableSemanticDecompression()` for reserving the future system-prompt decompression hook
+- `ReasoningMethod.SemanticDecompression` in `TPipe-Defaults` for the official reasoning-pipe path that analyzes
+  the compressed prompt, expands the legend, and emits structured decompression reasoning
 
 When `compressUserPrompt` is enabled, TPipe tries semantic compression before truncation. If the prompt is
 structured content such as JSON, XML, or code, TPipe leaves the existing budget and truncation logic in place.
@@ -72,6 +74,11 @@ as closely as possible to the original intent and data, explains that the legend
 contains `code: phrase` lines until the first blank line, and instructs the model to read the legend first,
 expand the 2-character codes, restore omitted glue words and syntax as faithfully as possible, preserve quoted
 spans verbatim, and then continue with the rest of the system instructions.
+
+The dedicated `ReasoningMethod.SemanticDecompression` path is the official nested reasoning implementation for
+that decompression work. The runtime injects the compression legend map into the reasoning pipe when this method
+is active, so the reasoning model can decode the short codes deterministically before the parent pipe consumes
+the flattened reasoning stream.
 
 ## Usage
 

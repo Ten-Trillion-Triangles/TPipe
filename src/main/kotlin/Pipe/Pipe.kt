@@ -6044,6 +6044,23 @@ abstract class Pipe : P2PInterface, ProviderInterface
          * content object, and we want to be able to sandbox that.
          */
         val contentCopy = content.deepCopy()
+
+        /**
+         * If the reasoning method is SemanticDecompression, automatically inject the legendMap from the
+         * content metadata into the reasoning pipe's pipeMetadata. The legendMap is placed there by
+         * truncateToFitTokenBudget when semantic compression fires, so the reasoning pipe can use it
+         * for deterministic code-to-phrase expansion before the LLM even sees the text.
+         */
+        val reasoningMethod = reasoningPipe?.pipeMetadata?.get("reasoningMethod") as? String ?: ""
+        if(reasoningMethod == "SemanticDecompression")
+        {
+            val legendMap = content.metadata["semanticCompressionLegendMap"]
+            if(legendMap != null)
+            {
+                reasoningPipe?.pipeMetadata?.set("legendMap", legendMap)
+            }
+        }
+
         val reasoningBudget = tokenBudgetSettings?.reasoningBudget ?: 0 //Declare our budget. 0 is unlimited.
         var budgetPerRound = 0 //Divided by reasoningBudget / number of reasoning rounds.
         var rounds = reasoningPipe?.pipeMetadata?.get("reasoningRounds") as? Int
@@ -6082,7 +6099,6 @@ abstract class Pipe : P2PInterface, ProviderInterface
          */
         val converseSchemaRef = deserialize<ConverseHistory>(converseSchema)
 
-        val reasoningMethod = reasoningPipe?.pipeMetadata["reasoningMethod"] as? String ?: ""
         val reasoningStream = StringBuilder(contentCopy.modelReasoning)
         val roundDirectives = resolveReasoningRoundDirectives()
         val usingDirectiveRounds = roundDirectives.isNotEmpty()

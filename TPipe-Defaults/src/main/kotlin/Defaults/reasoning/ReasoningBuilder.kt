@@ -11,6 +11,7 @@ import Defaults.reasoning.ReasoningPrompts.comprehensivePlanPrompt
 import Defaults.reasoning.ReasoningPrompts.rolePlayPrompt
 import Defaults.reasoning.ReasoningPrompts.selectDepth
 import Defaults.reasoning.ReasoningPrompts.selectDuration
+import Defaults.reasoning.ReasoningPrompts.semanticDecompressionPrompt
 import com.TTT.Context.ConverseHistory
 import com.TTT.Pipe.Pipe
 import com.TTT.Structs.BestIdeaResponse
@@ -21,6 +22,7 @@ import com.TTT.Structs.MultiPhasePlan
 import com.TTT.Structs.PipeSettings
 import com.TTT.Structs.ProcessFocusedResult
 import com.TTT.Structs.ReasoningRoundDirective
+import com.TTT.Structs.SemanticDecompressionResponse
 import com.TTT.Structs.StructuredCot
 import kotlin.reflect.KClass
 
@@ -37,6 +39,9 @@ import kotlin.reflect.KClass
  * the given task is.
  * @param  ChainOfDraft Use minimal draft-based reasoning with maximum 5-word constraints per step,
  * focusing on essential calculations and transformations only.
+ * @param SemanticDecompression Specialized reasoning for understanding and restoring semantically compressed
+ * text. Analyzes the legend, identifies the parent pipe's task, extracts key data points, and produces
+ * decompressed content in a form the parent pipe can act on.
  */
 enum class ReasoningMethod
 {
@@ -46,7 +51,8 @@ enum class ReasoningMethod
     StructuredCot,
     processFocusedCot,
     RolePlay,
-    ChainOfDraft
+    ChainOfDraft,
+    SemanticDecompression
 }
 
 /**
@@ -229,6 +235,17 @@ object ReasoningBuilder
                 jsonOutputObject = ChainOfDraftResponse()
                 jsonOutputClass = ChainOfDraftResponse::class
             }
+
+            ReasoningMethod.SemanticDecompression ->
+            {
+                targetSystemPrompt = semanticDecompressionPrompt(
+                    settings.depth,
+                    settings.duration
+                )
+
+                jsonOutputObject = SemanticDecompressionResponse()
+                jsonOutputClass = SemanticDecompressionResponse::class
+            }
         }
 
         //Assign our system prompt to order the pipe to reason/think.
@@ -260,6 +277,7 @@ object ReasoningBuilder
             MethodActorResponse::class -> targetPipe.setJsonOutput(jsonOutputObject as MethodActorResponse)
             MultiPhasePlan::class -> targetPipe.setJsonOutput(jsonOutputObject as MultiPhasePlan)
             ChainOfDraftResponse::class -> targetPipe.setJsonOutput(jsonOutputObject as ChainOfDraftResponse)
+            SemanticDecompressionResponse::class -> targetPipe.setJsonOutput(jsonOutputObject as SemanticDecompressionResponse)
         }
 
         if(settings.numberOfRounds > 1)

@@ -282,6 +282,26 @@ val chainOfDraftReasoningPipe = reasonWithBedrock(
 
 **When to avoid**: Zero-shot scenarios (works best with few-shot examples), tasks requiring high interpretability (legal/medical), small language models (<3B parameters), creative or open-ended tasks where elaboration adds value
 
+### Semantic Decompression Reasoning
+```kotlin
+val decompressionReasoningSettings = ReasoningSettings(
+    reasoningMethod = ReasoningMethod.SemanticDecompression,
+    depth = ReasoningDepth.High,
+    duration = ReasoningDuration.Long,
+    reasoningInjector = ReasoningInjector.BeforeUserPrompt
+)
+
+val decompressionReasoningPipe = reasonWithBedrock(
+    bedrockConfig,
+    decompressionReasoningSettings,
+    pipeSettings
+)
+```
+
+**What it does**: Uses the official semantic-decompression reasoning schema to inspect legend-backed compressed prompts, expand the short codes, identify the parent task, and produce structured decompression reasoning that the parent pipe can unwrap into plain thought-stream text.
+
+**Best for**: Semantic-compression round trips, legend expansion, prompt reconstruction, and live regressions that need to prove the decompression reasoning path is wired end-to-end.
+
 ## Reasoning Injection Methods
 
 Configure how reasoning content is injected into the main pipe:

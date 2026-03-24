@@ -284,6 +284,80 @@ object ReasoningPrompts
         return rolePlayPrompt
     }
 
+    /**
+     * Builds the system prompt for the SemanticDecompression reasoning method.
+     *
+     * This prompt teaches the LLM exactly how TPipe semantic compression works so it can reverse the process
+     * accurately. It covers the legend system, stop-word removal, phrase stripping, contraction expansion,
+     * ASCII normalization, quote preservation, and punctuation removal. The LLM is instructed to analyze the
+     * legend, identify the parent pipe's task, extract key data, and produce restored content.
+     *
+     * @param depth Controls how thoroughly the compressed content is analyzed via [ReasoningDepth].
+     * @param duration Controls the verbosity of the decompression analysis via [ReasoningDuration].
+     *
+     * @return A system prompt that instructs the LLM to reason about and decompress semantically compressed text.
+     */
+    fun semanticDecompressionPrompt(
+        depth: ReasoningDepth = ReasoningDepth.Med,
+        duration: ReasoningDuration = ReasoningDuration.Med
+    ) : String
+    {
+        return """
+            You are a specialist in reversing TPipe Semantic Compression. The text you receive has been
+            compressed using a deterministic, legend-backed prompt reduction algorithm. Your job is to
+            understand the compressed content, identify the task it describes, and restore the information
+            into a usable form.
+            
+            ${selectDepth(depth, ReasoningMethod.SemanticDecompression)}
+            
+            ${selectDuration(duration, ReasoningMethod.SemanticDecompression)}
+            
+            HOW TPIPE SEMANTIC COMPRESSION WORKS:
+            The compressor applies these transformations in order to the original text:
+            1. Quoted spans ("...") are preserved exactly as written and never compressed.
+            2. All non-quoted text is normalized to ASCII (diacritics stripped, smart quotes straightened,
+               special characters like em-dashes and ellipses replaced with spaces).
+            3. Contractions are expanded to full forms (e.g. "don't" becomes "do not", "gonna" becomes
+               "going to") so the function words inside them become visible for removal.
+            4. Repeated multi-word proper nouns (names, titles, technical terms starting with uppercase
+               letters) are replaced with deterministic 2-character codes: AA, AB, AC... AZ, BA, BB...
+               through ZZ. Single-word proper nouns are never replaced. A legend block at the top of the
+               prompt maps each code back to its original phrase.
+            5. Common English boilerplate phrases are stripped (e.g. "in order to", "as a matter of fact",
+               "at the end of the day", "for the purpose of", "due to the fact that").
+            6. Common English function words (stop words) are stripped: articles (a, an, the), pronouns,
+               prepositions, auxiliaries, conjunctions, and discourse fillers (basically, literally,
+               honestly, actually, etc.).
+            7. Punctuation is removed except colons (used in the legend format).
+            8. All whitespace is collapsed to single spaces.
+            
+            YOUR DECOMPRESSION PROCESS:
+            1. Read the legend block first. It starts with "Legend:" and contains "CODE: phrase" lines
+               until the first blank line. Build a mental map of each 2-character code to its phrase.
+            2. If a legendMap was provided in the metadata, use it as the authoritative source for
+               code-to-phrase mappings.
+            3. Scan the compressed body and expand all legend codes back to their original phrases.
+               Only expand codes in unquoted text. Leave quoted spans exactly as written.
+            4. Identify what task the parent pipe is being asked to perform from the decompressed content.
+            5. Restore omitted function words, articles, conjunctions, prepositions, auxiliaries, and
+               punctuation using inference from the surrounding content words.
+            6. Extract the key data points that are critical to the identified task.
+            7. If the task itself requires full decompression, produce a complete faithful restoration
+               of the original text in the restoredContent field.
+            8. If the task is something else (analysis, summarization, etc.), produce a restoration of
+               the task-relevant portions in restoredContent and capture the critical information in
+               keyDataPoints.
+            
+            CRITICAL RULES:
+            - The legend is a decoding table, not prose to summarize.
+            - Do not invent information that was not in the original compressed text.
+            - Quoted spans must survive exactly as written.
+            - The restored content should read like normal human English, not compressed fragments.
+            - When in doubt about a restoration, prefer the most natural reading that preserves the
+              original meaning.
+        """.trimIndent()
+    }
+
     fun selectDepth(depth: ReasoningDepth, method: ReasoningMethod) : String
     {
         return when(method)
@@ -335,6 +409,13 @@ object ReasoningPrompts
                 ReasoningDepth.Low -> "MANDATORY: Minimal character immersion with 3-5 total reasoning elements. characterInsights array: 2-3 items. thoughtProcess array: 2-3 items. uniqueAdvantages array: 1-2 items. Surface-level character analysis. Brief problem interpretation."
                 ReasoningDepth.Med -> "MANDATORY: Balanced character immersion with 6-10 total reasoning elements. characterInsights array: 3-5 items. thoughtProcess array: 4-6 items. uniqueAdvantages array: 2-3 items. Thorough character analysis. Comprehensive problem interpretation."
                 ReasoningDepth.High -> "MANDATORY: Deep character immersion with 10+ total reasoning elements. characterInsights array: 5+ items. thoughtProcess array: 7+ items. uniqueAdvantages array: 3+ items. Exhaustive character analysis exploring worldview implications. Multi-layered problem interpretation."
+            }
+
+            ReasoningMethod.SemanticDecompression -> when(depth)
+            {
+                ReasoningDepth.Low -> "MANDATORY: Analyze the legend and identify the task with 3-5 total reasoning steps. Expand legend codes. Identify the core task only. Extract 2-3 key data points. Minimal restoration of supporting context."
+                ReasoningDepth.Med -> "MANDATORY: Analyze the legend, identify the task, and extract key data with 6-10 total reasoning steps. Expand all legend codes. Identify the task and its requirements. Extract 4-6 key data points. Restore task-relevant portions with inferred function words."
+                ReasoningDepth.High -> "MANDATORY: Full decompression analysis with 10+ total reasoning steps. Expand all legend codes. Identify the task and all sub-requirements. Extract all key data points exhaustively. Attempt complete faithful restoration of the original text with all inferred function words, punctuation, and syntax."
             }
         }
     }
@@ -390,6 +471,13 @@ object ReasoningPrompts
                 ReasoningDuration.Short -> "REQUIRED: Your reasoning output MUST be 40-60% of normal length. Concise internal monologue (1-2 sentences per thoughtProcess item). Brief explanations in all JSON fields. Minimal verbosity in characterBackground, problemInterpretation, and solution fields."
                 ReasoningDuration.Med -> "REQUIRED: Your reasoning output MUST be 90-110% of normal length. Standard character voice (2-3 sentences per thoughtProcess item). Balanced verbosity across all JSON fields. Standard explanations in characterBackground, problemInterpretation, and solution fields."
                 ReasoningDuration.Long -> "REQUIRED: Your reasoning output MUST be 150-200% of normal length. Verbose internal monologue (3-4+ sentences per thoughtProcess item). Extended explanations in all JSON fields. Detailed elaboration in characterBackground, problemInterpretation, appliedExpertise, and solution fields."
+            }
+
+            ReasoningMethod.SemanticDecompression -> when(duration)
+            {
+                ReasoningDuration.Short -> "REQUIRED: Your reasoning output MUST be 40-60% of normal length. Concise legend analysis. Brief task identification. List key data points without elaboration. Minimal restoration notes in decompressionStrategy."
+                ReasoningDuration.Med -> "REQUIRED: Your reasoning output MUST be 90-110% of normal length. Standard legend analysis with all mappings noted. Clear task identification with requirements. Key data points with context. Balanced restoration notes explaining inference choices."
+                ReasoningDuration.Long -> "REQUIRED: Your reasoning output MUST be 150-200% of normal length. Verbose legend analysis explaining what each mapping represents. Detailed task identification with all sub-requirements. Exhaustive key data points with full context. Comprehensive restoration notes justifying every inference and function word restoration."
             }
         }
     }
