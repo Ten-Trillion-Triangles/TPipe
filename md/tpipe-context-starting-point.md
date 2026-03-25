@@ -226,15 +226,15 @@ Good fit:
 
 ### DistributionGrid
 
-`DistributionGrid` is now in its validated, non-executing harness stage.
+`DistributionGrid` is now in its validated, local-executing harness stage.
 
 Current source status:
 
 - the Phase 1 contract-model files exist for runtime, memory, durability, and protocol vocabulary
 - the Phase 2 shell supports grid-level P2P identity plus router, worker, local peer, and external peer-descriptor registration
 - the Phase 3 slice now adds `init()` validation, ancestry and nested-depth safety, child-pipeline exposure, lifecycle flags, typed grid descriptor metadata, and grid trace vocabulary
-- the harness still does not execute tasks yet
-- local router-to-worker execution, remote handoff, and registry discovery are still unimplemented
+- the Phase 4 slice now adds local `execute(...)`, `executeLocal(...)`, `executeP2PRequest(...)`, local router-to-worker execution, local outcome or failure mapping, and grid-level DITL hook registration
+- remote handoff, handshake or session runtime behavior, and registry discovery are still unimplemented
 
 Treat this as a partially built harness, not a finished orchestration runtime.
 
@@ -697,7 +697,7 @@ This makes the pipeline the boundary between temporary execution state and persi
 
 - The repository is in a strong “working core + some stubbed advanced containers” state.
 - `Pipe`, `Pipeline`, `ContextBank`, `ContextWindow`, `MiniBank`, `Connector`, `Splitter`, `MultiConnector`, and `Manifold` are real implementation surfaces.
-- `DistributionGrid` has moved past the old placeholder stage into a non-executing shell, while `Junction` is now a full runtime harness with discussion and workflow recipes.
+- `DistributionGrid` has moved past the old placeholder stage into a locally executing shell, while `Junction` is now a full runtime harness with discussion and workflow recipes.
 - The docs are broad and sometimes describe aspirational behavior, so source files should be treated as the final word for anything operationally important.
 
 ## Practical Takeaways
@@ -706,5 +706,5 @@ This makes the pipeline the boundary between temporary execution state and persi
 - Use `ContextWindow` for local context and `ContextBank` for global/shared memory.
 - Use `MiniBank` when you need multiple page keys preserved independently.
 - Use `Connector` for one-key branching, `Splitter` for fan-out, `MultiConnector` for nested routing, and `Manifold` for manager-worker loops.
-- Do not rely on `DistributionGrid` as production-ready execution container yet.
+- Do not rely on `DistributionGrid` as a production-ready distributed execution container yet.
 - Use `Junction` when you need a P2P-aware harness that can handle discussion-only or plan/vote/act/verify/adjust/output recipes.

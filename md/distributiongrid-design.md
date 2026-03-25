@@ -11,7 +11,7 @@ Use this file for stable architecture and interface decisions. Use [`md/distribu
 
 ## Current Implementation Boundary
 
-`DistributionGrid` is no longer a pure stub in the current working tree, but it is still only a non-executing harness.
+`DistributionGrid` is no longer a pure stub in the current working tree, but it is still only a local-executing harness.
 
 Verified shipped behavior:
 
@@ -24,21 +24,24 @@ Verified shipped behavior:
 - the shell now validates required bindings, local ownership, duplicate registration state, ancestry cycles, and nested depth through `init()`
 - the shell now exposes child pipelines through `getPipelinesFromInterface()`
 - the shell now supports pause/resume flags, runtime-state clearing, and trace clearing
+- the shell now executes a local-only router-to-worker path through `execute(...)`, `executeLocal(...)`, and inbound `executeP2PRequest(...)`
+- the shell now records local hop, outcome, and failure metadata and preserves normal TPipe content success or failure flags
+- the shell now exposes public grid-level DITL hook registration for local route, local-worker, failure, and outcome-transformation stages
 - typed `distributionGridMetadata` now exists on `P2PDescriptor`
-- `DISTRIBUTION_GRID_*` trace vocabulary now exists for validation, lifecycle, and later execution phases
-- focused tests exist for contract models, shell registration semantics, and validation/lifecycle behavior
+- `DISTRIBUTION_GRID_*` trace vocabulary now exists for validation, lifecycle, and local execution phases
+- focused tests exist for contract models, shell registration semantics, validation/lifecycle behavior, and local execution behavior
 
 Verified missing behavior:
 
 - no node router implementation
 - no node worker implementation
-- no execution loop
 - no peer discovery
 - no P2P routing logic
+- no remote peer handoff
+- no handshake or session runtime behavior
 - no runtime durability behavior
-- no execution-time tracing surface
 - no runtime memory-policy behavior
-- no DITL orchestration hooks
+- no remote DITL hook invocation for peer dispatch, peer response, or outbound memory shaping
 
 This file records the intended architecture. It must not imply that the runtime below already exists.
 

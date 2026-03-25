@@ -11,25 +11,26 @@ Use this file for the current task only. Move durable implementation truth into 
 
 ## Current Task
 
-- Task: Phase 4 - implement the first local execution core on top of the validated Phase 3 shell.
+- Task: Phase 5 - implement explicit remote peer handoff on top of the shipped local execution core.
 - Status: ready
-- Exact progress: Phase 0, Phase 1, Phase 2, and Phase 3 are complete; Phase 4 has not started
+- Exact progress: Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are complete; Phase 5 has not started
 - Last updated: 2026-03-25
 - Files in scope:
   - `src/main/kotlin/Pipeline/DistributionGrid.kt`
   - `src/test/kotlin/Pipeline/DistributionGridExecutionCoreTest.kt`
-- Last completed step: landed `init()` validation, ancestry and cycle safety, lifecycle controls, child-pipeline exposure, typed grid metadata support, and the first `DISTRIBUTION_GRID_*` trace vocabulary
-- Current blocker: none; Phase 4 may add only the local execution path and must still avoid remote handoff and registry discovery
-- Next atomic step: normalize direct and inbound P2P execution into one local envelope-driven runtime path and add the first router-to-worker flow
-- Verification target: local-only execution works end to end, direct and inbound execution share one runtime path, and `DistributionGrid` still avoids remote peer dispatch
+  - `src/test/kotlin/Pipeline/DistributionGridRemoteHandoffTest.kt`
+- Last completed step: landed the first local-only execution runtime, grid-level DITL hook registration, local hop or outcome or failure mapping, and Phase 4 execution tracing
+- Current blocker: none; Phase 5 may add only explicit-peer remote handoff and must still avoid registry discovery or lease-based membership
+- Next atomic step: add the explicit-peer handshake and session path, then route one remote handoff through configured peer descriptors only
+- Verification target: explicit peer handoff requires valid grid metadata plus handshake or valid session state, and remote returns or failures map back through the normal `P2PResponse` boundary
 
 ## Milestones
 
-- [ ] Add a local `execute(...)` entrypoint for the grid shell and normalize it with `executeLocal(...)`.
-- [ ] Add local-only envelope normalization and the first router-to-worker orchestration path.
-- [ ] Add `executeP2PRequest(...)` normalization so inbound P2P requests reuse the same local runtime path.
-- [ ] Add local hop recording, local completion or failure mapping, and the first execution-time grid trace emissions.
-- [ ] Verify local execution works without adding remote peer dispatch, registry lookup, or handshake enforcement.
+- [ ] Add explicit remote peer dispatch for configured peer bindings or descriptors only.
+- [ ] Add mandatory handshake and negotiated policy validation before first remote handoff.
+- [ ] Add session creation and valid session reuse for repeated explicit-peer calls.
+- [ ] Map remote returns and remote failures back into the local envelope and terminal content surface.
+- [ ] Verify explicit remote handoff works without adding registry discovery, lease renewal, or trust-anchor expansion.
 
 ## Upcoming Queue
 
@@ -53,6 +54,7 @@ Use this file for the current task only. Move durable implementation truth into 
 - 2026-03-25: Completed Phase 1 by landing the contract model files and focused contract-model tests from the clean stub baseline.
 - 2026-03-25: Completed Phase 2 by replacing the stub shell with the non-executing configuration shell and focused registration tests.
 - 2026-03-25: Completed Phase 3 by adding validation, lifecycle controls, child-pipeline exposure, grid descriptor metadata, and focused validation or lifecycle tests.
+- 2026-03-25: Completed Phase 4 by landing the first local execution core, shared direct or local or inbound P2P runtime normalization, local DITL hooks, hop or outcome or failure mapping, and focused execution-core tests.
 
 ## Sync Rules
 

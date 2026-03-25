@@ -286,24 +286,6 @@ class DistributionGridValidationLifecycleTest
     }
 
     /**
-     * Verifies that the Phase 3 shell still does not execute work yet.
-     */
-    @Test
-    fun remainsNonExecutingInPhaseThree()
-    {
-        runBlocking {
-            val grid = DistributionGrid()
-            val content = MultimodalContent(text = "Still a non-executing shell.")
-
-            val localResult = grid.executeLocal(content)
-            val p2pResult = grid.executeP2PRequest(P2PRequest())
-
-            assertSame(content, localResult)
-            assertNull(p2pResult)
-        }
-    }
-
-    /**
      * Build a minimal descriptor for external-peer and identity tests.
      *
      * @param name Descriptor agent name.

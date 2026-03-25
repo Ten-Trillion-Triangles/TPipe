@@ -74,7 +74,7 @@ fun enableTracing(config: TraceConfig = TraceConfig()) {
 
 ### Orchestration Containers
 - **Manifold**: Manager-worker task coordination
-- **DistributionGrid**: Decentralized remote grid harness (Phase 3 validated shell)
+- **DistributionGrid**: Decentralized remote grid harness (Phase 4 local execution core)
 - **Junction**: Democratic discussion, voting, and workflow harness
 
 ## When to Use Containers
@@ -98,7 +98,7 @@ fun enableTracing(config: TraceConfig = TraceConfig()) {
 | MultiConnector | ✅ Complete | ✅ Yes | ❌ No |
 | Splitter | ✅ Complete | ✅ Yes | ✅ Yes |
 | Manifold | ✅ Complete | ✅ Yes | ✅ Yes |
-| DistributionGrid | ⚠️ Phase 3 validated shell | ✅ Yes | ⚠️ Partial |
+| DistributionGrid | ⚠️ Phase 4 local execution core | ✅ Yes | ⚠️ Partial |
 | Junction | ✅ Complete | ✅ Yes | ✅ Yes |
 
 ## Example: Basic Container Pattern

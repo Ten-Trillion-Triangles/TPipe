@@ -57,7 +57,7 @@ JUNCTION_HANDOFF
 | MultiConnector | ❌ No | No tracing methods |
 | Splitter | ✅ Yes | `enableTracing(config)` |
 | Manifold | ✅ Yes | Built-in tracing |
-| DistributionGrid | ⚠️ Partial | Phase 3 shell supports trace configuration, validation/lifecycle events, and `clearTrace()` |
+| DistributionGrid | ⚠️ Partial | Phase 4 shell supports trace configuration, validation/lifecycle events, local execution events, and `clearTrace()` |
 | Junction | ✅ Yes | `enableTracing(config)` |
 
 ### Enabling Tracing
@@ -121,7 +121,7 @@ class Splitter : P2PInterface {
 ```
 
 ### Not Yet P2P-Functional Containers
-- **DistributionGrid**: Implements `P2PInterface`, but still has no execution-path behavior yet
+- **DistributionGrid**: Implements `P2PInterface` and now supports local-only execution, but remote handoff and discovery are still unimplemented
 
 ## Container State Management
 
@@ -329,7 +329,7 @@ return coroutineScope {
 | **MultiConnector** | ✅ Complete | `add()`, `setMode()`, `execute()` | ✅ | ❌ |
 | **Splitter** | ✅ Complete | `addContent()`, `addPipeline()`, `executePipelines()` | ✅ | ✅ |
 | **Manifold** | ✅ Complete | `execute()`, manager pipeline required | ✅ | ✅ |
-| **DistributionGrid** | ⚠️ Phase 3 validated shell | `setRouter()`, `setWorker()`, `addPeer()`, `init()`, and lifecycle helpers | ⚠️ | ⚠️ |
+| **DistributionGrid** | ⚠️ Phase 4 local execution core | `setRouter()`, `setWorker()`, `addPeer()`, `init()`, execution entrypoints, and lifecycle helpers | ⚠️ | ⚠️ |
 | **Junction** | ✅ Complete | `execute()`, `conductDiscussion()` | ✅ | ✅ |
 
 ## Best Practices Based on Actual APIs

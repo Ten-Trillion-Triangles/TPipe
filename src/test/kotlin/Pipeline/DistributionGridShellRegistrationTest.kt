@@ -269,24 +269,6 @@ class DistributionGridShellRegistrationTest
     }
 
     /**
-     * Verifies that Phase 2 still leaves execution behavior inert.
-     */
-    @Test
-    fun remainsNonExecutingInPhaseTwo()
-    {
-        runBlocking {
-            val grid = DistributionGrid()
-            val content = MultimodalContent(text = "No runtime yet.")
-
-            val localResult = grid.executeLocal(content)
-            val p2pResult = grid.executeP2PRequest(P2PRequest())
-
-            assertSame(content, localResult)
-            assertNull(p2pResult)
-        }
-    }
-
-    /**
      * Helper used to build a minimal descriptor for registration tests.
      *
      * @param name Descriptor agent name.

@@ -15,7 +15,7 @@ Steering-set ownership:
 
 ## Current Status
 
-- `DistributionGrid` is now a validated, lifecycle-aware, non-executing Phase 3 harness as of 2026-03-25.
+- `DistributionGrid` is now a local-executing, Phase 4 harness as of 2026-03-25.
 - The old stub-era `setEntryPipeline()` surface and legacy task or judgement placeholder runtime are no longer the active implementation shape.
 - The contract layer from Phase 1 is in place:
   - `DistributionGridModels.kt`
@@ -34,11 +34,19 @@ Steering-set ownership:
   - `getPipelinesFromInterface()` child-pipeline exposure for local bindings
   - `pause()`, `resume()`, `isPaused()`, `canPause()`, `clearRuntimeState()`, and `clearTrace()`
   - `DISTRIBUTION_GRID_*` trace vocabulary and validation/lifecycle trace emission
-- Focused regression coverage now exists for contract models, shell registration behavior, and validation/lifecycle behavior:
+- The Phase 4 local execution slice is now in place:
+  - `execute(...)`, `executeLocal(...)`, and `executeP2PRequest(...)` now share one normalized local runtime path
+  - local router-to-worker execution now works end to end
+  - router return, reject, terminate, and unsupported remote-directive paths now map to terminal local outcomes or failures
+  - local hop history, outcome metadata, failure metadata, and dual content-level success or failure signaling now exist
+  - public grid-level DITL hook registration now exists for route, local-worker, failure, and outcome-transformation stages
+  - local execution-time grid tracing now emits start, decision, local worker, success or failure, and end events
+- Focused regression coverage now exists for contract models, shell registration behavior, validation/lifecycle behavior, and local execution behavior:
   - `DistributionGridContractModelsTest.kt`
   - `DistributionGridShellRegistrationTest.kt`
   - `DistributionGridValidationLifecycleTest.kt`
-- `DistributionGrid` still does not perform task execution, peer discovery, remote handoff, handshake/session runtime behavior, durability behavior, privacy policy enforcement, auth policy enforcement, DITL orchestration hooks, or memory-policy behavior yet.
+  - `DistributionGridExecutionCoreTest.kt`
+- `DistributionGrid` still does not perform remote peer handoff, registry discovery, handshake/session runtime behavior, durability behavior, privacy policy enforcement, auth policy enforcement beyond local defaults, or memory-policy behavior yet.
 - The steering-doc set now contains the approved full node-based architecture specification for the future runtime.
 - The implementation order has now been codified into explicit phases so runtime work can proceed without crossing phase boundaries accidentally.
 
@@ -48,7 +56,7 @@ Steering-set ownership:
 - `Phase 1: Foundation Contracts` — complete
 - `Phase 2: Container Shell And Registration Semantics` — complete
 - `Phase 3: Validation, Shared Infra, And Lifecycle` — complete
-- `Phase 4: Local Execution Core` — not started
+- `Phase 4: Local Execution Core` — complete
 - `Phase 5: Explicit Remote Peer Handoff` — not started
 - `Phase 6: Registry Discovery And Membership` — not started
 - `Phase 7: Cross-Cutting Runtime Hardening` — not started
@@ -60,6 +68,7 @@ Steering-set ownership:
 - `Phase 1`: the contract model files and focused contract-model tests now compile and pass without changing `DistributionGrid.kt`, `P2PDescriptor.kt`, or `TraceEventType.kt`.
 - `Phase 2`: the old stub shell has been replaced with the non-executing configuration shell, and focused shell-registration tests now pass without adding execution flow, descriptor metadata changes, or trace vocabulary changes.
 - `Phase 3`: `DistributionGrid` now validates its local graph, exposes child pipelines, carries typed grid metadata on descriptors, and passes focused validation/lifecycle tests without adding task execution.
+- `Phase 4`: `DistributionGrid` now executes the local router-to-worker path through one normalized runtime flow, preserves normal TPipe success or failure semantics, exposes grid-level DITL hooks, and passes focused execution-core tests without adding remote handoff or discovery.
 
 ## Plan At A Glance
 
@@ -67,7 +76,7 @@ Steering-set ownership:
 - [x] Phase 1: Foundation Contracts
 - [x] Phase 2: Container Shell And Registration Semantics
 - [x] Phase 3: Validation, Shared Infra, And Lifecycle
-- [ ] Phase 4: Local Execution Core
+- [x] Phase 4: Local Execution Core
 - [ ] Phase 5: Explicit Remote Peer Handoff
 - [ ] Phase 6: Registry Discovery And Membership
 - [ ] Phase 7: Cross-Cutting Runtime Hardening
@@ -87,6 +96,10 @@ Steering-set ownership:
 - The Phase 3 shell now exposes child pipelines for router, worker, and local peers through `getPipelinesFromInterface()`.
 - The Phase 3 shell now supports pause/resume flags, runtime-state clearing, trace clearing, and validation/lifecycle trace emission without adding task execution.
 - Focused Phase 3 tests now cover init validation, foreign-owner rejection, cycle detection, nested-depth enforcement, lifecycle state, and trace clearing.
+- The Phase 4 shell now executes local work through `execute(...)`, `executeLocal(...)`, and `executeP2PRequest(...)` using one normalized envelope-driven local runtime path.
+- The Phase 4 shell now supports local router-to-worker execution, router return/reject/terminate handling, local hop recording, and terminal outcome or failure metadata.
+- The Phase 4 shell now exposes grid-level DITL hook registration for the local execution flow and reserves peer or outbound-memory hook surfaces for later remote phases.
+- Focused Phase 4 tests now cover local execution normalization, direct and inbound P2P execution, directive handling, local failure preservation, hook ordering, and execution-time tracing.
 - Internal docs already describe `DistributionGrid` as incomplete rather than production-ready.
 - The `DistributionGrid` steering set now has dedicated design, progress, and plan files.
 - The design doc now records the approved remote node architecture, the envelope-first public contract, and the TPipe standards integration surface for the future runtime.
@@ -129,6 +142,9 @@ Steering-set ownership:
 - Phase 3 adds shell-level pause/resume state now, but real execution checkpoints remain deferred to Phase 4.
 - Phase 3 adds an optional typed `distributionGridMetadata` field directly on `P2PDescriptor`.
 - Phase 3 synthesizes the grid node's outward identity when missing rather than requiring callers to supply it up front.
+- Phase 4 exposes public grid-level DITL hook registration now rather than deferring the public hook surface to later hardening phases.
+- Phase 4 defaults a missing router directive to `RUN_LOCAL_WORKER` and currently resolves router decisions from `MultimodalContent.metadata["distributionGridDirective"]`.
+- Phase 4 preserves TPipe-style terminal content semantics by setting `passPipeline = true` on successful local completion and `terminatePipeline = true` on terminal local failure.
 
 ## Risks And Guardrails
 
@@ -153,8 +169,8 @@ Steering-set ownership:
 - Risk: implementation work may again jump ahead of the approved dependency order and create rework.
 - Guardrail: the phase board is now authoritative for what may be implemented next, and each phase has explicit exclusions in the design doc.
 
-- Risk: the shell could be mistaken for a usable runtime because the old stub placeholder has been replaced.
-- Guardrail: all docs and tests must continue to state clearly that even after Phase 3, execution, remote handoff, and registry behavior remain unimplemented.
+- Risk: the local execution slice could be mistaken for full grid routing readiness.
+- Guardrail: all docs and tests must continue to state clearly that after Phase 4 only local execution is shipped; remote handoff, handshake, and registry behavior remain unimplemented.
 
 ## Verification Log
 
@@ -173,6 +189,9 @@ Steering-set ownership:
 - Reviewed `src/main/kotlin/Pipeline/DistributionGrid.kt`, `src/main/kotlin/P2P/P2PDescriptor.kt`, and `src/main/kotlin/Debug/TraceEventType.kt` while implementing the Phase 3 validation and shared-infra slice.
 - Ran `./gradlew compileKotlin compileTestKotlin` after landing the Phase 3 validation/lifecycle changes.
 - Ran `./gradlew test --tests "com.TTT.Pipeline.DistributionGridShellRegistrationTest" --tests "com.TTT.Pipeline.DistributionGridValidationLifecycleTest" -x :TPipe-Bedrock:test -x :TPipe-Defaults:test -x :TPipe-MCP:test -x :TPipe-Ollama:test -x :TPipe-TraceServer:test -x :TPipe-Tuner:test` to verify the Phase 2 and Phase 3 test slices together.
+- Reviewed `src/main/kotlin/Pipeline/DistributionGrid.kt`, `src/main/kotlin/P2P/P2PRequest.kt`, `src/main/kotlin/P2P/P2PResponse.kt`, `src/main/kotlin/Pipeline/Junction.kt`, and `docs/core-concepts/developer-in-the-loop.md` while implementing the Phase 4 local execution flow.
+- Ran `./gradlew compileKotlin compileTestKotlin` after landing the Phase 4 execution changes.
+- Ran `./gradlew test --tests "com.TTT.Pipeline.DistributionGrid*" -x :TPipe-Bedrock:test -x :TPipe-Defaults:test -x :TPipe-MCP:test -x :TPipe-Ollama:test -x :TPipe-TraceServer:test -x :TPipe-Tuner:test` to verify the DistributionGrid contract, shell, lifecycle, and local execution slices together.
 
 Commands used during the architecture pass:
 
@@ -198,3 +217,4 @@ Commands used during the architecture pass:
 - 2026-03-25: Phase 1 landed the new contract model files and focused contract-model tests without changing the stub runtime shell or shared infrastructure.
 - 2026-03-25: Phase 2 replaced the stub shell with the non-executing configuration shell and added focused shell-registration tests.
 - 2026-03-25: Phase 3 added validation, lifecycle controls, child-pipeline exposure, typed grid metadata, and focused validation/lifecycle tests.
+- 2026-03-25: Phase 4 added the first local execution core, grid-level DITL hook registration, local terminal outcome or failure mapping, and focused execution-core tests.

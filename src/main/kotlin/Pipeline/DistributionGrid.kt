@@ -8,13 +8,20 @@ import com.TTT.Debug.TraceEventType
 import com.TTT.Debug.TracePhase
 import com.TTT.P2P.ContextProtocol
 import com.TTT.P2P.P2PDescriptor
+import com.TTT.P2P.P2PError
 import com.TTT.P2P.P2PInterface
+import com.TTT.P2P.P2PRejection
 import com.TTT.P2P.P2PRequirements
+import com.TTT.P2P.P2PRequest
+import com.TTT.P2P.P2PResponse
 import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.PipeError
+import com.TTT.Pipe.hasError
 import com.TTT.PipeContextProtocol.Transport
+import com.TTT.Util.deepCopy
 import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.UUID
@@ -56,6 +63,14 @@ private enum class DistributionGridBindingKind
  */
 class DistributionGrid : P2PInterface
 {
+    private companion object
+    {
+        private const val ENVELOPE_METADATA_KEY = "distributionGridEnvelope"
+        private const val DIRECTIVE_METADATA_KEY = "distributionGridDirective"
+        private const val OUTCOME_METADATA_KEY = "distributionGridOutcome"
+        private const val FAILURE_METADATA_KEY = "distributionGridFailure"
+    }
+
     private var p2pDescriptor: P2PDescriptor? = null
     private var p2pTransport: P2PTransport? = null
     private var p2pRequirements: P2PRequirements? = null
@@ -75,6 +90,15 @@ class DistributionGrid : P2PInterface
     private var traceConfig = TraceConfig()
     private var initialized = false
     private var pauseRequested = false
+
+    private var beforeRouteHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
+    private var beforeLocalWorkerHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
+    private var afterLocalWorkerHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
+    private var beforePeerDispatchHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
+    private var afterPeerResponseHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
+    private var outboundMemoryHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
+    private var failureHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
+    private var outcomeTransformationHook: (suspend (MultimodalContent, DistributionGridEnvelope) -> MultimodalContent)? = null
 
     private val gridId = UUID.randomUUID().toString()
     private val defaultMaxNestedDepth = 8
@@ -184,6 +208,69 @@ class DistributionGrid : P2PInterface
         }
 
         return pipelineSet.toList()
+    }
+
+    /**
+     * Execute the local DistributionGrid runtime path directly.
+     *
+     * Phase 4 introduces the first real local-only runtime behavior. This entrypoint normalizes the request into a
+     * grid envelope, executes the router-to-worker path, and returns terminal content without any remote dispatch.
+     *
+     * @param content Content to execute through the local grid harness.
+     * @return Terminal local execution result.
+     */
+    suspend fun execute(content: MultimodalContent): MultimodalContent
+    {
+        val readinessFailure = validateExecutionReadiness()
+        if(readinessFailure != null)
+        {
+            return buildBoundaryFailureContent(content, readinessFailure)
+        }
+
+        val workingContent = content.deepCopy()
+        val envelope = normalizeEnvelopeFromDirectInput(workingContent)
+        return executeEnvelopeLocally(envelope)
+    }
+
+    /**
+     * Execute the local DistributionGrid runtime path without going through P2P transport.
+     *
+     * @param content Content to execute through the local grid harness.
+     * @return Terminal local execution result.
+     */
+    override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
+    {
+        return execute(content)
+    }
+
+    /**
+     * Normalize an inbound P2P request into the same local runtime path used by direct execution.
+     *
+     * @param request Inbound P2P request to execute locally.
+     * @return P2P-wrapped local execution result or a boundary rejection when execution cannot begin.
+     */
+    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
+    {
+        val readinessFailure = validateExecutionReadiness()
+        if(readinessFailure != null)
+        {
+            return mapFailureToP2PResponse(readinessFailure)
+        }
+
+        val inputContent = request.prompt.deepCopy()
+        inputContent.context = request.context?.deepCopy() ?: inputContent.context
+        val envelope = normalizeEnvelopeFromP2PRequest(request, inputContent)
+        val result = executeEnvelopeLocally(envelope)
+
+        val failure = result.metadata[FAILURE_METADATA_KEY] as? DistributionGridFailure
+        if(failure != null && failure.kind == DistributionGridFailureKind.VALIDATION_FAILURE &&
+            result.metadata[OUTCOME_METADATA_KEY] == null
+        )
+        {
+            return mapFailureToP2PResponse(failure)
+        }
+
+        return P2PResponse(output = result)
     }
 
 //----------------------------------------------Configuration------------------------------------------------------------
@@ -712,7 +799,820 @@ class DistributionGrid : P2PInterface
         return tracingEnabled
     }
 
+    /**
+     * Register a hook that runs after envelope normalization but before router dispatch.
+     *
+     * @param hook Hook to assign, or `null` to clear it.
+     * @return This grid for method chaining.
+     */
+    fun setBeforeRouteHook(
+        hook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)?
+    ): DistributionGrid
+    {
+        beforeRouteHook = hook
+        return this
+    }
+
+    /**
+     * Register a hook that runs immediately before local worker dispatch.
+     *
+     * @param hook Hook to assign, or `null` to clear it.
+     * @return This grid for method chaining.
+     */
+    fun setBeforeLocalWorkerHook(
+        hook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)?
+    ): DistributionGrid
+    {
+        beforeLocalWorkerHook = hook
+        return this
+    }
+
+    /**
+     * Register a hook that runs immediately after local worker completion.
+     *
+     * @param hook Hook to assign, or `null` to clear it.
+     * @return This grid for method chaining.
+     */
+    fun setAfterLocalWorkerHook(
+        hook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)?
+    ): DistributionGrid
+    {
+        afterLocalWorkerHook = hook
+        return this
+    }
+
+    /**
+     * Register a hook reserved for later remote peer dispatch phases.
+     *
+     * @param hook Hook to assign, or `null` to clear it.
+     * @return This grid for method chaining.
+     */
+    fun setBeforePeerDispatchHook(
+        hook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)?
+    ): DistributionGrid
+    {
+        beforePeerDispatchHook = hook
+        return this
+    }
+
+    /**
+     * Register a hook reserved for later remote peer response phases.
+     *
+     * @param hook Hook to assign, or `null` to clear it.
+     * @return This grid for method chaining.
+     */
+    fun setAfterPeerResponseHook(
+        hook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)?
+    ): DistributionGrid
+    {
+        afterPeerResponseHook = hook
+        return this
+    }
+
+    /**
+     * Register a hook reserved for later outbound memory shaping phases.
+     *
+     * @param hook Hook to assign, or `null` to clear it.
+     * @return This grid for method chaining.
+     */
+    fun setOutboundMemoryHook(
+        hook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)?
+    ): DistributionGrid
+    {
+        outboundMemoryHook = hook
+        return this
+    }
+
+    /**
+     * Register a hook that runs on the failure path before terminal content is finalized.
+     *
+     * @param hook Hook to assign, or `null` to clear it.
+     * @return This grid for method chaining.
+     */
+    fun setFailureHook(
+        hook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)?
+    ): DistributionGrid
+    {
+        failureHook = hook
+        return this
+    }
+
+    /**
+     * Register a hook that transforms the terminal output content before it is returned to the caller.
+     *
+     * @param hook Hook to assign, or `null` to clear it.
+     * @return This grid for method chaining.
+     */
+    fun setOutcomeTransformationHook(
+        hook: (suspend (MultimodalContent, DistributionGridEnvelope) -> MultimodalContent)?
+    ): DistributionGrid
+    {
+        outcomeTransformationHook = hook
+        return this
+    }
+
 //----------------------------------------------Helpers-----------------------------------------------------------------
+
+    /**
+     * Validate whether the Phase 4 runtime is ready to execute local work.
+     *
+     * @return Failure record when execution must be rejected before it starts, or `null` when the shell is ready.
+     */
+    private fun validateExecutionReadiness(): DistributionGridFailure?
+    {
+        if(!initialized)
+        {
+            return buildFailure(
+                kind = DistributionGridFailureKind.VALIDATION_FAILURE,
+                reason = "DistributionGrid must be initialized with init() before execution can begin.",
+                retryable = true
+            )
+        }
+
+        if(pauseRequested)
+        {
+            return buildFailure(
+                kind = DistributionGridFailureKind.VALIDATION_FAILURE,
+                reason = "DistributionGrid is paused and cannot begin a new execution.",
+                retryable = true
+            )
+        }
+
+        if(routerBinding == null || workerBinding == null)
+        {
+            return buildFailure(
+                kind = DistributionGridFailureKind.VALIDATION_FAILURE,
+                reason = "DistributionGrid requires both router and worker bindings before execution.",
+                retryable = true
+            )
+        }
+
+        return null
+    }
+
+    /**
+     * Build the normalized envelope for direct local execution.
+     *
+     * @param content Deep-copied input content for this execution.
+     * @return Fresh execution envelope.
+     */
+    private fun normalizeEnvelopeFromDirectInput(content: MultimodalContent): DistributionGridEnvelope
+    {
+        val currentNodeId = resolveCurrentNodeId()
+        val currentTransport = resolveCurrentTransport()
+
+        return DistributionGridEnvelope(
+            taskId = UUID.randomUUID().toString(),
+            originNodeId = currentNodeId,
+            originTransport = currentTransport.deepCopy(),
+            senderNodeId = currentNodeId,
+            senderTransport = currentTransport.deepCopy(),
+            currentNodeId = currentNodeId,
+            currentTransport = currentTransport.deepCopy(),
+            content = content,
+            taskIntent = content.text,
+            currentObjective = content.text,
+            routingPolicy = routingPolicy.deepCopy(),
+            tracePolicy = resolveDefaultTracePolicy(),
+            credentialPolicy = DistributionGridCredentialPolicy(),
+            executionNotes = mutableListOf(),
+            hopHistory = mutableListOf(),
+            completed = false,
+            latestOutcome = null,
+            latestFailure = null,
+            durableStateKey = "",
+            sessionRef = null,
+            attributes = mutableMapOf()
+        )
+    }
+
+    /**
+     * Build the normalized envelope for inbound P2P execution.
+     *
+     * @param request Inbound request being normalized.
+     * @param content Deep-copied prompt content from the request.
+     * @return Fresh execution envelope.
+     */
+    private fun normalizeEnvelopeFromP2PRequest(
+        request: P2PRequest,
+        content: MultimodalContent
+    ): DistributionGridEnvelope
+    {
+        val currentNodeId = resolveCurrentNodeId()
+        val currentTransport = resolveCurrentTransport()
+        val senderNodeId = request.transport.transportAddress.ifBlank { "external-sender" }
+        val senderTransport = request.transport.copy()
+
+        return DistributionGridEnvelope(
+            taskId = UUID.randomUUID().toString(),
+            originNodeId = senderNodeId,
+            originTransport = senderTransport.deepCopy(),
+            senderNodeId = senderNodeId,
+            senderTransport = senderTransport.deepCopy(),
+            currentNodeId = currentNodeId,
+            currentTransport = currentTransport.deepCopy(),
+            content = content,
+            taskIntent = content.text,
+            currentObjective = content.text,
+            routingPolicy = routingPolicy.deepCopy(),
+            tracePolicy = resolveDefaultTracePolicy(),
+            credentialPolicy = DistributionGridCredentialPolicy(),
+            executionNotes = mutableListOf(),
+            hopHistory = mutableListOf(),
+            completed = false,
+            latestOutcome = null,
+            latestFailure = null,
+            durableStateKey = "",
+            sessionRef = null,
+            attributes = mutableMapOf()
+        )
+    }
+
+    /**
+     * Execute one normalized envelope through the Phase 4 local-only runtime path.
+     *
+     * @param envelope Fresh execution envelope to process.
+     * @return Terminal local execution content.
+     */
+    private suspend fun executeEnvelopeLocally(envelope: DistributionGridEnvelope): MultimodalContent
+    {
+        val executionStartedAt = System.currentTimeMillis()
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_START,
+            TracePhase.ORCHESTRATION,
+            metadata = mapOf(
+                "taskId" to envelope.taskId,
+                "currentNodeId" to envelope.currentNodeId
+            )
+        )
+
+        return try
+        {
+            val preparedEnvelope = beforeRouteHook?.invoke(envelope) ?: envelope
+            val routerResult = routerBinding!!.component.executeLocal(preparedEnvelope.content)
+            preparedEnvelope.content = routerResult
+
+            if(routerResult.hasError() || routerResult.terminatePipeline)
+            {
+                val failure = buildFailure(
+                    kind = DistributionGridFailureKind.ROUTING_FAILURE,
+                    reason = routerResult.pipeError?.message ?: "Router execution failed.",
+                    retryable = false
+                )
+                preparedEnvelope.latestFailure = failure
+                preparedEnvelope.executionNotes.add("Router execution failed before local worker dispatch.")
+                return finalizeFailedEnvelope(
+                    envelope = preparedEnvelope,
+                    failure = failure,
+                    startedAt = executionStartedAt,
+                    completedAt = System.currentTimeMillis(),
+                    directiveKind = DistributionGridDirectiveKind.TERMINATE
+                )
+            }
+
+            val directive = resolveDirective(preparedEnvelope)
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_ROUTER_DECISION,
+                TracePhase.ORCHESTRATION,
+                metadata = mapOf(
+                    "taskId" to preparedEnvelope.taskId,
+                    "directive" to directive.kind.name
+                )
+            )
+
+            routeLocalDirective(preparedEnvelope, directive, executionStartedAt)
+        }
+
+        catch(error: Throwable)
+        {
+            val failure = buildFailure(
+                kind = DistributionGridFailureKind.UNKNOWN,
+                reason = error.message ?: "DistributionGrid local execution failed.",
+                retryable = false
+            )
+            envelope.latestFailure = failure
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_FAILURE,
+                TracePhase.CLEANUP,
+                metadata = mapOf(
+                    "taskId" to envelope.taskId,
+                    "directive" to "EXCEPTION"
+                ),
+                error = error
+            )
+            finalizeFailedEnvelope(
+                envelope = envelope,
+                failure = failure,
+                startedAt = executionStartedAt,
+                completedAt = System.currentTimeMillis(),
+                directiveKind = DistributionGridDirectiveKind.TERMINATE,
+                error = error
+            )
+        }
+    }
+
+    /**
+     * Route one local directive without dispatching any remote peers.
+     *
+     * @param envelope Current execution envelope.
+     * @param directive Resolved router directive.
+     * @param startedAt Execution start time used for hop recording.
+     * @return Terminal local execution content.
+     */
+    private suspend fun routeLocalDirective(
+        envelope: DistributionGridEnvelope,
+        directive: DistributionGridDirective,
+        startedAt: Long
+    ): MultimodalContent
+    {
+        return when(directive.kind)
+        {
+            DistributionGridDirectiveKind.RUN_LOCAL_WORKER ->
+            {
+                val preparedEnvelope = beforeLocalWorkerHook?.invoke(envelope) ?: envelope
+                runLocalWorker(preparedEnvelope, startedAt)
+            }
+
+            DistributionGridDirectiveKind.RETURN_TO_SENDER,
+            DistributionGridDirectiveKind.RETURN_TO_ORIGIN,
+            DistributionGridDirectiveKind.RETURN_TO_TRANSPORT ->
+            {
+                envelope.executionNotes.add(
+                    directive.notes.ifBlank { "Router returned locally without worker dispatch." }
+                )
+                finalizeSuccessfulEnvelope(
+                    envelope = envelope,
+                    returnMode = directive.toReturnMode(),
+                    startedAt = startedAt,
+                    completedAt = System.currentTimeMillis(),
+                    directiveKind = directive.kind
+                )
+            }
+
+            DistributionGridDirectiveKind.REJECT,
+            DistributionGridDirectiveKind.TERMINATE ->
+            {
+                val failure = buildFailure(
+                    kind = DistributionGridFailureKind.POLICY_REJECTED,
+                    reason = directive.rejectReason.ifBlank { "Router rejected the task locally." },
+                    retryable = false
+                )
+                envelope.latestFailure = failure
+                finalizeFailedEnvelope(
+                    envelope = envelope,
+                    failure = failure,
+                    startedAt = startedAt,
+                    completedAt = System.currentTimeMillis(),
+                    directiveKind = directive.kind
+                )
+            }
+
+            DistributionGridDirectiveKind.HAND_OFF_TO_PEER,
+            DistributionGridDirectiveKind.RETRY_SAME_PEER,
+            DistributionGridDirectiveKind.TRY_ALTERNATE_PEER ->
+            {
+                val failure = buildFailure(
+                    kind = DistributionGridFailureKind.ROUTING_FAILURE,
+                    reason = "Directive '${directive.kind.name}' is not supported until Phase 5 remote handoff.",
+                    retryable = false
+                )
+                envelope.latestFailure = failure
+                finalizeFailedEnvelope(
+                    envelope = envelope,
+                    failure = failure,
+                    startedAt = startedAt,
+                    completedAt = System.currentTimeMillis(),
+                    directiveKind = directive.kind
+                )
+            }
+        }
+    }
+
+    /**
+     * Execute the local worker binding and finalize the Phase 4 local worker path.
+     *
+     * @param envelope Current execution envelope.
+     * @param startedAt Execution start time used for hop recording.
+     * @return Terminal local execution content.
+     */
+    private suspend fun runLocalWorker(
+        envelope: DistributionGridEnvelope,
+        startedAt: Long
+    ): MultimodalContent
+    {
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_LOCAL_WORKER_DISPATCH,
+            TracePhase.EXECUTION,
+            metadata = mapOf(
+                "taskId" to envelope.taskId,
+                "workerBindingKey" to workerBinding!!.bindingKey
+            )
+        )
+
+        return try
+        {
+            val workerResult = workerBinding!!.component.executeLocal(envelope.content)
+            envelope.content = workerResult
+
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_LOCAL_WORKER_RESPONSE,
+                TracePhase.EXECUTION,
+                metadata = mapOf(
+                    "taskId" to envelope.taskId,
+                    "workerBindingKey" to workerBinding!!.bindingKey,
+                    "terminated" to workerResult.terminatePipeline,
+                    "hasError" to workerResult.hasError()
+                )
+            )
+
+            val updatedEnvelope = afterLocalWorkerHook?.invoke(envelope) ?: envelope
+            if(workerResult.hasError() || workerResult.terminatePipeline)
+            {
+                val failure = buildFailure(
+                    kind = DistributionGridFailureKind.WORKER_FAILURE,
+                    reason = workerResult.pipeError?.message ?: "Local worker execution failed.",
+                    retryable = false
+                )
+                updatedEnvelope.latestFailure = failure
+                return finalizeFailedEnvelope(
+                    envelope = updatedEnvelope,
+                    failure = failure,
+                    startedAt = startedAt,
+                    completedAt = System.currentTimeMillis(),
+                    directiveKind = DistributionGridDirectiveKind.RUN_LOCAL_WORKER
+                )
+            }
+
+            finalizeSuccessfulEnvelope(
+                envelope = updatedEnvelope,
+                returnMode = resolveReturnMode(updatedEnvelope.routingPolicy),
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                directiveKind = DistributionGridDirectiveKind.RUN_LOCAL_WORKER
+            )
+        }
+
+        catch(error: Throwable)
+        {
+            val failure = buildFailure(
+                kind = DistributionGridFailureKind.WORKER_FAILURE,
+                reason = error.message ?: "Local worker execution failed.",
+                retryable = false
+            )
+            envelope.latestFailure = failure
+            finalizeFailedEnvelope(
+                envelope = envelope,
+                failure = failure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                directiveKind = DistributionGridDirectiveKind.RUN_LOCAL_WORKER,
+                error = error
+            )
+        }
+    }
+
+    /**
+     * Finalize a successful local execution outcome.
+     *
+     * @param envelope Current execution envelope.
+     * @param returnMode Terminal return mode to record.
+     * @param startedAt Execution start time used for hop recording.
+     * @param completedAt Completion time used for hop recording.
+     * @param directiveKind Directive that produced the terminal state.
+     * @return Final terminal content.
+     */
+    private suspend fun finalizeSuccessfulEnvelope(
+        envelope: DistributionGridEnvelope,
+        returnMode: DistributionGridReturnMode,
+        startedAt: Long,
+        completedAt: Long,
+        directiveKind: DistributionGridDirectiveKind
+    ): MultimodalContent
+    {
+        envelope.completed = true
+        val outcome = DistributionGridOutcome(
+            status = DistributionGridOutcomeStatus.SUCCESS,
+            returnMode = returnMode,
+            taskId = envelope.taskId,
+            finalContent = envelope.content.deepCopy(),
+            completionNotes = envelope.executionNotes.joinToString(separator = " | "),
+            hopCount = envelope.hopHistory.size + 1,
+            finalNodeId = envelope.currentNodeId,
+            terminalFailure = null
+        )
+        envelope.latestOutcome = outcome
+        envelope.latestFailure = null
+        envelope.hopHistory.add(
+            buildHopRecord(
+                envelope = envelope,
+                directiveKind = directiveKind,
+                resultSummary = "Local execution completed successfully.",
+                startedAt = startedAt,
+                completedAt = completedAt
+            )
+        )
+
+        val baseOutput = envelope.content
+        baseOutput.passPipeline = true
+        baseOutput.terminatePipeline = false
+        baseOutput.metadata[ENVELOPE_METADATA_KEY] = envelope.deepCopy()
+        baseOutput.metadata[OUTCOME_METADATA_KEY] = outcome.deepCopy()
+        baseOutput.metadata.remove(FAILURE_METADATA_KEY)
+
+        val finalOutput = outcomeTransformationHook?.invoke(baseOutput, envelope) ?: baseOutput
+
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_SUCCESS,
+            TracePhase.CLEANUP,
+            metadata = mapOf(
+                "taskId" to envelope.taskId,
+                "directive" to directiveKind.name,
+                "returnMode" to returnMode.name,
+                "hopCount" to envelope.hopHistory.size
+            )
+        )
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_END,
+            TracePhase.CLEANUP,
+            metadata = mapOf(
+                "taskId" to envelope.taskId,
+                "status" to DistributionGridOutcomeStatus.SUCCESS.name
+            )
+        )
+
+        return finalOutput
+    }
+
+    /**
+     * Finalize a failed local execution outcome.
+     *
+     * @param envelope Current execution envelope.
+     * @param failure Failure record to attach.
+     * @param startedAt Execution start time used for hop recording.
+     * @param completedAt Completion time used for hop recording.
+     * @param directiveKind Directive that produced the terminal state.
+     * @param error Optional thrown exception associated with the failure.
+     * @return Final terminal content.
+     */
+    private suspend fun finalizeFailedEnvelope(
+        envelope: DistributionGridEnvelope,
+        failure: DistributionGridFailure,
+        startedAt: Long,
+        completedAt: Long,
+        directiveKind: DistributionGridDirectiveKind,
+        error: Throwable? = null
+    ): MultimodalContent
+    {
+        envelope.completed = true
+        envelope.latestFailure = failure
+        envelope.hopHistory.add(
+            buildHopRecord(
+                envelope = envelope,
+                directiveKind = directiveKind,
+                resultSummary = failure.reason.ifBlank { "Local execution failed." },
+                startedAt = startedAt,
+                completedAt = completedAt
+            )
+        )
+
+        val preparedEnvelope = try
+        {
+            failureHook?.invoke(envelope) ?: envelope
+        }
+        catch(hookError: Throwable)
+        {
+            envelope.executionNotes.add(
+                "Failure hook error: ${hookError.message ?: hookError::class.simpleName.orEmpty()}"
+            )
+            envelope
+        }
+
+        val failureOutput = preparedEnvelope.content
+        failureOutput.passPipeline = false
+        failureOutput.terminatePipeline = true
+        if(failureOutput.pipeError == null)
+        {
+            failureOutput.pipeError = PipeError(
+                exception = error ?: IllegalStateException(failure.reason.ifBlank { "DistributionGrid failure." }),
+                eventType = TraceEventType.DISTRIBUTION_GRID_FAILURE,
+                phase = TracePhase.CLEANUP,
+                pipeName = "DistributionGrid-${p2pDescriptor?.agentName ?: gridId}",
+                pipeId = gridId
+            )
+        }
+
+        val outcome = DistributionGridOutcome(
+            status = DistributionGridOutcomeStatus.FAILURE,
+            returnMode = preparedEnvelope.routingPolicy.failureReturnMode,
+            taskId = preparedEnvelope.taskId,
+            finalContent = failureOutput.deepCopy(),
+            completionNotes = preparedEnvelope.executionNotes.joinToString(separator = " | "),
+            hopCount = preparedEnvelope.hopHistory.size,
+            finalNodeId = preparedEnvelope.currentNodeId,
+            terminalFailure = failure.deepCopy()
+        )
+        preparedEnvelope.latestOutcome = outcome
+
+        failureOutput.metadata[ENVELOPE_METADATA_KEY] = preparedEnvelope.deepCopy()
+        failureOutput.metadata[FAILURE_METADATA_KEY] = failure.deepCopy()
+        failureOutput.metadata[OUTCOME_METADATA_KEY] = outcome.deepCopy()
+
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_FAILURE,
+            TracePhase.CLEANUP,
+            metadata = mapOf(
+                "taskId" to preparedEnvelope.taskId,
+                "directive" to directiveKind.name,
+                "failureKind" to failure.kind.name,
+                "reason" to failure.reason
+            ),
+            error = error
+        )
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_END,
+            TracePhase.CLEANUP,
+            metadata = mapOf(
+                "taskId" to preparedEnvelope.taskId,
+                "status" to DistributionGridOutcomeStatus.FAILURE.name
+            )
+        )
+
+        return failureOutput
+    }
+
+    /**
+     * Convert a boundary-level execution failure into terminal local content.
+     *
+     * @param originalInput Original content that was supplied to the shell.
+     * @param failure Failure explaining why execution could not begin.
+     * @return Terminal failure content.
+     */
+    private fun buildBoundaryFailureContent(
+        originalInput: MultimodalContent,
+        failure: DistributionGridFailure
+    ): MultimodalContent
+    {
+        val content = originalInput.deepCopy()
+        content.terminatePipeline = true
+        content.passPipeline = false
+        content.pipeError = PipeError(
+            exception = IllegalStateException(failure.reason),
+            eventType = TraceEventType.DISTRIBUTION_GRID_FAILURE,
+            phase = TracePhase.VALIDATION,
+            pipeName = "DistributionGrid-${p2pDescriptor?.agentName ?: gridId}",
+            pipeId = gridId
+        )
+        content.metadata[FAILURE_METADATA_KEY] = failure.deepCopy()
+
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_FAILURE,
+            TracePhase.VALIDATION,
+            metadata = mapOf(
+                "failureKind" to failure.kind.name,
+                "reason" to failure.reason
+            )
+        )
+
+        return content
+    }
+
+    /**
+     * Convert a boundary-level grid failure into a P2P rejection response.
+     *
+     * @param failure Failure to map to the P2P boundary.
+     * @return P2P rejection response.
+     */
+    private fun mapFailureToP2PResponse(failure: DistributionGridFailure): P2PResponse
+    {
+        return P2PResponse(
+            rejection = P2PRejection(
+                errorType = P2PError.configuration,
+                reason = failure.reason
+            )
+        )
+    }
+
+    /**
+     * Resolve the router directive recorded on the current content, or default to local worker execution.
+     *
+     * @param envelope Current execution envelope.
+     * @return Resolved directive for the local execution step.
+     */
+    private fun resolveDirective(envelope: DistributionGridEnvelope): DistributionGridDirective
+    {
+        val contentDirective = envelope.content.metadata[DIRECTIVE_METADATA_KEY] as? DistributionGridDirective
+        return contentDirective?.deepCopy() ?: DistributionGridDirective()
+    }
+
+    /**
+     * Resolve the default return mode for a local worker completion.
+     *
+     * @param policy Routing policy stored on the envelope.
+     * @return Effective return mode for the local completion path.
+     */
+    private fun resolveReturnMode(policy: DistributionGridRoutingPolicy): DistributionGridReturnMode
+    {
+        if(policy.returnAfterFirstLocalWork)
+        {
+            return DistributionGridReturnMode.RETURN_AFTER_LOCAL_WORK
+        }
+
+        return policy.completionReturnMode
+    }
+
+    /**
+     * Build a compact grid failure record for the current shell.
+     *
+     * @param kind Failure category.
+     * @param reason Human-readable reason.
+     * @param retryable Whether the caller may retry.
+     * @return Failure record.
+     */
+    private fun buildFailure(
+        kind: DistributionGridFailureKind,
+        reason: String,
+        retryable: Boolean
+    ): DistributionGridFailure
+    {
+        val transport = resolveCurrentTransport()
+        return DistributionGridFailure(
+            kind = kind,
+            sourceNodeId = resolveCurrentNodeId(),
+            targetNodeId = "",
+            transportMethod = transport.transportMethod,
+            transportAddress = transport.transportAddress,
+            reason = reason,
+            policyCause = "",
+            retryable = retryable
+        )
+    }
+
+    /**
+     * Build one local hop record for the current execution.
+     *
+     * @param envelope Current execution envelope.
+     * @param directiveKind Directive that was applied locally.
+     * @param resultSummary Human-readable result summary.
+     * @param startedAt Hop start timestamp.
+     * @param completedAt Hop completion timestamp.
+     * @return Hop record for the local action.
+     */
+    private fun buildHopRecord(
+        envelope: DistributionGridEnvelope,
+        directiveKind: DistributionGridDirectiveKind,
+        resultSummary: String,
+        startedAt: Long,
+        completedAt: Long
+    ): DistributionGridHopRecord
+    {
+        return DistributionGridHopRecord(
+            sourceNodeId = envelope.senderNodeId,
+            destinationNodeId = envelope.currentNodeId,
+            transportMethod = envelope.currentTransport.transportMethod,
+            transportAddress = envelope.currentTransport.transportAddress,
+            routerAction = directiveKind,
+            privacyDecision = if(envelope.tracePolicy.requireRedaction) "redacted" else "standard",
+            resultSummary = resultSummary,
+            startedAtEpochMillis = startedAt,
+            completedAtEpochMillis = completedAt
+        )
+    }
+
+    /**
+     * Resolve the current node id from explicit grid metadata when available.
+     *
+     * @return Stable current node id.
+     */
+    private fun resolveCurrentNodeId(): String
+    {
+        return p2pDescriptor?.distributionGridMetadata?.nodeId
+            ?.ifBlank { gridId }
+            ?: gridId
+    }
+
+    /**
+     * Resolve the current outward transport identity for this grid node.
+     *
+     * @return Current outward transport identity.
+     */
+    private fun resolveCurrentTransport(): P2PTransport
+    {
+        return p2pTransport?.deepCopy() ?: defaultGridTransport()
+    }
+
+    /**
+     * Resolve the default trace policy snapshot to store on new execution envelopes.
+     *
+     * @return Trace policy snapshot for new executions.
+     */
+    private fun resolveDefaultTracePolicy(): DistributionGridTracePolicy
+    {
+        return p2pDescriptor?.distributionGridMetadata?.defaultTracePolicy?.deepCopy()
+            ?: DistributionGridTracePolicy(
+                allowTracing = tracingEnabled,
+                allowTracePersistence = traceConfig.enabled
+            )
+    }
 
     /**
      * Build and normalize a router, worker, or local peer binding.
@@ -1237,5 +2137,21 @@ class DistributionGrid : P2PInterface
         }
 
         return metadata
+    }
+
+    /**
+     * Convert a router directive into the corresponding return mode when the directive is terminal locally.
+     *
+     * @return Return mode implied by the directive kind.
+     */
+    private fun DistributionGridDirective.toReturnMode(): DistributionGridReturnMode
+    {
+        return when(kind)
+        {
+            DistributionGridDirectiveKind.RETURN_TO_SENDER -> DistributionGridReturnMode.RETURN_TO_SENDER
+            DistributionGridDirectiveKind.RETURN_TO_ORIGIN -> DistributionGridReturnMode.RETURN_TO_ORIGIN
+            DistributionGridDirectiveKind.RETURN_TO_TRANSPORT -> DistributionGridReturnMode.RETURN_TO_TRANSPORT
+            else -> DistributionGridReturnMode.RETURN_TO_SENDER
+        }
     }
 }

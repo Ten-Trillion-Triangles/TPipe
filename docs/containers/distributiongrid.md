@@ -8,7 +8,7 @@ This page describes current shipped behavior only. The evolving full runtime spe
 
 ## Current Implementation Status
 
-`DistributionGrid` is currently implemented through Phase 3 of its rollout:
+`DistributionGrid` is currently implemented through Phase 4 of its rollout:
 
 - the contract-model layer exists for runtime, memory, durability, and protocol vocabulary
 - the `DistributionGrid` class now provides a non-executing configuration shell
@@ -20,28 +20,29 @@ This page describes current shipped behavior only. The evolving full runtime spe
 - the shell now validates required bindings, local ownership, duplicate registration state, ancestry cycles, and nested depth through `init()`
 - the shell now exposes child pipelines through `getPipelinesFromInterface()`
 - the shell now supports pause/resume flags, runtime-state clearing, and trace clearing
+- the shell now executes local-only work through `execute(...)`, `executeLocal(...)`, and `executeP2PRequest(...)`
+- the shell now supports a first local router-to-worker flow
+- the shell now records local hop, outcome, and failure metadata on terminal content
+- the shell now exposes grid-level DITL hook registration for the local execution flow
 - typed `distributionGridMetadata` now exists on `P2PDescriptor`
-- `DISTRIBUTION_GRID_*` trace vocabulary now exists for validation and lifecycle events
+- `DISTRIBUTION_GRID_*` trace vocabulary now exists for validation, lifecycle, and local execution events
 
 ## What Is Still Missing
 
-`DistributionGrid` does not execute tasks yet.
-
 The following areas remain unimplemented:
 
-- local router-to-worker execution
 - remote peer handoff
 - registry discovery and leased membership
 - handshake, negotiated policy, and session enforcement
 - trace report and failure-analysis behavior
 - runtime durability behavior
 - memory-policy enforcement
-- DITL orchestration hooks
+- remote DITL hook invocation for peer dispatch, peer response, and outbound memory shaping
 - privacy, auth, and PCP mediation
 
 ## Current Shell Surface
 
-The Phase 3 shell is still non-executing, but it now includes configuration, validation, and lifecycle methods.
+The Phase 4 shell now includes configuration, validation, lifecycle methods, and a local-only execution path.
 
 ### Grid-level P2P identity
 
@@ -83,6 +84,20 @@ The Phase 3 shell is still non-executing, but it now includes configuration, val
 - `clearRuntimeState()`
 - `clearTrace()`
 
+### Local execution and hooks
+
+- `execute(...)`
+- `executeLocal(...)`
+- `executeP2PRequest(...)`
+- `setBeforeRouteHook(...)`
+- `setBeforeLocalWorkerHook(...)`
+- `setAfterLocalWorkerHook(...)`
+- `setBeforePeerDispatchHook(...)`
+- `setAfterPeerResponseHook(...)`
+- `setOutboundMemoryHook(...)`
+- `setFailureHook(...)`
+- `setOutcomeTransformationHook(...)`
+
 ### Readback helpers
 
 - `getRouterBindingKey()`
@@ -105,7 +120,7 @@ The current contract layer is split into four source files:
 - `src/main/kotlin/Pipeline/DistributionGridDurabilityModels.kt`
 - `src/main/kotlin/Pipeline/DistributionGridProtocolModels.kt`
 
-These files define the vocabulary for the future runtime, but they do not by themselves make the grid executable yet.
+These files define the vocabulary for the runtime, but the grid is still only locally executable at this stage.
 
 ## Intended Architecture
 
@@ -130,15 +145,15 @@ The current shipped slice has focused coverage through:
 - `DistributionGridContractModelsTest`
 - `DistributionGridShellRegistrationTest`
 - `DistributionGridValidationLifecycleTest`
+- `DistributionGridExecutionCoreTest`
 
 ## Contributing
 
 If you are continuing `DistributionGrid` implementation, follow the internal phased rollout rather than adding features ad hoc:
 
-1. Phase 4: local execution core
-2. Phase 5: explicit remote peer handoff
-3. Phase 6: registry discovery and membership
-4. later hardening, DSL, and public-doc sync
+1. Phase 5: explicit remote peer handoff
+2. Phase 6: registry discovery and membership
+3. later hardening, DSL, and public-doc sync
 
 ---
 
