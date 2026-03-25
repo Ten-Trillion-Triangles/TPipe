@@ -226,15 +226,17 @@ Good fit:
 
 ### DistributionGrid
 
-`DistributionGrid` is currently only partially implemented.
+`DistributionGrid` is now in its validated, non-executing harness stage.
 
 Current source status:
 
-- the data classes `DistributionGridTask` and `DistributionGridJudgement` exist
-- `setEntryPipeline()` validates that one pipe emits the required JSON schema
-- the execution loop, agent routing, judge logic, and token management are not implemented yet
+- the Phase 1 contract-model files exist for runtime, memory, durability, and protocol vocabulary
+- the Phase 2 shell supports grid-level P2P identity plus router, worker, local peer, and external peer-descriptor registration
+- the Phase 3 slice now adds `init()` validation, ancestry and nested-depth safety, child-pipeline exposure, lifecycle flags, typed grid descriptor metadata, and grid trace vocabulary
+- the harness still does not execute tasks yet
+- local router-to-worker execution, remote handoff, and registry discovery are still unimplemented
 
-Treat this as a structural placeholder, not a finished orchestration runtime.
+Treat this as a partially built harness, not a finished orchestration runtime.
 
 Keep these DistributionGrid records handy:
 
@@ -695,7 +697,7 @@ This makes the pipeline the boundary between temporary execution state and persi
 
 - The repository is in a strong “working core + some stubbed advanced containers” state.
 - `Pipe`, `Pipeline`, `ContextBank`, `ContextWindow`, `MiniBank`, `Connector`, `Splitter`, `MultiConnector`, and `Manifold` are real implementation surfaces.
-- `DistributionGrid` is still a placeholder, but `Junction` is now a full runtime harness with discussion and workflow recipes.
+- `DistributionGrid` has moved past the old placeholder stage into a non-executing shell, while `Junction` is now a full runtime harness with discussion and workflow recipes.
 - The docs are broad and sometimes describe aspirational behavior, so source files should be treated as the final word for anything operationally important.
 
 ## Practical Takeaways

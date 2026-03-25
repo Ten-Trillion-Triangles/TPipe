@@ -96,6 +96,32 @@ enum class TraceEventType {
     SPLITTER_PARALLEL_AWAIT,
     SPLITTER_RESULT_COLLECTION,
 
+    // DistributionGrid Orchestration Events
+    //
+    // DistributionGrid uses its own trace family so validation, lifecycle, and later node-routing behavior can be
+    // grouped separately from pipe, pipeline, and the other harness containers.
+    DISTRIBUTION_GRID_INIT,
+    DISTRIBUTION_GRID_VALIDATION_START,
+    DISTRIBUTION_GRID_VALIDATION_SUCCESS,
+    DISTRIBUTION_GRID_VALIDATION_FAILURE,
+    DISTRIBUTION_GRID_PAUSE,
+    DISTRIBUTION_GRID_RESUME,
+    DISTRIBUTION_GRID_RUNTIME_RESET,
+    DISTRIBUTION_GRID_START,
+    DISTRIBUTION_GRID_END,
+    DISTRIBUTION_GRID_SUCCESS,
+    DISTRIBUTION_GRID_FAILURE,
+    DISTRIBUTION_GRID_ROUTER_DECISION,
+    DISTRIBUTION_GRID_LOCAL_WORKER_DISPATCH,
+    DISTRIBUTION_GRID_LOCAL_WORKER_RESPONSE,
+    DISTRIBUTION_GRID_PEER_HANDOFF,
+    DISTRIBUTION_GRID_PEER_RESPONSE,
+    DISTRIBUTION_GRID_RETURN_ROUTING,
+    DISTRIBUTION_GRID_MEMORY_ENVELOPE,
+    DISTRIBUTION_GRID_POLICY_EVALUATION,
+    DISTRIBUTION_GRID_SESSION_HANDSHAKE,
+    DISTRIBUTION_GRID_LOOP_GUARD,
+
     // Junction Orchestration Events
     //
     // Junction gets its own trace family because the harness is a multi-stage orchestrator rather than a

@@ -11,13 +11,22 @@ Use this file for stable architecture and interface decisions. Use [`md/distribu
 
 ## Current Implementation Boundary
 
-`DistributionGrid` is still a stub in the current working tree.
+`DistributionGrid` is no longer a pure stub in the current working tree, but it is still only a non-executing harness.
 
 Verified shipped behavior:
 
-- `DistributionGridTask` exists as a stub-era task model.
-- `DistributionGridJudgement` exists as a stub-era judge model.
-- `setEntryPipeline()` validates that one pipe emits the expected `DistributionGridTask` JSON schema before storing the pipeline reference.
+- the Phase 1 contract-model layer exists for runtime, memory, durability, and protocol contracts
+- the Phase 2 configuration shell exists on `DistributionGrid`
+- the shell now stores grid-level P2P identity state
+- the shell now supports router and worker binding plus local peer and external peer-descriptor registration
+- the shell now synthesizes deterministic local descriptor, transport, and requirements defaults for local bindings
+- the shell now enforces duplicate-peer rejection and local peer replacement or removal rules
+- the shell now validates required bindings, local ownership, duplicate registration state, ancestry cycles, and nested depth through `init()`
+- the shell now exposes child pipelines through `getPipelinesFromInterface()`
+- the shell now supports pause/resume flags, runtime-state clearing, and trace clearing
+- typed `distributionGridMetadata` now exists on `P2PDescriptor`
+- `DISTRIBUTION_GRID_*` trace vocabulary now exists for validation, lifecycle, and later execution phases
+- focused tests exist for contract models, shell registration semantics, and validation/lifecycle behavior
 
 Verified missing behavior:
 
@@ -26,9 +35,9 @@ Verified missing behavior:
 - no execution loop
 - no peer discovery
 - no P2P routing logic
-- no durability support
-- no tracing surface
-- no memory policy
+- no runtime durability behavior
+- no execution-time tracing surface
+- no runtime memory-policy behavior
 - no DITL orchestration hooks
 
 This file records the intended architecture. It must not imply that the runtime below already exists.
@@ -65,6 +74,274 @@ The following decisions are locked for this workstream:
 - the new runtime must use a new envelope-first model, not the stub-era task/judge pair as the primary public contract
 - durability is first-class and must use a pluggable store contract
 - the harness must support raw API, Kotlin DSL, and Defaults-friendly ergonomics
+
+## Implementation Program
+
+The implementation order for `DistributionGrid` is locked. It exists to minimize churn, keep cross-cutting TPipe standards aligned, and prevent later-phase behavior from leaking into earlier slices.
+
+Sequencing rules:
+
+- each phase may depend only on completed earlier phases
+- no phase may silently pull later-phase behavior forward
+- if a phase discovers a new dependency boundary or guardrail, update this design file before code is written
+- each phase must have explicit entry criteria, exclusions, and exit criteria
+- public docs must continue to describe shipped behavior only, not future-phase behavior
+
+### Phase 0: Steering Alignment
+
+Purpose:
+
+- codify the implementation order, task boundaries, exclusions, and acceptance targets in the steering set
+
+Required scope:
+
+- update the design, progress, and plan steering docs so the implementation sequence is explicit and phase-driven
+
+Explicit exclusions:
+
+- no runtime code changes
+- no shared infrastructure changes
+- no public docs that imply new shipped behavior
+
+Entry criteria:
+
+- approved architecture spec exists in the steering set
+- runtime code is still at the clean stub baseline
+
+Exit criteria:
+
+- the steering docs agree on one implementation order
+- the active task after this phase is `Phase 1: Foundation Contracts`
+
+### Phase 1: Foundation Contracts
+
+Purpose:
+
+- define the stable contract vocabulary that later runtime, transport, and discovery work will depend on
+
+Required scope:
+
+- add the runtime contract model file
+- add the memory model file
+- add the durability model file
+- add the protocol model file
+- add a focused contract-model test file for serialization, defaults, and the durable-store interface shape
+
+Explicit exclusions:
+
+- do not modify `DistributionGrid.kt`
+- do not modify `P2PDescriptor.kt`
+- do not modify `TraceEventType.kt`
+- do not add shell behavior, execution logic, registry logic, or tracing behavior
+
+Entry criteria:
+
+- `Phase 0` is complete
+- the repo is still at the stub-only `DistributionGrid` baseline
+
+Exit criteria:
+
+- the new contract files compile cleanly
+- the focused contract-model tests pass
+- the codebase has the approved vocabulary for envelopes, directives, policy, memory, durability, and protocol metadata
+- runtime behavior remains unchanged from the stub baseline
+
+### Phase 2: Container Shell And Registration Semantics
+
+Purpose:
+
+- replace the stub-only class shell with the raw node-oriented API surface and safe registration behavior
+
+Required scope:
+
+- add router, worker, peer, discovery, routing, memory, durability, and tracing configuration APIs
+- implement safe default descriptor and requirement generation for local bindings
+- implement rebind cleanup, duplicate-peer handling, and one-node outward identity rules
+
+Explicit exclusions:
+
+- no real execution path
+- no handshake enforcement
+- no registry discovery
+- no tracing event family yet unless strictly needed by lifecycle signatures
+
+Entry criteria:
+
+- `Phase 1` contract files exist and compile
+
+Exit criteria:
+
+- the raw configuration shell compiles
+- registration semantics are explicit and safe
+- the runtime still does not execute tasks
+
+### Phase 3: Validation, Shared Infra, And Lifecycle
+
+Purpose:
+
+- add the guardrails and shared surfaces the shell needs before any real orchestration begins
+
+Required scope:
+
+- implement `init()` validation
+- add local ancestry and cycle safety
+- add `getPipelinesFromInterface()`
+- add `pause()`, `resume()`, `isPaused()`, `canPause()`, `clearRuntimeState()`, and `clearTrace()`
+- add explicit `P2PDescriptor` support for grid metadata
+- add `DISTRIBUTION_GRID_*` trace event vocabulary
+
+Explicit exclusions:
+
+- no local worker orchestration yet
+- no remote handoff yet
+- no registry discovery yet
+
+Entry criteria:
+
+- `Phase 2` shell and registration behavior exists
+
+Exit criteria:
+
+- invalid configurations fail fast
+- shared infra exists only where this phase requires it
+- lifecycle and validation surfaces compile without introducing task routing
+
+### Phase 4: Local Execution Core
+
+Purpose:
+
+- implement the first real runtime behavior through a local-only router-to-worker path
+
+Required scope:
+
+- normalize direct and inbound P2P execution into one envelope-driven runtime path
+- implement local router decision handling
+- dispatch the local worker and map local completion and failure behavior
+- record hops, surface dual error states, and invoke orchestration-level DITL hooks in a defined order
+
+Explicit exclusions:
+
+- no remote peer dispatch
+- no registry queries
+- no registry lease behavior
+
+Entry criteria:
+
+- `Phase 3` validation and lifecycle scaffolding exists
+
+Exit criteria:
+
+- `execute(...)`, `executeLocal(...)`, and `executeP2PRequest(...)` share one normalized runtime path
+- local-only execution works end to end
+- terminal content success and failure semantics align with normal TPipe behavior
+
+### Phase 5: Explicit Remote Peer Handoff
+
+Purpose:
+
+- add remote routing to explicitly configured peers before introducing registry discovery complexity
+
+Required scope:
+
+- support handoff to explicit peer descriptors only
+- implement mandatory handshake, negotiated policy, session creation, session reuse, and remote return or failure mapping
+
+Explicit exclusions:
+
+- no registry discovery
+- no registry lease renewal
+- no trust-anchor discovery expansion beyond explicit peers
+
+Entry criteria:
+
+- `Phase 4` local execution path is working
+
+Exit criteria:
+
+- explicit peer handoff requires valid grid metadata plus handshake or valid session state
+- remote returns and failures map back through the approved P2P boundary contract
+
+### Phase 6: Registry Discovery And Membership
+
+Purpose:
+
+- introduce trusted discovery only after explicit peer routing is already proven
+
+Required scope:
+
+- add bootstrap trust anchors
+- add registry advertisements and node advertisements
+- add lease-based registration and renewal contracts
+- add structured registry queries and candidate verification
+
+Explicit exclusions:
+
+- no widening of trust rules beyond the approved trust-anchor model
+- no shortcut that treats registry presence alone as sufficient proof of grid identity
+
+Entry criteria:
+
+- `Phase 5` explicit peer handoff is working
+
+Exit criteria:
+
+- registries are discovered and queried through the trust-anchor model
+- discovered peers are admitted only after verification plus handshake rules
+
+### Phase 7: Cross-Cutting Runtime Hardening
+
+Purpose:
+
+- make the runtime standards-complete against the approved TPipe memory, privacy, auth, durability, and tracing expectations
+
+Required scope:
+
+- implement outbound memory shaping and redaction
+- implement durable-store checkpoints and resume behavior
+- implement privacy-policy enforcement and credential-routing behavior
+- implement PCP mediation and safe pause checkpoints
+- align trace export with the normal `PipeTracer.exportTrace(...)` path
+
+Explicit exclusions:
+
+- no new transport model
+- no public doc claims beyond shipped behavior
+
+Entry criteria:
+
+- `Phase 6` discovery and remote routing rules are in place
+
+Exit criteria:
+
+- cross-cutting runtime behavior matches the approved policies in this document
+- the runtime is standards-complete enough for DSL and public-doc stabilization
+
+### Phase 8: DSL, Defaults, Public Docs, And Final Coverage
+
+Purpose:
+
+- finish the developer-facing ergonomics and sync all outward-facing documentation and tests to the shipped runtime
+
+Required scope:
+
+- add `DistributionGridDsl.kt`
+- add Defaults-friendly builder targets
+- update public docs to match the shipped runtime
+- complete the full test matrix for local execution, remote handoff, discovery, policy, memory, tracing, and durability
+
+Explicit exclusions:
+
+- do not describe behavior that still is not shipped
+
+Entry criteria:
+
+- `Phase 7` hardening is complete
+
+Exit criteria:
+
+- DSL and Defaults ergonomics reflect real runtime behavior
+- public docs describe shipped behavior accurately
+- final tests cover the major runtime and policy paths
 
 ## Runtime Model
 
@@ -476,6 +753,10 @@ The raw API should provide:
 - `setMaxHops(...)`
 - `enableTracing(...)`
 - `disableTracing()`
+- `clearRuntimeState()`
+- `clearTrace()`
+- `getTraceReport(...)`
+- `getFailureAnalysis()`
 - `pause()`
 - `resume()`
 - `isPaused()`
@@ -484,6 +765,10 @@ The raw API should provide:
 - `execute(...)`
 - `executeLocal(...)`
 - `executeP2PRequest(...)`
+
+Optional `P2PDescriptor` and `P2PRequirements` arguments on router, worker, and peer registration methods are part of the intended public ergonomics.
+
+If those values are omitted, the grid should synthesize secure local defaults rather than forcing the caller to hand-author every descriptor and requirement object.
 
 ### DITL-style container hooks
 
@@ -504,6 +789,17 @@ This is a hybrid DITL model:
 
 - normal pipe and pipeline DITL remains on the child router and worker harnesses
 - orchestration-level DITL exists on the container where routing and policy decisions happen
+
+The container-level hooks are not read-only observer callbacks.
+
+They must be able, within explicit hook contracts, to:
+
+- transform envelope content
+- reroute or replace a directive
+- request retry behavior
+- reject a hop
+- terminate execution
+- reshape outbound memory before handoff
 
 ### Kotlin DSL and Defaults ergonomics
 
@@ -532,6 +828,73 @@ That means the router may consider:
 - remote descriptors loaded into the client-side catalog
 
 The router must still filter visibility through node policy before handing candidates to the routing logic.
+
+## Local Registration And Visibility
+
+`DistributionGrid` is one outward-facing grid node, but it still manages nested local bindings internally.
+
+Default visibility rules:
+
+- router binding is local by default
+- worker binding is local by default
+- attached local peers are local by default
+- outward advertisement happens at the node level unless explicitly expanded in a future opt-in mode
+
+This means the node should normally appear as one grid endpoint to external discovery even though it contains multiple internal roles.
+
+### Local container binding
+
+During `init()` the grid must bind local router and worker objects to the grid container before local registry registration.
+
+This keeps nested bindings from leaking into global visibility accidentally and preserves the local-container semantics used by other TPipe harnesses.
+
+### Safe default registration behavior
+
+When router, worker, or peer bindings are registered without explicit `P2PDescriptor` or `P2PRequirements`, the grid should synthesize secure local defaults.
+
+Those defaults should follow the same broad safety posture used by other harnesses:
+
+- local-only visibility unless explicitly advertised
+- conservative auth and context behavior
+- no blind duplication or custom-schema exposure
+- enough descriptor detail for internal routing, tracing, and debugging
+
+### Rebinding and duplicate handling
+
+Role rebinding should be explicit and safe.
+
+Expected behavior:
+
+- `setRouter(...)` replaces any previous router binding
+- `setWorker(...)` replaces any previous worker binding
+- replacing a role removes stale local registry state before the new binding is registered
+- `addPeer(...)` rejects duplicate peer identity unless the old peer has been explicitly removed or replaced through a dedicated path
+
+Canonical duplicate-peer identity should use:
+
+- explicit grid node id when available
+- transport identity as fallback when no stable grid node id is present
+
+### Outward advertisement shape
+
+The default outward advertisement model is one public node descriptor.
+
+That public descriptor may contain:
+
+- transport path for the grid node
+- `DistributionGridNodeMetadata`
+- high-level router and worker capability summary
+- request-template and auth hints needed to contact the node
+
+Router and worker internals should not be advertised as separate public P2P agents by default.
+
+### Nested pipeline exposure
+
+Even though outward discovery treats the grid as one node endpoint, `getPipelinesFromInterface()` should still expose the nested child pipelines required for:
+
+- tracing propagation
+- container interoperability
+- nested harness inspection
 
 ## Registry Discovery And Membership
 
@@ -663,6 +1026,14 @@ Session rules:
 
 Transport connection identity alone must not be treated as the session record.
 
+### Session storage
+
+Negotiated sessions live in memory by default.
+
+The design should also support optional durable-store integration so long-running tasks can resume safely after interruption or process restart.
+
+Durable storage of sessions is optional, not automatic.
+
 ## Grid RPC Message Family
 
 The grid protocol rides on normal TPipe P2P transport. It is not a separate transport stack.
@@ -689,6 +1060,51 @@ This keeps `DistributionGrid` aligned with TPipe's existing transport, auth, des
 - trust establishment
 - policy negotiation
 - durable task exchange
+
+## P2P Boundary Contract
+
+`DistributionGrid` must remain P2P-native at the transport boundary.
+
+That means:
+
+- the outward execution surface still uses normal `P2PRequest`
+- `executeP2PRequest(...)` still returns normal `P2PResponse`
+- grid-native models ride inside the request and response flow rather than replacing it
+
+### Failure mapping
+
+Grid-specific failures must map cleanly into the normal P2P response surface.
+
+This includes:
+
+- handshake rejection
+- session rejection
+- registry or trust rejection
+- policy rejection
+- task-level grid failure
+
+The response should return standard `P2PRejection` semantics at the boundary while preserving grid-specific detail in structured grid metadata.
+
+### Return-path alignment
+
+The grid envelope may track richer routing state such as origin, sender, and return policy, but the outer P2P call must still preserve normal `returnAddress` behavior so it remains compatible with existing TPipe transport flows.
+
+### Content-level completion semantics
+
+Grid-native outcome records complement normal TPipe content semantics rather than replacing them.
+
+Expected behavior:
+
+- successful terminal grid completion should preserve normal successful content-return behavior
+- unrecoverable terminal grid failure should preserve normal failure or termination behavior
+- structured grid outcome and failure metadata should be attached in addition to the normal content-level signals
+
+### Error-surface compatibility
+
+When a failure occurs after child router or worker execution has started, callers should be able to inspect both:
+
+- grid-native structured failure metadata
+- native content or pipeline error state when child execution already produced it
 
 ## Registry And Node Verification Rules
 
@@ -738,6 +1154,12 @@ The design target is a broad but still structured hook set for:
 
 This keeps the grid native to TPipe's memory ecosystem without turning the container into the owner of every memory backend.
 
+### Inbound mutation safety
+
+Inbound `P2PRequest` content and context must be normalized into deep-copied execution state before local execution begins.
+
+This prevents callers from observing accidental mutation when the grid reuses one runtime path for direct execution and inbound P2P execution.
+
 ### Durability contract
 
 Durability is first-class in the spec.
@@ -781,6 +1203,15 @@ Expected trace event families include:
 - durable save and load
 - loop guard and rejection events
 
+The tracing surface should also include the same practical lifecycle controls used by the more mature harnesses:
+
+- manual trace clearing
+- clear per-run runtime state without destroying configuration
+- trace-report export
+- structured failure analysis access
+
+`getTraceReport(...)` should use the normal `PipeTracer.exportTrace(...)` path so existing trace export behavior, including optional remote dispatch through `RemoteTraceConfig`, continues to work without a separate grid-only export system.
+
 ### Privacy behavior
 
 Requester trace and privacy policy is enforced, not advisory.
@@ -792,6 +1223,10 @@ The grid must support:
 - no-tracing requests
 - storage restrictions for trace and task persistence
 
+Existing `P2PDescriptor` privacy hints such as prompt recording and interaction recording remain descriptor-level signals, not absolute enforcement.
+
+However, when requester privacy policy requires stricter handling, the router must treat incompatible descriptor privacy hints as hard compatibility filters during peer selection and handshake.
+
 ## P2P, PCP, Auth, And Security Standards
 
 ### P2P alignment
@@ -799,6 +1234,12 @@ The grid must support:
 The grid must use normal TPipe P2P models and transport handling.
 
 Do not invent a separate transport framework for the grid.
+
+Outbound request shaping should preserve the normal TPipe request-template precedence:
+
+- caller override first
+- then peer descriptor `requestTemplate`
+- then registry template fallback
 
 ### PCP mediation
 
@@ -824,6 +1265,21 @@ The default assumption must be:
 
 If a task needs more complex auth routing, it must do so through the credential DSL rather than informal secret propagation.
 
+### Validation order
+
+The grid should use split-phase validation rather than collapsing every concern into one step.
+
+Expected order:
+
+1. basic transport and identity checks
+2. grid marker, trust-anchor, and advertisement validation
+3. session validation or mandatory handshake
+4. policy negotiation
+5. standard `P2PRequirements` validation for content, converse rules, duplication, token budgets, auth, and related request constraints
+6. task execution
+
+This preserves normal TPipe validation behavior while still ensuring the router never executes a task against an untrusted or non-grid endpoint.
+
 ## Loop And Safety Guards
 
 The grid needs two separate safety systems.
@@ -846,6 +1302,47 @@ During execution the node must enforce:
 - explicit rejection of runaway routes
 - durable-state consistency during resume
 
+## Runtime Lifecycle
+
+The grid should follow the same broad runtime hygiene as the mature harnesses.
+
+### Per-run reset behavior
+
+Each execution starts from a clean runtime snapshot for transient execution state.
+
+Reset between runs:
+
+- active hop state
+- current directive state
+- pause tokens
+- transient route caches
+- per-run execution notes
+
+Preserve across runs unless explicitly cleared:
+
+- static configuration
+- router and worker bindings
+- trust anchors and peer descriptors
+- trace configuration
+- durable-store configuration
+
+### Manual lifecycle controls
+
+`clearRuntimeState()` should clear transient execution state without discarding configuration.
+
+`clearTrace()` should clear accumulated trace history without disabling tracing or removing trace configuration.
+
+### Pause checkpoints
+
+Pause and resume must only be honored at safe routing boundaries.
+
+The grid must not suspend:
+
+- mid-hop
+- mid-response merge
+- mid-policy negotiation
+- mid-durable-state transition
+
 ## Test Expectations
 
 The first serious implementation wave must include coverage for:
@@ -853,9 +1350,11 @@ The first serious implementation wave must include coverage for:
 - missing router or worker rejection
 - local ancestry and cycle rejection
 - local execute and P2P execute sharing one runtime path
+- P2P response and rejection mapping for grid-native failures
 - policy-driven return to sender, origin, and explicit transport
 - return-after-first-local-work
 - hybrid discovery behavior
+- local-by-default binding visibility and outward single-node advertisement behavior
 - upstream failure propagation
 - PCP mediation behavior
 - least-privilege outbound redaction
@@ -873,6 +1372,8 @@ The first serious implementation wave must include coverage for:
 - major-version match and minor-version negotiation
 - policy intersection and rejection on incompatible constraints
 - session reference reuse and expiry
+- optional durable-session restore behavior
+- inbound request deep-copy normalization
 - mixed dedicated-registry and mixed-role registry deployments
 
 ## Non-Goals

@@ -1,5 +1,6 @@
 package com.TTT.P2P
 
+import com.TTT.Pipeline.DistributionGridNodeMetadata
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.PipeContextProtocol.Transport
 import javax.management.Descriptor
@@ -134,6 +135,8 @@ data class P2PSkills(
  *
  * @param allowedModels Map that denotes use case, and allowed models for said use case. Enables the requester to
  * request specific available llm models for a task or part of the task. Only true if duplication is allowed.
+ *
+ * @param distributionGridMetadata Optional typed metadata that marks this descriptor as a `DistributionGrid` node.
  */
 @kotlinx.serialization.Serializable
 data class P2PDescriptor(
@@ -156,7 +159,8 @@ data class P2PDescriptor(
     var agentSkills: MutableList<P2PSkills>? = null,
     var pcpDescriptor: PcpContext = PcpContext(), //Optional.
     var allowedModels: MutableMap<String, MutableList<String>>? = null, //Optional depends on duplication being allowed.
-    var requestTemplate: P2PRequest? = null
+    var requestTemplate: P2PRequest? = null,
+    var distributionGridMetadata: DistributionGridNodeMetadata? = null
     )
 {
     

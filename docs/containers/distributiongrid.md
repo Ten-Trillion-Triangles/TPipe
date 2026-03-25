@@ -1,223 +1,144 @@
 # DistributionGrid
 
-> 💡 **Tip:** A **DistributionGrid** distributes water (tasks) from a single source across an arbitrary number of identical parallel pipes based on a dynamic input list.
+`DistributionGrid` is TPipe's remote grid-harness container.
 
+One `DistributionGrid` instance represents one node on a larger distributed grid. The long-term design is a router plus worker node that can exchange work with other grid nodes over the normal TPipe P2P layer.
 
-## Table of Contents
-- [Current Implementation Status](#current-implementation-status)
-- [Defined Data Structures](#defined-data-structures)
-- [Intended Architecture](#intended-architecture)
-- [Schema Validation](#schema-validation)
-- [Missing Implementation](#missing-implementation)
-- [Planned Usage (Not Currently Working)](#planned-usage-not-currently-working)
-- [Development Requirements](#development-requirements)
-- [Current Limitations](#current-limitations)
-- [Contributing](#contributing)
-
-DistributionGrid is designed for decentralized agent swarms where AI agents autonomously decide which agent to call next. **Currently this is a stub implementation** with only basic structure and data classes defined.
-
-The detailed evolving architecture for the future runtime is tracked in the internal steering docs under `md/`. This public page should be read as a statement of current shipped behavior first, not as the final approved node design.
+This page describes current shipped behavior only. The evolving full runtime spec lives in the internal steering docs under `md/`.
 
 ## Current Implementation Status
 
-⚠️ **DistributionGrid is currently incomplete** - only the class structure and data types exist.
+`DistributionGrid` is currently implemented through Phase 3 of its rollout:
 
-```kotlin
-class DistributionGrid : P2PInterface {
-    private var entryPipeline: Pipeline? = null
-    private var judgePipeline: Pipeline? = null  
-    private var workerPipelines: MutableList<Pipeline>? = null
-    private var availableAgents: List<AgentDescriptor>? = null
-    private var enableTracing = false
-    
-    // Only one implemented method:
-    fun setEntryPipeline(pipeline: Pipeline) {
-        // Validates pipeline has DistributionGridTask JSON schema
-        val requiredJsonOutputSchema = examplePromptFor(DistributionGridTask::class)
-        // ... validation logic
-        entryPipeline = pipeline
-    }
-}
-```
+- the contract-model layer exists for runtime, memory, durability, and protocol vocabulary
+- the `DistributionGrid` class now provides a non-executing configuration shell
+- the shell stores grid-level `P2PInterface` identity state
+- the shell supports router and worker binding
+- the shell supports local peer registration and external peer-descriptor registration
+- the shell synthesizes safe local defaults for descriptor, transport, and requirements when those values are omitted
+- the shell supports duplicate-peer rejection plus local peer removal and replacement helpers
+- the shell now validates required bindings, local ownership, duplicate registration state, ancestry cycles, and nested depth through `init()`
+- the shell now exposes child pipelines through `getPipelinesFromInterface()`
+- the shell now supports pause/resume flags, runtime-state clearing, and trace clearing
+- typed `distributionGridMetadata` now exists on `P2PDescriptor`
+- `DISTRIBUTION_GRID_*` trace vocabulary now exists for validation and lifecycle events
 
-## Defined Data Structures
+## What Is Still Missing
 
-### DistributionGridTask
-Task payload designed to pass between agents:
+`DistributionGrid` does not execute tasks yet.
 
-```kotlin
-@Serializable
-data class DistributionGridTask(
-    var isTaskComplete: Boolean,
-    var taskDescription: String,        // Original task, never changes
-    var actionTaken: String,           // What current agent did
-    var requestToNextAgent: String,    // Instructions for next agent
-    var nextAgentToCall: AgentRequest, // Which agent to call next
-    var pcpRequest: PcPRequest? = null,// Optional tool execution
-    var userContent: MultimodalContent? = null // Hidden from agents
-)
-```
+The following areas remain unimplemented:
 
-### DistributionGridJudgement
-Judge evaluation result:
+- local router-to-worker execution
+- remote peer handoff
+- registry discovery and leased membership
+- handshake, negotiated policy, and session enforcement
+- trace report and failure-analysis behavior
+- runtime durability behavior
+- memory-policy enforcement
+- DITL orchestration hooks
+- privacy, auth, and PCP mediation
 
-```kotlin
-data class DistributionGridJudgement(
-    var isTaskComplete: Boolean = false,
-    var previousAgent: String = "",
-    var previousAgentResponse: MultimodalContent = MultimodalContent()
-)
-```
+## Current Shell Surface
+
+The Phase 3 shell is still non-executing, but it now includes configuration, validation, and lifecycle methods.
+
+### Grid-level P2P identity
+
+- `setP2pDescription(...)`
+- `getP2pDescription()`
+- `setP2pTransport(...)`
+- `getP2pTransport()`
+- `setP2pRequirements(...)`
+- `getP2pRequirements()`
+- `setContainerObject(...)`
+- `getContainerObject()`
+
+### Node bindings and peer registration
+
+- `setRouter(...)`
+- `setWorker(...)`
+- `addPeer(...)`
+- `addPeerDescriptor(...)`
+- `removePeer(...)`
+- `replacePeer(...)`
+
+### Stored shell configuration
+
+- `setDiscoveryMode(...)`
+- `setRoutingPolicy(...)`
+- `setMemoryPolicy(...)`
+- `setDurableStore(...)`
+- `setMaxHops(...)`
+- `enableTracing(...)`
+- `disableTracing()`
+
+### Validation and lifecycle
+
+- `init()`
+- `pause()`
+- `resume()`
+- `isPaused()`
+- `canPause()`
+- `clearRuntimeState()`
+- `clearTrace()`
+
+### Readback helpers
+
+- `getRouterBindingKey()`
+- `getWorkerBindingKey()`
+- `getLocalPeerKeys()`
+- `getExternalPeerKeys()`
+- `getDiscoveryMode()`
+- `getRoutingPolicy()`
+- `getMemoryPolicy()`
+- `getDurableStore()`
+- `getMaxHops()`
+- `isTracingEnabled()`
+
+## Runtime Contract Files
+
+The current contract layer is split into four source files:
+
+- `src/main/kotlin/Pipeline/DistributionGridModels.kt`
+- `src/main/kotlin/Pipeline/DistributionGridMemoryModels.kt`
+- `src/main/kotlin/Pipeline/DistributionGridDurabilityModels.kt`
+- `src/main/kotlin/Pipeline/DistributionGridProtocolModels.kt`
+
+These files define the vocabulary for the future runtime, but they do not by themselves make the grid executable yet.
 
 ## Intended Architecture
 
-The planned design includes:
+The approved design target is:
 
-### Dispatcher Pipeline
-- Initial task assessment and first agent selection
-- Must have JSON output schema matching `DistributionGridTask`
+- one `DistributionGrid` object equals one node
+- every node has a router role and a local worker role
+- the router decides where work goes next
+- task exchange happens over normal TPipe P2P transports
+- grid-specific policy, memory, tracing, durability, and handshake behavior are layered on top of that P2P substrate
 
-### Worker Pipelines
-- Autonomous agents that process tasks and select next agents
-- Each must support `DistributionGridTask` input/output
+For the full future-facing spec, use:
 
-### Judge Pipeline
-- Validates task completion and routes incomplete tasks
-- Uses `DistributionGridJudgement` for decisions
+- `md/distributiongrid-design.md`
+- `md/distributiongrid-progress.md`
+- `md/distributiongrid-plan.md`
 
-## Schema Validation
+## Verification
 
-The only implemented feature validates pipeline schemas:
+The current shipped slice has focused coverage through:
 
-```kotlin
-fun setEntryPipeline(pipeline: Pipeline) {
-    val requiredJsonOutputSchema = examplePromptFor(DistributionGridTask::class)
-    
-    var hasSchema = false
-    for (pipe in pipeline.getPipes()) {
-        if (pipe.jsonOutput == requiredJsonOutputSchema) {
-            hasSchema = true
-            break
-        }
-    }
-    
-    if (!hasSchema) {
-        throw Exception("Entry pipeline must have a pipe with the following json output schema: $requiredJsonOutputSchema")
-    }
-    
-    entryPipeline = pipeline
-}
-```
-
-## Missing Implementation
-
-The following features are **not yet implemented**:
-
-- ❌ Task execution loop
-- ❌ Agent discovery and routing
-- ❌ Judge validation system
-- ❌ Token management and compression
-- ❌ Conversation history tracking
-- ❌ Worker pipeline management
-- ❌ P2P request handling
-- ❌ Tracing events
-- ❌ Error handling and recovery
-
-## Planned Usage (Not Currently Working)
-
-```kotlin
-// This is the intended API design, but not implemented:
-class SoftwareDevelopmentGrid {
-    private val grid = DistributionGrid()
-    
-    init {
-        // These methods don't exist yet:
-        // grid.setDispatcher(dispatcherPipeline)
-        // grid.addWorker("architect", architectPipeline)  
-        // grid.setJudge(judgePipeline)
-        // grid.setMaxIterations(50)
-        
-        // Only this works:
-        grid.setEntryPipeline(dispatcherPipeline)
-    }
-    
-    suspend fun developSoftware(requirements: String): SoftwareProject {
-        // This execute method doesn't exist:
-        // val result = grid.executeTask(requirements)
-        
-        throw NotImplementedError("DistributionGrid execution not implemented")
-    }
-}
-```
-
-## Development Requirements
-
-To complete DistributionGrid implementation:
-
-### Core Methods Needed
-```kotlin
-// Agent management
-fun addWorker(name: String, pipeline: Pipeline)
-fun setJudge(pipeline: Pipeline)
-fun setMaxIterations(max: Int)
-
-// Execution
-suspend fun executeTask(task: String): MultimodalContent
-suspend fun executeAgent(agentName: String, task: DistributionGridTask): MultimodalContent
-
-// Agent discovery
-fun updateAvailableAgents()
-fun getAgentContext(): String
-
-// Token management  
-fun manageTokens(history: ConverseHistory): ConverseHistory
-fun compressHistory(history: ConverseHistory, targetSize: Int): ConverseHistory
-```
-
-### P2P Integration
-```kotlin
-override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
-    // Route to appropriate agent based on request
-}
-
-override fun getPipelinesFromInterface(): List<Pipeline> {
-    // Return all registered pipelines
-}
-```
-
-### Tracing Support
-```kotlin
-fun enableTracing(config: TraceConfig)
-// Emit events like:
-// - DISTRIBUTION_GRID_START/END
-// - AGENT_DISPATCH/COMPLETION  
-// - TASK_ROUTING_DECISION
-// - JUDGE_VALIDATION
-// - TOKEN_COMPRESSION
-```
-
-## Current Limitations
-
-- **No execution capability** - only schema validation works
-- **No agent management** - cannot add workers or judges
-- **No P2P handling** - P2P methods are inherited but not implemented
-- **No tracing** - no trace events emitted
-- **No error handling** - no recovery mechanisms
+- `DistributionGridContractModelsTest`
+- `DistributionGridShellRegistrationTest`
+- `DistributionGridValidationLifecycleTest`
 
 ## Contributing
 
-If implementing DistributionGrid:
+If you are continuing `DistributionGrid` implementation, follow the internal phased rollout rather than adding features ad hoc:
 
-1. **Study existing containers** (Manifold, Splitter) for patterns
-2. **Implement agent management** methods
-3. **Create execution loop** with task routing
-4. **Add judge validation** system
-5. **Implement token management** and compression
-6. **Add comprehensive tracing** support
-7. **Handle P2P requests** properly
-8. **Create test scenarios** for distributed execution
-
-DistributionGrid represents an advanced distributed AI pattern that requires significant implementation work to become functional.
+1. Phase 4: local execution core
+2. Phase 5: explicit remote peer handoff
+3. Phase 6: registry discovery and membership
+4. later hardening, DSL, and public-doc sync
 
 ---
 

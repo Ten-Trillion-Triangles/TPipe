@@ -15,31 +15,82 @@ Steering-set ownership:
 
 ## Current Status
 
-- `DistributionGrid` remains a partial stub as of 2026-03-25.
-- The current implementation still contains only the stub-era structural models `DistributionGridTask` and `DistributionGridJudgement`.
-- `setEntryPipeline()` remains the only implemented runtime method and only performs schema validation plus assignment.
-- Node routing, worker execution, peer discovery, durability, tracing, privacy policy, auth policy, DITL orchestration hooks, and memory policy are not implemented yet.
+- `DistributionGrid` is now a validated, lifecycle-aware, non-executing Phase 3 harness as of 2026-03-25.
+- The old stub-era `setEntryPipeline()` surface and legacy task or judgement placeholder runtime are no longer the active implementation shape.
+- The contract layer from Phase 1 is in place:
+  - `DistributionGridModels.kt`
+  - `DistributionGridMemoryModels.kt`
+  - `DistributionGridDurabilityModels.kt`
+  - `DistributionGridProtocolModels.kt`
+- The Phase 2 configuration shell remains in place:
+  - grid-level `P2PInterface` identity storage
+  - router and worker binding APIs
+  - local peer and external peer-descriptor registration APIs
+  - safe synthesized local defaults for descriptor, transport, and requirements
+  - duplicate-peer rejection, local replacement or removal helpers, and tracing configuration storage
+- The Phase 3 validation and lifecycle slice is now in place:
+  - `init()` validation for router, worker, max hops, ownership, duplicate-key safety, and ancestry
+  - synthesized outward node identity plus typed `distributionGridMetadata`
+  - `getPipelinesFromInterface()` child-pipeline exposure for local bindings
+  - `pause()`, `resume()`, `isPaused()`, `canPause()`, `clearRuntimeState()`, and `clearTrace()`
+  - `DISTRIBUTION_GRID_*` trace vocabulary and validation/lifecycle trace emission
+- Focused regression coverage now exists for contract models, shell registration behavior, and validation/lifecycle behavior:
+  - `DistributionGridContractModelsTest.kt`
+  - `DistributionGridShellRegistrationTest.kt`
+  - `DistributionGridValidationLifecycleTest.kt`
+- `DistributionGrid` still does not perform task execution, peer discovery, remote handoff, handshake/session runtime behavior, durability behavior, privacy policy enforcement, auth policy enforcement, DITL orchestration hooks, or memory-policy behavior yet.
 - The steering-doc set now contains the approved full node-based architecture specification for the future runtime.
+- The implementation order has now been codified into explicit phases so runtime work can proceed without crossing phase boundaries accidentally.
+
+## Phase Status Board
+
+- `Phase 0: Steering Alignment` — complete
+- `Phase 1: Foundation Contracts` — complete
+- `Phase 2: Container Shell And Registration Semantics` — complete
+- `Phase 3: Validation, Shared Infra, And Lifecycle` — complete
+- `Phase 4: Local Execution Core` — not started
+- `Phase 5: Explicit Remote Peer Handoff` — not started
+- `Phase 6: Registry Discovery And Membership` — not started
+- `Phase 7: Cross-Cutting Runtime Hardening` — not started
+- `Phase 8: DSL, Defaults, Public Docs, And Final Coverage` — not started
+
+## Phase Evidence
+
+- `Phase 0`: the steering docs now define the implementation order, phase boundaries, exclusions, and acceptance targets.
+- `Phase 1`: the contract model files and focused contract-model tests now compile and pass without changing `DistributionGrid.kt`, `P2PDescriptor.kt`, or `TraceEventType.kt`.
+- `Phase 2`: the old stub shell has been replaced with the non-executing configuration shell, and focused shell-registration tests now pass without adding execution flow, descriptor metadata changes, or trace vocabulary changes.
+- `Phase 3`: `DistributionGrid` now validates its local graph, exposes child pipelines, carries typed grid metadata on descriptors, and passes focused validation/lifecycle tests without adding task execution.
 
 ## Plan At A Glance
 
-- [x] Create the compaction-safe steering set for `DistributionGrid`.
-- [x] Approve and record the full node-based architecture spec.
-- [ ] Implement the new model layer for envelopes, directives, policy, memory, and durability.
-- [ ] Replace the stub-era `DistributionGrid` API with router and worker node configuration.
-- [ ] Add init validation, hop-loop guards, tracing events, and pause/resume scaffolding.
-- [ ] Add DSL and Defaults-friendly runtime structure.
-- [ ] Add focused tests for routing, policy, tracing, privacy, memory, and durability behavior.
-- [ ] Synchronize public docs with the new runtime once implementation exists.
+- [x] Phase 0: Steering Alignment
+- [x] Phase 1: Foundation Contracts
+- [x] Phase 2: Container Shell And Registration Semantics
+- [x] Phase 3: Validation, Shared Infra, And Lifecycle
+- [ ] Phase 4: Local Execution Core
+- [ ] Phase 5: Explicit Remote Peer Handoff
+- [ ] Phase 6: Registry Discovery And Membership
+- [ ] Phase 7: Cross-Cutting Runtime Hardening
+- [ ] Phase 8: DSL, Defaults, Public Docs, And Final Coverage
 
 ## Completed Work
 
-- `DistributionGridTask` exists in the runtime source.
-- `DistributionGridJudgement` exists in the runtime source.
-- `setEntryPipeline()` validates the required JSON schema before storing the entry pipeline.
+- The Phase 1 contract layer now exists for envelopes, directives, policies, memory, durability, and protocol metadata.
+- The Phase 1 durable-store interface contract now exists as a backend-agnostic public contract.
+- Focused contract-model tests now cover serialization, defaults, protocol-version negotiation, and the durable-store interface shape.
+- The Phase 2 shell now exposes grid-level P2P identity storage and non-executing configuration APIs for router, worker, peer, discovery, routing, memory, durability, and tracing state.
+- The Phase 2 shell now synthesizes deterministic local defaults for router, worker, and peer bindings when explicit descriptor or requirements values are omitted.
+- The Phase 2 shell now enforces duplicate-peer rejection, supports local peer replacement and removal, and preserves one outward node identity at the grid level.
+- Focused shell-registration tests now cover binding defaults, rebinding behavior, peer key handling, external descriptor storage, and the non-executing Phase 2 boundary.
+- The Phase 3 shell now validates required bindings, local ownership, duplicate registration state, ancestry cycles, and nested depth before execution is allowed later.
+- The Phase 3 shell now synthesizes a safe outward node descriptor, transport, requirements, and typed `distributionGridMetadata` during `init()` when they are missing.
+- The Phase 3 shell now exposes child pipelines for router, worker, and local peers through `getPipelinesFromInterface()`.
+- The Phase 3 shell now supports pause/resume flags, runtime-state clearing, trace clearing, and validation/lifecycle trace emission without adding task execution.
+- Focused Phase 3 tests now cover init validation, foreign-owner rejection, cycle detection, nested-depth enforcement, lifecycle state, and trace clearing.
 - Internal docs already describe `DistributionGrid` as incomplete rather than production-ready.
 - The `DistributionGrid` steering set now has dedicated design, progress, and plan files.
 - The design doc now records the approved remote node architecture, the envelope-first public contract, and the TPipe standards integration surface for the future runtime.
+- The steering set now also records the approved phased implementation order and the acceptance boundary for each phase.
 
 ## Approved Decisions
 
@@ -68,6 +119,16 @@ Steering-set ownership:
 - Protocol compatibility requires major-version match and minor-version negotiation.
 - Policy negotiation is intersection-or-reject.
 - Successful handshakes create cached session records that later handoffs may reference.
+- Implementation order is locked to minimize churn: contracts, shell, validation and lifecycle, local execution, explicit remote handoff, registry discovery, hardening, then DSL and public-doc sync.
+- Shared infrastructure changes such as grid descriptor metadata and trace vocabulary must land only in the phase that actually requires them.
+- Explicit remote peer handoff must be implemented before registry discovery.
+- Phase 2 hard-replaces the stub shell rather than keeping a deprecated compatibility bridge.
+- Phase 2 includes `removePeer(...)` and `replacePeer(...)` as part of the shell surface.
+- Phase 2 remains a configuration shell only and intentionally defers `init()`, validation, lifecycle controls, and execution behavior to later phases.
+- Phase 3 uses `Reject Foreign` ownership validation rather than rebinding local components during `init()`.
+- Phase 3 adds shell-level pause/resume state now, but real execution checkpoints remain deferred to Phase 4.
+- Phase 3 adds an optional typed `distributionGridMetadata` field directly on `P2PDescriptor`.
+- Phase 3 synthesizes the grid node's outward identity when missing rather than requiring callers to supply it up front.
 
 ## Risks And Guardrails
 
@@ -89,15 +150,29 @@ Steering-set ownership:
 - Risk: the steering set can become stale if only code changes are tracked.
 - Guardrail: update this file whenever implementation truth or approved design decisions materially change.
 
+- Risk: implementation work may again jump ahead of the approved dependency order and create rework.
+- Guardrail: the phase board is now authoritative for what may be implemented next, and each phase has explicit exclusions in the design doc.
+
+- Risk: the shell could be mistaken for a usable runtime because the old stub placeholder has been replaced.
+- Guardrail: all docs and tests must continue to state clearly that even after Phase 3, execution, remote handoff, and registry behavior remain unimplemented.
+
 ## Verification Log
 
-- Reviewed `src/main/kotlin/Pipeline/DistributionGrid.kt` to confirm the currently implemented models and `setEntryPipeline()` behavior.
+- Reviewed `src/main/kotlin/Pipeline/DistributionGrid.kt` to confirm the current shell surface, non-executing boundary, and registration semantics.
 - Reviewed `src/main/kotlin/Pipeline/Manifold.kt` and `src/main/kotlin/Pipeline/Junction.kt` to align the grid with existing TPipe harness standards.
 - Reviewed `src/main/kotlin/P2P/P2PRegistry.kt`, `P2PDescriptor.kt`, `P2PRequest.kt`, and `P2PRequirements.kt` to ground the remote transport, auth, and request-template design.
 - Reviewed `src/main/kotlin/P2P/P2PHost.kt` and P2P docs to ground stdio hosting, descriptor transport semantics, and the current lack of built-in grid handshake support.
 - Reviewed `docs/core-concepts/developer-in-the-loop.md` and `docs/core-concepts/developer-in-the-loop-pipes.md` to ground the DITL surface.
 - Reviewed `docs/core-concepts/tracing-and-debugging.md` to ground the tracing and privacy surface.
 - Reviewed `docs/advanced-concepts/memory-introspection.md` and `docs/advanced-concepts/remote-memory.md` to ground optional memory integrations and durable-state expectations.
+- Ran `./gradlew compileKotlin compileTestKotlin` after landing the Phase 1 contract files.
+- Ran `./gradlew test --tests "com.TTT.Pipeline.DistributionGridContractModelsTest" -x :TPipe-Bedrock:test -x :TPipe-Defaults:test -x :TPipe-MCP:test -x :TPipe-Ollama:test -x :TPipe-TraceServer:test -x :TPipe-Tuner:test` to verify the contract-model test slice.
+- Reviewed `src/main/kotlin/Pipeline/DistributionGrid.kt` and `src/test/kotlin/Pipeline/DistributionGridShellRegistrationTest.kt` while implementing the Phase 2 shell and registration semantics.
+- Ran `./gradlew compileKotlin compileTestKotlin` after landing the Phase 2 shell.
+- Ran `./gradlew test --tests "com.TTT.Pipeline.DistributionGridShellRegistrationTest" -x :TPipe-Bedrock:test -x :TPipe-Defaults:test -x :TPipe-MCP:test -x :TPipe-Ollama:test -x :TPipe-TraceServer:test -x :TPipe-Tuner:test` to verify the Phase 2 shell-registration slice.
+- Reviewed `src/main/kotlin/Pipeline/DistributionGrid.kt`, `src/main/kotlin/P2P/P2PDescriptor.kt`, and `src/main/kotlin/Debug/TraceEventType.kt` while implementing the Phase 3 validation and shared-infra slice.
+- Ran `./gradlew compileKotlin compileTestKotlin` after landing the Phase 3 validation/lifecycle changes.
+- Ran `./gradlew test --tests "com.TTT.Pipeline.DistributionGridShellRegistrationTest" --tests "com.TTT.Pipeline.DistributionGridValidationLifecycleTest" -x :TPipe-Bedrock:test -x :TPipe-Defaults:test -x :TPipe-MCP:test -x :TPipe-Ollama:test -x :TPipe-TraceServer:test -x :TPipe-Tuner:test` to verify the Phase 2 and Phase 3 test slices together.
 
 Commands used during the architecture pass:
 
@@ -118,3 +193,8 @@ Commands used during the architecture pass:
 - 2026-03-25: `md/tpipe-context-starting-point.md` updated to point future sessions at the new steering set.
 - 2026-03-25: Full node-based `DistributionGrid` architecture spec approved and written into the steering set.
 - 2026-03-25: Registry discovery, node marking, handshake, and session protocol requirements were added to the approved design.
+- 2026-03-25: Accidental runtime prototype changes were rolled back so implementation can restart from the clean stub baseline in the intended order.
+- 2026-03-25: The steering docs were updated to codify the exact phased implementation order, phase exclusions, and acceptance targets.
+- 2026-03-25: Phase 1 landed the new contract model files and focused contract-model tests without changing the stub runtime shell or shared infrastructure.
+- 2026-03-25: Phase 2 replaced the stub shell with the non-executing configuration shell and added focused shell-registration tests.
+- 2026-03-25: Phase 3 added validation, lifecycle controls, child-pipeline exposure, typed grid metadata, and focused validation/lifecycle tests.
