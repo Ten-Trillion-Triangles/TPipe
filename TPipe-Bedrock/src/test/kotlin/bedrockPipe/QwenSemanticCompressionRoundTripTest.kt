@@ -20,11 +20,13 @@ import com.TTT.Util.buildSemanticDecompressionInstructions
 import com.TTT.Util.semanticCompress
 import com.TTT.Util.writeStringToFile
 import env.bedrockEnv
+import java.io.File
 import java.nio.file.Files
 import kotlin.io.path.deleteIfExists
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.assertTrue
 
 private const val QWEN_30B_MODEL_ID = "qwen.qwen3-coder-30b-a3b-v1:0"
 private const val QWEN_30B_MODEL_ARN = "arn:aws:bedrock:us-west-2::foundation-model/qwen.qwen3-coder-30b-a3b-v1:0"
@@ -61,10 +63,11 @@ class QwenSemanticCompressionRoundTripTest
 
         println("Semantic compression lengths: original=${originalPrompt.length} compressed=${compression.compressedText.length}")
 
-        val resultTraceDir = "${TPipeConfig.getTraceDir()}/Library/qwen-semantic-compression-round-trip"
-        val pipelineTracePath = "$resultTraceDir/pipeline.html"
-        val agentTracePath = "$resultTraceDir/agent.html"
-        val reasoningTracePath = "$resultTraceDir/reasoning.html"
+        val resultTraceDir = File(TPipeConfig.getTraceDir(), "Library/qwen-semantic-compression-round-trip")
+        val pipelineTracePath = File(resultTraceDir, "pipeline.html")
+        val pipelineJsonTracePath = File(resultTraceDir, "pipeline.json")
+        val agentTracePath = File(resultTraceDir, "agent.html")
+        val reasoningTracePath = File(resultTraceDir, "reasoning.html")
 
         bedrockEnv.resetInferenceConfig()
         bedrockEnv.setInferenceConfigFile(inferenceConfigPath.toFile())
@@ -139,6 +142,8 @@ class QwenSemanticCompressionRoundTripTest
             runBlocking(Dispatchers.IO)
             {
                 pipeline.init(initPipes = true)
+                qwenPipe.addTraceId(resolveTraceId(qwenPipe))
+                reasoningPipe.addTraceId(resolveTraceId(reasoningPipe))
                 val result = pipeline.execute(MultimodalContent(text = compressedPrompt))
                 println("Original prompt length=${originalPrompt.length}")
                 println("Compressed prompt length=${compressedPrompt.length}")
@@ -157,10 +162,12 @@ class QwenSemanticCompressionRoundTripTest
             try
             {
                 writeTraceArtifacts(
+                    traceDir = resultTraceDir,
                     pipeline = pipeline,
                     qwenPipe = qwenPipe,
                     reasoningPipe = reasoningPipe,
                     pipelineTracePath = pipelineTracePath,
+                    pipelineJsonTracePath = pipelineJsonTracePath,
                     agentTracePath = agentTracePath,
                     reasoningTracePath = reasoningTracePath
                 )
@@ -178,23 +185,37 @@ class QwenSemanticCompressionRoundTripTest
     }
 
     private fun writeTraceArtifacts(
+        traceDir: File,
         pipeline: Pipeline,
         qwenPipe: com.TTT.Pipe.Pipe,
         reasoningPipe: com.TTT.Pipe.Pipe,
-        pipelineTracePath: String,
-        agentTracePath: String,
-        reasoningTracePath: String
+        pipelineTracePath: File,
+        pipelineJsonTracePath: File,
+        agentTracePath: File,
+        reasoningTracePath: File
     )
     {
-        val pipelineTrace = PipeTracer.exportTrace(pipeline.getTraceId(), TraceFormat.HTML)
+        traceDir.mkdirs()
+
+        val pipelineHtmlTrace = PipeTracer.exportTrace(pipeline.getTraceId(), TraceFormat.HTML)
+        val pipelineJsonTrace = PipeTracer.exportTrace(pipeline.getTraceId(), TraceFormat.JSON)
         val agentTrace = PipeTracer.exportTrace(resolveTraceId(qwenPipe), TraceFormat.HTML)
         val reasoningTrace = PipeTracer.exportTrace(resolveTraceId(reasoningPipe), TraceFormat.HTML)
 
-        writeStringToFile(pipelineTracePath, pipelineTrace)
-        writeStringToFile(agentTracePath, agentTrace)
-        writeStringToFile(reasoningTracePath, reasoningTrace)
-        println("Saved trace artifacts: pipeline=${pipelineTracePath}, agent=${agentTracePath}, reasoning=${reasoningTracePath}")
-        println("Trace sizes: pipeline=${pipelineTrace.length}, agent=${agentTrace.length}, reasoning=${reasoningTrace.length}")
+        writeTraceFile(pipelineTracePath, pipelineHtmlTrace, "pipeline HTML")
+        writeTraceFile(pipelineJsonTracePath, pipelineJsonTrace, "pipeline JSON")
+        writeTraceFile(agentTracePath, agentTrace, "agent HTML")
+        writeTraceFile(reasoningTracePath, reasoningTrace, "reasoning HTML")
+
+        println("Saved trace artifacts under ${traceDir.absolutePath}")
+        println("Trace sizes: pipelineHtml=${pipelineHtmlTrace.length}, pipelineJson=${pipelineJsonTrace.length}, agent=${agentTrace.length}, reasoning=${reasoningTrace.length}")
+    }
+
+    private fun writeTraceFile(path: File, content: String, label: String)
+    {
+        writeStringToFile(path.absolutePath, content)
+        assertTrue(path.exists(), "$label trace file should exist at ${path.absolutePath}")
+        assertTrue(path.length() > 0, "$label trace file should not be empty at ${path.absolutePath}")
     }
 
     private fun resolveTraceId(pipe: com.TTT.Pipe.Pipe): String

@@ -16,6 +16,8 @@
 
 DistributionGrid is designed for decentralized agent swarms where AI agents autonomously decide which agent to call next. **Currently this is a stub implementation** with only basic structure and data classes defined.
 
+The detailed evolving architecture for the future runtime is tracked in the internal steering docs under `md/`. This public page should be read as a statement of current shipped behavior first, not as the final approved node design.
+
 ## Current Implementation Status
 
 ⚠️ **DistributionGrid is currently incomplete** - only the class structure and data types exist.

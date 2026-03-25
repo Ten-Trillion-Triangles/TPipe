@@ -236,6 +236,12 @@ Current source status:
 
 Treat this as a structural placeholder, not a finished orchestration runtime.
 
+Keep these DistributionGrid records handy:
+
+- [`md/distributiongrid-design.md`](./distributiongrid-design.md) for the long-lived design intent and guardrails
+- [`md/distributiongrid-progress.md`](./distributiongrid-progress.md) for the living implementation state and evidence
+- [`md/distributiongrid-plan.md`](./distributiongrid-plan.md) for the single current task and exact short-horizon progress
+
 ### Junction
 
 `Junction` is now a real harness.

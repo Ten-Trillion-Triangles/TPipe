@@ -86,7 +86,14 @@ fun buildSemanticDecompressionInstructions(): String
 private data class ProperNounCandidate(
     val phrase: String,
     var count: Int = 0,
-    val firstIndex: Int
+    val firstIndex: Int,
+    var seenNotAtSentenceStart: Boolean = false
+)
+
+private data class TokenData(
+    val text: String,
+    val index: Int,
+    val isSentenceStart: Boolean
 )
 
 private data class QuoteSpan(
@@ -95,273 +102,146 @@ private data class QuoteSpan(
 )
 
 private val DEFAULT_STOP_WORDS = setOf(
-    "a",
-    "about",
-    "after",
-    "again",
-    "against",
-    "all",
-    "almost",
-    "along",
-    "also",
-    "although",
-    "always",
-    "among",
-    "an",
-    "and",
-    "any",
-    "are",
-    "around",
-    "as",
-    "at",
-    "be",
-    "because",
-    "been",
-    "before",
-    "being",
-    "below",
-    "between",
-    "both",
-    "but",
-    "by",
-    "can",
-    "could",
-    "did",
-    "do",
-    "does",
-    "doing",
-    "down",
-    "during",
-    "each",
-    "either",
-    "enough",
-    "every",
-    "few",
-    "for",
-    "from",
-    "further",
-    "get",
-    "got",
-    "had",
-    "has",
-    "have",
-    "having",
-    "he",
-    "her",
-    "here",
-    "hers",
-    "him",
-    "himself",
-    "his",
-    "how",
-    "i",
-    "if",
-    "in",
-    "into",
-    "is",
-    "it",
-    "its",
-    "just",
-    "kind",
-    "less",
-    "like",
-    "many",
-    "may",
-    "me",
-    "more",
-    "most",
-    "much",
-    "must",
-    "my",
-    "myself",
-    "no",
-    "nor",
-    "not",
-    "of",
-    "off",
-    "on",
-    "once",
-    "one",
-    "only",
-    "or",
-    "other",
-    "our",
-    "ours",
-    "out",
-    "over",
-    "own",
-    "perhaps",
-    "please",
-    "really",
-    "same",
-    "she",
-    "should",
-    "so",
-    "some",
-    "still",
-    "such",
-    "than",
-    "that",
-    "the",
-    "their",
-    "theirs",
-    "them",
-    "themselves",
-    "then",
-    "there",
-    "these",
-    "they",
-    "this",
-    "those",
-    "through",
-    "to",
-    "too",
-    "under",
-    "until",
-    "up",
-    "very",
-    "was",
-    "we",
-    "were",
-    "what",
-    "when",
-    "where",
-    "which",
-    "while",
-    "who",
-    "whom",
-    "why",
-    "will",
-    "with",
-    "within",
-    "without",
-    "would",
-    "you",
-    "your",
-    "yours",
-    "yourself",
-    "yourselves",
-    "actually",
-    "basically",
-    "clearly",
-    "definitely",
-    "exactly",
-    "factually",
-    "generally",
-    "honestly",
-    "literally",
-    "maybe",
-    "obviously",
-    "okay",
-    "ok",
-    "quite",
-    "rather",
-    "simply",
-    "somewhat",
-    "basically",
-    "yeah",
-    "yes",
-    "nope",
-    "nah",
-    "well",
-    "let",
-    "lets"
+    "a", "aboard", "about", "above", "across", "after", "afterwards", "again", "against", "albeit",
+    "all", "almost", "alone", "along", "already", "also", "although", "always", "am", "amid",
+    "amidst", "among", "amongst", "an", "and", "another", "any", "anybody", "anyhow", "anyone",
+    "anything", "anyway", "anywhere", "are", "around", "as", "at", "atop", "barring", "be",
+    "because", "been", "before", "beforehand", "behind", "being", "below", "beneath", "beside", "besides",
+    "between", "beyond", "both", "but", "by", "can", "cannot", "circa", "concerning", "considering",
+    "could", "dare", "despite", "did", "do", "does", "done", "down", "during", "each",
+    "either", "else", "elsewhere", "enough", "even", "ever", "every", "everybody", "everyone", "everything",
+    "everywhere", "except", "excluding", "few", "first", "for", "former", "from", "further", "furthermore",
+    "given", "had", "has", "have", "he", "hence", "her", "here", "hereabouts", "hereafter",
+    "hereby", "herein", "hereinafter", "hereof", "hereto", "heretofore", "hereunder", "hereupon", "herewith", "hers",
+    "herself", "him", "himself", "his", "how", "however", "i", "if", "in", "including",
+    "indeed", "inside", "instead", "into", "is", "it", "its", "itself", "latter", "least",
+    "less", "lest", "like", "many", "may", "maybe", "me", "meanwhile", "might", "mine",
+    "minus", "more", "moreover", "most", "mostly", "much", "must", "my", "myself", "namely",
+    "near", "need", "neither", "never", "nevertheless", "no", "nobody", "none", "nonetheless", "nor",
+    "not", "nothing", "notwithstanding", "now", "nowhere", "of", "off", "often", "oftentimes", "on",
+    "once", "one", "oneself", "only", "onto", "or", "other", "others", "otherwise", "ought",
+    "our", "ours", "ourselves", "out", "outside", "over", "pending", "per", "perhaps", "plus",
+    "rather", "re", "regarding", "same", "sans", "second", "several", "shall", "she", "should",
+    "since", "so", "some", "somebody", "somehow", "someone", "something", "sometime", "sometimes", "somewhat",
+    "somewhere", "still", "such", "than", "that", "the", "their", "theirs", "them", "themselves",
+    "then", "thence", "there", "thereabouts", "thereafter", "thereby", "therefore", "therein", "thereof", "thereon",
+    "thereupon", "these", "they", "third", "this", "those", "though", "through", "throughout", "thru",
+    "thus", "till", "to", "together", "too", "toward", "towards", "under", "underneath", "unless",
+    "unlike", "until", "up", "upon", "us", "used", "versus", "very", "via", "was",
+    "we", "well", "were", "what", "whatever", "whatsoever", "when", "whence", "whenever", "where",
+    "whereafter", "whereas", "whereby", "wherein", "whereof", "whereupon", "wherever", "whether", "which",
+    "whichever", "while", "whither", "who", "whoever", "whole", "whom", "whomever", "whose", "why",
+    "whyever", "will", "with", "within", "without", "would", "yes", "yet", "you", "your",
+    "yours", "yourself", "yourselves"
+)
+
+private val PRONOUNS = setOf(
+    "i", "me", "my", "mine", "myself",
+    "we", "us", "our", "ours", "ourselves",
+    "you", "your", "yours", "yourself", "yourselves",
+    "he", "him", "his", "himself",
+    "she", "her", "hers", "herself",
+    "it", "its", "itself",
+    "they", "them", "their", "theirs", "themselves",
+    "this", "that", "these", "those",
+    "who", "whom", "whose", "which", "what", "where", "when", "why", "how",
+    "some", "any", "no", "every", "all", "both", "each", "few", "many", "most", "other", "somebody", "someone", "something",
+    "anybody", "anyone", "anything", "nobody", "none", "nothing", "everybody", "everyone", "everything"
 )
 
 private val DEFAULT_COMMON_PHRASES = listOf(
-    "in order to",
-    "at the end of the day",
-    "as a matter of fact",
-    "in fact",
-    "for the purpose of",
-    "due to the fact that",
-    "in the event that",
-    "with respect to",
-    "in addition to",
-    "as well as",
-    "in spite of",
-    "because of",
-    "in regard to",
-    "in relation to",
-    "in the case of",
-    "by means of",
-    "based on the fact that",
-    "for example",
-    "for instance",
-    "for the most part",
-    "in other words",
-    "on the other hand",
-    "at this point in time",
-    "as soon as possible",
-    "if at all possible",
-    "in the process of",
-    "taking into account",
-    "in light of",
-    "with the exception of",
-    "as a result of",
-    "in comparison with",
-    "in order that",
-    "in accordance with",
-    "in terms of",
-    "in the interest of",
-    "for the sake of",
-    "kind of",
-    "sort of",
-    "you know",
-    "in the same way",
-    "in a way",
-    "in summary",
-    "to be honest",
-    "to put it simply",
-    "if possible",
-    "as needed",
-    "as required",
-    "as appropriate",
-    "as requested",
-    "more or less",
-    "the fact that",
-    "the reason why",
-    "in some cases",
-    "at least",
-    "at most"
+    "a piece of cake", "break a leg", "hit the nail on the head", "cost an arm and a leg", "beat around the bush",
+    "bite the bullet", "call it a day", "cut corners", "get out of hand", "hang in there",
+    "in a nutshell", "it's not rocket science", "kill two birds with one stone", "let the cat out of the bag", "miss the boat",
+    "no pain no gain", "on the ball", "once in a blue moon", "pull someone's leg", "rain on someone's parade",
+    "speak of the devil", "the ball is in your court", "the best of both worlds", "the last straw", "through thick and thin",
+    "under the weather", "wrap your head around something", "you can say that again", "a blessing in disguise", "a dime a dozen",
+    "a drop in the bucket", "a fish out of water", "a slap on the wrist", "a taste of your own medicine", "add fuel to the fire",
+    "against the clock", "all ears", "all in the same boat", "at the drop of a hat", "back to the drawing board",
+    "bark up the wrong tree", "be glad to see the back of", "beat someone to the punch", "beggars can't be choosers", "behind someone's back",
+    "below the belt", "bend over backwards", "better late than never", "bite off more than you can chew", "blow off steam",
+    "break the ice", "burn the midnight oil", "burn your bridges", "bury the hatchet", "by the skin of your teeth",
+    "call someone's bluff", "chomp at the bit", "clear the air", "come rain or shine", "cool as a cucumber",
+    "crack someone up", "cross that bridge when you come to it", "cry over spilled milk", "curiosity killed the cat", "cut to the chase",
+    "dig deep", "don't count your chickens before they hatch", "don't give up your day job", "don't put all your eggs in one basket", "down to earth",
+    "drive someone up the wall", "easier said than done", "every cloud has a silver lining", "face the music", "find your feet",
+    "fit as a fiddle", "get a taste of your own medicine", "get cold feet", "get something off your chest", "get your act together",
+    "give someone the benefit of the doubt", "give someone the cold shoulder", "go back to the drawing board", "go down in flames", "go the extra mile",
+    "good things come to those who wait", "hear it on the grapevine", "hit the sack", "hit the roof", "in the heat of the moment",
+    "it takes two to tango", "jump on the bandwagon", "jump the gun", "keep an eye on", "keep your chin up",
+    "kick the bucket", "kill time", "knock on wood", "know the ropes", "leave no stone unturned",
+    "let sleeping dogs lie", "let someone off the hook", "look before you leap", "lose your touch", "make a long story short",
+    "make ends meet", "miss the mark", "no ifs ands or buts", "off the top of my head", "on cloud nine",
+    "on thin ice", "out of the blue", "out of the frying pan and into the fire", "over the moon", "pass with flying colors",
+    "pay through the nose", "play devil's advocate", "play it by ear", "pull yourself together", "put something on ice",
+    "put the cart before the horse", "put your foot down", "read between the lines", "ring a bell", "rise and shine",
+    "rub salt in the wound", "rule of thumb", "run like the wind", "see eye to eye", "shoot from the hip",
+    "sick and tired", "sit tight", "sleep on it", "spill the beans", "start from scratch", "stay in touch",
+    "steal someone's thunder", "stick to your guns", "take a rain check", "take it with a grain of salt", "the early bird gets the worm",
+    "the elephant in the room", "the whole nine yards", "there's no place like home", "throw in the towel", "tickled pink",
+    "time flies", "up in arms", "wake up on the wrong side of the bed", "waste not want not", "watch your mouth",
+    "water under the bridge", "wear your heart on your sleeve", "weigh your words", "when pigs fly", "white lie",
+    "wipe the slate clean", "with flying colors", "worth its weight in gold", "you can't judge a book by its cover", "your guess is as good as mine",
+    "at the end of the day", "for the time being", "in light of the fact that", "with all due respect", "as a matter of fact",
+    "all things considered", "by and large", "for the most part", "in a manner of speaking", "last but not least",
+    "more or less", "sooner or later", "time and time again", "first and foremost", "odds and ends",
+    "part and parcel", "safe and sound", "null and void", "bits and pieces", "peace and quiet",
+    "leaps and bounds", "prim and proper", "spick and span", "tried and true", "short and sweet",
+    "high and dry", "now or never", "do or die", "sink or swim", "make or break",
+    "the one and only", "the one and the same", "in this day and age", "from time to time", "from head to toe",
+    "from start to finish", "from top to bottom", "from beginning to end", "through and through", "day in and day out",
+    "year in and year out", "here and there", "now and then", "little by little", "step by step",
+    "word for word", "time after time", "over and over again", "again and again", "on and on",
+    "so on and so forth", "to and fro", "back and forth", "up and down", "in and out",
+    "round and round", "by the way", "in other words", "on the other hand", "for example",
+    "as a result", "in addition", "in conclusion", "in summary", "in fact",
+    "of course", "as well as", "such as", "due to", "because of",
+    "in order to", "with regard to", "according to", "based on", "in case of",
+    "in spite of", "instead of", "looking forward to", "as far as", "as long as",
+    "as soon as", "as if", "as though", "even if", "even though",
+    "so that", "provided that", "in the event that", "the fact that", "the point is",
+    "the thing is", "what I mean is", "having said that", "that being said", "be that as it may",
+    "for all intents and purposes", "in the final analysis", "when it comes to", "in terms of", "with respect to",
+    "a lot of", "a couple of", "a number of", "a great deal of", "a variety of",
+    "a means of", "a source of", "a form of", "a type of", "a kind of",
+    "an example of", "the rest of", "the majority of", "the purpose of", "the importance of",
+    "the impact of", "the role of", "the process of", "the development of", "the use of",
+    "the study of", "the concept of", "the idea of", "the theory of", "the principle of",
+    "it is important to", "it is necessary to", "it is possible to", "it is likely that", "it seems that",
+    "it appears that", "there is no doubt that", "there is a need to", "there is a way to", "research has shown",
+    "studies have found", "it has been suggested", "it has been argued", "it can be seen", "as can be seen",
+    "as shown in", "as demonstrated by", "in the context of", "in the field of", "in the area of",
+    "in the process of", "in the form of", "in the case of", "on the basis of", "on the part of",
+    "at the level of", "at the time of", "for the purpose of", "with the exception of", "without a doubt",
+    "without question", "without a second thought", "in no time", "in the meantime", "in the long run",
+    "in the short term", "for good", "for sure", "for real", "for free",
+    "for sale", "for rent", "for hire", "for example", "for instance",
+    "from now on", "from then on", "from here on out", "up to date", "up to you",
+    "up to a point", "out of date", "out of order", "out of context", "out of control",
+    "out of the question", "by accident", "by chance", "by hand", "by heart",
+    "by mistake", "by myself", "by no means", "by the book", "on purpose",
+    "on time", "on schedule", "on average", "on fire", "on sale",
+    "on display", "on hold", "on board", "on duty", "on vacation",
+    "on the phone", "on the internet", "on the one hand", "on the other hand", "at first",
+    "at last", "at least", "at most", "at best", "at worst", "at large", "at length", "at once",
+    "at present", "at random", "at risk", "at stake", "at work", "in advance", "in charge",
+    "in common", "in detail", "in effect", "in full", "in general", "in particular", "in person",
+    "in place", "in private", "in public", "in reality", "in return", "in stock", "in style",
+    "in theory", "in trouble", "in turn", "in use", "in vain", "in view of",
+    "with care", "with ease", "with luck", "with pleasure", "with respect",
+    "with success", "without delay", "without fail", "without warning", "all of a sudden",
+    "as a whole", "at all costs", "by all means", "for the best", "in the end",
+    "of all time", "to some extent", "to a certain extent", "to a great extent", "to the full",
+    "to the point", "under control", "under pressure", "under the circumstances", "within reason",
+    "without exception", "and so on", "and so forth", "and the like", "and whatnot", "et cetera"
 )
 
 private val PROPER_NOUN_CONNECTORS = setOf(
-    "of",
-    "de",
-    "van",
-    "von",
-    "la",
-    "le",
-    "di",
-    "da",
-    "del",
-    "du",
-    "dos",
-    "das",
-    "al",
-    "bin",
-    "binti",
-    "ben",
-    "y",
-    "e",
+    "of", "de", "van", "von", "la", "le", "di", "da", "del", "du", "dos", "das", "al", "bin", "binti", "ben", "y", "e"
 )
 
 private val COMMON_CAPITALIZED_SENTENCE_WORDS = setOf(
-    "Please",
-    "Thanks",
-    "Thank",
-    "Yes",
-    "No",
-    "Well",
-    "Okay",
-    "Ok",
-    "Maybe",
-    "Actually",
-    "Basically",
-    "Really",
-    "Simply",
-    "Literally"
+    "Please", "Thanks", "Thank", "Yes", "No", "Well", "Okay", "Ok", "Maybe", "Actually", "Basically", "Really", "Simply", "Literally"
 )
 
 private val TOKEN_PATTERN = Regex("[A-Za-z0-9]+")
@@ -507,9 +387,10 @@ fun semanticCompress(
         SemanticCompressionLexicon.contractions
     )
 
-    val stopWords = DEFAULT_STOP_WORDS +
+    // Subtract ALL pronouns to preserve them in the text as requested.
+    val stopWords = (DEFAULT_STOP_WORDS +
         SemanticCompressionLexicon.stopWords +
-        settings.additionalStopWords
+        settings.additionalStopWords.map { it.lowercase() }) - PRONOUNS
     val allPhrases = DEFAULT_COMMON_PHRASES +
         SemanticCompressionLexicon.commonPhrases +
         settings.additionalCommonPhrases
@@ -578,7 +459,7 @@ private fun maskQuotedSpans(
 
     for(character in input)
     {
-        if(character == '"')
+        if(character == '"' || character == '“' || character == '”')
         {
             currentQuote.append(character)
 
@@ -676,7 +557,8 @@ private fun normalizeAscii(input: String): String
 
 private fun removePunctuation(input: String): String
 {
-    return input.replace(Regex("[^A-Za-z0-9:\\s]"), " ")
+    // Preserve quotation marks and colons as requested.
+    return input.replace(Regex("[^A-Za-z0-9:\"“”\\s]"), " ")
 }
 
 private fun collapseWhitespace(input: String): String
@@ -772,27 +654,38 @@ private fun collectProperNounCandidates(
 ): List<ProperNounCandidate>
 {
     val candidates = linkedMapOf<String, ProperNounCandidate>()
-    val tokenMatches = TOKEN_PATTERN.findAll(input)
-        .map { match -> match.value to match.range.first }
-        .toList()
+    val tokenMatches = TOKEN_PATTERN.findAll(input).toList()
     val connectorSet = connectors.map { it.lowercase() }.toSet()
+    
+    val tokens = tokenMatches.mapIndexed { i, match ->
+        val isSentenceStart = if (i == 0) true else {
+            val prevMatch = tokenMatches[i - 1]
+            val gap = input.substring(prevMatch.range.last + 1, match.range.first)
+            gap.contains(Regex("[.?!\\n]"))
+        }
+        TokenData(match.value, match.range.first, isSentenceStart)
+    }
+
     var index = 0
 
-    while(index < tokenMatches.size)
+    while(index < tokens.size)
     {
-        val (token, _) = tokenMatches[index]
+        val tokenData = tokens[index]
 
-        if(!isProperNounToken(token, connectorSet))
+        if(!isProperNounToken(tokenData.text, connectorSet))
         {
             index++
             continue
         }
 
-        val runTokens = mutableListOf<Pair<String, Int>>()
+        val runTokens = mutableListOf<TokenData>()
 
-        while(index < tokenMatches.size && isProperNounToken(tokenMatches[index].first, connectorSet))
+        while(index < tokens.size && isProperNounToken(tokens[index].text, connectorSet))
         {
-            runTokens.add(tokenMatches[index])
+            if (runTokens.isNotEmpty() && tokens[index].isSentenceStart) {
+                break
+            }
+            runTokens.add(tokens[index])
             index++
         }
 
@@ -808,14 +701,12 @@ private fun collectProperNounCandidates(
     return candidates.values
         .filter { candidate ->
             val phrase = candidate.phrase
-            val words = phrase.split(" ").filter { it.isNotBlank() }
+            val lowerPhrase = phrase.lowercase()
             val repeatedEnough = candidate.count >= properNounReplacementThreshold(phrase)
-            val looksLikeName = words.size > 1 ||
-                words.any { it.firstOrNull()?.isUpperCase() == true } ||
-                words.any { it.any { char -> char.isDigit() } } ||
-                phrase !in commonCapitalizedSentenceWords
-
-            repeatedEnough && looksLikeName
+            val isValidProperNoun = candidate.seenNotAtSentenceStart
+            repeatedEnough && isValidProperNoun && 
+                phrase !in commonCapitalizedSentenceWords &&
+                lowerPhrase !in PRONOUNS
         }
         .sortedWith(
             compareByDescending<ProperNounCandidate> { it.count }
@@ -825,15 +716,30 @@ private fun collectProperNounCandidates(
 }
 
 private fun collectProperNounRunCandidates(
-    runTokens: List<Pair<String, Int>>,
+    runTokens: List<TokenData>,
     candidates: MutableMap<String, ProperNounCandidate>,
     stopWords: Set<String>,
     commonCapitalizedSentenceWords: Set<String>,
     connectorSet: Set<String>
 )
 {
-    if(runTokens.size < 2)
+    if(runTokens.isEmpty())
     {
+        return
+    }
+
+    if(runTokens.size == 1)
+    {
+        val remaining = trimConnectorEdges(runTokens, connectorSet)
+        if (remaining.isNotEmpty()) {
+            registerProperNounCandidate(
+                unitTokens = remaining,
+                repeatCount = 1,
+                candidates = candidates,
+                stopWords = stopWords,
+                commonCapitalizedSentenceWords = commonCapitalizedSentenceWords
+            )
+        }
         return
     }
 
@@ -881,19 +787,19 @@ private fun collectProperNounRunCandidates(
 }
 
 private fun registerProperNounCandidate(
-    unitTokens: List<Pair<String, Int>>,
+    unitTokens: List<TokenData>,
     repeatCount: Int,
     candidates: MutableMap<String, ProperNounCandidate>,
     stopWords: Set<String>,
     commonCapitalizedSentenceWords: Set<String>
 )
 {
-    if(unitTokens.size < 2)
+    if(unitTokens.isEmpty())
     {
         return
     }
 
-    val phrase = collapseWhitespace(unitTokens.joinToString(" ") { it.first })
+    val phrase = collapseWhitespace(unitTokens.joinToString(" ") { it.text })
     val lowerPhrase = phrase.lowercase()
 
     if(phrase.isBlank() || phrase.length < 2)
@@ -912,32 +818,35 @@ private fun registerProperNounCandidate(
     }
 
     val count = repeatCount.coerceAtLeast(1)
-    val firstIndex = unitTokens.first().second
+    val firstIndex = unitTokens.first().index
+    val isSentenceStart = unitTokens.first().isSentenceStart
 
     candidates[phrase] = candidates[phrase]?.let { existing ->
         existing.count += count
+        if(!isSentenceStart) existing.seenNotAtSentenceStart = true
         existing
     } ?: ProperNounCandidate(
         phrase = phrase,
         count = count,
-        firstIndex = firstIndex
+        firstIndex = firstIndex,
+        seenNotAtSentenceStart = !isSentenceStart
     )
 }
 
 private fun trimConnectorEdges(
-    tokens: List<Pair<String, Int>>,
+    tokens: List<TokenData>,
     connectorSet: Set<String>
-): List<Pair<String, Int>>
+): List<TokenData>
 {
     var start = 0
     var end = tokens.size
 
-    while(start < end && tokens[start].first.lowercase() in connectorSet)
+    while(start < end && tokens[start].text.lowercase() in connectorSet)
     {
         start++
     }
 
-    while(end > start && tokens[end - 1].first.lowercase() in connectorSet)
+    while(end > start && tokens[end - 1].text.lowercase() in connectorSet)
     {
         end--
     }
@@ -946,10 +855,10 @@ private fun trimConnectorEdges(
 }
 
 private fun findRepeatedPrefix(
-    tokens: List<Pair<String, Int>>
+    tokens: List<TokenData>
 ): Pair<Int, Int>?
 {
-    val values = tokens.map { it.first }
+    val values = tokens.map { it.text }
 
     for(unitSize in 2..(values.size / 2))
     {
@@ -983,8 +892,7 @@ private fun isProperNounToken(
 {
     val lower = token.lowercase()
     return lower in connectorSet ||
-        token.firstOrNull()?.isUpperCase() == true ||
-        token.any { it.isDigit() }
+        token.firstOrNull()?.isUpperCase() == true
 }
 
 private fun toLegendCode(index: Int): String
