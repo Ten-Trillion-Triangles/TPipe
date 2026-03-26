@@ -226,7 +226,7 @@ Good fit:
 
 ### DistributionGrid
 
-`DistributionGrid` is now in its validated, local-executing harness stage.
+`DistributionGrid` is now in its explicit-peer remote-capable harness stage.
 
 Current source status:
 
@@ -234,7 +234,8 @@ Current source status:
 - the Phase 2 shell supports grid-level P2P identity plus router, worker, local peer, and external peer-descriptor registration
 - the Phase 3 slice now adds `init()` validation, ancestry and nested-depth safety, child-pipeline exposure, lifecycle flags, typed grid descriptor metadata, and grid trace vocabulary
 - the Phase 4 slice now adds local `execute(...)`, `executeLocal(...)`, `executeP2PRequest(...)`, local router-to-worker execution, local outcome or failure mapping, and grid-level DITL hook registration
-- remote handoff, handshake or session runtime behavior, and registry discovery are still unimplemented
+- the Phase 5 slice now adds explicit-peer remote handoff, serialized grid RPC over the normal P2P boundary, mandatory handshake, and in-memory session reuse
+- registry discovery, leased membership, and cross-cutting hardening are still unimplemented
 
 Treat this as a partially built harness, not a finished orchestration runtime.
 

@@ -1,7 +1,7 @@
 # DistributionGrid Design
 
 Date: 2026-03-25
-Last Updated: 2026-03-25
+Last Updated: 2026-03-26
 
 ## Purpose
 
@@ -11,7 +11,7 @@ Use this file for stable architecture and interface decisions. Use [`md/distribu
 
 ## Current Implementation Boundary
 
-`DistributionGrid` is no longer a pure stub in the current working tree, but it is still only a local-executing harness.
+`DistributionGrid` is no longer a pure stub in the current working tree, but it is still only an explicit-peer remote-capable harness.
 
 Verified shipped behavior:
 
@@ -24,24 +24,34 @@ Verified shipped behavior:
 - the shell now validates required bindings, local ownership, duplicate registration state, ancestry cycles, and nested depth through `init()`
 - the shell now exposes child pipelines through `getPipelinesFromInterface()`
 - the shell now supports pause/resume flags, runtime-state clearing, and trace clearing
-- the shell now executes a local-only router-to-worker path through `execute(...)`, `executeLocal(...)`, and inbound `executeP2PRequest(...)`
+- the shell now executes a local router-to-worker path through `execute(...)`, `executeLocal(...)`, and inbound `executeP2PRequest(...)`
 - the shell now records local hop, outcome, and failure metadata and preserves normal TPipe content success or failure flags
 - the shell now exposes public grid-level DITL hook registration for local route, local-worker, failure, and outcome-transformation stages
 - typed `distributionGridMetadata` now exists on `P2PDescriptor`
 - `DISTRIBUTION_GRID_*` trace vocabulary now exists for validation, lifecycle, and local execution phases
-- focused tests exist for contract models, shell registration semantics, validation/lifecycle behavior, and local execution behavior
+- explicit remote peer handoff now works for configured external peer descriptors
+- explicitly framed serialized grid RPC messages now ride over the normal P2P request and response boundary
+- mandatory first-contact handshake and in-memory session reuse now exist for explicit peers
+- negotiated session policy is now authoritative for outbound and inbound remote task execution
+- cached explicit-peer sessions are now reused only when their negotiated policy still satisfies the current task request
+- widened handshake acknowledgements are now rejected before session caching or task handoff
+- inbound remote envelopes now use the caller's return address as the recorded sender transport
+- peer-authored handshake rejection details are preserved instead of being replaced by a generic session failure
+- inbound remote task handoff now maps back through the same local execution core in single-node mode
+- peer-dispatch and peer-response hooks now run on the explicit remote path
+- focused tests exist for contract models, shell registration semantics, validation/lifecycle behavior, local execution behavior, and explicit remote handoff behavior
 
 Verified missing behavior:
 
 - no node router implementation
 - no node worker implementation
 - no peer discovery
-- no P2P routing logic
-- no remote peer handoff
-- no handshake or session runtime behavior
+- no registry-driven P2P routing logic
+- no registry discovery
+- no leased membership behavior
 - no runtime durability behavior
 - no runtime memory-policy behavior
-- no remote DITL hook invocation for peer dispatch, peer response, or outbound memory shaping
+- no outbound-memory hook invocation or memory-envelope shaping
 
 This file records the intended architecture. It must not imply that the runtime below already exists.
 
@@ -707,6 +717,11 @@ It must include:
 - protocol version
 - optional session reference
 - typed payload
+
+Framed RPC traffic is fail-closed: if a prompt carries the grid RPC prefix but the payload cannot be deserialized,
+the request must be rejected as protocol traffic instead of falling through to ordinary execution.
+Handshake acknowledgements must also echo the session identity carried by the RPC wrapper before the sender caches
+the negotiated session record.
 
 ### Legacy stub models
 

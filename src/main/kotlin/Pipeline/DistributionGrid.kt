@@ -11,6 +11,7 @@ import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PError
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRejection
+import com.TTT.P2P.P2PRegistry
 import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PResponse
@@ -21,7 +22,9 @@ import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.PipeError
 import com.TTT.Pipe.hasError
 import com.TTT.PipeContextProtocol.Transport
+import com.TTT.Util.deserialize
 import com.TTT.Util.deepCopy
+import com.TTT.Util.serialize
 import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.UUID
@@ -69,6 +72,12 @@ class DistributionGrid : P2PInterface
         private const val DIRECTIVE_METADATA_KEY = "distributionGridDirective"
         private const val OUTCOME_METADATA_KEY = "distributionGridOutcome"
         private const val FAILURE_METADATA_KEY = "distributionGridFailure"
+        private const val SINGLE_NODE_MODE_ATTRIBUTE = "distributionGridSingleNodeMode"
+        private const val GRID_RPC_FRAME_PREFIX = "TPipe-DistributionGrid-RPC::1"
+        private const val HANDSHAKE_PAYLOAD_TYPE = "DistributionGridHandshakeRequest"
+        private const val HANDSHAKE_RESPONSE_PAYLOAD_TYPE = "DistributionGridHandshakeResponse"
+        private const val ENVELOPE_PAYLOAD_TYPE = "DistributionGridEnvelope"
+        private const val FAILURE_PAYLOAD_TYPE = "DistributionGridFailure"
     }
 
     private var p2pDescriptor: P2PDescriptor? = null
@@ -99,10 +108,57 @@ class DistributionGrid : P2PInterface
     private var outboundMemoryHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
     private var failureHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
     private var outcomeTransformationHook: (suspend (MultimodalContent, DistributionGridEnvelope) -> MultimodalContent)? = null
+    private val sessionRecordsByPeerKey = linkedMapOf<DistributionGridPeerSessionKey, DistributionGridSessionRecord>()
+    private val sessionRecordsById = linkedMapOf<String, DistributionGridSessionRecord>()
 
     private val gridId = UUID.randomUUID().toString()
     private val defaultMaxNestedDepth = 8
     private var synthesizedPeerOrdinal = 0
+
+    /**
+     * Canonical registry scope used for explicit-peer cache identity.
+     *
+     * @param memberships Sorted registry memberships for one node.
+     */
+    private data class DistributionGridRegistryScope(
+        val memberships: List<String>
+    )
+    {
+        /**
+         * Encode the registry scope for wire-facing session metadata.
+         *
+         * @return Canonical registry token suitable for session records and RPC wrappers.
+         */
+        fun toRegistryToken(): String
+        {
+            if(memberships.isEmpty())
+            {
+                return ""
+            }
+
+            if(memberships.size == 1 && memberships.first().none { it == '|' || it == '%' })
+            {
+                return memberships.first()
+            }
+
+            return memberships.joinToString(separator = "|") { membership ->
+                membership
+                    .replace("%", "%25")
+                    .replace("|", "%7C")
+            }
+        }
+    }
+
+    /**
+     * Structured cache key for one explicit-peer session.
+     *
+     * @param peerKey Canonical explicit-peer key.
+     * @param registryScope Canonical registry scope for the session.
+     */
+    private data class DistributionGridPeerSessionKey(
+        val peerKey: String,
+        val registryScope: DistributionGridRegistryScope
+    )
 
 //----------------------------------------------P2P Interface------------------------------------------------------------
 
@@ -251,6 +307,24 @@ class DistributionGrid : P2PInterface
      */
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {
+        val promptText = request.prompt.text
+        val hasGridRpcFramePrefix = hasGridRpcFrame(promptText)
+        val gridRpcMessage = parseGridRpcMessage(promptText)
+        if(gridRpcMessage != null)
+        {
+            return handleGridRpcRequest(request, gridRpcMessage)
+        }
+
+        if(hasGridRpcFramePrefix)
+        {
+            return P2PResponse(
+                rejection = P2PRejection(
+                    errorType = P2PError.json,
+                    reason = "DistributionGrid framed RPC payload was malformed."
+                )
+            )
+        }
+
         val readinessFailure = validateExecutionReadiness()
         if(readinessFailure != null)
         {
@@ -641,6 +715,7 @@ class DistributionGrid : P2PInterface
 
         initialized = false
         pauseRequested = false
+        invalidateAllSessions("Runtime state cleared.")
     }
 
     /**
@@ -951,6 +1026,760 @@ class DistributionGrid : P2PInterface
     }
 
     /**
+     * Parse a grid RPC message only when the inbound prompt clearly looks like serialized grid JSON.
+     *
+     * @param text Prompt text to inspect.
+     * @return Parsed grid RPC message or `null` when the prompt is ordinary content.
+     */
+    private fun parseGridRpcMessage(text: String): DistributionGridRpcMessage?
+    {
+        val trimmed = text.trim()
+        if(trimmed.isBlank() || !trimmed.startsWith(GRID_RPC_FRAME_PREFIX))
+        {
+            return null
+        }
+
+        val payloadText = trimmed.removePrefix(GRID_RPC_FRAME_PREFIX)
+        if(payloadText.isEmpty())
+        {
+            return null
+        }
+
+        val payload = when
+        {
+            payloadText.startsWith("\r\n") -> payloadText.removePrefix("\r\n")
+            payloadText.startsWith('\n') -> payloadText.removePrefix("\n")
+            else -> return null
+        }.trim()
+        if(payload.isBlank())
+        {
+            return null
+        }
+
+        return deserialize<DistributionGridRpcMessage>(payload, useRepair = false)
+    }
+
+    /**
+     * Determine whether one prompt is framed as DistributionGrid RPC traffic.
+     *
+     * @param text Prompt text to inspect.
+     * @return `true` when the prompt begins with the DistributionGrid RPC prefix.
+     */
+    private fun hasGridRpcFrame(text: String): Boolean
+    {
+        return text.trim().startsWith(GRID_RPC_FRAME_PREFIX)
+    }
+
+    /**
+     * Handle one inbound grid RPC request over the normal P2P boundary.
+     *
+     * @param request Raw inbound P2P request.
+     * @param rpcMessage Parsed grid RPC message.
+     * @return P2P response carrying a grid RPC reply or a standard boundary rejection.
+     */
+    private suspend fun handleGridRpcRequest(
+        request: P2PRequest,
+        rpcMessage: DistributionGridRpcMessage
+    ): P2PResponse
+    {
+        return when(rpcMessage.messageType)
+        {
+            DistributionGridRpcMessageType.HANDSHAKE_INIT ->
+            {
+                handleHandshakeInitRequest(request, rpcMessage)
+            }
+
+            DistributionGridRpcMessageType.TASK_HANDOFF ->
+            {
+                handleTaskHandoffRequest(request, rpcMessage)
+            }
+
+            else ->
+            {
+                P2PResponse(
+                    rejection = P2PRejection(
+                        errorType = P2PError.configuration,
+                        reason = "DistributionGrid does not support inbound RPC '${rpcMessage.messageType.name}' in Phase 5."
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * Handle an inbound first-contact handshake request from an explicit remote grid peer.
+     *
+     * @param request Raw inbound P2P request.
+     * @param rpcMessage Parsed handshake RPC wrapper.
+     * @return P2P response carrying handshake acknowledgment or session rejection.
+     */
+    private suspend fun handleHandshakeInitRequest(
+        request: P2PRequest,
+        rpcMessage: DistributionGridRpcMessage
+    ): P2PResponse
+    {
+        val readinessFailure = validateExecutionReadiness()
+        if(readinessFailure != null)
+        {
+            return mapFailureToP2PResponse(readinessFailure)
+        }
+
+        val handshakeRequest = deserialize<DistributionGridHandshakeRequest>(
+            rpcMessage.payloadJson,
+            useRepair = false
+        ) ?: return P2PResponse(
+            output = buildGridRpcContent(
+                buildFailureRpcMessage(
+                    messageType = DistributionGridRpcMessageType.SESSION_REJECT,
+                    targetId = rpcMessage.senderNodeId,
+                    protocolVersion = rpcMessage.protocolVersion,
+                    failure = buildFailure(
+                        kind = DistributionGridFailureKind.HANDSHAKE_REJECTED,
+                        reason = "DistributionGrid could not deserialize the handshake payload.",
+                        retryable = true
+                    )
+                )
+            )
+        )
+
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_SESSION_HANDSHAKE,
+            TracePhase.AGENT_COMMUNICATION,
+            metadata = mapOf(
+                "senderNodeId" to handshakeRequest.requesterNodeId,
+                "transport" to request.transport.transportMethod.name
+            )
+        )
+
+        val negotiatedPolicy = negotiateHandshakePolicy(
+            handshakeRequest = handshakeRequest,
+            requestTransport = request.transport
+        )
+
+        if(negotiatedPolicy == null)
+        {
+            val failure = buildFailure(
+                kind = DistributionGridFailureKind.HANDSHAKE_REJECTED,
+                reason = "DistributionGrid handshake negotiation failed.",
+                retryable = true
+            )
+            return P2PResponse(
+                output = buildGridRpcContent(
+                buildFailureRpcMessage(
+                    messageType = DistributionGridRpcMessageType.SESSION_REJECT,
+                    targetId = handshakeRequest.requesterNodeId,
+                    protocolVersion = rpcMessage.protocolVersion,
+                    failure = failure
+                )
+            )
+            )
+        }
+
+        val requestedSessionSeconds = resolveRequestedSessionSeconds(
+            handshakeRequest.requestedSessionDurationSeconds
+        ) ?: return P2PResponse(
+            output = buildGridRpcContent(
+                buildFailureRpcMessage(
+                    messageType = DistributionGridRpcMessageType.SESSION_REJECT,
+                    targetId = handshakeRequest.requesterNodeId,
+                    protocolVersion = rpcMessage.protocolVersion,
+                    failure = buildFailure(
+                        kind = DistributionGridFailureKind.HANDSHAKE_REJECTED,
+                        reason = "DistributionGrid handshake requested an invalid session lifetime.",
+                        retryable = false
+                    )
+                )
+            )
+        )
+
+        val sessionRecord = DistributionGridSessionRecord(
+            sessionId = UUID.randomUUID().toString(),
+            requesterNodeId = handshakeRequest.requesterNodeId.ifBlank {
+                handshakeRequest.requesterMetadata.nodeId
+            },
+            responderNodeId = resolveCurrentNodeId(),
+            registryId = handshakeRequest.registryId,
+            negotiatedProtocolVersion = negotiatedPolicy.protocolVersion.deepCopy(),
+            negotiatedPolicy = negotiatedPolicy.deepCopy(),
+            expiresAtEpochMillis = System.currentTimeMillis() + requestedSessionSeconds * 1000L,
+            invalidated = false,
+            invalidationReason = ""
+        )
+        cacheSession(sessionRecord)
+
+        val responsePayload = DistributionGridHandshakeResponse(
+            accepted = true,
+            negotiatedProtocolVersion = negotiatedPolicy.protocolVersion.deepCopy(),
+            negotiatedPolicy = negotiatedPolicy.deepCopy(),
+            rejectionReason = "",
+            sessionRecord = sessionRecord.deepCopy()
+        )
+
+        return P2PResponse(
+            output = buildGridRpcContent(
+                DistributionGridRpcMessage(
+                    messageType = DistributionGridRpcMessageType.HANDSHAKE_ACK,
+                    senderNodeId = resolveCurrentNodeId(),
+                    targetId = sessionRecord.requesterNodeId,
+                    protocolVersion = negotiatedPolicy.protocolVersion.deepCopy(),
+                    sessionRef = sessionRecord.toSessionRef(),
+                    payloadType = HANDSHAKE_RESPONSE_PAYLOAD_TYPE,
+                    payloadJson = serialize(responsePayload)
+                )
+            )
+        )
+    }
+
+    /**
+     * Handle an inbound remote task handoff once a valid explicit-peer session already exists.
+     *
+     * @param request Raw inbound P2P request.
+     * @param rpcMessage Parsed task handoff RPC wrapper.
+     * @return P2P response carrying `TASK_RETURN`, `TASK_FAILURE`, or `SESSION_REJECT`.
+     */
+    private suspend fun handleTaskHandoffRequest(
+        request: P2PRequest,
+        rpcMessage: DistributionGridRpcMessage
+    ): P2PResponse
+    {
+        val readinessFailure = validateExecutionReadiness()
+        if(readinessFailure != null)
+        {
+            return mapFailureToP2PResponse(readinessFailure)
+        }
+
+        val sessionRef = rpcMessage.sessionRef ?: return P2PResponse(
+            output = buildGridRpcContent(
+                buildFailureRpcMessage(
+                    messageType = DistributionGridRpcMessageType.SESSION_REJECT,
+                    targetId = rpcMessage.senderNodeId,
+                    protocolVersion = rpcMessage.protocolVersion,
+                    failure = buildFailure(
+                        kind = DistributionGridFailureKind.SESSION_REJECTED,
+                        reason = "DistributionGrid task handoff requires a valid session reference.",
+                        retryable = true
+                    )
+                )
+            )
+        )
+
+        val sessionRecord = resolveInboundSession(
+            sessionRef = sessionRef,
+            rpcMessage = rpcMessage,
+            senderNodeId = rpcMessage.senderNodeId.ifBlank { request.transport.transportAddress }
+        ) ?: return P2PResponse(
+            output = buildGridRpcContent(
+                buildFailureRpcMessage(
+                    messageType = DistributionGridRpcMessageType.SESSION_REJECT,
+                    targetId = rpcMessage.senderNodeId,
+                    sessionRef = sessionRef.deepCopy(),
+                    protocolVersion = rpcMessage.protocolVersion,
+                    failure = buildFailure(
+                        kind = DistributionGridFailureKind.SESSION_REJECTED,
+                        reason = "DistributionGrid could not validate the supplied session reference.",
+                        retryable = true
+                    )
+                )
+            )
+        )
+
+        val remoteEnvelope = deserialize<DistributionGridEnvelope>(
+            rpcMessage.payloadJson,
+            useRepair = false
+        ) ?: return P2PResponse(
+            output = buildGridRpcContent(
+                buildFailureRpcMessage(
+                    messageType = DistributionGridRpcMessageType.TASK_FAILURE,
+                    targetId = rpcMessage.senderNodeId,
+                    sessionRef = sessionRecord.toSessionRef(),
+                    protocolVersion = sessionRecord.negotiatedProtocolVersion,
+                    failure = buildFailure(
+                        kind = DistributionGridFailureKind.ROUTING_FAILURE,
+                        reason = "DistributionGrid could not deserialize the remote task envelope.",
+                        retryable = false
+                    )
+                )
+            )
+        )
+
+        val preparedEnvelope = remoteEnvelope.deepCopy().apply {
+            senderNodeId = sessionRecord.requesterNodeId
+            senderTransport = request.returnAddress.deepCopy().takeIf {
+                it.transportAddress.isNotBlank() || it.transportAuthBody.isNotBlank()
+            } ?: request.transport.deepCopy()
+            currentNodeId = resolveCurrentNodeId()
+            currentTransport = resolveCurrentTransport()
+            this.sessionRef = sessionRecord.toSessionRef()
+            content = content.deepCopy()
+        }
+        applyNegotiatedPolicyToEnvelope(preparedEnvelope, sessionRecord)
+
+        val result = executeEnvelopeLocally(
+            envelope = preparedEnvelope,
+            inboundSingleNodeMode = true,
+            negotiatedSessionRecord = sessionRecord
+        )
+        val terminalEnvelope = extractEnvelopeFromTerminalContent(result, preparedEnvelope)
+        val responseType = when
+        {
+            result.metadata[FAILURE_METADATA_KEY] != null || result.terminatePipeline ->
+            {
+                DistributionGridRpcMessageType.TASK_FAILURE
+            }
+
+            else ->
+            {
+                DistributionGridRpcMessageType.TASK_RETURN
+            }
+        }
+
+        return P2PResponse(
+            output = buildGridRpcContent(
+                DistributionGridRpcMessage(
+                    messageType = responseType,
+                    senderNodeId = resolveCurrentNodeId(),
+                    targetId = sessionRecord.requesterNodeId,
+                    protocolVersion = sessionRecord.negotiatedProtocolVersion.deepCopy(),
+                    sessionRef = sessionRecord.toSessionRef(),
+                    payloadType = ENVELOPE_PAYLOAD_TYPE,
+                    payloadJson = serialize(terminalEnvelope)
+                )
+            )
+        )
+    }
+
+    /**
+     * Dispatch one remote handoff to an explicitly configured peer descriptor.
+     *
+     * @param envelope Current execution envelope.
+     * @param directive Router directive requesting remote handoff.
+     * @param startedAt Execution start time used for hop recording.
+     * @return Terminal content finalized locally after the remote reply.
+     */
+    private suspend fun dispatchExplicitPeerHandoff(
+        envelope: DistributionGridEnvelope,
+        directive: DistributionGridDirective,
+        startedAt: Long
+    ): MultimodalContent
+    {
+        val resolvedPeer = resolveExplicitPeerDescriptor(directive)
+        if(resolvedPeer == null)
+        {
+            val failure = buildFailure(
+                kind = DistributionGridFailureKind.ROUTING_FAILURE,
+                reason = "DistributionGrid could not resolve explicit peer '${directive.targetPeerId.ifBlank { directive.targetNodeId }}'.",
+                retryable = false
+            )
+            envelope.latestFailure = failure
+            return finalizeFailedEnvelope(
+                envelope = envelope,
+                failure = failure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                directiveKind = directive.kind
+            )
+        }
+
+        val peerKey = resolvedPeer.first
+        val peerDescriptor = resolvedPeer.second
+        val peerMetadata = peerDescriptor.distributionGridMetadata
+        val preparedEnvelope = beforePeerDispatchHook?.invoke(envelope) ?: envelope
+        if(peerMetadata == null || peerMetadata.nodeId.isBlank())
+        {
+            val failure = buildFailure(
+                kind = DistributionGridFailureKind.TRUST_REJECTED,
+                reason = "DistributionGrid explicit peer '$peerKey' is missing explicit grid metadata.",
+                retryable = false
+            )
+            preparedEnvelope.latestFailure = failure
+            return finalizeFailedEnvelope(
+                envelope = preparedEnvelope,
+                failure = failure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                directiveKind = directive.kind
+            )
+        }
+
+        if(!isDescriptorPrivacyCompatible(peerDescriptor, preparedEnvelope.tracePolicy))
+        {
+            val failure = buildFailure(
+                kind = DistributionGridFailureKind.POLICY_REJECTED,
+                reason = "DistributionGrid explicit peer '$peerKey' conflicts with the current trace or privacy policy.",
+                retryable = false
+            )
+            preparedEnvelope.latestFailure = failure
+            return finalizeFailedEnvelope(
+                envelope = preparedEnvelope,
+                failure = failure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                directiveKind = directive.kind
+            )
+        }
+
+        val handshakeOutcome = resolveOrCreatePeerSession(peerKey, peerDescriptor, preparedEnvelope)
+        val sessionRecord = handshakeOutcome.sessionRecord
+        if(sessionRecord == null)
+        {
+            val failure = handshakeOutcome.failure ?: buildFailure(
+                kind = DistributionGridFailureKind.SESSION_REJECTED,
+                reason = "DistributionGrid could not establish a valid explicit-peer session for '$peerKey'.",
+                retryable = true
+            )
+            preparedEnvelope.latestFailure = failure
+            val failedEnvelope = mergeRemoteFailure(
+                envelope = preparedEnvelope,
+                peerDescriptor = peerDescriptor,
+                failure = failure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                resultSummary = failure.reason
+            )
+            return finalizeFailedEnvelope(
+                envelope = failedEnvelope,
+                failure = failure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                directiveKind = directive.kind,
+                recordTerminalHop = false
+            )
+        }
+
+        val outboundEnvelope = preparedEnvelope.deepCopy().apply {
+            senderNodeId = resolveCurrentNodeId()
+            senderTransport = resolveCurrentTransport()
+            currentNodeId = peerMetadata.nodeId
+            currentTransport = peerDescriptor.transport.deepCopy()
+            sessionRef = sessionRecord.toSessionRef()
+            attributes.remove(SINGLE_NODE_MODE_ATTRIBUTE)
+            content = content.deepCopy()
+        }
+        applyNegotiatedPolicyToEnvelope(outboundEnvelope, sessionRecord)
+
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_PEER_HANDOFF,
+            TracePhase.AGENT_COMMUNICATION,
+            metadata = mapOf(
+                "taskId" to preparedEnvelope.taskId,
+                "peerKey" to peerKey,
+                "targetNodeId" to peerMetadata.nodeId,
+                "transport" to peerDescriptor.transport.transportMethod.name
+            )
+        )
+
+        val response = sendGridRpcRequest(
+            descriptor = peerDescriptor,
+            rpcMessage = DistributionGridRpcMessage(
+                messageType = DistributionGridRpcMessageType.TASK_HANDOFF,
+                senderNodeId = resolveCurrentNodeId(),
+                targetId = peerMetadata.nodeId,
+                protocolVersion = sessionRecord.negotiatedProtocolVersion.deepCopy(),
+                sessionRef = sessionRecord.toSessionRef(),
+                payloadType = ENVELOPE_PAYLOAD_TYPE,
+                payloadJson = serialize(outboundEnvelope)
+            )
+        )
+
+        if(response.rejection != null)
+        {
+            invalidateSession(
+                sessionRecord = sessionRecord,
+                reason = "Explicit peer rejected the handoff at the transport boundary."
+            )
+            val failure = mapRemoteP2PRejectionToFailure(
+                rejection = response.rejection!!,
+                peerDescriptor = peerDescriptor
+            )
+            preparedEnvelope.latestFailure = failure
+            val failedEnvelope = mergeRemoteFailure(
+                envelope = preparedEnvelope,
+                peerDescriptor = peerDescriptor,
+                failure = failure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                resultSummary = failure.reason
+            )
+            return finalizeFailedEnvelope(
+                envelope = failedEnvelope,
+                failure = failure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                directiveKind = directive.kind,
+                recordTerminalHop = false
+            )
+        }
+
+        val rpcResponse = parseGridRpcMessage(response.output?.text.orEmpty())
+        if(rpcResponse == null)
+        {
+            invalidateSession(
+                sessionRecord = sessionRecord,
+                reason = "Explicit peer returned a non-grid response to task handoff."
+            )
+            val failure = buildFailure(
+                kind = DistributionGridFailureKind.TRANSPORT_FAILURE,
+                reason = "DistributionGrid explicit peer '$peerKey' returned a non-grid response to task handoff.",
+                retryable = false
+            )
+            val failedEnvelope = mergeRemoteFailure(
+                envelope = preparedEnvelope,
+                peerDescriptor = peerDescriptor,
+                failure = failure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                resultSummary = failure.reason
+            )
+            return finalizeFailedEnvelope(
+                envelope = failedEnvelope,
+                failure = failure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                directiveKind = directive.kind,
+                recordTerminalHop = false
+            )
+        }
+
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_PEER_RESPONSE,
+            TracePhase.AGENT_COMMUNICATION,
+            metadata = mapOf(
+                "taskId" to preparedEnvelope.taskId,
+                "peerKey" to peerKey,
+                "messageType" to rpcResponse.messageType.name
+            )
+        )
+
+        return when(rpcResponse.messageType)
+        {
+            DistributionGridRpcMessageType.TASK_RETURN ->
+            {
+                val remoteEnvelope = deserialize<DistributionGridEnvelope>(
+                    rpcResponse.payloadJson,
+                    useRepair = false
+                )
+
+                if(remoteEnvelope == null)
+                {
+                    val failure = buildFailure(
+                        kind = DistributionGridFailureKind.TRANSPORT_FAILURE,
+                        reason = "DistributionGrid explicit peer '$peerKey' returned an unreadable envelope.",
+                        retryable = false
+                    )
+                    val failedEnvelope = mergeRemoteFailure(
+                        envelope = preparedEnvelope,
+                        peerDescriptor = peerDescriptor,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        resultSummary = failure.reason
+                    )
+                    return finalizeFailedEnvelope(
+                        envelope = failedEnvelope,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        directiveKind = directive.kind,
+                        recordTerminalHop = false
+                    )
+                }
+
+                val expectedSessionRef = sessionRecord.toSessionRef()
+                if(rpcResponse.sessionRef != expectedSessionRef ||
+                    (remoteEnvelope.sessionRef != null && remoteEnvelope.sessionRef != expectedSessionRef)
+                )
+                {
+                    invalidateSession(
+                        sessionRecord = sessionRecord,
+                        reason = "Explicit peer returned a task reply with a mismatched session reference."
+                    )
+
+                    val failure = buildFailure(
+                        kind = DistributionGridFailureKind.SESSION_REJECTED,
+                        reason = "DistributionGrid explicit peer '$peerKey' returned a task reply for the wrong session.",
+                        retryable = true
+                    )
+                    val failedEnvelope = mergeRemoteFailure(
+                        envelope = preparedEnvelope,
+                        peerDescriptor = peerDescriptor,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        resultSummary = failure.reason
+                    )
+                    return finalizeFailedEnvelope(
+                        envelope = failedEnvelope,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        directiveKind = directive.kind,
+                        recordTerminalHop = false
+                    )
+                }
+
+                var mergedEnvelope = mergeRemoteSuccess(
+                    envelope = preparedEnvelope,
+                    peerDescriptor = peerDescriptor,
+                    remoteEnvelope = remoteEnvelope,
+                    startedAt = startedAt,
+                    completedAt = System.currentTimeMillis(),
+                    resolvedSessionRef = expectedSessionRef
+                )
+                mergedEnvelope = afterPeerResponseHook?.invoke(mergedEnvelope) ?: mergedEnvelope
+                trace(
+                    TraceEventType.DISTRIBUTION_GRID_RETURN_ROUTING,
+                    TracePhase.CLEANUP,
+                    metadata = mapOf(
+                        "taskId" to mergedEnvelope.taskId,
+                        "targetNodeId" to peerMetadata.nodeId
+                    )
+                )
+                finalizeSuccessfulEnvelope(
+                    envelope = mergedEnvelope,
+                    returnMode = remoteEnvelope.latestOutcome?.returnMode ?: resolveReturnMode(mergedEnvelope.routingPolicy),
+                    startedAt = startedAt,
+                    completedAt = System.currentTimeMillis(),
+                    directiveKind = directive.kind,
+                    recordTerminalHop = false
+                )
+            }
+
+            DistributionGridRpcMessageType.TASK_FAILURE,
+            DistributionGridRpcMessageType.SESSION_REJECT ->
+            {
+                if(rpcResponse.messageType == DistributionGridRpcMessageType.SESSION_REJECT)
+                {
+                    invalidateSession(sessionRecord, "Explicit peer session was rejected by the remote node.")
+                }
+
+                val remoteEnvelope = deserialize<DistributionGridEnvelope>(
+                    rpcResponse.payloadJson,
+                    useRepair = false
+                )
+                val remoteFailure = remoteEnvelope?.latestFailure
+                    ?: deserialize<DistributionGridFailure>(rpcResponse.payloadJson, useRepair = false)
+                    ?: buildFailure(
+                        kind = if(rpcResponse.messageType == DistributionGridRpcMessageType.SESSION_REJECT)
+                        {
+                            DistributionGridFailureKind.SESSION_REJECTED
+                        }
+                        else
+                        {
+                            DistributionGridFailureKind.ROUTING_FAILURE
+                        },
+                        reason = "DistributionGrid explicit peer '$peerKey' returned a remote failure.",
+                        retryable = rpcResponse.messageType == DistributionGridRpcMessageType.SESSION_REJECT
+                    )
+
+                val expectedSessionRef = sessionRecord.toSessionRef()
+                val remoteSessionRef = remoteEnvelope?.sessionRef
+                if(rpcResponse.sessionRef != expectedSessionRef ||
+                    (remoteSessionRef != null && remoteSessionRef != expectedSessionRef)
+                )
+                {
+                    invalidateSession(
+                        sessionRecord = sessionRecord,
+                        reason = "Explicit peer returned a failure reply with a mismatched session reference."
+                    )
+
+                    val failure = buildFailure(
+                        kind = DistributionGridFailureKind.SESSION_REJECTED,
+                        reason = "DistributionGrid explicit peer '$peerKey' returned a failure reply for the wrong session.",
+                        retryable = true
+                    )
+                    val failedEnvelope = mergeRemoteFailure(
+                        envelope = preparedEnvelope,
+                        peerDescriptor = peerDescriptor,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        resultSummary = failure.reason
+                    )
+                    return finalizeFailedEnvelope(
+                        envelope = failedEnvelope,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        directiveKind = directive.kind,
+                        recordTerminalHop = false
+                    )
+                }
+
+                var mergedEnvelope = if(remoteEnvelope != null)
+                {
+                    mergeRemoteFailure(
+                        envelope = preparedEnvelope,
+                        peerDescriptor = peerDescriptor,
+                        failure = remoteFailure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        resultSummary = remoteFailure.reason,
+                        remoteEnvelope = remoteEnvelope,
+                        resolvedSessionRef = expectedSessionRef
+                    )
+                }
+
+                else
+                {
+                    mergeRemoteFailure(
+                        envelope = preparedEnvelope,
+                        peerDescriptor = peerDescriptor,
+                        failure = remoteFailure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        resultSummary = remoteFailure.reason,
+                        resolvedSessionRef = expectedSessionRef
+                    )
+                }
+
+                mergedEnvelope = afterPeerResponseHook?.invoke(mergedEnvelope) ?: mergedEnvelope
+                trace(
+                    TraceEventType.DISTRIBUTION_GRID_RETURN_ROUTING,
+                    TracePhase.CLEANUP,
+                    metadata = mapOf(
+                        "taskId" to mergedEnvelope.taskId,
+                        "targetNodeId" to peerMetadata.nodeId,
+                        "status" to "failure"
+                    )
+                )
+                finalizeFailedEnvelope(
+                    envelope = mergedEnvelope,
+                    failure = remoteFailure,
+                    startedAt = startedAt,
+                    completedAt = System.currentTimeMillis(),
+                    directiveKind = directive.kind,
+                    recordTerminalHop = false
+                )
+            }
+
+            else ->
+            {
+                val failure = buildFailure(
+                    kind = DistributionGridFailureKind.TRANSPORT_FAILURE,
+                    reason = "DistributionGrid explicit peer '$peerKey' returned unsupported RPC '${rpcResponse.messageType.name}'.",
+                    retryable = false
+                )
+                val failedEnvelope = mergeRemoteFailure(
+                    envelope = preparedEnvelope,
+                    peerDescriptor = peerDescriptor,
+                    failure = failure,
+                    startedAt = startedAt,
+                    completedAt = System.currentTimeMillis(),
+                    resultSummary = failure.reason
+                )
+                finalizeFailedEnvelope(
+                    envelope = failedEnvelope,
+                    failure = failure,
+                    startedAt = startedAt,
+                    completedAt = System.currentTimeMillis(),
+                    directiveKind = directive.kind,
+                    recordTerminalHop = false
+                )
+            }
+        }
+    }
+
+    /**
      * Build the normalized envelope for direct local execution.
      *
      * @param content Deep-copied input content for this execution.
@@ -1034,7 +1863,11 @@ class DistributionGrid : P2PInterface
      * @param envelope Fresh execution envelope to process.
      * @return Terminal local execution content.
      */
-    private suspend fun executeEnvelopeLocally(envelope: DistributionGridEnvelope): MultimodalContent
+    private suspend fun executeEnvelopeLocally(
+        envelope: DistributionGridEnvelope,
+        inboundSingleNodeMode: Boolean = false,
+        negotiatedSessionRecord: DistributionGridSessionRecord? = null
+    ): MultimodalContent
     {
         val executionStartedAt = System.currentTimeMillis()
         trace(
@@ -1049,6 +1882,10 @@ class DistributionGrid : P2PInterface
         return try
         {
             val preparedEnvelope = beforeRouteHook?.invoke(envelope) ?: envelope
+            if(inboundSingleNodeMode && negotiatedSessionRecord != null)
+            {
+                applyNegotiatedPolicyToEnvelope(preparedEnvelope, negotiatedSessionRecord)
+            }
             val routerResult = routerBinding!!.component.executeLocal(preparedEnvelope.content)
             preparedEnvelope.content = routerResult
 
@@ -1080,7 +1917,13 @@ class DistributionGrid : P2PInterface
                 )
             )
 
-            routeLocalDirective(preparedEnvelope, directive, executionStartedAt)
+            routeLocalDirective(
+                envelope = preparedEnvelope,
+                directive = directive,
+                startedAt = executionStartedAt,
+                inboundSingleNodeMode = inboundSingleNodeMode,
+                negotiatedSessionRecord = negotiatedSessionRecord
+            )
         }
 
         catch(error: Throwable)
@@ -1112,6 +1955,17 @@ class DistributionGrid : P2PInterface
     }
 
     /**
+     * Compact result wrapper for explicit-peer handshake resolution.
+     *
+     * @param sessionRecord Negotiated session record when the handshake succeeded.
+     * @param failure Failure record when the handshake failed or was rejected.
+     */
+    private data class DistributionGridPeerHandshakeOutcome(
+        val sessionRecord: DistributionGridSessionRecord? = null,
+        val failure: DistributionGridFailure? = null
+    )
+
+    /**
      * Route one local directive without dispatching any remote peers.
      *
      * @param envelope Current execution envelope.
@@ -1122,7 +1976,9 @@ class DistributionGrid : P2PInterface
     private suspend fun routeLocalDirective(
         envelope: DistributionGridEnvelope,
         directive: DistributionGridDirective,
-        startedAt: Long
+        startedAt: Long,
+        inboundSingleNodeMode: Boolean = false,
+        negotiatedSessionRecord: DistributionGridSessionRecord? = null
     ): MultimodalContent
     {
         return when(directive.kind)
@@ -1130,7 +1986,16 @@ class DistributionGrid : P2PInterface
             DistributionGridDirectiveKind.RUN_LOCAL_WORKER ->
             {
                 val preparedEnvelope = beforeLocalWorkerHook?.invoke(envelope) ?: envelope
-                runLocalWorker(preparedEnvelope, startedAt)
+                if(inboundSingleNodeMode && negotiatedSessionRecord != null)
+                {
+                    applyNegotiatedPolicyToEnvelope(preparedEnvelope, negotiatedSessionRecord)
+                }
+                runLocalWorker(
+                    envelope = preparedEnvelope,
+                    startedAt = startedAt,
+                    inboundSingleNodeMode = inboundSingleNodeMode,
+                    negotiatedSessionRecord = negotiatedSessionRecord
+                )
             }
 
             DistributionGridDirectiveKind.RETURN_TO_SENDER,
@@ -1167,13 +2032,34 @@ class DistributionGrid : P2PInterface
                 )
             }
 
-            DistributionGridDirectiveKind.HAND_OFF_TO_PEER,
+            DistributionGridDirectiveKind.HAND_OFF_TO_PEER ->
+            {
+                if(inboundSingleNodeMode)
+                {
+                    val failure = buildFailure(
+                        kind = DistributionGridFailureKind.ROUTING_FAILURE,
+                        reason = "Nested remote handoff is not supported during inbound Phase 5 task execution.",
+                        retryable = false
+                    )
+                    envelope.latestFailure = failure
+                    return finalizeFailedEnvelope(
+                        envelope = envelope,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        directiveKind = directive.kind
+                    )
+                }
+
+                dispatchExplicitPeerHandoff(envelope, directive, startedAt)
+            }
+
             DistributionGridDirectiveKind.RETRY_SAME_PEER,
             DistributionGridDirectiveKind.TRY_ALTERNATE_PEER ->
             {
                 val failure = buildFailure(
                     kind = DistributionGridFailureKind.ROUTING_FAILURE,
-                    reason = "Directive '${directive.kind.name}' is not supported until Phase 5 remote handoff.",
+                    reason = "Directive '${directive.kind.name}' is not supported until a later DistributionGrid phase.",
                     retryable = false
                 )
                 envelope.latestFailure = failure
@@ -1197,7 +2083,9 @@ class DistributionGrid : P2PInterface
      */
     private suspend fun runLocalWorker(
         envelope: DistributionGridEnvelope,
-        startedAt: Long
+        startedAt: Long,
+        inboundSingleNodeMode: Boolean = false,
+        negotiatedSessionRecord: DistributionGridSessionRecord? = null
     ): MultimodalContent
     {
         trace(
@@ -1226,6 +2114,10 @@ class DistributionGrid : P2PInterface
             )
 
             val updatedEnvelope = afterLocalWorkerHook?.invoke(envelope) ?: envelope
+            if(inboundSingleNodeMode && negotiatedSessionRecord != null)
+            {
+                applyNegotiatedPolicyToEnvelope(updatedEnvelope, negotiatedSessionRecord)
+            }
             if(workerResult.hasError() || workerResult.terminatePipeline)
             {
                 val failure = buildFailure(
@@ -1286,40 +2178,47 @@ class DistributionGrid : P2PInterface
         returnMode: DistributionGridReturnMode,
         startedAt: Long,
         completedAt: Long,
-        directiveKind: DistributionGridDirectiveKind
+        directiveKind: DistributionGridDirectiveKind,
+        recordTerminalHop: Boolean = true
     ): MultimodalContent
     {
         envelope.completed = true
+        if(recordTerminalHop)
+        {
+            envelope.hopHistory.add(
+                buildHopRecord(
+                    envelope = envelope,
+                    directiveKind = directiveKind,
+                    resultSummary = "Local execution completed successfully.",
+                    startedAt = startedAt,
+                    completedAt = completedAt
+                )
+            )
+        }
+
+        val baseOutput = envelope.content
+        baseOutput.passPipeline = true
+        baseOutput.terminatePipeline = false
+
+        val finalOutput = outcomeTransformationHook?.invoke(baseOutput, envelope) ?: baseOutput
+        envelope.content = finalOutput
+
         val outcome = DistributionGridOutcome(
             status = DistributionGridOutcomeStatus.SUCCESS,
             returnMode = returnMode,
             taskId = envelope.taskId,
-            finalContent = envelope.content.deepCopy(),
+            finalContent = finalOutput.deepCopy(),
             completionNotes = envelope.executionNotes.joinToString(separator = " | "),
-            hopCount = envelope.hopHistory.size + 1,
+            hopCount = envelope.hopHistory.size,
             finalNodeId = envelope.currentNodeId,
             terminalFailure = null
         )
         envelope.latestOutcome = outcome
         envelope.latestFailure = null
-        envelope.hopHistory.add(
-            buildHopRecord(
-                envelope = envelope,
-                directiveKind = directiveKind,
-                resultSummary = "Local execution completed successfully.",
-                startedAt = startedAt,
-                completedAt = completedAt
-            )
-        )
 
-        val baseOutput = envelope.content
-        baseOutput.passPipeline = true
-        baseOutput.terminatePipeline = false
-        baseOutput.metadata[ENVELOPE_METADATA_KEY] = envelope.deepCopy()
-        baseOutput.metadata[OUTCOME_METADATA_KEY] = outcome.deepCopy()
-        baseOutput.metadata.remove(FAILURE_METADATA_KEY)
-
-        val finalOutput = outcomeTransformationHook?.invoke(baseOutput, envelope) ?: baseOutput
+        finalOutput.metadata[ENVELOPE_METADATA_KEY] = envelope.deepCopy()
+        finalOutput.metadata[OUTCOME_METADATA_KEY] = outcome.deepCopy()
+        finalOutput.metadata.remove(FAILURE_METADATA_KEY)
 
         trace(
             TraceEventType.DISTRIBUTION_GRID_SUCCESS,
@@ -1360,20 +2259,24 @@ class DistributionGrid : P2PInterface
         startedAt: Long,
         completedAt: Long,
         directiveKind: DistributionGridDirectiveKind,
-        error: Throwable? = null
+        error: Throwable? = null,
+        recordTerminalHop: Boolean = true
     ): MultimodalContent
     {
         envelope.completed = true
         envelope.latestFailure = failure
-        envelope.hopHistory.add(
-            buildHopRecord(
-                envelope = envelope,
-                directiveKind = directiveKind,
-                resultSummary = failure.reason.ifBlank { "Local execution failed." },
-                startedAt = startedAt,
-                completedAt = completedAt
+        if(recordTerminalHop)
+        {
+            envelope.hopHistory.add(
+                buildHopRecord(
+                    envelope = envelope,
+                    directiveKind = directiveKind,
+                    resultSummary = failure.reason.ifBlank { "Local execution failed." },
+                    startedAt = startedAt,
+                    completedAt = completedAt
+                )
             )
-        )
+        }
 
         val preparedEnvelope = try
         {
@@ -1400,6 +2303,8 @@ class DistributionGrid : P2PInterface
                 pipeId = gridId
             )
         }
+
+        preparedEnvelope.content = failureOutput
 
         val outcome = DistributionGridOutcome(
             status = DistributionGridOutcomeStatus.FAILURE,
@@ -1484,9 +2389,21 @@ class DistributionGrid : P2PInterface
      */
     private fun mapFailureToP2PResponse(failure: DistributionGridFailure): P2PResponse
     {
+        val errorType = when(failure.kind)
+        {
+            DistributionGridFailureKind.TRANSPORT_FAILURE -> P2PError.transport
+            DistributionGridFailureKind.HANDSHAKE_REJECTED,
+            DistributionGridFailureKind.SESSION_REJECTED,
+            DistributionGridFailureKind.TRUST_REJECTED,
+            DistributionGridFailureKind.POLICY_REJECTED,
+            DistributionGridFailureKind.VALIDATION_FAILURE -> P2PError.configuration
+
+            else -> P2PError.configuration
+        }
+
         return P2PResponse(
             rejection = P2PRejection(
-                errorType = P2PError.configuration,
+                errorType = errorType,
                 reason = failure.reason
             )
         )
@@ -1531,19 +2448,1408 @@ class DistributionGrid : P2PInterface
     private fun buildFailure(
         kind: DistributionGridFailureKind,
         reason: String,
-        retryable: Boolean
+        retryable: Boolean,
+        sourceNodeId: String = resolveCurrentNodeId()
     ): DistributionGridFailure
     {
         val transport = resolveCurrentTransport()
         return DistributionGridFailure(
             kind = kind,
-            sourceNodeId = resolveCurrentNodeId(),
+            sourceNodeId = sourceNodeId,
             targetNodeId = "",
             transportMethod = transport.transportMethod,
             transportAddress = transport.transportAddress,
             reason = reason,
             policyCause = "",
             retryable = retryable
+        )
+    }
+
+    /**
+     * Resolve an explicit external peer descriptor for a remote handoff directive.
+     *
+     * @param directive Router directive requesting remote handoff.
+     * @return Canonical peer key and descriptor pair, or `null` when no explicit peer matches.
+     */
+    private fun resolveExplicitPeerDescriptor(
+        directive: DistributionGridDirective
+    ): Pair<String, P2PDescriptor>?
+    {
+        val targetPeerId = directive.targetPeerId
+        if(targetPeerId.isNotBlank())
+        {
+            val descriptor = externalPeerDescriptorsByKey[targetPeerId]
+            if(descriptor != null)
+            {
+                return Pair(targetPeerId, descriptor)
+            }
+        }
+
+        val targetNodeId = directive.targetNodeId
+        if(targetNodeId.isNotBlank())
+        {
+            val resolved = externalPeerDescriptorsByKey.entries.firstOrNull { entry ->
+                entry.value.distributionGridMetadata?.nodeId == targetNodeId
+            }
+            if(resolved != null)
+            {
+                return Pair(resolved.key, resolved.value)
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Resolve an existing valid session or create a new one through the explicit-peer handshake path.
+     *
+     * @param peerKey Canonical explicit-peer key.
+     * @param descriptor Explicit remote peer descriptor.
+     * @param envelope Current execution envelope.
+     * @return Valid session record or `null` when negotiation fails.
+     */
+    private suspend fun resolveOrCreatePeerSession(
+        peerKey: String,
+        descriptor: P2PDescriptor,
+        envelope: DistributionGridEnvelope
+    ): DistributionGridPeerHandshakeOutcome
+    {
+        val registryScope = resolveCurrentRegistryScope()
+        val cachedSession = resolveValidCachedSession(peerKey, registryScope, descriptor, envelope)
+        if(cachedSession != null)
+        {
+            return DistributionGridPeerHandshakeOutcome(sessionRecord = cachedSession)
+        }
+
+        return performPeerHandshake(peerKey, registryScope, descriptor, envelope)
+    }
+
+    /**
+     * Reuse a cached explicit-peer session only when it still matches the current peer and protocol constraints.
+     *
+     * @param peerKey Canonical explicit-peer key.
+     * @param descriptor Explicit peer descriptor.
+     * @return Cached session record or `null` when a fresh handshake is required.
+     */
+    private fun resolveValidCachedSession(
+        peerKey: String,
+        registryScope: DistributionGridRegistryScope,
+        descriptor: P2PDescriptor,
+        envelope: DistributionGridEnvelope
+    ): DistributionGridSessionRecord?
+    {
+        val sessionRecord = sessionRecordsByPeerKey[buildPeerSessionCacheKey(peerKey, registryScope)] ?: return null
+        val peerNodeId = descriptor.distributionGridMetadata?.nodeId.orEmpty()
+        if(!isSessionValid(
+                sessionRecord = sessionRecord,
+                expectedRequesterNodeId = resolveCurrentNodeId(),
+                expectedResponderNodeId = peerNodeId
+            )
+        )
+        {
+            invalidateSession(sessionRecord, "Cached explicit-peer session is no longer valid.")
+            return null
+        }
+
+        if(!sessionPolicySatisfiesEnvelope(sessionRecord, envelope))
+        {
+            invalidateSession(sessionRecord, "Cached explicit-peer session no longer satisfies the current envelope policy.")
+            return null
+        }
+
+        return sessionRecord.deepCopy()
+    }
+
+    /**
+     * Resolve a cached explicit-peer session using the legacy registry-token entrypoint.
+     *
+     * @param peerKey Canonical explicit-peer key.
+     * @param registryId Registry relationship token to resolve.
+     * @param descriptor Explicit peer descriptor.
+     * @param envelope Current task envelope.
+     * @return Cached session record or `null` when a fresh handshake is required.
+     */
+    private fun resolveValidCachedSession(
+        peerKey: String,
+        registryId: String,
+        descriptor: P2PDescriptor,
+        envelope: DistributionGridEnvelope
+    ): DistributionGridSessionRecord?
+    {
+        return resolveValidCachedSession(
+            peerKey = peerKey,
+            registryScope = resolveRegistryScopeFromToken(registryId),
+            descriptor = descriptor,
+            envelope = envelope
+        )
+    }
+
+    /**
+     * Perform the explicit-peer handshake needed before the first remote task handoff.
+     *
+     * @param peerKey Canonical explicit-peer key.
+     * @param descriptor Explicit peer descriptor.
+     * @param envelope Current execution envelope.
+     * @return Negotiated session record or failure details when the handshake fails.
+     */
+    private suspend fun performPeerHandshake(
+        peerKey: String,
+        registryScope: DistributionGridRegistryScope,
+        descriptor: P2PDescriptor,
+        envelope: DistributionGridEnvelope
+    ): DistributionGridPeerHandshakeOutcome
+    {
+        val localMetadata = p2pDescriptor?.distributionGridMetadata ?: return DistributionGridPeerHandshakeOutcome(
+            failure = buildFailure(
+                kind = DistributionGridFailureKind.VALIDATION_FAILURE,
+                reason = "DistributionGrid is missing local grid metadata for explicit-peer handshake.",
+                retryable = false
+            )
+        )
+        val peerMetadata = descriptor.distributionGridMetadata ?: return DistributionGridPeerHandshakeOutcome(
+            failure = buildFailure(
+                kind = DistributionGridFailureKind.TRUST_REJECTED,
+                reason = "DistributionGrid explicit peer '$peerKey' is missing grid metadata.",
+                retryable = false
+            )
+        )
+
+        if(!isDescriptorPrivacyCompatible(descriptor, envelope.tracePolicy))
+        {
+            return DistributionGridPeerHandshakeOutcome(
+                failure = buildFailure(
+                    kind = DistributionGridFailureKind.POLICY_REJECTED,
+                    reason = "DistributionGrid explicit peer '$peerKey' conflicts with the current trace or privacy policy.",
+                    retryable = false
+                )
+            )
+        }
+
+        val handshakeRequest = DistributionGridHandshakeRequest(
+            requesterNodeId = resolveCurrentNodeId(),
+            requesterMetadata = localMetadata.deepCopy(),
+            registryId = registryScope.toRegistryToken(),
+            supportedProtocolVersions = localMetadata.supportedProtocolVersions.deepCopy<MutableList<DistributionGridProtocolVersion>>(),
+            acceptedTransports = mutableListOf(descriptor.transport.transportMethod),
+            tracePolicy = envelope.tracePolicy.deepCopy(),
+            credentialPolicy = envelope.credentialPolicy.deepCopy(),
+            acceptedRoutingPolicy = envelope.routingPolicy.deepCopy(),
+            requestedSessionDurationSeconds = 3600
+        )
+
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_SESSION_HANDSHAKE,
+            TracePhase.AGENT_COMMUNICATION,
+            metadata = mapOf(
+                "peerKey" to peerKey,
+                "targetNodeId" to peerMetadata.nodeId,
+                "registryId" to registryScope.toRegistryToken()
+            )
+        )
+
+        val response = sendGridRpcRequest(
+            descriptor = descriptor,
+            rpcMessage = DistributionGridRpcMessage(
+                messageType = DistributionGridRpcMessageType.HANDSHAKE_INIT,
+                senderNodeId = resolveCurrentNodeId(),
+                targetId = peerMetadata.nodeId,
+                protocolVersion = localMetadata.supportedProtocolVersions.firstOrNull()?.deepCopy()
+                    ?: DistributionGridProtocolVersion(),
+                sessionRef = null,
+                payloadType = HANDSHAKE_PAYLOAD_TYPE,
+                payloadJson = serialize(handshakeRequest)
+            )
+        )
+
+        if(response.rejection != null)
+        {
+            return DistributionGridPeerHandshakeOutcome(
+                failure = mapRemoteP2PRejectionToFailure(
+                    rejection = response.rejection!!,
+                    peerDescriptor = descriptor
+                )
+            )
+        }
+
+        val rpcResponse = parseGridRpcMessage(response.output?.text.orEmpty()) ?: return DistributionGridPeerHandshakeOutcome(
+            failure = buildFailure(
+                kind = DistributionGridFailureKind.TRANSPORT_FAILURE,
+                reason = "DistributionGrid explicit peer '$peerKey' returned a non-grid handshake response.",
+                retryable = true
+            )
+        )
+        return when(rpcResponse.messageType)
+        {
+            DistributionGridRpcMessageType.HANDSHAKE_ACK ->
+            {
+                val handshakeResponse = deserialize<DistributionGridHandshakeResponse>(
+                    rpcResponse.payloadJson,
+                    useRepair = false
+                ) ?: return DistributionGridPeerHandshakeOutcome(
+                    failure = buildFailure(
+                        kind = DistributionGridFailureKind.TRANSPORT_FAILURE,
+                        reason = "DistributionGrid explicit peer '$peerKey' returned an unreadable handshake acknowledgment.",
+                        retryable = false
+                    )
+                )
+
+                if(!handshakeResponse.accepted)
+                {
+                    val rejectionReason = handshakeResponse.rejectionReason.takeIf { it.isNotBlank() }
+                        ?: "DistributionGrid explicit peer '$peerKey' rejected the handshake."
+                    return DistributionGridPeerHandshakeOutcome(
+                        failure = buildFailure(
+                            kind = DistributionGridFailureKind.HANDSHAKE_REJECTED,
+                            reason = rejectionReason,
+                            retryable = false
+                        )
+                    )
+                }
+
+                val sessionRecord = handshakeResponse.sessionRecord ?: return DistributionGridPeerHandshakeOutcome(
+                    failure = buildFailure(
+                        kind = DistributionGridFailureKind.SESSION_REJECTED,
+                        reason = "DistributionGrid explicit peer '$peerKey' omitted the negotiated session record.",
+                        retryable = false
+                    )
+                )
+                if(rpcResponse.sessionRef != sessionRecord.toSessionRef())
+                {
+                    return DistributionGridPeerHandshakeOutcome(
+                        failure = buildFailure(
+                            kind = DistributionGridFailureKind.HANDSHAKE_REJECTED,
+                            reason = "DistributionGrid explicit peer '$peerKey' returned a handshake session reference that did not match the negotiated session record.",
+                            retryable = false
+                        )
+                    )
+                }
+                val handshakeNegotiatedPolicy = handshakeResponse.negotiatedPolicy ?: return DistributionGridPeerHandshakeOutcome(
+                    failure = buildFailure(
+                        kind = DistributionGridFailureKind.HANDSHAKE_REJECTED,
+                        reason = "DistributionGrid explicit peer '$peerKey' omitted the negotiated policy in its handshake acknowledgment.",
+                        retryable = false
+                    )
+                )
+                val canonicalSessionPolicy = canonicalizeNegotiatedPolicyForComparison(sessionRecord.negotiatedPolicy)
+                val canonicalHandshakePolicy = canonicalizeNegotiatedPolicyForComparison(
+                    handshakeNegotiatedPolicy
+                )
+                if(!handshakeResponse.accepted ||
+                    handshakeResponse.negotiatedProtocolVersion != sessionRecord.negotiatedProtocolVersion ||
+                    canonicalHandshakePolicy != canonicalSessionPolicy ||
+                    !isHandshakeSessionDurationWithinRequestedWindow(
+                        sessionRecord = sessionRecord,
+                        handshakeRequest = handshakeRequest
+                    ) ||
+                    !negotiatedPolicySatisfiesHandshakeRequest(
+                        negotiatedPolicy = sessionRecord.negotiatedPolicy,
+                        handshakeRequest = handshakeRequest
+                    ) ||
+                    !isSessionValid(
+                        sessionRecord = sessionRecord,
+                        expectedRequesterNodeId = resolveCurrentNodeId(),
+                        expectedResponderNodeId = peerMetadata.nodeId
+                    )
+                )
+                {
+                    return DistributionGridPeerHandshakeOutcome(
+                        failure = buildFailure(
+                            kind = DistributionGridFailureKind.HANDSHAKE_REJECTED,
+                            reason = "DistributionGrid explicit peer '$peerKey' returned an invalid or widened handshake acknowledgment.",
+                            retryable = false
+                        )
+                    )
+                }
+
+        cacheSession(sessionRecord, peerKey, registryScope)
+        DistributionGridPeerHandshakeOutcome(sessionRecord = sessionRecord.deepCopy())
+    }
+
+            DistributionGridRpcMessageType.SESSION_REJECT ->
+            {
+                val peerFailure = deserialize<DistributionGridFailure>(
+                    rpcResponse.payloadJson,
+                    useRepair = false
+                ) ?: deserialize<DistributionGridEnvelope>(rpcResponse.payloadJson, useRepair = false)
+                    ?.latestFailure
+                    ?: buildFailure(
+                        kind = DistributionGridFailureKind.SESSION_REJECTED,
+                        reason = "DistributionGrid explicit peer '$peerKey' rejected the handshake.",
+                        retryable = false
+                    )
+
+                DistributionGridPeerHandshakeOutcome(failure = peerFailure)
+            }
+
+            else ->
+            {
+                DistributionGridPeerHandshakeOutcome(
+                    failure = buildFailure(
+                        kind = DistributionGridFailureKind.SESSION_REJECTED,
+                        reason = "DistributionGrid explicit peer '$peerKey' returned unsupported handshake RPC '${rpcResponse.messageType.name}'.",
+                        retryable = false
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * Send one grid RPC request to an explicit remote peer using the normal TPipe transport layer.
+     *
+     * @param descriptor Explicit peer descriptor.
+     * @param rpcMessage Grid RPC message to send.
+     * @return P2P response from the remote peer.
+     */
+    private suspend fun sendGridRpcRequest(
+        descriptor: P2PDescriptor,
+        rpcMessage: DistributionGridRpcMessage
+    ): P2PResponse
+    {
+        val request = buildGridRpcRequest(descriptor, rpcMessage)
+        return P2PRegistry.externalP2PCall(request)
+    }
+
+    /**
+     * Build one outbound P2P request for a grid RPC call using the normal request-template precedence.
+     *
+     * @param descriptor Explicit peer descriptor to target.
+     * @param rpcMessage Grid RPC payload to send.
+     * @return P2P request carrying the serialized RPC message.
+     */
+    private fun buildGridRpcRequest(
+        descriptor: P2PDescriptor,
+        rpcMessage: DistributionGridRpcMessage
+    ): P2PRequest
+    {
+        val baseRequest = descriptor.requestTemplate?.deepCopy<P2PRequest>()
+            ?: P2PRegistry.requestTemplates[descriptor.agentName]?.deepCopy<P2PRequest>()
+            ?: P2PRequest()
+
+        return baseRequest.apply {
+            transport = descriptor.transport.copy()
+            returnAddress = resolveCurrentTransport()
+            prompt = buildGridRpcContent(rpcMessage)
+            context = null
+            customContextDescriptions = null
+            if(transport.transportMethod != Transport.Stdio)
+            {
+                pcpRequest = null
+            }
+            inputSchema = null
+            outputSchema = null
+        }
+    }
+
+    /**
+     * Build terminal content that carries one serialized grid RPC message.
+     *
+     * @param rpcMessage Grid RPC message to serialize.
+     * @return P2P-safe multimodal content payload.
+     */
+    private fun buildGridRpcContent(rpcMessage: DistributionGridRpcMessage): MultimodalContent
+    {
+        return MultimodalContent(text = "$GRID_RPC_FRAME_PREFIX\n${serialize(rpcMessage)}")
+    }
+
+    /**
+     * Canonicalize a negotiated policy so storage-class ordering does not affect equality checks.
+     *
+     * @param negotiatedPolicy Negotiated policy to normalize for comparison.
+     * @return Canonicalized deep copy of the negotiated policy.
+     */
+    private fun canonicalizeNegotiatedPolicyForComparison(
+        negotiatedPolicy: DistributionGridNegotiatedPolicy
+    ): DistributionGridNegotiatedPolicy
+    {
+        return negotiatedPolicy.deepCopy().apply {
+            storageClasses = storageClasses.distinct().sorted().toMutableList()
+        }
+    }
+
+    /**
+     * Clamp one execution envelope to the effective negotiated session policy before remote execution continues.
+     *
+     * @param envelope Envelope to update in place.
+     * @param sessionRecord Session record that carries the negotiated policy.
+     */
+    private fun applyNegotiatedPolicyToEnvelope(
+        envelope: DistributionGridEnvelope,
+        sessionRecord: DistributionGridSessionRecord
+    )
+    {
+        val negotiatedPolicy = sessionRecord.negotiatedPolicy
+        envelope.tracePolicy = negotiatedPolicy.tracePolicy.deepCopy().apply {
+            allowedStorageClasses = negotiatedPolicy.storageClasses.deepCopy()
+        }
+        envelope.routingPolicy = negotiatedPolicy.routingPolicy.deepCopy()
+        envelope.credentialPolicy = negotiatedPolicy.credentialPolicy.deepCopy()
+    }
+
+    /**
+     * Build one grid RPC wrapper that carries a serialized failure payload.
+     *
+     * @param messageType Failure-flavored grid RPC type.
+     * @param targetId Target node identity for the message.
+     * @param failure Failure payload to serialize.
+     * @return Grid RPC message carrying the failure payload.
+     */
+    private fun buildFailureRpcMessage(
+        messageType: DistributionGridRpcMessageType,
+        targetId: String,
+        protocolVersion: DistributionGridProtocolVersion? = null,
+        sessionRef: DistributionGridSessionRef? = null,
+        failure: DistributionGridFailure
+    ): DistributionGridRpcMessage
+    {
+        return DistributionGridRpcMessage(
+            messageType = messageType,
+            senderNodeId = resolveCurrentNodeId(),
+            targetId = targetId,
+            protocolVersion = protocolVersion?.deepCopy()
+                ?: p2pDescriptor?.distributionGridMetadata?.supportedProtocolVersions?.firstOrNull()?.deepCopy()
+                ?: DistributionGridProtocolVersion(),
+            sessionRef = sessionRef?.deepCopy(),
+            payloadType = FAILURE_PAYLOAD_TYPE,
+            payloadJson = serialize(failure)
+        )
+    }
+
+    /**
+     * Map a remote P2P rejection into a more truthful grid failure instead of flattening everything into transport.
+     *
+     * @param rejection Remote boundary rejection returned by the peer transport.
+     * @return Grid failure describing the remote boundary outcome.
+     */
+    private fun mapRemoteP2PRejectionToFailure(
+        rejection: P2PRejection,
+        peerDescriptor: P2PDescriptor
+    ): DistributionGridFailure
+    {
+        val kind = when(rejection.errorType)
+        {
+            P2PError.transport ->
+            {
+                DistributionGridFailureKind.TRANSPORT_FAILURE
+            }
+
+            P2PError.auth ->
+            {
+                DistributionGridFailureKind.TRUST_REJECTED
+            }
+
+            P2PError.configuration,
+            P2PError.context,
+            P2PError.content,
+            P2PError.prompt ->
+            {
+                DistributionGridFailureKind.POLICY_REJECTED
+            }
+
+            P2PError.json ->
+            {
+                DistributionGridFailureKind.HANDSHAKE_REJECTED
+            }
+
+            P2PError.none ->
+            {
+                DistributionGridFailureKind.ROUTING_FAILURE
+            }
+        }
+
+        val retryable = when(rejection.errorType)
+        {
+            P2PError.transport -> true
+            else -> false
+        }
+
+        return buildFailure(
+            kind = kind,
+            reason = rejection.reason.ifBlank { "DistributionGrid remote peer rejected the handoff request." },
+            retryable = retryable
+        ).copy(
+            sourceNodeId = peerDescriptor.distributionGridMetadata?.nodeId?.takeIf { it.isNotBlank() }
+                ?: peerDescriptor.agentName.takeIf { it.isNotBlank() }
+                ?: peerDescriptor.transport.transportAddress.takeIf { it.isNotBlank() }
+                ?: resolveCurrentNodeId(),
+            transportMethod = peerDescriptor.transport.transportMethod,
+            transportAddress = peerDescriptor.transport.transportAddress
+        )
+    }
+
+    /**
+     * Negotiate the Phase 5 handshake policy surface for an inbound explicit-peer handshake.
+     *
+     * @param handshakeRequest Remote handshake request.
+     * @param requestTransport Transport used to reach the current node.
+     * @return Negotiated policy or `null` when no safe overlap exists.
+     */
+    private fun negotiateHandshakePolicy(
+        handshakeRequest: DistributionGridHandshakeRequest,
+        requestTransport: P2PTransport
+    ): DistributionGridNegotiatedPolicy?
+    {
+        val localDescriptor = p2pDescriptor ?: return null
+        val localMetadata = localDescriptor.distributionGridMetadata ?: return null
+        if(handshakeRequest.requesterNodeId.isBlank() && handshakeRequest.requesterMetadata.nodeId.isBlank())
+        {
+            return null
+        }
+
+        if(requestTransport.transportMethod !in localMetadata.supportedTransports)
+        {
+            return null
+        }
+
+        if(handshakeRequest.acceptedTransports.isNotEmpty() &&
+            requestTransport.transportMethod !in handshakeRequest.acceptedTransports
+        )
+        {
+            return null
+        }
+
+        if(!isDescriptorPrivacyCompatible(localDescriptor, handshakeRequest.tracePolicy))
+        {
+            return null
+        }
+
+        val negotiatedVersion = DistributionGridProtocolVersion.negotiateHighestShared(
+            localVersions = localMetadata.supportedProtocolVersions,
+            remoteVersions = handshakeRequest.supportedProtocolVersions
+        ) ?: return null
+
+        val negotiatedTracePolicy = negotiateTracePolicy(
+            localPolicy = localMetadata.defaultTracePolicy,
+            requestedPolicy = handshakeRequest.tracePolicy
+        )
+        val negotiatedRoutingPolicy = negotiateRoutingPolicy(
+            localPolicy = localMetadata.defaultRoutingPolicy,
+            requestedPolicy = handshakeRequest.acceptedRoutingPolicy
+        )
+        val negotiatedCredentialPolicy = negotiateCredentialPolicy(handshakeRequest.credentialPolicy)
+        val storageClasses = negotiateStorageClasses(
+            localPolicy = localMetadata.defaultTracePolicy,
+            requestedPolicy = handshakeRequest.tracePolicy
+        ) ?: return null
+
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_POLICY_EVALUATION,
+            TracePhase.VALIDATION,
+            metadata = mapOf(
+                "requesterNodeId" to handshakeRequest.requesterNodeId.ifBlank {
+                    handshakeRequest.requesterMetadata.nodeId
+                },
+                "protocolVersion" to "${negotiatedVersion.major}.${negotiatedVersion.minor}.${negotiatedVersion.patch}"
+            )
+        )
+
+        return DistributionGridNegotiatedPolicy(
+            protocolVersion = negotiatedVersion,
+            tracePolicy = negotiatedTracePolicy,
+            credentialPolicy = negotiatedCredentialPolicy,
+            routingPolicy = negotiatedRoutingPolicy,
+            storageClasses = storageClasses
+        )
+    }
+
+    /**
+     * Enforce descriptor privacy hints as hard compatibility filters when the requester policy requires it.
+     *
+     * @param descriptor Peer descriptor under consideration.
+     * @param tracePolicy Requester trace or privacy policy.
+     * @return `true` when the descriptor is compatible with the policy.
+     */
+    private fun isDescriptorPrivacyCompatible(
+        descriptor: P2PDescriptor,
+        tracePolicy: DistributionGridTracePolicy
+    ): Boolean
+    {
+        if(!tracePolicy.rejectNonCompliantNodes)
+        {
+            return true
+        }
+
+        val recordsSensitiveData = descriptor.recordsPromptContent || descriptor.recordsInteractionContext
+        if(!tracePolicy.allowTracing && recordsSensitiveData)
+        {
+            return false
+        }
+
+        if(tracePolicy.requireRedaction && recordsSensitiveData)
+        {
+            return false
+        }
+
+        if(!tracePolicy.allowTracePersistence && recordsSensitiveData)
+        {
+            return false
+        }
+
+        return true
+    }
+
+    /**
+     * Negotiate the stricter effective trace policy used for the session.
+     *
+     * @param localPolicy Current node default trace policy.
+     * @param requestedPolicy Requester-supplied trace policy.
+     * @return Negotiated trace policy.
+     */
+    private fun negotiateTracePolicy(
+        localPolicy: DistributionGridTracePolicy,
+        requestedPolicy: DistributionGridTracePolicy
+    ): DistributionGridTracePolicy
+    {
+        val allowedStorageClasses = when
+        {
+            localPolicy.allowedStorageClasses.isNotEmpty() && requestedPolicy.allowedStorageClasses.isNotEmpty() ->
+            {
+                localPolicy.allowedStorageClasses
+                    .intersect(requestedPolicy.allowedStorageClasses.toSet())
+                    .toMutableList()
+            }
+
+            localPolicy.allowedStorageClasses.isNotEmpty() ->
+            {
+                localPolicy.allowedStorageClasses.deepCopy()
+            }
+
+            else ->
+            {
+                requestedPolicy.allowedStorageClasses.deepCopy()
+            }
+        }
+
+        return DistributionGridTracePolicy(
+            allowTracing = localPolicy.allowTracing && requestedPolicy.allowTracing,
+            allowTracePersistence = localPolicy.allowTracePersistence && requestedPolicy.allowTracePersistence,
+            requireRedaction = localPolicy.requireRedaction || requestedPolicy.requireRedaction,
+            rejectNonCompliantNodes = localPolicy.rejectNonCompliantNodes || requestedPolicy.rejectNonCompliantNodes,
+            allowedStorageClasses = allowedStorageClasses,
+            disallowedStorageClasses = (
+                localPolicy.disallowedStorageClasses + requestedPolicy.disallowedStorageClasses
+            ).distinct().toMutableList()
+        )
+    }
+
+    /**
+     * Negotiate the small routing-policy slice Phase 5 actually uses for explicit remote handoff.
+     *
+     * @param localPolicy Current node default routing policy.
+     * @param requestedPolicy Requester-accepted routing policy.
+     * @return Negotiated routing policy.
+     */
+    private fun negotiateRoutingPolicy(
+        localPolicy: DistributionGridRoutingPolicy,
+        requestedPolicy: DistributionGridRoutingPolicy
+    ): DistributionGridRoutingPolicy
+    {
+        val localHopLimit = localPolicy.maxHopCount.coerceAtLeast(1)
+        val requestedHopLimit = requestedPolicy.maxHopCount.coerceAtLeast(1)
+
+        return DistributionGridRoutingPolicy(
+            completionReturnMode = requestedPolicy.completionReturnMode,
+            failureReturnMode = requestedPolicy.failureReturnMode,
+            explicitReturnTransport = requestedPolicy.explicitReturnTransport?.deepCopy(),
+            returnAfterFirstLocalWork = requestedPolicy.returnAfterFirstLocalWork,
+            allowRetrySamePeer = false,
+            maxRetryCount = 0,
+            allowAlternatePeers = false,
+            maxHopCount = minOf(localHopLimit, requestedHopLimit)
+        )
+    }
+
+    /**
+     * Clamp Phase 5 credential negotiation to conservative no-secret-forwarding behavior.
+     *
+     * @param requestedPolicy Requester credential policy.
+     * @return Negotiated credential policy.
+     */
+    private fun negotiateCredentialPolicy(
+        requestedPolicy: DistributionGridCredentialPolicy
+    ): DistributionGridCredentialPolicy
+    {
+        return DistributionGridCredentialPolicy(
+            forwardSecrets = false,
+            credentialRefs = requestedPolicy.credentialRefs.deepCopy(),
+            perHopCredentialRefs = requestedPolicy.perHopCredentialRefs.deepCopy(),
+            allowCredentialTransforms = requestedPolicy.allowCredentialTransforms,
+            denySecretPropagation = true
+        )
+    }
+
+    /**
+     * Resolve the negotiated storage-class set when both peers impose restrictions.
+     *
+     * @param localPolicy Current node trace policy.
+     * @param requestedPolicy Requester trace policy.
+     * @return Effective allowed storage classes or `null` when no safe overlap exists.
+     */
+    private fun negotiateStorageClasses(
+        localPolicy: DistributionGridTracePolicy,
+        requestedPolicy: DistributionGridTracePolicy
+    ): MutableList<String>?
+    {
+        if(localPolicy.allowedStorageClasses.isNotEmpty() && requestedPolicy.allowedStorageClasses.isNotEmpty())
+        {
+            val intersection = localPolicy.allowedStorageClasses
+                .intersect(requestedPolicy.allowedStorageClasses.toSet())
+                .toMutableList()
+
+            if(intersection.isEmpty())
+            {
+                return null
+            }
+
+            return intersection
+        }
+
+        return when
+        {
+            localPolicy.allowedStorageClasses.isNotEmpty() -> localPolicy.allowedStorageClasses.deepCopy()
+            requestedPolicy.allowedStorageClasses.isNotEmpty() -> requestedPolicy.allowedStorageClasses.deepCopy()
+            else -> mutableListOf()
+        }
+    }
+
+    /**
+     * Validate and resolve one inbound session reference supplied by a remote peer.
+     *
+     * @param sessionRef Session reference carried on the RPC wrapper.
+     * @param senderNodeId Sending node id from the RPC wrapper.
+     * @return Valid cached session record or `null` when the reference cannot be trusted anymore.
+     */
+    private fun resolveInboundSession(
+        sessionRef: DistributionGridSessionRef,
+        rpcMessage: DistributionGridRpcMessage,
+        senderNodeId: String
+    ): DistributionGridSessionRecord?
+    {
+        val sessionRecord = sessionRecordsById[sessionRef.sessionId] ?: return null
+        if(!isSessionValid(
+                sessionRecord = sessionRecord,
+                expectedRequesterNodeId = senderNodeId,
+                expectedResponderNodeId = resolveCurrentNodeId()
+            )
+        )
+        {
+            invalidateSession(sessionRecord, "Inbound session reference failed validation.")
+            return null
+        }
+
+        if(!isInboundSessionWrapperValid(
+                sessionRecord = sessionRecord,
+                sessionRef = sessionRef,
+                rpcMessage = rpcMessage
+            )
+        )
+        {
+            invalidateSession(sessionRecord, "Inbound session wrapper did not match the cached session.")
+            return null
+        }
+
+        return sessionRecord.deepCopy()
+    }
+
+    /**
+     * Check whether an inbound RPC wrapper matches the cached session record exactly.
+     *
+     * @param sessionRecord Session record fetched from the cache.
+     * @param sessionRef Session reference carried on the RPC wrapper.
+     * @param rpcMessage Full RPC wrapper carrying the task handoff.
+     * @return `true` when the wrapper matches the cached session and negotiated protocol exactly.
+     */
+    private fun isInboundSessionWrapperValid(
+        sessionRecord: DistributionGridSessionRecord,
+        sessionRef: DistributionGridSessionRef,
+        rpcMessage: DistributionGridRpcMessage
+    ): Boolean
+    {
+        return sessionRef == sessionRecord.toSessionRef() &&
+            rpcMessage.protocolVersion == sessionRecord.negotiatedProtocolVersion
+    }
+
+    /**
+     * Check whether a cached session record is still safe to use.
+     *
+     * @param sessionRecord Session record to validate.
+     * @param expectedRequesterNodeId Expected requester node id.
+     * @param expectedResponderNodeId Expected responder node id.
+     * @return `true` when the session is still valid.
+     */
+    private fun isSessionValid(
+        sessionRecord: DistributionGridSessionRecord,
+        expectedRequesterNodeId: String,
+        expectedResponderNodeId: String
+    ): Boolean
+    {
+        if(sessionRecord.invalidated)
+        {
+            return false
+        }
+
+        if(sessionRecord.expiresAtEpochMillis <= System.currentTimeMillis())
+        {
+            return false
+        }
+
+        if(sessionRecord.requesterNodeId != expectedRequesterNodeId)
+        {
+            return false
+        }
+
+        if(sessionRecord.responderNodeId != expectedResponderNodeId)
+        {
+            return false
+        }
+
+        val localVersions = p2pDescriptor?.distributionGridMetadata?.supportedProtocolVersions ?: return false
+        return localVersions.any { it.major == sessionRecord.negotiatedProtocolVersion.major }
+    }
+
+    /**
+     * Check whether one cached session still satisfies the policy requested by the current task envelope.
+     *
+     * @param sessionRecord Cached session record under consideration.
+     * @param envelope Current task envelope.
+     * @return `true` when the cached negotiated policy is no broader than the envelope request.
+     */
+    private fun sessionPolicySatisfiesEnvelope(
+        sessionRecord: DistributionGridSessionRecord,
+        envelope: DistributionGridEnvelope
+    ): Boolean
+    {
+        return negotiatedPolicySatisfiesRequestedPolicies(
+            negotiatedPolicy = sessionRecord.negotiatedPolicy,
+            requestedTracePolicy = envelope.tracePolicy,
+            requestedRoutingPolicy = envelope.routingPolicy,
+            requestedCredentialPolicy = envelope.credentialPolicy
+        )
+    }
+
+    /**
+     * Check whether one handshake-negotiated policy stayed within the policy requested by the caller.
+     *
+     * @param negotiatedPolicy Negotiated policy returned by the remote peer.
+     * @param handshakeRequest Original handshake request sent by the caller.
+     * @return `true` when the negotiated policy does not widen the request.
+     */
+    private fun negotiatedPolicySatisfiesHandshakeRequest(
+        negotiatedPolicy: DistributionGridNegotiatedPolicy,
+        handshakeRequest: DistributionGridHandshakeRequest
+    ): Boolean
+    {
+        return negotiatedPolicySatisfiesRequestedPolicies(
+            negotiatedPolicy = negotiatedPolicy,
+            requestedTracePolicy = handshakeRequest.tracePolicy,
+            requestedRoutingPolicy = handshakeRequest.acceptedRoutingPolicy,
+            requestedCredentialPolicy = handshakeRequest.credentialPolicy
+        )
+    }
+
+    /**
+     * Check whether the negotiated session expiry stays within the window requested by the caller.
+     *
+     * @param sessionRecord Negotiated session record returned by the peer.
+     * @param handshakeRequest Original handshake request sent by the caller.
+     * @return `true` when the peer's expiry remains within the requested duration window.
+     */
+    private fun isHandshakeSessionDurationWithinRequestedWindow(
+        sessionRecord: DistributionGridSessionRecord,
+        handshakeRequest: DistributionGridHandshakeRequest
+    ): Boolean
+    {
+        val requestedSeconds = resolveRequestedSessionSeconds(handshakeRequest.requestedSessionDurationSeconds)
+            ?: return false
+        val maxExpiresAt = System.currentTimeMillis() + requestedSeconds * 1000L
+        return sessionRecord.expiresAtEpochMillis <= maxExpiresAt
+    }
+
+    /**
+     * Check whether one negotiated policy is no broader than the requested trace, routing, and credential policies.
+     *
+     * @param negotiatedPolicy Effective negotiated policy to validate.
+     * @param requestedTracePolicy Requested trace policy.
+     * @param requestedRoutingPolicy Requested routing policy.
+     * @param requestedCredentialPolicy Requested credential policy.
+     * @return `true` when the negotiated policy stays within the requested limits.
+     */
+    private fun negotiatedPolicySatisfiesRequestedPolicies(
+        negotiatedPolicy: DistributionGridNegotiatedPolicy,
+        requestedTracePolicy: DistributionGridTracePolicy,
+        requestedRoutingPolicy: DistributionGridRoutingPolicy,
+        requestedCredentialPolicy: DistributionGridCredentialPolicy
+    ): Boolean
+    {
+        val tracePolicy = negotiatedPolicy.tracePolicy
+        if(tracePolicy.allowTracing && !requestedTracePolicy.allowTracing)
+        {
+            return false
+        }
+
+        if(tracePolicy.allowTracePersistence && !requestedTracePolicy.allowTracePersistence)
+        {
+            return false
+        }
+
+        if(requestedTracePolicy.requireRedaction && !tracePolicy.requireRedaction)
+        {
+            return false
+        }
+
+        if(requestedTracePolicy.rejectNonCompliantNodes && !tracePolicy.rejectNonCompliantNodes)
+        {
+            return false
+        }
+
+        if(requestedTracePolicy.allowedStorageClasses.isNotEmpty() &&
+            !negotiatedPolicy.storageClasses.all { it in requestedTracePolicy.allowedStorageClasses }
+        )
+        {
+            return false
+        }
+
+        if(!tracePolicy.disallowedStorageClasses.containsAll(requestedTracePolicy.disallowedStorageClasses))
+        {
+            return false
+        }
+
+        val routingPolicy = negotiatedPolicy.routingPolicy
+        if(routingPolicy.completionReturnMode != requestedRoutingPolicy.completionReturnMode ||
+            routingPolicy.failureReturnMode != requestedRoutingPolicy.failureReturnMode ||
+            routingPolicy.explicitReturnTransport != requestedRoutingPolicy.explicitReturnTransport ||
+            routingPolicy.returnAfterFirstLocalWork != requestedRoutingPolicy.returnAfterFirstLocalWork
+        )
+        {
+            return false
+        }
+
+        if(routingPolicy.allowRetrySamePeer && !requestedRoutingPolicy.allowRetrySamePeer)
+        {
+            return false
+        }
+
+        if(routingPolicy.maxRetryCount > requestedRoutingPolicy.maxRetryCount)
+        {
+            return false
+        }
+
+        if(routingPolicy.allowAlternatePeers && !requestedRoutingPolicy.allowAlternatePeers)
+        {
+            return false
+        }
+
+        if(routingPolicy.maxHopCount > requestedRoutingPolicy.maxHopCount.coerceAtLeast(1))
+        {
+            return false
+        }
+
+        val credentialPolicy = negotiatedPolicy.credentialPolicy
+        if(credentialPolicy.forwardSecrets && !requestedCredentialPolicy.forwardSecrets)
+        {
+            return false
+        }
+
+        if(!credentialPolicy.credentialRefs.all { it in requestedCredentialPolicy.credentialRefs })
+        {
+            return false
+        }
+
+        if(!credentialPolicy.perHopCredentialRefs.keys.all { requestedCredentialPolicy.perHopCredentialRefs.containsKey(it) })
+        {
+            return false
+        }
+
+        val hasCredentialValueMismatch = credentialPolicy.perHopCredentialRefs.any { (nodeId, credentialRef) ->
+            requestedCredentialPolicy.perHopCredentialRefs[nodeId] != credentialRef
+        }
+        if(hasCredentialValueMismatch)
+        {
+            return false
+        }
+
+        if(credentialPolicy.allowCredentialTransforms && !requestedCredentialPolicy.allowCredentialTransforms)
+        {
+            return false
+        }
+
+        if(requestedCredentialPolicy.denySecretPropagation && !credentialPolicy.denySecretPropagation)
+        {
+            return false
+        }
+
+        return true
+    }
+
+    /**
+     * Cache one validated session record for later explicit-peer reuse.
+     *
+     * @param sessionRecord Session record to store.
+     * @param peerKey Optional explicit-peer key for outbound reuse.
+     */
+    private fun cacheSession(
+        sessionRecord: DistributionGridSessionRecord,
+        peerKey: String? = null,
+        registryScope: DistributionGridRegistryScope? = null
+    )
+    {
+        sessionRecordsById[sessionRecord.sessionId] = sessionRecord.deepCopy()
+
+        if(peerKey != null)
+        {
+            val resolvedRegistryScope = registryScope ?: resolveRegistryScopeFromToken(sessionRecord.registryId)
+            sessionRecordsByPeerKey[buildPeerSessionCacheKey(peerKey, resolvedRegistryScope)] = sessionRecord.deepCopy()
+        }
+    }
+
+    /**
+     * Cache one session using the legacy peer-key-only helper signature.
+     *
+     * @param sessionRecord Session record to store.
+     * @param peerKey Optional explicit-peer key for outbound reuse.
+     */
+    private fun cacheSession(
+        sessionRecord: DistributionGridSessionRecord,
+        peerKey: String? = null
+    )
+    {
+        cacheSession(
+            sessionRecord = sessionRecord,
+            peerKey = peerKey,
+            registryScope = null
+        )
+    }
+
+    /**
+     * Invalidate one cached session everywhere it may have been stored.
+     *
+     * @param sessionRecord Session record to invalidate.
+     * @param reason Human-readable invalidation reason.
+     */
+    private fun invalidateSession(
+        sessionRecord: DistributionGridSessionRecord,
+        reason: String
+    )
+    {
+        sessionRecordsById.remove(sessionRecord.sessionId)
+        val peerKeys = sessionRecordsByPeerKey
+            .filterValues { it.sessionId == sessionRecord.sessionId }
+            .keys
+            .toList()
+        peerKeys.forEach { sessionRecordsByPeerKey.remove(it) }
+    }
+
+    /**
+     * Build the stable cache key used for one explicit-peer session.
+     *
+     * @param peerKey Canonical explicit-peer key.
+     * @param registryScope Canonical registry scope for the session.
+     * @return Stable cache key.
+     */
+    private fun buildPeerSessionCacheKey(
+        peerKey: String,
+        registryScope: DistributionGridRegistryScope
+    ): DistributionGridPeerSessionKey
+    {
+        return DistributionGridPeerSessionKey(
+            peerKey = peerKey,
+            registryScope = registryScope
+        )
+    }
+
+    /**
+     * Resolve the canonical registry scope that scopes explicit-peer sessions for the current node.
+     *
+     * @return Canonical registry scope or an empty scope when the node is not registry-scoped.
+     */
+    private fun resolveCurrentRegistryScope(): DistributionGridRegistryScope
+    {
+        val memberships = p2pDescriptor?.distributionGridMetadata?.registryMemberships
+            .orEmpty()
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
+
+        return DistributionGridRegistryScope(memberships = memberships)
+    }
+
+    /**
+     * Resolve the registry relationship token used on the wire for explicit-peer sessions.
+     *
+     * @return Canonical registry token or blank when the node is not registry-scoped.
+     */
+    private fun resolveCurrentRegistryContextId(): String
+    {
+        return resolveCurrentRegistryScope().toRegistryToken()
+    }
+
+    /**
+     * Decode one registry token back into the canonical scope structure used for cache identity.
+     *
+     * @param registryToken Registry token stored on a session record or handshake payload.
+     * @return Canonical registry scope.
+     */
+    private fun resolveRegistryScopeFromToken(registryToken: String): DistributionGridRegistryScope
+    {
+        if(registryToken.isBlank())
+        {
+            return DistributionGridRegistryScope(memberships = mutableListOf())
+        }
+
+        if(registryToken.indexOf('%') == -1 && registryToken.indexOf('|') == -1)
+        {
+            return DistributionGridRegistryScope(memberships = mutableListOf(registryToken))
+        }
+
+        val memberships = mutableListOf<String>()
+        val buffer = StringBuilder()
+        var index = 0
+        while(index < registryToken.length)
+        {
+            val character = registryToken[index]
+            if(character == '%' && index + 2 < registryToken.length)
+            {
+                when(registryToken.substring(index, index + 3))
+                {
+                    "%25" ->
+                    {
+                        buffer.append('%')
+                        index += 3
+                        continue
+                    }
+
+                    "%7C" ->
+                    {
+                        buffer.append('|')
+                        index += 3
+                        continue
+                    }
+                }
+            }
+
+            if(character == '|')
+            {
+                memberships.add(buffer.toString())
+                buffer.clear()
+                index += 1
+                continue
+            }
+
+            buffer.append(character)
+            index += 1
+        }
+
+        memberships.add(buffer.toString())
+        return DistributionGridRegistryScope(
+            memberships = memberships.filter { it.isNotBlank() }.distinct().sorted()
+        )
+    }
+
+    /**
+     * Invalidate and clear all cached sessions.
+     *
+     * @param reason Invalidation reason to record conceptually for diagnostics.
+     */
+    private fun invalidateAllSessions(reason: String)
+    {
+        if(sessionRecordsById.isNotEmpty())
+        {
+            sessionRecordsById.values.toList().forEach { session ->
+                session.invalidated = true
+                session.invalidationReason = reason
+            }
+        }
+
+        sessionRecordsByPeerKey.clear()
+        sessionRecordsById.clear()
+    }
+
+    /**
+     * Resolve the requested session duration without silently widening short requests.
+     *
+     * @param requestedSeconds Requested session duration in seconds.
+     * @return Valid session duration in seconds, or `null` when the request is non-positive.
+     */
+    private fun resolveRequestedSessionSeconds(requestedSeconds: Int): Int?
+    {
+        if(requestedSeconds <= 0)
+        {
+            return null
+        }
+
+        return requestedSeconds.coerceAtMost(3600)
+    }
+
+    /**
+     * Extract the serialized terminal envelope from returned content, or reconstruct a minimal snapshot if missing.
+     *
+     * @param content Terminal content returned by local execution.
+     * @param fallbackEnvelope Fallback envelope to update when metadata is missing.
+     * @return Terminal envelope snapshot.
+     */
+    private fun extractEnvelopeFromTerminalContent(
+        content: MultimodalContent,
+        fallbackEnvelope: DistributionGridEnvelope
+    ): DistributionGridEnvelope
+    {
+        val metadataEnvelope = content.metadata[ENVELOPE_METADATA_KEY] as? DistributionGridEnvelope
+        if(metadataEnvelope != null)
+        {
+            return metadataEnvelope.deepCopy()
+        }
+
+        return fallbackEnvelope.deepCopy().apply {
+            this.content = content.deepCopy()
+            this.completed = content.passPipeline || content.terminatePipeline
+            this.latestOutcome = content.metadata[OUTCOME_METADATA_KEY] as? DistributionGridOutcome
+            this.latestFailure = content.metadata[FAILURE_METADATA_KEY] as? DistributionGridFailure
+        }
+    }
+
+    /**
+     * Merge an outbound handoff record and returned remote envelope into the local finalization envelope.
+     *
+     * @param envelope Local pre-dispatch envelope.
+     * @param peerDescriptor Explicit remote peer descriptor.
+     * @param remoteEnvelope Remote terminal envelope returned by the peer.
+     * @param startedAt Original execution start timestamp.
+     * @param completedAt Completion timestamp for the remote exchange.
+     * @return Merged envelope ready for local finalization.
+     */
+    private fun mergeRemoteSuccess(
+        envelope: DistributionGridEnvelope,
+        peerDescriptor: P2PDescriptor,
+        remoteEnvelope: DistributionGridEnvelope,
+        startedAt: Long,
+        completedAt: Long,
+        resolvedSessionRef: DistributionGridSessionRef? = null
+    ): DistributionGridEnvelope
+    {
+        val remoteNodeId = remoteEnvelope.currentNodeId.ifBlank {
+            peerDescriptor.distributionGridMetadata?.nodeId ?: envelope.currentNodeId
+        }
+        val remoteTransport = remoteEnvelope.currentTransport.deepCopy().takeIf {
+            it.transportAddress.isNotBlank() || it.transportAuthBody.isNotBlank()
+        } ?: peerDescriptor.transport.deepCopy()
+
+        val mergedEnvelope = envelope.deepCopy().apply {
+            content = remoteEnvelope.content.deepCopy()
+            completed = remoteEnvelope.completed
+            latestOutcome = remoteEnvelope.latestOutcome?.deepCopy()
+            latestFailure = remoteEnvelope.latestFailure?.deepCopy()
+            sessionRef = resolvedSessionRef?.deepCopy()
+                ?: remoteEnvelope.sessionRef?.deepCopy()
+                ?: sessionRef
+            currentNodeId = remoteNodeId
+            currentTransport = remoteTransport.deepCopy()
+            executionNotes.addAll(remoteEnvelope.executionNotes.deepCopy())
+            executionNotes.add("Explicit remote handoff returned from '$remoteNodeId'.")
+        }
+
+        mergedEnvelope.hopHistory.add(
+            buildRemoteDispatchHopRecord(
+                envelope = envelope,
+                peerDescriptor = peerDescriptor,
+                resultSummary = "Remote handoff completed successfully.",
+                startedAt = startedAt,
+                completedAt = completedAt
+            )
+        )
+        mergedEnvelope.hopHistory.addAll(remoteEnvelope.hopHistory.deepCopy())
+
+        return mergedEnvelope
+    }
+
+    /**
+     * Merge an outbound handoff record and remote failure details into the local finalization envelope.
+     *
+     * @param envelope Local pre-dispatch envelope.
+     * @param peerDescriptor Explicit remote peer descriptor.
+     * @param failure Failure to attach.
+     * @param startedAt Original execution start timestamp.
+     * @param completedAt Completion timestamp for the remote exchange.
+     * @param resultSummary Human-readable hop result summary.
+     * @param remoteEnvelope Optional remote envelope when the peer returned one.
+     * @return Merged envelope ready for local failure finalization.
+     */
+    private fun mergeRemoteFailure(
+        envelope: DistributionGridEnvelope,
+        peerDescriptor: P2PDescriptor,
+        failure: DistributionGridFailure,
+        startedAt: Long,
+        completedAt: Long,
+        resultSummary: String,
+        remoteEnvelope: DistributionGridEnvelope? = null,
+        resolvedSessionRef: DistributionGridSessionRef? = null
+    ): DistributionGridEnvelope
+    {
+        val remoteNodeId = remoteEnvelope?.currentNodeId?.takeIf { it.isNotBlank() }
+            ?: peerDescriptor.distributionGridMetadata?.nodeId
+            ?: envelope.currentNodeId
+        val remoteTransport = remoteEnvelope?.currentTransport?.deepCopy()?.takeIf {
+            it.transportAddress.isNotBlank() || it.transportAuthBody.isNotBlank()
+        } ?: peerDescriptor.transport.deepCopy()
+
+        val mergedEnvelope = envelope.deepCopy().apply {
+            latestFailure = failure.deepCopy()
+            latestOutcome = remoteEnvelope?.latestOutcome?.deepCopy()
+            sessionRef = resolvedSessionRef?.deepCopy()
+                ?: remoteEnvelope?.sessionRef?.deepCopy()
+                ?: sessionRef
+            content = remoteEnvelope?.content?.deepCopy() ?: content.deepCopy()
+            executionNotes.addAll(remoteEnvelope?.executionNotes?.deepCopy().orEmpty())
+            currentNodeId = remoteNodeId
+            currentTransport = remoteTransport.deepCopy()
+        }
+
+        mergedEnvelope.executionNotes.add("Explicit remote handoff failed: ${failure.reason}")
+        mergedEnvelope.hopHistory.add(
+            buildRemoteDispatchHopRecord(
+                envelope = envelope,
+                peerDescriptor = peerDescriptor,
+                resultSummary = resultSummary,
+                startedAt = startedAt,
+                completedAt = completedAt
+            )
+        )
+
+        if(remoteEnvelope != null)
+        {
+            mergedEnvelope.hopHistory.addAll(remoteEnvelope.hopHistory.deepCopy())
+        }
+
+        return mergedEnvelope
+    }
+
+    /**
+     * Build one outbound explicit-peer hop record from the sender node's perspective.
+     *
+     * @param envelope Current local envelope.
+     * @param peerDescriptor Explicit peer descriptor being contacted.
+     * @param resultSummary Human-readable hop result summary.
+     * @param startedAt Hop start timestamp.
+     * @param completedAt Hop completion timestamp.
+     * @return Hop record for the remote dispatch.
+     */
+    private fun buildRemoteDispatchHopRecord(
+        envelope: DistributionGridEnvelope,
+        peerDescriptor: P2PDescriptor,
+        resultSummary: String,
+        startedAt: Long,
+        completedAt: Long
+    ): DistributionGridHopRecord
+    {
+        return DistributionGridHopRecord(
+            sourceNodeId = envelope.currentNodeId,
+            destinationNodeId = peerDescriptor.distributionGridMetadata?.nodeId
+                ?: peerDescriptor.transport.transportAddress,
+            transportMethod = peerDescriptor.transport.transportMethod,
+            transportAddress = peerDescriptor.transport.transportAddress,
+            routerAction = DistributionGridDirectiveKind.HAND_OFF_TO_PEER,
+            privacyDecision = if(envelope.tracePolicy.requireRedaction) "redacted" else "standard",
+            resultSummary = resultSummary,
+            startedAtEpochMillis = startedAt,
+            completedAtEpochMillis = completedAt
         )
     }
 
@@ -1710,6 +4016,7 @@ class DistributionGrid : P2PInterface
     private fun markShellDirty()
     {
         initialized = false
+        invalidateAllSessions("Grid configuration changed.")
     }
 
     /**
@@ -2153,5 +4460,21 @@ class DistributionGrid : P2PInterface
             DistributionGridDirectiveKind.RETURN_TO_TRANSPORT -> DistributionGridReturnMode.RETURN_TO_TRANSPORT
             else -> DistributionGridReturnMode.RETURN_TO_SENDER
         }
+    }
+
+    /**
+     * Build the lightweight session reference reused on later grid RPC messages.
+     *
+     * @return Compact session reference for the record.
+     */
+    private fun DistributionGridSessionRecord.toSessionRef(): DistributionGridSessionRef
+    {
+        return DistributionGridSessionRef(
+            sessionId = sessionId,
+            requesterNodeId = requesterNodeId,
+            responderNodeId = responderNodeId,
+            registryId = registryId,
+            expiresAtEpochMillis = expiresAtEpochMillis
+        )
     }
 }

@@ -366,6 +366,7 @@ data class DistributionGridSessionRef(
     var sessionId: String = "",
     var requesterNodeId: String = "",
     var responderNodeId: String = "",
+    var registryId: String = "",
     var expiresAtEpochMillis: Long = 0L
 )
 

@@ -1,7 +1,7 @@
 # DistributionGrid Plan
 
 Date: 2026-03-25
-Last Updated: 2026-03-25
+Last Updated: 2026-03-26
 
 ## Purpose
 
@@ -11,38 +11,37 @@ Use this file for the current task only. Move durable implementation truth into 
 
 ## Current Task
 
-- Task: Phase 5 - implement explicit remote peer handoff on top of the shipped local execution core.
-- Status: ready
-- Exact progress: Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are complete; Phase 5 has not started
-- Last updated: 2026-03-25
+- Task: Phase 5 stability repair pass - invalidate peer-level cached sessions and remove cache-key aliasing.
+- Status: in progress
+- Exact progress: Phase 0 through Phase 5 are complete; Phase 5 now has a targeted repair pass in flight and Phase 6 remains queued
+- Last updated: 2026-03-26
 - Files in scope:
   - `src/main/kotlin/Pipeline/DistributionGrid.kt`
-  - `src/test/kotlin/Pipeline/DistributionGridExecutionCoreTest.kt`
   - `src/test/kotlin/Pipeline/DistributionGridRemoteHandoffTest.kt`
-- Last completed step: landed the first local-only execution runtime, grid-level DITL hook registration, local hop or outcome or failure mapping, and Phase 4 execution tracing
-- Current blocker: none; Phase 5 may add only explicit-peer remote handoff and must still avoid registry discovery or lease-based membership
-- Next atomic step: add the explicit-peer handshake and session path, then route one remote handoff through configured peer descriptors only
-- Verification target: explicit peer handoff requires valid grid metadata plus handshake or valid session state, and remote returns or failures map back through the normal `P2PResponse` boundary
+- Last completed step: stabilized the explicit-peer remote-handoff slice again by forcing fresh handshakes when cached sessions no longer satisfy current task policy and by rejecting widened handshake acknowledgements before session caching or task handoff
+- Current blocker: none; the remaining work is a Phase 5 repair pass, not a discovery dependency
+- Next atomic step: replace concatenated peer-session keys with a structured key and invalidate cached sessions on peer boundary failures
+- Verification target: boundary rejections clear stale explicit-peer sessions, peer/registry cache keys do not alias, and the next call re-handshakes when the remote side changes state
 
 ## Milestones
 
-- [ ] Add explicit remote peer dispatch for configured peer bindings or descriptors only.
-- [ ] Add mandatory handshake and negotiated policy validation before first remote handoff.
-- [ ] Add session creation and valid session reuse for repeated explicit-peer calls.
-- [ ] Map remote returns and remote failures back into the local envelope and terminal content surface.
-- [ ] Verify explicit remote handoff works without adding registry discovery, lease renewal, or trust-anchor expansion.
+- [ ] Add bootstrap trust-anchor inputs for registry discovery.
+- [ ] Add registry and node advertisement verification for discovered candidates.
+- [ ] Add structured registry query execution and candidate filtering.
+- [ ] Add lease-based membership and renewal bookkeeping.
+- [ ] Verify discovered peers still require explicit grid metadata plus handshake or valid session state before routing.
 
 ## Upcoming Queue
-
-- `Phase 5: Explicit Remote Peer Handoff`
-  Scope: add remote handoff to explicitly configured peers with mandatory handshake, negotiated policy, session creation, and mapped remote returns or failures.
-  Must not touch: registry discovery, lease renewal, trust-anchor expansion beyond explicit peers.
-  Verification target: explicit peer handoff requires valid grid metadata plus handshake or valid session state.
 
 - `Phase 6: Registry Discovery And Membership`
   Scope: add bootstrap-trust discovery, lease-based registration, structured registry queries, and candidate advertisement verification.
   Must not touch: broader runtime hardening, DSL ergonomics, or public-doc completion claims beyond shipped discovery behavior.
   Verification target: trusted registries can be queried safely and discovered candidates are verified before routing.
+
+- `Phase 7: Cross-Cutting Runtime Hardening`
+  Scope: add outbound memory shaping, durability behavior, privacy or auth or PCP mediation, trace export alignment, and safe pause checkpoints.
+  Must not touch: DSL ergonomics or final public-doc completion claims beyond shipped hardening behavior.
+  Verification target: the remote runtime matches the approved TPipe memory, privacy, auth, durability, and tracing policies.
 
 ## Recent Task History
 
@@ -55,6 +54,9 @@ Use this file for the current task only. Move durable implementation truth into 
 - 2026-03-25: Completed Phase 2 by replacing the stub shell with the non-executing configuration shell and focused registration tests.
 - 2026-03-25: Completed Phase 3 by adding validation, lifecycle controls, child-pipeline exposure, grid descriptor metadata, and focused validation or lifecycle tests.
 - 2026-03-25: Completed Phase 4 by landing the first local execution core, shared direct or local or inbound P2P runtime normalization, local DITL hooks, hop or outcome or failure mapping, and focused execution-core tests.
+- 2026-03-25: Completed Phase 5 by landing explicit-peer remote handoff, grid RPC over normal P2P requests, mandatory handshake, in-memory session reuse, and focused remote-handoff tests.
+- 2026-03-26: Stabilized Phase 5 by fixing stale-session recovery after `SESSION_REJECT`, making negotiated session policy authoritative on remote execution, framing grid RPC prompts explicitly, and aligning remote-success `hopCount` with recorded hops.
+- 2026-03-26: Hardened Phase 5 policy integrity by revalidating cached sessions against current task policy and rejecting handshake acknowledgements that widen the requested trace, routing, or credential policy.
 
 ## Sync Rules
 

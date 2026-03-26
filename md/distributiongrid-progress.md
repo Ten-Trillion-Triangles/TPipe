@@ -1,7 +1,7 @@
 # DistributionGrid Progress
 
 Date: 2026-03-25
-Last Updated: 2026-03-25
+Last Updated: 2026-03-26
 
 ## Overview
 
@@ -15,7 +15,7 @@ Steering-set ownership:
 
 ## Current Status
 
-- `DistributionGrid` is now a local-executing, Phase 4 harness as of 2026-03-25.
+- `DistributionGrid` is now an explicit-peer remote-capable, Phase 5 harness as of 2026-03-25.
 - The old stub-era `setEntryPipeline()` surface and legacy task or judgement placeholder runtime are no longer the active implementation shape.
 - The contract layer from Phase 1 is in place:
   - `DistributionGridModels.kt`
@@ -41,12 +41,26 @@ Steering-set ownership:
   - local hop history, outcome metadata, failure metadata, and dual content-level success or failure signaling now exist
   - public grid-level DITL hook registration now exists for route, local-worker, failure, and outcome-transformation stages
   - local execution-time grid tracing now emits start, decision, local worker, success or failure, and end events
-- Focused regression coverage now exists for contract models, shell registration behavior, validation/lifecycle behavior, and local execution behavior:
+- The Phase 5 explicit remote handoff slice is now in place:
+  - explicit remote handoff now works through configured external peer descriptors
+  - grid RPC now rides over normal P2P requests through explicitly framed serialized `DistributionGridRpcMessage` payloads
+  - first-contact handshake, negotiated policy, and in-memory session reuse now exist for explicit peers
+  - negotiated session policy is now enforced for outbound and inbound remote task execution
+  - cached sessions are now reused only when they still satisfy the current task policy, otherwise a fresh handshake is required
+  - widened handshake acknowledgements are now rejected before session caching or task handoff
+  - inbound remote envelopes now record the caller's return address as the sender transport
+  - peer-authored handshake rejection details are now preserved instead of being flattened into a generic session rejection
+  - inbound remote `HANDSHAKE_INIT`, `TASK_HANDOFF`, `TASK_RETURN`, `TASK_FAILURE`, and `SESSION_REJECT` handling now exists
+  - remote returns and failures now map back into the sender envelope and terminal content surface, and stale sessions are invalidated on `SESSION_REJECT`
+  - peer-dispatch and peer-response hooks now run on the explicit remote path
+- Phase 5 is now in a targeted repair pass for peer-level session eviction and explicit-peer cache-key stability.
+- Focused regression coverage now exists for contract models, shell registration behavior, validation/lifecycle behavior, local execution behavior, and explicit remote handoff behavior:
   - `DistributionGridContractModelsTest.kt`
   - `DistributionGridShellRegistrationTest.kt`
   - `DistributionGridValidationLifecycleTest.kt`
   - `DistributionGridExecutionCoreTest.kt`
-- `DistributionGrid` still does not perform remote peer handoff, registry discovery, handshake/session runtime behavior, durability behavior, privacy policy enforcement, auth policy enforcement beyond local defaults, or memory-policy behavior yet.
+  - `DistributionGridRemoteHandoffTest.kt`
+- `DistributionGrid` still does not perform registry discovery, leased membership, durable-session persistence, runtime durability behavior, outbound memory shaping, or full privacy or auth or PCP mediation yet.
 - The steering-doc set now contains the approved full node-based architecture specification for the future runtime.
 - The implementation order has now been codified into explicit phases so runtime work can proceed without crossing phase boundaries accidentally.
 
@@ -57,7 +71,7 @@ Steering-set ownership:
 - `Phase 2: Container Shell And Registration Semantics` — complete
 - `Phase 3: Validation, Shared Infra, And Lifecycle` — complete
 - `Phase 4: Local Execution Core` — complete
-- `Phase 5: Explicit Remote Peer Handoff` — not started
+- `Phase 5: Explicit Remote Peer Handoff` — complete
 - `Phase 6: Registry Discovery And Membership` — not started
 - `Phase 7: Cross-Cutting Runtime Hardening` — not started
 - `Phase 8: DSL, Defaults, Public Docs, And Final Coverage` — not started
@@ -69,6 +83,10 @@ Steering-set ownership:
 - `Phase 2`: the old stub shell has been replaced with the non-executing configuration shell, and focused shell-registration tests now pass without adding execution flow, descriptor metadata changes, or trace vocabulary changes.
 - `Phase 3`: `DistributionGrid` now validates its local graph, exposes child pipelines, carries typed grid metadata on descriptors, and passes focused validation/lifecycle tests without adding task execution.
 - `Phase 4`: `DistributionGrid` now executes the local router-to-worker path through one normalized runtime flow, preserves normal TPipe success or failure semantics, exposes grid-level DITL hooks, and passes focused execution-core tests without adding remote handoff or discovery.
+- `Phase 5`: `DistributionGrid` now performs explicit-peer remote handoff through explicitly framed grid RPC messages, enforces handshake or valid-session requirements for explicit peers, and passes focused remote-handoff tests without adding registry discovery.
+- `Phase 5`: `DistributionGrid` now preserves caller return-address transport on inbound remote envelopes and peer-authored handshake rejection details on `SESSION_REJECT`.
+- `Phase 5`: `DistributionGrid` now invalidates cached explicit-peer sessions when the peer rejects a task handoff at the transport boundary or returns a non-grid response.
+- `Phase 5`: `DistributionGrid` now uses a structured explicit-peer session cache key so peer and registry strings cannot alias through separator collisions.
 
 ## Plan At A Glance
 
@@ -77,7 +95,7 @@ Steering-set ownership:
 - [x] Phase 2: Container Shell And Registration Semantics
 - [x] Phase 3: Validation, Shared Infra, And Lifecycle
 - [x] Phase 4: Local Execution Core
-- [ ] Phase 5: Explicit Remote Peer Handoff
+- [x] Phase 5: Explicit Remote Peer Handoff
 - [ ] Phase 6: Registry Discovery And Membership
 - [ ] Phase 7: Cross-Cutting Runtime Hardening
 - [ ] Phase 8: DSL, Defaults, Public Docs, And Final Coverage
@@ -100,6 +118,14 @@ Steering-set ownership:
 - The Phase 4 shell now supports local router-to-worker execution, router return/reject/terminate handling, local hop recording, and terminal outcome or failure metadata.
 - The Phase 4 shell now exposes grid-level DITL hook registration for the local execution flow and reserves peer or outbound-memory hook surfaces for later remote phases.
 - Focused Phase 4 tests now cover local execution normalization, direct and inbound P2P execution, directive handling, local failure preservation, hook ordering, and execution-time tracing.
+- The Phase 5 shell now performs explicit remote peer handoff through configured external peer descriptors only and keeps attached local peers out of the remote target set.
+- The Phase 5 shell now serializes grid RPC messages into `P2PRequest.prompt.text` so handshake and task-exchange traffic can ride over the normal `Transport.Tpipe`, `Transport.Http`, and `Transport.Stdio` request paths.
+- The Phase 5 shell now enforces mandatory first-contact handshake for explicit peers, caches valid sessions in memory, invalidates stale sessions on `SESSION_REJECT`, and reuses those sessions on repeated explicit-peer calls until invalidation or expiry.
+- The Phase 5 shell now supports inbound handshake and task-handoff RPC handling while forcing inbound remote task execution to stay in single-node mode.
+- The Phase 5 shell now treats negotiated session policy as authoritative during remote task execution, revalidates cached sessions against the current task envelope before reuse, rejects widened handshake acknowledgements, preserves caller return-address transport on inbound remote envelopes, preserves peer-authored handshake rejection details, and no longer auto-detects internal RPC traffic from ordinary JSON prompts.
+- The Phase 5 shell now evicts explicit-peer sessions after peer-level transport rejections and malformed remote responses so the next call can renegotiate cleanly.
+- The Phase 5 shell now keeps explicit-peer cache keys structured instead of concatenating raw peer and registry strings.
+- Focused Phase 5 tests now cover explicit remote handoff success, session reuse, explicit-peer metadata rejection, inbound nested-handoff rejection, peer hook invocation, local-peer exclusion, and boundary handshake rejection.
 - Internal docs already describe `DistributionGrid` as incomplete rather than production-ready.
 - The `DistributionGrid` steering set now has dedicated design, progress, and plan files.
 - The design doc now records the approved remote node architecture, the envelope-first public contract, and the TPipe standards integration surface for the future runtime.
@@ -145,6 +171,9 @@ Steering-set ownership:
 - Phase 4 exposes public grid-level DITL hook registration now rather than deferring the public hook surface to later hardening phases.
 - Phase 4 defaults a missing router directive to `RUN_LOCAL_WORKER` and currently resolves router decisions from `MultimodalContent.metadata["distributionGridDirective"]`.
 - Phase 4 preserves TPipe-style terminal content semantics by setting `passPipeline = true` on successful local completion and `terminatePipeline = true` on terminal local failure.
+- Phase 5 supports explicit remote handoff only through `addPeerDescriptor(...)` external peers; attached local peers remain local-only.
+- Phase 5 currently finalizes locally after one remote reply rather than resuming a full multi-hop routing loop at the sender.
+- Phase 5 currently supports only primary `HAND_OFF_TO_PEER`; retry and alternate-peer directives remain deferred.
 
 ## Risks And Guardrails
 
@@ -169,8 +198,8 @@ Steering-set ownership:
 - Risk: implementation work may again jump ahead of the approved dependency order and create rework.
 - Guardrail: the phase board is now authoritative for what may be implemented next, and each phase has explicit exclusions in the design doc.
 
-- Risk: the local execution slice could be mistaken for full grid routing readiness.
-- Guardrail: all docs and tests must continue to state clearly that after Phase 4 only local execution is shipped; remote handoff, handshake, and registry behavior remain unimplemented.
+- Risk: the explicit-peer remote slice could be mistaken for full discovery-ready distributed routing.
+- Guardrail: all docs and tests must continue to state clearly that after Phase 5 only explicit-peer remote handoff is shipped; registry discovery, leased membership, and cross-cutting hardening remain unimplemented.
 
 ## Verification Log
 
@@ -192,6 +221,13 @@ Steering-set ownership:
 - Reviewed `src/main/kotlin/Pipeline/DistributionGrid.kt`, `src/main/kotlin/P2P/P2PRequest.kt`, `src/main/kotlin/P2P/P2PResponse.kt`, `src/main/kotlin/Pipeline/Junction.kt`, and `docs/core-concepts/developer-in-the-loop.md` while implementing the Phase 4 local execution flow.
 - Ran `./gradlew compileKotlin compileTestKotlin` after landing the Phase 4 execution changes.
 - Ran `./gradlew test --tests "com.TTT.Pipeline.DistributionGrid*" -x :TPipe-Bedrock:test -x :TPipe-Defaults:test -x :TPipe-MCP:test -x :TPipe-Ollama:test -x :TPipe-TraceServer:test -x :TPipe-Tuner:test` to verify the DistributionGrid contract, shell, lifecycle, and local execution slices together.
+- Reviewed `src/main/kotlin/Pipeline/DistributionGrid.kt`, `src/main/kotlin/P2P/P2PRegistry.kt`, `src/main/kotlin/P2P/P2PRequest.kt`, and `src/main/kotlin/P2P/P2PResponse.kt` while implementing Phase 5 explicit remote handoff and grid RPC transport.
+- Ran `./gradlew compileKotlin compileTestKotlin` after landing the Phase 5 remote-handoff runtime.
+- Ran `./gradlew test --tests "com.TTT.Pipeline.DistributionGrid*" -x :TPipe-Bedrock:test -x :TPipe-Defaults:test -x :TPipe-MCP:test -x :TPipe-Ollama:test -x :TPipe-TraceServer:test -x :TPipe-Tuner:test` again after landing the Phase 5 remote-handoff slice and focused tests.
+- Reviewed the Phase 5 stabilization findings for stale-session recovery, negotiated-policy enforcement, RPC framing, and hop-count consistency before landing the follow-up fixes.
+- Reviewed the follow-up Phase 5 policy-integrity findings for cached-session reuse and widened handshake acknowledgements before landing the second stabilization pass.
+- Reviewed the Phase 5 transport and rejection-detail findings for inbound sender transport and peer-authored handshake failures before landing the final repair pass.
+- Reviewed the final Phase 5 boundary findings for fail-closed framed RPC rejection and handshake ACK session-identity validation before landing the last repair pass.
 
 Commands used during the architecture pass:
 
@@ -218,3 +254,5 @@ Commands used during the architecture pass:
 - 2026-03-25: Phase 2 replaced the stub shell with the non-executing configuration shell and added focused shell-registration tests.
 - 2026-03-25: Phase 3 added validation, lifecycle controls, child-pipeline exposure, typed grid metadata, and focused validation/lifecycle tests.
 - 2026-03-25: Phase 4 added the first local execution core, grid-level DITL hook registration, local terminal outcome or failure mapping, and focused execution-core tests.
+- 2026-03-25: Phase 5 added explicit-peer remote handoff, grid RPC over the normal P2P boundary, mandatory handshake, in-memory session reuse, and focused remote-handoff tests.
+- 2026-03-26: Phase 5 repair pass started to preserve exact requested session lifetimes and serialize post-hook remote content instead of the pre-hook envelope snapshot.

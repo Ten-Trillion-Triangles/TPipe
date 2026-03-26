@@ -8,10 +8,10 @@ This page describes current shipped behavior only. The evolving full runtime spe
 
 ## Current Implementation Status
 
-`DistributionGrid` is currently implemented through Phase 4 of its rollout:
+`DistributionGrid` is currently implemented through Phase 5 of its rollout:
 
 - the contract-model layer exists for runtime, memory, durability, and protocol vocabulary
-- the `DistributionGrid` class now provides a non-executing configuration shell
+- the `DistributionGrid` class now provides the validated node shell used by the local and explicit-peer remote runtime
 - the shell stores grid-level `P2PInterface` identity state
 - the shell supports router and worker binding
 - the shell supports local peer registration and external peer-descriptor registration
@@ -20,29 +20,33 @@ This page describes current shipped behavior only. The evolving full runtime spe
 - the shell now validates required bindings, local ownership, duplicate registration state, ancestry cycles, and nested depth through `init()`
 - the shell now exposes child pipelines through `getPipelinesFromInterface()`
 - the shell now supports pause/resume flags, runtime-state clearing, and trace clearing
-- the shell now executes local-only work through `execute(...)`, `executeLocal(...)`, and `executeP2PRequest(...)`
+- the shell now executes local work through `execute(...)`, `executeLocal(...)`, and `executeP2PRequest(...)`
 - the shell now supports a first local router-to-worker flow
 - the shell now records local hop, outcome, and failure metadata on terminal content
 - the shell now exposes grid-level DITL hook registration for the local execution flow
 - typed `distributionGridMetadata` now exists on `P2PDescriptor`
 - `DISTRIBUTION_GRID_*` trace vocabulary now exists for validation, lifecycle, and local execution events
+- the shell now supports explicit remote peer handoff through configured external peer descriptors
+- the shell now performs explicitly framed serialized grid RPC over the normal P2P boundary for handshake and task-exchange traffic
+- the shell now supports mandatory explicit-peer handshake, authoritative negotiated policy, and in-memory session reuse
+- cached explicit-peer sessions are now reused only when they still satisfy the current task policy, and widened handshake acknowledgements are rejected
+- inbound remote envelopes now record the caller's return address as the sender transport, and peer-authored handshake rejection details are preserved
+- the shell now supports inbound explicit remote task handoff and locally finalizes remote returns or failures
 
 ## What Is Still Missing
 
 The following areas remain unimplemented:
 
-- remote peer handoff
 - registry discovery and leased membership
-- handshake, negotiated policy, and session enforcement
 - trace report and failure-analysis behavior
 - runtime durability behavior
 - memory-policy enforcement
-- remote DITL hook invocation for peer dispatch, peer response, and outbound memory shaping
+- outbound memory shaping and outbound-memory hook invocation
 - privacy, auth, and PCP mediation
 
 ## Current Shell Surface
 
-The Phase 4 shell now includes configuration, validation, lifecycle methods, and a local-only execution path.
+The Phase 5 shell now includes configuration, validation, lifecycle methods, a local execution path, and explicit-peer remote handoff.
 
 ### Grid-level P2P identity
 
@@ -120,7 +124,7 @@ The current contract layer is split into four source files:
 - `src/main/kotlin/Pipeline/DistributionGridDurabilityModels.kt`
 - `src/main/kotlin/Pipeline/DistributionGridProtocolModels.kt`
 
-These files define the vocabulary for the runtime, but the grid is still only locally executable at this stage.
+These files define the vocabulary for the runtime, and the grid now uses them for both local execution and explicit-peer remote handoff.
 
 ## Intended Architecture
 
@@ -146,14 +150,15 @@ The current shipped slice has focused coverage through:
 - `DistributionGridShellRegistrationTest`
 - `DistributionGridValidationLifecycleTest`
 - `DistributionGridExecutionCoreTest`
+- `DistributionGridRemoteHandoffTest`
 
 ## Contributing
 
 If you are continuing `DistributionGrid` implementation, follow the internal phased rollout rather than adding features ad hoc:
 
-1. Phase 5: explicit remote peer handoff
-2. Phase 6: registry discovery and membership
-3. later hardening, DSL, and public-doc sync
+1. Phase 6: registry discovery and membership
+2. Phase 7: cross-cutting runtime hardening
+3. later DSL, Defaults, and final public-doc sync
 
 ---
 

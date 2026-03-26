@@ -105,6 +105,7 @@ class DistributionGridContractModelsTest
                 sessionId = "session-1",
                 requesterNodeId = "origin-node",
                 responderNodeId = "router-a",
+                registryId = "travel-registry",
                 expiresAtEpochMillis = 1000L
             ),
             attributes = mutableMapOf("priority" to "high")
@@ -129,6 +130,7 @@ class DistributionGridContractModelsTest
         assertEquals("task-001", restoredEnvelope.taskId)
         assertEquals("Travel booking workflow", restoredEnvelope.taskIntent)
         assertEquals("Choose the next booking node", restoredEnvelope.currentObjective)
+        assertEquals("travel-registry", restoredEnvelope.sessionRef?.registryId)
         assertEquals("origin-node", restoredEnvelope.originNodeId)
         assertEquals(1, restoredEnvelope.hopHistory.size)
         assertEquals(DistributionGridFailureKind.POLICY_REJECTED, restoredEnvelope.latestFailure?.kind)
@@ -278,6 +280,7 @@ class DistributionGridContractModelsTest
                 sessionId = "session-1",
                 requesterNodeId = "origin-node",
                 responderNodeId = "hotel-node",
+                registryId = "travel-registry",
                 expiresAtEpochMillis = 100000L
             ),
             payloadType = "DistributionGridHandshakeResponse",
@@ -306,6 +309,7 @@ class DistributionGridContractModelsTest
         assertEquals("travel-registry", restoredAdvertisement.registryId)
         assertEquals(DistributionGridRpcMessageType.HANDSHAKE_ACK, restoredRpc.messageType)
         assertEquals("DistributionGridHandshakeResponse", restoredRpc.payloadType)
+        assertEquals("travel-registry", restoredRpc.sessionRef?.registryId)
         assertNotNull(negotiatedVersion)
         assertEquals(1, negotiatedVersion.major)
         assertEquals(2, negotiatedVersion.minor)
@@ -333,6 +337,7 @@ class DistributionGridContractModelsTest
                     sessionId = "session-1",
                     requesterNodeId = "origin-node",
                     responderNodeId = "router-a",
+                    registryId = "travel-registry",
                     expiresAtEpochMillis = 100000L
                 ),
                 checkpointReason = "after-router-decision",
