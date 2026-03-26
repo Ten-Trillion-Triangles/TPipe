@@ -2734,8 +2734,10 @@ class DistributionGrid : P2PInterface
                 val canonicalHandshakePolicy = canonicalizeNegotiatedPolicyForComparison(
                     handshakeNegotiatedPolicy
                 )
+                val requestedRegistryId = registryScope.toRegistryToken()
                 if(!handshakeResponse.accepted ||
                     handshakeResponse.negotiatedProtocolVersion != sessionRecord.negotiatedProtocolVersion ||
+                    sessionRecord.registryId != requestedRegistryId ||
                     canonicalHandshakePolicy != canonicalSessionPolicy ||
                     !isHandshakeSessionDurationWithinRequestedWindow(
                         sessionRecord = sessionRecord,
@@ -3742,6 +3744,7 @@ class DistributionGrid : P2PInterface
                 ?: sessionRef
             currentNodeId = remoteNodeId
             currentTransport = remoteTransport.deepCopy()
+            attributes.putAll(remoteEnvelope.attributes.deepCopy())
             executionNotes.addAll(remoteEnvelope.executionNotes.deepCopy())
             executionNotes.add("Explicit remote handoff returned from '$remoteNodeId'.")
         }
@@ -3797,6 +3800,7 @@ class DistributionGrid : P2PInterface
                 ?: remoteEnvelope?.sessionRef?.deepCopy()
                 ?: sessionRef
             content = remoteEnvelope?.content?.deepCopy() ?: content.deepCopy()
+            attributes.putAll(remoteEnvelope?.attributes?.deepCopy().orEmpty())
             executionNotes.addAll(remoteEnvelope?.executionNotes?.deepCopy().orEmpty())
             currentNodeId = remoteNodeId
             currentTransport = remoteTransport.deepCopy()

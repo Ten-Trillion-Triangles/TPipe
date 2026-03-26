@@ -112,6 +112,14 @@ class DistributionGridRemoteHandoffTest
                     content
                 }
             )
+                .setBeforeRouteHook { envelope ->
+                    envelope.attributes["remote-result-attribute"] = "remote-success"
+                    envelope
+                }
+                .setBeforeLocalWorkerHook { envelope ->
+                    envelope.attributes["remote-worker-attribute"] = "remote-worker"
+                    envelope
+                }
 
             try
             {
@@ -149,6 +157,8 @@ class DistributionGridRemoteHandoffTest
                 assertEquals(1, senderRouter.localExecutionCount)
                 assertEquals(0, senderWorker.localExecutionCount)
                 assertNotNull(envelope)
+                assertEquals("remote-success", envelope.attributes["remote-result-attribute"])
+                assertEquals("remote-worker", envelope.attributes["remote-worker-attribute"])
                 assertEquals(2, envelope.hopHistory.size)
                 assertEquals(
                     remoteGrid.getP2pDescription()!!.distributionGridMetadata!!.nodeId,
@@ -981,6 +991,10 @@ class DistributionGridRemoteHandoffTest
                     content
                 }
             )
+                .setBeforeRouteHook { envelope ->
+                    envelope.attributes["remote-failure-attribute"] = "remote-failure"
+                    envelope
+                }
                 .setFailureHook { envelope ->
                     envelope.executionNotes.add("remote failure hook")
                     envelope.content.addText("remote-failure-hook")
@@ -1017,6 +1031,7 @@ class DistributionGridRemoteHandoffTest
                 assertEquals(DistributionGridFailureKind.WORKER_FAILURE, failure.kind)
                 assertTrue(result.text.contains("remote-failure-hook"))
                 assertNotNull(envelope)
+                assertEquals("remote-failure", envelope.attributes["remote-failure-attribute"])
                 assertTrue(envelope.executionNotes.contains("remote failure hook"))
                 assertNotNull(outcome)
                 assertTrue(outcome!!.completionNotes.contains("remote failure hook"))
@@ -1722,6 +1737,142 @@ class DistributionGridRemoteHandoffTest
             finally
             {
                 P2PRegistry.remove(remoteGrid)
+            }
+        }
+    }
+
+    /**
+     * Verifies that handshake acknowledgements with a mismatched registry scope are rejected before they can poison the cache.
+     */
+    @Test
+    fun handshakeAckWithMismatchedRegistryScopeIsRejectedBeforeCaching()
+    {
+        runBlocking {
+            val peerTransport = P2PTransport(
+                transportMethod = Transport.Tpipe,
+                transportAddress = "mismatched-registry-peer-address"
+            )
+            val peerDescriptor = buildStaticGridDescriptor(
+                nodeId = "mismatched-registry-peer",
+                transportAddress = peerTransport.transportAddress
+            )
+            val peerRequirements = P2PRequirements(
+                allowExternalConnections = true,
+                acceptedContent = mutableListOf(SupportedContentTypes.text)
+            )
+
+            val fakePeer = object : P2PInterface
+            {
+                override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse
+                {
+                    val rpcMessage = deserialize<DistributionGridRpcMessage>(
+                        request.prompt.text.substringAfter('\n'),
+                        useRepair = false
+                    ) ?: return P2PResponse().apply {
+                        rejection = P2PRejection(
+                            P2PError.transport,
+                            "Failed to deserialize grid RPC request."
+                        )
+                    }
+
+                    if(rpcMessage.messageType != DistributionGridRpcMessageType.HANDSHAKE_INIT)
+                    {
+                        return P2PResponse().apply {
+                            rejection = P2PRejection(
+                                P2PError.configuration,
+                                "Unsupported RPC '${rpcMessage.messageType.name}'."
+                            )
+                        }
+                    }
+
+                    val handshakeRequest = deserialize<DistributionGridHandshakeRequest>(
+                        rpcMessage.payloadJson,
+                        useRepair = false
+                    ) ?: return P2PResponse().apply {
+                        rejection = P2PRejection(
+                            P2PError.transport,
+                            "Failed to deserialize handshake request."
+                        )
+                    }
+
+                    val sessionRecord = DistributionGridSessionRecord(
+                        sessionId = "mismatched-registry-session",
+                        requesterNodeId = handshakeRequest.requesterNodeId,
+                        responderNodeId = peerDescriptor.distributionGridMetadata!!.nodeId,
+                        registryId = "registry-b",
+                        negotiatedProtocolVersion = handshakeRequest.supportedProtocolVersions.first().deepCopy(),
+                        negotiatedPolicy = DistributionGridNegotiatedPolicy(
+                            tracePolicy = handshakeRequest.tracePolicy.deepCopy().apply {
+                                allowedStorageClasses = handshakeRequest.tracePolicy.allowedStorageClasses.deepCopy()
+                            },
+                            routingPolicy = handshakeRequest.acceptedRoutingPolicy.deepCopy(),
+                            credentialPolicy = handshakeRequest.credentialPolicy.deepCopy(),
+                            storageClasses = handshakeRequest.tracePolicy.allowedStorageClasses.deepCopy()
+                        ),
+                        expiresAtEpochMillis = System.currentTimeMillis() + 60_000L
+                    )
+                    val responsePayload = DistributionGridHandshakeResponse(
+                        accepted = true,
+                        negotiatedProtocolVersion = sessionRecord.negotiatedProtocolVersion.deepCopy(),
+                        negotiatedPolicy = sessionRecord.negotiatedPolicy.deepCopy(),
+                        rejectionReason = "",
+                        sessionRecord = sessionRecord.deepCopy()
+                    )
+
+                    return P2PResponse(
+                        output = MultimodalContent(
+                            text = buildStaticGridRpcPrompt(
+                                DistributionGridRpcMessage(
+                                    messageType = DistributionGridRpcMessageType.HANDSHAKE_ACK,
+                                    senderNodeId = peerDescriptor.distributionGridMetadata!!.nodeId,
+                                    targetId = handshakeRequest.requesterNodeId,
+                                    protocolVersion = sessionRecord.negotiatedProtocolVersion.deepCopy(),
+                                    sessionRef = DistributionGridSessionRef(
+                                        sessionId = sessionRecord.sessionId,
+                                        requesterNodeId = sessionRecord.requesterNodeId,
+                                        responderNodeId = sessionRecord.responderNodeId,
+                                        registryId = sessionRecord.registryId,
+                                        expiresAtEpochMillis = sessionRecord.expiresAtEpochMillis
+                                    ),
+                                    payloadType = "DistributionGridHandshakeResponse",
+                                    payloadJson = serialize(responsePayload)
+                                )
+                            )
+                        )
+                    )
+                }
+            }
+
+            P2PRegistry.register(fakePeer, peerTransport, peerDescriptor, peerRequirements)
+
+            try
+            {
+                val senderGrid = initializedGrid(
+                    nodeId = "mismatched-registry-sender",
+                    transportAddress = "mismatched-registry-sender-address",
+                    router = ExecutionInterface("mismatched-registry-router") { content ->
+                        content.metadata["distributionGridDirective"] = DistributionGridDirective(
+                            kind = DistributionGridDirectiveKind.HAND_OFF_TO_PEER,
+                            targetPeerId = "${peerTransport.transportMethod}::${peerTransport.transportAddress}"
+                        )
+                        content
+                    },
+                    worker = ExecutionInterface("mismatched-registry-worker") { it },
+                    registryMemberships = mutableListOf("registry-a")
+                )
+
+                senderGrid.addPeerDescriptor(peerDescriptor.deepCopy())
+                senderGrid.init()
+
+                val result = senderGrid.execute(MultimodalContent(text = "start"))
+
+                assertTrue(result.terminatePipeline)
+                assertEquals(0, readSessionRecordCount(senderGrid))
+            }
+
+            finally
+            {
+                P2PRegistry.remove(peerTransport)
             }
         }
     }
