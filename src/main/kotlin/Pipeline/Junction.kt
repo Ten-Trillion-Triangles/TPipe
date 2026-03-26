@@ -165,6 +165,33 @@ class Junction : P2PInterface
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {
+        // Junction enforces authentication when the descriptor requires it, using the mechanism provided
+        // in the requirements block to validate the incoming auth body.
+        val descriptor = getP2pDescription()
+        val requirements = getP2pRequirements()
+
+        if(descriptor?.requiresAuth == true)
+        {
+            if(request.authBody.isBlank())
+            {
+                throw SecurityException("Authentication required but authBody is missing or blank.")
+            }
+
+            val authMechanism = requirements?.authMechanism
+            if(authMechanism != null)
+            {
+                val isAuthenticated = authMechanism(request.authBody)
+                if(!isAuthenticated)
+                {
+                    throw SecurityException("Authentication failed for the provided authBody.")
+                }
+            }
+            else
+            {
+                throw SecurityException("Authentication required but no authMechanism is configured.")
+            }
+        }
+
         // Normalize the incoming request to a mutable snapshot so nested callers do not see their prompt or
         // context mutated while Junction reuses the same execution path for in-process and P2P invocations.
         val inputContent = request.prompt.deepCopy()

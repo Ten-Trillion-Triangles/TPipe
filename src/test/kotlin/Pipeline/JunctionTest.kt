@@ -1718,6 +1718,240 @@ class JunctionTest
             assertEquals(0, moderator.requestCount)
         }
     }
+
+    /**
+     * Verifies that Junction enforces authentication when requiresAuth is enabled.
+     */
+    @Test
+    fun enforcesAuthenticationSuccess()
+    {
+        runBlocking {
+            val moderator = RecordingP2PInterface(
+                name = "moderator",
+                responseText = serialize(
+                    ModeratorDirective(
+                        continueDiscussion = false,
+                        finalDecision = "Approve"
+                    )
+                )
+            )
+            val participant = RecordingP2PInterface(
+                name = "worker",
+                responseText = serialize(
+                    ParticipantOpinion(
+                        participantName = "worker",
+                        opinion = "Approve",
+                        vote = "Approve"
+                    )
+                )
+            )
+
+            val junction = Junction()
+                .setModerator(moderator)
+                .addParticipant("worker", participant)
+                .setRounds(1)
+
+            junction.setP2pDescription(P2PDescriptor(
+                agentName = "junction",
+                agentDescription = "desc",
+                transport = P2PTransport(),
+                requiresAuth = true,
+                usesConverse = true,
+                allowsAgentDuplication = false,
+                allowsCustomContext = false,
+                allowsCustomAgentJson = false,
+                recordsInteractionContext = false,
+                recordsPromptContent = false,
+                allowsExternalContext = false,
+                contextProtocol = ContextProtocol.none
+            ))
+            junction.setP2pRequirements(P2PRequirements(
+                authMechanism = { authBody -> authBody == "valid-token" }
+            ))
+
+            val request = P2PRequest(
+                prompt = MultimodalContent(text = "Test auth."),
+                authBody = "valid-token"
+            )
+
+            val response = junction.executeP2PRequest(request)
+            assertNotNull(response)
+            val decision = deserialize<DiscussionDecision>(response!!.output!!.text)
+            assertEquals("Approve", decision!!.decision)
+        }
+    }
+
+    /**
+     * Verifies that Junction rejects P2P requests with missing auth body when auth is required.
+     */
+    @Test
+    fun rejectsMissingAuthBody()
+    {
+        runBlocking {
+            val junction = Junction()
+                .setModerator(RecordingP2PInterface("moderator"))
+                .addParticipant("worker", RecordingP2PInterface("worker"))
+
+            junction.setP2pDescription(P2PDescriptor(
+                agentName = "junction",
+                agentDescription = "desc",
+                transport = P2PTransport(),
+                requiresAuth = true,
+                usesConverse = true,
+                allowsAgentDuplication = false,
+                allowsCustomContext = false,
+                allowsCustomAgentJson = false,
+                recordsInteractionContext = false,
+                recordsPromptContent = false,
+                allowsExternalContext = false,
+                contextProtocol = ContextProtocol.none
+            ))
+            junction.setP2pRequirements(P2PRequirements(
+                authMechanism = { true }
+            ))
+
+            val request = P2PRequest(
+                prompt = MultimodalContent(text = "Test missing auth."),
+                authBody = ""
+            )
+
+            assertFailsWith<SecurityException> {
+                junction.executeP2PRequest(request)
+            }
+        }
+    }
+
+    /**
+     * Verifies that Junction rejects P2P requests with invalid auth body.
+     */
+    @Test
+    fun rejectsInvalidAuthBody()
+    {
+        runBlocking {
+            val junction = Junction()
+                .setModerator(RecordingP2PInterface("moderator"))
+                .addParticipant("worker", RecordingP2PInterface("worker"))
+
+            junction.setP2pDescription(P2PDescriptor(
+                agentName = "junction",
+                agentDescription = "desc",
+                transport = P2PTransport(),
+                requiresAuth = true,
+                usesConverse = true,
+                allowsAgentDuplication = false,
+                allowsCustomContext = false,
+                allowsCustomAgentJson = false,
+                recordsInteractionContext = false,
+                recordsPromptContent = false,
+                allowsExternalContext = false,
+                contextProtocol = ContextProtocol.none
+            ))
+            junction.setP2pRequirements(P2PRequirements(
+                authMechanism = { authBody -> authBody == "valid-token" }
+            ))
+
+            val request = P2PRequest(
+                prompt = MultimodalContent(text = "Test invalid auth."),
+                authBody = "invalid-token"
+            )
+
+            assertFailsWith<SecurityException> {
+                junction.executeP2PRequest(request)
+            }
+        }
+    }
+
+    /**
+     * Verifies that the Junction DSL validates the presence of an auth mechanism when auth is required.
+     */
+    @Test
+    fun dslValidatesAuthMechanismRequirement()
+    {
+        runBlocking {
+            val moderator = RecordingP2PInterface("moderator")
+            val participant = RecordingP2PInterface("worker")
+
+            // Should fail because requiresAuth is true but no authMechanism is provided
+            assertFailsWith<IllegalArgumentException> {
+                junction {
+                    moderator(moderator)
+                    participant("worker", participant)
+                    descriptor(P2PDescriptor(
+                        agentName = "junction",
+                        agentDescription = "desc",
+                        transport = P2PTransport(),
+                        requiresAuth = true,
+                        usesConverse = true,
+                        allowsAgentDuplication = false,
+                        allowsCustomContext = false,
+                        allowsCustomAgentJson = false,
+                        recordsInteractionContext = false,
+                        recordsPromptContent = false,
+                        allowsExternalContext = false,
+                        contextProtocol = ContextProtocol.none
+                    ))
+                    // Missing authMechanism in requirements
+                }
+            }
+
+            // Should succeed when authMechanism is provided
+            val junction = junction {
+                moderator(moderator)
+                participant("worker", participant)
+                requirements(P2PRequirements(authMechanism = { true }))
+                descriptor(P2PDescriptor(
+                    agentName = "junction",
+                    agentDescription = "desc",
+                    transport = P2PTransport(),
+                    requiresAuth = true,
+                    usesConverse = true,
+                    allowsAgentDuplication = false,
+                    allowsCustomContext = false,
+                    allowsCustomAgentJson = false,
+                    recordsInteractionContext = false,
+                    recordsPromptContent = false,
+                    allowsExternalContext = false,
+                    contextProtocol = ContextProtocol.none
+                ))
+            }
+            assertNotNull(junction)
+        }
+    }
+
+    /**
+     * Verifies that Junction throws a SecurityException when authentication is required but no mechanism is provided.
+     */
+    @Test
+    fun rejectsMissingAuthMechanism()
+    {
+        runBlocking {
+            val junction = Junction()
+            junction.setP2pDescription(P2PDescriptor(
+                agentName = "junction",
+                agentDescription = "desc",
+                transport = P2PTransport(),
+                requiresAuth = true,
+                usesConverse = true,
+                allowsAgentDuplication = false,
+                allowsCustomContext = false,
+                allowsCustomAgentJson = false,
+                recordsInteractionContext = false,
+                recordsPromptContent = false,
+                allowsExternalContext = false,
+                contextProtocol = ContextProtocol.none
+            ))
+            junction.setP2pRequirements(P2PRequirements(authMechanism = null))
+
+            assertFailsWith<SecurityException> {
+                junction.executeP2PRequest(
+                    P2PRequest(
+                        authBody = "some-token",
+                        prompt = MultimodalContent(text = "Hello")
+                    )
+                )
+            }
+        }
+    }
 }
 
 /**

@@ -212,6 +212,26 @@ class JunctionDsl
     }
 
     /**
+     * Configure the P2P descriptor for this Junction.
+     *
+     * @param descriptor The descriptor to use for this Junction.
+     */
+    fun descriptor(descriptor: P2PDescriptor)
+    {
+        junction.setP2pDescription(descriptor)
+    }
+
+    /**
+     * Configure the P2P requirements for this Junction.
+     *
+     * @param requirements The requirements to use for this Junction.
+     */
+    fun requirements(requirements: P2PRequirements)
+    {
+        junction.setP2pRequirements(requirements)
+    }
+
+    /**
      * Configure the outbound memory policy used by the Junction harness.
      */
     fun memoryPolicy(block: JunctionMemoryPolicy.() -> Unit)
@@ -480,6 +500,18 @@ class JunctionDsl
      */
     fun build(): Junction
     {
+        // Junction requires an authentication mechanism when the descriptor is configured to require auth,
+        // ensuring that P2P requests cannot bypass security due to a missing validation lambda.
+        val descriptor = junction.getP2pDescription()
+        val requirements = junction.getP2pRequirements()
+
+        if(descriptor?.requiresAuth == true)
+        {
+            require(requirements?.authMechanism != null) {
+                "Junction requires an authMechanism when requiresAuth is enabled in the descriptor."
+            }
+        }
+
         // Run the actual harness initialization inside the builder so graph validation happens immediately
         // instead of being deferred to the first execution call.
         runBlocking {
