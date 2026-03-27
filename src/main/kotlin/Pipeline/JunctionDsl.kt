@@ -496,6 +496,9 @@ class JunctionDsl
      * a half-configured harness object back. This keeps the builder ergonomic while still enforcing Junction's
      * runtime contract at construction time.
      *
+     * WARNING: This method uses runBlocking to initialize the Junction. If you are already in a coroutine
+     * context, use [buildSuspend] instead to avoid potential thread starvation or deadlocks.
+     *
      * @return Fully initialized Junction ready for execution.
      */
     fun build(): Junction
@@ -517,6 +520,30 @@ class JunctionDsl
         runBlocking {
             junction.init()
         }
+        return junction
+    }
+
+    /**
+     * Build and initialize the configured Junction asynchronously.
+     *
+     * This is the recommended way to build a Junction from within a coroutine context, as it avoids
+     * the use of runBlocking.
+     *
+     * @return Fully initialized Junction ready for execution.
+     */
+    suspend fun buildSuspend(): Junction
+    {
+        val descriptor = junction.getP2pDescription()
+        val requirements = junction.getP2pRequirements()
+
+        if(descriptor?.requiresAuth == true)
+        {
+            require(requirements?.authMechanism != null) {
+                "Junction requires an authMechanism when requiresAuth is enabled in the descriptor."
+            }
+        }
+
+        junction.init()
         return junction
     }
 }

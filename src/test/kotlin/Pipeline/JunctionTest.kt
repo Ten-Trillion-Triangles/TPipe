@@ -1952,6 +1952,137 @@ class JunctionTest
             }
         }
     }
+
+    /**
+     * Verifies that the Junction DSL can be built asynchronously using buildSuspend.
+     */
+    @Test
+    fun testJunctionDslBuildSuspend()
+    {
+        runBlocking {
+            val moderator = RecordingP2PInterface("moderator")
+            val participant = RecordingP2PInterface("worker")
+
+            val junction = JunctionDsl().apply {
+                moderator(moderator)
+                participant("worker", participant)
+                rounds(1)
+                threshold(0.5)
+            }.buildSuspend()
+
+            assertNotNull(junction)
+            val result = junction.execute(MultimodalContent(text = "Test suspend build."))
+            assertNotNull(result)
+            assertTrue(result.passPipeline)
+        }
+    }
+
+    /**
+     * Verifies that authentication is enforced if an authMechanism is present, even if the descriptor
+     * does not explicitly require it or is missing.
+     */
+    @Test
+    fun testAuthEnforcedByMechanismPresence()
+    {
+        runBlocking {
+            val moderator = RecordingP2PInterface("moderator")
+            val participant = RecordingP2PInterface("worker")
+
+            val junction = Junction()
+                .setModerator(moderator)
+                .addParticipant("worker", participant)
+                .setRounds(1)
+
+            // No descriptor set, or descriptor with requiresAuth = false
+            junction.setP2pRequirements(P2PRequirements(
+                authMechanism = { authBody -> authBody == "valid-token" }
+            ))
+
+            // Should fail with missing auth body
+            assertFailsWith<SecurityException> {
+                junction.executeP2PRequest(P2PRequest(
+                    prompt = MultimodalContent(text = "Test."),
+                    authBody = ""
+                ))
+            }
+
+            // Should fail with invalid auth body
+            assertFailsWith<SecurityException> {
+                junction.executeP2PRequest(P2PRequest(
+                    prompt = MultimodalContent(text = "Test."),
+                    authBody = "invalid"
+                ))
+            }
+
+            // Should succeed with valid auth body
+            val response = junction.executeP2PRequest(P2PRequest(
+                prompt = MultimodalContent(text = "Test."),
+                authBody = "valid-token"
+            ))
+            assertNotNull(response)
+        }
+    }
+
+    /**
+     * Verifies that passPipeline = true results in a JUNCTION_WORKFLOW_SUCCESS trace event during workflow execution.
+     */
+    @Test
+    fun testTraceSuccessOnPassPipeline()
+    {
+        runBlocking {
+            val traceConfig = TraceConfig(enabled = true)
+            val planner = RecordingP2PInterface(
+                name = "planner",
+                responseText = serialize(
+                    JunctionWorkflowPhaseResult(
+                        phase = JunctionWorkflowPhase.PLAN,
+                        cycleNumber = 1,
+                        participantName = "planner",
+                        text = "Plan.",
+                        passed = true
+                    )
+                )
+            )
+            val participant = RecordingP2PInterface(
+                name = "participant",
+                responseText = serialize(
+                    ParticipantOpinion(
+                        participantName = "participant",
+                        opinion = "Approve",
+                        vote = "Approve"
+                    )
+                )
+            )
+            val outputHandler = RecordingP2PInterface(
+                name = "output",
+                responseText = serialize(
+                    JunctionWorkflowPhaseResult(
+                        phase = JunctionWorkflowPhase.OUTPUT,
+                        cycleNumber = 1,
+                        participantName = "output",
+                        text = "Output.",
+                        passed = true
+                    )
+                )
+            )
+            val moderator = RecordingP2PInterface("moderator")
+
+            val junction = Junction()
+                .setModerator(moderator)
+                .addParticipant("participant", participant)
+                .setPlanner(planner)
+                .setOutputHandler(outputHandler)
+                .votePlanOutputExit()
+                .setRounds(1)
+                .enableTracing(traceConfig)
+
+            val result = junction.execute(MultimodalContent(text = "Test trace success."))
+            assertTrue(result.passPipeline)
+
+            val traceEvents = PipeTracer.getTrace(junction.getTraceId()).map { it.eventType }
+            assertTrue(traceEvents.contains(TraceEventType.JUNCTION_WORKFLOW_SUCCESS), "Trace should contain JUNCTION_WORKFLOW_SUCCESS")
+        }
+    }
 }
 
 /**

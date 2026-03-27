@@ -165,19 +165,19 @@ class Junction : P2PInterface
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {
-        // Junction enforces authentication when the descriptor requires it, using the mechanism provided
-        // in the requirements block to validate the incoming auth body.
+        // Junction enforces authentication when the descriptor requires it, or when an explicit auth
+        // mechanism is provided in the requirements block.
         val descriptor = getP2pDescription()
         val requirements = getP2pRequirements()
+        val authMechanism = requirements?.authMechanism
 
-        if(descriptor?.requiresAuth == true)
+        if(descriptor?.requiresAuth == true || authMechanism != null)
         {
             if(request.authBody.isBlank())
             {
                 throw SecurityException("Authentication required but authBody is missing or blank.")
             }
 
-            val authMechanism = requirements?.authMechanism
             if(authMechanism != null)
             {
                 val isAuthenticated = authMechanism(request.authBody)
@@ -1339,7 +1339,7 @@ class Junction : P2PInterface
         if(tracingEnabled)
         {
             trace(
-                if(workflowState.completed) TraceEventType.JUNCTION_WORKFLOW_SUCCESS else TraceEventType.JUNCTION_WORKFLOW_FAILURE,
+                if(finalOutput.passPipeline) TraceEventType.JUNCTION_WORKFLOW_SUCCESS else TraceEventType.JUNCTION_WORKFLOW_FAILURE,
                 TracePhase.CLEANUP,
                 finalOutput,
                 metadata = mapOf(
