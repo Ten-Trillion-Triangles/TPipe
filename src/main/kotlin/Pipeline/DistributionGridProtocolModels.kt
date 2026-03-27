@@ -192,6 +192,7 @@ data class DistributionGridRegistryAdvertisement(
 /**
  * Node-to-registry registration payload.
  *
+ * @param leaseId Existing lease identifier when the request is renewing an active membership.
  * @param descriptor Public descriptor the node wants the registry to advertise.
  * @param metadata Explicit grid metadata for the node.
  * @param requestedLeaseSeconds Requested lease duration.
@@ -200,6 +201,7 @@ data class DistributionGridRegistryAdvertisement(
  */
 @Serializable
 data class DistributionGridRegistrationRequest(
+    var leaseId: String = "",
     var descriptor: P2PDescriptor? = null,
     var metadata: DistributionGridNodeMetadata = DistributionGridNodeMetadata(),
     var requestedLeaseSeconds: Int = 3600,
@@ -264,6 +266,36 @@ data class DistributionGridRegistryQueryResult(
     var rejectionReason: String = "",
     var candidates: MutableList<DistributionGridNodeAdvertisement> = mutableListOf()
 )
+
+/**
+ * Verifies registry and node advertisements before they are admitted to discovery state.
+ */
+interface DistributionGridTrustVerifier
+{
+    /**
+     * Validate one registry advertisement against the currently trusted parent set.
+     *
+     * @param candidate Registry advertisement under consideration.
+     * @param trustedParents Registry advertisements already trusted as parents or roots.
+     * @return Rejection failure, or `null` when the candidate is trusted.
+     */
+    suspend fun verifyRegistryAdvertisement(
+        candidate: DistributionGridRegistryAdvertisement,
+        trustedParents: List<DistributionGridRegistryAdvertisement>
+    ): DistributionGridFailure?
+
+    /**
+     * Validate one node advertisement against the trusted registry that surfaced it.
+     *
+     * @param registryAdvertisement Trusted registry advertisement that returned the node.
+     * @param candidate Node advertisement under consideration.
+     * @return Rejection failure, or `null` when the candidate is trusted.
+     */
+    suspend fun verifyNodeAdvertisement(
+        registryAdvertisement: DistributionGridRegistryAdvertisement,
+        candidate: DistributionGridNodeAdvertisement
+    ): DistributionGridFailure?
+}
 
 /**
  * Mandatory first-contact node handshake payload.

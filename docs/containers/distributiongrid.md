@@ -8,7 +8,7 @@ This page describes current shipped behavior only. The evolving full runtime spe
 
 ## Current Implementation Status
 
-`DistributionGrid` is currently implemented through Phase 5 of its rollout:
+`DistributionGrid` is currently implemented through Phase 6 of its rollout:
 
 - the contract-model layer exists for runtime, memory, durability, and protocol vocabulary
 - the `DistributionGrid` class now provides the validated node shell used by the local and explicit-peer remote runtime
@@ -32,12 +32,14 @@ This page describes current shipped behavior only. The evolving full runtime spe
 - cached explicit-peer sessions are now reused only when they still satisfy the current task policy, and widened handshake acknowledgements are rejected
 - inbound remote envelopes now record the caller's return address as the sender transport, and peer-authored handshake rejection details are preserved
 - the shell now supports inbound explicit remote task handoff and locally finalizes remote returns or failures
+- the shell now supports bootstrap registry configuration, trusted registry probing, explicit lease registration and renewal, and structured registry queries
+- discovered node advertisements are now verified and cached before they are used for remote handoff
+- registry-capable nodes can now serve mixed-role or dedicated registry RPC behavior for probe, register, renew, and query flows
 
 ## What Is Still Missing
 
 The following areas remain unimplemented:
 
-- registry discovery and leased membership
 - trace report and failure-analysis behavior
 - runtime durability behavior
 - memory-policy enforcement
@@ -46,7 +48,7 @@ The following areas remain unimplemented:
 
 ## Current Shell Surface
 
-The Phase 5 shell now includes configuration, validation, lifecycle methods, a local execution path, and explicit-peer remote handoff.
+The Phase 6 shell now includes configuration, validation, lifecycle methods, a local execution path, explicit-peer remote handoff, and registry discovery or membership behavior.
 
 ### Grid-level P2P identity
 
@@ -74,6 +76,10 @@ The Phase 5 shell now includes configuration, validation, lifecycle methods, a l
 - `setRoutingPolicy(...)`
 - `setMemoryPolicy(...)`
 - `setDurableStore(...)`
+- `setRegistryMetadata(...)`
+- `getRegistryMetadata()`
+- `setTrustVerifier(...)`
+- `getTrustVerifier()`
 - `setMaxHops(...)`
 - `enableTracing(...)`
 - `disableTracing()`
@@ -108,6 +114,18 @@ The Phase 5 shell now includes configuration, validation, lifecycle methods, a l
 - `getWorkerBindingKey()`
 - `getLocalPeerKeys()`
 - `getExternalPeerKeys()`
+- `addBootstrapRegistry(...)`
+- `removeBootstrapRegistry(...)`
+- `getBootstrapRegistryIds()`
+- `getDiscoveredRegistryIds()`
+- `getDiscoveredNodeIds()`
+- `getActiveRegistryLeaseIds()`
+- `probeTrustedRegistries()`
+- `registerWithRegistry(...)`
+- `renewRegistryLease(...)`
+- `tickRegistryMemberships(...)`
+- `queryRegistries(...)`
+- `clearDiscoveredRegistryState()`
 - `getDiscoveryMode()`
 - `getRoutingPolicy()`
 - `getMemoryPolicy()`

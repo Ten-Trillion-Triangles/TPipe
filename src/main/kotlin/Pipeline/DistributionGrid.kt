@@ -74,6 +74,11 @@ class DistributionGrid : P2PInterface
         private const val FAILURE_METADATA_KEY = "distributionGridFailure"
         private const val SINGLE_NODE_MODE_ATTRIBUTE = "distributionGridSingleNodeMode"
         private const val GRID_RPC_FRAME_PREFIX = "TPipe-DistributionGrid-RPC::1"
+        private const val REGISTRY_ADVERTISEMENT_PAYLOAD_TYPE = "DistributionGridRegistryAdvertisement"
+        private const val REGISTRATION_REQUEST_PAYLOAD_TYPE = "DistributionGridRegistrationRequest"
+        private const val REGISTRATION_LEASE_PAYLOAD_TYPE = "DistributionGridRegistrationLease"
+        private const val REGISTRY_QUERY_PAYLOAD_TYPE = "DistributionGridRegistryQuery"
+        private const val REGISTRY_QUERY_RESULT_PAYLOAD_TYPE = "DistributionGridRegistryQueryResult"
         private const val HANDSHAKE_PAYLOAD_TYPE = "DistributionGridHandshakeRequest"
         private const val HANDSHAKE_RESPONSE_PAYLOAD_TYPE = "DistributionGridHandshakeResponse"
         private const val ENVELOPE_PAYLOAD_TYPE = "DistributionGridEnvelope"
@@ -94,6 +99,8 @@ class DistributionGrid : P2PInterface
     private var routingPolicy = DistributionGridRoutingPolicy()
     private var memoryPolicy = DistributionGridMemoryPolicy()
     private var durableStore: DistributionGridDurableStore? = null
+    private var registryMetadata: DistributionGridRegistryMetadata? = null
+    private var trustVerifier: DistributionGridTrustVerifier = DefaultDistributionGridTrustVerifier()
     private var maxHops = 16
     private var tracingEnabled = false
     private var traceConfig = TraceConfig()
@@ -110,6 +117,13 @@ class DistributionGrid : P2PInterface
     private var outcomeTransformationHook: (suspend (MultimodalContent, DistributionGridEnvelope) -> MultimodalContent)? = null
     private val sessionRecordsByPeerKey = linkedMapOf<DistributionGridPeerSessionKey, DistributionGridSessionRecord>()
     private val sessionRecordsById = linkedMapOf<String, DistributionGridSessionRecord>()
+    private val bootstrapRegistriesById = linkedMapOf<String, DistributionGridRegistryAdvertisement>()
+    private val discoveredRegistriesById = linkedMapOf<String, DistributionGridRegistryAdvertisement>()
+    private val discoveredNodeAdvertisementsById = linkedMapOf<DistributionGridDiscoveredNodeKey, DistributionGridNodeAdvertisement>()
+    private val activeRegistryLeasesById = linkedMapOf<String, DistributionGridRegistrationLease>()
+    private val localRegisteredNodeAdvertisementsById = linkedMapOf<String, DistributionGridNodeAdvertisement>()
+    private val localRegistrationLeasesById = linkedMapOf<String, DistributionGridRegistrationLease>()
+    private val localRegistrationLeaseIdsByNodeId = linkedMapOf<String, String>()
 
     private val gridId = UUID.randomUUID().toString()
     private val defaultMaxNestedDepth = 8
@@ -131,21 +145,17 @@ class DistributionGrid : P2PInterface
          */
         fun toRegistryToken(): String
         {
-            if(memberships.isEmpty())
+            val canonicalMemberships = memberships
+                .filter { it.isNotBlank() }
+                .distinct()
+                .sorted()
+
+            if(canonicalMemberships.isEmpty())
             {
                 return ""
             }
 
-            if(memberships.size == 1 && memberships.first().none { it == '|' || it == '%' })
-            {
-                return memberships.first()
-            }
-
-            return memberships.joinToString(separator = "|") { membership ->
-                membership
-                    .replace("%", "%25")
-                    .replace("|", "%7C")
-            }
+            return serialize(canonicalMemberships)
         }
     }
 
@@ -159,6 +169,176 @@ class DistributionGrid : P2PInterface
         val peerKey: String,
         val registryScope: DistributionGridRegistryScope
     )
+
+    /**
+     * Canonical discovered-node cache identity scoped by registry relationship.
+     *
+     * @param nodeId Canonical discovered node id.
+     * @param registryId Registry that surfaced the node.
+     */
+    private data class DistributionGridDiscoveredNodeKey(
+        val nodeId: String,
+        val registryId: String
+    )
+
+    /**
+     * Resolved remote peer target used by the handoff runtime.
+     *
+     * @param peerKey Stable peer identity used for session caching.
+     * @param descriptor Descriptor used for transport and handshake.
+     * @param registryScope Registry scope used for discovered-peer session identity.
+     */
+    private data class DistributionGridResolvedPeerTarget(
+        val peerKey: String,
+        val descriptor: P2PDescriptor,
+        val registryScope: DistributionGridRegistryScope? = null
+    )
+
+    /**
+     * Conservative default trust verifier for Phase 6 discovery and registry membership.
+     */
+    private inner class DefaultDistributionGridTrustVerifier : DistributionGridTrustVerifier
+    {
+        override suspend fun verifyRegistryAdvertisement(
+            candidate: DistributionGridRegistryAdvertisement,
+            trustedParents: List<DistributionGridRegistryAdvertisement>
+        ): DistributionGridFailure?
+        {
+            if(candidate.metadata.registryId.isBlank())
+            {
+                return buildFailure(
+                    kind = DistributionGridFailureKind.TRUST_REJECTED,
+                    reason = "DistributionGrid rejected a registry advertisement without a stable registry id.",
+                    retryable = false
+                )
+            }
+
+            if(candidate.transport.transportAddress.isBlank())
+            {
+                return buildFailure(
+                    kind = DistributionGridFailureKind.TRUST_REJECTED,
+                    reason = "DistributionGrid rejected registry '${candidate.metadata.registryId}' because it had no transport address.",
+                    retryable = false
+                )
+            }
+
+            if(candidate.expiresAtEpochMillis > 0L &&
+                candidate.expiresAtEpochMillis <= System.currentTimeMillis()
+            )
+            {
+                return buildFailure(
+                    kind = DistributionGridFailureKind.TRUST_REJECTED,
+                    reason = "DistributionGrid rejected stale registry advertisement '${candidate.metadata.registryId}'.",
+                    retryable = true
+                )
+            }
+
+            if(trustedParents.isEmpty())
+            {
+                if(!candidate.metadata.bootstrapTrusted)
+                {
+                    return buildFailure(
+                        kind = DistributionGridFailureKind.TRUST_REJECTED,
+                        reason = "DistributionGrid rejected registry '${candidate.metadata.registryId}' because it was not marked as a trusted bootstrap root.",
+                        retryable = false
+                    )
+                }
+
+                return null
+            }
+
+            val sameTrustedRegistry = trustedParents.any { parent ->
+                parent.metadata.registryId == candidate.metadata.registryId
+            }
+            if(sameTrustedRegistry)
+            {
+                return null
+            }
+
+            if(candidate.attestationRef.isBlank())
+            {
+                return buildFailure(
+                    kind = DistributionGridFailureKind.TRUST_REJECTED,
+                    reason = "DistributionGrid rejected learned registry '${candidate.metadata.registryId}' because it had no attestation reference.",
+                    retryable = false
+                )
+            }
+
+            val trustDomainMatches = trustedParents.any { parent ->
+                parent.metadata.trustDomainId.isNotBlank() &&
+                    candidate.metadata.trustDomainId.isNotBlank() &&
+                    parent.metadata.trustDomainId == candidate.metadata.trustDomainId
+            }
+            if(!trustDomainMatches)
+            {
+                return buildFailure(
+                    kind = DistributionGridFailureKind.TRUST_REJECTED,
+                    reason = "DistributionGrid rejected learned registry '${candidate.metadata.registryId}' because its trust domain did not chain to a trusted parent.",
+                    retryable = false
+                )
+            }
+
+            return null
+        }
+
+        override suspend fun verifyNodeAdvertisement(
+            registryAdvertisement: DistributionGridRegistryAdvertisement,
+            candidate: DistributionGridNodeAdvertisement
+        ): DistributionGridFailure?
+        {
+            val nodeId = candidate.metadata.nodeId.ifBlank {
+                candidate.descriptor?.distributionGridMetadata?.nodeId.orEmpty()
+            }
+            if(nodeId.isBlank())
+            {
+                return buildFailure(
+                    kind = DistributionGridFailureKind.TRUST_REJECTED,
+                    reason = "DistributionGrid rejected a node advertisement without an explicit node id.",
+                    retryable = false
+                )
+            }
+
+            if(candidate.registryId != registryAdvertisement.metadata.registryId)
+            {
+                return buildFailure(
+                    kind = DistributionGridFailureKind.TRUST_REJECTED,
+                    reason = "DistributionGrid rejected node '$nodeId' because its registry advertisement did not match the trusted registry.",
+                    retryable = false
+                )
+            }
+
+            if(candidate.descriptor == null || candidate.descriptor!!.distributionGridMetadata == null)
+            {
+                return buildFailure(
+                    kind = DistributionGridFailureKind.TRUST_REJECTED,
+                    reason = "DistributionGrid rejected node '$nodeId' because it was missing explicit grid metadata.",
+                    retryable = false
+                )
+            }
+
+            if(candidate.expiresAtEpochMillis > 0L &&
+                candidate.expiresAtEpochMillis <= System.currentTimeMillis()
+            )
+            {
+                return buildFailure(
+                    kind = DistributionGridFailureKind.TRUST_REJECTED,
+                    reason = "DistributionGrid rejected stale node advertisement '$nodeId'.",
+                    retryable = true
+                )
+            }
+
+            if(candidate.attestationRef.isBlank())
+            {
+                return buildFailure(
+                    kind = DistributionGridFailureKind.TRUST_REJECTED,
+                    reason = "DistributionGrid rejected node '$nodeId' because it had no attestation reference.",
+                    retryable = false
+                )
+            }
+
+            return null
+        }
+    }
 
 //----------------------------------------------P2P Interface------------------------------------------------------------
 
@@ -575,6 +755,92 @@ class DistributionGrid : P2PInterface
     }
 
     /**
+     * Store explicit registry metadata when this grid node also exposes registry behavior.
+     *
+     * @param metadata Registry metadata to assign, or `null` to clear registry behavior.
+     * @return This grid for method chaining.
+     */
+    fun setRegistryMetadata(metadata: DistributionGridRegistryMetadata?): DistributionGrid
+    {
+        registryMetadata = metadata?.deepCopy()
+        markShellDirty()
+        return this
+    }
+
+    /**
+     * Read the configured registry metadata for this grid node.
+     *
+     * @return Registry metadata or `null` when the node is not acting as a registry.
+     */
+    fun getRegistryMetadata(): DistributionGridRegistryMetadata?
+    {
+        return registryMetadata?.deepCopy()
+    }
+
+    /**
+     * Override the trust verifier used for registry and node advertisement admission.
+     *
+     * @param verifier Verifier to install.
+     * @return This grid for method chaining.
+     */
+    fun setTrustVerifier(verifier: DistributionGridTrustVerifier): DistributionGrid
+    {
+        trustVerifier = verifier
+        markShellDirty()
+        return this
+    }
+
+    /**
+     * Read the trust verifier currently used for discovery admission.
+     *
+     * @return Active trust verifier.
+     */
+    fun getTrustVerifier(): DistributionGridTrustVerifier
+    {
+        return trustVerifier
+    }
+
+    /**
+     * Add one bootstrap registry advertisement as a discovery root.
+     *
+     * @param advertisement Bootstrap registry advertisement to trust as a root.
+     * @return This grid for method chaining.
+     */
+    fun addBootstrapRegistry(advertisement: DistributionGridRegistryAdvertisement): DistributionGrid
+    {
+        val registryId = advertisement.metadata.registryId.ifBlank {
+            advertisement.transport.transportAddress
+        }
+        require(registryId.isNotBlank()) { "Bootstrap registry id must not be blank." }
+
+        bootstrapRegistriesById[registryId] = advertisement.deepCopy().apply {
+            metadata.registryId = registryId
+            metadata.bootstrapTrusted = true
+            expiresAtEpochMillis = Long.MAX_VALUE
+        }
+        markShellDirty()
+        return this
+    }
+
+    /**
+     * Remove one bootstrap registry root.
+     *
+     * @param registryId Registry id to remove.
+     * @return This grid for method chaining.
+     */
+    fun removeBootstrapRegistry(registryId: String): DistributionGrid
+    {
+        require(registryId.isNotBlank()) { "Registry id must not be blank." }
+        bootstrapRegistriesById.remove(registryId)
+        discoveredRegistriesById.remove(registryId)
+        discoveredNodeAdvertisementsById.entries.removeIf { it.key.registryId == registryId }
+        activeRegistryLeasesById.remove(registryId)
+        syncRegistryMembershipsFromActiveLeases()
+        markShellDirty()
+        return this
+    }
+
+    /**
      * Store the maximum hop count for future execution phases.
      *
      * @param max Maximum hop count to store.
@@ -815,6 +1081,49 @@ class DistributionGrid : P2PInterface
     }
 
     /**
+     * Read the configured bootstrap registry ids.
+     *
+     * @return Ordered bootstrap registry ids.
+     */
+    fun getBootstrapRegistryIds(): List<String>
+    {
+        return bootstrapRegistriesById.keys.toList()
+    }
+
+    /**
+     * Read the verified discovered registry ids.
+     *
+     * @return Ordered discovered registry ids.
+     */
+    fun getDiscoveredRegistryIds(): List<String>
+    {
+        return discoveredRegistriesById.keys.toList()
+    }
+
+    /**
+     * Read the verified discovered node ids.
+     *
+     * @return Ordered discovered node ids.
+     */
+    fun getDiscoveredNodeIds(): List<String>
+    {
+        return discoveredNodeAdvertisementsById.keys
+            .map { it.nodeId }
+            .distinct()
+            .toList()
+    }
+
+    /**
+     * Read the currently active registry lease ids.
+     *
+     * @return Ordered active lease ids.
+     */
+    fun getActiveRegistryLeaseIds(): List<String>
+    {
+        return activeRegistryLeasesById.values.map { it.leaseId }
+    }
+
+    /**
      * Read the configured discovery mode.
      *
      * @return Stored discovery mode.
@@ -872,6 +1181,284 @@ class DistributionGrid : P2PInterface
     fun isTracingEnabled(): Boolean
     {
         return tracingEnabled
+    }
+
+    /**
+     * Probe all configured bootstrap registries and cache the verified advertisements that respond.
+     *
+     * @return Verified registry advertisements discovered during the probe pass.
+     */
+    suspend fun probeTrustedRegistries(): List<DistributionGridRegistryAdvertisement>
+    {
+        validateRegistryClientReadiness()?.let { throw IllegalStateException(it.reason) }
+
+        val discoveredAdvertisements = mutableListOf<DistributionGridRegistryAdvertisement>()
+        bootstrapRegistriesById.values.toList().forEach { bootstrapRegistry ->
+            val response = sendRegistryRpcRequest(
+                advertisement = bootstrapRegistry,
+                rpcMessage = DistributionGridRpcMessage(
+                    messageType = DistributionGridRpcMessageType.PROBE_REGISTRY,
+                    senderNodeId = resolveCurrentNodeId(),
+                    targetId = bootstrapRegistry.metadata.registryId,
+                    protocolVersion = resolveRegistryProtocolVersion(bootstrapRegistry),
+                    payloadType = REGISTRY_ADVERTISEMENT_PAYLOAD_TYPE,
+                    payloadJson = ""
+                )
+            )
+
+            if(response.rejection != null)
+            {
+                return@forEach
+            }
+
+            val rpcResponse = parseGridRpcMessage(response.output?.text.orEmpty()) ?: return@forEach
+            if(rpcResponse.messageType != DistributionGridRpcMessageType.PROBE_REGISTRY ||
+                rpcResponse.payloadType != REGISTRY_ADVERTISEMENT_PAYLOAD_TYPE
+            )
+            {
+                return@forEach
+            }
+            val advertisement = deserialize<DistributionGridRegistryAdvertisement>(
+                rpcResponse.payloadJson,
+                useRepair = false
+            ) ?: return@forEach
+
+            val failure = trustVerifier.verifyRegistryAdvertisement(
+                candidate = advertisement,
+                trustedParents = listOf(bootstrapRegistry)
+            )
+            if(failure == null)
+            {
+                discoveredRegistriesById[advertisement.metadata.registryId] = advertisement.deepCopy()
+                discoveredAdvertisements.add(advertisement.deepCopy())
+            }
+        }
+
+        return discoveredAdvertisements
+    }
+
+    /**
+     * Register this node with one trusted registry and store the returned lease.
+     *
+     * @param registryId Target registry id.
+     * @param requestedLeaseSeconds Optional requested lease duration override.
+     * @return Granted lease or `null` when the registry rejected the registration.
+     */
+    suspend fun registerWithRegistry(
+        registryId: String,
+        requestedLeaseSeconds: Int? = null
+    ): DistributionGridRegistrationLease?
+    {
+        validateRegistryClientReadiness()?.let { throw IllegalStateException(it.reason) }
+
+        val registryAdvertisement = resolveRegistryAdvertisement(registryId) ?: return null
+        val request = DistributionGridRegistrationRequest(
+            leaseId = "",
+            descriptor = p2pDescriptor?.deepCopy(),
+            metadata = requireNotNull(p2pDescriptor?.distributionGridMetadata).deepCopy(),
+            requestedLeaseSeconds = requestedLeaseSeconds ?: registryAdvertisement.metadata.defaultLeaseSeconds,
+            healthSummary = "healthy",
+            restateCapabilities = true
+        )
+
+        val response = sendRegistryRpcRequest(
+            advertisement = registryAdvertisement,
+            rpcMessage = DistributionGridRpcMessage(
+                messageType = DistributionGridRpcMessageType.REGISTER_NODE,
+                senderNodeId = resolveCurrentNodeId(),
+                targetId = registryId,
+                protocolVersion = resolveRegistryProtocolVersion(registryAdvertisement),
+                payloadType = REGISTRATION_REQUEST_PAYLOAD_TYPE,
+                payloadJson = serialize(request)
+            )
+        )
+
+        val lease = extractRegistryLeaseFromResponse(
+            response = response,
+            expectedMessageType = DistributionGridRpcMessageType.REGISTER_NODE,
+            expectedRegistryId = registryId,
+            expectedNodeId = request.metadata.nodeId.ifBlank { resolveCurrentNodeId() }
+        ) ?: return null
+        activeRegistryLeasesById[registryId] = lease.deepCopy()
+        syncRegistryMembershipsFromActiveLeases()
+        return lease.deepCopy()
+    }
+
+    /**
+     * Renew one active registry lease explicitly.
+     *
+     * @param registryId Registry id whose lease should be renewed.
+     * @return Refreshed lease or `null` when renewal failed.
+     */
+    suspend fun renewRegistryLease(registryId: String): DistributionGridRegistrationLease?
+    {
+        validateRegistryClientReadiness()?.let { throw IllegalStateException(it.reason) }
+
+        val existingLease = activeRegistryLeasesById[registryId] ?: return null
+        val registryAdvertisement = resolveRegistryAdvertisement(registryId) ?: return null
+        val request = DistributionGridRegistrationRequest(
+            leaseId = existingLease.leaseId,
+            descriptor = p2pDescriptor?.deepCopy(),
+            metadata = requireNotNull(p2pDescriptor?.distributionGridMetadata).deepCopy(),
+            requestedLeaseSeconds = existingLease.grantedLeaseSeconds,
+            healthSummary = "healthy",
+            restateCapabilities = true
+        )
+
+        val response = sendRegistryRpcRequest(
+            advertisement = registryAdvertisement,
+            rpcMessage = DistributionGridRpcMessage(
+                messageType = DistributionGridRpcMessageType.RENEW_LEASE,
+                senderNodeId = resolveCurrentNodeId(),
+                targetId = registryId,
+                protocolVersion = resolveRegistryProtocolVersion(registryAdvertisement),
+                payloadType = REGISTRATION_REQUEST_PAYLOAD_TYPE,
+                payloadJson = serialize(request)
+            )
+        )
+
+        val renewedLease = extractRegistryLeaseFromResponse(
+            response = response,
+            expectedMessageType = DistributionGridRpcMessageType.RENEW_LEASE,
+            expectedRegistryId = registryId,
+            expectedNodeId = request.metadata.nodeId.ifBlank { resolveCurrentNodeId() }
+        ) ?: return null
+        activeRegistryLeasesById[registryId] = renewedLease.deepCopy()
+        syncRegistryMembershipsFromActiveLeases()
+        return renewedLease.deepCopy()
+    }
+
+    /**
+     * Renew near-expiry leases and drop expired memberships.
+     *
+     * @param nowEpochMillis Current time used for expiry checks.
+     * @return Refreshed leases produced by this tick.
+     */
+    suspend fun tickRegistryMemberships(
+        nowEpochMillis: Long = System.currentTimeMillis()
+    ): List<DistributionGridRegistrationLease>
+    {
+        validateRegistryClientReadiness()?.let { throw IllegalStateException(it.reason) }
+
+        val renewedLeases = mutableListOf<DistributionGridRegistrationLease>()
+        val expiredRegistryIds = activeRegistryLeasesById
+            .filterValues { it.expiresAtEpochMillis <= nowEpochMillis }
+            .keys
+            .toList()
+
+        expiredRegistryIds.forEach { activeRegistryLeasesById.remove(it) }
+        if(expiredRegistryIds.isNotEmpty())
+        {
+            syncRegistryMembershipsFromActiveLeases()
+        }
+
+        activeRegistryLeasesById.toMap().forEach { (registryId, lease) ->
+            val renewalWindowMillis = resolveLeaseRenewalWindowMillis(lease)
+            if(lease.expiresAtEpochMillis - nowEpochMillis <= renewalWindowMillis)
+            {
+                val renewedLease = renewRegistryLease(registryId)
+                if(renewedLease != null)
+                {
+                    renewedLeases.add(renewedLease)
+                }
+            }
+        }
+
+        return renewedLeases
+    }
+
+    /**
+     * Query trusted registries for candidate downstream nodes and cache the verified advertisements.
+     *
+     * @param query Structured candidate query.
+     * @param registryIds Optional explicit registry ids to query. Blank means all known registries.
+     * @return Verified node advertisements returned by the queried registries.
+     */
+    suspend fun queryRegistries(
+        query: DistributionGridRegistryQuery,
+        registryIds: List<String> = emptyList()
+    ): List<DistributionGridNodeAdvertisement>
+    {
+        validateRegistryClientReadiness()?.let { throw IllegalStateException(it.reason) }
+
+        val targetRegistryIds = if(registryIds.isNotEmpty())
+        {
+            registryIds
+        }
+        else
+        {
+            (discoveredRegistriesById.keys + bootstrapRegistriesById.keys).distinct()
+        }
+
+        val verifiedCandidates = mutableListOf<DistributionGridNodeAdvertisement>()
+        targetRegistryIds.forEach { registryId ->
+            val registryAdvertisement = resolveRegistryAdvertisement(registryId) ?: return@forEach
+            val response = sendRegistryRpcRequest(
+                advertisement = registryAdvertisement,
+                rpcMessage = DistributionGridRpcMessage(
+                    messageType = DistributionGridRpcMessageType.QUERY_REGISTRY,
+                    senderNodeId = resolveCurrentNodeId(),
+                    targetId = registryId,
+                    protocolVersion = resolveRegistryProtocolVersion(registryAdvertisement),
+                    payloadType = REGISTRY_QUERY_PAYLOAD_TYPE,
+                    payloadJson = serialize(query)
+                )
+            )
+
+            if(response.rejection != null)
+            {
+                return@forEach
+            }
+
+            val rpcResponse = parseGridRpcMessage(response.output?.text.orEmpty()) ?: return@forEach
+            if(rpcResponse.messageType != DistributionGridRpcMessageType.QUERY_REGISTRY ||
+                rpcResponse.payloadType != REGISTRY_QUERY_RESULT_PAYLOAD_TYPE
+            )
+            {
+                return@forEach
+            }
+            val result = deserialize<DistributionGridRegistryQueryResult>(
+                rpcResponse.payloadJson,
+                useRepair = false
+            ) ?: return@forEach
+            if(!result.accepted)
+            {
+                return@forEach
+            }
+
+            result.candidates.forEach { candidate ->
+                val failure = trustVerifier.verifyNodeAdvertisement(registryAdvertisement, candidate)
+                if(failure == null)
+                {
+                    val resolvedNodeId = resolveDiscoveredNodeId(candidate)
+                    if(resolvedNodeId.isNotBlank())
+                    {
+                        val normalizedCandidate = canonicalizeDiscoveredNodeAdvertisement(
+                            candidate = candidate,
+                            resolvedNodeId = resolvedNodeId
+                        )
+                        discoveredNodeAdvertisementsById[buildDiscoveredNodeKey(
+                            nodeId = resolvedNodeId,
+                            registryId = normalizedCandidate.registryId
+                        )] = normalizedCandidate.deepCopy()
+                        verifiedCandidates.add(normalizedCandidate.deepCopy())
+                    }
+                }
+            }
+        }
+
+        return verifiedCandidates
+    }
+
+    /**
+     * Clear discovered registries, discovered nodes, and active lease state without removing bootstrap roots.
+     */
+    fun clearDiscoveredRegistryState()
+    {
+        discoveredRegistriesById.clear()
+        discoveredNodeAdvertisementsById.clear()
+        activeRegistryLeasesById.clear()
+        syncRegistryMembershipsFromActiveLeases()
     }
 
     /**
@@ -1026,6 +1613,58 @@ class DistributionGrid : P2PInterface
     }
 
     /**
+     * Validate whether the shell is ready to act as a registry client.
+     *
+     * @return Failure record when registry work must be rejected, or `null` when the shell is ready.
+     */
+    private fun validateRegistryClientReadiness(): DistributionGridFailure?
+    {
+        val readinessFailure = validateExecutionReadiness()
+        if(readinessFailure != null)
+        {
+            return readinessFailure
+        }
+
+        if(p2pDescriptor?.distributionGridMetadata == null)
+        {
+            return buildFailure(
+                kind = DistributionGridFailureKind.VALIDATION_FAILURE,
+                reason = "DistributionGrid requires explicit node metadata before registry discovery can run.",
+                retryable = false
+            )
+        }
+
+        return null
+    }
+
+    /**
+     * Validate whether the shell is ready to serve registry RPC requests.
+     *
+     * @return Failure record when registry behavior must be rejected, or `null` when registry behavior is active.
+     */
+    private fun validateRegistryServerReadiness(): DistributionGridFailure?
+    {
+        val readinessFailure = validateRegistryClientReadiness()
+        if(readinessFailure != null)
+        {
+            return readinessFailure
+        }
+
+        val localRegistryMetadata = registryMetadata
+        val actsAsRegistry = p2pDescriptor?.distributionGridMetadata?.actsAsRegistry == true
+        if(localRegistryMetadata == null || !actsAsRegistry)
+        {
+            return buildFailure(
+                kind = DistributionGridFailureKind.TRUST_REJECTED,
+                reason = "DistributionGrid is not configured to expose registry behavior.",
+                retryable = false
+            )
+        }
+
+        return null
+    }
+
+    /**
      * Parse a grid RPC message only when the inbound prompt clearly looks like serialized grid JSON.
      *
      * @param text Prompt text to inspect.
@@ -1084,6 +1723,26 @@ class DistributionGrid : P2PInterface
     {
         return when(rpcMessage.messageType)
         {
+            DistributionGridRpcMessageType.PROBE_REGISTRY ->
+            {
+                handleProbeRegistryRequest(request, rpcMessage)
+            }
+
+            DistributionGridRpcMessageType.REGISTER_NODE ->
+            {
+                handleRegisterNodeRequest(request, rpcMessage)
+            }
+
+            DistributionGridRpcMessageType.RENEW_LEASE ->
+            {
+                handleRenewLeaseRequest(request, rpcMessage)
+            }
+
+            DistributionGridRpcMessageType.QUERY_REGISTRY ->
+            {
+                handleQueryRegistryRequest(request, rpcMessage)
+            }
+
             DistributionGridRpcMessageType.HANDSHAKE_INIT ->
             {
                 handleHandshakeInitRequest(request, rpcMessage)
@@ -1104,6 +1763,270 @@ class DistributionGrid : P2PInterface
                 )
             }
         }
+    }
+
+    /**
+     * Return the current registry advertisement when this node exposes registry behavior.
+     *
+     * @param request Raw inbound P2P request.
+     * @param rpcMessage Parsed registry probe RPC.
+     * @return P2P response carrying the local registry advertisement.
+     */
+    private suspend fun handleProbeRegistryRequest(
+        request: P2PRequest,
+        rpcMessage: DistributionGridRpcMessage
+    ): P2PResponse
+    {
+        val registryFailure = validateRegistryServerReadiness()
+        if(registryFailure != null)
+        {
+            return mapFailureToP2PResponse(registryFailure)
+        }
+
+        val advertisement = buildLocalRegistryAdvertisement()
+        val protocolVersion = resolveInboundRegistryProtocolVersion(rpcMessage)
+
+        return P2PResponse(
+            output = buildGridRpcContent(
+                DistributionGridRpcMessage(
+                    messageType = DistributionGridRpcMessageType.PROBE_REGISTRY,
+                    senderNodeId = resolveCurrentNodeId(),
+                    targetId = rpcMessage.senderNodeId,
+                    protocolVersion = protocolVersion,
+                    payloadType = REGISTRY_ADVERTISEMENT_PAYLOAD_TYPE,
+                    payloadJson = serialize(advertisement)
+                )
+            )
+        )
+    }
+
+    /**
+     * Register or refresh one node entry in the local registry directory.
+     *
+     * @param request Raw inbound P2P request.
+     * @param rpcMessage Parsed registration RPC.
+     * @return P2P response carrying the granted lease or a boundary rejection.
+     */
+    private suspend fun handleRegisterNodeRequest(
+        request: P2PRequest,
+        rpcMessage: DistributionGridRpcMessage
+    ): P2PResponse
+    {
+        val registryFailure = validateRegistryServerReadiness()
+        if(registryFailure != null)
+        {
+            return mapFailureToP2PResponse(registryFailure)
+        }
+
+        val registrationRequest = deserialize<DistributionGridRegistrationRequest>(
+            rpcMessage.payloadJson,
+            useRepair = false
+        ) ?: return P2PResponse(
+            rejection = P2PRejection(
+                errorType = P2PError.json,
+                reason = "DistributionGrid could not deserialize the node registration request."
+            )
+        )
+
+        val nodeId = registrationRequest.metadata.nodeId.ifBlank {
+            registrationRequest.descriptor?.distributionGridMetadata?.nodeId.orEmpty()
+        }
+        if(nodeId.isBlank())
+        {
+            return P2PResponse(
+                rejection = P2PRejection(
+                    errorType = P2PError.configuration,
+                    reason = "DistributionGrid node registration requires explicit grid node metadata."
+                )
+            )
+        }
+
+        val lease = grantRegistrationLease(nodeId, registrationRequest, existingLeaseId = null)
+        val descriptor = registrationRequest.descriptor ?: buildRemoteDescriptorFromRegistration(request, registrationRequest)
+            ?: return P2PResponse(
+                rejection = P2PRejection(
+                    errorType = P2PError.configuration,
+                    reason = "DistributionGrid node registration requires a caller return address when no descriptor is supplied."
+                )
+            )
+        val advertisement = buildRegisteredNodeAdvertisement(
+            descriptor = descriptor,
+            metadata = registrationRequest.metadata,
+            lease = lease
+        )
+        storeLocalRegistrationLeaseState(
+            nodeId = nodeId,
+            lease = lease,
+            advertisement = advertisement
+        )
+
+        return P2PResponse(
+            output = buildGridRpcContent(
+                DistributionGridRpcMessage(
+                    messageType = DistributionGridRpcMessageType.REGISTER_NODE,
+                    senderNodeId = resolveCurrentNodeId(),
+                    targetId = rpcMessage.senderNodeId,
+                    protocolVersion = resolveInboundRegistryProtocolVersion(rpcMessage),
+                    payloadType = REGISTRATION_LEASE_PAYLOAD_TYPE,
+                    payloadJson = serialize(lease)
+                )
+            )
+        )
+    }
+
+    /**
+     * Renew one existing node lease in the local registry directory.
+     *
+     * @param request Raw inbound P2P request.
+     * @param rpcMessage Parsed renewal RPC.
+     * @return P2P response carrying the refreshed lease or a boundary rejection.
+     */
+    private suspend fun handleRenewLeaseRequest(
+        request: P2PRequest,
+        rpcMessage: DistributionGridRpcMessage
+    ): P2PResponse
+    {
+        val registryFailure = validateRegistryServerReadiness()
+        if(registryFailure != null)
+        {
+            return mapFailureToP2PResponse(registryFailure)
+        }
+
+        val registrationRequest = deserialize<DistributionGridRegistrationRequest>(
+            rpcMessage.payloadJson,
+            useRepair = false
+        ) ?: return P2PResponse(
+            rejection = P2PRejection(
+                errorType = P2PError.json,
+                reason = "DistributionGrid could not deserialize the lease-renewal request."
+            )
+        )
+
+        val nodeId = registrationRequest.metadata.nodeId.ifBlank {
+            registrationRequest.descriptor?.distributionGridMetadata?.nodeId.orEmpty()
+        }
+        val leaseId = registrationRequest.leaseId
+        val existingLease = localRegistrationLeasesById[leaseId]
+        if(nodeId.isBlank() || existingLease == null || existingLease.nodeId != nodeId)
+        {
+            return P2PResponse(
+                rejection = P2PRejection(
+                    errorType = P2PError.configuration,
+                    reason = "DistributionGrid could not resolve the requested registry lease for renewal."
+                )
+            )
+        }
+
+        if(existingLease.expiresAtEpochMillis <= System.currentTimeMillis())
+        {
+            localRegistrationLeasesById.remove(existingLease.leaseId)
+            localRegistrationLeaseIdsByNodeId.remove(nodeId)
+            localRegisteredNodeAdvertisementsById.remove(nodeId)
+            return P2PResponse(
+                rejection = P2PRejection(
+                    errorType = P2PError.configuration,
+                    reason = "DistributionGrid registry lease '$leaseId' has already expired."
+                )
+            )
+        }
+
+        val lease = grantRegistrationLease(
+            nodeId = nodeId,
+            registrationRequest = registrationRequest,
+            existingLeaseId = existingLease.leaseId
+        )
+        val descriptor = registrationRequest.descriptor
+            ?: localRegisteredNodeAdvertisementsById[nodeId]?.descriptor
+            ?: buildRemoteDescriptorFromRegistration(request, registrationRequest)
+            ?: return P2PResponse(
+                rejection = P2PRejection(
+                    errorType = P2PError.configuration,
+                    reason = "DistributionGrid lease renewal requires a caller return address when no descriptor is supplied."
+                )
+            )
+        val advertisement = buildRegisteredNodeAdvertisement(
+            descriptor = descriptor,
+            metadata = registrationRequest.metadata,
+            lease = lease
+        )
+        storeLocalRegistrationLeaseState(
+            nodeId = nodeId,
+            lease = lease,
+            advertisement = advertisement
+        )
+
+        return P2PResponse(
+            output = buildGridRpcContent(
+                DistributionGridRpcMessage(
+                    messageType = DistributionGridRpcMessageType.RENEW_LEASE,
+                    senderNodeId = resolveCurrentNodeId(),
+                    targetId = rpcMessage.senderNodeId,
+                    protocolVersion = resolveInboundRegistryProtocolVersion(rpcMessage),
+                    payloadType = REGISTRATION_LEASE_PAYLOAD_TYPE,
+                    payloadJson = serialize(lease)
+                )
+            )
+        )
+    }
+
+    /**
+     * Evaluate one structured registry query against the local registry directory.
+     *
+     * @param request Raw inbound P2P request.
+     * @param rpcMessage Parsed registry query RPC.
+     * @return P2P response carrying the query result.
+     */
+    private suspend fun handleQueryRegistryRequest(
+        request: P2PRequest,
+        rpcMessage: DistributionGridRpcMessage
+    ): P2PResponse
+    {
+        val registryFailure = validateRegistryServerReadiness()
+        if(registryFailure != null)
+        {
+            return mapFailureToP2PResponse(registryFailure)
+        }
+
+        val query = deserialize<DistributionGridRegistryQuery>(
+            rpcMessage.payloadJson,
+            useRepair = false
+        ) ?: return P2PResponse(
+            rejection = P2PRejection(
+                errorType = P2PError.json,
+                reason = "DistributionGrid could not deserialize the registry query."
+            )
+        )
+
+        purgeExpiredLocalRegistrationState()
+
+        val registryId = registryMetadata!!.registryId
+        val result = DistributionGridRegistryQueryResult(
+            registryId = registryId,
+            accepted = true,
+            rejectionReason = "",
+            candidates = localRegisteredNodeAdvertisementsById.values
+                .filter { advertisement ->
+                    advertisement.lease?.expiresAtEpochMillis?.let { it > System.currentTimeMillis() } ?: false
+                }
+                .filter { advertisement ->
+                    matchesRegistryQuery(advertisement, query)
+                }
+                .map { it.deepCopy() }
+                .toMutableList()
+        )
+
+        return P2PResponse(
+            output = buildGridRpcContent(
+                DistributionGridRpcMessage(
+                    messageType = DistributionGridRpcMessageType.QUERY_REGISTRY,
+                    senderNodeId = resolveCurrentNodeId(),
+                    targetId = rpcMessage.senderNodeId,
+                    protocolVersion = resolveInboundRegistryProtocolVersion(rpcMessage),
+                    payloadType = REGISTRY_QUERY_RESULT_PAYLOAD_TYPE,
+                    payloadJson = serialize(result)
+                )
+            )
+        )
     }
 
     /**
@@ -1380,8 +2303,8 @@ class DistributionGrid : P2PInterface
             )
         }
 
-        val peerKey = resolvedPeer.first
-        val peerDescriptor = resolvedPeer.second
+        val peerKey = resolvedPeer.peerKey
+        val peerDescriptor = resolvedPeer.descriptor
         val peerMetadata = peerDescriptor.distributionGridMetadata
         val preparedEnvelope = beforePeerDispatchHook?.invoke(envelope) ?: envelope
         if(peerMetadata == null || peerMetadata.nodeId.isBlank())
@@ -1418,7 +2341,12 @@ class DistributionGrid : P2PInterface
             )
         }
 
-        val handshakeOutcome = resolveOrCreatePeerSession(peerKey, peerDescriptor, preparedEnvelope)
+        val handshakeOutcome = resolveOrCreatePeerSession(
+            peerKey = peerKey,
+            descriptor = peerDescriptor,
+            envelope = preparedEnvelope,
+            registryScopeOverride = resolvedPeer.registryScope
+        )
         val sessionRecord = handshakeOutcome.sessionRecord
         if(sessionRecord == null)
         {
@@ -2473,31 +3401,170 @@ class DistributionGrid : P2PInterface
      */
     private fun resolveExplicitPeerDescriptor(
         directive: DistributionGridDirective
-    ): Pair<String, P2PDescriptor>?
+    ): DistributionGridResolvedPeerTarget?
     {
+        val explicitAllowed = discoveryMode != DistributionGridPeerDiscoveryMode.REGISTRY_ONLY
+        val registryAllowed = discoveryMode != DistributionGridPeerDiscoveryMode.EXPLICIT_ONLY
+
         val targetPeerId = directive.targetPeerId
-        if(targetPeerId.isNotBlank())
+        if(explicitAllowed && targetPeerId.isNotBlank())
         {
             val descriptor = externalPeerDescriptorsByKey[targetPeerId]
             if(descriptor != null)
             {
-                return Pair(targetPeerId, descriptor)
+                return DistributionGridResolvedPeerTarget(
+                    peerKey = targetPeerId,
+                    descriptor = descriptor
+                )
             }
         }
 
         val targetNodeId = directive.targetNodeId
         if(targetNodeId.isNotBlank())
         {
-            val resolved = externalPeerDescriptorsByKey.entries.firstOrNull { entry ->
-                entry.value.distributionGridMetadata?.nodeId == targetNodeId
-            }
-            if(resolved != null)
+            if(explicitAllowed)
             {
-                return Pair(resolved.key, resolved.value)
+                val resolvedExplicit = externalPeerDescriptorsByKey.entries.firstOrNull { entry ->
+                    entry.value.distributionGridMetadata?.nodeId == targetNodeId
+                }
+                if(resolvedExplicit != null)
+                {
+                    return DistributionGridResolvedPeerTarget(
+                        peerKey = resolvedExplicit.key,
+                        descriptor = resolvedExplicit.value
+                    )
+                }
+            }
+
+            if(registryAllowed)
+            {
+                val discoveredAdvertisement = resolveFreshDiscoveredNodeAdvertisement(targetNodeId)
+                val discoveredDescriptor = discoveredAdvertisement?.descriptor
+                if(discoveredAdvertisement != null && discoveredDescriptor != null)
+                {
+                    return DistributionGridResolvedPeerTarget(
+                        peerKey = "discovered::${discoveredAdvertisement.registryId}::$targetNodeId",
+                        descriptor = discoveredDescriptor.deepCopy(),
+                        registryScope = DistributionGridRegistryScope(
+                            memberships = discoveredAdvertisement.registryId
+                                .takeIf { it.isNotBlank() }
+                                ?.let { listOf(it) }
+                                ?: emptyList()
+                        )
+                    )
+                }
             }
         }
 
         return null
+    }
+
+    /**
+     * Resolve one discovered node advertisement only when it is still fresh and still tied to a trusted registry.
+     *
+     * @param nodeId Canonical discovered node id.
+     * @return Fresh discovered advertisement, or `null` when the cached advertisement must not be reused.
+     */
+    private fun resolveFreshDiscoveredNodeAdvertisement(
+        nodeId: String
+    ): DistributionGridNodeAdvertisement?
+    {
+        val now = System.currentTimeMillis()
+        val validCandidates = mutableListOf<Pair<DistributionGridDiscoveredNodeKey, DistributionGridNodeAdvertisement>>()
+
+        discoveredNodeAdvertisementsById.entries
+            .filter { it.key.nodeId == nodeId }
+            .forEach { (key, discoveredAdvertisement) ->
+                val registryId = discoveredAdvertisement.registryId
+                if(registryId.isBlank() || resolveRegistryAdvertisement(registryId) == null)
+                {
+                    discoveredNodeAdvertisementsById.remove(key)
+                    return@forEach
+                }
+
+                val leaseExpiry = discoveredAdvertisement.lease?.expiresAtEpochMillis
+                    ?: discoveredAdvertisement.expiresAtEpochMillis
+                if(leaseExpiry <= now || discoveredAdvertisement.expiresAtEpochMillis <= now)
+                {
+                    discoveredNodeAdvertisementsById.remove(key)
+                    return@forEach
+                }
+
+                val resolvedNodeId = resolveDiscoveredNodeId(discoveredAdvertisement)
+                if(resolvedNodeId.isBlank())
+                {
+                    discoveredNodeAdvertisementsById.remove(key)
+                    return@forEach
+                }
+
+                validCandidates.add(
+                    key to canonicalizeDiscoveredNodeAdvertisement(
+                        candidate = discoveredAdvertisement,
+                        resolvedNodeId = resolvedNodeId
+                    )
+                )
+            }
+
+        return validCandidates
+            .sortedWith(
+                compareByDescending<Pair<DistributionGridDiscoveredNodeKey, DistributionGridNodeAdvertisement>> {
+                    it.second.lease?.expiresAtEpochMillis ?: it.second.expiresAtEpochMillis
+                }.thenByDescending { it.second.discoveredAtEpochMillis }
+                    .thenBy { it.first.registryId }
+            )
+            .firstOrNull()
+            ?.second
+    }
+
+    /**
+     * Resolve the canonical discovered node id from a verified advertisement.
+     *
+     * @param candidate Discovered node advertisement under consideration.
+     * @return Canonical node id or blank when the advertisement still does not identify a stable node.
+     */
+    private fun resolveDiscoveredNodeId(
+        candidate: DistributionGridNodeAdvertisement
+    ): String
+    {
+        return candidate.metadata.nodeId.ifBlank {
+            candidate.descriptor?.distributionGridMetadata?.nodeId.orEmpty()
+        }
+    }
+
+    /**
+     * Normalize one discovered node advertisement so all identity fields align with the resolved node id.
+     *
+     * @param candidate Discovered node advertisement to normalize.
+     * @param resolvedNodeId Canonical node id resolved for the advertisement.
+     * @return Normalized deep copy of the candidate.
+     */
+    private fun canonicalizeDiscoveredNodeAdvertisement(
+        candidate: DistributionGridNodeAdvertisement,
+        resolvedNodeId: String
+    ): DistributionGridNodeAdvertisement
+    {
+        return candidate.deepCopy().apply {
+            metadata.nodeId = resolvedNodeId
+            descriptor?.distributionGridMetadata?.nodeId = resolvedNodeId
+        }
+    }
+
+    /**
+     * Build the canonical cache key for one discovered node advertisement.
+     *
+     * @param nodeId Canonical discovered node id.
+     * @param registryId Registry that surfaced the node.
+     * @return Structured discovered-node cache key.
+     */
+    private fun buildDiscoveredNodeKey(
+        nodeId: String,
+        registryId: String
+    ): DistributionGridDiscoveredNodeKey
+    {
+        return DistributionGridDiscoveredNodeKey(
+            nodeId = nodeId,
+            registryId = registryId
+        )
     }
 
     /**
@@ -2511,10 +3578,11 @@ class DistributionGrid : P2PInterface
     private suspend fun resolveOrCreatePeerSession(
         peerKey: String,
         descriptor: P2PDescriptor,
-        envelope: DistributionGridEnvelope
+        envelope: DistributionGridEnvelope,
+        registryScopeOverride: DistributionGridRegistryScope? = null
     ): DistributionGridPeerHandshakeOutcome
     {
-        val registryScope = resolveCurrentRegistryScope()
+        val registryScope = registryScopeOverride ?: resolveCurrentRegistryScope()
         val cachedSession = resolveValidCachedSession(peerKey, registryScope, descriptor, envelope)
         if(cachedSession != null)
         {
@@ -2813,6 +3881,47 @@ class DistributionGrid : P2PInterface
     }
 
     /**
+     * Send one registry RPC request using a verified registry advertisement as the target.
+     *
+     * @param advertisement Verified registry advertisement to contact.
+     * @param rpcMessage Registry RPC payload to send.
+     * @return P2P response from the remote registry.
+     */
+    private suspend fun sendRegistryRpcRequest(
+        advertisement: DistributionGridRegistryAdvertisement,
+        rpcMessage: DistributionGridRpcMessage
+    ): P2PResponse
+    {
+        val descriptor = P2PDescriptor(
+            agentName = advertisement.metadata.registryId.ifBlank {
+                advertisement.transport.transportAddress
+            },
+            agentDescription = "DistributionGrid registry endpoint",
+            transport = advertisement.transport.deepCopy(),
+            requiresAuth = false,
+            usesConverse = false,
+            allowsAgentDuplication = false,
+            allowsCustomContext = false,
+            allowsCustomAgentJson = false,
+            recordsInteractionContext = false,
+            recordsPromptContent = false,
+            allowsExternalContext = false,
+            contextProtocol = ContextProtocol.none,
+            supportedContentTypes = mutableListOf(SupportedContentTypes.text),
+            distributionGridMetadata = DistributionGridNodeMetadata(
+                nodeId = advertisement.metadata.registryId.ifBlank {
+                    advertisement.transport.transportAddress
+                },
+                supportedProtocolVersions = advertisement.metadata.supportedProtocolVersions.deepCopy(),
+                supportedTransports = mutableListOf(advertisement.transport.transportMethod),
+                actsAsRegistry = true
+            )
+        )
+
+        return sendGridRpcRequest(descriptor, rpcMessage)
+    }
+
+    /**
      * Build one outbound P2P request for a grid RPC call using the normal request-template precedence.
      *
      * @param descriptor Explicit peer descriptor to target.
@@ -2852,6 +3961,381 @@ class DistributionGrid : P2PInterface
     private fun buildGridRpcContent(rpcMessage: DistributionGridRpcMessage): MultimodalContent
     {
         return MultimodalContent(text = "$GRID_RPC_FRAME_PREFIX\n${serialize(rpcMessage)}")
+    }
+
+    /**
+     * Resolve the protocol version used for one outbound registry RPC call.
+     *
+     * @param advertisement Registry advertisement being contacted.
+     * @return Outbound protocol version.
+     */
+    private fun resolveRegistryProtocolVersion(
+        advertisement: DistributionGridRegistryAdvertisement
+    ): DistributionGridProtocolVersion
+    {
+        val localVersions = p2pDescriptor?.distributionGridMetadata?.supportedProtocolVersions.orEmpty()
+        val remoteVersions = advertisement.metadata.supportedProtocolVersions
+        return DistributionGridProtocolVersion.negotiateHighestShared(
+            localVersions = localVersions,
+            remoteVersions = remoteVersions
+        ) ?: remoteVersions.firstOrNull()?.deepCopy()
+            ?: localVersions.firstOrNull()?.deepCopy()
+            ?: DistributionGridProtocolVersion()
+    }
+
+    /**
+     * Resolve the protocol version used for one inbound registry RPC response.
+     *
+     * @param rpcMessage Inbound registry RPC wrapper.
+     * @return Protocol version echoed on the response wrapper.
+     */
+    private fun resolveInboundRegistryProtocolVersion(
+        rpcMessage: DistributionGridRpcMessage
+    ): DistributionGridProtocolVersion
+    {
+        val localSupported = registryMetadata?.supportedProtocolVersions
+            ?: p2pDescriptor?.distributionGridMetadata?.supportedProtocolVersions
+            ?: mutableListOf(DistributionGridProtocolVersion())
+
+        return DistributionGridProtocolVersion.negotiateHighestShared(
+            localVersions = localSupported,
+            remoteVersions = listOf(rpcMessage.protocolVersion)
+        ) ?: rpcMessage.protocolVersion.deepCopy()
+    }
+
+    /**
+     * Resolve one known registry advertisement by id from discovered or bootstrap state.
+     *
+     * @param registryId Registry id to resolve.
+     * @return Matching registry advertisement or `null` when none is known.
+     */
+    private fun resolveRegistryAdvertisement(
+        registryId: String
+    ): DistributionGridRegistryAdvertisement?
+    {
+        val now = System.currentTimeMillis()
+        val discoveredAdvertisement = discoveredRegistriesById[registryId]
+        if(discoveredAdvertisement != null)
+        {
+            if(discoveredAdvertisement.expiresAtEpochMillis <= now)
+            {
+                discoveredRegistriesById.remove(registryId)
+            }
+            else
+            {
+                return discoveredAdvertisement.deepCopy()
+            }
+        }
+
+        val bootstrapAdvertisement = bootstrapRegistriesById[registryId]
+        if(bootstrapAdvertisement != null)
+        {
+            if(bootstrapAdvertisement.expiresAtEpochMillis <= now)
+            {
+                bootstrapRegistriesById.remove(registryId)
+                return null
+            }
+
+            return bootstrapAdvertisement.deepCopy()
+        }
+
+        return null
+    }
+
+    /**
+     * Parse one registry lease from a registry RPC response.
+     *
+     * @param response Raw P2P response returned by the registry.
+     * @return Granted or renewed lease, or `null` when the registry rejected the operation.
+     */
+    private fun extractRegistryLeaseFromResponse(
+        response: P2PResponse,
+        expectedMessageType: DistributionGridRpcMessageType,
+        expectedRegistryId: String,
+        expectedNodeId: String
+    ): DistributionGridRegistrationLease?
+    {
+        if(response.rejection != null)
+        {
+            return null
+        }
+
+        val rpcResponse = parseGridRpcMessage(response.output?.text.orEmpty()) ?: return null
+        if(rpcResponse.messageType != expectedMessageType ||
+            rpcResponse.payloadType != REGISTRATION_LEASE_PAYLOAD_TYPE
+        )
+        {
+            return null
+        }
+
+        val lease = deserialize<DistributionGridRegistrationLease>(rpcResponse.payloadJson, useRepair = false)
+            ?: return null
+
+        if(lease.leaseId.isBlank() ||
+            lease.nodeId != expectedNodeId ||
+            lease.registryId != expectedRegistryId ||
+            lease.expiresAtEpochMillis <= System.currentTimeMillis() ||
+            lease.grantedLeaseSeconds <= 0
+        )
+        {
+            return null
+        }
+
+        return lease
+    }
+
+    /**
+     * Build the local registry advertisement published by this node.
+     *
+     * @return Current local registry advertisement.
+     */
+    private fun buildLocalRegistryAdvertisement(): DistributionGridRegistryAdvertisement
+    {
+        val localRegistryMetadata = requireNotNull(registryMetadata).deepCopy()
+        val now = System.currentTimeMillis()
+        return DistributionGridRegistryAdvertisement(
+            transport = resolveCurrentTransport(),
+            metadata = localRegistryMetadata,
+            attestationRef = if(localRegistryMetadata.bootstrapTrusted)
+            {
+                "bootstrap:${localRegistryMetadata.registryId}"
+            }
+            else
+            {
+                "registry:${localRegistryMetadata.registryId}"
+            },
+            discoveredAtEpochMillis = now,
+            expiresAtEpochMillis = now + localRegistryMetadata.defaultLeaseSeconds.coerceAtLeast(1) * 1000L
+        )
+    }
+
+    /**
+     * Grant one local registry lease.
+     *
+     * @param nodeId Node being registered.
+     * @param registrationRequest Registration request supplied by the caller.
+     * @param existingLeaseId Existing lease id when the request is a renewal.
+     * @return Granted lease.
+     */
+    private fun grantRegistrationLease(
+        nodeId: String,
+        registrationRequest: DistributionGridRegistrationRequest,
+        existingLeaseId: String?
+    ): DistributionGridRegistrationLease
+    {
+        val localRegistryMetadata = requireNotNull(registryMetadata)
+        val grantedLeaseSeconds = registrationRequest.requestedLeaseSeconds
+            .coerceAtLeast(1)
+            .coerceAtMost(localRegistryMetadata.defaultLeaseSeconds.coerceAtLeast(1))
+        return DistributionGridRegistrationLease(
+            leaseId = existingLeaseId ?: UUID.randomUUID().toString(),
+            nodeId = nodeId,
+            registryId = localRegistryMetadata.registryId,
+            grantedLeaseSeconds = grantedLeaseSeconds,
+            expiresAtEpochMillis = System.currentTimeMillis() + grantedLeaseSeconds * 1000L,
+            renewalRequired = localRegistryMetadata.leaseRequired
+        )
+    }
+
+    /**
+     * Build one node advertisement stored by the local registry directory.
+     *
+     * @param descriptor Descriptor to advertise.
+     * @param metadata Node metadata to advertise.
+     * @param lease Active lease associated with the node.
+     * @return Stored node advertisement.
+     */
+    private fun buildRegisteredNodeAdvertisement(
+        descriptor: P2PDescriptor,
+        metadata: DistributionGridNodeMetadata,
+        lease: DistributionGridRegistrationLease
+    ): DistributionGridNodeAdvertisement
+    {
+        val now = System.currentTimeMillis()
+        return DistributionGridNodeAdvertisement(
+            descriptor = descriptor.deepCopy(),
+            metadata = metadata.deepCopy(),
+            registryId = lease.registryId,
+            lease = lease.deepCopy(),
+            attestationRef = "registry:${lease.registryId}:node:${metadata.nodeId}",
+            discoveredAtEpochMillis = now,
+            expiresAtEpochMillis = lease.expiresAtEpochMillis
+        )
+    }
+
+    /**
+     * Replace any existing lease state for one node with the newly granted lease.
+     *
+     * @param nodeId Node whose lease state is being updated.
+     * @param lease Newly granted lease.
+     * @param advertisement Advertised node state associated with the lease.
+     */
+    private fun storeLocalRegistrationLeaseState(
+        nodeId: String,
+        lease: DistributionGridRegistrationLease,
+        advertisement: DistributionGridNodeAdvertisement
+    )
+    {
+        val priorLeaseId = localRegistrationLeaseIdsByNodeId[nodeId]
+        if(priorLeaseId != null && priorLeaseId != lease.leaseId)
+        {
+            localRegistrationLeasesById.remove(priorLeaseId)
+        }
+
+        localRegistrationLeasesById.entries.removeIf { it.value.nodeId == nodeId && it.key != lease.leaseId }
+        localRegisteredNodeAdvertisementsById[nodeId] = advertisement.deepCopy()
+        localRegistrationLeasesById[lease.leaseId] = lease.deepCopy()
+        localRegistrationLeaseIdsByNodeId[nodeId] = lease.leaseId
+    }
+
+    /**
+     * Build a fallback descriptor for a remote registration request when the caller omitted one.
+     *
+     * @param request Raw inbound P2P request.
+     * @param registrationRequest Registration request supplied by the caller.
+     * @return Descriptor synthesized from the request transport and node metadata.
+     */
+    private fun buildRemoteDescriptorFromRegistration(
+        request: P2PRequest,
+        registrationRequest: DistributionGridRegistrationRequest
+    ): P2PDescriptor?
+    {
+        val callerTransport = request.returnAddress.deepCopy().takeIf {
+            it.transportAddress.isNotBlank() || it.transportAuthBody.isNotBlank()
+        } ?: return null
+
+        return P2PDescriptor(
+            agentName = registrationRequest.metadata.nodeId,
+            agentDescription = "DistributionGrid registered node",
+            transport = callerTransport,
+            requiresAuth = false,
+            usesConverse = false,
+            allowsAgentDuplication = false,
+            allowsCustomContext = false,
+            allowsCustomAgentJson = false,
+            recordsInteractionContext = false,
+            recordsPromptContent = false,
+            allowsExternalContext = false,
+            contextProtocol = ContextProtocol.none,
+            supportedContentTypes = mutableListOf(SupportedContentTypes.text),
+            distributionGridMetadata = registrationRequest.metadata.deepCopy()
+        )
+    }
+
+    /**
+     * Check whether one cached node advertisement matches a structured registry query.
+     *
+     * @param advertisement Cached node advertisement.
+     * @param query Structured query to evaluate.
+     * @return `true` when the advertisement matches the requested filters.
+     */
+    private fun matchesRegistryQuery(
+        advertisement: DistributionGridNodeAdvertisement,
+        query: DistributionGridRegistryQuery
+    ): Boolean
+    {
+        val metadata = advertisement.metadata
+        if(query.requiredCapabilities.isNotEmpty() &&
+            !query.requiredCapabilities.all { capability -> capability in metadata.roleCapabilities }
+        )
+        {
+            return false
+        }
+
+        if(query.acceptedTransports.isNotEmpty() &&
+            metadata.supportedTransports.none { it in query.acceptedTransports }
+        )
+        {
+            return false
+        }
+
+        if(query.registryIds.isNotEmpty() && advertisement.registryId !in query.registryIds)
+        {
+            return false
+        }
+
+        val localRegistryTrustDomain = registryMetadata?.trustDomainId.orEmpty()
+        if(query.trustDomainIds.isNotEmpty() &&
+            localRegistryTrustDomain !in query.trustDomainIds
+        )
+        {
+            return false
+        }
+
+        if(query.requireHealthy && advertisement.lease == null)
+        {
+            return false
+        }
+
+        if(query.freshnessWindowSeconds > 0)
+        {
+            val now = System.currentTimeMillis()
+            if(advertisement.expiresAtEpochMillis <= now ||
+                advertisement.discoveredAtEpochMillis < now - query.freshnessWindowSeconds * 1000L
+            )
+            {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    /**
+     * Drop expired local registration entries before answering registry queries.
+     */
+    private fun purgeExpiredLocalRegistrationState()
+    {
+        val now = System.currentTimeMillis()
+        val expiredLeaseIds = localRegistrationLeasesById.values
+            .filter { it.expiresAtEpochMillis <= now }
+            .map { it.leaseId }
+            .toSet()
+        if(expiredLeaseIds.isEmpty())
+        {
+            return
+        }
+
+        localRegistrationLeasesById.entries.removeIf { it.key in expiredLeaseIds }
+        localRegistrationLeaseIdsByNodeId.entries.removeIf { it.value in expiredLeaseIds }
+        localRegisteredNodeAdvertisementsById.entries.removeIf { entry ->
+            entry.value.lease?.leaseId in expiredLeaseIds
+        }
+    }
+
+    /**
+     * Synchronize local node metadata memberships from the current active registry leases.
+     */
+    private fun syncRegistryMembershipsFromActiveLeases()
+    {
+        val metadata = p2pDescriptor?.distributionGridMetadata ?: return
+        val previousMemberships = metadata.registryMemberships.toSet()
+        val nextMemberships = activeRegistryLeasesById.values
+            .map { it.registryId }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
+            .toMutableList()
+
+        metadata.registryMemberships = nextMemberships
+        if(previousMemberships != nextMemberships.toSet())
+        {
+            invalidateAllSessions("Registry membership changed.")
+        }
+    }
+
+    /**
+     * Resolve the manual renewal window used by `tickRegistryMemberships(...)`.
+     *
+     * @param lease Lease currently under consideration.
+     * @return Renewal window in milliseconds.
+     */
+    private fun resolveLeaseRenewalWindowMillis(
+        lease: DistributionGridRegistrationLease
+    ): Long
+    {
+        val renewalWindowSeconds = minOf(300, maxOf(1, lease.grantedLeaseSeconds / 5))
+        return renewalWindowSeconds * 1000L
     }
 
     /**
@@ -3598,6 +5082,18 @@ class DistributionGrid : P2PInterface
             return DistributionGridRegistryScope(memberships = mutableListOf())
         }
 
+        val structuredMemberships = deserialize<List<String>>(registryToken, useRepair = false)
+        if(structuredMemberships != null)
+        {
+            return DistributionGridRegistryScope(
+                memberships = structuredMemberships
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .sorted()
+                    .toMutableList()
+            )
+        }
+
         if(registryToken.indexOf('%') == -1 && registryToken.indexOf('|') == -1)
         {
             return DistributionGridRegistryScope(memberships = mutableListOf(registryToken))
@@ -4030,12 +5526,17 @@ class DistributionGrid : P2PInterface
     {
         val resolvedTransport = p2pTransport ?: defaultGridTransport()
         val resolvedRequirements = p2pRequirements ?: synthesizeRequirements()
+        val resolvedGridMetadata = (p2pDescriptor?.distributionGridMetadata ?: synthesizeGridMetadata(resolvedTransport)).copy(
+            actsAsRegistry = registryMetadata != null,
+            registryMemberships = p2pDescriptor?.distributionGridMetadata?.registryMemberships
+                ?: mutableListOf()
+        )
         val resolvedDescriptor = (p2pDescriptor ?: synthesizeGridDescriptor(
             transport = resolvedTransport,
             agentName = defaultGridAgentName()
         )).copy(
             transport = resolvedTransport,
-            distributionGridMetadata = p2pDescriptor?.distributionGridMetadata ?: synthesizeGridMetadata(resolvedTransport)
+            distributionGridMetadata = resolvedGridMetadata
         )
 
         p2pTransport = resolvedTransport
@@ -4360,7 +5861,7 @@ class DistributionGrid : P2PInterface
                 allowTracePersistence = traceConfig.enabled
             ),
             defaultRoutingPolicy = routingPolicy,
-            actsAsRegistry = false
+            actsAsRegistry = registryMetadata != null
         )
     }
 

@@ -11,7 +11,7 @@ Use this file for stable architecture and interface decisions. Use [`md/distribu
 
 ## Current Implementation Boundary
 
-`DistributionGrid` is no longer a pure stub in the current working tree, but it is still only an explicit-peer remote-capable harness.
+`DistributionGrid` is no longer a pure stub in the current working tree, and it now includes the Phase 6 registry discovery and membership slice.
 
 Verified shipped behavior:
 
@@ -39,16 +39,17 @@ Verified shipped behavior:
 - peer-authored handshake rejection details are preserved instead of being replaced by a generic session failure
 - inbound remote task handoff now maps back through the same local execution core in single-node mode
 - peer-dispatch and peer-response hooks now run on the explicit remote path
+- bootstrap registry advertisements can now be configured, probed, and cached as verified discovery roots
+- a pluggable trust verifier now gates registry and node advertisement admission
+- registry RPC now supports probe, register, renew, and structured query behavior
+- lease-based registry membership now updates local node metadata and explicit discovered-node caches
+- discovered nodes can now feed the existing remote handoff runtime when discovery mode allows it
 - focused tests exist for contract models, shell registration semantics, validation/lifecycle behavior, local execution behavior, and explicit remote handoff behavior
 
 Verified missing behavior:
 
 - no node router implementation
 - no node worker implementation
-- no peer discovery
-- no registry-driven P2P routing logic
-- no registry discovery
-- no leased membership behavior
 - no runtime durability behavior
 - no runtime memory-policy behavior
 - no outbound-memory hook invocation or memory-envelope shaping

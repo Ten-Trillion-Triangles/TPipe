@@ -11,32 +11,27 @@ Use this file for the current task only. Move durable implementation truth into 
 
 ## Current Task
 
-- Task: Phase 5 stability repair pass - invalidate peer-level cached sessions and remove cache-key aliasing.
+- Task: Phase 6 stabilization repair - registry cache revalidation and safe registration fallback.
 - Status: in progress
-- Exact progress: Phase 0 through Phase 5 are complete; Phase 5 now has a targeted repair pass in flight and Phase 6 remains queued
+- Exact progress: Phase 6 is complete, but a short repair pass is in flight to keep discovered-node cache entries registry-scoped and replace stale live leases when a node re-registers
 - Last updated: 2026-03-26
 - Files in scope:
   - `src/main/kotlin/Pipeline/DistributionGrid.kt`
-  - `src/test/kotlin/Pipeline/DistributionGridRemoteHandoffTest.kt`
-- Last completed step: stabilized the explicit-peer remote-handoff slice again by forcing fresh handshakes when cached sessions no longer satisfy current task policy and by rejecting widened handshake acknowledgements before session caching or task handoff
-- Current blocker: none; the remaining work is a Phase 5 repair pass, not a discovery dependency
-- Next atomic step: replace concatenated peer-session keys with a structured key and invalidate cached sessions on peer boundary failures
-- Verification target: boundary rejections clear stale explicit-peer sessions, peer/registry cache keys do not alias, and the next call re-handshakes when the remote side changes state
+  - `src/test/kotlin/Pipeline/DistributionGridRegistryDiscoveryTest.kt`
+- Last completed step: completed Phase 6 by adding bootstrap-registry probing, trust-verifier admission, lease-based membership registration and renewal, structured registry queries, and discovered-node routing back into the existing handoff path
+- Current blocker: none
+- Next atomic step: finish the registry-scoped discovery cache and lease-replacement repair, then resume Phase 7 planning
+- Verification target: the repair preserves the shipped Phase 6 discovery model while preventing registry aliasing and stale live lease state
 
 ## Milestones
 
-- [ ] Add bootstrap trust-anchor inputs for registry discovery.
-- [ ] Add registry and node advertisement verification for discovered candidates.
-- [ ] Add structured registry query execution and candidate filtering.
-- [ ] Add lease-based membership and renewal bookkeeping.
-- [ ] Verify discovered peers still require explicit grid metadata plus handshake or valid session state before routing.
+- [x] Add bootstrap trust-anchor inputs for registry discovery.
+- [x] Add registry and node advertisement verification for discovered candidates.
+- [x] Add structured registry query execution and candidate filtering.
+- [x] Add lease-based membership and renewal bookkeeping.
+- [x] Verify discovered peers still require explicit grid metadata plus handshake or valid session state before routing.
 
 ## Upcoming Queue
-
-- `Phase 6: Registry Discovery And Membership`
-  Scope: add bootstrap-trust discovery, lease-based registration, structured registry queries, and candidate advertisement verification.
-  Must not touch: broader runtime hardening, DSL ergonomics, or public-doc completion claims beyond shipped discovery behavior.
-  Verification target: trusted registries can be queried safely and discovered candidates are verified before routing.
 
 - `Phase 7: Cross-Cutting Runtime Hardening`
   Scope: add outbound memory shaping, durability behavior, privacy or auth or PCP mediation, trace export alignment, and safe pause checkpoints.
@@ -57,6 +52,7 @@ Use this file for the current task only. Move durable implementation truth into 
 - 2026-03-25: Completed Phase 5 by landing explicit-peer remote handoff, grid RPC over normal P2P requests, mandatory handshake, in-memory session reuse, and focused remote-handoff tests.
 - 2026-03-26: Stabilized Phase 5 by fixing stale-session recovery after `SESSION_REJECT`, making negotiated session policy authoritative on remote execution, framing grid RPC prompts explicitly, and aligning remote-success `hopCount` with recorded hops.
 - 2026-03-26: Hardened Phase 5 policy integrity by revalidating cached sessions against current task policy and rejecting handshake acknowledgements that widen the requested trace, routing, or credential policy.
+- 2026-03-26: Completed Phase 6 by adding bootstrap registry probing, pluggable trust verification, lease-based registration and renewal, structured registry queries, and discovered-node routing through the existing handoff runtime.
 
 ## Sync Rules
 

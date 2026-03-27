@@ -1658,7 +1658,7 @@ class DistributionGridRemoteHandoffTest
                 )
 
                 assertNotNull(cachedInRegistryA)
-                assertEquals("registry-a", cachedInRegistryA!!.registryId)
+                assertEquals(serialize(listOf("registry-a")), cachedInRegistryA!!.registryId)
                 assertNull(cachedInRegistryB)
             }
 

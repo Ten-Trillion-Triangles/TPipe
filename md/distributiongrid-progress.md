@@ -15,7 +15,7 @@ Steering-set ownership:
 
 ## Current Status
 
-- `DistributionGrid` is now an explicit-peer remote-capable, Phase 5 harness as of 2026-03-25.
+- `DistributionGrid` is now a registry-aware, Phase 6 harness as of 2026-03-26.
 - The old stub-era `setEntryPipeline()` surface and legacy task or judgement placeholder runtime are no longer the active implementation shape.
 - The contract layer from Phase 1 is in place:
   - `DistributionGridModels.kt`
@@ -53,14 +53,29 @@ Steering-set ownership:
   - inbound remote `HANDSHAKE_INIT`, `TASK_HANDOFF`, `TASK_RETURN`, `TASK_FAILURE`, and `SESSION_REJECT` handling now exists
   - remote returns and failures now map back into the sender envelope and terminal content surface, and stale sessions are invalidated on `SESSION_REJECT`
   - peer-dispatch and peer-response hooks now run on the explicit remote path
-- Phase 5 is now in a targeted repair pass for peer-level session eviction and explicit-peer cache-key stability.
+- The Phase 6 registry discovery and membership slice is now in place:
+  - bootstrap registry advertisements can now be configured, probed, and cached as verified discovery roots
+  - a pluggable `DistributionGridTrustVerifier` now gates registry and node advertisement admission
+  - `DistributionGrid` now supports explicit registry metadata plus inbound `PROBE_REGISTRY`, `REGISTER_NODE`, `RENEW_LEASE`, and `QUERY_REGISTRY` RPC handling
+  - nodes can now register with trusted registries, renew leases explicitly, and keep local `registryMemberships` synchronized from active leases
+  - structured registry queries now return verified `DistributionGridNodeAdvertisement` candidates that are cached by node id
+  - discovered nodes can now feed the existing remote-handoff runtime when `discoveryMode` allows it, while still requiring explicit grid metadata plus node handshake or valid node session state
+- Phase 6 discovery and membership now also harden the cache boundary:
+  - discovered nodes are evicted before routing when they are stale or when their trust anchor is removed
+  - discovered nodes are cached with registry-scoped identity so the same node id can be learned from multiple registries without overwriting earlier entries
+  - discovered node advertisements are canonicalized under the resolved node id instead of being cached under an empty-string alias
+  - registry lease replies are shape-validated before active lease or membership state can change
+  - cached registry advertisements are revalidated before reuse so expired registries are evicted instead of being contacted indefinitely
+  - descriptor-less registrations no longer fall back to the registry transport when the caller does not supply a return address
+  - fresh registrations replace the previous live lease for the same node instead of leaving stale lease state behind
 - Focused regression coverage now exists for contract models, shell registration behavior, validation/lifecycle behavior, local execution behavior, and explicit remote handoff behavior:
   - `DistributionGridContractModelsTest.kt`
   - `DistributionGridShellRegistrationTest.kt`
   - `DistributionGridValidationLifecycleTest.kt`
   - `DistributionGridExecutionCoreTest.kt`
   - `DistributionGridRemoteHandoffTest.kt`
-- `DistributionGrid` still does not perform registry discovery, leased membership, durable-session persistence, runtime durability behavior, outbound memory shaping, or full privacy or auth or PCP mediation yet.
+  - `DistributionGridRegistryDiscoveryTest.kt`
+- `DistributionGrid` still does not perform durable-session persistence, runtime durability behavior, outbound memory shaping, or full privacy or auth or PCP mediation yet.
 - The steering-doc set now contains the approved full node-based architecture specification for the future runtime.
 - The implementation order has now been codified into explicit phases so runtime work can proceed without crossing phase boundaries accidentally.
 
@@ -72,7 +87,7 @@ Steering-set ownership:
 - `Phase 3: Validation, Shared Infra, And Lifecycle` — complete
 - `Phase 4: Local Execution Core` — complete
 - `Phase 5: Explicit Remote Peer Handoff` — complete
-- `Phase 6: Registry Discovery And Membership` — not started
+- `Phase 6: Registry Discovery And Membership` — complete
 - `Phase 7: Cross-Cutting Runtime Hardening` — not started
 - `Phase 8: DSL, Defaults, Public Docs, And Final Coverage` — not started
 
@@ -87,6 +102,8 @@ Steering-set ownership:
 - `Phase 5`: `DistributionGrid` now preserves caller return-address transport on inbound remote envelopes and peer-authored handshake rejection details on `SESSION_REJECT`.
 - `Phase 5`: `DistributionGrid` now invalidates cached explicit-peer sessions when the peer rejects a task handoff at the transport boundary or returns a non-grid response.
 - `Phase 5`: `DistributionGrid` now uses a structured explicit-peer session cache key so peer and registry strings cannot alias through separator collisions.
+- `Phase 6`: `DistributionGrid` now performs trusted bootstrap-registry probing, lease-based registration and renewal, structured registry queries, and discovered-node admission without weakening the existing node-handshake requirements.
+- `Phase 6`: `DistributionGrid` now revalidates cached registry advertisements before reuse and rejects descriptor-less registrations that omit a caller return address.
 
 ## Plan At A Glance
 
@@ -96,7 +113,7 @@ Steering-set ownership:
 - [x] Phase 3: Validation, Shared Infra, And Lifecycle
 - [x] Phase 4: Local Execution Core
 - [x] Phase 5: Explicit Remote Peer Handoff
-- [ ] Phase 6: Registry Discovery And Membership
+- [x] Phase 6: Registry Discovery And Membership
 - [ ] Phase 7: Cross-Cutting Runtime Hardening
 - [ ] Phase 8: DSL, Defaults, Public Docs, And Final Coverage
 
@@ -256,3 +273,4 @@ Commands used during the architecture pass:
 - 2026-03-25: Phase 4 added the first local execution core, grid-level DITL hook registration, local terminal outcome or failure mapping, and focused execution-core tests.
 - 2026-03-25: Phase 5 added explicit-peer remote handoff, grid RPC over the normal P2P boundary, mandatory handshake, in-memory session reuse, and focused remote-handoff tests.
 - 2026-03-26: Phase 5 repair pass started to preserve exact requested session lifetimes and serialize post-hook remote content instead of the pre-hook envelope snapshot.
+- 2026-03-26: Phase 6 discovery repair pass hardened discovered-node freshness, registry-scoped discovered-node cache identity, registry lease-response validation, and stale-live-lease replacement on re-registration.
