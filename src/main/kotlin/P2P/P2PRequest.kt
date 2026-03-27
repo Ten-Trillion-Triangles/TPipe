@@ -85,7 +85,6 @@ data class P2PRequest(
     var returnAddress: P2PTransport = P2PTransport(),
     var prompt: MultimodalContent = MultimodalContent(),
     var authBody: String = "",
-    @kotlinx.serialization.Transient var authValidated: Boolean = false,
     var contextExplanationMessage: String = "",
     var context: ContextWindow? = null,
     var customContextDescriptions: MutableMap<String, String>? = null,

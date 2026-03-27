@@ -4,7 +4,6 @@ import com.TTT.Debug.TraceConfig
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.P2P.AgentRequest
 import com.TTT.P2P.P2PDescriptor
-import com.TTT.P2P.P2PRegistry
 import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.P2PTransport
@@ -172,7 +171,6 @@ class ManifoldDsl
 
         validateWorkers()
         validateManager(managerSpec)
-        validateAuth(managerSpec)
         val resolvedHistory = resolveHistoryConfiguration(managerSpec)
 
         /**
@@ -372,34 +370,6 @@ class ManifoldDsl
                 throw IllegalArgumentException(
                     "Manager dispatch pipe '$agentPipeName' must emit AgentRequest JSON."
                 )
-            }
-        }
-    }
-
-    /**
-     * Validate authentication settings for the manager and all workers.
-     *
-     * @param managerSpec Manager configuration captured by the DSL.
-     */
-    private fun validateAuth(managerSpec: ManagerConfiguration)
-    {
-        val managerDescriptor = managerSpec.descriptor
-        val managerRequirements = managerSpec.requirements
-        val hasGlobalAuth = P2PRegistry.globalAuthMechanism != null
-
-        if (managerDescriptor?.requiresAuth == true && managerRequirements?.authMechanism == null && !hasGlobalAuth)
-        {
-            throw IllegalArgumentException("Manager pipeline '${managerDescriptor.agentName}' requires authentication but no authMechanism is configured.")
-        }
-
-        for (worker in workerConfigurations)
-        {
-            val workerDescriptor = worker.descriptor
-            val workerRequirements = worker.requirements
-
-            if (workerDescriptor?.requiresAuth == true && workerRequirements?.authMechanism == null && !hasGlobalAuth)
-            {
-                throw IllegalArgumentException("Worker '${worker.agentName}' requires authentication but no authMechanism is configured.")
             }
         }
     }

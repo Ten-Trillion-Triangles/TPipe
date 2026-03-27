@@ -374,14 +374,15 @@ class P2PRegistryRequirementsTest {
     }
 
     @Test
-    fun testRegistryValidationDoesNotStickOnReusedRequestInstance() = runBlocking {
-        val workerTransport = P2PTransport(transportMethod = Transport.Tpipe, transportAddress = "sticky-worker")
-        val workerDescriptor = P2PDescriptor(
-            agentName = "sticky-worker",
-            agentDescription = "Sticky auth worker",
-            transport = workerTransport,
-            requiresAuth = false,
-            usesConverse = true,
+    fun testRegistrationFailsWhenRequiresAuthButNoMechanism()
+    {
+        val transport = P2PTransport(transportMethod = Transport.Tpipe, transportAddress = "no-auth-agent")
+        val descriptor = P2PDescriptor(
+            agentName = "no-auth-agent",
+            agentDescription = "Agent with requiresAuth but no mechanism",
+            transport = transport,
+            requiresAuth = true,
+            usesConverse = false,
             allowsAgentDuplication = false,
             allowsCustomContext = false,
             allowsCustomAgentJson = false,
@@ -390,30 +391,28 @@ class P2PRegistryRequirementsTest {
             allowsExternalContext = false,
             contextProtocol = ContextProtocol.pcp
         )
-        val workerRequirements = P2PRequirements(
-            allowExternalConnections = true,
-            authMechanism = { authBody -> authBody == "sticky-token" }
-        )
-        val workerAgent = CapturingP2PInterface(workerTransport, workerDescriptor, workerRequirements)
-        val sharedRequest = P2PRequest().apply {
-            transport = workerTransport
-            authBody = "sticky-token"
-            prompt.addText("hello")
-        }
+        val requirements = P2PRequirements(allowExternalConnections = true, authMechanism = null)
+        val agent = TestP2PInterface(transport, descriptor, requirements)
+        val originalGlobalAuth = P2PRegistry.globalAuthMechanism
 
         try {
-            P2PRegistry.register(workerAgent, workerTransport, workerDescriptor, workerRequirements)
+            P2PRegistry.globalAuthMechanism = null
+            assertFailsWith<IllegalArgumentException> {
+                P2PRegistry.register(agent, transport, descriptor, requirements)
+            }
 
-            val firstResponse = P2PRegistry.executeP2pRequest(sharedRequest)
-            assertNotNull(firstResponse.output)
-            assertFalse(sharedRequest.authValidated, "Registry validation should not mutate the caller-owned request instance")
-            assertTrue(workerAgent.lastRequest!!.authValidated, "Container should see a validated copy of the request")
+            // Succeeds with local mechanism
+            val reqWithAuth = P2PRequirements(allowExternalConnections = true, authMechanism = { it == "ok" })
+            P2PRegistry.register(agent, transport, descriptor, reqWithAuth)
+            P2PRegistry.remove(transport)
 
-            val secondResponse = P2PRegistry.executeP2pRequest(sharedRequest)
-            assertNotNull(secondResponse.output)
-            assertFalse(sharedRequest.authValidated, "Reused requests should stay reusable after multiple registry calls")
+            // Succeeds with global mechanism
+            P2PRegistry.globalAuthMechanism = { it == "global" }
+            P2PRegistry.register(agent, transport, descriptor, requirements)
+            P2PRegistry.remove(transport)
         } finally {
-            P2PRegistry.remove(workerTransport)
+            P2PRegistry.globalAuthMechanism = originalGlobalAuth
+            P2PRegistry.remove(transport)
         }
     }
 

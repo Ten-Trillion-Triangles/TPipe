@@ -6,7 +6,6 @@ import com.TTT.P2P.AgentDescriptor
 import com.TTT.P2P.ContextProtocol
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PRequirements
-import com.TTT.P2P.P2PRegistry
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.CustomJsonSchema
@@ -19,7 +18,6 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -1452,78 +1450,6 @@ class ManifoldDslTest
     }
 
     /**
-     * Verifies that auth is enforced when a mechanism is present, even if requiresAuth is false.
-     */
-    @Test
-    fun testManifoldAuthEnforcementWithMechanism() = runBlocking {
-        var authCalled = false
-        val builtManifold = manifold {
-            manager {
-                pipeline(
-                    pipeline = buildSafeManagerPipeline("manager"),
-                    descriptor = buildCustomDescriptor("manager", "manager").apply { requiresAuth = false },
-                    requirements = P2PRequirements(
-                        authMechanism = {
-                            authCalled = true
-                            it == "valid-token"
-                        }
-                    )
-                )
-                agentDispatchPipe("manager-pipe")
-            }
-            history {
-                autoTruncate()
-            }
-            worker("worker") {
-                pipeline(buildSafeWorkerPipeline("worker"))
-            }
-        }
-
-        val request = P2PRequest().apply {
-            authBody = "valid-token"
-            prompt = MultimodalContent("test")
-        }
-
-        builtManifold.executeP2PRequest(request)
-        assertTrue(authCalled, "Auth mechanism should have been called")
-    }
-
-    /**
-     * Verifies that invalid credentials result in a SecurityException.
-     */
-    @Test
-    fun testManifoldAuthFailureThrowsSecurityException() = runBlocking {
-        val builtManifold = manifold {
-            manager {
-                pipeline(
-                    pipeline = buildSafeManagerPipeline("manager"),
-                    descriptor = buildCustomDescriptor("manager", "manager").apply { requiresAuth = true },
-                    requirements = P2PRequirements(
-                        authMechanism = { it == "valid-token" }
-                    )
-                )
-                agentDispatchPipe("manager-pipe")
-            }
-            history {
-                autoTruncate()
-            }
-            worker("worker") {
-                pipeline(buildSafeWorkerPipeline("worker"))
-            }
-        }
-
-        val request = P2PRequest().apply {
-            authBody = "invalid-token"
-            prompt = MultimodalContent("test")
-        }
-
-        assertFailsWith<SecurityException> {
-            builtManifold.executeP2PRequest(request)
-        }
-        Unit
-    }
-
-    /**
      * Verifies that buildSuspend correctly initializes the manifold.
      */
     @Test
@@ -1543,122 +1469,5 @@ class ManifoldDslTest
 
         assertEquals("manager", builtManifold.getManagerPipeline().pipelineName)
         assertEquals(1, builtManifold.getWorkerPipelines().size)
-    }
-
-    /**
-     * Verifies that DSL build fails if requiresAuth is true but mechanism is missing.
-     */
-    @Test
-    fun testManifoldDslValidationFailure() {
-        val exception = assertFailsWith<IllegalArgumentException> {
-            manifold {
-                manager {
-                    pipeline(
-                        pipeline = buildSafeManagerPipeline("manager"),
-                        descriptor = buildCustomDescriptor("manager", "manager").apply { requiresAuth = true },
-                        requirements = P2PRequirements(authMechanism = null)
-                    )
-                    agentDispatchPipe("manager-pipe")
-                }
-                history {
-                    autoTruncate()
-                }
-                worker("worker") {
-                    pipeline(buildSafeWorkerPipeline("worker"))
-                }
-            }
-        }
-        assertTrue(exception.message!!.contains("requires authentication but no authMechanism is configured"))
-    }
-
-    /**
-     * Verifies that DSL build fails if a worker requires authentication but no mechanism is configured.
-     */
-    @Test
-    fun testManifoldDslWorkerValidationFailure() {
-        val exception = assertFailsWith<IllegalArgumentException> {
-            manifold {
-                manager {
-                    pipeline(buildSafeManagerPipeline("manager"))
-                    agentDispatchPipe("manager-pipe")
-                }
-                history {
-                    autoTruncate()
-                }
-                worker("worker") {
-                    pipeline(
-                        pipeline = buildSafeWorkerPipeline("worker"),
-                        descriptor = buildCustomDescriptor("worker", "worker").apply { requiresAuth = true },
-                        requirements = P2PRequirements(authMechanism = null)
-                    )
-                }
-            }
-        }
-        assertTrue(exception.message!!.contains("Worker 'worker' requires authentication but no authMechanism is configured"))
-    }
-
-    /**
-     * Verifies that buildSuspend correctly initializes a manifold with authentication.
-     */
-    @Test
-    fun testManifoldDslBuildSuspendWithAuth() = runBlocking {
-        val builtManifold = ManifoldDsl().apply {
-            manager {
-                pipeline(
-                    pipeline = buildSafeManagerPipeline("manager"),
-                    descriptor = buildCustomDescriptor("manager", "manager").apply { requiresAuth = true },
-                    requirements = P2PRequirements(authMechanism = { it == "valid" })
-                )
-                agentDispatchPipe("manager-pipe")
-            }
-            history {
-                autoTruncate()
-            }
-            worker("worker") {
-                pipeline(buildSafeWorkerPipeline("worker"))
-            }
-        }.buildSuspend()
-
-        val request = P2PRequest().apply {
-            authBody = "valid"
-            prompt = MultimodalContent("test")
-        }
-        val response = builtManifold.executeP2PRequest(request)
-        assertNotNull(response)
-        Unit
-    }
-
-    /**
-     * Verifies that buildSuspend accepts manifolds that rely on the global transport auth hook instead of a local
-     * authMechanism.
-     */
-    @Test
-    fun testManifoldDslBuildSuspendWithGlobalAuth() = runBlocking {
-        val originalGlobalAuth = P2PRegistry.globalAuthMechanism
-        P2PRegistry.globalAuthMechanism = { authBody -> authBody == "global-valid" }
-
-        try {
-            val builtManifold = ManifoldDsl().apply {
-                manager {
-                    pipeline(
-                        pipeline = buildSafeManagerPipeline("manager"),
-                        descriptor = buildCustomDescriptor("manager", "manager").apply { requiresAuth = true },
-                        requirements = P2PRequirements(authMechanism = null)
-                    )
-                    agentDispatchPipe("manager-pipe")
-                }
-                history {
-                    autoTruncate()
-                }
-                worker("worker") {
-                    pipeline(buildSafeWorkerPipeline("worker"))
-                }
-            }.buildSuspend()
-
-            assertEquals("manager", builtManifold.getManagerPipeline().pipelineName)
-            assertEquals(1, builtManifold.getWorkerPipelines().size)
-        } finally {
-            P2PRegistry.globalAuthMechanism = originalGlobalAuth
-        }
     }
 }

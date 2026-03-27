@@ -122,6 +122,13 @@ object P2PRegistry
      */
     fun register(agent: P2PInterface, transport: P2PTransport, descriptor: P2PDescriptor, requirements: P2PRequirements)
     {
+        if(descriptor.requiresAuth && requirements.authMechanism == null && globalAuthMechanism == null)
+        {
+            throw IllegalArgumentException(
+                "Agent '${descriptor.agentName}' has requiresAuth=true but no authMechanism is configured and no globalAuthMechanism is set."
+            )
+        }
+
         Agents[transport] = P2PAgentListing(descriptor, requirements, agent)
     }
 
@@ -441,12 +448,9 @@ object P2PRegistry
             return response
         }
 
-        val validatedRequest = request.deepCopy<P2PRequest>().apply {
-            authValidated = true
-        }
         val result: Deferred<P2PResponse> = kotlinx.coroutines.coroutineScope {
             async {
-                agent.container.executeP2PRequest(validatedRequest) ?: P2PResponse()
+                agent.container.executeP2PRequest(request) ?: P2PResponse()
             }
         }
 
