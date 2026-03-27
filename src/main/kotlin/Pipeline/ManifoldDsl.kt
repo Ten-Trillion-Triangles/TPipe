@@ -4,6 +4,7 @@ import com.TTT.Debug.TraceConfig
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.P2P.AgentRequest
 import com.TTT.P2P.P2PDescriptor
+import com.TTT.P2P.P2PRegistry
 import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.P2PTransport
@@ -133,8 +134,37 @@ class ManifoldDsl
      * Build and initialize the configured [Manifold].
      *
      * @return Fully initialized manifold ready for use.
+     * @warning This method uses [runBlocking] to initialize the manifold. Use [buildSuspend] in coroutine contexts.
      */
     fun build(): Manifold
+    {
+        val manifold = configureManifold()
+        runBlocking {
+            manifold.init()
+        }
+        return manifold
+    }
+
+    /**
+     * Build and initialize the configured [Manifold] asynchronously.
+     *
+     * @return Fully initialized manifold ready for use.
+     */
+    suspend fun buildSuspend(): Manifold
+    {
+        val manifold = configureManifold()
+        manifold.init()
+        return manifold
+    }
+
+    /**
+     * Validate all DSL declarations and materialize a configured [Manifold] that is ready for [Manifold.init].
+     *
+     * This is the single source of truth for DSL-to-Manifold wiring so [build] and [buildSuspend] stay in sync.
+     *
+     * @return Configured but not yet initialized manifold.
+     */
+    private fun configureManifold(): Manifold
     {
         val managerSpec = managerConfiguration ?: throw IllegalArgumentException(
             "A manifold manager must be configured with manager { ... } before build()."
@@ -142,6 +172,7 @@ class ManifoldDsl
 
         validateWorkers()
         validateManager(managerSpec)
+        validateAuth(managerSpec)
         val resolvedHistory = resolveHistoryConfiguration(managerSpec)
 
         /**
@@ -177,14 +208,6 @@ class ManifoldDsl
         }
 
         applyValidationConfiguration(manifold)
-
-        /**
-         * The DSL returns a startup-ready manifold by default so callers can execute immediately without remembering
-         * to invoke init() themselves.
-         */
-        runBlocking {
-            manifold.init()
-        }
 
         return manifold
     }
@@ -349,6 +372,34 @@ class ManifoldDsl
                 throw IllegalArgumentException(
                     "Manager dispatch pipe '$agentPipeName' must emit AgentRequest JSON."
                 )
+            }
+        }
+    }
+
+    /**
+     * Validate authentication settings for the manager and all workers.
+     *
+     * @param managerSpec Manager configuration captured by the DSL.
+     */
+    private fun validateAuth(managerSpec: ManagerConfiguration)
+    {
+        val managerDescriptor = managerSpec.descriptor
+        val managerRequirements = managerSpec.requirements
+        val hasGlobalAuth = P2PRegistry.globalAuthMechanism != null
+
+        if (managerDescriptor?.requiresAuth == true && managerRequirements?.authMechanism == null && !hasGlobalAuth)
+        {
+            throw IllegalArgumentException("Manager pipeline '${managerDescriptor.agentName}' requires authentication but no authMechanism is configured.")
+        }
+
+        for (worker in workerConfigurations)
+        {
+            val workerDescriptor = worker.descriptor
+            val workerRequirements = worker.requirements
+
+            if (workerDescriptor?.requiresAuth == true && workerRequirements?.authMechanism == null && !hasGlobalAuth)
+            {
+                throw IllegalArgumentException("Worker '${worker.agentName}' requires authentication but no authMechanism is configured.")
             }
         }
     }

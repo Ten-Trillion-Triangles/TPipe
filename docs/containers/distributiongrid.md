@@ -160,6 +160,14 @@ For the full future-facing spec, use:
 - `md/distributiongrid-progress.md`
 - `md/distributiongrid-plan.md`
 
+## PCP Forwarding Policy (Phase 7)
+
+Non-stdio transports no longer silently strip PCP payloads before remote handoff. Instead, PCP forwarding is gated by the `distributionGridAllowRemotePcpForwarding` attribute on the envelope or content metadata. Requests that carry real PCP tooling (beyond stdio session options) to a non-stdio peer will receive a `POLICY_REJECTED` failure unless the attribute is explicitly set to `"true"`. Set the attribute on the envelope before dispatch to opt in:
+
+```kotlin
+envelope.attributes["distributionGridAllowRemotePcpForwarding"] = "true"
+```
+
 ## Verification
 
 The current shipped slice has focused coverage through:
@@ -169,14 +177,16 @@ The current shipped slice has focused coverage through:
 - `DistributionGridValidationLifecycleTest`
 - `DistributionGridExecutionCoreTest`
 - `DistributionGridRemoteHandoffTest`
+- `DistributionGridRegistryDiscoveryTest`
+- `DistributionGridHardeningTest`
 
 ## Contributing
 
 If you are continuing `DistributionGrid` implementation, follow the internal phased rollout rather than adding features ad hoc:
 
-1. Phase 6: registry discovery and membership
-2. Phase 7: cross-cutting runtime hardening
-3. later DSL, Defaults, and final public-doc sync
+1. Phase 8: DSL, defaults, public-doc sync, and final coverage cleanup
+2. keep Phase 5 through Phase 7 runtime semantics stable unless a targeted repair is required
+3. route any new runtime-semantics ideas back through the steering docs before coding
 
 ---
 

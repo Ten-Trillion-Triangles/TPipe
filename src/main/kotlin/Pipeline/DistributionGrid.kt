@@ -1,11 +1,18 @@
 package com.TTT.Pipeline
 
 import com.TTT.Debug.EventPriorityMapper
+import com.TTT.Debug.FailureAnalysis
 import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceEvent
 import com.TTT.Debug.TraceEventType
+import com.TTT.Debug.TraceFormat
 import com.TTT.Debug.TracePhase
+import com.TTT.Context.ContextWindow
+import com.TTT.Context.Dictionary
+import com.TTT.Context.MiniBank
+import com.TTT.Config.AuthRegistry
+import com.TTT.Enums.ContextWindowSettings
 import com.TTT.P2P.ContextProtocol
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PError
@@ -20,7 +27,10 @@ import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.PipeError
+import com.TTT.Pipe.TruncationSettings
 import com.TTT.Pipe.hasError
+import com.TTT.PipeContextProtocol.PcPRequest
+import com.TTT.PipeContextProtocol.StdioContextOptions
 import com.TTT.PipeContextProtocol.Transport
 import com.TTT.Util.deserialize
 import com.TTT.Util.deepCopy
@@ -72,7 +82,14 @@ class DistributionGrid : P2PInterface
         private const val DIRECTIVE_METADATA_KEY = "distributionGridDirective"
         private const val OUTCOME_METADATA_KEY = "distributionGridOutcome"
         private const val FAILURE_METADATA_KEY = "distributionGridFailure"
+        private const val MEMORY_ENVELOPE_METADATA_KEY = "distributionGridMemoryEnvelope"
+        private const val PAUSED_METADATA_KEY = "distributionGridPaused"
+        private const val PAUSED_TASK_ID_METADATA_KEY = "distributionGridPausedTaskId"
+        private const val PAUSED_REASON_METADATA_KEY = "distributionGridPauseReason"
         private const val SINGLE_NODE_MODE_ATTRIBUTE = "distributionGridSingleNodeMode"
+        private const val ALLOW_REMOTE_PCP_FORWARDING_ATTRIBUTE = "distributionGridAllowRemotePcpForwarding"
+        private const val RETRY_COUNT_ATTRIBUTE_PREFIX = "distributionGridRetryCount::"
+        private const val ALTERNATE_INDEX_ATTRIBUTE_PREFIX = "distributionGridAlternateIndex::"
         private const val GRID_RPC_FRAME_PREFIX = "TPipe-DistributionGrid-RPC::1"
         private const val REGISTRY_ADVERTISEMENT_PAYLOAD_TYPE = "DistributionGridRegistryAdvertisement"
         private const val REGISTRATION_REQUEST_PAYLOAD_TYPE = "DistributionGridRegistrationRequest"
@@ -882,6 +899,185 @@ class DistributionGrid : P2PInterface
         traceConfig = TraceConfig()
         markShellDirty()
         return this
+    }
+
+    /**
+     * Export the current grid trace using the same tracer path as the mature TPipe harnesses.
+     *
+     * @param format Output format to export.
+     * @return Formatted trace report.
+     */
+    fun getTraceReport(format: TraceFormat = traceConfig.outputFormat): String
+    {
+        return PipeTracer.exportTrace(gridId, format)
+    }
+
+    /**
+     * Read structured failure analysis for the current grid trace when tracing is enabled.
+     *
+     * @return Failure analysis or `null` when tracing is disabled.
+     */
+    fun getFailureAnalysis(): FailureAnalysis?
+    {
+        return if(tracingEnabled) PipeTracer.getFailureAnalysis(gridId) else null
+    }
+
+    /**
+     * Resume one previously checkpointed task from the configured durable store.
+     *
+     * This is the explicit public resume path for Phase 7. Normal `execute(...)` behavior remains unchanged.
+     *
+     * @param taskId Stable task identifier to resume.
+     * @return Resumed terminal content or boundary failure content when the checkpoint cannot be resumed.
+     */
+    suspend fun resumeTask(taskId: String): MultimodalContent
+    {
+        val readinessFailure = validateExecutionReadiness()
+        if(readinessFailure != null)
+        {
+            return buildBoundaryFailureContent(MultimodalContent(), readinessFailure)
+        }
+
+        val store = durableStore
+        if(store == null)
+        {
+            return buildBoundaryFailureContent(
+                MultimodalContent(),
+                buildFailure(
+                    kind = DistributionGridFailureKind.DURABILITY_FAILURE,
+                    reason = "DistributionGrid cannot resume task '$taskId' without a configured durable store.",
+                    retryable = true
+                )
+            )
+        }
+
+        val durableState = try
+        {
+            store.resumeState(taskId)
+        }
+        catch(error: Throwable)
+        {
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_FAILURE,
+                TracePhase.CONTEXT_PREPARATION,
+                metadata = mapOf(
+                    "taskId" to taskId,
+                    "checkpointReason" to "resume-load"
+                ),
+                error = error
+            )
+            return buildBoundaryFailureContent(
+                MultimodalContent(),
+                buildFailure(
+                    kind = DistributionGridFailureKind.DURABILITY_FAILURE,
+                    reason = error.message ?: "DistributionGrid could not load durable state for task '$taskId'.",
+                    retryable = true
+                )
+            )
+        }
+
+        if(durableState == null)
+        {
+            return buildBoundaryFailureContent(
+                MultimodalContent(),
+                buildFailure(
+                    kind = DistributionGridFailureKind.DURABILITY_FAILURE,
+                    reason = "DistributionGrid could not find resumable durable state for task '$taskId'.",
+                    retryable = true
+                )
+            )
+        }
+
+        if(durableState.completed && durableState.checkpointReason != "after-peer-response")
+        {
+            val finalContent = durableState.envelope.content.deepCopy()
+            finalContent.metadata[ENVELOPE_METADATA_KEY] = durableState.envelope.deepCopy()
+            durableState.envelope.latestOutcome?.let { finalContent.metadata[OUTCOME_METADATA_KEY] = it.deepCopy() }
+            durableState.envelope.latestFailure?.let { finalContent.metadata[FAILURE_METADATA_KEY] = it.deepCopy() }
+            return finalContent
+        }
+
+        val checkpointOutcome = durableState.envelope.latestOutcome?.deepCopy()
+        val resumedEnvelope = durableState.envelope.deepCopy().apply {
+            durableStateKey = taskId
+            completed = false
+            latestOutcome = null
+            attributes.remove(SINGLE_NODE_MODE_ATTRIBUTE)
+            content = content.deepCopy().apply {
+                metadata.remove(PAUSED_METADATA_KEY)
+                metadata.remove(PAUSED_TASK_ID_METADATA_KEY)
+                metadata.remove(PAUSED_REASON_METADATA_KEY)
+            }
+        }
+        revalidateResumedSession(resumedEnvelope)
+
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_RESUME,
+            TracePhase.CONTEXT_PREPARATION,
+            metadata = mapOf(
+                "taskId" to taskId,
+                "checkpointReason" to durableState.checkpointReason
+            )
+        )
+
+        return when(durableState.checkpointReason)
+        {
+            "before-peer-dispatch" ->
+            {
+                val resumedLocalNodeId = resolveCurrentNodeId()
+                val resumedLocalTransport = resolveCurrentTransport()
+                val resumedPeerNodeId = resumedEnvelope.currentNodeId
+                val resumedDirective = DistributionGridDirective(
+                    kind = DistributionGridDirectiveKind.HAND_OFF_TO_PEER,
+                    targetNodeId = resumedPeerNodeId,
+                    targetPeerId = "",
+                    notes = "Resumed from durable checkpoint 'before-peer-dispatch'."
+                )
+                resumedEnvelope.currentNodeId = resumedLocalNodeId
+                resumedEnvelope.currentTransport = resumedLocalTransport
+                dispatchExplicitPeerHandoff(resumedEnvelope, resumedDirective, System.currentTimeMillis())
+            }
+
+            "after-local-worker",
+            "after-peer-response" ->
+            {
+                if(resumedEnvelope.latestFailure != null)
+                {
+                    finalizeFailedEnvelope(
+                        envelope = resumedEnvelope,
+                        failure = resumedEnvelope.latestFailure!!,
+                        startedAt = System.currentTimeMillis(),
+                        completedAt = System.currentTimeMillis(),
+                        directiveKind = DistributionGridDirectiveKind.RUN_LOCAL_WORKER,
+                        recordTerminalHop = false
+                    )
+                }
+                else
+                {
+                    val returnMode = if(durableState.checkpointReason == "after-peer-response")
+                    {
+                        checkpointOutcome?.returnMode ?: resolveReturnMode(resumedEnvelope.routingPolicy)
+                    }
+                    else
+                    {
+                        resolveReturnMode(resumedEnvelope.routingPolicy)
+                    }
+                    finalizeSuccessfulEnvelope(
+                        envelope = resumedEnvelope,
+                        returnMode = returnMode,
+                        startedAt = System.currentTimeMillis(),
+                        completedAt = System.currentTimeMillis(),
+                        directiveKind = DistributionGridDirectiveKind.RUN_LOCAL_WORKER,
+                        recordTerminalHop = durableState.checkpointReason == "after-local-worker"
+                    )
+                }
+            }
+
+            else ->
+            {
+                executeEnvelopeLocally(resumedEnvelope)
+            }
+        }
     }
 
     /**
@@ -2307,6 +2503,35 @@ class DistributionGrid : P2PInterface
         val peerDescriptor = resolvedPeer.descriptor
         val peerMetadata = peerDescriptor.distributionGridMetadata
         val preparedEnvelope = beforePeerDispatchHook?.invoke(envelope) ?: envelope
+
+        val allowedHopCount = minOf(maxHops, preparedEnvelope.routingPolicy.maxHopCount.coerceAtLeast(1))
+        if(preparedEnvelope.hopHistory.size >= allowedHopCount)
+        {
+            val failure = buildFailure(
+                kind = DistributionGridFailureKind.ROUTING_FAILURE,
+                reason = "DistributionGrid exhausted the maximum hop count of $allowedHopCount before peer handoff.",
+                retryable = false
+            )
+            preparedEnvelope.latestFailure = failure
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_LOOP_GUARD,
+                TracePhase.ORCHESTRATION,
+                metadata = mapOf(
+                    "taskId" to preparedEnvelope.taskId,
+                    "peerKey" to peerKey,
+                    "hopHistorySize" to preparedEnvelope.hopHistory.size,
+                    "allowedHopCount" to allowedHopCount
+                )
+            )
+            return finalizeFailedEnvelope(
+                envelope = preparedEnvelope,
+                failure = failure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                directiveKind = directive.kind
+            )
+        }
+
         if(peerMetadata == null || peerMetadata.nodeId.isBlank())
         {
             val failure = buildFailure(
@@ -2384,30 +2609,102 @@ class DistributionGrid : P2PInterface
             content = content.deepCopy()
         }
         applyNegotiatedPolicyToEnvelope(outboundEnvelope, sessionRecord)
+        val shapedOutboundEnvelope = try
+        {
+            shapeOutboundEnvelopeForPeer(outboundEnvelope, peerDescriptor)
+        }
+        catch(error: Throwable)
+        {
+            val failure = buildFailure(
+                kind = DistributionGridFailureKind.POLICY_REJECTED,
+                reason = error.message ?: "DistributionGrid could not build a safe outbound memory envelope.",
+                retryable = false
+            )
+            val failedEnvelope = mergeRemoteFailure(
+                envelope = preparedEnvelope,
+                peerDescriptor = peerDescriptor,
+                failure = failure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                resultSummary = failure.reason,
+                resolvedSessionRef = sessionRecord.toSessionRef()
+            )
+            return finalizeFailedEnvelope(
+                envelope = failedEnvelope,
+                failure = failure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                directiveKind = directive.kind,
+                recordTerminalHop = false
+            )
+        }
+
+        val pausedBeforeDispatch = maybePauseAtSafeBoundary(
+            envelope = shapedOutboundEnvelope,
+            checkpointReason = "before-peer-dispatch"
+        )
+        if(pausedBeforeDispatch != null)
+        {
+            return pausedBeforeDispatch
+        }
+
+        checkpointTaskState(shapedOutboundEnvelope, "before-peer-dispatch")
 
         trace(
             TraceEventType.DISTRIBUTION_GRID_PEER_HANDOFF,
             TracePhase.AGENT_COMMUNICATION,
             metadata = mapOf(
-                "taskId" to preparedEnvelope.taskId,
+                "taskId" to shapedOutboundEnvelope.taskId,
                 "peerKey" to peerKey,
                 "targetNodeId" to peerMetadata.nodeId,
                 "transport" to peerDescriptor.transport.transportMethod.name
             )
         )
 
-        val response = sendGridRpcRequest(
-            descriptor = peerDescriptor,
-            rpcMessage = DistributionGridRpcMessage(
-                messageType = DistributionGridRpcMessageType.TASK_HANDOFF,
-                senderNodeId = resolveCurrentNodeId(),
-                targetId = peerMetadata.nodeId,
-                protocolVersion = sessionRecord.negotiatedProtocolVersion.deepCopy(),
-                sessionRef = sessionRecord.toSessionRef(),
-                payloadType = ENVELOPE_PAYLOAD_TYPE,
-                payloadJson = serialize(outboundEnvelope)
-            )
+        val handoffRpcMessage = DistributionGridRpcMessage(
+            messageType = DistributionGridRpcMessageType.TASK_HANDOFF,
+            senderNodeId = resolveCurrentNodeId(),
+            targetId = peerMetadata.nodeId,
+            protocolVersion = sessionRecord.negotiatedProtocolVersion.deepCopy(),
+            sessionRef = sessionRecord.toSessionRef(),
+            payloadType = ENVELOPE_PAYLOAD_TYPE,
+            payloadJson = serialize(shapedOutboundEnvelope)
         )
+        val outboundRequest = buildGridRpcRequest(peerDescriptor, handoffRpcMessage)
+        injectOutboundCredentials(
+            envelope = shapedOutboundEnvelope,
+            peerKey = peerKey,
+            descriptor = peerDescriptor,
+            request = outboundRequest
+        )
+        val outboundPolicyFailure = validateOutboundPolicy(
+            envelope = shapedOutboundEnvelope,
+            peerKey = peerKey,
+            descriptor = peerDescriptor,
+            request = outboundRequest
+        )
+        if(outboundPolicyFailure != null)
+        {
+            val failedEnvelope = mergeRemoteFailure(
+                envelope = preparedEnvelope,
+                peerDescriptor = peerDescriptor,
+                failure = outboundPolicyFailure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                resultSummary = outboundPolicyFailure.reason,
+                resolvedSessionRef = sessionRecord.toSessionRef()
+            )
+            return finalizeFailedEnvelope(
+                envelope = failedEnvelope,
+                failure = outboundPolicyFailure,
+                startedAt = startedAt,
+                completedAt = System.currentTimeMillis(),
+                directiveKind = directive.kind,
+                recordTerminalHop = false
+            )
+        }
+
+        val response = P2PRegistry.externalP2PCall(outboundRequest)
 
         if(response.rejection != null)
         {
@@ -2554,6 +2851,15 @@ class DistributionGrid : P2PInterface
                     resolvedSessionRef = expectedSessionRef
                 )
                 mergedEnvelope = afterPeerResponseHook?.invoke(mergedEnvelope) ?: mergedEnvelope
+                val pausedAfterPeer = maybePauseAtSafeBoundary(
+                    envelope = mergedEnvelope,
+                    checkpointReason = "after-peer-response"
+                )
+                if(pausedAfterPeer != null)
+                {
+                    return pausedAfterPeer
+                }
+                checkpointTaskState(mergedEnvelope, "after-peer-response")
                 trace(
                     TraceEventType.DISTRIBUTION_GRID_RETURN_ROUTING,
                     TracePhase.CLEANUP,
@@ -2661,6 +2967,29 @@ class DistributionGrid : P2PInterface
                 }
 
                 mergedEnvelope = afterPeerResponseHook?.invoke(mergedEnvelope) ?: mergedEnvelope
+                val continuationDirective = resolveDirective(mergedEnvelope)
+                if(continuationDirective.kind == DistributionGridDirectiveKind.RETRY_SAME_PEER ||
+                    continuationDirective.kind == DistributionGridDirectiveKind.TRY_ALTERNATE_PEER
+                )
+                {
+                    return continueWithRetryDirective(
+                        envelope = mergedEnvelope,
+                        directive = continuationDirective,
+                        startedAt = startedAt,
+                        redispatchEnvelope = preparedEnvelope.deepCopy(),
+                        fallbackPeerKey = peerKey,
+                        fallbackTargetNodeId = peerMetadata.nodeId
+                    )
+                }
+                val pausedAfterPeer = maybePauseAtSafeBoundary(
+                    envelope = mergedEnvelope,
+                    checkpointReason = "after-peer-response"
+                )
+                if(pausedAfterPeer != null)
+                {
+                    return pausedAfterPeer
+                }
+                checkpointTaskState(mergedEnvelope, "after-peer-response")
                 trace(
                     TraceEventType.DISTRIBUTION_GRID_RETURN_ROUTING,
                     TracePhase.CLEANUP,
@@ -2985,18 +3314,10 @@ class DistributionGrid : P2PInterface
             DistributionGridDirectiveKind.RETRY_SAME_PEER,
             DistributionGridDirectiveKind.TRY_ALTERNATE_PEER ->
             {
-                val failure = buildFailure(
-                    kind = DistributionGridFailureKind.ROUTING_FAILURE,
-                    reason = "Directive '${directive.kind.name}' is not supported until a later DistributionGrid phase.",
-                    retryable = false
-                )
-                envelope.latestFailure = failure
-                finalizeFailedEnvelope(
+                continueWithRetryDirective(
                     envelope = envelope,
-                    failure = failure,
-                    startedAt = startedAt,
-                    completedAt = System.currentTimeMillis(),
-                    directiveKind = directive.kind
+                    directive = directive,
+                    startedAt = startedAt
                 )
             }
         }
@@ -3061,6 +3382,14 @@ class DistributionGrid : P2PInterface
                     completedAt = System.currentTimeMillis(),
                     directiveKind = DistributionGridDirectiveKind.RUN_LOCAL_WORKER
                 )
+            }
+            val pausedResult = maybePauseAtSafeBoundary(
+                envelope = updatedEnvelope,
+                checkpointReason = "after-local-worker"
+            )
+            if(pausedResult != null)
+            {
+                return pausedResult
             }
 
             finalizeSuccessfulEnvelope(
@@ -3147,6 +3476,10 @@ class DistributionGrid : P2PInterface
         finalOutput.metadata[ENVELOPE_METADATA_KEY] = envelope.deepCopy()
         finalOutput.metadata[OUTCOME_METADATA_KEY] = outcome.deepCopy()
         finalOutput.metadata.remove(FAILURE_METADATA_KEY)
+
+        checkpointTaskState(envelope, "terminal-success")
+        archiveTaskStateBestEffort(envelope, "terminal-success")
+        pauseRequested = false
 
         trace(
             TraceEventType.DISTRIBUTION_GRID_SUCCESS,
@@ -3250,6 +3583,10 @@ class DistributionGrid : P2PInterface
         failureOutput.metadata[FAILURE_METADATA_KEY] = failure.deepCopy()
         failureOutput.metadata[OUTCOME_METADATA_KEY] = outcome.deepCopy()
 
+        checkpointTaskState(preparedEnvelope, "terminal-failure")
+        archiveTaskStateBestEffort(preparedEnvelope, "terminal-failure")
+        pauseRequested = false
+
         trace(
             TraceEventType.DISTRIBUTION_GRID_FAILURE,
             TracePhase.CLEANUP,
@@ -3335,6 +3672,1139 @@ class DistributionGrid : P2PInterface
                 reason = failure.reason
             )
         )
+    }
+
+    /**
+     * Revalidate any stored session reference before resumed execution continues.
+     *
+     * Resumed work must not blindly trust an old session snapshot. If the session record is missing, invalidated,
+     * expired, or no longer matches the cached in-memory record, the resumed envelope drops the session and forces
+     * a later handshake to negotiate fresh state.
+     *
+     * @param envelope Envelope loaded from durable state.
+     */
+    private fun revalidateResumedSession(envelope: DistributionGridEnvelope)
+    {
+        val sessionRef = envelope.sessionRef ?: return
+        val cachedSession = sessionRecordsById[sessionRef.sessionId]
+        if(cachedSession == null ||
+            !isSessionValid(
+                sessionRecord = cachedSession,
+                expectedRequesterNodeId = sessionRef.requesterNodeId,
+                expectedResponderNodeId = sessionRef.responderNodeId
+            ) ||
+            cachedSession.toSessionRef() != sessionRef
+        )
+        {
+            envelope.executionNotes.add(
+                "Resumed task dropped stale session '${sessionRef.sessionId}' and will renegotiate if remote dispatch continues."
+            )
+            envelope.sessionRef = null
+        }
+    }
+
+    /**
+     * Persist a best-effort durable checkpoint for the current task state.
+     *
+     * Normal runtime execution continues when the save fails. The failure is recorded in execution notes and tracing
+     * so callers can still diagnose durability drift without forcing the live task to abort.
+     *
+     * @param envelope Envelope snapshot to persist.
+     * @param checkpointReason Human-readable reason for the checkpoint.
+     * @return `true` when the checkpoint saved successfully.
+     */
+    private suspend fun checkpointTaskState(
+        envelope: DistributionGridEnvelope,
+        checkpointReason: String
+    ): Boolean
+    {
+        val store = durableStore ?: return false
+        if(envelope.durableStateKey.isBlank())
+        {
+            envelope.durableStateKey = envelope.taskId
+        }
+
+        val durableState = DistributionGridDurableState(
+            taskId = envelope.taskId,
+            envelope = envelope.deepCopy(),
+            sessionRef = envelope.sessionRef?.deepCopy(),
+            checkpointReason = checkpointReason,
+            completed = envelope.completed,
+            updatedAtEpochMillis = System.currentTimeMillis(),
+            archived = false
+        )
+
+        return try
+        {
+            store.saveState(durableState)
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_POLICY_EVALUATION,
+                TracePhase.CONTEXT_PREPARATION,
+                metadata = mapOf(
+                    "taskId" to envelope.taskId,
+                    "checkpointReason" to checkpointReason,
+                    "durabilityAction" to "save"
+                )
+            )
+            true
+        }
+
+        catch(error: Throwable)
+        {
+            envelope.executionNotes.add(
+                "Durability checkpoint '$checkpointReason' failed: ${error.message ?: error::class.simpleName.orEmpty()}"
+            )
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_FAILURE,
+                TracePhase.CONTEXT_PREPARATION,
+                metadata = mapOf(
+                    "taskId" to envelope.taskId,
+                    "checkpointReason" to checkpointReason,
+                    "durabilityAction" to "save"
+                ),
+                error = error
+            )
+            false
+        }
+    }
+
+    /**
+     * Attempt to archive one terminal durable state without rewriting the task outcome when archiving fails.
+     *
+     * @param envelope Terminal envelope being finalized.
+     * @param checkpointReason Human-readable archive reason.
+     */
+    private suspend fun archiveTaskStateBestEffort(
+        envelope: DistributionGridEnvelope,
+        checkpointReason: String
+    )
+    {
+        val store = durableStore ?: return
+        val taskId = envelope.taskId.ifBlank { envelope.durableStateKey }
+        if(taskId.isBlank())
+        {
+            return
+        }
+
+        try
+        {
+            store.archiveState(taskId)
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_POLICY_EVALUATION,
+                TracePhase.CLEANUP,
+                metadata = mapOf(
+                    "taskId" to taskId,
+                    "checkpointReason" to checkpointReason,
+                    "durabilityAction" to "archive"
+                )
+            )
+        }
+
+        catch(error: Throwable)
+        {
+            envelope.executionNotes.add(
+                "Durability archive '$checkpointReason' failed: ${error.message ?: error::class.simpleName.orEmpty()}"
+            )
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_FAILURE,
+                TracePhase.CLEANUP,
+                metadata = mapOf(
+                    "taskId" to taskId,
+                    "checkpointReason" to checkpointReason,
+                    "durabilityAction" to "archive"
+                ),
+                error = error
+            )
+        }
+    }
+
+    /**
+     * Honor a requested safe pause only at an execution boundary where the current state can be checkpointed.
+     *
+     * If the checkpoint cannot be saved, the pause is canceled and execution continues, matching the best-effort
+     * durability stance chosen for Phase 7.
+     *
+     * @param envelope Current envelope at a safe boundary.
+     * @param checkpointReason Human-readable reason for the pause checkpoint.
+     * @return Paused content when the checkpoint succeeded, or `null` when execution should continue.
+     */
+    private suspend fun maybePauseAtSafeBoundary(
+        envelope: DistributionGridEnvelope,
+        checkpointReason: String
+    ): MultimodalContent?
+    {
+        if(!pauseRequested)
+        {
+            return null
+        }
+
+        val checkpointEnvelope = if(checkpointReason == "after-peer-response" && envelope.completed)
+        {
+            envelope.deepCopy().apply {
+                completed = false
+            }
+        }
+        else
+        {
+            envelope
+        }
+
+        val checkpointSaved = checkpointTaskState(checkpointEnvelope, checkpointReason)
+        if(!checkpointSaved)
+        {
+            pauseRequested = false
+            val cancellationNote = "Pause request was canceled because checkpoint '$checkpointReason' could not be saved."
+            checkpointEnvelope.executionNotes.add(cancellationNote)
+            if(checkpointEnvelope !== envelope)
+            {
+                envelope.executionNotes.add(cancellationNote)
+            }
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_RESUME,
+                TracePhase.CLEANUP,
+                metadata = mapOf(
+                    "taskId" to envelope.taskId,
+                    "checkpointReason" to checkpointReason,
+                    "paused" to false
+                )
+            )
+            return null
+        }
+
+        pauseRequested = false
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_PAUSE,
+            TracePhase.CLEANUP,
+            metadata = mapOf(
+                "taskId" to envelope.taskId,
+                "checkpointReason" to checkpointReason
+            )
+        )
+        return buildPausedContent(checkpointEnvelope, checkpointReason)
+    }
+
+    /**
+     * Build the non-terminal content returned when a task pauses cleanly at a safe checkpoint.
+     *
+     * @param envelope Current envelope snapshot.
+     * @param checkpointReason Human-readable reason for the pause.
+     * @return Paused content ready to return to the caller.
+     */
+    private fun buildPausedContent(
+        envelope: DistributionGridEnvelope,
+        checkpointReason: String
+    ): MultimodalContent
+    {
+        val pausedOutput = envelope.content.deepCopy().apply {
+            passPipeline = false
+            terminatePipeline = false
+            metadata[PAUSED_METADATA_KEY] = true
+            metadata[PAUSED_TASK_ID_METADATA_KEY] = envelope.taskId
+            metadata[PAUSED_REASON_METADATA_KEY] = checkpointReason
+            metadata[ENVELOPE_METADATA_KEY] = envelope.deepCopy().apply {
+                durableStateKey = taskId
+            }
+            metadata.remove(OUTCOME_METADATA_KEY)
+            metadata.remove(FAILURE_METADATA_KEY)
+        }
+        return pausedOutput
+    }
+
+    /**
+     * Resolve the smallest safe outbound memory budget for a remote peer handoff.
+     *
+     * @param descriptor Remote peer descriptor being targeted.
+     * @return Safe outbound token ceiling.
+     */
+    private fun resolveOutboundBudget(descriptor: P2PDescriptor): Int
+    {
+        val policyBudget = memoryPolicy.outboundTokenBudget.takeIf { it > 0 } ?: Int.MAX_VALUE
+        val descriptorBudget = descriptor.contextWindowSize.takeIf { it > 0 } ?: Int.MAX_VALUE
+        return minOf(policyBudget, descriptorBudget)
+    }
+
+    /**
+     * Resolve the token-counting settings used for deterministic outbound compaction.
+     *
+     * @return Shared truncation settings.
+     */
+    private fun resolveMemoryTruncationSettings(): TruncationSettings
+    {
+        return TruncationSettings()
+    }
+
+    /**
+     * Compact one text block to a hard token budget using dictionary-backed accounting.
+     *
+     * @param text Text to compact.
+     * @param tokenBudget Hard token ceiling.
+     * @param settings Shared truncation settings.
+     * @param preserveStart Whether the front of the text should be preserved.
+     * @return Budgeted text block.
+     */
+    private fun budgetText(
+        text: String,
+        tokenBudget: Int,
+        settings: TruncationSettings,
+        preserveStart: Boolean = true
+    ): String
+    {
+        if(text.isBlank() || tokenBudget <= 0)
+        {
+            return ""
+        }
+
+        val method = if(preserveStart) ContextWindowSettings.TruncateBottom else ContextWindowSettings.TruncateTop
+        return Dictionary.truncate(
+            text,
+            tokenBudget,
+            1,
+            method,
+            settings.countSubWordsInFirstWord,
+            settings.favorWholeWords,
+            settings.countOnlyFirstWordFound,
+            settings.splitForNonWordChar,
+            settings.alwaysSplitIfWholeWordExists,
+            settings.countSubWordsIfSplit,
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias
+        )
+    }
+
+    /**
+     * Estimate the token count of one compacted block.
+     *
+     * @param text Text to inspect.
+     * @param settings Shared truncation settings.
+     * @return Approximate token count.
+     */
+    private fun countBudgetedTokens(text: String, settings: TruncationSettings): Int
+    {
+        if(text.isBlank())
+        {
+            return 0
+        }
+
+        return Dictionary.countTokens(
+            text,
+            settings.countSubWordsInFirstWord,
+            settings.favorWholeWords,
+            settings.countOnlyFirstWordFound,
+            settings.splitForNonWordChar,
+            settings.alwaysSplitIfWholeWordExists,
+            settings.countSubWordsIfSplit,
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias
+        )
+    }
+
+    /**
+     * Build one labeled compact memory section.
+     *
+     * @param title Human-readable section title.
+     * @param lines Nonblank lines to include.
+     * @return Section block or blank when no input lines remain.
+     */
+    private fun buildSectionText(title: String, lines: List<String>): String
+    {
+        val filtered = lines.filter { it.isNotBlank() }
+        if(filtered.isEmpty())
+        {
+            return ""
+        }
+
+        return buildString {
+            appendLine("$title:")
+            filtered.forEach { line ->
+                appendLine("- $line")
+            }
+        }.trim()
+    }
+
+    /**
+     * Build the optional older-history summary block used only after hard budgets are allocated.
+     *
+     * @param summarySeed Older-history text seed.
+     * @param summaryBudget Summary token budget.
+     * @param settings Shared truncation settings.
+     * @return Budgeted summary block.
+     */
+    private fun buildSummaryText(
+        summarySeed: String,
+        summaryBudget: Int,
+        settings: TruncationSettings
+    ): String
+    {
+        if(summarySeed.isBlank() || summaryBudget <= 0)
+        {
+            return ""
+        }
+
+        val trimmedSeed = summarySeed.take(memoryPolicy.maxSummaryCharacters)
+        val summarized = if(memoryPolicy.enableSummarization && memoryPolicy.summarizer != null)
+        {
+            runCatching { memoryPolicy.summarizer?.invoke(trimmedSeed).orEmpty() }
+                .getOrDefault("")
+                .ifBlank { trimmedSeed }
+        }
+        else
+        {
+            trimmedSeed
+        }
+
+        val summarySection = buildSectionText("Summary", listOf(summarized))
+        return budgetText(summarySection, summaryBudget, settings, preserveStart = true)
+    }
+
+    /**
+     * Render compact memory sections into a [ContextWindow] for remote prompt injection.
+     *
+     * @param sections Ordered compact section text.
+     * @param budget Available prompt budget.
+     * @param settings Shared truncation settings.
+     * @param inputText Original live content used to preserve text matches.
+     * @return Compact prompt window.
+     */
+    private fun buildContextWindowForPrompt(
+        sections: List<String>,
+        budget: Int,
+        settings: TruncationSettings,
+        inputText: String
+    ): ContextWindow
+    {
+        val promptWindow = ContextWindow()
+        sections.filter { it.isNotBlank() }.forEach { section ->
+            promptWindow.contextElements.add(section)
+        }
+
+        if(promptWindow.contextElements.isEmpty())
+        {
+            return promptWindow
+        }
+
+        promptWindow.truncateContextElements(
+            budget,
+            1,
+            ContextWindowSettings.TruncateBottom,
+            settings.countSubWordsInFirstWord,
+            settings.favorWholeWords,
+            settings.countOnlyFirstWordFound,
+            settings.splitForNonWordChar,
+            settings.alwaysSplitIfWholeWordExists,
+            settings.countSubWordsIfSplit,
+            settings.nonWordSplitCount,
+            settings.tokenCountingBias,
+            inputText = inputText,
+            preserveTextMatches = true
+        )
+
+        return promptWindow
+    }
+
+    /**
+     * Mirror compact prompt sections into a [MiniBank] for receivers that expect page-based prompt state.
+     *
+     * @param sections Named prompt section text.
+     * @return MiniBank copy of the compact prompt state.
+     */
+    private fun buildMiniBankFromSections(sections: Map<String, String>): MiniBank
+    {
+        val miniBank = MiniBank()
+        sections.forEach { (key, text) ->
+            if(text.isBlank())
+            {
+                return@forEach
+            }
+
+            miniBank.contextMap[key] = ContextWindow().apply {
+                contextElements.add(text)
+            }
+        }
+
+        return miniBank
+    }
+
+    /**
+     * Produce a compact excerpt of the current live content for inclusion in critical outbound state.
+     *
+     * @param text Live content text.
+     * @param settings Shared truncation settings.
+     * @return Budgeted excerpt.
+     */
+    private fun compactContentExcerpt(
+        text: String,
+        settings: TruncationSettings
+    ): String
+    {
+        val excerptBudget = maxOf(memoryPolicy.minimumCriticalBudget / 2, 128)
+        return budgetText(text, excerptBudget, settings, preserveStart = true)
+    }
+
+    /**
+     * Build the critical outbound memory lines that must survive every remote handoff.
+     *
+     * @param envelope Live envelope being prepared for handoff.
+     * @param targetNodeId Remote node id.
+     * @param settings Shared truncation settings.
+     * @return Critical memory lines.
+     */
+    private fun buildOutboundCriticalLines(
+        envelope: DistributionGridEnvelope,
+        targetNodeId: String,
+        settings: TruncationSettings
+    ): List<String>
+    {
+        val liveExcerpt = if(memoryPolicy.redactContentSections || envelope.tracePolicy.requireRedaction)
+        {
+            "[REDACTED]"
+        }
+        else
+        {
+            compactContentExcerpt(envelope.content.text, settings)
+        }
+
+        return listOf(
+            "Task: ${envelope.taskId}",
+            "Origin: ${envelope.originNodeId.ifBlank { "<unknown>" }}",
+            "Sender: ${envelope.senderNodeId.ifBlank { "<unknown>" }}",
+            "Current objective: ${envelope.currentObjective.ifBlank { envelope.taskIntent.ifBlank { "<none>" } }}",
+            "Target node: ${targetNodeId.ifBlank { "<unknown>" }}",
+            "Trace redaction required: ${envelope.tracePolicy.requireRedaction}",
+            "Hop count: ${envelope.hopHistory.size}",
+            "Latest content excerpt: $liveExcerpt"
+        )
+    }
+
+    /**
+     * Build recent outbound memory lines from the bounded live execution notes and hop history.
+     *
+     * @param envelope Live envelope being prepared for handoff.
+     * @return Recent memory lines.
+     */
+    private fun buildOutboundRecentLines(envelope: DistributionGridEnvelope): List<String>
+    {
+        val recentNotes = envelope.executionNotes
+            .takeLast(memoryPolicy.maxExecutionNotes)
+            .map { "Note: $it" }
+
+        val recentHops = envelope.hopHistory
+            .takeLast(memoryPolicy.maxHopRecords)
+            .map { hop ->
+                "Hop ${hop.routerAction.name}: ${hop.sourceNodeId} -> ${hop.destinationNodeId} (${hop.resultSummary})"
+            }
+
+        return recentNotes + recentHops
+    }
+
+    /**
+     * Build the older-history seed that may be summarized when extra outbound budget remains.
+     *
+     * @param envelope Live envelope being prepared for handoff.
+     * @return Summary seed text.
+     */
+    private fun buildOutboundSummarySeed(envelope: DistributionGridEnvelope): String
+    {
+        val omittedNotes = envelope.executionNotes.dropLast(memoryPolicy.maxExecutionNotes)
+        val omittedHops = envelope.hopHistory.dropLast(memoryPolicy.maxHopRecords)
+
+        return buildString {
+            if(omittedNotes.isNotEmpty())
+            {
+                appendLine("Older execution notes omitted: ${omittedNotes.size}")
+                omittedNotes.takeLast(5).forEach { appendLine(it) }
+            }
+            if(omittedHops.isNotEmpty())
+            {
+                appendLine("Older hops omitted: ${omittedHops.size}")
+                omittedHops.takeLast(5).forEach { hop ->
+                    appendLine("${hop.sourceNodeId} -> ${hop.destinationNodeId}: ${hop.resultSummary}")
+                }
+            }
+        }.trim()
+    }
+
+    /**
+     * Build one complete outbound memory envelope for a remote peer handoff.
+     *
+     * @param envelope Live envelope being prepared.
+     * @param descriptor Remote peer descriptor.
+     * @return Compact outbound memory envelope.
+     */
+    private fun buildOutboundMemoryEnvelope(
+        envelope: DistributionGridEnvelope,
+        descriptor: P2PDescriptor
+    ): DistributionGridMemoryEnvelope
+    {
+        val settings = resolveMemoryTruncationSettings()
+        val resolvedBudget = resolveOutboundBudget(descriptor)
+        val availableBudget = maxOf(0, resolvedBudget - memoryPolicy.safetyReserveTokens)
+
+        val summarySeed = buildOutboundSummarySeed(envelope)
+        val configuredSummaryBudget = if(summarySeed.isBlank()) 0 else memoryPolicy.summaryBudget.coerceAtLeast(0)
+        val maximumReservedSummaryBudget = maxOf(0, availableBudget - memoryPolicy.minimumCriticalBudget - memoryPolicy.minimumRecentBudget)
+        val summaryBudget = minOf(configuredSummaryBudget, maximumReservedSummaryBudget)
+        val remainingBudget = maxOf(0, availableBudget - summaryBudget)
+
+        var criticalBudget = maxOf(0, maxOf(memoryPolicy.minimumCriticalBudget, remainingBudget / 2))
+        criticalBudget = minOf(criticalBudget, remainingBudget)
+        var recentBudget = maxOf(0, remainingBudget - criticalBudget)
+        if(recentBudget > 0)
+        {
+            recentBudget = minOf(recentBudget, maxOf(memoryPolicy.minimumRecentBudget, remainingBudget / 3))
+        }
+
+        val criticalRaw = buildSectionText(
+            "Critical state",
+            buildOutboundCriticalLines(
+                envelope = envelope,
+                targetNodeId = descriptor.distributionGridMetadata?.nodeId.orEmpty(),
+                settings = settings
+            )
+        )
+        val recentRaw = buildSectionText("Recent history", buildOutboundRecentLines(envelope))
+        val criticalText = budgetText(criticalRaw, criticalBudget, settings, preserveStart = true)
+        val recentText = budgetText(recentRaw, recentBudget, settings, preserveStart = true)
+        val summaryText = buildSummaryText(summarySeed, summaryBudget, settings)
+
+        val sections = mutableListOf<DistributionGridMemorySection>()
+        sections.add(
+            DistributionGridMemorySection(
+                name = "critical",
+                tokenBudget = criticalBudget,
+                text = criticalText,
+                truncated = countBudgetedTokens(criticalText, settings) < countBudgetedTokens(criticalRaw, settings),
+                tokenCount = countBudgetedTokens(criticalText, settings)
+            )
+        )
+
+        if(recentText.isNotBlank())
+        {
+            sections.add(
+                DistributionGridMemorySection(
+                    name = "recent",
+                    tokenBudget = recentBudget,
+                    text = recentText,
+                    truncated = countBudgetedTokens(recentText, settings) < countBudgetedTokens(recentRaw, settings),
+                    tokenCount = countBudgetedTokens(recentText, settings)
+                )
+            )
+        }
+
+        if(summaryText.isNotBlank())
+        {
+            sections.add(
+                DistributionGridMemorySection(
+                    name = "summary",
+                    tokenBudget = summaryBudget,
+                    text = summaryText,
+                    truncated = countBudgetedTokens(summaryText, settings) < countBudgetedTokens(summarySeed, settings),
+                    tokenCount = countBudgetedTokens(summaryText, settings)
+                )
+            )
+        }
+
+        val promptWindow = buildContextWindowForPrompt(
+            sections = listOf(criticalText, recentText, summaryText),
+            budget = availableBudget,
+            settings = settings,
+            inputText = envelope.content.text
+        )
+        val miniBank = buildMiniBankFromSections(
+            linkedMapOf(
+                "critical" to criticalText,
+                "recent" to recentText,
+                "summary" to summaryText
+            )
+        )
+
+        return DistributionGridMemoryEnvelope(
+            targetNodeId = descriptor.distributionGridMetadata?.nodeId.orEmpty(),
+            resolvedBudget = resolvedBudget,
+            availableBudget = availableBudget,
+            safetyReserveTokens = memoryPolicy.safetyReserveTokens,
+            criticalBudget = criticalBudget,
+            recentBudget = recentBudget,
+            summaryBudget = summaryBudget,
+            summarizationUsed = memoryPolicy.enableSummarization && memoryPolicy.summarizer != null && summarySeed.isNotBlank(),
+            compacted = sections.any { it.truncated },
+            failureReason = "",
+            sections = sections,
+            contextWindow = promptWindow,
+            miniBank = miniBank
+        )
+    }
+
+    /**
+     * Remove local-only or trace-sensitive metadata from outbound content before remote handoff.
+     *
+     * @param metadata Raw content metadata map.
+     * @return Sanitized metadata copy.
+     */
+    private fun sanitizeOutboundContentMetadata(metadata: MutableMap<Any, Any>): MutableMap<Any, Any>
+    {
+        val sanitized = metadata.toMutableMap()
+        sanitized.remove(ENVELOPE_METADATA_KEY)
+        sanitized.remove(OUTCOME_METADATA_KEY)
+        sanitized.remove(FAILURE_METADATA_KEY)
+        sanitized.remove(DIRECTIVE_METADATA_KEY)
+        sanitized.remove(PAUSED_METADATA_KEY)
+        sanitized.remove(PAUSED_TASK_ID_METADATA_KEY)
+        sanitized.remove(PAUSED_REASON_METADATA_KEY)
+
+        if(memoryPolicy.redactTraceMetadata)
+        {
+            sanitized.keys
+                .filterIsInstance<String>()
+                .filter { key -> key.contains("trace", ignoreCase = true) }
+                .forEach { key -> sanitized.remove(key) }
+        }
+
+        return sanitized
+    }
+
+    /**
+     * Shape the outbound handoff envelope so remote peers receive bounded memory and redacted metadata.
+     *
+     * @param envelope Live envelope about to be handed off.
+     * @param descriptor Remote peer descriptor being targeted.
+     * @return Outbound envelope ready for RPC serialization.
+     */
+    private suspend fun shapeOutboundEnvelopeForPeer(
+        envelope: DistributionGridEnvelope,
+        descriptor: P2PDescriptor
+    ): DistributionGridEnvelope
+    {
+        val memoryEnvelope = buildOutboundMemoryEnvelope(envelope, descriptor)
+
+        val shapedEnvelope = envelope.deepCopy().apply {
+            executionNotes = executionNotes.takeLast(memoryPolicy.maxExecutionNotes).toMutableList()
+            hopHistory = hopHistory.takeLast(memoryPolicy.maxHopRecords).toMutableList()
+            content = content.deepCopy().apply {
+                context = memoryEnvelope.contextWindow.deepCopy()
+                miniBankContext = memoryEnvelope.miniBank.deepCopy()
+                metadata = sanitizeOutboundContentMetadata(metadata)
+                metadata[MEMORY_ENVELOPE_METADATA_KEY] = memoryEnvelope.deepCopy()
+                if(memoryPolicy.redactContentSections || envelope.tracePolicy.requireRedaction)
+                {
+                    text = "[REDACTED]"
+                    binaryContent = mutableListOf()
+                    tools = PcPRequest()
+                }
+            }
+        }
+
+        val hookEnvelope = outboundMemoryHook?.invoke(shapedEnvelope) ?: shapedEnvelope
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_MEMORY_ENVELOPE,
+            TracePhase.CONTEXT_PREPARATION,
+            metadata = mapOf(
+                "taskId" to hookEnvelope.taskId,
+                "targetNodeId" to memoryEnvelope.targetNodeId,
+                "resolvedBudget" to memoryEnvelope.resolvedBudget,
+                "availableBudget" to memoryEnvelope.availableBudget,
+                "compacted" to memoryEnvelope.compacted,
+                "summarizationUsed" to memoryEnvelope.summarizationUsed
+            )
+        )
+        return hookEnvelope
+    }
+
+    /**
+     * Decide whether remote PCP forwarding is explicitly allowed for the current handoff.
+     *
+     * @param envelope Current execution envelope.
+     * @return `true` when remote PCP forwarding has been explicitly enabled.
+     */
+    private fun isRemotePcpForwardAllowed(envelope: DistributionGridEnvelope): Boolean
+    {
+        val attributeFlag = envelope.attributes[ALLOW_REMOTE_PCP_FORWARDING_ATTRIBUTE]
+        if(attributeFlag.equals("true", ignoreCase = true))
+        {
+            return true
+        }
+
+        val metadataFlag = envelope.content.metadata[ALLOW_REMOTE_PCP_FORWARDING_ATTRIBUTE]
+        return metadataFlag == true || metadataFlag?.toString().equals("true", ignoreCase = true)
+    }
+
+    /**
+     * Inject resolved credentials into an outbound request before policy validation.
+     *
+     * Credential resolution uses the peer's canonical node identity and falls back through the same identity
+     * sources the P2P layer uses so auth lookup parity is preserved.
+     *
+     * @param envelope Current execution envelope.
+     * @param peerKey Canonical peer key being targeted.
+     * @param descriptor Remote peer descriptor.
+     * @param request Outbound P2P request to populate.
+     */
+    private fun injectOutboundCredentials(
+        envelope: DistributionGridEnvelope,
+        peerKey: String,
+        descriptor: P2PDescriptor,
+        request: P2PRequest
+    )
+    {
+        val resolvedPeerNodeId = descriptor.distributionGridMetadata?.nodeId.orEmpty()
+        val requiredCredentialRef = sequenceOf(
+            resolvedPeerNodeId.takeIf { it.isNotBlank() },
+            peerKey.takeIf { it.isNotBlank() },
+            descriptor.agentName.takeIf { it.isNotBlank() },
+            request.transport.transportAddress.takeIf { it.isNotBlank() }
+        ).mapNotNull { identity ->
+            envelope.credentialPolicy.perHopCredentialRefs[identity]
+        }.firstOrNull() ?: return
+
+        val selectedAuthToken = when
+        {
+            request.authBody.isNotBlank() -> request.authBody
+            else -> sequenceOf(
+                request.transport.transportAddress.takeIf { it.isNotBlank() },
+                resolvedPeerNodeId.takeIf { it.isNotBlank() },
+                peerKey.takeIf { it.isNotBlank() },
+                descriptor.agentName.takeIf { it.isNotBlank() }
+            ).mapNotNull { identity ->
+                identity?.let { AuthRegistry.getToken(it).takeIf { token -> token.isNotBlank() } }
+            }.firstOrNull().orEmpty()
+        }
+
+        if(request.authBody.isBlank())
+        {
+            request.authBody = selectedAuthToken
+        }
+        if(request.transport.transportMethod != Transport.Tpipe && request.transport.transportAuthBody.isBlank())
+        {
+            request.transport.transportAuthBody = selectedAuthToken
+        }
+    }
+
+    /**
+     * Check whether an outbound request satisfies the current credential-routing policy for the target peer.
+     *
+     * This is a read-only check. Credential injection must be performed beforehand via [injectOutboundCredentials].
+     *
+     * @param envelope Current execution envelope.
+     * @param peerKey Canonical peer key being targeted.
+     * @param descriptor Remote peer descriptor.
+     * @param request Outbound P2P request to validate.
+     * @return Failure when policy denies the outbound request, or `null` when it is allowed.
+     */
+    private fun validateOutboundPolicy(
+        envelope: DistributionGridEnvelope,
+        peerKey: String,
+        descriptor: P2PDescriptor,
+        request: P2PRequest
+    ): DistributionGridFailure?
+    {
+        val requiresRemotePcpForwarding = request.transport.transportMethod != Transport.Stdio &&
+            hasForwardingRelevantPcpPayload(request.pcpRequest)
+        if(requiresRemotePcpForwarding && !isRemotePcpForwardAllowed(envelope))
+        {
+            return buildFailure(
+                kind = DistributionGridFailureKind.POLICY_REJECTED,
+                reason = "DistributionGrid refused to forward PCP tooling to remote peer '$peerKey' without explicit allowance.",
+                retryable = false
+            )
+        }
+
+        val resolvedPeerNodeId = descriptor.distributionGridMetadata?.nodeId.orEmpty()
+        val requiredCredentialRef = sequenceOf(
+            resolvedPeerNodeId.takeIf { it.isNotBlank() },
+            peerKey.takeIf { it.isNotBlank() },
+            descriptor.agentName.takeIf { it.isNotBlank() },
+            request.transport.transportAddress.takeIf { it.isNotBlank() }
+        ).mapNotNull { identity ->
+            envelope.credentialPolicy.perHopCredentialRefs[identity]
+        }.firstOrNull()
+
+        val hasAuthMaterial = request.authBody.isNotBlank() ||
+            request.transport.transportAuthBody.isNotBlank()
+        if(requiredCredentialRef != null && !hasAuthMaterial)
+        {
+            return buildFailure(
+                kind = DistributionGridFailureKind.POLICY_REJECTED,
+                reason = "DistributionGrid could not satisfy required credential reference '$requiredCredentialRef' for peer '$peerKey'.",
+                retryable = false
+            )
+        }
+
+        return null
+    }
+
+    /**
+     * Determine whether a PCP request contains any real forwarding payload beyond stdio session settings.
+     *
+     * @param pcpRequest PCP request to inspect.
+     * @return `true` when the request carries non-stdio PCP tooling that should be gated as forwarding.
+     */
+    private fun hasForwardingRelevantPcpPayload(pcpRequest: PcPRequest?): Boolean
+    {
+        if(pcpRequest == null)
+        {
+            return false
+        }
+
+        val sanitizedRequest = pcpRequest.copy(
+            stdioContextOptions = StdioContextOptions()
+        )
+        return sanitizedRequest != PcPRequest()
+    }
+
+    /**
+     * Continue execution with a retry or alternate-peer directive after a safe boundary.
+     *
+     * @param envelope Current envelope state.
+     * @param directive Continuation directive to apply.
+     * @param startedAt Original execution start time.
+     * @param fallbackPeerKey Peer key from the prior handoff, used when the retry directive does not repeat it.
+     * @param fallbackTargetNodeId Node id from the prior handoff, used when the retry directive does not repeat it.
+     * @return Terminal content for the continuation path.
+     */
+    private suspend fun continueWithRetryDirective(
+        envelope: DistributionGridEnvelope,
+        directive: DistributionGridDirective,
+        startedAt: Long,
+        redispatchEnvelope: DistributionGridEnvelope? = null,
+        fallbackPeerKey: String = "",
+        fallbackTargetNodeId: String = ""
+    ): MultimodalContent
+    {
+        val retryEnvelope = (redispatchEnvelope ?: envelope).deepCopy().apply {
+            if(redispatchEnvelope != null)
+            {
+                executionNotes.addAll(envelope.executionNotes.deepCopy())
+                attributes.putAll(envelope.attributes.deepCopy())
+                hopHistory = envelope.hopHistory.deepCopy()
+            }
+            latestFailure = null
+            latestOutcome = null
+            completed = false
+        }
+
+        return when(directive.kind)
+        {
+            DistributionGridDirectiveKind.RETRY_SAME_PEER ->
+            {
+                if(!envelope.routingPolicy.allowRetrySamePeer)
+                {
+                    val failure = buildFailure(
+                        kind = DistributionGridFailureKind.POLICY_REJECTED,
+                        reason = "DistributionGrid retry-same-peer was requested even though the current routing policy disallows it.",
+                        retryable = false
+                    )
+                    envelope.latestFailure = failure
+                    return finalizeFailedEnvelope(
+                        envelope = envelope,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        directiveKind = directive.kind,
+                        recordTerminalHop = false
+                    )
+                }
+
+                val retryPeerKey = directive.targetPeerId.ifBlank { fallbackPeerKey }
+                if(retryPeerKey.isBlank())
+                {
+                    val failure = buildFailure(
+                        kind = DistributionGridFailureKind.ROUTING_FAILURE,
+                        reason = "DistributionGrid retry-same-peer requires a target peer identity.",
+                        retryable = false
+                    )
+                    envelope.latestFailure = failure
+                    return finalizeFailedEnvelope(
+                        envelope = envelope,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        directiveKind = directive.kind,
+                        recordTerminalHop = false
+                    )
+                }
+
+                val retryCountKey = "$RETRY_COUNT_ATTRIBUTE_PREFIX$retryPeerKey"
+                val retryCount = envelope.attributes[retryCountKey]?.toIntOrNull()?.plus(1) ?: 1
+                if(retryCount > envelope.routingPolicy.maxRetryCount)
+                {
+                    val failure = buildFailure(
+                        kind = DistributionGridFailureKind.ROUTING_FAILURE,
+                        reason = "DistributionGrid exhausted same-peer retries for '$retryPeerKey'.",
+                        retryable = false
+                    )
+                    envelope.latestFailure = failure
+                    return finalizeFailedEnvelope(
+                        envelope = envelope,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        directiveKind = directive.kind,
+                        recordTerminalHop = false
+                    )
+                }
+
+                envelope.attributes[retryCountKey] = retryCount.toString()
+                retryEnvelope.attributes[retryCountKey] = retryCount.toString()
+                val retryPeerDescriptor = resolveExplicitPeerDescriptor(
+                    DistributionGridDirective(
+                        kind = DistributionGridDirectiveKind.HAND_OFF_TO_PEER,
+                        targetPeerId = retryPeerKey,
+                        targetNodeId = fallbackTargetNodeId
+                    )
+                )?.descriptor
+                trace(
+                    TraceEventType.DISTRIBUTION_GRID_LOOP_GUARD,
+                    TracePhase.ORCHESTRATION,
+                    metadata = mapOf(
+                        "taskId" to envelope.taskId,
+                        "directive" to directive.kind.name,
+                        "peerKey" to retryPeerKey,
+                        "retryCount" to retryCount
+                    )
+                )
+                retryEnvelope.currentNodeId = retryPeerDescriptor?.distributionGridMetadata?.nodeId
+                    ?: fallbackTargetNodeId.ifBlank { retryEnvelope.currentNodeId }
+                retryEnvelope.currentTransport = retryPeerDescriptor?.transport?.deepCopy()
+                    ?: retryEnvelope.currentTransport.deepCopy()
+                val pausedBeforeRetry = maybePauseAtSafeBoundary(
+                    envelope = retryEnvelope,
+                    checkpointReason = "before-peer-dispatch"
+                )
+                if(pausedBeforeRetry != null)
+                {
+                    return pausedBeforeRetry
+                }
+                checkpointTaskState(retryEnvelope, "before-peer-dispatch")
+                dispatchExplicitPeerHandoff(
+                    envelope = retryEnvelope,
+                    directive = DistributionGridDirective(
+                        kind = DistributionGridDirectiveKind.HAND_OFF_TO_PEER,
+                        targetPeerId = retryPeerKey,
+                        targetNodeId = directive.targetNodeId.ifBlank { fallbackTargetNodeId },
+                        alternatePeerIds = directive.alternatePeerIds.deepCopy()
+                    ),
+                    startedAt = startedAt
+                )
+            }
+
+            DistributionGridDirectiveKind.TRY_ALTERNATE_PEER ->
+            {
+                if(!envelope.routingPolicy.allowAlternatePeers)
+                {
+                    val failure = buildFailure(
+                        kind = DistributionGridFailureKind.POLICY_REJECTED,
+                        reason = "DistributionGrid alternate-peer routing was requested even though the current routing policy disallows it.",
+                        retryable = false
+                    )
+                    envelope.latestFailure = failure
+                    return finalizeFailedEnvelope(
+                        envelope = envelope,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        directiveKind = directive.kind,
+                        recordTerminalHop = false
+                    )
+                }
+
+                if(directive.alternatePeerIds.isEmpty())
+                {
+                    val failure = buildFailure(
+                        kind = DistributionGridFailureKind.ROUTING_FAILURE,
+                        reason = "DistributionGrid alternate-peer routing requires explicit alternate peer ids.",
+                        retryable = false
+                    )
+                    envelope.latestFailure = failure
+                    return finalizeFailedEnvelope(
+                        envelope = envelope,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        directiveKind = directive.kind,
+                        recordTerminalHop = false
+                    )
+                }
+
+                val alternateIndexKey = "$ALTERNATE_INDEX_ATTRIBUTE_PREFIX${directive.targetPeerId.ifBlank { fallbackPeerKey }}"
+                val nextAlternateIndex = envelope.attributes[alternateIndexKey]?.toIntOrNull() ?: 0
+                if(nextAlternateIndex >= directive.alternatePeerIds.size)
+                {
+                    val failure = buildFailure(
+                        kind = DistributionGridFailureKind.ROUTING_FAILURE,
+                        reason = "DistributionGrid exhausted alternate peers for '${directive.targetPeerId.ifBlank { fallbackPeerKey }}'.",
+                        retryable = false
+                    )
+                    envelope.latestFailure = failure
+                    return finalizeFailedEnvelope(
+                        envelope = envelope,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        directiveKind = directive.kind,
+                        recordTerminalHop = false
+                    )
+                }
+
+                val alternatePeerKey = directive.alternatePeerIds[nextAlternateIndex]
+                envelope.attributes[alternateIndexKey] = (nextAlternateIndex + 1).toString()
+                retryEnvelope.attributes[alternateIndexKey] = (nextAlternateIndex + 1).toString()
+                val alternatePeerDescriptor = resolveExplicitPeerDescriptor(
+                    DistributionGridDirective(
+                        kind = DistributionGridDirectiveKind.HAND_OFF_TO_PEER,
+                        targetPeerId = alternatePeerKey
+                    )
+                )?.descriptor
+                trace(
+                    TraceEventType.DISTRIBUTION_GRID_LOOP_GUARD,
+                    TracePhase.ORCHESTRATION,
+                    metadata = mapOf(
+                        "taskId" to envelope.taskId,
+                        "directive" to directive.kind.name,
+                        "peerKey" to alternatePeerKey,
+                        "alternateIndex" to nextAlternateIndex
+                    )
+                )
+                retryEnvelope.currentNodeId = alternatePeerDescriptor?.distributionGridMetadata?.nodeId
+                    ?: retryEnvelope.currentNodeId
+                retryEnvelope.currentTransport = alternatePeerDescriptor?.transport?.deepCopy()
+                    ?: retryEnvelope.currentTransport.deepCopy()
+                val pausedBeforeRetry = maybePauseAtSafeBoundary(
+                    envelope = retryEnvelope,
+                    checkpointReason = "before-peer-dispatch"
+                )
+                if(pausedBeforeRetry != null)
+                {
+                    return pausedBeforeRetry
+                }
+                checkpointTaskState(retryEnvelope, "before-peer-dispatch")
+                dispatchExplicitPeerHandoff(
+                    envelope = retryEnvelope,
+                    directive = DistributionGridDirective(
+                        kind = DistributionGridDirectiveKind.HAND_OFF_TO_PEER,
+                        targetPeerId = alternatePeerKey,
+                        targetNodeId = fallbackTargetNodeId
+                    ),
+                    startedAt = startedAt
+                )
+            }
+
+            else ->
+            {
+                val failure = buildFailure(
+                    kind = DistributionGridFailureKind.ROUTING_FAILURE,
+                    reason = "DistributionGrid cannot continue with unsupported directive '${directive.kind.name}'.",
+                    retryable = false
+                )
+                envelope.latestFailure = failure
+                finalizeFailedEnvelope(
+                    envelope = envelope,
+                    failure = failure,
+                    startedAt = startedAt,
+                    completedAt = System.currentTimeMillis(),
+                    directiveKind = directive.kind,
+                    recordTerminalHop = false
+                )
+            }
+        }
     }
 
     /**
@@ -3715,19 +5185,35 @@ class DistributionGrid : P2PInterface
             )
         )
 
-        val response = sendGridRpcRequest(
-            descriptor = descriptor,
-            rpcMessage = DistributionGridRpcMessage(
-                messageType = DistributionGridRpcMessageType.HANDSHAKE_INIT,
-                senderNodeId = resolveCurrentNodeId(),
-                targetId = peerMetadata.nodeId,
-                protocolVersion = localMetadata.supportedProtocolVersions.firstOrNull()?.deepCopy()
-                    ?: DistributionGridProtocolVersion(),
-                sessionRef = null,
-                payloadType = HANDSHAKE_PAYLOAD_TYPE,
-                payloadJson = serialize(handshakeRequest)
-            )
+        val handshakeRpcMessage = DistributionGridRpcMessage(
+            messageType = DistributionGridRpcMessageType.HANDSHAKE_INIT,
+            senderNodeId = resolveCurrentNodeId(),
+            targetId = peerMetadata.nodeId,
+            protocolVersion = localMetadata.supportedProtocolVersions.firstOrNull()?.deepCopy()
+                ?: DistributionGridProtocolVersion(),
+            sessionRef = null,
+            payloadType = HANDSHAKE_PAYLOAD_TYPE,
+            payloadJson = serialize(handshakeRequest)
         )
+        val handshakeRequestP2P = buildGridRpcRequest(descriptor, handshakeRpcMessage)
+        injectOutboundCredentials(
+            envelope = envelope,
+            peerKey = peerKey,
+            descriptor = descriptor,
+            request = handshakeRequestP2P
+        )
+        val outboundPolicyFailure = validateOutboundPolicy(
+            envelope = envelope,
+            peerKey = peerKey,
+            descriptor = descriptor,
+            request = handshakeRequestP2P
+        )
+        if(outboundPolicyFailure != null)
+        {
+            return DistributionGridPeerHandshakeOutcome(failure = outboundPolicyFailure)
+        }
+
+        val response = P2PRegistry.externalP2PCall(handshakeRequestP2P)
 
         if(response.rejection != null)
         {
@@ -3943,10 +5429,6 @@ class DistributionGrid : P2PInterface
             prompt = buildGridRpcContent(rpcMessage)
             context = null
             customContextDescriptions = null
-            if(transport.transportMethod != Transport.Stdio)
-            {
-                pcpRequest = null
-            }
             inputSchema = null
             outputSchema = null
         }
@@ -5340,7 +6822,7 @@ class DistributionGrid : P2PInterface
     ): DistributionGridHopRecord
     {
         return DistributionGridHopRecord(
-            sourceNodeId = envelope.currentNodeId,
+            sourceNodeId = envelope.senderNodeId.ifBlank { envelope.currentNodeId },
             destinationNodeId = peerDescriptor.distributionGridMetadata?.nodeId
                 ?: peerDescriptor.transport.transportAddress,
             transportMethod = peerDescriptor.transport.transportMethod,

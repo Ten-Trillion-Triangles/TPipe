@@ -118,6 +118,24 @@ class Manifold : P2PInterface
      */
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {
+        val descriptor = getP2pDescription()
+        val requirements = getP2pRequirements()
+
+        val authRequired = descriptor?.requiresAuth == true || requirements?.authMechanism != null
+        if(authRequired && !request.authValidated)
+        {
+            val mechanism = requirements?.authMechanism
+            if(mechanism == null)
+            {
+                throw SecurityException("Authentication required but no mechanism configured for Manifold '${descriptor?.agentName}'")
+            }
+
+            if(!mechanism.invoke(request.authBody))
+            {
+                throw SecurityException("Invalid credentials provided for Manifold '${descriptor?.agentName}'")
+            }
+        }
+
         val promptResult = execute(request.prompt)
         val newResponse = P2PResponse(output = promptResult)
         return newResponse
@@ -578,6 +596,11 @@ class Manifold : P2PInterface
         managerPipeline.setP2pDescription(descriptor)
         managerPipeline.setP2pRequirements(requirements)
 
+        // Ensure the manifold itself also has the descriptor and requirements for its own P2PInterface implementation.
+        this.p2pDescriptor = descriptor
+        this.p2pTransport = descriptor.transport
+        this.p2PRequirements = requirements
+
         P2PRegistry.remove(managerPipeline) //Remove to ensure we aren't double registered.
 
         /**
@@ -746,6 +769,14 @@ class Manifold : P2PInterface
      */
     suspend fun init()
     {
+        val descriptor = getP2pDescription()
+        val requirements = getP2pRequirements()
+        val hasGlobalAuth = P2PRegistry.globalAuthMechanism != null
+        if (descriptor?.requiresAuth == true && requirements?.authMechanism == null && !hasGlobalAuth)
+        {
+            throw IllegalArgumentException("Manifold '${descriptor.agentName}' requires authentication but no authMechanism is configured in P2PRequirements.")
+        }
+
         //Step 1: Check for empty pipelines. If any are empty we need to throw on the spot.
         if(managerPipeline.getPipes().isEmpty() || workerPipelines.isEmpty()) throw Exception("One or more manager or worker pipelines are empty. Cannot start the manifold.")
 

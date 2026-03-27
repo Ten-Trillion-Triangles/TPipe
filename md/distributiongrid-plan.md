@@ -1,7 +1,7 @@
 # DistributionGrid Plan
 
 Date: 2026-03-25
-Last Updated: 2026-03-26
+Last Updated: 2026-03-27
 
 ## Purpose
 
@@ -11,17 +11,19 @@ Use this file for the current task only. Move durable implementation truth into 
 
 ## Current Task
 
-- Task: Phase 6 stabilization repair - registry cache revalidation and safe registration fallback.
-- Status: in progress
-- Exact progress: Phase 6 is complete, but a short repair pass is in flight to keep discovered-node cache entries registry-scoped and replace stale live leases when a node re-registers
-- Last updated: 2026-03-26
+- Task: Phase 7 follow-up repair pass.
+- Status: complete
+- Exact progress: Phase 7 follow-up repairs are complete; the remaining review items were credential-identity enforcement and resumable after-peer-response checkpoints, and both are now fixed and verified.
+- Last updated: 2026-03-27
 - Files in scope:
   - `src/main/kotlin/Pipeline/DistributionGrid.kt`
-  - `src/test/kotlin/Pipeline/DistributionGridRegistryDiscoveryTest.kt`
-- Last completed step: completed Phase 6 by adding bootstrap-registry probing, trust-verifier admission, lease-based membership registration and renewal, structured registry queries, and discovered-node routing back into the existing handoff path
+  - `src/test/kotlin/Pipeline/DistributionGridHardeningTest.kt`
+  - `md/distributiongrid-progress.md`
+  - `docs/containers/distributiongrid.md`
+- Last completed step: fixed the credential-auth gate and resumable after-peer-response pause checkpoint, then reran the focused and broader `DistributionGrid` test sweeps successfully.
 - Current blocker: none
-- Next atomic step: finish the registry-scoped discovery cache and lease-replacement repair, then resume Phase 7 planning
-- Verification target: the repair preserves the shipped Phase 6 discovery model while preventing registry aliasing and stale live lease state
+- Next atomic step: move into Phase 8 planning and UI/doc finalization work.
+- Verification target: Phase 7 hardening behavior remains green after the repair pass and the codebase is ready for Phase 8 prep.
 
 ## Milestones
 
@@ -33,10 +35,10 @@ Use this file for the current task only. Move durable implementation truth into 
 
 ## Upcoming Queue
 
-- `Phase 7: Cross-Cutting Runtime Hardening`
-  Scope: add outbound memory shaping, durability behavior, privacy or auth or PCP mediation, trace export alignment, and safe pause checkpoints.
-  Must not touch: DSL ergonomics or final public-doc completion claims beyond shipped hardening behavior.
-  Verification target: the remote runtime matches the approved TPipe memory, privacy, auth, durability, and tracing policies.
+- `Phase 8: DSL, Defaults, Public Docs, And Final Coverage`
+  Scope: finish the user-facing DSL, default-policy ergonomics, public docs, and final coverage cleanup now that the runtime phases are complete.
+  Must not touch: the shipped Phase 5 through Phase 7 runtime semantics except for tightly scoped follow-up fixes.
+  Verification target: public APIs and docs expose the completed runtime coherently without regressing the verified handoff, discovery, and hardening paths.
 
 ## Recent Task History
 
@@ -53,6 +55,9 @@ Use this file for the current task only. Move durable implementation truth into 
 - 2026-03-26: Stabilized Phase 5 by fixing stale-session recovery after `SESSION_REJECT`, making negotiated session policy authoritative on remote execution, framing grid RPC prompts explicitly, and aligning remote-success `hopCount` with recorded hops.
 - 2026-03-26: Hardened Phase 5 policy integrity by revalidating cached sessions against current task policy and rejecting handshake acknowledgements that widen the requested trace, routing, or credential policy.
 - 2026-03-26: Completed Phase 6 by adding bootstrap registry probing, pluggable trust verification, lease-based registration and renewal, structured registry queries, and discovered-node routing through the existing handoff runtime.
+- 2026-03-27: Completed Phase 7 by landing outbound memory shaping, best-effort durability checkpoints and `resumeTask(taskId)`, PCP or credential or privacy policy enforcement on remote handoff, retry and alternate-peer runtime handling, and grid trace-export/failure-analysis wrappers.
+- 2026-03-27: Started a Phase 7 repair pass to fix terminal pause cleanup, retry-hop accounting, and configured summary-budget enforcement regressions identified in review.
+- 2026-03-27: Completed the Phase 7 follow-up repair pass by fixing the credential-identity gate, preserving auth lookup parity with the P2P path, and making after-peer-response pause checkpoints resumable instead of terminal.
 
 ## Sync Rules
 

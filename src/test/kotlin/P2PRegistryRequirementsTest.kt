@@ -374,6 +374,100 @@ class P2PRegistryRequirementsTest {
     }
 
     @Test
+    fun testRegistryValidationDoesNotStickOnReusedRequestInstance() = runBlocking {
+        val workerTransport = P2PTransport(transportMethod = Transport.Tpipe, transportAddress = "sticky-worker")
+        val workerDescriptor = P2PDescriptor(
+            agentName = "sticky-worker",
+            agentDescription = "Sticky auth worker",
+            transport = workerTransport,
+            requiresAuth = false,
+            usesConverse = true,
+            allowsAgentDuplication = false,
+            allowsCustomContext = false,
+            allowsCustomAgentJson = false,
+            recordsInteractionContext = false,
+            recordsPromptContent = false,
+            allowsExternalContext = false,
+            contextProtocol = ContextProtocol.pcp
+        )
+        val workerRequirements = P2PRequirements(
+            allowExternalConnections = true,
+            authMechanism = { authBody -> authBody == "sticky-token" }
+        )
+        val workerAgent = CapturingP2PInterface(workerTransport, workerDescriptor, workerRequirements)
+        val sharedRequest = P2PRequest().apply {
+            transport = workerTransport
+            authBody = "sticky-token"
+            prompt.addText("hello")
+        }
+
+        try {
+            P2PRegistry.register(workerAgent, workerTransport, workerDescriptor, workerRequirements)
+
+            val firstResponse = P2PRegistry.executeP2pRequest(sharedRequest)
+            assertNotNull(firstResponse.output)
+            assertFalse(sharedRequest.authValidated, "Registry validation should not mutate the caller-owned request instance")
+            assertTrue(workerAgent.lastRequest!!.authValidated, "Container should see a validated copy of the request")
+
+            val secondResponse = P2PRegistry.executeP2pRequest(sharedRequest)
+            assertNotNull(secondResponse.output)
+            assertFalse(sharedRequest.authValidated, "Reused requests should stay reusable after multiple registry calls")
+        } finally {
+            P2PRegistry.remove(workerTransport)
+        }
+    }
+
+    @Test
+    fun testGlobalAuthMechanismEnforcementFallback() = runBlocking {
+        val workerTransport = P2PTransport(transportMethod = Transport.Tpipe, transportAddress = "global-auth-worker")
+        val workerDescriptor = P2PDescriptor(
+            agentName = "global-auth-worker",
+            agentDescription = "Worker relying on global auth",
+            transport = workerTransport,
+            requiresAuth = true,
+            usesConverse = false,
+            allowsAgentDuplication = false,
+            allowsCustomContext = false,
+            allowsCustomAgentJson = false,
+            recordsInteractionContext = false,
+            recordsPromptContent = false,
+            allowsExternalContext = false,
+            contextProtocol = ContextProtocol.pcp
+        )
+        val workerRequirements = P2PRequirements(
+            allowExternalConnections = true,
+            authMechanism = null
+        )
+        val workerAgent = TestP2PInterface(workerTransport, workerDescriptor, workerRequirements)
+        val originalGlobalAuth = P2PRegistry.globalAuthMechanism
+
+        try {
+            P2PRegistry.globalAuthMechanism = { authBody -> authBody == "global-secret" }
+            P2PRegistry.register(workerAgent, workerTransport, workerDescriptor, workerRequirements)
+
+            val validRequest = P2PRequest().apply {
+                transport = workerTransport
+                authBody = "global-secret"
+                prompt.addText("hello")
+            }
+            val validResponse = P2PRegistry.executeP2pRequest(validRequest)
+            assertNull(validResponse.rejection, "Valid global auth credentials should pass")
+
+            val invalidRequest = P2PRequest().apply {
+                transport = workerTransport
+                authBody = "wrong-secret"
+                prompt.addText("hello")
+            }
+            val invalidResponse = P2PRegistry.executeP2pRequest(invalidRequest)
+            assertNotNull(invalidResponse.rejection, "Invalid global auth credentials should be rejected")
+            assertEquals(P2PError.auth, invalidResponse.rejection!!.errorType)
+        } finally {
+            P2PRegistry.globalAuthMechanism = originalGlobalAuth
+            P2PRegistry.remove(workerTransport)
+        }
+    }
+
+    @Test
     fun testAcceptedContentTypesRequirement() = runBlocking {
         val requirements = P2PRequirements(
             acceptedContent = mutableListOf(SupportedContentTypes.image),

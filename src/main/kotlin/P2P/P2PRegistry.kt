@@ -360,9 +360,10 @@ object P2PRegistry
             }
         }
 
-        if(requirements.authMechanism != null)
+        val effectiveAuthMechanism = requirements.authMechanism ?: globalAuthMechanism
+        if(effectiveAuthMechanism != null)
         {
-            val result = requirements.authMechanism?.invoke(request.authBody)
+            val result = effectiveAuthMechanism.invoke(request.authBody)
             if(result == false)
             {
                 val rejection = P2PRejection()
@@ -440,9 +441,12 @@ object P2PRegistry
             return response
         }
 
+        val validatedRequest = request.deepCopy<P2PRequest>().apply {
+            authValidated = true
+        }
         val result: Deferred<P2PResponse> = kotlinx.coroutines.coroutineScope {
             async {
-                agent.container.executeP2PRequest(request) ?: P2PResponse()
+                agent.container.executeP2PRequest(validatedRequest) ?: P2PResponse()
             }
         }
 

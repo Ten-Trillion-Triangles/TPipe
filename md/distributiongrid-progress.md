@@ -1,7 +1,7 @@
 # DistributionGrid Progress
 
 Date: 2026-03-25
-Last Updated: 2026-03-26
+Last Updated: 2026-03-27
 
 ## Overview
 
@@ -75,7 +75,19 @@ Steering-set ownership:
   - `DistributionGridExecutionCoreTest.kt`
   - `DistributionGridRemoteHandoffTest.kt`
   - `DistributionGridRegistryDiscoveryTest.kt`
-- `DistributionGrid` still does not perform durable-session persistence, runtime durability behavior, outbound memory shaping, or full privacy or auth or PCP mediation yet.
+- `DistributionGrid` now includes the shipped Phase 7 durability, outbound memory shaping, and privacy or auth or PCP mediation behavior.
+- The Phase 7 hardening layer received a follow-up repair pass on 2026-03-27:
+  - retry and alternate-peer redispatch now resume from the original pre-failure task snapshot instead of the merged failure envelope
+  - outbound PCP gating now ignores empty/default PCP template objects on non-stdio peers
+  - stdio session options remain allowed and are still not treated as PCP forwarding
+- The Phase 7 hardening layer received another follow-up repair pass on 2026-03-27:
+  - terminal pause requests are cleared on terminal exits so the grid does not remain globally paused
+  - retry and alternate-peer redispatch preserve hop accounting while still starting from the clean pre-failure snapshot
+  - outbound memory shaping now honors the configured summary-budget reservation instead of deriving it only from leftovers
+- The Phase 7 hardening layer received a final follow-up repair pass on 2026-03-27:
+  - per-hop credential refs are resolved through the peer's canonical node identity, with auth lookup parity for the same identity sources the P2P layer uses
+  - paused after-peer-response checkpoints now remain resumable and no longer short-circuit resume into a raw terminal snapshot
+  - the focused hardening suite and the broader `DistributionGrid*` sweep both passed after the fix
 - The steering-doc set now contains the approved full node-based architecture specification for the future runtime.
 - The implementation order has now been codified into explicit phases so runtime work can proceed without crossing phase boundaries accidentally.
 
@@ -88,7 +100,7 @@ Steering-set ownership:
 - `Phase 4: Local Execution Core` — complete
 - `Phase 5: Explicit Remote Peer Handoff` — complete
 - `Phase 6: Registry Discovery And Membership` — complete
-- `Phase 7: Cross-Cutting Runtime Hardening` — not started
+- `Phase 7: Cross-Cutting Runtime Hardening` — complete
 - `Phase 8: DSL, Defaults, Public Docs, And Final Coverage` — not started
 
 ## Phase Evidence
@@ -104,6 +116,10 @@ Steering-set ownership:
 - `Phase 5`: `DistributionGrid` now uses a structured explicit-peer session cache key so peer and registry strings cannot alias through separator collisions.
 - `Phase 6`: `DistributionGrid` now performs trusted bootstrap-registry probing, lease-based registration and renewal, structured registry queries, and discovered-node admission without weakening the existing node-handshake requirements.
 - `Phase 6`: `DistributionGrid` now revalidates cached registry advertisements before reuse and rejects descriptor-less registrations that omit a caller return address.
+- `Phase 7`: `DistributionGrid` now shapes outbound remote memory into bounded context and minibank payloads, rejects disallowed PCP forwarding before remote calls, records best-effort durable checkpoints at safe boundaries, resumes paused durable tasks through `resumeTask(taskId)`, and exposes normal tracer export and failure-analysis wrappers.
+- `Phase 7`: `DistributionGrid` now honors `RETRY_SAME_PEER` and `TRY_ALTERNATE_PEER` through the existing directive model while keeping hop, session, and policy validation in force.
+- `Phase 7`: `DistributionGrid` now reuses the clean pre-failure task snapshot for retry and alternate-peer redispatch, and its outbound PCP gate only treats real PCP forwarding payloads as disallowed on non-stdio peers.
+- `Phase 7`: `DistributionGrid` now clears the transient pause request on terminal exits, preserves hop history during retry redispatch, and reserves summary-budget explicitly when shaping outbound memory.
 
 ## Plan At A Glance
 
@@ -114,7 +130,7 @@ Steering-set ownership:
 - [x] Phase 4: Local Execution Core
 - [x] Phase 5: Explicit Remote Peer Handoff
 - [x] Phase 6: Registry Discovery And Membership
-- [ ] Phase 7: Cross-Cutting Runtime Hardening
+- [x] Phase 7: Cross-Cutting Runtime Hardening
 - [ ] Phase 8: DSL, Defaults, Public Docs, And Final Coverage
 
 ## Completed Work
@@ -245,6 +261,10 @@ Steering-set ownership:
 - Reviewed the follow-up Phase 5 policy-integrity findings for cached-session reuse and widened handshake acknowledgements before landing the second stabilization pass.
 - Reviewed the Phase 5 transport and rejection-detail findings for inbound sender transport and peer-authored handshake failures before landing the final repair pass.
 - Reviewed the final Phase 5 boundary findings for fail-closed framed RPC rejection and handshake ACK session-identity validation before landing the last repair pass.
+- Reviewed the Phase 7 credential-identity and resumable-pause findings, then updated `DistributionGrid` so per-hop credential refs resolve through the canonical peer node identity and `after-peer-response` pause checkpoints remain resumable.
+- Ran `./gradlew --no-daemon -Dkotlin.compiler.execution.strategy=in-process -Dkotlin.daemon.jvmargs=-Xmx6g clean compileKotlin compileTestKotlin`.
+- Ran `./gradlew --no-daemon -Dkotlin.compiler.execution.strategy=in-process -Dkotlin.daemon.jvmargs=-Xmx6g test --tests "com.TTT.Pipeline.DistributionGridHardeningTest" -x :TPipe-Bedrock:test -x :TPipe-Defaults:test -x :TPipe-MCP:test -x :TPipe-Ollama:test -x :TPipe-TraceServer:test -x :TPipe-Tuner:test`.
+- Ran `./gradlew --no-daemon -Dkotlin.compiler.execution.strategy=in-process -Dkotlin.daemon.jvmargs=-Xmx6g test --tests "com.TTT.Pipeline.DistributionGrid*" -x :TPipe-Bedrock:test -x :TPipe-Defaults:test -x :TPipe-MCP:test -x :TPipe-Ollama:test -x :TPipe-TraceServer:test -x :TPipe-Tuner:test`.
 
 Commands used during the architecture pass:
 
