@@ -124,6 +124,43 @@ object P2PRegistry
         }
     }
 
+    /**
+     * Import hosted public agent listings into the client-side remote catalog.
+     *
+     * Only generic `AGENT` listings are loaded here. DistributionGrid-specific listings stay in their own discovery
+     * path so public catalog data cannot silently bypass grid trust and handshake rules.
+     *
+     * @param listings Hosted-registry listings to import.
+     * @param replaceExisting Whether existing client-side descriptors/templates with the same agent name should be replaced.
+     */
+    fun loadHostedAgentListings(
+        listings: List<P2PHostedRegistryListing>,
+        replaceExisting: Boolean = true
+    )
+    {
+        listings.forEach { listing ->
+            if(listing.kind != P2PHostedListingKind.AGENT)
+            {
+                return@forEach
+            }
+
+            val descriptor = listing.publicDescriptor?.deepCopy<P2PDescriptor>() ?: return@forEach
+            val agentName = descriptor.agentName
+            if(agentName.isBlank())
+            {
+                return@forEach
+            }
+
+            if(!replaceExisting && clientAgentList.containsKey(agentName))
+            {
+                return@forEach
+            }
+
+            clientAgentList[agentName] = descriptor
+            requestTemplates[agentName] = descriptor.requestTemplate?.deepCopy<P2PRequest>() ?: P2PRequest()
+        }
+    }
+
 
 //------------------------------------------------Functions-------------------------------------------------------------
 

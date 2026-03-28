@@ -7,6 +7,7 @@
 - [P2PResponse](#p2presponse)
 - [P2PRequirements](#p2prequirements)
 - [P2PRegistry](#p2pregistry)
+- [Hosted Registry](#hosted-registry)
 - [Supporting Classes](#supporting-classes)
 - [Enums](#enums)
 
@@ -218,6 +219,69 @@ Registers agent with explicit configuration.
 Registers agent using stored interface configuration with automatic requirement inference.
 
 **Behavior:** Auto-generates requirements from descriptor if not provided. Sets sensible defaults based on descriptor capabilities.
+
+---
+
+## Hosted Registry
+
+TPipe now includes a remotely hosted registry surface for public catalog-style listing and lookup over the
+existing P2P transport path.
+
+### Core Classes
+
+- **`P2PHostedRegistry`**: `P2PInterface` implementation that exposes hosted-registry RPC over normal P2P transport
+- **`P2PHostedRegistryStore`**: storage contract for listings and leases
+- **`InMemoryP2PHostedRegistryStore`**: first shipped store implementation
+- **`P2PHostedRegistryClient`**: coder-facing client helpers for info, search, publish, renew, delete, and import
+- **`P2PHostedRegistryTools`**: PCP-callable tool bundle for agents
+
+### Listing Kinds
+
+- **`AGENT`**: public P2P agent listing
+- **`GRID_NODE`**: public `DistributionGrid` node listing
+- **`GRID_REGISTRY`**: public `DistributionGrid` registry listing
+
+### Query and Publish Models
+
+- **`P2PHostedRegistryListing`**: one hosted listing record
+- **`P2PHostedRegistryQuery`**: structured search request with text, category, tag, transport, auth, capability, and trust filters
+- **`P2PHostedRegistryQueryResult`**: accepted flag, rejection reason, total count, and results
+- **`P2PHostedRegistryPublishRequest`**: listing plus requested lease duration
+- **`P2PHostedRegistryMutationResult`**: accepted flag, rejection reason, updated listing, and lease
+
+### Security Rules
+
+- hosted registries sanitize secret-bearing auth from stored public descriptors and request templates
+- lease expiry removes listings from query results
+- hosted-registry admission policy is separate from `DistributionGridTrustVerifier`
+- public catalog presence does not bypass grid handshake, session, or trust-verification requirements
+
+### Coder-Facing Client Example
+
+```kotlin
+val result = P2PHostedRegistryClient.searchListings(
+    transport = P2PTransport(Transport.Tpipe, "public-hosted-registry"),
+    query = P2PHostedRegistryQuery(
+        textQuery = "research",
+        categories = mutableListOf("research/agent"),
+        tags = mutableListOf("search")
+    )
+)
+```
+
+### PCP Tool Surface
+
+`P2PHostedRegistryTools.registerAndEnable(context)` exposes read tools by default:
+
+- `search_p2p_registry_listings`
+- `get_p2p_registry_listing`
+- `list_trusted_grid_registries`
+
+Opting into write tools adds:
+
+- `publish_p2p_registry_listing`
+- `renew_p2p_registry_listing`
+- `remove_p2p_registry_listing`
 
 #### Agent Management
 

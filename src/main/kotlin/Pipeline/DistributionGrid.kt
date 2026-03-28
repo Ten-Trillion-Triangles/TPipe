@@ -16,6 +16,15 @@ import com.TTT.Enums.ContextWindowSettings
 import com.TTT.P2P.ContextProtocol
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PError
+import com.TTT.P2P.P2PHostedListingKind
+import com.TTT.P2P.P2PHostedListingMetadata
+import com.TTT.P2P.P2PHostedRegistryClient
+import com.TTT.P2P.P2PHostedRegistryListing
+import com.TTT.P2P.P2PHostedRegistryMutationResult
+import com.TTT.P2P.P2PHostedRegistryPublishRequest
+import com.TTT.P2P.P2PHostedRegistryQuery
+import com.TTT.P2P.P2PHostedRegistryRemoveRequest
+import com.TTT.P2P.P2PHostedRegistryRenewRequest
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRejection
 import com.TTT.P2P.P2PRegistry
@@ -145,6 +154,7 @@ class DistributionGrid : P2PInterface
     @RuntimeState
     private val sessionRecordsById = linkedMapOf<String, DistributionGridSessionRecord>()
     private val bootstrapRegistriesById = linkedMapOf<String, DistributionGridRegistryAdvertisement>()
+    private val bootstrapCatalogSourcesById = linkedMapOf<String, DistributionGridBootstrapCatalogSource>()
     @RuntimeState
     private val discoveredRegistriesById = linkedMapOf<String, DistributionGridRegistryAdvertisement>()
     @RuntimeState
@@ -858,6 +868,46 @@ class DistributionGrid : P2PInterface
     }
 
     /**
+     * Add one trusted hosted-registry bootstrap source used to pull public `GRID_REGISTRY` listings.
+     *
+     * @param source Hosted-registry source configuration.
+     * @return This grid for method chaining.
+     */
+    fun addBootstrapCatalogSource(source: DistributionGridBootstrapCatalogSource): DistributionGrid
+    {
+        val sourceId = source.sourceId.ifBlank { source.transport.transportAddress }
+        require(sourceId.isNotBlank()) { "Bootstrap catalog source id must not be blank." }
+
+        val normalizedQuery = source.query.deepCopy<P2PHostedRegistryQuery>().apply {
+            if(P2PHostedListingKind.GRID_REGISTRY !in listingKinds)
+            {
+                listingKinds = (listingKinds + P2PHostedListingKind.GRID_REGISTRY).distinct().toMutableList()
+            }
+        }
+
+        bootstrapCatalogSourcesById[sourceId] = source.deepCopy<DistributionGridBootstrapCatalogSource>().apply {
+            this.sourceId = sourceId
+            this.query = normalizedQuery
+        }
+        markShellDirty()
+        return this
+    }
+
+    /**
+     * Remove one configured hosted-registry bootstrap source.
+     *
+     * @param sourceId Source identifier to remove.
+     * @return This grid for method chaining.
+     */
+    fun removeBootstrapCatalogSource(sourceId: String): DistributionGrid
+    {
+        require(sourceId.isNotBlank()) { "Bootstrap catalog source id must not be blank." }
+        bootstrapCatalogSourcesById.remove(sourceId)
+        markShellDirty()
+        return this
+    }
+
+    /**
      * Remove one bootstrap registry root.
      *
      * @param registryId Registry id to remove.
@@ -1180,6 +1230,14 @@ class DistributionGrid : P2PInterface
             gridPauseRequested = false
             pausedTaskIds.clear()
 
+            val autoBootstrapSources = bootstrapCatalogSourcesById.values
+                .filter { it.autoPullOnInit }
+                .map { it.sourceId }
+            if(autoBootstrapSources.isNotEmpty())
+            {
+                pullTrustedBootstrapCatalogs(autoBootstrapSources)
+            }
+
             trace(
                 TraceEventType.DISTRIBUTION_GRID_VALIDATION_SUCCESS,
                 TracePhase.VALIDATION,
@@ -1359,6 +1417,16 @@ class DistributionGrid : P2PInterface
     fun getBootstrapRegistryIds(): List<String>
     {
         return bootstrapRegistriesById.keys.toList()
+    }
+
+    /**
+     * Read the configured hosted-registry bootstrap source ids.
+     *
+     * @return Ordered hosted-registry bootstrap source ids.
+     */
+    fun getBootstrapCatalogSourceIds(): List<String>
+    {
+        return bootstrapCatalogSourcesById.keys.toList()
     }
 
     /**
@@ -1742,6 +1810,249 @@ class DistributionGrid : P2PInterface
         }
 
         return verifiedCandidates
+    }
+
+    /**
+     * Pull trusted `GRID_REGISTRY` listings from configured hosted-registry bootstrap sources and admit verified
+     * registry advertisements into live discovery state.
+     *
+     * @param sourceIds Optional explicit source ids. Blank means all configured sources.
+     * @return Registry advertisements that were accepted into discovery state.
+     */
+    suspend fun pullTrustedBootstrapCatalogs(
+        sourceIds: List<String> = emptyList()
+    ): List<DistributionGridRegistryAdvertisement>
+    {
+        validateRegistryClientReadiness()?.let { throw IllegalStateException(it.reason) }
+        purgeExpiredDiscoveryState()
+
+        val targetSourceIds = if(sourceIds.isNotEmpty())
+        {
+            sourceIds
+        }
+        else
+        {
+            bootstrapCatalogSourcesById.keys.toList()
+        }
+
+        val acceptedAdvertisements = mutableListOf<DistributionGridRegistryAdvertisement>()
+        targetSourceIds.forEach { sourceId ->
+            val source = bootstrapCatalogSourcesById[sourceId] ?: return@forEach
+            val result = P2PHostedRegistryClient.searchListings(
+                transport = source.transport,
+                query = source.query
+            )
+            if(!result.accepted)
+            {
+                return@forEach
+            }
+
+            val trustedParents = (bootstrapRegistriesById.values + discoveredRegistriesById.values)
+                .map { it.deepCopy<DistributionGridRegistryAdvertisement>() }
+
+            result.results.forEach { listing ->
+                val candidate = listing.gridRegistryAdvertisement?.deepCopy<DistributionGridRegistryAdvertisement>()
+                    ?: return@forEach
+                if(candidate.attestationRef.isBlank() && listing.attestationRef.isNotBlank())
+                {
+                    candidate.attestationRef = listing.attestationRef
+                }
+                val failure = trustVerifier.verifyRegistryAdvertisement(
+                    candidate = candidate,
+                    trustedParents = trustedParents
+                )
+                if(failure == null)
+                {
+                    discoveredRegistriesById[candidate.metadata.registryId] = candidate.deepCopy()
+                    acceptedAdvertisements.add(candidate.deepCopy())
+                }
+            }
+        }
+
+        return acceptedAdvertisements
+    }
+
+    /**
+     * Publish the current node as a public `GRID_NODE` listing on one hosted registry.
+     */
+    suspend fun publishPublicNodeListing(
+        transport: P2PTransport,
+        options: DistributionGridPublicListingOptions = DistributionGridPublicListingOptions(),
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryMutationResult
+    {
+        val descriptor = p2pDescriptor?.deepCopy()
+            ?: return buildHostedRegistryMutationFailure(
+                "DistributionGrid cannot publish a public node listing without a node descriptor."
+            )
+        val metadata = descriptor.distributionGridMetadata?.deepCopy()
+            ?: return buildHostedRegistryMutationFailure(
+                "DistributionGrid cannot publish a public node listing without grid metadata."
+            )
+        val now = System.currentTimeMillis()
+        val listing = P2PHostedRegistryListing(
+            kind = P2PHostedListingKind.GRID_NODE,
+            metadata = P2PHostedListingMetadata(
+                title = options.title.ifBlank { descriptor.agentName.ifBlank { metadata.nodeId } },
+                summary = options.summary.ifBlank { descriptor.agentDescription },
+                categories = options.categories.toMutableList(),
+                tags = options.tags.toMutableList()
+            ),
+            publicDescriptor = descriptor.deepCopy(),
+            gridNodeAdvertisement = DistributionGridNodeAdvertisement(
+                descriptor = descriptor.deepCopy(),
+                metadata = metadata.deepCopy(),
+                registryId = metadata.registryMemberships.firstOrNull().orEmpty(),
+                discoveredAtEpochMillis = now,
+                expiresAtEpochMillis = now + options.requestedLeaseSeconds.coerceAtLeast(1) * 1000L
+            )
+        )
+
+        return P2PHostedRegistryClient.publishListing(
+            transport = transport,
+            request = P2PHostedRegistryPublishRequest(
+                listing = listing,
+                requestedLeaseSeconds = options.requestedLeaseSeconds
+            ),
+            authBody = authBody,
+            transportAuthBody = transportAuthBody
+        )
+    }
+
+    /**
+     * Renew one previously published public node listing.
+     */
+    suspend fun renewPublicNodeListing(
+        transport: P2PTransport,
+        listingId: String,
+        leaseId: String,
+        requestedLeaseSeconds: Int = 3600,
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryMutationResult
+    {
+        return P2PHostedRegistryClient.renewListing(
+            transport = transport,
+            request = P2PHostedRegistryRenewRequest(
+                listingId = listingId,
+                leaseId = leaseId,
+                requestedLeaseSeconds = requestedLeaseSeconds
+            ),
+            authBody = authBody,
+            transportAuthBody = transportAuthBody
+        )
+    }
+
+    /**
+     * Remove one previously published public node listing.
+     */
+    suspend fun removePublicNodeListing(
+        transport: P2PTransport,
+        listingId: String,
+        leaseId: String,
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryMutationResult
+    {
+        return P2PHostedRegistryClient.removeListing(
+            transport = transport,
+            request = P2PHostedRegistryRemoveRequest(
+                listingId = listingId,
+                leaseId = leaseId
+            ),
+            authBody = authBody,
+            transportAuthBody = transportAuthBody
+        )
+    }
+
+    /**
+     * Publish the current node's registry role as a public `GRID_REGISTRY` listing on one hosted registry.
+     */
+    suspend fun publishPublicRegistryListing(
+        transport: P2PTransport,
+        options: DistributionGridPublicListingOptions = DistributionGridPublicListingOptions(),
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryMutationResult
+    {
+        val metadata = registryMetadata?.deepCopy()
+            ?: return buildHostedRegistryMutationFailure(
+                "DistributionGrid cannot publish a public registry listing without registry metadata."
+            )
+        val nodeDescriptor = p2pDescriptor?.deepCopy()
+            ?: return buildHostedRegistryMutationFailure(
+                "DistributionGrid cannot publish a public registry listing without a node descriptor."
+            )
+        val advertisement = DistributionGridRegistryAdvertisement(
+            transport = resolveCurrentTransport(),
+            metadata = metadata,
+            discoveredAtEpochMillis = System.currentTimeMillis(),
+            expiresAtEpochMillis = System.currentTimeMillis() + options.requestedLeaseSeconds.coerceAtLeast(1) * 1000L
+        )
+        val listing = P2PHostedRegistryListing(
+            kind = P2PHostedListingKind.GRID_REGISTRY,
+            metadata = P2PHostedListingMetadata(
+                title = options.title.ifBlank { metadata.registryId.ifBlank { nodeDescriptor.agentName } },
+                summary = options.summary.ifBlank { nodeDescriptor.agentDescription },
+                categories = options.categories.toMutableList(),
+                tags = options.tags.toMutableList()
+            ),
+            publicDescriptor = nodeDescriptor.deepCopy(),
+            gridRegistryAdvertisement = advertisement
+        )
+
+        return P2PHostedRegistryClient.publishListing(
+            transport = transport,
+            request = P2PHostedRegistryPublishRequest(
+                listing = listing,
+                requestedLeaseSeconds = options.requestedLeaseSeconds
+            ),
+            authBody = authBody,
+            transportAuthBody = transportAuthBody
+        )
+    }
+
+    /**
+     * Renew one previously published public registry listing.
+     */
+    suspend fun renewPublicRegistryListing(
+        transport: P2PTransport,
+        listingId: String,
+        leaseId: String,
+        requestedLeaseSeconds: Int = 3600,
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryMutationResult
+    {
+        return renewPublicNodeListing(
+            transport = transport,
+            listingId = listingId,
+            leaseId = leaseId,
+            requestedLeaseSeconds = requestedLeaseSeconds,
+            authBody = authBody,
+            transportAuthBody = transportAuthBody
+        )
+    }
+
+    /**
+     * Remove one previously published public registry listing.
+     */
+    suspend fun removePublicRegistryListing(
+        transport: P2PTransport,
+        listingId: String,
+        leaseId: String,
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryMutationResult
+    {
+        return removePublicNodeListing(
+            transport = transport,
+            listingId = listingId,
+            leaseId = leaseId,
+            authBody = authBody,
+            transportAuthBody = transportAuthBody
+        )
     }
 
     /**
@@ -5927,6 +6238,14 @@ class DistributionGrid : P2PInterface
         }
 
         return true
+    }
+
+    private fun buildHostedRegistryMutationFailure(reason: String): P2PHostedRegistryMutationResult
+    {
+        return P2PHostedRegistryMutationResult(
+            accepted = false,
+            rejectionReason = reason
+        )
     }
 
     /**

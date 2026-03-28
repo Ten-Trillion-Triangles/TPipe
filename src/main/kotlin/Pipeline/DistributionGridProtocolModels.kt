@@ -1,5 +1,6 @@
 package com.TTT.Pipeline
 
+import com.TTT.P2P.P2PHostedRegistryQuery
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PTransport
 import com.TTT.PipeContextProtocol.Transport
@@ -187,6 +188,43 @@ data class DistributionGridRegistryAdvertisement(
     var attestationRef: String = "",
     var discoveredAtEpochMillis: Long = 0L,
     var expiresAtEpochMillis: Long = 0L
+)
+
+/**
+ * Trusted hosted-registry source that can be queried for additional public grid-registry advertisements.
+ *
+ * These sources are discovery transports only; every pulled `GRID_REGISTRY` listing must still be converted back
+ * through the normal grid trust verifier before it enters live discovery state.
+ *
+ * @param sourceId Stable local identifier for this bootstrap catalog source.
+ * @param transport Hosted-registry transport endpoint.
+ * @param query Query used to pull `GRID_REGISTRY` listings from the source.
+ * @param autoPullOnInit Whether the grid should pull this source during `init()`.
+ */
+@Serializable
+data class DistributionGridBootstrapCatalogSource(
+    var sourceId: String = "",
+    var transport: P2PTransport = P2PTransport(),
+    var query: P2PHostedRegistryQuery = P2PHostedRegistryQuery(),
+    var autoPullOnInit: Boolean = false
+)
+
+/**
+ * Public-listing metadata used when a grid node publishes itself or its registry role to a hosted public registry.
+ *
+ * @param title Human-facing listing title.
+ * @param summary Human-facing listing summary.
+ * @param categories Free-form hierarchical categories.
+ * @param tags Free-form short labels.
+ * @param requestedLeaseSeconds Requested hosted-registry lease duration.
+ */
+@Serializable
+data class DistributionGridPublicListingOptions(
+    var title: String = "",
+    var summary: String = "",
+    var categories: MutableList<String> = mutableListOf(),
+    var tags: MutableList<String> = mutableListOf(),
+    var requestedLeaseSeconds: Int = 3600
 )
 
 /**

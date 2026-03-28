@@ -54,7 +54,8 @@ internal data class DistributionGridDiscoveryConfiguration(
     var mode: DistributionGridPeerDiscoveryMode = DistributionGridPeerDiscoveryMode.HYBRID,
     var registryMetadata: DistributionGridRegistryMetadata? = null,
     var trustVerifier: DistributionGridTrustVerifier? = null,
-    var bootstrapRegistries: MutableList<DistributionGridRegistryAdvertisement> = mutableListOf()
+    var bootstrapRegistries: MutableList<DistributionGridRegistryAdvertisement> = mutableListOf(),
+    var bootstrapCatalogSources: MutableList<DistributionGridBootstrapCatalogSource> = mutableListOf()
 )
 
 internal data class DistributionGridTracingConfiguration(
@@ -373,6 +374,7 @@ class DistributionGridDsl
             discovery.registryMetadata?.let { grid.setRegistryMetadata(it.deepCopy()) }
             discovery.trustVerifier?.let { grid.setTrustVerifier(it) }
             discovery.bootstrapRegistries.forEach { grid.addBootstrapRegistry(it.deepCopy()) }
+            discovery.bootstrapCatalogSources.forEach { grid.addBootstrapCatalogSource(it.deepCopy()) }
         }
 
         routingConfiguration?.let { grid.setRoutingPolicy(it.deepCopy()) }
@@ -791,11 +793,17 @@ class DistributionGridDiscoveryDsl
         configuration.bootstrapRegistries.add(advertisement.deepCopy())
     }
 
+    fun bootstrapCatalogSource(source: DistributionGridBootstrapCatalogSource)
+    {
+        configuration.bootstrapCatalogSources.add(source.deepCopy())
+    }
+
     internal fun build(): DistributionGridDiscoveryConfiguration
     {
         return configuration.copy(
             registryMetadata = configuration.registryMetadata?.deepCopy(),
-            bootstrapRegistries = configuration.bootstrapRegistries.map { it.deepCopy() }.toMutableList()
+            bootstrapRegistries = configuration.bootstrapRegistries.map { it.deepCopy() }.toMutableList(),
+            bootstrapCatalogSources = configuration.bootstrapCatalogSources.map { it.deepCopy() }.toMutableList()
         )
     }
 }

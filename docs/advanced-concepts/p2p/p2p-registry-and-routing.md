@@ -76,6 +76,35 @@ val remoteDescriptors = loadFromExternalSource()
 P2PRegistry.loadAgents(remoteDescriptors)
 ```
 
+### Hosted Public Registry Catalog
+
+For searchable remote catalog hosting, use `P2PHostedRegistry` instead of stretching `loadAgents(...)` into a
+remote directory system.
+
+Hosted registries support:
+
+- public `AGENT`, `GRID_NODE`, and `GRID_REGISTRY` listings
+- lease-based publication and renewal
+- structured filtering by kind, category, tag, transport, auth requirement, content type, capability, and trust-domain metadata
+- text search across titles, summaries, descriptions, categories, tags, and capability labels
+- import of sanitized `AGENT` listings into the local static registry through `P2PHostedRegistryClient.pullListingsToLocalRegistry(...)`
+
+Example:
+
+```kotlin
+val hostedResults = P2PHostedRegistryClient.searchListings(
+    transport = P2PTransport(Transport.Tpipe, "public-agent-catalog"),
+    query = P2PHostedRegistryQuery(
+        textQuery = "research",
+        categories = mutableListOf("research/agent"),
+        listingKinds = mutableListOf(P2PHostedListingKind.AGENT)
+    )
+)
+```
+
+Hosted registries are still just P2P services under the hood, so they can be exposed in-process, over HTTP
+`/p2p`, or over stdio hosts without a second API stack.
+
 ## Request Validation
 
 The registry validates all requests before execution:
@@ -133,6 +162,7 @@ The registry maintains:
 - **Local agents**: Registered P2PInterface implementations
 - **Remote catalog**: External agent descriptors
 - **Request templates**: Reusable request configurations
+- **Hosted catalog imports**: Sanitized public `AGENT` listings loaded from hosted registries when explicitly pulled
 
 All operations are thread-safe via internal mutex protection.
 

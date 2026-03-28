@@ -38,6 +38,7 @@ This page describes current shipped behavior only. The evolving full runtime spe
 - the shell now supports outbound memory shaping, privacy/auth/PCP mediation, durable checkpoints, `resumeTask(taskId)`, retry/alternate-peer runtime behavior, and trace export/failure-analysis helpers
 - the Kotlin DSL now supports full-node assembly through `distributionGrid { ... }`, including router/worker binding, discovery, policies, tracing, hooks, and operational tuning
 - `TPipe-Defaults` now provides an additive `defaults { bedrock(...) }` / `defaults { ollama(...) }` bridge for the grid DSL plus matching raw defaults factories
+- the shell now supports hosted-registry bootstrap catalog sources plus explicit public node/registry listing publication helpers
 - public docs and tests now reflect the shipped runtime rather than the earlier Phase 5/6 rollout point
 
 ## What Is Still Missing
@@ -121,14 +122,24 @@ The Phase 8 shell now includes configuration, validation, lifecycle methods, loc
 - `addBootstrapRegistry(...)`
 - `removeBootstrapRegistry(...)`
 - `getBootstrapRegistryIds()`
+- `addBootstrapCatalogSource(...)`
+- `removeBootstrapCatalogSource(...)`
+- `getBootstrapCatalogSourceIds()`
 - `getDiscoveredRegistryIds()`
 - `getDiscoveredNodeIds()`
 - `getActiveRegistryLeaseIds()`
 - `probeTrustedRegistries()`
+- `pullTrustedBootstrapCatalogs(...)`
 - `registerWithRegistry(...)`
 - `renewRegistryLease(...)`
 - `tickRegistryMemberships(...)`
 - `queryRegistries(...)`
+- `publishPublicNodeListing(...)`
+- `renewPublicNodeListing(...)`
+- `removePublicNodeListing(...)`
+- `publishPublicRegistryListing(...)`
+- `renewPublicRegistryListing(...)`
+- `removePublicRegistryListing(...)`
 - `clearDiscoveredRegistryState()`
 - `getDiscoveryMode()`
 - `getRoutingPolicy()`
@@ -176,6 +187,59 @@ val grid = distributionGrid {
 ```
 
 The DSL returns an initialized grid by default. Use `DistributionGridDsl.buildSuspend()` when you need coroutine-safe startup.
+
+### Hosted Bootstrap Catalogs
+
+If you want the grid to discover trusted registries from a remotely hosted public catalog on startup, add a
+bootstrap catalog source inside `discovery { }`:
+
+```kotlin
+distributionGrid {
+    router(routerPipeline)
+    worker(workerPipeline)
+
+    discovery {
+        bootstrapCatalogSource(
+            DistributionGridBootstrapCatalogSource(
+                sourceId = "public-grid-registry-catalog",
+                transport = P2PTransport(
+                    transportMethod = Transport.Tpipe,
+                    transportAddress = "public-grid-registry-catalog"
+                ),
+                query = P2PHostedRegistryQuery(
+                    listingKinds = mutableListOf(P2PHostedListingKind.GRID_REGISTRY),
+                    categories = mutableListOf("grid/registry")
+                ),
+                autoPullOnInit = true
+            )
+        )
+    }
+}
+```
+
+Hosted bootstrap catalogs are still discovery aids only. Pulled `GRID_REGISTRY` advertisements still have to pass
+the configured `DistributionGridTrustVerifier`, and later remote routing still uses the normal handshake and
+session rules.
+
+### Public Listing Helpers
+
+`DistributionGrid` can also publish its own outward node or registry state into a hosted public catalog:
+
+```kotlin
+val result = grid.publishPublicNodeListing(
+    transport = P2PTransport(Transport.Tpipe, "public-grid-catalog"),
+    options = DistributionGridPublicListingOptions(
+        title = "Public Research Grid Node",
+        summary = "Remote worker entrypoint for research workloads.",
+        categories = mutableListOf("grid/node"),
+        tags = mutableListOf("research", "worker")
+    ),
+    authBody = "publisher-token"
+)
+```
+
+These helpers sanitize public listing data and keep hosted-catalog visibility separate from actual runtime trust,
+handshake, and session enforcement.
 
 ### DSL blocks
 
