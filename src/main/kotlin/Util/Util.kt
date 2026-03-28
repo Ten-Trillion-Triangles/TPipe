@@ -2,6 +2,7 @@ package com.TTT.Util
 
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.Pipe
+import com.TTT.P2P.P2PInterface
 import com.TTT.Pipeline.Pipeline
 import kotlinx.coroutines.*
 import kotlinx.io.IOException
@@ -569,6 +570,124 @@ fun deepCopyInternal(obj: Any?, kClass: KClass<*>): Any?
         
         // Return as-is for other types
         else -> obj
+    }
+}
+
+/**
+ * Clone any TPipe object by creating a fresh instance via its no-arg constructor and copying all mutable
+ * configuration properties via reflection. Properties annotated with [RuntimeState] or `@Transient` are
+ * skipped so the clone starts with clean runtime state.
+ *
+ * Property classification:
+ * - Primitives, Strings, Enums: copied directly
+ * - Data classes: deep-copied via [deepCopy]
+ * - Collections (List, Set, Map): deep-copied with recursive content handling
+ * - [Pipe] subclasses: cloned via [constructPipeFromTemplate]
+ * - [P2PInterface] / other classes with no-arg constructors: recursively cloned via this function
+ * - Lambdas and function types: shared by reference (configuration, not state)
+ * - Everything else: shared by reference (external resources)
+ *
+ * @param template The object to clone.
+ * @return A fresh instance with identical configuration and default runtime state.
+ */
+@Suppress("UNCHECKED_CAST")
+fun <T : Any> cloneInstance(template: T): T
+{
+    val kClass = template::class
+
+    val newInstance = try
+    {
+        kClass.java.getDeclaredConstructor().newInstance()
+    }
+    catch(e: Exception)
+    {
+        return template
+    }
+
+    kClass.memberProperties.forEach { prop ->
+        if(prop !is KMutableProperty1<*, *>)
+        {
+            return@forEach
+        }
+
+        val isRuntimeState = prop.annotations.any { it.annotationClass == RuntimeState::class }
+        val isTransient = prop.annotations.any {
+            it.annotationClass.qualifiedName?.contains("Transient") == true
+        }
+        if(isRuntimeState || isTransient)
+        {
+            return@forEach
+        }
+
+        try
+        {
+            prop.isAccessible = true
+            val value = (prop as KProperty1<Any, Any?>).get(template) ?: run {
+                (prop as KMutableProperty1<Any, Any?>).set(newInstance, null)
+                return@forEach
+            }
+
+            val copied = cloneValue(value)
+            (prop as KMutableProperty1<Any, Any?>).set(newInstance, copied)
+        }
+        catch(_: Exception)
+        {
+            // Skip inaccessible or unsettable properties
+        }
+    }
+
+    return newInstance as T
+}
+
+/**
+ * Classify and copy a single property value according to the P2P concurrency isolation property classification.
+ */
+@Suppress("UNCHECKED_CAST")
+private fun cloneValue(value: Any): Any
+{
+    return when
+    {
+        // Immutable primitives — copy directly
+        value is String || value is Number || value is Boolean || value is Char || value is Enum<*> -> value
+
+        // Function types — share by reference (configuration lambdas)
+        value is Function<*> -> value
+
+        // Pipe subclasses — use existing proven infrastructure
+        value is Pipe -> constructPipeFromTemplate<Pipe>(value, copyFunctions = true, copyPipes = true, copyMetadata = true) ?: value
+
+        // P2PInterface implementations (Pipeline, Manifold, Junction, DistributionGrid, etc.) — recursive clone
+        value is com.TTT.P2P.P2PInterface -> cloneInstance(value)
+
+        // Data classes — use existing deepCopy
+        value::class.isData -> value.deepCopy()
+
+        // Mutable collections — deep copy contents
+        value is MutableList<*> -> value.map { item -> if(item != null) cloneValue(item) else null }.toMutableList()
+        value is List<*> -> value.map { item -> if(item != null) cloneValue(item) else null }
+        value is MutableSet<*> -> value.map { item -> if(item != null) cloneValue(item) else null }.toMutableSet()
+        value is Set<*> -> value.map { item -> if(item != null) cloneValue(item) else null }.toSet()
+        value is MutableMap<*, *> -> (value as MutableMap<Any?, Any?>).entries.associate { (k, v) ->
+            k to if(v != null) cloneValue(v) else null
+        }.toMutableMap()
+        value is Map<*, *> -> value.entries.associate { (k, v) ->
+            k to if(v != null) cloneValue(v) else null
+        }
+
+        // Non-data class with no-arg constructor — recursive structural clone
+        else ->
+        {
+            try
+            {
+                value::class.java.getDeclaredConstructor()
+                cloneInstance(value)
+            }
+            catch(_: NoSuchMethodException)
+            {
+                // No no-arg constructor — share by reference (external resource)
+                value
+            }
+        }
     }
 }
 

@@ -9,6 +9,7 @@ import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PResponse
 import com.TTT.P2P.P2PTransport
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Util.RuntimeState
 import kotlinx.coroutines.Job
 
 /**
@@ -21,6 +22,7 @@ import kotlinx.coroutines.Job
  */
 class Connector : P2PInterface
 {
+    @com.TTT.Util.RuntimeState
     private val pipelineId: String = java.util.UUID.randomUUID().toString()
 
 //---------------------------------------------P2P Interface------------------------------------------------------------
@@ -90,6 +92,7 @@ class Connector : P2PInterface
      */
     private var branches = mutableMapOf<Any, Pipeline>()
 
+    @RuntimeState
     private var lastConnection: Any? = null
 
     /**

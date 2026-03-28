@@ -28,6 +28,7 @@ import com.TTT.PipeContextProtocol.Transport
 import com.TTT.Util.deepCopy
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
+import com.TTT.Util.RuntimeState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -94,13 +95,18 @@ class Junction : P2PInterface
     private var adjusterBinding: JunctionBinding? = null
     private var outputBinding: JunctionBinding? = null
 
+    @RuntimeState
     private var discussionState = DiscussionState()
     private var workflowRecipe = JunctionWorkflowRecipe.DISCUSSION_ONLY
+    @RuntimeState
     private var workflowState = JunctionWorkflowState()
     private var tracingEnabled = false
     private var traceConfig = TraceConfig()
+    @RuntimeState
     private val junctionId = UUID.randomUUID().toString()
+    @RuntimeState
     private var isPaused = false
+    @RuntimeState
     private val resumeSignal = Channel<Unit>(1)
     private var moderatorInterventionEnabled = true
     private var defaultMaxNestedDepth = 8

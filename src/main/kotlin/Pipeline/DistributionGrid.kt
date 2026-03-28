@@ -35,6 +35,7 @@ import com.TTT.PipeContextProtocol.Transport
 import com.TTT.Util.deserialize
 import com.TTT.Util.deepCopy
 import com.TTT.Util.serialize
+import com.TTT.Util.RuntimeState
 import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.UUID
@@ -121,7 +122,9 @@ class DistributionGrid : P2PInterface
     private var maxHops = 16
     private var tracingEnabled = false
     private var traceConfig = TraceConfig()
+    @RuntimeState
     private var initialized = false
+    @RuntimeState
     private var pauseRequested = false
 
     private var beforeRouteHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
@@ -132,18 +135,28 @@ class DistributionGrid : P2PInterface
     private var outboundMemoryHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
     private var failureHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
     private var outcomeTransformationHook: (suspend (MultimodalContent, DistributionGridEnvelope) -> MultimodalContent)? = null
+    @RuntimeState
     private val sessionRecordsByPeerKey = linkedMapOf<DistributionGridPeerSessionKey, DistributionGridSessionRecord>()
+    @RuntimeState
     private val sessionRecordsById = linkedMapOf<String, DistributionGridSessionRecord>()
     private val bootstrapRegistriesById = linkedMapOf<String, DistributionGridRegistryAdvertisement>()
+    @RuntimeState
     private val discoveredRegistriesById = linkedMapOf<String, DistributionGridRegistryAdvertisement>()
+    @RuntimeState
     private val discoveredNodeAdvertisementsById = linkedMapOf<DistributionGridDiscoveredNodeKey, DistributionGridNodeAdvertisement>()
+    @RuntimeState
     private val activeRegistryLeasesById = linkedMapOf<String, DistributionGridRegistrationLease>()
+    @RuntimeState
     private val localRegisteredNodeAdvertisementsById = linkedMapOf<String, DistributionGridNodeAdvertisement>()
+    @RuntimeState
     private val localRegistrationLeasesById = linkedMapOf<String, DistributionGridRegistrationLease>()
+    @RuntimeState
     private val localRegistrationLeaseIdsByNodeId = linkedMapOf<String, String>()
 
+    @RuntimeState
     private val gridId = UUID.randomUUID().toString()
     private val defaultMaxNestedDepth = 8
+    @RuntimeState
     private var synthesizedPeerOrdinal = 0
 
     /**

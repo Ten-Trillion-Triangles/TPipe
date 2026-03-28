@@ -5,6 +5,7 @@ import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
+import com.TTT.Util.RuntimeState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -70,6 +71,7 @@ class Splitter: P2PInterface
     /**
      * Collection to store results from all executed pipelines
      */
+    @RuntimeState
     val results = MultimodalCollection()
 
     /**
@@ -77,6 +79,7 @@ class Splitter: P2PInterface
      */
     private var tracingEnabled = false
     private var traceConfig = TraceConfig()
+    @RuntimeState
     private val splitterId = UUID.randomUUID().toString()
 
     /**
@@ -110,26 +113,31 @@ class Splitter: P2PInterface
     /**
      * Mutex for thread-safe callback execution and completion tracking
      */
+    @RuntimeState
     private val executionMutex = Mutex()
 
     /**
      * Flag to track if splitter is currently executing pipelines
      */
+    @RuntimeState
     private var isExecuting = false
 
     /**
      * Atomic counter to track completed pipelines for callback triggering
      */
+    @RuntimeState
     private var completedPipelines = AtomicInteger(0)
 
     /**
      * Total number of pipelines to execute, set before execution starts
      */
+    @RuntimeState
     private var totalPipelines = 0
 
     /**
      * Flag to ensure onSplitterFinish callback is called only once
      */
+    @RuntimeState
     private var splitterCompleted = false
 
 //-------------------------------------------Constructor----------------------------------------------------------------

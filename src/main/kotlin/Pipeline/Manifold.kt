@@ -30,6 +30,7 @@ import com.TTT.Debug.*
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Pipe.Pipe
 import com.TTT.Util.examplePromptFor
+import com.TTT.Util.RuntimeState
 import kotlinx.coroutines.channels.Channel
 import org.slf4j.helpers.NOP_FallbackServiceProvider
 import java.util.UUID
@@ -133,6 +134,7 @@ class Manifold : P2PInterface
      * Most critical property in this class. This is the content object that will be worked on by every llm agent
      * inside the manifold. Perhaps we should move it to its own, more distinct and visible area in this file?
      */
+    @RuntimeState
     private var workingContentObject = MultimodalContent()
 
     /**
@@ -214,9 +216,13 @@ class Manifold : P2PInterface
      */
     private var tracingEnabled = false
     private var traceConfig = TraceConfig()
+    @RuntimeState
     private val manifoldId = UUID.randomUUID().toString()
+    @RuntimeState
     private var currentTaskProgress = TaskProgress()
+    @RuntimeState
     private var loopIterationCount = 0
+    @RuntimeState
     private val agentInteractionMap = mutableMapOf<String, Int>()
 
     /**
@@ -226,9 +232,11 @@ class Manifold : P2PInterface
      * largely by hand with the programmer, Manifolds are too automated to make interrupting them reasonable. And so we
      * need this built in pause/resume mechanism in place.
      */
+    @RuntimeState
     private var isPaused = false
 
     //Lock mechanism to pause and resume the manifold.
+    @RuntimeState
     private val resumeSignal = Channel<Unit>(Channel.RENDEZVOUS)
 
 

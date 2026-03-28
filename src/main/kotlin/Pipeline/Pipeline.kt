@@ -19,6 +19,7 @@ import com.TTT.Pipe.TokenUsage
 import com.TTT.Pipe.PipeTimeoutStrategy
 import com.TTT.Util.copyPipeline
 import com.TTT.Util.deepCopy
+import com.TTT.Util.RuntimeState
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
@@ -76,6 +77,7 @@ class Pipeline : P2PInterface
      * Aggregated token usage across tracked pipes. Reset at the start of each execution.
      */
     @kotlinx.serialization.Transient
+    @RuntimeState
     private var pipelineTokenUsage = TokenUsage()
 
     @kotlinx.serialization.Transient
@@ -110,7 +112,9 @@ class Pipeline : P2PInterface
      * Pause/resume functionality using TPipe's declarative approach
      * Pausing auto-enabled when any pause point is declared
      */
+    @RuntimeState
     private var isPaused = false
+    @RuntimeState
     private val resumeSignal = Channel<Unit>(Channel.RENDEZVOUS)
     private var pauseBeforePipes = false
     private var pauseAfterPipes = false
@@ -127,6 +131,7 @@ class Pipeline : P2PInterface
      */
     private var tracingEnabled = false
     private var traceConfig = TraceConfig()
+    @RuntimeState
     private val pipelineId = UUID.randomUUID().toString()
 
     /**
@@ -138,6 +143,7 @@ class Pipeline : P2PInterface
      * @see executeMultimodal
      * @see getNextPipe
      */
+    @RuntimeState
     private var currentPipeIndex = 0
 
     /**
@@ -165,6 +171,7 @@ class Pipeline : P2PInterface
      * Internal private var for [ConverseHistory] to enable automatic wrapping of [MultimodalContent] into a converse
      * history structure. Gets cleared each initial pipeline run and returns out at the end of the run if enabled.
      */
+    @RuntimeState
     private var internalConverseHistory = ConverseHistory()
 
     /**
