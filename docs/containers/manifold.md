@@ -596,6 +596,10 @@ Fix:
 - Enable tracing while developing custom manager prompts or agent-routing behavior
 - Build a fresh manifold per concurrent top-level task
 
+## P2P Concurrency
+
+Manifold is stateful — it maintains working content, loop counters, and agent interaction maps during execution. When exposed via P2P, register with `P2PConcurrencyMode.ISOLATED` so each inbound request gets a fresh clone. See [P2P Registry and Routing](../advanced-concepts/p2p/p2p-registry-and-routing.md#concurrency-modes) for details.
+
 ---
 
 **Previous:** [← Splitter](splitter.md) | **Next:** [DistributionGrid →](distributiongrid.md)

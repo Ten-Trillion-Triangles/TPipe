@@ -188,6 +188,10 @@ If you are continuing `DistributionGrid` implementation, follow the internal pha
 2. keep Phase 5 through Phase 7 runtime semantics stable unless a targeted repair is required
 3. route any new runtime-semantics ideas back through the steering docs before coding
 
+## P2P Concurrency
+
+DistributionGrid is stateful — it maintains session caches, discovery state, pause flags, and lease state during execution. When exposed via P2P, register with `P2PConcurrencyMode.ISOLATED` so each inbound request gets a fresh clone. See [P2P Registry and Routing](../advanced-concepts/p2p/p2p-registry-and-routing.md#concurrency-modes) for details.
+
 ---
 
 **Previous:** [← Manifold](manifold.md) | **Next:** [Junction →](junction.md)

@@ -22,7 +22,7 @@ import kotlinx.coroutines.Job
  */
 class Connector : P2PInterface
 {
-    @com.TTT.Util.RuntimeState
+    @RuntimeState
     private val pipelineId: String = java.util.UUID.randomUUID().toString()
 
 //---------------------------------------------P2P Interface------------------------------------------------------------

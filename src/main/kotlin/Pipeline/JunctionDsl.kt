@@ -2,6 +2,7 @@ package com.TTT.Pipeline
 
 import com.TTT.Debug.TraceConfig
 import com.TTT.P2P.P2PDescriptor
+import com.TTT.P2P.P2PConcurrencyMode
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequirements
 import kotlinx.coroutines.runBlocking
@@ -36,6 +37,24 @@ class JunctionDsl
 {
     private var moderatorConfigured = false
     private val junction = Junction()
+    private var concurrencyModeConfiguration: P2PConcurrencyMode = P2PConcurrencyMode.SHARED
+
+    /**
+     * Set the P2P concurrency mode for this junction when registered with the P2P registry.
+     *
+     * @param mode SHARED routes all requests to one instance. ISOLATED clones per request.
+     */
+    fun concurrencyMode(mode: P2PConcurrencyMode)
+    {
+        concurrencyModeConfiguration = mode
+    }
+
+    /**
+     * Read the configured concurrency mode.
+     *
+     * @return The concurrency mode set on this DSL.
+     */
+    fun getConcurrencyMode(): P2PConcurrencyMode = concurrencyModeConfiguration
 
     /**
      * Configure the discussion moderator.

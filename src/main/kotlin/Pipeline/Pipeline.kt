@@ -45,6 +45,7 @@ class Pipeline : P2PInterface
      * Reference to any containers that are holding this pipeline. Will be required for more advanced tracing patterns
      * such as Splitters, Manifolds, and DistributionGrids.
      */
+    @RuntimeState
     var pipelineContainer: Any? = null
 
     /**

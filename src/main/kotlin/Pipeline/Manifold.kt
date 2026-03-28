@@ -67,6 +67,7 @@ class Manifold : P2PInterface
     private var p2pDescriptor: P2PDescriptor? = null
     private var p2pTransport: P2PTransport? = null
     private var p2PRequirements: P2PRequirements? = null
+    @RuntimeState
     private var containerObject: Any? = null
 
     override fun setP2pDescription(description: P2PDescriptor)

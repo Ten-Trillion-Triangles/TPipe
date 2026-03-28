@@ -38,8 +38,8 @@ Steering-set ownership:
 - `Phase 1: Generalize the Reflection Clone` — complete
 - `Phase 2: Class Annotation Audit` — complete
 - `Phase 3: Registry Concurrency Modes` — complete
-- `Phase 4: Integration Tests` — not started
-- `Phase 5: Public Docs and DSL Updates` — not started
+- `Phase 4: Integration Tests` — complete
+- `Phase 5: Public Docs and DSL Updates` — complete
 
 ## Phase Evidence
 

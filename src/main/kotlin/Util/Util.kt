@@ -582,7 +582,7 @@ fun deepCopyInternal(obj: Any?, kClass: KClass<*>): Any?
  * - Primitives, Strings, Enums: copied directly
  * - Data classes: deep-copied via [deepCopy]
  * - Collections (List, Set, Map): deep-copied with recursive content handling
- * - [Pipe] subclasses: cloned via [constructPipeFromTemplate]
+ * - [Pipe] subclasses: recursively cloned via this function (preserves actual subclass type)
  * - [P2PInterface] / other classes with no-arg constructors: recursively cloned via this function
  * - Lambdas and function types: shared by reference (configuration, not state)
  * - Everything else: shared by reference (external resources)
@@ -603,15 +603,10 @@ fun <T : Any> cloneInstance(template: T): T
     }
     catch(e: Exception)
     {
-        return template
+        throw IllegalStateException("cloneInstance failed to create ${kClass.simpleName}: ${e.message}", e)
     }
 
     kClass.memberProperties.forEach { prop ->
-        if(prop !is KMutableProperty1<*, *>)
-        {
-            return@forEach
-        }
-
         val isRuntimeState = prop.annotations.any { it.annotationClass == RuntimeState::class }
         val isTransient = prop.annotations.any {
             it.annotationClass.qualifiedName?.contains("Transient") == true
@@ -624,13 +619,50 @@ fun <T : Any> cloneInstance(template: T): T
         try
         {
             prop.isAccessible = true
-            val value = (prop as KProperty1<Any, Any?>).get(template) ?: run {
-                (prop as KMutableProperty1<Any, Any?>).set(newInstance, null)
-                return@forEach
-            }
+            val templateValue = (prop as KProperty1<Any, Any?>).get(template)
 
-            val copied = cloneValue(value)
-            (prop as KMutableProperty1<Any, Any?>).set(newInstance, copied)
+            if(prop is KMutableProperty1<*, *>)
+            {
+                //Mutable property — clone and set directly.
+                if(templateValue == null)
+                {
+                    (prop as KMutableProperty1<Any, Any?>).set(newInstance, null)
+                }
+                else
+                {
+                    (prop as KMutableProperty1<Any, Any?>).set(newInstance, cloneValue(templateValue))
+                }
+            }
+            else
+            {
+                //Immutable property (val) — if it holds a mutable collection, populate the clone's collection.
+                if(templateValue == null) return@forEach
+                val newValue = (prop as KProperty1<Any, Any?>).get(newInstance)
+
+                when(templateValue)
+                {
+                    is MutableList<*> ->
+                    {
+                        val target = newValue as? MutableList<Any?> ?: return@forEach
+                        target.clear()
+                        templateValue.forEach { item -> target.add(if(item != null) cloneValue(item) else null) }
+                    }
+
+                    is MutableMap<*, *> ->
+                    {
+                        val target = newValue as? MutableMap<Any?, Any?> ?: return@forEach
+                        target.clear()
+                        templateValue.forEach { (k, v) -> target[k] = if(v != null) cloneValue(v) else null }
+                    }
+
+                    is MutableSet<*> ->
+                    {
+                        val target = newValue as? MutableSet<Any?> ?: return@forEach
+                        target.clear()
+                        templateValue.forEach { item -> target.add(if(item != null) cloneValue(item) else null) }
+                    }
+                }
+            }
         }
         catch(_: Exception)
         {
@@ -655,9 +687,9 @@ private fun cloneValue(value: Any): Any
         // Function types — share by reference (configuration lambdas)
         value is Function<*> -> value
 
-        // Pipe subclasses — use existing proven infrastructure
-        value is Pipe -> constructPipeFromTemplate<Pipe>(value, copyFunctions = true, copyPipes = true, copyMetadata = true) ?: value
-
+        // Pipe subclasses — recursive clone using the actual runtime class (not constructPipeFromTemplate
+        // which uses the reified type parameter and would create a base Pipe instead of the subclass)
+        value is Pipe -> cloneInstance(value)
         // P2PInterface implementations (Pipeline, Manifold, Junction, DistributionGrid, etc.) — recursive clone
         value is com.TTT.P2P.P2PInterface -> cloneInstance(value)
 

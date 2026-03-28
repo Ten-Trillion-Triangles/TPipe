@@ -11,9 +11,9 @@ Use this file for the current task only. Move durable implementation truth into 
 
 ## Current Task
 
-- Task: Phase 4 — Integration Tests (Task 11: Concurrent execution tests)
-- Status: not started
-- Exact progress: Phases 1-3 are complete. The clone function, annotations, and registry concurrency modes all work. Next step is writing integration tests that verify concurrency safety with real concurrent P2P requests.
+- Task: All phases complete.
+- Status: complete
+- Exact progress: All 5 phases implemented and verified. The P2P concurrency isolation system is fully operational.
 - Last updated: 2026-03-27
 - Files in scope:
   - `src/test/kotlin/P2P/P2PConcurrencyModeTest.kt` (extend or new file)
@@ -35,11 +35,11 @@ Use this file for the current task only. Move durable implementation truth into 
 - [x] Add concurrency mode to `register()` + factory overload
 - [x] Implement clone-per-request and factory-per-request in `executeP2pRequest`
 - [ ] Add `P2PConcurrencyMode` enum and update `P2PAgentListing`
-- [ ] Add concurrency mode to `register()` + factory overload
-- [ ] Implement clone-per-request and factory-per-request in `executeP2pRequest`
-- [ ] Integration tests — concurrent execution
-- [ ] Update DSLs and public docs
-- [ ] Build and run full test suite
+- [x] Add concurrency mode to `register()` + factory overload
+- [x] Implement clone-per-request and factory-per-request in `executeP2pRequest`
+- [x] Integration tests — concurrent execution
+- [x] Update DSLs and public docs
+- [x] Build and run full test suite
 
 ## Upcoming Queue
 

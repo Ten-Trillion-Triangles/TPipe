@@ -4,6 +4,7 @@ import com.TTT.Debug.TraceConfig
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.P2P.AgentRequest
 import com.TTT.P2P.P2PDescriptor
+import com.TTT.P2P.P2PConcurrencyMode
 import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.P2PTransport
@@ -51,6 +52,24 @@ class ManifoldDsl
     private var historyConfiguration: HistoryConfiguration? = null
     private var validationConfiguration: ValidationConfiguration? = null
     private var tracingConfiguration: TraceConfig? = null
+    private var concurrencyModeConfiguration: P2PConcurrencyMode = P2PConcurrencyMode.SHARED
+
+    /**
+     * Set the P2P concurrency mode for this manifold when registered with the P2P registry.
+     *
+     * @param mode SHARED routes all requests to one instance. ISOLATED clones per request.
+     */
+    fun concurrencyMode(mode: P2PConcurrencyMode)
+    {
+        concurrencyModeConfiguration = mode
+    }
+
+    /**
+     * Read the configured concurrency mode.
+     *
+     * @return The concurrency mode set on this DSL.
+     */
+    fun getConcurrencyMode(): P2PConcurrencyMode = concurrencyModeConfiguration
 
     /**
      * Configure the manager pipeline used to orchestrate work across manifold workers.

@@ -15,6 +15,7 @@ import com.TTT.PipeContextProtocol.Transport
 import com.TTT.Util.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Concurrency mode for P2P agent registration. Controls whether inbound requests share one instance or get
@@ -495,6 +496,8 @@ object P2PRegistry
         }
 
         val requirements = agent.requirements
+        //For factory registrations, agent.container is a placeholder — pipe-level checks (token limits, multi-page
+        //budget) are skipped because the factory produces instances that may have different pipe configurations.
         val (isValid, rejectionReason) = checkAgentRequirements(request, agent.requirements, agent.container)
         if(!isValid)
         {
@@ -514,27 +517,44 @@ object P2PRegistry
 
                     P2PConcurrencyMode.ISOLATED ->
                     {
+                        val preExistingAgents = agentListMutex.withLock { Agents.toMap() }
+
                         val freshInstance = if(agent.factory != null)
                         {
                             agent.factory!!.invoke()
                         }
                         else
                         {
-                            cloneInstance(agent.container)
+                            val clone = cloneInstance(agent.container)
+                            //Containers require init() before execution. Factory mode assumes the factory returns ready instances.
+                            when(clone)
+                            {
+                                is com.TTT.Pipeline.Manifold -> clone.init()
+                                is com.TTT.Pipeline.Junction -> clone.init()
+                                is com.TTT.Pipeline.DistributionGrid -> clone.init()
+                                is com.TTT.Pipeline.Pipeline -> clone.init(true)
+                            }
+                            clone
                         }
 
-                        val preExistingKeys = Agents.keys.toSet()
                         try
                         {
                             freshInstance.executeP2PRequest(request) ?: P2PResponse()
                         }
                         finally
                         {
-                            //Clean up any child agents registered during the isolated execution.
-                            val addedKeys = Agents.keys.filter { it !in preExistingKeys }
-                            for(key in addedKeys)
-                            {
-                                Agents.remove(key)
+                            agentListMutex.withLock {
+                                //Remove any agents added during isolated execution.
+                                val addedKeys = Agents.keys.filter { it !in preExistingAgents }
+                                for(key in addedKeys)
+                                {
+                                    Agents.remove(key)
+                                }
+                                //Restore any agents that were overwritten by clone init() or execution.
+                                for((key, listing) in preExistingAgents)
+                                {
+                                    Agents[key] = listing
+                                }
                             }
                         }
                     }

@@ -135,3 +135,54 @@ The registry maintains:
 - **Request templates**: Reusable request configurations
 
 All operations are thread-safe via internal mutex protection.
+
+## Concurrency Modes
+
+By default, the registry routes all inbound requests for a transport address to the same object instance (`SHARED` mode). For stateful containers like Manifold, Junction, and DistributionGrid, concurrent inbound requests can race on mutable runtime state.
+
+`ISOLATED` mode solves this by creating a fresh clone of the registered agent for each inbound request. The clone gets its own runtime state while sharing configuration, hooks, and external resources with the template.
+
+### Registering with ISOLATED Mode
+
+```kotlin
+P2PRegistry.register(
+    agent = myManifold,
+    transport = myTransport,
+    descriptor = myDescriptor,
+    requirements = myRequirements,
+    concurrencyMode = P2PConcurrencyMode.ISOLATED
+)
+```
+
+### Registering with a Factory Function
+
+For cases where automatic cloning cannot capture the full setup (external resources, custom initialization), supply a factory function:
+
+```kotlin
+P2PRegistry.register(
+    factory = {
+        val m = Manifold()
+        m.setManagerPipeline(buildManager())
+        m.addWorkerPipeline(buildWorker())
+        m.init()
+        m
+    },
+    transport = myTransport,
+    descriptor = myDescriptor,
+    requirements = myRequirements
+)
+```
+
+Factory mode implies ISOLATED — every request calls the factory, executes against the fresh instance, and discards it.
+
+### When to Use Each Mode
+
+| Mode | Use When |
+|------|----------|
+| `SHARED` (default) | Stateless agents, simple pipes, or when you want shared conversation history across requests |
+| `ISOLATED` | Stateful containers (Manifold, Junction, DistributionGrid) exposed to concurrent P2P traffic |
+| Factory | Complex setups with external resources that automatic cloning cannot capture |
+
+### Child Agent Cleanup
+
+When an ISOLATED container's execution registers child agents (e.g., Manifold registers its worker pipelines), those child registrations are automatically cleaned up after the request completes.

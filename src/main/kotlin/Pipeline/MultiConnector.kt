@@ -7,6 +7,7 @@ import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PResponse
 import com.TTT.P2P.P2PTransport
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Util.RuntimeState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
@@ -45,6 +46,7 @@ class MultiConnector : P2PInterface
      * Reference to any containers that are holding this MultiConnector. Will be required for more advanced tracing patterns
      * such as Splitters, Manifolds, and DistributionGrids.
      */
+    @RuntimeState
     private var containerObject: Any? = null
 
     override fun setP2pDescription(description: P2PDescriptor)

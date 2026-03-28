@@ -84,6 +84,7 @@ class Junction : P2PInterface
     private var p2pDescriptor: P2PDescriptor? = null
     private var p2pTransport: P2PTransport? = null
     private var p2pRequirements: P2PRequirements? = null
+    @RuntimeState
     private var containerObject: Any? = null
 
     private var moderatorBinding: JunctionBinding? = null

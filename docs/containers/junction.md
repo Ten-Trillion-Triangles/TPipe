@@ -178,4 +178,8 @@ The returned content contains a structured decision payload, not just free-form 
 - The moderator is optional at configuration time but required before `init()` succeeds.
 - The implementation is deterministic in the sense that it always returns a decision artifact, even if it falls back to the best available vote or topic text.
 
+## P2P Concurrency
+
+Junction is stateful — it maintains discussion state, workflow state, and pause flags during execution. When exposed via P2P, register with `P2PConcurrencyMode.ISOLATED` so each inbound request gets a fresh clone. See [P2P Registry and Routing](../advanced-concepts/p2p/p2p-registry-and-routing.md#concurrency-modes) for details.
+
 **Next:** [Container Overview →](container-overview.md)
