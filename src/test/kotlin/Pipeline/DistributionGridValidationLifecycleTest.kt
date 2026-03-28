@@ -236,7 +236,7 @@ class DistributionGridValidationLifecycleTest
             assertFalse(grid.isPaused())
             assertEquals("router", grid.getRouterBindingKey())
             assertEquals("worker", grid.getWorkerBindingKey())
-            assertSame(routingPolicy, grid.getRoutingPolicy())
+            assertEquals(routingPolicy, grid.getRoutingPolicy())
             assertEquals(24, grid.getMaxHops())
         }
     }

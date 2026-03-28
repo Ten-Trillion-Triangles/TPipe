@@ -2,6 +2,7 @@ package com.TTT.Pipeline
 
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
+import com.TTT.Pipe.TruncationSettings
 import kotlinx.serialization.Serializable
 
 /**
@@ -54,7 +55,8 @@ data class DistributionGridMemoryPolicy(
     var maxSummaryCharacters: Int = 4096,
     var redactContentSections: Boolean = false,
     var redactTraceMetadata: Boolean = true,
-    @kotlinx.serialization.Transient var summarizer: ((String) -> String)? = null
+    @kotlinx.serialization.Transient var summarizer: ((String) -> String)? = null,
+    @kotlinx.serialization.Transient var truncationSettings: TruncationSettings = TruncationSettings()
 )
 
 /**

@@ -121,12 +121,16 @@ class DistributionGrid : P2PInterface
     private var registryMetadata: DistributionGridRegistryMetadata? = null
     private var trustVerifier: DistributionGridTrustVerifier = DefaultDistributionGridTrustVerifier()
     private var maxHops = 16
+    private var rpcTimeoutMillis: Long = 120_000L
+    private var maxSessionDurationSeconds: Int = 3600
     private var tracingEnabled = false
     private var traceConfig = TraceConfig()
     @RuntimeState
     private var initialized = false
     @RuntimeState
-    private var pauseRequested = false
+    private var gridPauseRequested = false
+    @RuntimeState
+    private val pausedTaskIds = mutableSetOf<String>()
 
     private var beforeRouteHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
     private var beforeLocalWorkerHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null
@@ -754,7 +758,7 @@ class DistributionGrid : P2PInterface
      */
     fun setRoutingPolicy(policy: DistributionGridRoutingPolicy): DistributionGrid
     {
-        routingPolicy = policy
+        routingPolicy = policy.deepCopy()
         markShellDirty()
         return this
     }
@@ -767,7 +771,7 @@ class DistributionGrid : P2PInterface
      */
     fun setMemoryPolicy(policy: DistributionGridMemoryPolicy): DistributionGrid
     {
-        memoryPolicy = policy
+        memoryPolicy = policy.copy()
         markShellDirty()
         return this
     }
@@ -881,6 +885,32 @@ class DistributionGrid : P2PInterface
     {
         maxHops = max
         markShellDirty()
+        return this
+    }
+
+    /**
+     * Store the RPC timeout applied to all outbound grid calls.
+     *
+     * @param millis Timeout in milliseconds. Must be positive.
+     * @return This grid for method chaining.
+     */
+    fun setRpcTimeout(millis: Long): DistributionGrid
+    {
+        require(millis > 0) { "RPC timeout must be positive." }
+        rpcTimeoutMillis = millis
+        return this
+    }
+
+    /**
+     * Store the maximum session duration cap for handshake negotiation.
+     *
+     * @param seconds Maximum session lifetime in seconds. Must be positive.
+     * @return This grid for method chaining.
+     */
+    fun setMaxSessionDuration(seconds: Int): DistributionGrid
+    {
+        require(seconds > 0) { "Max session duration must be positive." }
+        maxSessionDurationSeconds = seconds
         return this
     }
 
@@ -1147,7 +1177,8 @@ class DistributionGrid : P2PInterface
             }
 
             initialized = true
-            pauseRequested = false
+            gridPauseRequested = false
+            pausedTaskIds.clear()
 
             trace(
                 TraceEventType.DISTRIBUTION_GRID_VALIDATION_SUCCESS,
@@ -1185,12 +1216,14 @@ class DistributionGrid : P2PInterface
             TracePhase.CLEANUP,
             metadata = mapOf(
                 "wasInitialized" to initialized,
-                "wasPaused" to pauseRequested
+                "wasPaused" to gridPauseRequested
             )
         )
 
         initialized = false
-        pauseRequested = false
+        gridPauseRequested = false
+        pausedTaskIds.clear()
+        synthesizedPeerOrdinal = 0
         invalidateAllSessions("Runtime state cleared.")
     }
 
@@ -1203,41 +1236,69 @@ class DistributionGrid : P2PInterface
     }
 
     /**
-     * Request a pause at the next safe checkpoint.
-     *
-     * Phase 3 exposes only shell-level pause state. Execution checkpoints land later with the runtime path.
+     * Request a grid-wide pause at the next safe checkpoint.
      */
     fun pause()
     {
-        pauseRequested = true
+        gridPauseRequested = true
         trace(
             TraceEventType.DISTRIBUTION_GRID_PAUSE,
             TracePhase.ORCHESTRATION,
-            metadata = mapOf("requested" to true)
+            metadata = mapOf("requested" to true, "scope" to "grid")
         )
     }
 
     /**
-     * Clear a previously requested pause.
+     * Request a per-task pause at the next safe checkpoint.
+     *
+     * @param taskId Stable task identifier to pause.
+     */
+    fun pause(taskId: String)
+    {
+        pausedTaskIds.add(taskId)
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_PAUSE,
+            TracePhase.ORCHESTRATION,
+            metadata = mapOf("requested" to true, "scope" to "task", "taskId" to taskId)
+        )
+    }
+
+    /**
+     * Clear a previously requested grid-wide pause.
      */
     fun resume()
     {
-        pauseRequested = false
+        gridPauseRequested = false
         trace(
             TraceEventType.DISTRIBUTION_GRID_RESUME,
             TracePhase.ORCHESTRATION,
-            metadata = mapOf("requested" to false)
+            metadata = mapOf("requested" to false, "scope" to "grid")
         )
     }
 
     /**
-     * Check whether the shell is currently paused.
+     * Clear a previously requested per-task pause.
      *
-     * @return `true` when a pause has been requested.
+     * @param taskId Stable task identifier to resume.
+     */
+    fun resume(taskId: String)
+    {
+        pausedTaskIds.remove(taskId)
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_RESUME,
+            TracePhase.ORCHESTRATION,
+            metadata = mapOf("requested" to false, "scope" to "task", "taskId" to taskId)
+        )
+    }
+
+    /**
+     * Check whether the grid-wide pause has been requested.
+     *
+     * @return `true` when a grid-wide pause has been requested.
      */
     fun isPaused(): Boolean
     {
-        return pauseRequested
+        return gridPauseRequested
     }
 
     /**
@@ -1401,6 +1462,7 @@ class DistributionGrid : P2PInterface
     suspend fun probeTrustedRegistries(): List<DistributionGridRegistryAdvertisement>
     {
         validateRegistryClientReadiness()?.let { throw IllegalStateException(it.reason) }
+        purgeExpiredDiscoveryState()
 
         val discoveredAdvertisements = mutableListOf<DistributionGridRegistryAdvertisement>()
         bootstrapRegistriesById.values.toList().forEach { bootstrapRegistry ->
@@ -1549,6 +1611,7 @@ class DistributionGrid : P2PInterface
     ): List<DistributionGridRegistrationLease>
     {
         validateRegistryClientReadiness()?.let { throw IllegalStateException(it.reason) }
+        purgeExpiredDiscoveryState()
 
         val renewedLeases = mutableListOf<DistributionGridRegistrationLease>()
         val expiredRegistryIds = activeRegistryLeasesById
@@ -1590,6 +1653,7 @@ class DistributionGrid : P2PInterface
     ): List<DistributionGridNodeAdvertisement>
     {
         validateRegistryClientReadiness()?.let { throw IllegalStateException(it.reason) }
+        purgeExpiredDiscoveryState()
 
         val targetRegistryIds = if(registryIds.isNotEmpty())
         {
@@ -1801,7 +1865,7 @@ class DistributionGrid : P2PInterface
             )
         }
 
-        if(pauseRequested)
+        if(gridPauseRequested)
         {
             return buildFailure(
                 kind = DistributionGridFailureKind.VALIDATION_FAILURE,
@@ -2447,6 +2511,27 @@ class DistributionGrid : P2PInterface
         }
         applyNegotiatedPolicyToEnvelope(preparedEnvelope, sessionRecord)
 
+        val allowedHopCount = minOf(maxHops, preparedEnvelope.routingPolicy.maxHopCount.coerceAtLeast(1))
+        if(preparedEnvelope.hopHistory.size >= allowedHopCount)
+        {
+            val failure = buildFailure(
+                kind = DistributionGridFailureKind.ROUTING_FAILURE,
+                reason = "DistributionGrid rejected inbound task handoff because the hop count (${preparedEnvelope.hopHistory.size}) reached the limit ($allowedHopCount).",
+                retryable = false
+            )
+            return P2PResponse(
+                output = buildGridRpcContent(
+                    buildFailureRpcMessage(
+                        messageType = DistributionGridRpcMessageType.TASK_FAILURE,
+                        targetId = rpcMessage.senderNodeId,
+                        sessionRef = sessionRecord.toSessionRef(),
+                        protocolVersion = sessionRecord.negotiatedProtocolVersion,
+                        failure = failure
+                    )
+                )
+            )
+        }
+
         val result = executeEnvelopeLocally(
             envelope = preparedEnvelope,
             inboundSingleNodeMode = true,
@@ -2718,7 +2803,7 @@ class DistributionGrid : P2PInterface
             )
         }
 
-        val response = P2PRegistry.externalP2PCall(outboundRequest)
+        val response = externalP2PCallWithTimeout(outboundRequest)
 
         if(response.rejection != null)
         {
@@ -3328,6 +3413,23 @@ class DistributionGrid : P2PInterface
             DistributionGridDirectiveKind.RETRY_SAME_PEER,
             DistributionGridDirectiveKind.TRY_ALTERNATE_PEER ->
             {
+                if(inboundSingleNodeMode)
+                {
+                    val failure = buildFailure(
+                        kind = DistributionGridFailureKind.ROUTING_FAILURE,
+                        reason = "Retry and alternate-peer directives are not supported during inbound single-node execution.",
+                        retryable = false
+                    )
+                    envelope.latestFailure = failure
+                    return finalizeFailedEnvelope(
+                        envelope = envelope,
+                        failure = failure,
+                        startedAt = startedAt,
+                        completedAt = System.currentTimeMillis(),
+                        directiveKind = directive.kind
+                    )
+                }
+
                 continueWithRetryDirective(
                     envelope = envelope,
                     directive = directive,
@@ -3493,7 +3595,8 @@ class DistributionGrid : P2PInterface
 
         checkpointTaskState(envelope, "terminal-success")
         archiveTaskStateBestEffort(envelope, "terminal-success")
-        pauseRequested = false
+        pausedTaskIds.remove(envelope.taskId)
+        gridPauseRequested = false
 
         trace(
             TraceEventType.DISTRIBUTION_GRID_SUCCESS,
@@ -3599,7 +3702,8 @@ class DistributionGrid : P2PInterface
 
         checkpointTaskState(preparedEnvelope, "terminal-failure")
         archiveTaskStateBestEffort(preparedEnvelope, "terminal-failure")
-        pauseRequested = false
+        pausedTaskIds.remove(preparedEnvelope.taskId)
+        gridPauseRequested = false
 
         trace(
             TraceEventType.DISTRIBUTION_GRID_FAILURE,
@@ -3847,7 +3951,7 @@ class DistributionGrid : P2PInterface
         checkpointReason: String
     ): MultimodalContent?
     {
-        if(!pauseRequested)
+        if(!gridPauseRequested && envelope.taskId !in pausedTaskIds)
         {
             return null
         }
@@ -3866,7 +3970,8 @@ class DistributionGrid : P2PInterface
         val checkpointSaved = checkpointTaskState(checkpointEnvelope, checkpointReason)
         if(!checkpointSaved)
         {
-            pauseRequested = false
+            pausedTaskIds.remove(envelope.taskId)
+            gridPauseRequested = false
             val cancellationNote = "Pause request was canceled because checkpoint '$checkpointReason' could not be saved."
             checkpointEnvelope.executionNotes.add(cancellationNote)
             if(checkpointEnvelope !== envelope)
@@ -3885,7 +3990,8 @@ class DistributionGrid : P2PInterface
             return null
         }
 
-        pauseRequested = false
+        pausedTaskIds.remove(envelope.taskId)
+        gridPauseRequested = false
         trace(
             TraceEventType.DISTRIBUTION_GRID_PAUSE,
             TracePhase.CLEANUP,
@@ -3944,7 +4050,7 @@ class DistributionGrid : P2PInterface
      */
     private fun resolveMemoryTruncationSettings(): TruncationSettings
     {
-        return TruncationSettings()
+        return memoryPolicy.truncationSettings
     }
 
     /**
@@ -4346,6 +4452,22 @@ class DistributionGrid : P2PInterface
             contextWindow = promptWindow,
             miniBank = miniBank
         )
+    }
+
+    /**
+     * Strip grid-internal attribute prefixes from inbound remote attributes before merging.
+     *
+     * @param attributes Remote envelope attributes to sanitize.
+     * @return Sanitized attribute map safe for local merge.
+     */
+    private fun sanitizeInboundAttributes(attributes: Map<String, String>): Map<String, String>
+    {
+        return attributes.filterKeys { key ->
+            !key.startsWith(RETRY_COUNT_ATTRIBUTE_PREFIX) &&
+            !key.startsWith(ALTERNATE_INDEX_ATTRIBUTE_PREFIX) &&
+            key != SINGLE_NODE_MODE_ATTRIBUTE &&
+            key != ALLOW_REMOTE_PCP_FORWARDING_ATTRIBUTE
+        }
     }
 
     /**
@@ -4887,6 +5009,7 @@ class DistributionGrid : P2PInterface
         directive: DistributionGridDirective
     ): DistributionGridResolvedPeerTarget?
     {
+        purgeExpiredDiscoveryState()
         val explicitAllowed = discoveryMode != DistributionGridPeerDiscoveryMode.REGISTRY_ONLY
         val registryAllowed = discoveryMode != DistributionGridPeerDiscoveryMode.EXPLICIT_ONLY
 
@@ -4958,11 +5081,10 @@ class DistributionGrid : P2PInterface
 
         discoveredNodeAdvertisementsById.entries
             .filter { it.key.nodeId == nodeId }
-            .forEach { (key, discoveredAdvertisement) ->
+            .forEach { (_, discoveredAdvertisement) ->
                 val registryId = discoveredAdvertisement.registryId
                 if(registryId.isBlank() || resolveRegistryAdvertisement(registryId) == null)
                 {
-                    discoveredNodeAdvertisementsById.remove(key)
                     return@forEach
                 }
 
@@ -4970,19 +5092,17 @@ class DistributionGrid : P2PInterface
                     ?: discoveredAdvertisement.expiresAtEpochMillis
                 if(leaseExpiry <= now || discoveredAdvertisement.expiresAtEpochMillis <= now)
                 {
-                    discoveredNodeAdvertisementsById.remove(key)
                     return@forEach
                 }
 
                 val resolvedNodeId = resolveDiscoveredNodeId(discoveredAdvertisement)
                 if(resolvedNodeId.isBlank())
                 {
-                    discoveredNodeAdvertisementsById.remove(key)
                     return@forEach
                 }
 
                 validCandidates.add(
-                    key to canonicalizeDiscoveredNodeAdvertisement(
+                    DistributionGridDiscoveredNodeKey(resolvedNodeId, registryId) to canonicalizeDiscoveredNodeAdvertisement(
                         candidate = discoveredAdvertisement,
                         resolvedNodeId = resolvedNodeId
                     )
@@ -5186,7 +5306,7 @@ class DistributionGrid : P2PInterface
             tracePolicy = envelope.tracePolicy.deepCopy(),
             credentialPolicy = envelope.credentialPolicy.deepCopy(),
             acceptedRoutingPolicy = envelope.routingPolicy.deepCopy(),
-            requestedSessionDurationSeconds = 3600
+            requestedSessionDurationSeconds = maxSessionDurationSeconds
         )
 
         trace(
@@ -5227,7 +5347,7 @@ class DistributionGrid : P2PInterface
             return DistributionGridPeerHandshakeOutcome(failure = outboundPolicyFailure)
         }
 
-        val response = P2PRegistry.externalP2PCall(handshakeRequestP2P)
+        val response = externalP2PCallWithTimeout(handshakeRequestP2P)
 
         if(response.rejection != null)
         {
@@ -5365,6 +5485,31 @@ class DistributionGrid : P2PInterface
     }
 
     /**
+     * Execute one outbound P2P call with the configured RPC timeout.
+     *
+     * @param request Outbound P2P request.
+     * @return P2P response or a transport rejection on timeout.
+     */
+    private suspend fun externalP2PCallWithTimeout(request: P2PRequest): P2PResponse
+    {
+        return try
+        {
+            kotlinx.coroutines.withTimeout(rpcTimeoutMillis) {
+                P2PRegistry.externalP2PCall(request)
+            }
+        }
+        catch(_: kotlinx.coroutines.TimeoutCancellationException)
+        {
+            P2PResponse(
+                rejection = P2PRejection(
+                    errorType = P2PError.transport,
+                    reason = "DistributionGrid RPC call timed out after ${rpcTimeoutMillis}ms."
+                )
+            )
+        }
+    }
+
+    /**
      * Send one grid RPC request to an explicit remote peer using the normal TPipe transport layer.
      *
      * @param descriptor Explicit peer descriptor.
@@ -5377,7 +5522,7 @@ class DistributionGrid : P2PInterface
     ): P2PResponse
     {
         val request = buildGridRpcRequest(descriptor, rpcMessage)
-        return P2PRegistry.externalP2PCall(request)
+        return externalP2PCallWithTimeout(request)
     }
 
     /**
@@ -5511,27 +5656,14 @@ class DistributionGrid : P2PInterface
     {
         val now = System.currentTimeMillis()
         val discoveredAdvertisement = discoveredRegistriesById[registryId]
-        if(discoveredAdvertisement != null)
+        if(discoveredAdvertisement != null && discoveredAdvertisement.expiresAtEpochMillis > now)
         {
-            if(discoveredAdvertisement.expiresAtEpochMillis <= now)
-            {
-                discoveredRegistriesById.remove(registryId)
-            }
-            else
-            {
-                return discoveredAdvertisement.deepCopy()
-            }
+            return discoveredAdvertisement.deepCopy()
         }
 
         val bootstrapAdvertisement = bootstrapRegistriesById[registryId]
-        if(bootstrapAdvertisement != null)
+        if(bootstrapAdvertisement != null && bootstrapAdvertisement.expiresAtEpochMillis > now)
         {
-            if(bootstrapAdvertisement.expiresAtEpochMillis <= now)
-            {
-                bootstrapRegistriesById.remove(registryId)
-                return null
-            }
-
             return bootstrapAdvertisement.deepCopy()
         }
 
@@ -5797,6 +5929,22 @@ class DistributionGrid : P2PInterface
         localRegisteredNodeAdvertisementsById.entries.removeIf { entry ->
             entry.value.lease?.leaseId in expiredLeaseIds
         }
+    }
+
+    /**
+     * Drop expired entries from discovered registries, discovered nodes, and bootstrap registries.
+     *
+     * Called at defined lifecycle points so read methods stay pure.
+     */
+    private fun purgeExpiredDiscoveryState()
+    {
+        val now = System.currentTimeMillis()
+        discoveredRegistriesById.entries.removeIf { it.value.expiresAtEpochMillis <= now }
+        discoveredNodeAdvertisementsById.entries.removeIf { (_, adv) ->
+            val leaseExpiry = adv.lease?.expiresAtEpochMillis ?: adv.expiresAtEpochMillis
+            leaseExpiry <= now || adv.expiresAtEpochMillis <= now
+        }
+        bootstrapRegistriesById.entries.removeIf { it.value.expiresAtEpochMillis <= now }
     }
 
     /**
@@ -6513,6 +6661,8 @@ class DistributionGrid : P2PInterface
         reason: String
     )
     {
+        sessionRecord.invalidated = true
+        sessionRecord.invalidationReason = reason
         sessionRecordsById.remove(sessionRecord.sessionId)
         val peerKeys = sessionRecordsByPeerKey
             .filterValues { it.sessionId == sessionRecord.sessionId }
@@ -6671,7 +6821,7 @@ class DistributionGrid : P2PInterface
             return null
         }
 
-        return requestedSeconds.coerceAtMost(3600)
+        return requestedSeconds.coerceAtMost(maxSessionDurationSeconds)
     }
 
     /**
@@ -6736,8 +6886,8 @@ class DistributionGrid : P2PInterface
                 ?: sessionRef
             currentNodeId = remoteNodeId
             currentTransport = remoteTransport.deepCopy()
-            attributes.putAll(remoteEnvelope.attributes.deepCopy())
-            executionNotes.addAll(remoteEnvelope.executionNotes.deepCopy())
+            attributes.putAll(sanitizeInboundAttributes(remoteEnvelope.attributes))
+            executionNotes.addAll(remoteEnvelope.executionNotes.takeLast(memoryPolicy.maxExecutionNotes))
             executionNotes.add("Explicit remote handoff returned from '$remoteNodeId'.")
         }
 
@@ -6750,7 +6900,7 @@ class DistributionGrid : P2PInterface
                 completedAt = completedAt
             )
         )
-        mergedEnvelope.hopHistory.addAll(remoteEnvelope.hopHistory.deepCopy())
+        mergedEnvelope.hopHistory.addAll(remoteEnvelope.hopHistory.takeLast(memoryPolicy.maxHopRecords))
 
         return mergedEnvelope
     }
@@ -6792,8 +6942,8 @@ class DistributionGrid : P2PInterface
                 ?: remoteEnvelope?.sessionRef?.deepCopy()
                 ?: sessionRef
             content = remoteEnvelope?.content?.deepCopy() ?: content.deepCopy()
-            attributes.putAll(remoteEnvelope?.attributes?.deepCopy().orEmpty())
-            executionNotes.addAll(remoteEnvelope?.executionNotes?.deepCopy().orEmpty())
+            attributes.putAll(sanitizeInboundAttributes(remoteEnvelope?.attributes.orEmpty()))
+            executionNotes.addAll(remoteEnvelope?.executionNotes?.takeLast(memoryPolicy.maxExecutionNotes).orEmpty())
             currentNodeId = remoteNodeId
             currentTransport = remoteTransport.deepCopy()
         }
@@ -6811,7 +6961,7 @@ class DistributionGrid : P2PInterface
 
         if(remoteEnvelope != null)
         {
-            mergedEnvelope.hopHistory.addAll(remoteEnvelope.hopHistory.deepCopy())
+            mergedEnvelope.hopHistory.addAll(remoteEnvelope.hopHistory.takeLast(memoryPolicy.maxHopRecords))
         }
 
         return mergedEnvelope
@@ -6836,7 +6986,7 @@ class DistributionGrid : P2PInterface
     ): DistributionGridHopRecord
     {
         return DistributionGridHopRecord(
-            sourceNodeId = envelope.senderNodeId.ifBlank { envelope.currentNodeId },
+            sourceNodeId = envelope.currentNodeId,
             destinationNodeId = peerDescriptor.distributionGridMetadata?.nodeId
                 ?: peerDescriptor.transport.transportAddress,
             transportMethod = peerDescriptor.transport.transportMethod,
@@ -6868,7 +7018,7 @@ class DistributionGrid : P2PInterface
     ): DistributionGridHopRecord
     {
         return DistributionGridHopRecord(
-            sourceNodeId = envelope.senderNodeId,
+            sourceNodeId = envelope.currentNodeId,
             destinationNodeId = envelope.currentNodeId,
             transportMethod = envelope.currentTransport.transportMethod,
             transportAddress = envelope.currentTransport.transportAddress,
@@ -7428,7 +7578,7 @@ class DistributionGrid : P2PInterface
         val metadata = mutableMapOf<String, Any>(
             "gridId" to gridId,
             "initialized" to initialized,
-            "paused" to pauseRequested,
+            "paused" to gridPauseRequested,
             "routerBound" to (routerBinding != null),
             "workerBound" to (workerBinding != null),
             "localPeerCount" to localPeerBindingsByKey.size,

@@ -258,8 +258,8 @@ class DistributionGridShellRegistrationTest
         grid.enableTracing(traceConfig)
 
         assertEquals(DistributionGridPeerDiscoveryMode.EXPLICIT_ONLY, grid.getDiscoveryMode())
-        assertSame(routingPolicy, grid.getRoutingPolicy())
-        assertSame(memoryPolicy, grid.getMemoryPolicy())
+        assertEquals(routingPolicy, grid.getRoutingPolicy())
+        assertEquals(memoryPolicy, grid.getMemoryPolicy())
         assertSame(durableStore, grid.getDurableStore())
         assertEquals(24, grid.getMaxHops())
         assertTrue(grid.isTracingEnabled())
