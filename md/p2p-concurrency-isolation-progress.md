@@ -37,13 +37,14 @@ Steering-set ownership:
 
 - `Phase 1: Generalize the Reflection Clone` — complete
 - `Phase 2: Class Annotation Audit` — complete
-- `Phase 3: Registry Concurrency Modes` — not started
+- `Phase 3: Registry Concurrency Modes` — complete
 - `Phase 4: Integration Tests` — not started
 - `Phase 5: Public Docs and DSL Updates` — not started
 
 ## Phase Evidence
 
 - `Phase 2`: All container classes annotated with `@RuntimeState` on runtime-transient fields. Pipeline (6 fields), Manifold (7), Junction (5), DistributionGrid (12), Connector (2), Splitter (7). Clean compile and all existing tests pass after annotation.
+- `Phase 3`: `P2PConcurrencyMode` enum added (SHARED/ISOLATED). `P2PAgentListing` extended with `concurrencyMode` and `factory` fields. Explicit `register()` accepts concurrency mode. Factory `register()` overload stores factory and sets ISOLATED. `executeP2pRequest` branches on mode: SHARED passes directly, ISOLATED clones or calls factory, child agents cleaned up in finally block. 4 focused tests pass (shared default, isolated independence, factory invocation, child cleanup).
 
 ## Plan At A Glance
 

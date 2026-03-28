@@ -17,6 +17,18 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 
 /**
+ * Concurrency mode for P2P agent registration. Controls whether inbound requests share one instance or get
+ * fresh isolated copies.
+ */
+enum class P2PConcurrencyMode
+{
+    /** Current default — one shared instance handles all requests. */
+    SHARED,
+    /** Each request gets a fresh clone or factory-built instance. */
+    ISOLATED
+}
+
+/**
  * Contains the critical contents of an agent listing. The agent descriptor which advertises agent capabilities.
  * The requirements of the agent, and the container which will be used to run the agent.
  *
@@ -30,7 +42,9 @@ import kotlinx.coroutines.sync.Mutex
 data class P2PAgentListing(
     var descriptor: P2PDescriptor,
     var requirements: P2PRequirements,
-    var container: P2PInterface
+    var container: P2PInterface,
+    var concurrencyMode: P2PConcurrencyMode = P2PConcurrencyMode.SHARED,
+    var factory: (suspend () -> P2PInterface)? = null
 )
 
 /**
@@ -119,8 +133,15 @@ object P2PRegistry
      * @param transport the transport path to the agent
      * @param descriptor the agent descriptor
      * @param requirements the agent requirements
+     * @param concurrencyMode SHARED routes all requests to this instance. ISOLATED clones it per request.
      */
-    fun register(agent: P2PInterface, transport: P2PTransport, descriptor: P2PDescriptor, requirements: P2PRequirements)
+    fun register(
+        agent: P2PInterface,
+        transport: P2PTransport,
+        descriptor: P2PDescriptor,
+        requirements: P2PRequirements,
+        concurrencyMode: P2PConcurrencyMode = P2PConcurrencyMode.SHARED
+    )
     {
         if(descriptor.requiresAuth && requirements.authMechanism == null && globalAuthMechanism == null)
         {
@@ -129,7 +150,41 @@ object P2PRegistry
             )
         }
 
-        Agents[transport] = P2PAgentListing(descriptor, requirements, agent)
+        Agents[transport] = P2PAgentListing(descriptor, requirements, agent, concurrencyMode)
+    }
+
+    /**
+     * Register a factory function that produces a fresh agent instance per inbound request.
+     *
+     * Factory mode implies ISOLATED concurrency — every request calls the factory, executes against the fresh
+     * instance, and discards it after completion.
+     *
+     * @param factory Suspend function that produces a fresh P2PInterface instance.
+     * @param transport the transport path for the agent
+     * @param descriptor the agent descriptor
+     * @param requirements the agent requirements
+     */
+    fun register(
+        factory: suspend () -> P2PInterface,
+        transport: P2PTransport,
+        descriptor: P2PDescriptor,
+        requirements: P2PRequirements
+    )
+    {
+        if(descriptor.requiresAuth && requirements.authMechanism == null && globalAuthMechanism == null)
+        {
+            throw IllegalArgumentException(
+                "Agent '${descriptor.agentName}' has requiresAuth=true but no authMechanism is configured and no globalAuthMechanism is set."
+            )
+        }
+
+        Agents[transport] = P2PAgentListing(
+            descriptor = descriptor,
+            requirements = requirements,
+            container = object : P2PInterface {},
+            concurrencyMode = P2PConcurrencyMode.ISOLATED,
+            factory = factory
+        )
     }
 
     /**
@@ -450,7 +505,40 @@ object P2PRegistry
 
         val result: Deferred<P2PResponse> = kotlinx.coroutines.coroutineScope {
             async {
-                agent.container.executeP2PRequest(request) ?: P2PResponse()
+                when(agent.concurrencyMode)
+                {
+                    P2PConcurrencyMode.SHARED ->
+                    {
+                        agent.container.executeP2PRequest(request) ?: P2PResponse()
+                    }
+
+                    P2PConcurrencyMode.ISOLATED ->
+                    {
+                        val freshInstance = if(agent.factory != null)
+                        {
+                            agent.factory!!.invoke()
+                        }
+                        else
+                        {
+                            cloneInstance(agent.container)
+                        }
+
+                        val preExistingKeys = Agents.keys.toSet()
+                        try
+                        {
+                            freshInstance.executeP2PRequest(request) ?: P2PResponse()
+                        }
+                        finally
+                        {
+                            //Clean up any child agents registered during the isolated execution.
+                            val addedKeys = Agents.keys.filter { it !in preExistingKeys }
+                            for(key in addedKeys)
+                            {
+                                Agents.remove(key)
+                            }
+                        }
+                    }
+                }
             }
         }
 

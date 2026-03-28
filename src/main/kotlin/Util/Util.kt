@@ -597,7 +597,9 @@ fun <T : Any> cloneInstance(template: T): T
 
     val newInstance = try
     {
-        kClass.java.getDeclaredConstructor().newInstance()
+        val constructor = kClass.java.getDeclaredConstructor()
+        constructor.isAccessible = true
+        constructor.newInstance()
     }
     catch(e: Exception)
     {
@@ -679,7 +681,8 @@ private fun cloneValue(value: Any): Any
         {
             try
             {
-                value::class.java.getDeclaredConstructor()
+                val constructor = value::class.java.getDeclaredConstructor()
+                constructor.isAccessible = true
                 cloneInstance(value)
             }
             catch(_: NoSuchMethodException)

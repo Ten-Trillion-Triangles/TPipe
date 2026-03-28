@@ -11,16 +11,16 @@ Use this file for the current task only. Move durable implementation truth into 
 
 ## Current Task
 
-- Task: Phase 3 — Registry Concurrency Modes (Task 8: Add P2PConcurrencyMode enum)
+- Task: Phase 4 — Integration Tests (Task 11: Concurrent execution tests)
 - Status: not started
-- Exact progress: Phase 1 and Phase 2 are complete. The clone function exists and all container classes are annotated. Next step is adding the concurrency mode enum and extending P2PAgentListing.
+- Exact progress: Phases 1-3 are complete. The clone function, annotations, and registry concurrency modes all work. Next step is writing integration tests that verify concurrency safety with real concurrent P2P requests.
 - Last updated: 2026-03-27
 - Files in scope:
-  - `src/main/kotlin/P2P/P2PRegistry.kt`
-- Last completed step: Annotated all runtime state fields across Pipeline, Manifold, Junction, DistributionGrid, Connector, Splitter. Clean compile and all existing tests pass.
+  - `src/test/kotlin/P2P/P2PConcurrencyModeTest.kt` (extend or new file)
+- Last completed step: Implemented clone-per-request and factory-per-request in executeP2pRequest. All 4 concurrency mode tests pass. Full affected suite green.
 - Current blocker: none
-- Next atomic step: Add `P2PConcurrencyMode` enum and `factory` field to `P2PAgentListing`. Then add concurrency mode parameter to explicit `register()` and factory `register()` overload. Then implement clone-per-request in `executeP2pRequest`.
-- Verification target: ISOLATED mode clones per request, factory mode calls factory per request, SHARED mode unchanged.
+- Next atomic step: Write concurrent execution tests — send N parallel requests to an ISOLATED agent and verify no cross-request state leakage.
+- Verification target: Concurrent P2P requests to ISOLATED containers produce independent results.
 
 ## Milestones
 
@@ -31,6 +31,9 @@ Use this file for the current task only. Move durable implementation truth into 
 - [x] Annotate Junction runtime state fields + test
 - [x] Annotate DistributionGrid runtime state fields + test
 - [x] Annotate Connector, MultiConnector, Splitter runtime state fields + test
+- [x] Add `P2PConcurrencyMode` enum and update `P2PAgentListing`
+- [x] Add concurrency mode to `register()` + factory overload
+- [x] Implement clone-per-request and factory-per-request in `executeP2pRequest`
 - [ ] Add `P2PConcurrencyMode` enum and update `P2PAgentListing`
 - [ ] Add concurrency mode to `register()` + factory overload
 - [ ] Implement clone-per-request and factory-per-request in `executeP2pRequest`
@@ -62,6 +65,7 @@ Use this file for the current task only. Move durable implementation truth into 
 - 2026-03-27: Created the P2P concurrency isolation steering doc (`md/p2p-concurrency-isolation-design.md`).
 - 2026-03-27: Created `@RuntimeState` annotation in `src/main/kotlin/Util/RuntimeState.kt`.
 - 2026-03-27: Completed Phase 2 — annotated all runtime state fields across Pipeline (6), Manifold (7), Junction (5), DistributionGrid (12), Connector (2), Splitter (7). Clean compile and all existing tests pass.
+- 2026-03-27: Completed Phase 3 — added P2PConcurrencyMode enum (SHARED/ISOLATED), extended P2PAgentListing, added concurrencyMode param to register(), added factory register() overload, implemented clone-per-request and factory-per-request in executeP2pRequest with child agent cleanup. Fixed cloneInstance to set constructor accessible for private classes. All 4 new concurrency mode tests pass. Full affected suite green.
 
 ## Sync Rules
 
