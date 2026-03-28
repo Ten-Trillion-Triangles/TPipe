@@ -1,7 +1,7 @@
 # DistributionGrid Plan
 
 Date: 2026-03-25
-Last Updated: 2026-03-27
+Last Updated: 2026-03-28
 
 ## Purpose
 
@@ -11,21 +11,21 @@ Use this file for the current task only. Move durable implementation truth into 
 
 ## Current Task
 
-- Task: Phase 8 DSL, docs, and final coverage pass.
+- Task: Post-Phase-8 provider-defaults extension for the DistributionGrid DSL.
 - Status: complete
-- Exact progress: Phase 8 is complete; the full-node Kotlin DSL, broad public-doc sync, and final DistributionGrid DSL coverage are now landed and verified.
+- Exact progress: The additive `TPipe-Defaults` integration is now landed for `DistributionGrid`, including provider-backed Bedrock/Ollama defaults, raw defaults factories, focused defaults tests, and public-doc sync.
 - Last updated: 2026-03-28
 - Files in scope:
-  - `src/main/kotlin/Pipeline/DistributionGridDsl.kt`
-  - `src/main/kotlin/Pipeline/DistributionGrid.kt`
-  - `src/test/kotlin/Pipeline/DistributionGridDslTest.kt`
-  - `src/test/kotlin/Pipeline/DistributionGridHardeningTest.kt`
+  - `TPipe-Defaults/src/main/kotlin/Defaults/DistributionGridDefaults.kt`
+  - `TPipe-Defaults/src/main/kotlin/Defaults/DistributionGridDslDefaults.kt`
+  - `TPipe-Defaults/src/main/kotlin/Defaults/ProviderConfiguration.kt`
+  - `TPipe-Defaults/src/test/kotlin/Defaults/DistributionGridDslDefaultsTest.kt`
   - `md/distributiongrid-progress.md`
   - `docs/containers/distributiongrid.md`
-- Last completed step: landed the full-node DSL, synced the public docs to Phase 8 truth, and reran the focused DSL plus broader `DistributionGrid` test sweeps successfully.
+- Last completed step: landed the additive provider-defaults bridge, reran `TPipe-Defaults` and broader `DistributionGrid*` verification, and synced the public/defaults docs.
 - Current blocker: none
-- Next atomic step: hold the shipped runtime stable and treat future defaults/provider integration as an additive extension layer.
-- Verification target: raw API, DSL assembly, discovery/hardening behavior, and public docs all describe the same shipped runtime.
+- Next atomic step: hold the shipped runtime and defaults extension stable, and keep future ergonomic work additive.
+- Verification target: raw defaults factories, DSL defaults bridge, core grid runtime, and public docs all describe the same additive provider-defaults surface.
 
 ## Milestones
 
@@ -61,6 +61,7 @@ Use this file for the current task only. Move durable implementation truth into 
 - 2026-03-27: Started a Phase 7 repair pass to fix terminal pause cleanup, retry-hop accounting, and configured summary-budget enforcement regressions identified in review.
 - 2026-03-27: Completed the Phase 7 follow-up repair pass by fixing the credential-identity gate, preserving auth lookup parity with the P2P path, and making after-peer-response pause checkpoints resumable instead of terminal.
 - 2026-03-28: Completed Phase 8 by landing `DistributionGridDsl.kt`, broad public-doc sync, small raw-API ergonomics readbacks for operations, and focused `DistributionGridDslTest` coverage.
+- 2026-03-28: Landed the additive `TPipe-Defaults` `DistributionGrid` bridge with Bedrock/Ollama defaults, raw defaults factories, focused defaults tests, and public-doc sync.
 
 ## Sync Rules
 

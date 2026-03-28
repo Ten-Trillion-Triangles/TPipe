@@ -15,7 +15,7 @@ Steering-set ownership:
 
 ## Current Status
 
-- `DistributionGrid` is now a Phase 8-shipped harness with runtime-complete Phase 7 behavior plus the Phase 8 Kotlin DSL, public-doc sync, and final coverage.
+- `DistributionGrid` is now a Phase 8-shipped harness with runtime-complete Phase 7 behavior plus the Phase 8 Kotlin DSL, public-doc sync, final coverage, and the additive `TPipe-Defaults` provider-defaults bridge.
 - The old stub-era `setEntryPipeline()` surface and legacy task or judgement placeholder runtime are no longer the active implementation shape.
 - The contract layer from Phase 1 is in place:
   - `DistributionGridModels.kt`
@@ -94,6 +94,11 @@ Steering-set ownership:
   - `DistributionGrid` now exposes `getRpcTimeout()` and `getMaxSessionDuration()` readbacks so DSL and docs can describe the operational shell without reflection
   - public docs now describe the shipped Phase 7 runtime and Phase 8 DSL instead of the earlier Phase 5/6 rollout point
   - focused `DistributionGridDslTest.kt` coverage now verifies DSL startup, invalid-layout rejection, synchronous/asynchronous builder parity, and raw-vs-DSL execution parity
+- The additive defaults/provider layer is now in place:
+  - `TPipe-Defaults` now exposes `DistributionGridDefaults.withBedrock(...)` and `DistributionGridDefaults.withOllama(...)`
+  - `DistributionGridDsl` now gains `defaults { bedrock(...) }` / `defaults { ollama(...) }` when `TPipe-Defaults` is present on the classpath
+  - grid-specific provider config types now exist so router/worker defaults and optional node-level policy seeds do not overload the manifold config model
+  - focused `DistributionGridDslDefaultsTest.kt` coverage now verifies provider-backed role seeding, optional policy seeding, fail-fast conflicts, and raw-vs-DSL parity
 - The steering-doc set now contains the approved full node-based architecture specification for the future runtime.
 - The implementation order has now been codified into explicit phases so runtime work can proceed without crossing phase boundaries accidentally.
 
@@ -272,6 +277,11 @@ Steering-set ownership:
 - Ran `./gradlew --no-daemon -Dkotlin.compiler.execution.strategy=in-process -Dkotlin.daemon.jvmargs=-Xmx6g clean compileKotlin compileTestKotlin`.
 - Ran `./gradlew --no-daemon -Dkotlin.compiler.execution.strategy=in-process -Dkotlin.daemon.jvmargs=-Xmx6g test --tests "com.TTT.Pipeline.DistributionGridHardeningTest" -x :TPipe-Bedrock:test -x :TPipe-Defaults:test -x :TPipe-MCP:test -x :TPipe-Ollama:test -x :TPipe-TraceServer:test -x :TPipe-Tuner:test`.
 - Ran `./gradlew --no-daemon -Dkotlin.compiler.execution.strategy=in-process -Dkotlin.daemon.jvmargs=-Xmx6g test --tests "com.TTT.Pipeline.DistributionGrid*" -x :TPipe-Bedrock:test -x :TPipe-Defaults:test -x :TPipe-MCP:test -x :TPipe-Ollama:test -x :TPipe-TraceServer:test -x :TPipe-Tuner:test`.
+- Reviewed `TPipe-Defaults/src/main/kotlin/Defaults/ManifoldDslDefaults.kt`, `TPipe-Defaults/src/main/kotlin/Defaults/ProviderConfiguration.kt`, `src/main/kotlin/Pipeline/DistributionGridDsl.kt`, and `docs/api/tpipe-defaults-package.md` before landing the additive grid-defaults bridge.
+- Ran `./gradlew --no-daemon -Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.compiler.execution.strategy=in-process -Dkotlin.daemon.jvmargs=-Xmx16g clean compileKotlin compileTestKotlin`.
+- Ran `./gradlew --no-daemon -Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.compiler.execution.strategy=in-process -Dkotlin.daemon.jvmargs=-Xmx16g :TPipe-Defaults:test --tests "*DistributionGridDslDefaultsTest*"`.
+- Ran `./gradlew --no-daemon -Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.compiler.execution.strategy=in-process -Dkotlin.daemon.jvmargs=-Xmx16g :TPipe-Defaults:test`.
+- Ran `./gradlew --no-daemon -Dorg.gradle.jvmargs=-Xmx8g -Dkotlin.compiler.execution.strategy=in-process -Dkotlin.daemon.jvmargs=-Xmx16g test --tests "com.TTT.Pipeline.DistributionGrid*" -x :TPipe-Bedrock:test -x :TPipe-Defaults:test -x :TPipe-MCP:test -x :TPipe-Ollama:test -x :TPipe-TraceServer:test -x :TPipe-Tuner:test`.
 
 Commands used during the architecture pass:
 

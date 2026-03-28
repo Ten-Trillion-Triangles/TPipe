@@ -37,13 +37,13 @@ This page describes current shipped behavior only. The evolving full runtime spe
 - registry-capable nodes can now serve mixed-role or dedicated registry RPC behavior for probe, register, renew, and query flows
 - the shell now supports outbound memory shaping, privacy/auth/PCP mediation, durable checkpoints, `resumeTask(taskId)`, retry/alternate-peer runtime behavior, and trace export/failure-analysis helpers
 - the Kotlin DSL now supports full-node assembly through `distributionGrid { ... }`, including router/worker binding, discovery, policies, tracing, hooks, and operational tuning
+- `TPipe-Defaults` now provides an additive `defaults { bedrock(...) }` / `defaults { ollama(...) }` bridge for the grid DSL plus matching raw defaults factories
 - public docs and tests now reflect the shipped runtime rather than the earlier Phase 5/6 rollout point
 
 ## What Is Still Missing
 
 The following work is intentionally deferred:
 
-- a built-in `TPipe-Defaults` provider block for the grid DSL
 - any new runtime semantics beyond the shipped Phase 7 behavior
 - future convenience or provider integrations that would extend the DSL without changing the core runtime
 
@@ -197,6 +197,29 @@ The `distributionGrid { }` builder supports these top-level blocks:
 | `hooks { }` | No | Configures orchestration hooks |
 | `operations { }` | No | Configures max hops, RPC timeout, and session-duration caps |
 
+### Defaults Extension
+
+When `TPipe-Defaults` is on the classpath, the grid DSL also supports a provider-backed defaults bridge:
+
+```kotlin
+import Defaults.BedrockGridConfiguration
+import Defaults.defaults
+import com.TTT.Pipeline.distributionGrid
+
+val grid = distributionGrid {
+    defaults {
+        bedrock(
+            BedrockGridConfiguration(
+                region = "us-east-1",
+                model = "anthropic.claude-3-haiku-20240307-v1:0"
+            )
+        )
+    }
+}
+```
+
+That extension seeds a provider-backed router and worker for the node and may also seed optional node-level policy blocks when the defaults configuration explicitly provides them. The extension lives in `TPipe-Defaults`; core `DistributionGrid` remains provider-agnostic.
+
 ### Build modes
 
 - `distributionGrid { ... }` uses `build()` and returns an initialized grid
@@ -256,7 +279,7 @@ The current shipped slice has focused coverage through:
 If you are continuing `DistributionGrid` implementation, follow the internal phased rollout rather than adding features ad hoc:
 
 1. Phase 8 is now the shipped ergonomics/docs layer; keep Phase 5 through Phase 7 runtime semantics stable unless a targeted repair is required
-2. future work should treat provider-defaults integration and other convenience layers as additive extensions rather than runtime redesign
+2. future work should treat additional convenience layers as additive extensions rather than runtime redesign
 3. route any new runtime-semantics ideas back through the steering docs before coding
 
 ## P2P Concurrency

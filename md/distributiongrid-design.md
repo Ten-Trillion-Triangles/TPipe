@@ -11,7 +11,7 @@ Use this file for stable architecture and interface decisions. Use [`md/distribu
 
 ## Current Implementation Boundary
 
-`DistributionGrid` is no longer a pure stub in the current working tree, and it now includes the shipped Phase 7 runtime plus the Phase 8 Kotlin DSL and public-doc layer.
+`DistributionGrid` is no longer a pure stub in the current working tree, and it now includes the shipped Phase 7 runtime, the Phase 8 Kotlin DSL and public-doc layer, plus the additive `TPipe-Defaults` provider-defaults bridge.
 
 Verified shipped behavior:
 
@@ -46,12 +46,12 @@ Verified shipped behavior:
 - discovered nodes can now feed the existing remote handoff runtime when discovery mode allows it
 - outbound memory shaping, durable checkpoints, pause or resume behavior, trace export, failure analysis, retry or alternate-peer routing, and policy mediation are now shipped
 - `DistributionGridDsl.kt` now exists and provides the shipped full-node Kotlin builder surface
+- `TPipe-Defaults` now exposes additive provider-backed Bedrock/Ollama defaults for `DistributionGrid` through both raw defaults factories and DSL extensions
 - the public container docs now reflect the shipped runtime and DSL surface
 - focused tests exist for contract models, shell registration semantics, validation/lifecycle behavior, local execution behavior, and explicit remote handoff behavior
 
 Verified missing behavior:
 
-- no built-in provider-defaults block in core for the grid DSL
 - no new runtime semantics beyond the shipped Phase 7 hardening model
 
 This file records the intended architecture. It must not imply that the runtime below already exists.

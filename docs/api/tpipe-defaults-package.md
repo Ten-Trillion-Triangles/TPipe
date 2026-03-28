@@ -440,6 +440,56 @@ The applied settings include:
 - `enableManagerBudgetControl` → `autoTruncate()`
 - `managerTokenBudget` → `managerTokenBudget(...)`
 
+---
+
+## DistributionGrid DSL Integration
+
+TPipe-Defaults also provides extension functions that bridge provider defaults into the [DistributionGrid DSL](../containers/distributiongrid.md#dsl-builder). This lets you use `defaults { bedrock(...) }` or `defaults { ollama(...) }` inside a `distributionGrid { }` block to configure a provider-backed router and worker without embedding provider logic into core `DistributionGrid`.
+
+### `DistributionGridDsl.defaults(block)`
+
+Entry point for defaults-backed configuration inside the grid DSL.
+
+```kotlin
+import Defaults.BedrockGridConfiguration
+import Defaults.defaults
+import com.TTT.Pipeline.distributionGrid
+
+val grid = distributionGrid {
+    defaults {
+        bedrock(
+            BedrockGridConfiguration(
+                region = "us-east-1",
+                model = "anthropic.claude-3-haiku-20240307-v1:0"
+            )
+        )
+    }
+}
+```
+
+**Behavior:** The `defaults` block creates a `DefaultsDistributionGridDsl` receiver that exposes `bedrock(...)` and `ollama(...)` methods. Each method:
+
+1. Validates the provider configuration
+2. Builds a provider-backed default router pipeline via `DistributionGridDefaults.buildDefaultRouterPipeline(...)`
+3. Builds a provider-backed default worker pipeline via `DistributionGridDefaults.buildDefaultWorkerPipeline(...)`
+4. Seeds the root `DistributionGridDsl` with those required roles
+5. Applies any explicitly supplied optional node-level defaults such as P2P identity, routing policy, memory policy, tracing, discovery, durability, or operational limits
+
+Conflict behavior:
+
+- defaults always own the router and worker roles
+- if the caller already configured a conflicting singleton concern, the DSL fails fast instead of silently overriding it
+- non-conflicting additive concerns like `peer(...)` and `peerDescriptor(...)` remain available
+
+### `DistributionGridDefaults`
+
+TPipe-Defaults also exposes raw defaults factories for non-DSL callers:
+
+- `DistributionGridDefaults.withBedrock(...)`
+- `DistributionGridDefaults.withOllama(...)`
+
+These factories use the same defaults-seeding path as the DSL bridge so the raw and DSL behaviors stay aligned.
+
 ## Key Behaviors
 
 ### Provider Abstraction
