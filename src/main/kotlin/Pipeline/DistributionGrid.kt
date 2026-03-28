@@ -1445,6 +1445,26 @@ class DistributionGrid : P2PInterface
     }
 
     /**
+     * Read the configured RPC timeout applied to outbound grid calls.
+     *
+     * @return Stored RPC timeout in milliseconds.
+     */
+    fun getRpcTimeout(): Long
+    {
+        return rpcTimeoutMillis
+    }
+
+    /**
+     * Read the configured session-duration cap used during handshake negotiation.
+     *
+     * @return Stored maximum session duration in seconds.
+     */
+    fun getMaxSessionDuration(): Int
+    {
+        return maxSessionDurationSeconds
+    }
+
+    /**
      * Check whether shell-level tracing is currently enabled.
      *
      * @return `true` when tracing has been enabled on the shell.

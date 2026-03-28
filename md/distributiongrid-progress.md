@@ -1,7 +1,7 @@
 # DistributionGrid Progress
 
 Date: 2026-03-25
-Last Updated: 2026-03-27
+Last Updated: 2026-03-28
 
 ## Overview
 
@@ -15,7 +15,7 @@ Steering-set ownership:
 
 ## Current Status
 
-- `DistributionGrid` is now a registry-aware, Phase 6 harness as of 2026-03-26.
+- `DistributionGrid` is now a Phase 8-shipped harness with runtime-complete Phase 7 behavior plus the Phase 8 Kotlin DSL, public-doc sync, and final coverage.
 - The old stub-era `setEntryPipeline()` surface and legacy task or judgement placeholder runtime are no longer the active implementation shape.
 - The contract layer from Phase 1 is in place:
   - `DistributionGridModels.kt`
@@ -88,6 +88,12 @@ Steering-set ownership:
   - per-hop credential refs are resolved through the peer's canonical node identity, with auth lookup parity for the same identity sources the P2P layer uses
   - paused after-peer-response checkpoints now remain resumable and no longer short-circuit resume into a raw terminal snapshot
   - the focused hardening suite and the broader `DistributionGrid*` sweep both passed after the fix
+- The Phase 8 ergonomics and documentation layer is now in place:
+  - `DistributionGridDsl.kt` now provides a full-node Kotlin DSL with `build()` and `buildSuspend()`
+  - the DSL wires router, worker, peers, discovery, routing, memory, durability, tracing, hooks, and operational knobs through the existing public shell API
+  - `DistributionGrid` now exposes `getRpcTimeout()` and `getMaxSessionDuration()` readbacks so DSL and docs can describe the operational shell without reflection
+  - public docs now describe the shipped Phase 7 runtime and Phase 8 DSL instead of the earlier Phase 5/6 rollout point
+  - focused `DistributionGridDslTest.kt` coverage now verifies DSL startup, invalid-layout rejection, synchronous/asynchronous builder parity, and raw-vs-DSL execution parity
 - The steering-doc set now contains the approved full node-based architecture specification for the future runtime.
 - The implementation order has now been codified into explicit phases so runtime work can proceed without crossing phase boundaries accidentally.
 
@@ -101,7 +107,7 @@ Steering-set ownership:
 - `Phase 5: Explicit Remote Peer Handoff` — complete
 - `Phase 6: Registry Discovery And Membership` — complete
 - `Phase 7: Cross-Cutting Runtime Hardening` — complete
-- `Phase 8: DSL, Defaults, Public Docs, And Final Coverage` — not started
+- `Phase 8: DSL, Defaults, Public Docs, And Final Coverage` — complete
 
 ## Phase Evidence
 
@@ -120,6 +126,7 @@ Steering-set ownership:
 - `Phase 7`: `DistributionGrid` now honors `RETRY_SAME_PEER` and `TRY_ALTERNATE_PEER` through the existing directive model while keeping hop, session, and policy validation in force.
 - `Phase 7`: `DistributionGrid` now reuses the clean pre-failure task snapshot for retry and alternate-peer redispatch, and its outbound PCP gate only treats real PCP forwarding payloads as disallowed on non-stdio peers.
 - `Phase 7`: `DistributionGrid` now clears the transient pause request on terminal exits, preserves hop history during retry redispatch, and reserves summary-budget explicitly when shaping outbound memory.
+- `Phase 8`: `DistributionGrid` now exposes a full-node Kotlin DSL with synchronous and asynchronous builders, broad public-doc sync, and focused DSL parity coverage without changing the shipped runtime semantics.
 
 ## Plan At A Glance
 
@@ -131,7 +138,7 @@ Steering-set ownership:
 - [x] Phase 5: Explicit Remote Peer Handoff
 - [x] Phase 6: Registry Discovery And Membership
 - [x] Phase 7: Cross-Cutting Runtime Hardening
-- [ ] Phase 8: DSL, Defaults, Public Docs, And Final Coverage
+- [x] Phase 8: DSL, Defaults, Public Docs, And Final Coverage
 
 ## Completed Work
 

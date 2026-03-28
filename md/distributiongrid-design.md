@@ -1,7 +1,7 @@
 # DistributionGrid Design
 
 Date: 2026-03-25
-Last Updated: 2026-03-26
+Last Updated: 2026-03-28
 
 ## Purpose
 
@@ -11,7 +11,7 @@ Use this file for stable architecture and interface decisions. Use [`md/distribu
 
 ## Current Implementation Boundary
 
-`DistributionGrid` is no longer a pure stub in the current working tree, and it now includes the Phase 6 registry discovery and membership slice.
+`DistributionGrid` is no longer a pure stub in the current working tree, and it now includes the shipped Phase 7 runtime plus the Phase 8 Kotlin DSL and public-doc layer.
 
 Verified shipped behavior:
 
@@ -44,15 +44,15 @@ Verified shipped behavior:
 - registry RPC now supports probe, register, renew, and structured query behavior
 - lease-based registry membership now updates local node metadata and explicit discovered-node caches
 - discovered nodes can now feed the existing remote handoff runtime when discovery mode allows it
+- outbound memory shaping, durable checkpoints, pause or resume behavior, trace export, failure analysis, retry or alternate-peer routing, and policy mediation are now shipped
+- `DistributionGridDsl.kt` now exists and provides the shipped full-node Kotlin builder surface
+- the public container docs now reflect the shipped runtime and DSL surface
 - focused tests exist for contract models, shell registration semantics, validation/lifecycle behavior, local execution behavior, and explicit remote handoff behavior
 
 Verified missing behavior:
 
-- no node router implementation
-- no node worker implementation
-- no runtime durability behavior
-- no runtime memory-policy behavior
-- no outbound-memory hook invocation or memory-envelope shaping
+- no built-in provider-defaults block in core for the grid DSL
+- no new runtime semantics beyond the shipped Phase 7 hardening model
 
 This file records the intended architecture. It must not imply that the runtime below already exists.
 

@@ -74,7 +74,7 @@ fun enableTracing(config: TraceConfig = TraceConfig()) {
 
 ### Orchestration Containers
 - **Manifold**: Manager-worker task coordination
-- **DistributionGrid**: Decentralized remote grid harness (Phase 5 explicit remote peer handoff)
+- **DistributionGrid**: Decentralized remote grid harness with local execution, explicit-peer handoff, trusted registry discovery, runtime hardening, and a Kotlin DSL
 - **Junction**: Democratic discussion, voting, and workflow harness
 
 ## When to Use Containers
@@ -98,7 +98,7 @@ fun enableTracing(config: TraceConfig = TraceConfig()) {
 | MultiConnector | ✅ Complete | ✅ Yes | ❌ No |
 | Splitter | ✅ Complete | ✅ Yes | ✅ Yes |
 | Manifold | ✅ Complete | ✅ Yes | ✅ Yes |
-| DistributionGrid | ⚠️ Phase 5 explicit remote peer handoff | ✅ Yes | ⚠️ Partial |
+| DistributionGrid | ✅ Phase 8 shipped | ✅ Yes | ✅ Yes |
 | Junction | ✅ Complete | ✅ Yes | ✅ Yes |
 
 ## Example: Basic Container Pattern

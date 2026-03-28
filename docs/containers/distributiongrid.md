@@ -8,7 +8,7 @@ This page describes current shipped behavior only. The evolving full runtime spe
 
 ## Current Implementation Status
 
-`DistributionGrid` is currently implemented through Phase 6 of its rollout:
+`DistributionGrid` is now implemented through Phase 8 of its rollout:
 
 - the contract-model layer exists for runtime, memory, durability, and protocol vocabulary
 - the `DistributionGrid` class now provides the validated node shell used by the local and explicit-peer remote runtime
@@ -35,20 +35,21 @@ This page describes current shipped behavior only. The evolving full runtime spe
 - the shell now supports bootstrap registry configuration, trusted registry probing, explicit lease registration and renewal, and structured registry queries
 - discovered node advertisements are now verified and cached before they are used for remote handoff
 - registry-capable nodes can now serve mixed-role or dedicated registry RPC behavior for probe, register, renew, and query flows
+- the shell now supports outbound memory shaping, privacy/auth/PCP mediation, durable checkpoints, `resumeTask(taskId)`, retry/alternate-peer runtime behavior, and trace export/failure-analysis helpers
+- the Kotlin DSL now supports full-node assembly through `distributionGrid { ... }`, including router/worker binding, discovery, policies, tracing, hooks, and operational tuning
+- public docs and tests now reflect the shipped runtime rather than the earlier Phase 5/6 rollout point
 
 ## What Is Still Missing
 
-The following areas remain unimplemented:
+The following work is intentionally deferred:
 
-- trace report and failure-analysis behavior
-- runtime durability behavior
-- memory-policy enforcement
-- outbound memory shaping and outbound-memory hook invocation
-- privacy, auth, and PCP mediation
+- a built-in `TPipe-Defaults` provider block for the grid DSL
+- any new runtime semantics beyond the shipped Phase 7 behavior
+- future convenience or provider integrations that would extend the DSL without changing the core runtime
 
 ## Current Shell Surface
 
-The Phase 6 shell now includes configuration, validation, lifecycle methods, a local execution path, explicit-peer remote handoff, and registry discovery or membership behavior.
+The Phase 8 shell now includes configuration, validation, lifecycle methods, local execution, explicit-peer remote handoff, registry discovery or membership, hardening behavior, and a Kotlin DSL.
 
 ### Grid-level P2P identity
 
@@ -81,6 +82,8 @@ The Phase 6 shell now includes configuration, validation, lifecycle methods, a l
 - `setTrustVerifier(...)`
 - `getTrustVerifier()`
 - `setMaxHops(...)`
+- `setRpcTimeout(...)`
+- `setMaxSessionDuration(...)`
 - `enableTracing(...)`
 - `disableTracing()`
 
@@ -93,6 +96,7 @@ The Phase 6 shell now includes configuration, validation, lifecycle methods, a l
 - `canPause()`
 - `clearRuntimeState()`
 - `clearTrace()`
+- `resumeTask(...)`
 
 ### Local execution and hooks
 
@@ -131,7 +135,73 @@ The Phase 6 shell now includes configuration, validation, lifecycle methods, a l
 - `getMemoryPolicy()`
 - `getDurableStore()`
 - `getMaxHops()`
+- `getRpcTimeout()`
+- `getMaxSessionDuration()`
 - `isTracingEnabled()`
+- `getTraceReport(...)`
+- `getFailureAnalysis()`
+
+## DSL Builder
+
+If you want the grid assembled, validated, and initialized in one place, prefer the Kotlin DSL:
+
+```kotlin
+import com.TTT.Pipeline.distributionGrid
+
+val grid = distributionGrid {
+    p2p {
+        agentName("research-grid-node")
+        transportAddress("research-grid-node")
+        transportMethod(Transport.Tpipe)
+    }
+
+    router(routerPipeline)
+    worker(workerPipeline)
+
+    routing {
+        allowRetrySamePeer(true)
+        maxRetryCount(1)
+        maxHopCount(8)
+    }
+
+    memory {
+        outboundTokenBudget(4096)
+        summaryBudget(512)
+    }
+
+    tracing {
+        enabled()
+    }
+}
+```
+
+The DSL returns an initialized grid by default. Use `DistributionGridDsl.buildSuspend()` when you need coroutine-safe startup.
+
+### DSL blocks
+
+The `distributionGrid { }` builder supports these top-level blocks:
+
+| Block | Required | Description |
+|-------|----------|-------------|
+| `p2p { }` | No | Configures the outward grid-node descriptor, transport, requirements, and container object |
+| `security { }` | No | Configures outward auth/privacy-related descriptor and requirement hints |
+| `router { }` or `router(...)` | Yes | Binds the local router role |
+| `worker { }` or `worker(...)` | Yes | Binds the local worker role |
+| `peer(...)` | No | Attaches a local peer binding |
+| `peerDescriptor(...)` | No | Registers an external peer descriptor |
+| `discovery { }` | No | Configures discovery mode, bootstrap registries, registry metadata, and trust verifier |
+| `routing { }` | No | Stores routing policy settings |
+| `memory { }` | No | Stores memory-policy settings |
+| `durability { }` | No | Binds a durable store |
+| `tracing { }` | No | Enables or disables tracing |
+| `hooks { }` | No | Configures orchestration hooks |
+| `operations { }` | No | Configures max hops, RPC timeout, and session-duration caps |
+
+### Build modes
+
+- `distributionGrid { ... }` uses `build()` and returns an initialized grid
+- `DistributionGridDsl.build()` initializes synchronously with `runBlocking`
+- `DistributionGridDsl.buildSuspend()` initializes asynchronously without blocking the caller
 
 ## Runtime Contract Files
 
@@ -179,13 +249,14 @@ The current shipped slice has focused coverage through:
 - `DistributionGridRemoteHandoffTest`
 - `DistributionGridRegistryDiscoveryTest`
 - `DistributionGridHardeningTest`
+- `DistributionGridDslTest`
 
 ## Contributing
 
 If you are continuing `DistributionGrid` implementation, follow the internal phased rollout rather than adding features ad hoc:
 
-1. Phase 8: DSL, defaults, public-doc sync, and final coverage cleanup
-2. keep Phase 5 through Phase 7 runtime semantics stable unless a targeted repair is required
+1. Phase 8 is now the shipped ergonomics/docs layer; keep Phase 5 through Phase 7 runtime semantics stable unless a targeted repair is required
+2. future work should treat provider-defaults integration and other convenience layers as additive extensions rather than runtime redesign
 3. route any new runtime-semantics ideas back through the steering docs before coding
 
 ## P2P Concurrency

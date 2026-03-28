@@ -11,19 +11,21 @@ Use this file for the current task only. Move durable implementation truth into 
 
 ## Current Task
 
-- Task: Phase 7 follow-up repair pass.
+- Task: Phase 8 DSL, docs, and final coverage pass.
 - Status: complete
-- Exact progress: Phase 7 follow-up repairs are complete; the remaining review items were credential-identity enforcement and resumable after-peer-response checkpoints, and both are now fixed and verified.
-- Last updated: 2026-03-27
+- Exact progress: Phase 8 is complete; the full-node Kotlin DSL, broad public-doc sync, and final DistributionGrid DSL coverage are now landed and verified.
+- Last updated: 2026-03-28
 - Files in scope:
+  - `src/main/kotlin/Pipeline/DistributionGridDsl.kt`
   - `src/main/kotlin/Pipeline/DistributionGrid.kt`
+  - `src/test/kotlin/Pipeline/DistributionGridDslTest.kt`
   - `src/test/kotlin/Pipeline/DistributionGridHardeningTest.kt`
   - `md/distributiongrid-progress.md`
   - `docs/containers/distributiongrid.md`
-- Last completed step: fixed the credential-auth gate and resumable after-peer-response pause checkpoint, then reran the focused and broader `DistributionGrid` test sweeps successfully.
+- Last completed step: landed the full-node DSL, synced the public docs to Phase 8 truth, and reran the focused DSL plus broader `DistributionGrid` test sweeps successfully.
 - Current blocker: none
-- Next atomic step: move into Phase 8 planning and UI/doc finalization work.
-- Verification target: Phase 7 hardening behavior remains green after the repair pass and the codebase is ready for Phase 8 prep.
+- Next atomic step: hold the shipped runtime stable and treat future defaults/provider integration as an additive extension layer.
+- Verification target: raw API, DSL assembly, discovery/hardening behavior, and public docs all describe the same shipped runtime.
 
 ## Milestones
 
@@ -35,10 +37,10 @@ Use this file for the current task only. Move durable implementation truth into 
 
 ## Upcoming Queue
 
-- `Phase 8: DSL, Defaults, Public Docs, And Final Coverage`
-  Scope: finish the user-facing DSL, default-policy ergonomics, public docs, and final coverage cleanup now that the runtime phases are complete.
-  Must not touch: the shipped Phase 5 through Phase 7 runtime semantics except for tightly scoped follow-up fixes.
-  Verification target: public APIs and docs expose the completed runtime coherently without regressing the verified handoff, discovery, and hardening paths.
+- `Future additive work`
+  Scope: provider-defaults extensions, optional convenience layers, and tightly scoped follow-up fixes that do not rewrite the shipped runtime model.
+  Must not touch: the shipped Phase 5 through Phase 8 semantics except for targeted repairs.
+  Verification target: future ergonomic additions remain strictly additive and do not reopen the verified handoff, discovery, hardening, or DSL paths.
 
 ## Recent Task History
 
@@ -58,6 +60,7 @@ Use this file for the current task only. Move durable implementation truth into 
 - 2026-03-27: Completed Phase 7 by landing outbound memory shaping, best-effort durability checkpoints and `resumeTask(taskId)`, PCP or credential or privacy policy enforcement on remote handoff, retry and alternate-peer runtime handling, and grid trace-export/failure-analysis wrappers.
 - 2026-03-27: Started a Phase 7 repair pass to fix terminal pause cleanup, retry-hop accounting, and configured summary-budget enforcement regressions identified in review.
 - 2026-03-27: Completed the Phase 7 follow-up repair pass by fixing the credential-identity gate, preserving auth lookup parity with the P2P path, and making after-peer-response pause checkpoints resumable instead of terminal.
+- 2026-03-28: Completed Phase 8 by landing `DistributionGridDsl.kt`, broad public-doc sync, small raw-API ergonomics readbacks for operations, and focused `DistributionGridDslTest` coverage.
 
 ## Sync Rules
 

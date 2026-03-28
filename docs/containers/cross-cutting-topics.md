@@ -57,7 +57,7 @@ JUNCTION_HANDOFF
 | MultiConnector | ❌ No | No tracing methods |
 | Splitter | ✅ Yes | `enableTracing(config)` |
 | Manifold | ✅ Yes | Built-in tracing |
-| DistributionGrid | ⚠️ Partial | Phase 5 shell supports trace configuration, validation/lifecycle events, local execution events, explicit remote handoff events, and `clearTrace()` |
+| DistributionGrid | ✅ Yes | Phase 8 runtime supports trace configuration, execution/discovery/hardening events, `clearTrace()`, `getTraceReport(...)`, and `getFailureAnalysis()` |
 | Junction | ✅ Yes | `enableTracing(config)` |
 
 ### Enabling Tracing
@@ -121,7 +121,7 @@ class Splitter : P2PInterface {
 ```
 
 ### Not Yet P2P-Functional Containers
-- **DistributionGrid**: Implements `P2PInterface` and now supports local execution plus explicit-peer remote handoff, but registry discovery and hardening are still unimplemented
+- **DistributionGrid**: Implements `P2PInterface` and now supports local execution, explicit-peer remote handoff, trusted registry discovery, runtime hardening, and Kotlin DSL assembly
 
 ## Container State Management
 
@@ -329,7 +329,7 @@ return coroutineScope {
 | **MultiConnector** | ✅ Complete | `add()`, `setMode()`, `execute()` | ✅ | ❌ |
 | **Splitter** | ✅ Complete | `addContent()`, `addPipeline()`, `executePipelines()` | ✅ | ✅ |
 | **Manifold** | ✅ Complete | `execute()`, manager pipeline required | ✅ | ✅ |
-| **DistributionGrid** | ⚠️ Phase 5 explicit remote peer handoff | `setRouter()`, `setWorker()`, `addPeer()`, `init()`, execution entrypoints, lifecycle helpers, and explicit-peer remote handoff | ⚠️ | ⚠️ |
+| **DistributionGrid** | ✅ Phase 8 shipped | `setRouter()`, `setWorker()`, peer registration, discovery/membership APIs, execution entrypoints, hardening helpers, trace export, and `distributionGrid { ... }` | ✅ | ✅ |
 | **Junction** | ✅ Complete | `execute()`, `conductDiscussion()` | ✅ | ✅ |
 
 ## Best Practices Based on Actual APIs
