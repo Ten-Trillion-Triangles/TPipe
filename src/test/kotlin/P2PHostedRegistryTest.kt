@@ -16,6 +16,7 @@ import com.TTT.P2P.P2PHostedRegistryModerateRequest
 import com.TTT.P2P.P2PHostedRegistryPolicySettings
 import com.TTT.P2P.P2PHostedRegistryPublishRequest
 import com.TTT.P2P.P2PHostedRegistryQuery
+import com.TTT.P2P.P2PHostedRegistryAuditAction
 import com.TTT.P2P.P2PRegistry
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PTransport
@@ -451,6 +452,118 @@ class P2PHostedRegistryTest
                 assertTrue(auditResult.accepted, auditResult.rejectionReason)
                 assertTrue(auditResult.results.any { it.action.name == "PUBLISH" })
                 assertTrue(auditResult.results.any { it.action.name == "MODERATE" })
+            }
+            finally
+            {
+                P2PRegistry.remove(transport)
+            }
+        }
+    }
+
+    @Test
+    fun hostedRegistryExposesStatusFacetsAndFilteredAuditViews()
+    {
+        runBlocking {
+            val transport = P2PTransport(
+                transportMethod = Transport.Tpipe,
+                transportAddress = "observable-hosted-registry"
+            )
+            val hostedRegistry = P2PHostedRegistry(
+                registryName = "observable-hosted-registry",
+                transport = transport,
+                store = InMemoryP2PHostedRegistryStore(),
+                policy = DefaultP2PHostedRegistryPolicy(
+                    P2PHostedRegistryPolicySettings(
+                        operatorRefs = mutableSetOf("operator-token")
+                    )
+                )
+            )
+
+            try
+            {
+                P2PRegistry.register(
+                    agent = hostedRegistry,
+                    transport = transport,
+                    descriptor = hostedRegistry.getP2pDescription(),
+                    requirements = hostedRegistry.getP2pRequirements()
+                )
+
+                val published = P2PHostedRegistryClient.publishListing(
+                    transport = transport,
+                    authBody = "publisher-token",
+                    request = P2PHostedRegistryPublishRequest(
+                        listing = P2PHostedRegistryListing(
+                            kind = P2PHostedListingKind.AGENT,
+                            metadata = P2PHostedListingMetadata(
+                                title = "Facet Agent",
+                                summary = "Facet summary",
+                                categories = mutableListOf("catalog/agent"),
+                                tags = mutableListOf("facet", "agent")
+                            ),
+                            publicDescriptor = P2PDescriptor(
+                                agentName = "facet-agent",
+                                agentDescription = "Facet capable agent",
+                                transport = P2PTransport(
+                                    transportMethod = Transport.Http,
+                                    transportAddress = "https://example.com/facet-agent"
+                                ),
+                                requiresAuth = true,
+                                usesConverse = false,
+                                allowsAgentDuplication = false,
+                                allowsCustomContext = false,
+                                allowsCustomAgentJson = false,
+                                recordsInteractionContext = false,
+                                recordsPromptContent = false,
+                                allowsExternalContext = false,
+                                contextProtocol = ContextProtocol.none,
+                                supportedContentTypes = mutableListOf(SupportedContentTypes.text)
+                            ),
+                            attestationRef = "verified-facet-agent"
+                        )
+                    )
+                )
+                assertTrue(published.accepted, published.rejectionReason)
+
+                val status = P2PHostedRegistryClient.getRegistryStatus(transport)
+                assertNotNull(status)
+                assertEquals("observable-hosted-registry", status.registryName)
+                assertEquals(1, status.stats.totalCount)
+                assertEquals(1, status.stats.agentCount)
+
+                val facets = P2PHostedRegistryClient.getSearchFacets(
+                    transport = transport,
+                    query = P2PHostedRegistryQuery(textQuery = "Facet")
+                )
+                assertTrue(facets.accepted, facets.rejectionReason)
+                assertTrue(facets.categories.any { it.value == "catalog/agent" && it.count == 1 })
+                assertTrue(facets.authRequirements.any { it.value == "true" && it.count == 1 })
+
+                val exactSearch = P2PHostedRegistryClient.searchListings(
+                    transport = transport,
+                    query = P2PHostedRegistryQuery(exactTitle = "Facet Agent")
+                )
+                assertTrue(exactSearch.accepted, exactSearch.rejectionReason)
+                assertEquals(1, exactSearch.totalCount)
+
+                val titlePrefixSearch = P2PHostedRegistryClient.searchListings(
+                    transport = transport,
+                    query = P2PHostedRegistryQuery(titlePrefix = "Facet")
+                )
+                assertTrue(titlePrefixSearch.accepted, titlePrefixSearch.rejectionReason)
+                assertEquals(1, titlePrefixSearch.totalCount)
+
+                val audit = P2PHostedRegistryClient.listAuditRecords(
+                    transport = transport,
+                    authBody = "operator-token",
+                    query = P2PHostedRegistryAuditQuery(
+                        actions = mutableListOf(P2PHostedRegistryAuditAction.PUBLISH),
+                        principalRef = "publisher-token",
+                        listingKinds = mutableListOf(P2PHostedListingKind.AGENT)
+                    )
+                )
+                assertTrue(audit.accepted, audit.rejectionReason)
+                assertEquals(1, audit.totalCount)
+                assertEquals(P2PHostedRegistryAuditAction.PUBLISH, audit.results.first().action)
             }
             finally
             {

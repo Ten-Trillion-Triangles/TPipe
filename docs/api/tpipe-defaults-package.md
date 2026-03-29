@@ -490,6 +490,35 @@ TPipe-Defaults also exposes raw defaults factories for non-DSL callers:
 
 These factories use the same defaults-seeding path as the DSL bridge so the raw and DSL behaviors stay aligned.
 
+## Hosted Registry Helpers
+
+`TPipe-Defaults` also exposes thin hosted-registry ergonomics helpers that return the shipped runtime types directly.
+
+### `HostedRegistryDefaults`
+
+Primary helpers:
+
+- `buildRegistryHost(...)`
+- `buildPublicRegistryHost(...)`
+- `buildPrivateRegistryHost(...)`
+- `trustedPublicAgentSource(...)`
+- `bootstrapCatalogSource(...)`
+- `publicListingOptions(...)`
+
+These helpers intentionally do not introduce a second runtime layer. They only compose:
+
+- `P2PHostedRegistry`
+- `P2PTrustedRegistrySource`
+- `DistributionGridBootstrapCatalogSource`
+- `DistributionGridPublicListingOptions`
+
+The defaults stay explicit:
+
+- file-backed hosted registries still require an explicit durable file path
+- trusted-source helpers remain `AGENT`-only
+- grid bootstrap helpers remain `GRID_REGISTRY`-only
+- no helper auto-publishes, auto-imports, or starts renew/refresh loops by surprise
+
 ## Key Behaviors
 
 ### Provider Abstraction

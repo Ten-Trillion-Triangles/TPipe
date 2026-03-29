@@ -1,6 +1,7 @@
 package com.TTT.Pipeline
 
 import com.TTT.P2P.P2PHostedRegistryQuery
+import com.TTT.P2P.P2PHostedListingKind
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PTransport
 import com.TTT.PipeContextProtocol.Transport
@@ -225,6 +226,35 @@ data class DistributionGridPublicListingOptions(
     var categories: MutableList<String> = mutableListOf(),
     var tags: MutableList<String> = mutableListOf(),
     var requestedLeaseSeconds: Int = 3600
+)
+
+/**
+ * Inspectable runtime status for one hosted bootstrap catalog source.
+ */
+@Serializable
+data class DistributionGridBootstrapCatalogSourceStatus(
+    var sourceId: String = "",
+    var lastPullAttemptEpochMillis: Long = 0L,
+    var lastSuccessfulPullEpochMillis: Long = 0L,
+    var lastFailureReason: String = "",
+    var acceptedRegistryCount: Int = 0,
+    var trustRejectedCount: Int = 0
+)
+
+/**
+ * Inspectable runtime status for one public hosted-listing auto-renew loop.
+ */
+@Serializable
+data class DistributionGridPublicListingAutoRenewStatus(
+    var renewalId: String = "",
+    var listingId: String = "",
+    var listingKind: P2PHostedListingKind = P2PHostedListingKind.GRID_NODE,
+    var renewEveryMillis: Long = 0L,
+    var requestedLeaseSeconds: Int = 3600,
+    var active: Boolean = false,
+    var lastRenewAttemptEpochMillis: Long = 0L,
+    var lastRenewSuccessEpochMillis: Long = 0L,
+    var lastFailureReason: String = ""
 )
 
 /**

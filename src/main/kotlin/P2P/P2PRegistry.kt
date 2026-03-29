@@ -111,6 +111,18 @@ data class P2PTrustedImportedAgentInfo(
 )
 
 /**
+ * Inspectable runtime status for one trusted hosted-registry source.
+ */
+data class P2PTrustedRegistrySourceStatus(
+    var sourceId: String = "",
+    var lastPullAttemptEpochMillis: Long = 0L,
+    var lastSuccessfulPullEpochMillis: Long = 0L,
+    var lastFailureReason: String = "",
+    var importedAgentCount: Int = 0,
+    var collisionCount: Int = 0
+)
+
+/**
  * Registry for P2P. Records pipelines, or containers of pipelines, their requirements to allow p2p, and transport path.
  * Each container or pipeline name can only be registered once. Unlike other global objects in TPipe, fields here
  * will always be entirely public so that they can be accessed from anywhere. And eventually, be addressable by a
@@ -177,6 +189,7 @@ object P2PRegistry
      * Collision diagnostics for rejected trusted hosted-registry imports.
      */
     private val trustedRegistryImportCollisions = linkedMapOf<Pair<String, String>, P2PTrustedRegistryImportCollision>()
+    private val trustedRegistrySourceStatusById = linkedMapOf<String, P2PTrustedRegistrySourceStatus>()
 
     private val trustedRegistryStateMutex = Mutex()
     private val trustedRegistryRefreshScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -279,6 +292,10 @@ object P2PRegistry
 
         trustedRegistryStateMutex.withLock {
             trustedRegistrySourcesById[normalizedSource.sourceId] = normalizedSource
+            trustedRegistrySourceStatusById.putIfAbsent(
+                normalizedSource.sourceId,
+                P2PTrustedRegistrySourceStatus(sourceId = normalizedSource.sourceId)
+            )
         }
 
         if(normalizedSource.autoPullOnRegister)
@@ -295,6 +312,7 @@ object P2PRegistry
         trustedRegistryStateMutex.withLock {
             trustedRegistrySourcesById.remove(sourceId)
             removeImportedAgentsLocked(sourceId)
+            trustedRegistrySourceStatusById.remove(sourceId)
         }
     }
 
@@ -315,6 +333,16 @@ object P2PRegistry
     {
         return trustedRegistryStateMutex.withLock {
             trustedRegistryImportCollisions.values.map { it.copy() }
+        }
+    }
+
+    /**
+     * Inspect current trusted hosted-registry source pull status and import counts.
+     */
+    suspend fun getTrustedRegistrySourceStatuses(): List<P2PTrustedRegistrySourceStatus>
+    {
+        return trustedRegistryStateMutex.withLock {
+            trustedRegistrySourceStatusById.values.map { it.copy() }
         }
     }
 
@@ -353,6 +381,7 @@ object P2PRegistry
             trustedImportedAgentsBySourceId.clear()
             trustedImportedSourceIdByAgentName.clear()
             trustedRegistryImportCollisions.clear()
+            trustedRegistrySourceStatusById.clear()
         }
     }
 
@@ -373,6 +402,15 @@ object P2PRegistry
         }
 
         sources.forEach { source ->
+            val pullStartedAt = System.currentTimeMillis()
+            trustedRegistryStateMutex.withLock {
+                val existing = trustedRegistrySourceStatusById[source.sourceId]
+                    ?: P2PTrustedRegistrySourceStatus(sourceId = source.sourceId)
+                trustedRegistrySourceStatusById[source.sourceId] = existing.copy(
+                    lastPullAttemptEpochMillis = pullStartedAt
+                )
+            }
+
             val result = P2PHostedRegistryClient.searchListings(
                 transport = source.transport,
                 query = source.query.deepCopy<P2PHostedRegistryQuery>().apply {
@@ -387,6 +425,18 @@ object P2PRegistry
 
             if(!result.accepted)
             {
+                trustedRegistryStateMutex.withLock {
+                    val existing = trustedRegistrySourceStatusById[source.sourceId]
+                        ?: P2PTrustedRegistrySourceStatus(sourceId = source.sourceId)
+                    trustedRegistrySourceStatusById[source.sourceId] = existing.copy(
+                        lastPullAttemptEpochMillis = pullStartedAt,
+                        lastFailureReason = result.rejectionReason.ifBlank {
+                            "Trusted hosted-registry source pull was rejected."
+                        },
+                        importedAgentCount = trustedImportedAgentsBySourceId[source.sourceId]?.size ?: 0,
+                        collisionCount = trustedRegistryImportCollisions.values.count { it.sourceId == source.sourceId }
+                    )
+                }
                 return@forEach
             }
 
@@ -420,6 +470,15 @@ object P2PRegistry
 
             trustedRegistryStateMutex.withLock {
                 reconcileTrustedSourceLocked(source, acceptedListings)
+                val existing = trustedRegistrySourceStatusById[source.sourceId]
+                    ?: P2PTrustedRegistrySourceStatus(sourceId = source.sourceId)
+                trustedRegistrySourceStatusById[source.sourceId] = existing.copy(
+                    lastPullAttemptEpochMillis = pullStartedAt,
+                    lastSuccessfulPullEpochMillis = System.currentTimeMillis(),
+                    lastFailureReason = "",
+                    importedAgentCount = trustedImportedAgentsBySourceId[source.sourceId]?.size ?: 0,
+                    collisionCount = trustedRegistryImportCollisions.values.count { it.sourceId == source.sourceId }
+                )
             }
         }
     }

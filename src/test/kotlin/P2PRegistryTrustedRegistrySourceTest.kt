@@ -277,6 +277,55 @@ class P2PRegistryTrustedRegistrySourceTest
         }
     }
 
+    @Test
+    fun trustedSourceStatusesTrackSuccessfulAndFailedPulls()
+    {
+        runBlocking {
+            val transport = P2PTransport(Transport.Tpipe, "trusted-source-status")
+            val hostedRegistry = hostedRegistry(transport)
+
+            try
+            {
+                registerHostedRegistry(hostedRegistry, transport)
+                publishAgentListing(transport, "status-agent", "Status Agent")
+
+                P2PRegistry.addTrustedRegistrySource(
+                    P2PTrustedRegistrySource(
+                        sourceId = "status-source",
+                        transport = transport,
+                        autoPullOnRegister = true
+                    )
+                )
+
+                val successStatus = P2PRegistry.getTrustedRegistrySourceStatuses()
+                    .first { it.sourceId == "status-source" }
+                assertTrue(successStatus.lastPullAttemptEpochMillis > 0L)
+                assertTrue(successStatus.lastSuccessfulPullEpochMillis > 0L)
+                assertEquals("", successStatus.lastFailureReason)
+                assertEquals(1, successStatus.importedAgentCount)
+
+                P2PRegistry.addTrustedRegistrySource(
+                    P2PTrustedRegistrySource(
+                        sourceId = "failing-source",
+                        transport = P2PTransport(Transport.Tpipe, "missing-hosted-registry"),
+                        autoPullOnRegister = true
+                    )
+                )
+
+                val failureStatus = P2PRegistry.getTrustedRegistrySourceStatuses()
+                    .first { it.sourceId == "failing-source" }
+                assertTrue(failureStatus.lastPullAttemptEpochMillis > 0L)
+                assertEquals(0, failureStatus.lastSuccessfulPullEpochMillis)
+                assertTrue(failureStatus.lastFailureReason.isNotBlank())
+            }
+            finally
+            {
+                P2PRegistry.clearTrustedRegistryImportState()
+                P2PRegistry.remove(transport)
+            }
+        }
+    }
+
     private fun hostedRegistry(transport: P2PTransport): P2PHostedRegistry
     {
         return P2PHostedRegistry(

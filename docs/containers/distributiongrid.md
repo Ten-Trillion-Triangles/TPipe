@@ -130,6 +130,7 @@ The Phase 8 shell now includes configuration, validation, lifecycle methods, loc
 - `getActiveRegistryLeaseIds()`
 - `probeTrustedRegistries()`
 - `pullTrustedBootstrapCatalogs(...)`
+- `getBootstrapCatalogSourceStatuses()`
 - `registerWithRegistry(...)`
 - `renewRegistryLease(...)`
 - `tickRegistryMemberships(...)`
@@ -140,6 +141,7 @@ The Phase 8 shell now includes configuration, validation, lifecycle methods, loc
 - `publishPublicRegistryListing(...)`
 - `renewPublicRegistryListing(...)`
 - `removePublicRegistryListing(...)`
+- `getPublicListingAutoRenewStatuses()`
 - `clearDiscoveredRegistryState()`
 - `getDiscoveryMode()`
 - `getRoutingPolicy()`
@@ -221,6 +223,12 @@ Hosted bootstrap catalogs are still discovery aids only. Pulled `GRID_REGISTRY` 
 the configured `DistributionGridTrustVerifier`, and later remote routing still uses the normal handshake and
 session rules.
 
+`DistributionGrid` now also exposes hosted-registry observability for this path, including:
+
+- bootstrap source pull attempt and success timestamps
+- accepted versus trust-rejected hosted registry counts
+- active public-listing auto-renew loop status with last success/failure details
+
 For non-grid clients that only need plain remote agent discovery/import, use `P2PRegistry` trusted hosted sources
 instead. That lighter path imports only `AGENT` listings and does not replace grid trust verification.
 
@@ -297,6 +305,14 @@ val grid = distributionGrid {
 ```
 
 That extension seeds a provider-backed router and worker for the node and may also seed optional node-level policy blocks when the defaults configuration explicitly provides them. The extension lives in `TPipe-Defaults`; core `DistributionGrid` remains provider-agnostic.
+
+For hosted-registry adoption, `TPipe-Defaults` now also provides thin helpers that build:
+
+- `DistributionGridBootstrapCatalogSource`
+- `DistributionGridPublicListingOptions`
+
+Those helpers stay additive and only scaffold the existing hosted-registry discovery/publication types. They do not
+auto-publish listings or start renew loops.
 
 ### Build modes
 

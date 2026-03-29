@@ -163,6 +163,8 @@ class DistributionGrid : P2PInterface
     private val bootstrapRegistriesById = linkedMapOf<String, DistributionGridRegistryAdvertisement>()
     private val bootstrapCatalogSourcesById = linkedMapOf<String, DistributionGridBootstrapCatalogSource>()
     @RuntimeState
+    private val bootstrapCatalogSourceStatusById = linkedMapOf<String, DistributionGridBootstrapCatalogSourceStatus>()
+    @RuntimeState
     private val discoveredRegistriesById = linkedMapOf<String, DistributionGridRegistryAdvertisement>()
     @RuntimeState
     private val discoveredNodeAdvertisementsById = linkedMapOf<DistributionGridDiscoveredNodeKey, DistributionGridNodeAdvertisement>()
@@ -176,6 +178,8 @@ class DistributionGrid : P2PInterface
     private val localRegistrationLeaseIdsByNodeId = linkedMapOf<String, String>()
     @RuntimeState
     private val publicListingRenewJobsById = linkedMapOf<String, Job>()
+    @RuntimeState
+    private val publicListingRenewStatusById = linkedMapOf<String, DistributionGridPublicListingAutoRenewStatus>()
     @RuntimeState
     private val publicListingRenewScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -900,6 +904,10 @@ class DistributionGrid : P2PInterface
             this.sourceId = sourceId
             this.query = normalizedQuery
         }
+        bootstrapCatalogSourceStatusById.putIfAbsent(
+            sourceId,
+            DistributionGridBootstrapCatalogSourceStatus(sourceId = sourceId)
+        )
         markShellDirty()
         return this
     }
@@ -914,6 +922,7 @@ class DistributionGrid : P2PInterface
     {
         require(sourceId.isNotBlank()) { "Bootstrap catalog source id must not be blank." }
         bootstrapCatalogSourcesById.remove(sourceId)
+        bootstrapCatalogSourceStatusById.remove(sourceId)
         markShellDirty()
         return this
     }
@@ -1849,17 +1858,33 @@ class DistributionGrid : P2PInterface
         val acceptedAdvertisements = mutableListOf<DistributionGridRegistryAdvertisement>()
         targetSourceIds.forEach { sourceId ->
             val source = bootstrapCatalogSourcesById[sourceId] ?: return@forEach
+            val pullStartedAt = System.currentTimeMillis()
+            bootstrapCatalogSourceStatusById[sourceId] =
+                (bootstrapCatalogSourceStatusById[sourceId]
+                    ?: DistributionGridBootstrapCatalogSourceStatus(sourceId = sourceId)).copy(
+                    lastPullAttemptEpochMillis = pullStartedAt
+                )
             val result = P2PHostedRegistryClient.searchListings(
                 transport = source.transport,
                 query = source.query
             )
             if(!result.accepted)
             {
+                bootstrapCatalogSourceStatusById[sourceId] =
+                    (bootstrapCatalogSourceStatusById[sourceId]
+                        ?: DistributionGridBootstrapCatalogSourceStatus(sourceId = sourceId)).copy(
+                        lastPullAttemptEpochMillis = pullStartedAt,
+                        lastFailureReason = result.rejectionReason.ifBlank {
+                            "Hosted bootstrap catalog pull was rejected."
+                        }
+                    )
                 return@forEach
             }
 
             val trustedParents = (bootstrapRegistriesById.values + discoveredRegistriesById.values)
                 .map { it.deepCopy<DistributionGridRegistryAdvertisement>() }
+            var acceptedCount = 0
+            var trustRejectedCount = 0
 
             result.results.forEach { listing ->
                 val candidate = listing.gridRegistryAdvertisement?.deepCopy<DistributionGridRegistryAdvertisement>()
@@ -1876,8 +1901,23 @@ class DistributionGrid : P2PInterface
                 {
                     discoveredRegistriesById[candidate.metadata.registryId] = candidate.deepCopy()
                     acceptedAdvertisements.add(candidate.deepCopy())
+                    acceptedCount++
+                }
+                else
+                {
+                    trustRejectedCount++
                 }
             }
+
+            bootstrapCatalogSourceStatusById[sourceId] =
+                (bootstrapCatalogSourceStatusById[sourceId]
+                    ?: DistributionGridBootstrapCatalogSourceStatus(sourceId = sourceId)).copy(
+                    lastPullAttemptEpochMillis = pullStartedAt,
+                    lastSuccessfulPullEpochMillis = System.currentTimeMillis(),
+                    lastFailureReason = "",
+                    acceptedRegistryCount = acceptedCount,
+                    trustRejectedCount = trustRejectedCount
+                )
         }
 
         return acceptedAdvertisements
@@ -2098,17 +2138,55 @@ class DistributionGrid : P2PInterface
     {
         require(renewEveryMillis > 0L) { "Public listing auto-renew interval must be greater than zero." }
         val renewalId = UUID.randomUUID().toString()
+        publicListingRenewStatusById[renewalId] = DistributionGridPublicListingAutoRenewStatus(
+            renewalId = renewalId,
+            listingId = listingId,
+            listingKind = P2PHostedListingKind.GRID_NODE,
+            renewEveryMillis = renewEveryMillis,
+            requestedLeaseSeconds = requestedLeaseSeconds,
+            active = true
+        )
         publicListingRenewJobsById[renewalId] = publicListingRenewScope.launch {
             while(true)
             {
                 delay(renewEveryMillis)
-                renewPublicNodeListing(
+                val attemptTime = System.currentTimeMillis()
+                publicListingRenewStatusById[renewalId] = publicListingRenewStatusById[renewalId]
+                    ?.copy(lastRenewAttemptEpochMillis = attemptTime, active = true)
+                    ?: DistributionGridPublicListingAutoRenewStatus(
+                        renewalId = renewalId,
+                        listingId = listingId,
+                        listingKind = P2PHostedListingKind.GRID_NODE,
+                        renewEveryMillis = renewEveryMillis,
+                        requestedLeaseSeconds = requestedLeaseSeconds,
+                        active = true,
+                        lastRenewAttemptEpochMillis = attemptTime
+                    )
+                val renewResult = renewPublicNodeListing(
                     transport = transport,
                     listingId = listingId,
                     leaseId = leaseId,
                     requestedLeaseSeconds = requestedLeaseSeconds,
                     authBody = authBody,
                     transportAuthBody = transportAuthBody
+                )
+                val currentStatus = publicListingRenewStatusById[renewalId]
+                publicListingRenewStatusById[renewalId] = currentStatus?.copy(
+                    active = true,
+                    lastRenewAttemptEpochMillis = attemptTime,
+                    lastRenewSuccessEpochMillis = if(renewResult.accepted) System.currentTimeMillis()
+                    else currentStatus.lastRenewSuccessEpochMillis,
+                    lastFailureReason = if(renewResult.accepted) "" else renewResult.rejectionReason
+                ) ?: DistributionGridPublicListingAutoRenewStatus(
+                    renewalId = renewalId,
+                    listingId = listingId,
+                    listingKind = P2PHostedListingKind.GRID_NODE,
+                    renewEveryMillis = renewEveryMillis,
+                    requestedLeaseSeconds = requestedLeaseSeconds,
+                    active = true,
+                    lastRenewAttemptEpochMillis = attemptTime,
+                    lastRenewSuccessEpochMillis = if(renewResult.accepted) System.currentTimeMillis() else 0L,
+                    lastFailureReason = if(renewResult.accepted) "" else renewResult.rejectionReason
                 )
             }
         }
@@ -2128,7 +2206,7 @@ class DistributionGrid : P2PInterface
         transportAuthBody: String = ""
     ): String
     {
-        return startPublicNodeListingAutoRenew(
+        val renewalId = startPublicNodeListingAutoRenew(
             transport = transport,
             listingId = listingId,
             leaseId = leaseId,
@@ -2137,6 +2215,17 @@ class DistributionGrid : P2PInterface
             authBody = authBody,
             transportAuthBody = transportAuthBody
         )
+        publicListingRenewStatusById[renewalId] = publicListingRenewStatusById[renewalId]
+            ?.copy(listingKind = P2PHostedListingKind.GRID_REGISTRY)
+            ?: DistributionGridPublicListingAutoRenewStatus(
+                renewalId = renewalId,
+                listingId = listingId,
+                listingKind = P2PHostedListingKind.GRID_REGISTRY,
+                renewEveryMillis = renewEveryMillis,
+                requestedLeaseSeconds = requestedLeaseSeconds,
+                active = true
+            )
+        return renewalId
     }
 
     /**
@@ -2145,6 +2234,9 @@ class DistributionGrid : P2PInterface
     fun stopPublicListingAutoRenew(renewalId: String)
     {
         publicListingRenewJobsById.remove(renewalId)?.cancel()
+        publicListingRenewStatusById[renewalId] = publicListingRenewStatusById[renewalId]
+            ?.copy(active = false)
+            ?: return
     }
 
     /**
@@ -2153,6 +2245,22 @@ class DistributionGrid : P2PInterface
     fun getPublicListingAutoRenewIds(): List<String>
     {
         return publicListingRenewJobsById.keys.toList()
+    }
+
+    /**
+     * Inspect current hosted bootstrap source pull status.
+     */
+    fun getBootstrapCatalogSourceStatuses(): List<DistributionGridBootstrapCatalogSourceStatus>
+    {
+        return bootstrapCatalogSourceStatusById.values.map { it.deepCopy() }
+    }
+
+    /**
+     * Inspect current public hosted-listing auto-renew loop status.
+     */
+    fun getPublicListingAutoRenewStatuses(): List<DistributionGridPublicListingAutoRenewStatus>
+    {
+        return publicListingRenewStatusById.values.map { it.deepCopy() }
     }
 
     /**

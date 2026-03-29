@@ -1,7 +1,7 @@
 # Hosted P2P Registry Progress
 
 Date: 2026-03-28
-Last Updated: 2026-03-28
+Last Updated: 2026-03-29
 
 ## Summary
 
@@ -33,6 +33,22 @@ The first hosted-registry slice is now implemented in code:
   - operator moderation
   - audit trails for listing lifecycle events
   - richer registry info with store kind and listing counts
+  - structured status and facet queries
+  - audit filtering by action, principal, listing kind, and time range
+- `P2PRegistry` now exposes trusted-source pull status:
+  - last attempt / success timestamps
+  - last failure reason
+  - imported agent counts
+  - collision counts
+- `DistributionGrid` now exposes hosted-registry observability for:
+  - bootstrap source pull state
+  - accepted vs trust-rejected hosted registry counts
+  - public listing auto-renew loop status
+- `TPipe-Defaults` now provides thin hosted-registry ergonomics helpers for:
+  - public/private hosted-registry host construction
+  - trusted plain-P2P source construction
+  - grid bootstrap catalog source construction
+  - public grid listing option scaffolding
 
 This means the foundational feature is shipped. The remaining work is now production-completion work rather than
 first-time feature invention.
@@ -76,12 +92,10 @@ Result:
 ## Known Remaining Work
 
 - search is functional but not yet “large catalog” complete:
-  - pagination hardening
-  - richer sorting
-  - faceting and stronger capability matching
+  - stronger capability faceting and any future advanced sort/filter helpers
 - plain `P2PRegistry` trusted imports remain intentionally lighter than `DistributionGrid` trust verification
-- `DistributionGrid` hosted-listing integration still has room for broader observability around long-lived public-node deployments
 - defaults/documentation polish for hosted-registry configuration is still future work
+  - broader example docs remain future work, but the first additive defaults/helper layer is now shipped
 
 ## Completion Roadmap
 
@@ -127,3 +141,5 @@ Target outcomes:
 ## Revision Log
 
 - 2026-03-28: Expanded the steering set from “first slice shipped” into a full completion roadmap covering durable stores, governance, search hardening, plain-P2P trusted import completion, grid lifecycle completion, and final ergonomics/docs polish.
+- 2026-03-29: Landed structured hosted-registry search/status surfaces, trusted-source pull status, grid bootstrap/auto-renew observability, and matching PCP read tools.
+- 2026-03-29: Landed the first `TPipe-Defaults` hosted-registry ergonomics helpers and synced the defaults/public docs.

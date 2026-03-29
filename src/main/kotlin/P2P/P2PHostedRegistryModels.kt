@@ -57,7 +57,9 @@ enum class P2PHostedRegistrySortMode
 enum class P2PHostedRegistryRpcType
 {
     REGISTRY_INFO,
+    REGISTRY_STATUS,
     SEARCH_LISTINGS,
+    SEARCH_FACETS,
     GET_LISTING,
     PUBLISH_LISTING,
     UPDATE_LISTING,
@@ -130,6 +132,8 @@ data class P2PHostedRegistryListing(
 @Serializable
 data class P2PHostedRegistryQuery(
     var textQuery: String = "",
+    var exactTitle: String = "",
+    var titlePrefix: String = "",
     var listingKinds: MutableList<P2PHostedListingKind> = mutableListOf(),
     var categories: MutableList<String> = mutableListOf(),
     var tags: MutableList<String> = mutableListOf(),
@@ -141,8 +145,13 @@ data class P2PHostedRegistryQuery(
     var trustDomainIds: MutableList<String> = mutableListOf(),
     var registryIds: MutableList<String> = mutableListOf(),
     var actsAsRegistry: Boolean? = null,
+    var moderationStates: MutableList<P2PHostedModerationState> = mutableListOf(),
     var verifiedOnly: Boolean = false,
     var healthyOnly: Boolean = false,
+    var createdAfterEpochMillis: Long = 0L,
+    var createdBeforeEpochMillis: Long = 0L,
+    var updatedAfterEpochMillis: Long = 0L,
+    var updatedBeforeEpochMillis: Long = 0L,
     var offset: Int = 0,
     var limit: Int = 25,
     var sortMode: P2PHostedRegistrySortMode = P2PHostedRegistrySortMode.RELEVANCE
@@ -156,7 +165,41 @@ data class P2PHostedRegistryQueryResult(
     var accepted: Boolean = true,
     var rejectionReason: String = "",
     var totalCount: Int = 0,
+    var hasMore: Boolean = false,
     var results: MutableList<P2PHostedRegistryListing> = mutableListOf()
+)
+
+/**
+ * Facet request over the hosted-registry catalog.
+ */
+@Serializable
+data class P2PHostedRegistryFacetRequest(
+    var query: P2PHostedRegistryQuery = P2PHostedRegistryQuery()
+)
+
+/**
+ * One facet bucket.
+ */
+@Serializable
+data class P2PHostedRegistryFacetBucket(
+    var value: String = "",
+    var count: Int = 0
+)
+
+/**
+ * Structured facet result for hosted-registry search UIs and tooling.
+ */
+@Serializable
+data class P2PHostedRegistryFacetResult(
+    var accepted: Boolean = true,
+    var rejectionReason: String = "",
+    var listingKinds: MutableList<P2PHostedRegistryFacetBucket> = mutableListOf(),
+    var categories: MutableList<P2PHostedRegistryFacetBucket> = mutableListOf(),
+    var tags: MutableList<P2PHostedRegistryFacetBucket> = mutableListOf(),
+    var transportMethods: MutableList<P2PHostedRegistryFacetBucket> = mutableListOf(),
+    var authRequirements: MutableList<P2PHostedRegistryFacetBucket> = mutableListOf(),
+    var trustDomains: MutableList<P2PHostedRegistryFacetBucket> = mutableListOf(),
+    var moderationStates: MutableList<P2PHostedRegistryFacetBucket> = mutableListOf()
 )
 
 /**
@@ -249,6 +292,11 @@ data class P2PHostedRegistryAuditRecord(
 @Serializable
 data class P2PHostedRegistryAuditQuery(
     var listingId: String = "",
+    var actions: MutableList<P2PHostedRegistryAuditAction> = mutableListOf(),
+    var principalRef: String = "",
+    var listingKinds: MutableList<P2PHostedListingKind> = mutableListOf(),
+    var occurredAfterEpochMillis: Long = 0L,
+    var occurredBeforeEpochMillis: Long = 0L,
     var offset: Int = 0,
     var limit: Int = 100
 )
@@ -284,6 +332,30 @@ data class P2PHostedRegistryInfo(
     var durableStoreKind: String = "memory",
     var auditEnabled: Boolean = true,
     var operatorManaged: Boolean = false
+)
+
+/**
+ * Operational status for one hosted-registry instance.
+ */
+@Serializable
+data class P2PHostedRegistryListingStats(
+    var totalCount: Int = 0,
+    var activeCount: Int = 0,
+    var pendingCount: Int = 0,
+    var hiddenCount: Int = 0,
+    var agentCount: Int = 0,
+    var gridNodeCount: Int = 0,
+    var gridRegistryCount: Int = 0
+)
+
+@Serializable
+data class P2PHostedRegistryStatus(
+    var registryName: String = "",
+    var durableStoreKind: String = "memory",
+    var stats: P2PHostedRegistryListingStats = P2PHostedRegistryListingStats(),
+    var auditEnabled: Boolean = true,
+    var operatorManaged: Boolean = false,
+    var lastExpirySweepEpochMillis: Long = 0L
 )
 
 /**

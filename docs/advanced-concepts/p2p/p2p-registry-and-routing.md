@@ -86,7 +86,10 @@ Hosted registries support:
 - public `AGENT`, `GRID_NODE`, and `GRID_REGISTRY` listings
 - lease-based publication and renewal
 - structured filtering by kind, category, tag, transport, auth requirement, content type, capability, and trust-domain metadata
+- exact-title and title-prefix filtering
 - text search across titles, summaries, descriptions, categories, tags, and capability labels
+- facet reads for kind/category/tag/transport/auth/trust-domain/moderation buckets
+- remote registry status reads plus filtered audit inspection
 - import of sanitized `AGENT` listings into the local static registry through `P2PHostedRegistryClient.pullListingsToLocalRegistry(...)`
 - import into plain `P2PRegistry` trusted sources with collision-safe source tracking
 
@@ -130,6 +133,14 @@ This path:
 - supports per-source admission filters
 - rejects duplicate collisions instead of overwriting existing entries
 - supports explicit pull plus optional auto-refresh
+- exposes per-source pull status, failure reason, and imported-agent counts
+
+If you want a thinner setup path, `TPipe-Defaults` now also provides helpers for:
+
+- building public or private `P2PHostedRegistry` hosts
+- building trusted `P2PRegistry` hosted-source configs
+
+Those helpers return the same runtime types directly and do not create a second hosted-registry runtime path.
 
 ### Dedicated HTTP Route
 

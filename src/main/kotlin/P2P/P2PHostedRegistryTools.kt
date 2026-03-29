@@ -18,6 +18,18 @@ import com.TTT.Util.deserialize
  */
 object P2PHostedRegistryTools
 {
+    suspend fun getP2pRegistryStatus(
+        transportAddress: String,
+        transportMethod: Transport = Transport.Tpipe,
+        authBody: String = ""
+    ): P2PHostedRegistryStatus?
+    {
+        return P2PHostedRegistryClient.getRegistryStatus(
+            transport = P2PTransport(transportMethod = transportMethod, transportAddress = transportAddress),
+            authBody = authBody
+        )
+    }
+
     suspend fun searchP2pRegistryListings(
         transportAddress: String,
         transportMethod: Transport = Transport.Tpipe,
@@ -44,6 +56,22 @@ object P2PHostedRegistryTools
         val query = deserialize<P2PHostedRegistryQuery>(queryJson, useRepair = false)
             ?: P2PHostedRegistryQuery()
         return P2PHostedRegistryClient.searchAgentListings(
+            transport = P2PTransport(transportMethod = transportMethod, transportAddress = transportAddress),
+            query = query,
+            authBody = authBody
+        )
+    }
+
+    suspend fun getP2pRegistryFacets(
+        transportAddress: String,
+        transportMethod: Transport = Transport.Tpipe,
+        queryJson: String = "",
+        authBody: String = ""
+    ): P2PHostedRegistryFacetResult
+    {
+        val query = deserialize<P2PHostedRegistryQuery>(queryJson, useRepair = false)
+            ?: P2PHostedRegistryQuery()
+        return P2PHostedRegistryClient.getSearchFacets(
             transport = P2PTransport(transportMethod = transportMethod, transportAddress = transportAddress),
             query = query,
             authBody = authBody
@@ -91,6 +119,27 @@ object P2PHostedRegistryTools
         return result.results.mapNotNull { listing ->
             listing.gridRegistryAdvertisement?.deepCopy<DistributionGridRegistryAdvertisement>()
         }
+    }
+
+    suspend fun listP2pRegistryAudit(
+        transportAddress: String,
+        transportMethod: Transport = Transport.Tpipe,
+        queryJson: String = "",
+        authBody: String = ""
+    ): P2PHostedRegistryAuditQueryResult
+    {
+        val query = deserialize<P2PHostedRegistryAuditQuery>(queryJson, useRepair = false)
+            ?: P2PHostedRegistryAuditQuery()
+        return P2PHostedRegistryClient.listAuditRecords(
+            transport = P2PTransport(transportMethod = transportMethod, transportAddress = transportAddress),
+            query = query,
+            authBody = authBody
+        )
+    }
+
+    suspend fun getP2pTrustedSourceStatus(): List<P2PTrustedRegistrySourceStatus>
+    {
+        return P2PRegistry.getTrustedRegistrySourceStatuses()
     }
 
     suspend fun publishP2pRegistryListing(
@@ -164,10 +213,14 @@ object P2PHostedRegistryTools
         allowWriteTools: Boolean = false
     )
     {
+        FunctionRegistry.registerFunction("get_p2p_registry_status", ::getP2pRegistryStatus)
         FunctionRegistry.registerFunction("search_p2p_registry_listings", ::searchP2pRegistryListings)
         FunctionRegistry.registerFunction("search_p2p_agent_listings", ::searchP2pAgentListings)
+        FunctionRegistry.registerFunction("get_p2p_registry_facets", ::getP2pRegistryFacets)
         FunctionRegistry.registerFunction("get_p2p_registry_listing", ::getP2pRegistryListing)
         FunctionRegistry.registerFunction("list_trusted_grid_registries", ::listTrustedGridRegistries)
+        FunctionRegistry.registerFunction("list_p2p_registry_audit", ::listP2pRegistryAudit)
+        FunctionRegistry.registerFunction("get_p2p_trusted_source_status", ::getP2pTrustedSourceStatus)
 
         if(allowWriteTools)
         {
@@ -185,10 +238,27 @@ object P2PHostedRegistryTools
         }
 
         addIfMissing(TPipeContextOptions().apply {
+            functionName = "get_p2p_registry_status"
+            description = "Read operational status for a hosted public P2P registry."
+            params["transportAddress"] = ContextOptionParameter(ParamType.String, "Hosted registry transport address.", emptyList())
+            params["transportMethod"] = ContextOptionParameter(ParamType.String, "Transport method name such as Tpipe, Http, or Stdio.", emptyList(), isRequired = false)
+            params["authBody"] = ContextOptionParameter(ParamType.String, "Optional auth token for registry hosts that gate reads.", emptyList(), isRequired = false)
+        })
+
+        addIfMissing(TPipeContextOptions().apply {
             functionName = "search_p2p_registry_listings"
             description = "Search a hosted public P2P registry for agent, grid node, or grid registry listings."
             params["transportAddress"] = ContextOptionParameter(ParamType.String, "Hosted registry transport address.", emptyList())
             params["transportMethod"] = ContextOptionParameter(ParamType.String, "Transport method name such as Tpipe, Http, or Stdio.", emptyList())
+            params["queryJson"] = ContextOptionParameter(ParamType.String, "Serialized P2PHostedRegistryQuery JSON.", emptyList(), isRequired = false)
+            params["authBody"] = ContextOptionParameter(ParamType.String, "Optional auth token for registry hosts that gate reads.", emptyList(), isRequired = false)
+        })
+
+        addIfMissing(TPipeContextOptions().apply {
+            functionName = "get_p2p_registry_facets"
+            description = "Return structured facet counts for hosted-registry search filters."
+            params["transportAddress"] = ContextOptionParameter(ParamType.String, "Hosted registry transport address.", emptyList())
+            params["transportMethod"] = ContextOptionParameter(ParamType.String, "Transport method name such as Tpipe, Http, or Stdio.", emptyList(), isRequired = false)
             params["queryJson"] = ContextOptionParameter(ParamType.String, "Serialized P2PHostedRegistryQuery JSON.", emptyList(), isRequired = false)
             params["authBody"] = ContextOptionParameter(ParamType.String, "Optional auth token for registry hosts that gate reads.", emptyList(), isRequired = false)
         })
@@ -218,6 +288,20 @@ object P2PHostedRegistryTools
             params["transportMethod"] = ContextOptionParameter(ParamType.String, "Transport method name such as Tpipe, Http, or Stdio.", emptyList(), isRequired = false)
             params["queryJson"] = ContextOptionParameter(ParamType.String, "Serialized P2PHostedRegistryQuery JSON.", emptyList(), isRequired = false)
             params["authBody"] = ContextOptionParameter(ParamType.String, "Optional auth token for registry hosts that gate reads.", emptyList(), isRequired = false)
+        })
+
+        addIfMissing(TPipeContextOptions().apply {
+            functionName = "list_p2p_registry_audit"
+            description = "Read hosted-registry audit records when the host policy allows operator access."
+            params["transportAddress"] = ContextOptionParameter(ParamType.String, "Hosted registry transport address.", emptyList())
+            params["transportMethod"] = ContextOptionParameter(ParamType.String, "Transport method name such as Tpipe, Http, or Stdio.", emptyList(), isRequired = false)
+            params["queryJson"] = ContextOptionParameter(ParamType.String, "Serialized P2PHostedRegistryAuditQuery JSON.", emptyList(), isRequired = false)
+            params["authBody"] = ContextOptionParameter(ParamType.String, "Operator auth token when audit reads are gated.", emptyList(), isRequired = false)
+        })
+
+        addIfMissing(TPipeContextOptions().apply {
+            functionName = "get_p2p_trusted_source_status"
+            description = "Inspect local trusted hosted-registry source pull state and imported agent counts."
         })
 
         if(allowWriteTools)

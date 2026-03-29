@@ -109,6 +109,12 @@ class DistributionGridHostedRegistryIntegrationTest
 
                 assertEquals(listOf("public-bootstrap-source"), grid.getBootstrapCatalogSourceIds())
                 assertEquals(listOf("public-bootstrap-registry"), grid.getDiscoveredRegistryIds())
+                val sourceStatus = grid.getBootstrapCatalogSourceStatuses()
+                    .first { it.sourceId == "public-bootstrap-source" }
+                assertTrue(sourceStatus.lastPullAttemptEpochMillis > 0L)
+                assertTrue(sourceStatus.lastSuccessfulPullEpochMillis > 0L)
+                assertEquals(1, sourceStatus.acceptedRegistryCount)
+                assertEquals(0, sourceStatus.trustRejectedCount)
             }
 
             finally
@@ -259,6 +265,13 @@ class DistributionGridHostedRegistryIntegrationTest
 
                 delay(700L)
 
+                val renewStatus = grid.getPublicListingAutoRenewStatuses()
+                    .first { it.renewalId == renewalId }
+                assertTrue(renewStatus.active)
+                assertTrue(renewStatus.lastRenewAttemptEpochMillis > 0L)
+                assertTrue(renewStatus.lastRenewSuccessEpochMillis > 0L)
+                assertEquals("", renewStatus.lastFailureReason)
+
                 val auditResult = P2PHostedRegistryClient.listAuditRecords(
                     transport = hostedRegistryTransport,
                     authBody = "operator-token"
@@ -269,6 +282,9 @@ class DistributionGridHostedRegistryIntegrationTest
 
                 grid.stopPublicListingAutoRenew(renewalId)
                 assertTrue(!grid.getPublicListingAutoRenewIds().contains(renewalId))
+                val stoppedStatus = grid.getPublicListingAutoRenewStatuses()
+                    .first { it.renewalId == renewalId }
+                assertTrue(!stoppedStatus.active)
             }
             finally
             {

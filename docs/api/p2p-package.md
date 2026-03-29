@@ -233,7 +233,7 @@ existing P2P transport path.
 - **`P2PHostedRegistryStore`**: storage contract for listings and leases
 - **`InMemoryP2PHostedRegistryStore`**: first shipped store implementation
 - **`FileBackedP2PHostedRegistryStore`**: durable JSON-backed hosted-registry store
-- **`P2PHostedRegistryClient`**: coder-facing client helpers for info, search, publish, renew, delete, and import
+- **`P2PHostedRegistryClient`**: coder-facing client helpers for info, status, search, facets, audit, publish, renew, delete, and import
 - **`P2PHostedRegistryTools`**: PCP-callable tool bundle for agents
 - **`P2PTrustedRegistrySource`**: plain `P2PRegistry` source record for trusted hosted-registry imports
 
@@ -274,6 +274,8 @@ Public functions:
 - `stopTrustedRegistryAutoRefresh()`
 - `isTrustedRegistryAutoRefreshRunning()`
 - `getTrustedRegistryImportCollisions()`
+- `getTrustedRegistrySourceStatuses()`
+- `listTrustedImportedAgents()`
 
 Behavior:
 
@@ -299,10 +301,14 @@ val result = P2PHostedRegistryClient.searchListings(
 
 `P2PHostedRegistryTools.registerAndEnable(context)` exposes read tools by default:
 
+- `get_p2p_registry_status`
 - `search_p2p_registry_listings`
 - `search_p2p_agent_listings`
+- `get_p2p_registry_facets`
 - `get_p2p_registry_listing`
 - `list_trusted_grid_registries`
+- `list_p2p_registry_audit`
+- `get_p2p_trusted_source_status`
 
 Opting into write tools adds:
 
@@ -466,3 +472,5 @@ Hosted registries now also expose minimal governance/lifecycle support:
 - operator moderation
 - listing audit records
 - registry info with listing counts and store kind
+- registry status with per-kind counts and last expiry sweep timestamp
+- structured facet reads for kind/category/tag/transport/auth/trust-domain/moderation filters

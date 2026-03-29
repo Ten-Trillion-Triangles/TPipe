@@ -14,8 +14,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 private const val HOSTED_REGISTRY_INFO_PAYLOAD = "P2PHostedRegistryInfo"
+private const val HOSTED_REGISTRY_STATUS_PAYLOAD = "P2PHostedRegistryStatus"
 private const val HOSTED_REGISTRY_QUERY_PAYLOAD = "P2PHostedRegistryQuery"
 private const val HOSTED_REGISTRY_QUERY_RESULT_PAYLOAD = "P2PHostedRegistryQueryResult"
+private const val HOSTED_REGISTRY_FACET_PAYLOAD = "P2PHostedRegistryFacetRequest"
+private const val HOSTED_REGISTRY_FACET_RESULT_PAYLOAD = "P2PHostedRegistryFacetResult"
 private const val HOSTED_REGISTRY_GET_PAYLOAD = "P2PHostedRegistryGetRequest"
 private const val HOSTED_REGISTRY_LISTING_PAYLOAD = "P2PHostedRegistryListing"
 private const val HOSTED_REGISTRY_PUBLISH_PAYLOAD = "P2PHostedRegistryPublishRequest"
@@ -444,6 +447,7 @@ class P2PHostedRegistry(
     private val policy: P2PHostedRegistryPolicy = DefaultP2PHostedRegistryPolicy()
 ) : P2PInterface
 {
+    private var lastExpirySweepEpochMillis: Long = 0L
     private var descriptor = P2PDescriptor(
         agentName = registryName,
         agentDescription = "Hosted P2P registry service for public agent and DistributionGrid listings.",
@@ -533,8 +537,17 @@ class P2PHostedRegistry(
                     }
                 )
             }
+            P2PHostedRegistryRpcType.REGISTRY_STATUS -> {
+                purgeExpiredListings()
+                buildRpcResponse(
+                    messageType = P2PHostedRegistryRpcType.REGISTRY_STATUS,
+                    payloadType = HOSTED_REGISTRY_STATUS_PAYLOAD,
+                    payload = buildRegistryStatus()
+                )
+            }
 
             P2PHostedRegistryRpcType.SEARCH_LISTINGS -> handleSearch(request = request, context = context, rpcMessage = rpcMessage)
+            P2PHostedRegistryRpcType.SEARCH_FACETS -> handleFacetSearch(context, rpcMessage)
             P2PHostedRegistryRpcType.GET_LISTING -> handleGet(context, rpcMessage)
             P2PHostedRegistryRpcType.PUBLISH_LISTING -> handlePublish(context, rpcMessage)
             P2PHostedRegistryRpcType.UPDATE_LISTING -> handleUpdate(context, rpcMessage)
@@ -575,7 +588,6 @@ class P2PHostedRegistry(
         purgeExpiredListings()
         val allListings = store.listListings()
             .filter { it.metadata.visibility == P2PHostedListingVisibility.PUBLIC }
-            .filter { it.moderationState == P2PHostedModerationState.ACTIVE }
         val matchedListings = allListings
             .filter { matchesQuery(it, query) }
             .sortedWith(buildComparator(query))
@@ -593,7 +605,83 @@ class P2PHostedRegistry(
                 accepted = true,
                 rejectionReason = "",
                 totalCount = matchedListings.size,
+                hasMore = query.offset.coerceAtLeast(0) + pagedListings.size < matchedListings.size,
                 results = pagedListings
+            )
+        )
+    }
+
+    private suspend fun handleFacetSearch(
+        context: P2PHostedRegistryAccessContext,
+        rpcMessage: P2PHostedRegistryRpcMessage
+    ): P2PResponse
+    {
+        val request = deserialize<P2PHostedRegistryFacetRequest>(
+            rpcMessage.payloadJson,
+            useRepair = false
+        ) ?: return P2PResponse(
+            rejection = P2PRejection(P2PError.json, "Failed to deserialize hosted-registry facet request.")
+        )
+
+        if(!policy.canRead(context, request.query))
+        {
+            return buildRpcResponse(
+                messageType = P2PHostedRegistryRpcType.SEARCH_FACETS,
+                payloadType = HOSTED_REGISTRY_FACET_RESULT_PAYLOAD,
+                payload = P2PHostedRegistryFacetResult(
+                    accepted = false,
+                    rejectionReason = "Hosted registry read access was denied."
+                )
+            )
+        }
+
+        purgeExpiredListings()
+        val matched = store.listListings()
+            .filter { it.metadata.visibility == P2PHostedListingVisibility.PUBLIC }
+            .filter {
+                matchesQuery(
+                    it,
+                    request.query.deepCopy<P2PHostedRegistryQuery>().apply {
+                        offset = 0
+                        limit = Int.MAX_VALUE
+                    }
+                )
+            }
+
+        return buildRpcResponse(
+            messageType = P2PHostedRegistryRpcType.SEARCH_FACETS,
+            payloadType = HOSTED_REGISTRY_FACET_RESULT_PAYLOAD,
+            payload = P2PHostedRegistryFacetResult(
+                accepted = true,
+                rejectionReason = "",
+                listingKinds = facetBuckets(matched.map { it.kind.name }),
+                categories = facetBuckets(matched.flatMap { it.metadata.categories }),
+                tags = facetBuckets(matched.flatMap { it.metadata.tags }),
+                transportMethods = facetBuckets(matched.flatMap { listing ->
+                    when(listing.kind)
+                    {
+                        P2PHostedListingKind.AGENT -> listOfNotNull(listing.publicDescriptor?.transport?.transportMethod?.name)
+                        P2PHostedListingKind.GRID_NODE -> listOfNotNull(listing.gridNodeAdvertisement?.descriptor?.transport?.transportMethod?.name)
+                        P2PHostedListingKind.GRID_REGISTRY -> listOfNotNull(listing.gridRegistryAdvertisement?.transport?.transportMethod?.name)
+                    }
+                }),
+                authRequirements = facetBuckets(matched.map { listing ->
+                    when(listing.kind)
+                    {
+                        P2PHostedListingKind.AGENT -> (listing.publicDescriptor?.requiresAuth ?: false).toString()
+                        P2PHostedListingKind.GRID_NODE -> (listing.gridNodeAdvertisement?.descriptor?.requiresAuth ?: false).toString()
+                        P2PHostedListingKind.GRID_REGISTRY -> "false"
+                    }
+                }),
+                trustDomains = facetBuckets(matched.mapNotNull { listing ->
+                    when(listing.kind)
+                    {
+                        P2PHostedListingKind.AGENT -> null
+                        P2PHostedListingKind.GRID_NODE -> listing.gridNodeAdvertisement?.metadata?.registryMemberships?.firstOrNull()
+                        P2PHostedListingKind.GRID_REGISTRY -> listing.gridRegistryAdvertisement?.metadata?.trustDomainId
+                    }?.takeIf { it.isNotBlank() }
+                }),
+                moderationStates = facetBuckets(matched.map { it.moderationState.name })
             )
         )
     }
@@ -963,6 +1051,15 @@ class P2PHostedRegistry(
 
         val filtered = store.listAuditRecords()
             .filter { request.listingId.isBlank() || it.listingId == request.listingId }
+            .filter { request.actions.isEmpty() || it.action in request.actions }
+            .filter { request.principalRef.isBlank() || it.principalRef == request.principalRef }
+            .filter { request.listingKinds.isEmpty() || it.listingKind in request.listingKinds }
+            .filter {
+                request.occurredAfterEpochMillis <= 0L || it.occurredAtEpochMillis >= request.occurredAfterEpochMillis
+            }
+            .filter {
+                request.occurredBeforeEpochMillis <= 0L || it.occurredAtEpochMillis <= request.occurredBeforeEpochMillis
+            }
             .sortedByDescending { it.occurredAtEpochMillis }
         val paged = filtered
             .drop(request.offset.coerceAtLeast(0))
@@ -985,6 +1082,7 @@ class P2PHostedRegistry(
     private suspend fun purgeExpiredListings()
     {
         val now = System.currentTimeMillis()
+        lastExpirySweepEpochMillis = now
         store.listListings().forEach { listing ->
             val expiresAt = listing.lease?.expiresAtEpochMillis ?: Long.MAX_VALUE
             if(expiresAt in 1 until now)
@@ -998,6 +1096,40 @@ class P2PHostedRegistry(
                 )
             }
         }
+    }
+
+    private suspend fun buildRegistryStatus(): P2PHostedRegistryStatus
+    {
+        val listings = store.listListings()
+        return P2PHostedRegistryStatus(
+            registryName = registryName,
+            durableStoreKind = store.describeStoreKind(),
+            stats = P2PHostedRegistryListingStats(
+                totalCount = listings.size,
+                activeCount = listings.count { it.moderationState == P2PHostedModerationState.ACTIVE },
+                pendingCount = listings.count { it.moderationState == P2PHostedModerationState.PENDING },
+                hiddenCount = listings.count { it.moderationState == P2PHostedModerationState.HIDDEN },
+                agentCount = listings.count { it.kind == P2PHostedListingKind.AGENT },
+                gridNodeCount = listings.count { it.kind == P2PHostedListingKind.GRID_NODE },
+                gridRegistryCount = listings.count { it.kind == P2PHostedListingKind.GRID_REGISTRY }
+            ),
+            auditEnabled = true,
+            operatorManaged = policy.info(registryName).operatorManaged,
+            lastExpirySweepEpochMillis = lastExpirySweepEpochMillis
+        )
+    }
+
+    private fun facetBuckets(values: List<String>): MutableList<P2PHostedRegistryFacetBucket>
+    {
+        return values
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key.lowercase() })
+            .map { P2PHostedRegistryFacetBucket(value = it.key, count = it.value) }
+            .toMutableList()
     }
 
     private suspend fun resolveExistingListingForPublish(
@@ -1129,6 +1261,20 @@ class P2PHostedRegistry(
             }
         }
 
+        if(query.exactTitle.isNotBlank() &&
+            !listing.metadata.title.equals(query.exactTitle, ignoreCase = true)
+        )
+        {
+            return false
+        }
+
+        if(query.titlePrefix.isNotBlank() &&
+            !listing.metadata.title.startsWith(query.titlePrefix, ignoreCase = true)
+        )
+        {
+            return false
+        }
+
         query.requiresAuth?.let { required ->
             val actual = when(listing.kind)
             {
@@ -1242,6 +1388,35 @@ class P2PHostedRegistry(
             {
                 return false
             }
+        }
+
+        if(query.moderationStates.isEmpty())
+        {
+            if(listing.moderationState != P2PHostedModerationState.ACTIVE)
+            {
+                return false
+            }
+        }
+        else if(listing.moderationState !in query.moderationStates)
+        {
+            return false
+        }
+
+        if(query.createdAfterEpochMillis > 0L && listing.metadata.createdAtEpochMillis < query.createdAfterEpochMillis)
+        {
+            return false
+        }
+        if(query.createdBeforeEpochMillis > 0L && listing.metadata.createdAtEpochMillis > query.createdBeforeEpochMillis)
+        {
+            return false
+        }
+        if(query.updatedAfterEpochMillis > 0L && listing.metadata.updatedAtEpochMillis < query.updatedAfterEpochMillis)
+        {
+            return false
+        }
+        if(query.updatedBeforeEpochMillis > 0L && listing.metadata.updatedAtEpochMillis > query.updatedBeforeEpochMillis)
+        {
+            return false
         }
 
         if(query.verifiedOnly && !listingHasVerificationEvidence(listing))
@@ -1451,6 +1626,62 @@ object P2PHostedRegistryClient
             ?: P2PHostedRegistryQueryResult(
                 accepted = false,
                 rejectionReason = "Hosted registry search returned an unreadable payload."
+            )
+    }
+
+    suspend fun getRegistryStatus(
+        transport: P2PTransport,
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryStatus?
+    {
+        val response = send(
+            transport = transport,
+            authBody = authBody,
+            transportAuthBody = transportAuthBody,
+            messageType = P2PHostedRegistryRpcType.REGISTRY_STATUS,
+            payloadType = HOSTED_REGISTRY_STATUS_PAYLOAD,
+            payloadJson = ""
+        ) ?: return null
+
+        if(response.payloadType != HOSTED_REGISTRY_STATUS_PAYLOAD)
+        {
+            return null
+        }
+        return deserialize<P2PHostedRegistryStatus>(response.payloadJson, useRepair = false)
+    }
+
+    suspend fun getSearchFacets(
+        transport: P2PTransport,
+        query: P2PHostedRegistryQuery = P2PHostedRegistryQuery(),
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryFacetResult
+    {
+        val response = send(
+            transport = transport,
+            authBody = authBody,
+            transportAuthBody = transportAuthBody,
+            messageType = P2PHostedRegistryRpcType.SEARCH_FACETS,
+            payloadType = HOSTED_REGISTRY_FACET_PAYLOAD,
+            payloadJson = serialize(P2PHostedRegistryFacetRequest(query = query))
+        ) ?: return P2PHostedRegistryFacetResult(
+            accepted = false,
+            rejectionReason = "Hosted registry facet query failed before a response was received."
+        )
+
+        if(response.payloadType != HOSTED_REGISTRY_FACET_RESULT_PAYLOAD)
+        {
+            return P2PHostedRegistryFacetResult(
+                accepted = false,
+                rejectionReason = "Hosted registry facet query returned an unexpected payload type '${response.payloadType}'."
+            )
+        }
+
+        return deserialize<P2PHostedRegistryFacetResult>(response.payloadJson, useRepair = false)
+            ?: P2PHostedRegistryFacetResult(
+                accepted = false,
+                rejectionReason = "Hosted registry facet query returned an unreadable payload."
             )
     }
 

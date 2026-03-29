@@ -3,11 +3,18 @@ package Defaults
 import com.TTT.Debug.TraceConfig
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.P2P.P2PDescriptor
+import com.TTT.P2P.P2PHostedListingKind
+import com.TTT.P2P.P2PHostedRegistryPolicySettings
+import com.TTT.P2P.P2PHostedRegistryQuery
 import com.TTT.P2P.P2PRequirements
+import com.TTT.P2P.P2PTransport
+import com.TTT.P2P.P2PTrustedRegistryAdmissionPolicy
 import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Pipeline.DistributionGridBootstrapCatalogSource
 import com.TTT.Pipeline.DistributionGridDurableStore
 import com.TTT.Pipeline.DistributionGridMemoryPolicy
 import com.TTT.Pipeline.DistributionGridPeerDiscoveryMode
+import com.TTT.Pipeline.DistributionGridPublicListingOptions
 import com.TTT.Pipeline.DistributionGridRegistryAdvertisement
 import com.TTT.Pipeline.DistributionGridRegistryMetadata
 import com.TTT.Pipeline.DistributionGridRoutingPolicy
@@ -230,5 +237,98 @@ data class OllamaGridConfiguration(
             timeout = timeout,
             useHttps = useHttps
         )
+    }
+}
+
+/**
+ * Store-selection mode for hosted-registry defaults.
+ */
+enum class HostedRegistryStoreMode
+{
+    MEMORY,
+    FILE_JSON
+}
+
+/**
+ * Thin defaults configuration for constructing a hosted-registry host.
+ */
+data class HostedRegistryConfiguration(
+    var registryName: String = "",
+    var transport: P2PTransport = P2PTransport(),
+    var storeMode: HostedRegistryStoreMode = HostedRegistryStoreMode.MEMORY,
+    var durableFilePath: String = "",
+    var policySettings: P2PHostedRegistryPolicySettings = P2PHostedRegistryPolicySettings()
+)
+{
+    fun validate(): Boolean
+    {
+        if(registryName.isBlank() || transport.transportAddress.isBlank())
+        {
+            return false
+        }
+        if(storeMode == HostedRegistryStoreMode.FILE_JSON && durableFilePath.isBlank())
+        {
+            return false
+        }
+        return true
+    }
+}
+
+/**
+ * Thin defaults configuration for plain `P2PRegistry` trusted hosted-registry imports.
+ */
+data class TrustedRegistrySourceConfiguration(
+    var sourceId: String = "",
+    var transport: P2PTransport = P2PTransport(),
+    var authBody: String = "",
+    var transportAuthBody: String = "",
+    var autoPullOnRegister: Boolean = false,
+    var includeInAutoRefresh: Boolean = true,
+    var textQuery: String = "",
+    var categories: MutableList<String> = mutableListOf(),
+    var tags: MutableList<String> = mutableListOf(),
+    var admissionPolicy: P2PTrustedRegistryAdmissionPolicy = P2PTrustedRegistryAdmissionPolicy(),
+    var requireVerificationEvidence: Boolean? = null,
+    var minimumRemainingLeaseMillis: Long? = null
+)
+{
+    fun validate(): Boolean
+    {
+        return sourceId.isNotBlank() && transport.transportAddress.isNotBlank()
+    }
+}
+
+/**
+ * Thin defaults configuration for `DistributionGrid` hosted bootstrap-catalog setup.
+ */
+data class DistributionGridBootstrapCatalogConfiguration(
+    var sourceId: String = "",
+    var transport: P2PTransport = P2PTransport(),
+    var autoPullOnInit: Boolean = false,
+    var categories: MutableList<String> = mutableListOf(),
+    var tags: MutableList<String> = mutableListOf(),
+    var trustDomainIds: MutableList<String> = mutableListOf()
+)
+{
+    fun validate(): Boolean
+    {
+        return sourceId.isNotBlank() && transport.transportAddress.isNotBlank()
+    }
+}
+
+/**
+ * Thin defaults configuration for public hosted-grid listing metadata.
+ */
+data class DistributionGridPublicListingDefaultsConfiguration(
+    var title: String = "",
+    var summary: String = "",
+    var categories: MutableList<String> = mutableListOf(),
+    var tags: MutableList<String> = mutableListOf(),
+    var requestedLeaseSeconds: Int = 3600
+)
+{
+    fun validate(): Boolean
+    {
+        return requestedLeaseSeconds > 0
     }
 }
