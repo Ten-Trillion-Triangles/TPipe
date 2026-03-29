@@ -43,7 +43,8 @@ class P2PHostedRegistryTest
             val hostedRegistry = P2PHostedRegistry(
                 registryName = "hosted-registry-test",
                 transport = transport,
-                store = InMemoryP2PHostedRegistryStore()
+                store = InMemoryP2PHostedRegistryStore(),
+                policy = authenticatedPolicy()
             )
 
             try
@@ -263,7 +264,10 @@ class P2PHostedRegistryTest
                 )
 
                 assertFalse(published.accepted)
-                assertTrue(published.rejectionReason.contains("denied", ignoreCase = true))
+                assertTrue(
+                    published.rejectionReason.contains("auth", ignoreCase = true) ||
+                        published.rejectionReason.contains("denied", ignoreCase = true)
+                )
             }
 
             finally
@@ -286,7 +290,8 @@ class P2PHostedRegistryTest
             val firstInstance = P2PHostedRegistry(
                 registryName = "durable-hosted-registry",
                 transport = transport,
-                store = FileBackedP2PHostedRegistryStore(tempFile.toString())
+                store = FileBackedP2PHostedRegistryStore(tempFile.toString()),
+                policy = authenticatedPolicy()
             )
 
             try
@@ -337,7 +342,8 @@ class P2PHostedRegistryTest
             val secondInstance = P2PHostedRegistry(
                 registryName = "durable-hosted-registry",
                 transport = transport,
-                store = FileBackedP2PHostedRegistryStore(tempFile.toString())
+                store = FileBackedP2PHostedRegistryStore(tempFile.toString()),
+                policy = authenticatedPolicy()
             )
 
             try
@@ -383,7 +389,16 @@ class P2PHostedRegistryTest
                 store = InMemoryP2PHostedRegistryStore(),
                 policy = DefaultP2PHostedRegistryPolicy(
                     P2PHostedRegistryPolicySettings(
-                        operatorRefs = mutableSetOf("operator-token")
+                        authMechanism = { it in allowedHostedRegistryTokens },
+                        principalResolver = { token ->
+                            when(token)
+                            {
+                                "publisher-token" -> "publisher-principal"
+                                "operator-token" -> "operator-principal"
+                                else -> token
+                            }
+                        },
+                        operatorRefs = mutableSetOf("operator-principal")
                     )
                 )
             )
@@ -450,7 +465,9 @@ class P2PHostedRegistryTest
                     query = P2PHostedRegistryAuditQuery(listingId = published.listing!!.listingId)
                 )
                 assertTrue(auditResult.accepted, auditResult.rejectionReason)
-                assertTrue(auditResult.results.any { it.action.name == "PUBLISH" })
+                assertTrue(auditResult.results.any {
+                    it.action.name == "PUBLISH" && it.principalRef == "publisher-principal"
+                })
                 assertTrue(auditResult.results.any { it.action.name == "MODERATE" })
             }
             finally
@@ -474,6 +491,7 @@ class P2PHostedRegistryTest
                 store = InMemoryP2PHostedRegistryStore(),
                 policy = DefaultP2PHostedRegistryPolicy(
                     P2PHostedRegistryPolicySettings(
+                        authMechanism = { it in allowedHostedRegistryTokens },
                         operatorRefs = mutableSetOf("operator-token")
                     )
                 )
@@ -570,5 +588,134 @@ class P2PHostedRegistryTest
                 P2PRegistry.remove(transport)
             }
         }
+    }
+
+    @Test
+    fun hostedRegistryCanRequireAuthForAllReadSurfaces()
+    {
+        runBlocking {
+            val transport = P2PTransport(
+                transportMethod = Transport.Tpipe,
+                transportAddress = "private-read-hosted-registry"
+            )
+            val hostedRegistry = P2PHostedRegistry(
+                registryName = "private-read-hosted-registry",
+                transport = transport,
+                store = InMemoryP2PHostedRegistryStore(),
+                policy = DefaultP2PHostedRegistryPolicy(
+                    P2PHostedRegistryPolicySettings(
+                        requireAuthForRead = true,
+                        requireAuthForWrite = true,
+                        authMechanism = { it == "reader-token" || it == "publisher-token" }
+                    )
+                )
+            )
+
+            try
+            {
+                P2PRegistry.register(
+                    agent = hostedRegistry,
+                    transport = transport,
+                    descriptor = hostedRegistry.getP2pDescription(),
+                    requirements = hostedRegistry.getP2pRequirements()
+                )
+
+                val published = P2PHostedRegistryClient.publishListing(
+                    transport = transport,
+                    authBody = "publisher-token",
+                    request = P2PHostedRegistryPublishRequest(
+                        listing = P2PHostedRegistryListing(
+                            kind = P2PHostedListingKind.AGENT,
+                            metadata = P2PHostedListingMetadata(title = "Private Read Agent"),
+                            publicDescriptor = P2PDescriptor(
+                                agentName = "private-read-agent",
+                                agentDescription = "Private read coverage",
+                                transport = P2PTransport(
+                                    transportMethod = Transport.Http,
+                                    transportAddress = "https://example.com/private-read-agent"
+                                ),
+                                requiresAuth = false,
+                                usesConverse = false,
+                                allowsAgentDuplication = false,
+                                allowsCustomContext = false,
+                                allowsCustomAgentJson = false,
+                                recordsInteractionContext = false,
+                                recordsPromptContent = false,
+                                allowsExternalContext = false,
+                                contextProtocol = ContextProtocol.none
+                            )
+                        )
+                    )
+                )
+                assertTrue(published.accepted, published.rejectionReason)
+
+                assertEquals(
+                    null,
+                    P2PHostedRegistryClient.getRegistryInfo(transport)
+                )
+                assertEquals(
+                    null,
+                    P2PHostedRegistryClient.getRegistryStatus(transport)
+                )
+                assertFalse(
+                    P2PHostedRegistryClient.searchListings(
+                        transport = transport,
+                        query = P2PHostedRegistryQuery(textQuery = "Private")
+                    ).accepted
+                )
+                assertFalse(
+                    P2PHostedRegistryClient.getSearchFacets(
+                        transport = transport,
+                        query = P2PHostedRegistryQuery(textQuery = "Private")
+                    ).accepted
+                )
+                assertFalse(
+                    P2PHostedRegistryClient.getListing(
+                        transport = transport,
+                        listingId = published.listing!!.listingId
+                    ).accepted
+                )
+
+                assertNotNull(
+                    P2PHostedRegistryClient.getRegistryInfo(
+                        transport = transport,
+                        authBody = "reader-token"
+                    )
+                )
+                assertTrue(
+                    P2PHostedRegistryClient.searchListings(
+                        transport = transport,
+                        query = P2PHostedRegistryQuery(textQuery = "Private"),
+                        authBody = "reader-token"
+                    ).accepted
+                )
+            }
+            finally
+            {
+                P2PRegistry.remove(transport)
+            }
+        }
+    }
+
+    private fun authenticatedPolicy(
+        requireAuthForRead: Boolean = false,
+        requireAuthForWrite: Boolean = true
+    ): DefaultP2PHostedRegistryPolicy
+    {
+        return DefaultP2PHostedRegistryPolicy(
+            P2PHostedRegistryPolicySettings(
+                requireAuthForRead = requireAuthForRead,
+                requireAuthForWrite = requireAuthForWrite,
+                authMechanism = { it in allowedHostedRegistryTokens }
+            )
+        )
+    }
+
+    private companion object {
+        private val allowedHostedRegistryTokens = setOf(
+            "publisher-token",
+            "operator-token",
+            "reader-token"
+        )
     }
 }

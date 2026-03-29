@@ -212,6 +212,7 @@ distributionGrid {
                     listingKinds = mutableListOf(P2PHostedListingKind.GRID_REGISTRY),
                     categories = mutableListOf("grid/registry")
                 ),
+                authBody = "catalog-reader-token",
                 autoPullOnInit = true
             )
         )
@@ -222,6 +223,9 @@ distributionGrid {
 Hosted bootstrap catalogs are still discovery aids only. Pulled `GRID_REGISTRY` advertisements still have to pass
 the configured `DistributionGridTrustVerifier`, and later remote routing still uses the normal handshake and
 session rules.
+
+If the hosted registry gates reads, set `authBody` and/or `transportAuthBody` on the bootstrap source. Those values
+are used only for the hosted-registry query; they do not change grid trust verification or remote session auth.
 
 `DistributionGrid` now also exposes hosted-registry observability for this path, including:
 

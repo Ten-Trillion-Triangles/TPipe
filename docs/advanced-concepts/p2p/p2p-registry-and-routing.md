@@ -84,6 +84,7 @@ remote directory system.
 Hosted registries support:
 
 - public `AGENT`, `GRID_NODE`, and `GRID_REGISTRY` listings
+- optional hosted-registry scoped auth using the normal TPipe auth-hook style
 - lease-based publication and renewal
 - structured filtering by kind, category, tag, transport, auth requirement, content type, capability, and trust-domain metadata
 - exact-title and title-prefix filtering
@@ -108,6 +109,17 @@ val hostedResults = P2PHostedRegistryClient.searchListings(
 
 Hosted registries are still just P2P services under the hood, so they can be exposed in-process, over HTTP
 `/p2p`, or over stdio hosts without a second API stack.
+
+When a hosted registry enables read or write auth, clients keep using the normal TPipe request auth fields:
+
+- `authBody` for P2P-style request auth
+- `transportAuthBody` / HTTP `Authorization` for transport-level auth
+
+Hosted-registry auth remains pluggable. A host may validate credentials with a hosted-registry-specific auth hook
+or fall back to `P2PRegistry.globalAuthMechanism`. The optional principal resolver is only for owner/operator/audit
+identity after auth succeeds; it does not replace TPipe's normal auth validation hooks.
+
+If you implement a custom `P2PHostedRegistryPolicy` instead of using `DefaultP2PHostedRegistryPolicy`, the early auth gate falls back to `globalAuthMechanism` only. Set `globalAuthMechanism` or handle credential validation inside your policy's `canRead`/`canPublish`/`canMutate` methods.
 
 ### Trusted Hosted Sources for Plain P2P Clients
 

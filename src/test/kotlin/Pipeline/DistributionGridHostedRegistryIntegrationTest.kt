@@ -135,7 +135,8 @@ class DistributionGridHostedRegistryIntegrationTest
             val hostedRegistry = P2PHostedRegistry(
                 registryName = "grid-node-publish-registry",
                 transport = hostedRegistryTransport,
-                store = InMemoryP2PHostedRegistryStore()
+                store = InMemoryP2PHostedRegistryStore(),
+                policy = authenticatedHostedRegistryPolicy()
             )
 
             try
@@ -204,6 +205,7 @@ class DistributionGridHostedRegistryIntegrationTest
                 store = InMemoryP2PHostedRegistryStore(),
                 policy = DefaultP2PHostedRegistryPolicy(
                     P2PHostedRegistryPolicySettings(
+                        authMechanism = { token -> token == "publisher-token" || token == "operator-token" },
                         operatorRefs = mutableSetOf("operator-token")
                     )
                 )
@@ -355,6 +357,15 @@ class DistributionGridHostedRegistryIntegrationTest
             grid.addBootstrapCatalogSource(source)
         }
         return grid
+    }
+
+    private fun authenticatedHostedRegistryPolicy(): DefaultP2PHostedRegistryPolicy
+    {
+        return DefaultP2PHostedRegistryPolicy(
+            P2PHostedRegistryPolicySettings(
+                authMechanism = { token -> token == "publisher-token" || token == "operator-token" }
+            )
+        )
     }
 }
 

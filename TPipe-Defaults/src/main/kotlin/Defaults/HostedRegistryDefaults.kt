@@ -126,6 +126,8 @@ object HostedRegistryDefaults
                 tags = configuration.tags.toMutableList(),
                 trustDomainIds = configuration.trustDomainIds.toMutableList()
             ),
+            authBody = configuration.authBody,
+            transportAuthBody = configuration.transportAuthBody,
             autoPullOnInit = configuration.autoPullOnInit
         )
     }

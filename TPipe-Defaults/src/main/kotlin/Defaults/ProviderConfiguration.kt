@@ -304,6 +304,8 @@ data class TrustedRegistrySourceConfiguration(
 data class DistributionGridBootstrapCatalogConfiguration(
     var sourceId: String = "",
     var transport: P2PTransport = P2PTransport(),
+    var authBody: String = "",
+    var transportAuthBody: String = "",
     var autoPullOnInit: Boolean = false,
     var categories: MutableList<String> = mutableListOf(),
     var tags: MutableList<String> = mutableListOf(),

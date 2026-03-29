@@ -74,19 +74,6 @@ fun Application.configureRouting()
                     }
                 }
 
-                val authMechanism = P2PRegistry.globalAuthMechanism
-                if(authMechanism != null)
-                {
-                    val isAuthorized = authMechanism(request.transport.transportAuthBody)
-                    if(!isAuthorized)
-                    {
-                        call.respond(P2PResponse().apply {
-                            rejection = P2PRejection(P2PError.auth, "Unauthorized P2P hosted registry request")
-                        })
-                        return@post
-                    }
-                }
-
                 val response = P2PRegistry.executeP2pRequest(request)
                 call.respond(response)
             }

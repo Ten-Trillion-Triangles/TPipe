@@ -62,6 +62,7 @@ class HostedRegistryDefaultsTest
                 registryName = "defaults-private-registry",
                 transport = P2PTransport(Transport.Tpipe, "defaults-private-registry"),
                 policySettings = P2PHostedRegistryPolicySettings(
+                    authMechanism = { it == "reader-token" },
                     operatorRefs = mutableSetOf("operator-token")
                 )
             )
@@ -119,6 +120,8 @@ class HostedRegistryDefaultsTest
             DistributionGridBootstrapCatalogConfiguration(
                 sourceId = "bootstrap-source",
                 transport = P2PTransport(Transport.Http, "https://grid-catalog.example"),
+                authBody = "bootstrap-auth",
+                transportAuthBody = "Bearer bootstrap-auth",
                 autoPullOnInit = true,
                 categories = mutableListOf("grid/registry"),
                 trustDomainIds = mutableListOf("public-grid")
@@ -128,6 +131,8 @@ class HostedRegistryDefaultsTest
         assertEquals(listOf(P2PHostedListingKind.GRID_REGISTRY), bootstrap.query.listingKinds)
         assertEquals(listOf("grid/registry"), bootstrap.query.categories)
         assertEquals(listOf("public-grid"), bootstrap.query.trustDomainIds)
+        assertEquals("bootstrap-auth", bootstrap.authBody)
+        assertEquals("Bearer bootstrap-auth", bootstrap.transportAuthBody)
         assertTrue(bootstrap.autoPullOnInit)
     }
 

@@ -823,10 +823,18 @@ object P2PRegistry
             }
         }
 
-        val effectiveAuthMechanism = requirements.authMechanism ?: globalAuthMechanism
+        val effectiveAuthMechanism = when
+        {
+            requirements.authMechanism != null -> requirements.authMechanism
+            agent is P2PHostedRegistry -> null
+            else -> globalAuthMechanism
+        }
         if(effectiveAuthMechanism != null)
         {
-            val result = effectiveAuthMechanism.invoke(request.authBody)
+            val effectiveAuthBody = request.authBody
+                .ifBlank { request.transport.transportAuthBody }
+                .trim()
+            val result = effectiveAuthMechanism.invoke(effectiveAuthBody)
             if(result == false)
             {
                 val rejection = P2PRejection()

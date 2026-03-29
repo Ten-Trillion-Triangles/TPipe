@@ -200,6 +200,8 @@ data class DistributionGridRegistryAdvertisement(
  * @param sourceId Stable local identifier for this bootstrap catalog source.
  * @param transport Hosted-registry transport endpoint.
  * @param query Query used to pull `GRID_REGISTRY` listings from the source.
+ * @param authBody Optional P2P auth token supplied to hosted-registry reads.
+ * @param transportAuthBody Optional transport-auth token or Authorization header value for hosted-registry reads.
  * @param autoPullOnInit Whether the grid should pull this source during `init()`.
  */
 @Serializable
@@ -207,6 +209,8 @@ data class DistributionGridBootstrapCatalogSource(
     var sourceId: String = "",
     var transport: P2PTransport = P2PTransport(),
     var query: P2PHostedRegistryQuery = P2PHostedRegistryQuery(),
+    var authBody: String = "",
+    var transportAuthBody: String = "",
     var autoPullOnInit: Boolean = false
 )
 

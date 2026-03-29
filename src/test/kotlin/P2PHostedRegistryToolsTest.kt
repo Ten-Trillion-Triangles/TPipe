@@ -7,6 +7,7 @@ import com.TTT.P2P.P2PHostedListingKind
 import com.TTT.P2P.P2PHostedListingMetadata
 import com.TTT.P2P.P2PHostedRegistry
 import com.TTT.P2P.P2PHostedRegistryListing
+import com.TTT.P2P.P2PHostedRegistryPolicySettings
 import com.TTT.P2P.P2PHostedRegistryPublishRequest
 import com.TTT.P2P.P2PHostedRegistryQuery
 import com.TTT.P2P.P2PHostedRegistryTools
@@ -22,6 +23,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import com.TTT.P2P.DefaultP2PHostedRegistryPolicy
 
 class P2PHostedRegistryToolsTest
 {
@@ -33,7 +35,8 @@ class P2PHostedRegistryToolsTest
             val hostedRegistry = P2PHostedRegistry(
                 registryName = "hosted-registry-tools",
                 transport = transport,
-                store = InMemoryP2PHostedRegistryStore()
+                store = InMemoryP2PHostedRegistryStore(),
+                policy = authenticatedPolicy()
             )
 
             try
@@ -117,7 +120,8 @@ class P2PHostedRegistryToolsTest
             val hostedRegistry = P2PHostedRegistry(
                 registryName = "hosted-registry-tools-status",
                 transport = transport,
-                store = InMemoryP2PHostedRegistryStore()
+                store = InMemoryP2PHostedRegistryStore(),
+                policy = authenticatedPolicy()
             )
 
             try
@@ -218,5 +222,14 @@ class P2PHostedRegistryToolsTest
         assertNotNull(context.tpipeOptions.find { it.functionName == "publish_p2p_registry_listing" })
         assertNotNull(context.tpipeOptions.find { it.functionName == "renew_p2p_registry_listing" })
         assertNotNull(context.tpipeOptions.find { it.functionName == "remove_p2p_registry_listing" })
+    }
+
+    private fun authenticatedPolicy(): DefaultP2PHostedRegistryPolicy
+    {
+        return DefaultP2PHostedRegistryPolicy(
+            P2PHostedRegistryPolicySettings(
+                authMechanism = { token -> token == "publisher-token" || token == "operator-token" }
+            )
+        )
     }
 }

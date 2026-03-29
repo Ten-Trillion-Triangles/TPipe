@@ -1866,7 +1866,9 @@ class DistributionGrid : P2PInterface
                 )
             val result = P2PHostedRegistryClient.searchListings(
                 transport = source.transport,
-                query = source.query
+                query = source.query,
+                authBody = source.authBody,
+                transportAuthBody = source.transportAuthBody
             )
             if(!result.accepted)
             {

@@ -8,6 +8,7 @@ import com.TTT.P2P.P2PHostedListingMetadata
 import com.TTT.P2P.P2PHostedRegistry
 import com.TTT.P2P.P2PHostedRegistryClient
 import com.TTT.P2P.P2PHostedRegistryListing
+import com.TTT.P2P.P2PHostedRegistryPolicySettings
 import com.TTT.P2P.P2PHostedRegistryPublishRequest
 import com.TTT.P2P.P2PRegistry
 import com.TTT.P2P.P2PRequest
@@ -16,6 +17,7 @@ import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.P2PTrustedRegistryAdmissionPolicy
 import com.TTT.P2P.P2PTrustedRegistrySource
 import com.TTT.P2P.SupportedContentTypes
+import com.TTT.P2P.DefaultP2PHostedRegistryPolicy
 import com.TTT.PipeContextProtocol.Transport
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -331,7 +333,12 @@ class P2PRegistryTrustedRegistrySourceTest
         return P2PHostedRegistry(
             registryName = transport.transportAddress,
             transport = transport,
-            store = InMemoryP2PHostedRegistryStore()
+            store = InMemoryP2PHostedRegistryStore(),
+            policy = DefaultP2PHostedRegistryPolicy(
+                P2PHostedRegistryPolicySettings(
+                    authMechanism = { token -> token == "publisher-token" }
+                )
+            )
         )
     }
 

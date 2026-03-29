@@ -35,6 +35,8 @@ private const val HOSTED_REGISTRY_MUTATION_RESULT_PAYLOAD = "P2PHostedRegistryMu
  */
 data class P2PHostedRegistryAccessContext(
     val request: P2PRequest,
+    val effectiveAuthBody: String,
+    val isAuthenticated: Boolean,
     val principalRef: String,
     val authBody: String,
     val transportAuthBody: String
@@ -85,6 +87,8 @@ data class P2PHostedRegistryPolicySettings(
     var requireAuthForRead: Boolean = false,
     var requireAuthForWrite: Boolean = true,
     var allowAnonymousPublish: Boolean = false,
+    var authMechanism: (suspend (authBody: String) -> Boolean)? = null,
+    var principalResolver: (suspend (authBody: String) -> String)? = null,
     var operatorRefs: MutableSet<String> = mutableSetOf(),
     var allowedKinds: MutableSet<P2PHostedListingKind> = mutableSetOf(
         P2PHostedListingKind.AGENT,
@@ -114,7 +118,7 @@ class DefaultP2PHostedRegistryPolicy(
         {
             return true
         }
-        return context.principalRef.isNotBlank()
+        return context.isAuthenticated
     }
 
     override suspend fun canPublish(
@@ -128,12 +132,12 @@ class DefaultP2PHostedRegistryPolicy(
             return false
         }
 
-        if(settings.requireAuthForWrite && context.principalRef.isBlank())
+        if(settings.requireAuthForWrite && !context.isAuthenticated)
         {
             return false
         }
 
-        if(context.principalRef.isBlank() && !settings.allowAnonymousPublish)
+        if(!context.isAuthenticated && !settings.allowAnonymousPublish)
         {
             return false
         }
@@ -162,7 +166,7 @@ class DefaultP2PHostedRegistryPolicy(
             return ownerRef == context.principalRef
         }
 
-        return !settings.requireAuthForWrite || context.principalRef.isNotBlank()
+        return !settings.requireAuthForWrite || context.isAuthenticated
     }
 
     override suspend fun canModerate(
@@ -184,6 +188,23 @@ class DefaultP2PHostedRegistryPolicy(
     override fun resolveOwnerRef(context: P2PHostedRegistryAccessContext): String
     {
         return context.principalRef
+    }
+
+    suspend fun authenticate(authBody: String): Boolean
+    {
+        val mechanism = settings.authMechanism ?: P2PRegistry.globalAuthMechanism
+        if(mechanism == null)
+        {
+            return false
+        }
+        return mechanism.invoke(authBody)
+    }
+
+    suspend fun resolvePrincipal(authBody: String): String
+    {
+        return settings.principalResolver?.invoke(authBody)?.trim().orEmpty().ifBlank {
+            authBody.trim()
+        }
     }
 
     override fun sanitizeListing(listing: P2PHostedRegistryListing): P2PHostedRegistryListing
@@ -513,11 +534,33 @@ class P2PHostedRegistry(
             )
         )
 
+        val effectiveAuthBody = request.authBody
+            .ifBlank { request.transport.transportAuthBody }
+            .trim()
+        val requiresAuth = rpcMessage.messageType.requiresHostedRegistryAuth(policy)
+        val isAuthenticated = if(requiresAuth)
+        {
+            validateHostedRegistryAuth(effectiveAuthBody)
+        }
+        else
+        {
+            false
+        }
+        if(requiresAuth && !isAuthenticated)
+        {
+            return P2PResponse(
+                rejection = P2PRejection(
+                    errorType = P2PError.auth,
+                    reason = "Hosted registry authentication failed."
+                )
+            )
+        }
+
         val context = P2PHostedRegistryAccessContext(
             request = request,
-            principalRef = request.authBody
-                .ifBlank { request.transport.transportAuthBody }
-                .trim(),
+            effectiveAuthBody = effectiveAuthBody,
+            isAuthenticated = isAuthenticated,
+            principalRef = resolvePrincipalRef(effectiveAuthBody, isAuthenticated),
             authBody = request.authBody,
             transportAuthBody = request.transport.transportAuthBody
         )
@@ -546,7 +589,7 @@ class P2PHostedRegistry(
                 )
             }
 
-            P2PHostedRegistryRpcType.SEARCH_LISTINGS -> handleSearch(request = request, context = context, rpcMessage = rpcMessage)
+            P2PHostedRegistryRpcType.SEARCH_LISTINGS -> handleSearch(context = context, rpcMessage = rpcMessage)
             P2PHostedRegistryRpcType.SEARCH_FACETS -> handleFacetSearch(context, rpcMessage)
             P2PHostedRegistryRpcType.GET_LISTING -> handleGet(context, rpcMessage)
             P2PHostedRegistryRpcType.PUBLISH_LISTING -> handlePublish(context, rpcMessage)
@@ -559,7 +602,6 @@ class P2PHostedRegistry(
     }
 
     private suspend fun handleSearch(
-        request: P2PRequest,
         context: P2PHostedRegistryAccessContext,
         rpcMessage: P2PHostedRegistryRpcMessage
     ): P2PResponse
@@ -1566,6 +1608,74 @@ class P2PHostedRegistry(
                 occurredAtEpochMillis = System.currentTimeMillis()
             )
         )
+    }
+
+    private suspend fun validateHostedRegistryAuth(authBody: String): Boolean
+    {
+        if(authBody.isBlank())
+        {
+            return false
+        }
+
+        val defaultPolicy = policy as? DefaultP2PHostedRegistryPolicy
+        val mechanism: (suspend (String) -> Boolean)? = if(defaultPolicy != null)
+        {
+            { credential -> defaultPolicy.authenticate(credential) }
+        }
+        else
+        {
+            P2PRegistry.globalAuthMechanism
+        }
+
+        if(mechanism == null)
+        {
+            return false
+        }
+
+        return mechanism.invoke(authBody)
+    }
+
+    private suspend fun resolvePrincipalRef(authBody: String, isAuthenticated: Boolean): String
+    {
+        if(authBody.isBlank())
+        {
+            return ""
+        }
+
+        val defaultPolicy = policy as? DefaultP2PHostedRegistryPolicy
+        if(isAuthenticated && defaultPolicy != null)
+        {
+            return defaultPolicy.resolvePrincipal(authBody)
+        }
+
+        return authBody.trim()
+    }
+}
+
+private fun P2PHostedRegistryRpcType.requiresHostedRegistryAuth(policy: P2PHostedRegistryPolicy): Boolean
+{
+    val defaultPolicy = policy as? DefaultP2PHostedRegistryPolicy ?: return when(this)
+    {
+        P2PHostedRegistryRpcType.MODERATE_LISTING,
+        P2PHostedRegistryRpcType.LIST_AUDIT_LOG -> true
+        else -> false
+    }
+
+    return when(this)
+    {
+        P2PHostedRegistryRpcType.REGISTRY_INFO,
+        P2PHostedRegistryRpcType.REGISTRY_STATUS,
+        P2PHostedRegistryRpcType.SEARCH_LISTINGS,
+        P2PHostedRegistryRpcType.SEARCH_FACETS,
+        P2PHostedRegistryRpcType.GET_LISTING -> defaultPolicy.info("").requireAuthForRead
+
+        P2PHostedRegistryRpcType.PUBLISH_LISTING,
+        P2PHostedRegistryRpcType.UPDATE_LISTING,
+        P2PHostedRegistryRpcType.RENEW_LISTING,
+        P2PHostedRegistryRpcType.REMOVE_LISTING -> defaultPolicy.info("").requireAuthForWrite
+
+        P2PHostedRegistryRpcType.MODERATE_LISTING,
+        P2PHostedRegistryRpcType.LIST_AUDIT_LOG -> true
     }
 }
 

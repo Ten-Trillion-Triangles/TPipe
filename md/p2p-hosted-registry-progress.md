@@ -28,6 +28,8 @@ The first hosted-registry slice is now implemented in code:
   - run opt-in public-listing auto-renew loops
 - the grid DSL now exposes `bootstrapCatalogSource(...)`
 - hosted registries are now reachable over a dedicated HTTP `POST /p2p/registry` route
+- hosted registries now support scoped pluggable auth for reads and writes without introducing a second auth system
+- authenticated hosted registries can now resolve a stable principal for owner/operator/audit tracking after auth succeeds
 - hosted registries now support:
   - a durable file-backed JSON store
   - operator moderation
@@ -44,6 +46,7 @@ The first hosted-registry slice is now implemented in code:
   - bootstrap source pull state
   - accepted vs trust-rejected hosted registry counts
   - public listing auto-renew loop status
+- `DistributionGridBootstrapCatalogSource` now carries optional hosted-registry auth values for secured catalog pulls
 - `TPipe-Defaults` now provides thin hosted-registry ergonomics helpers for:
   - public/private hosted-registry host construction
   - trusted plain-P2P source construction
@@ -88,6 +91,7 @@ Result:
   - the hosted-grid integration test double so it preserves container ownership like a real bound component
 - broader `DistributionGrid*` verification passed after the trusted-source and HTTP-route additions
 - inbound P2P lookup now tolerates auth-only transport differences so HTTP-hosted agents remain reachable when `transportAuthBody` is attached
+- hosted-registry auth now runs inside `P2PHostedRegistry` per operation so private-read/public-read-authenticated-write hosts work without blanket route-level global auth
 
 ## Known Remaining Work
 
