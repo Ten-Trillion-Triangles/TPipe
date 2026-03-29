@@ -64,6 +64,25 @@ data class P2PTransport(
     var transportAddress: String = "",
     var transportAuthBody: String = ""
 )
+{
+    /**
+     * Identity is defined by transport method and address only. The auth body is a runtime credential
+     * and must not affect map key lookups or equality checks.
+     */
+    override fun equals(other: Any?): Boolean
+    {
+        if(this === other) return true
+        if(other !is P2PTransport) return false
+        return transportMethod == other.transportMethod && transportAddress == other.transportAddress
+    }
+
+    override fun hashCode(): Int
+    {
+        var result = transportMethod.hashCode()
+        result = 31 * result + transportAddress.hashCode()
+        return result
+    }
+}
 
 /**
  * Granular definition of skills that an agent supports. Helps the llm reading the description better understand

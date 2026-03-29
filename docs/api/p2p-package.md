@@ -234,6 +234,7 @@ existing P2P transport path.
 - **`InMemoryP2PHostedRegistryStore`**: first shipped store implementation
 - **`P2PHostedRegistryClient`**: coder-facing client helpers for info, search, publish, renew, delete, and import
 - **`P2PHostedRegistryTools`**: PCP-callable tool bundle for agents
+- **`P2PTrustedRegistrySource`**: plain `P2PRegistry` source record for trusted hosted-registry imports
 
 ### Listing Kinds
 
@@ -255,6 +256,30 @@ existing P2P transport path.
 - lease expiry removes listings from query results
 - hosted-registry admission policy is separate from `DistributionGridTrustVerifier`
 - public catalog presence does not bypass grid handshake, session, or trust-verification requirements
+- plain `P2PRegistry` trusted imports reject duplicate collisions instead of overwriting existing entries
+
+### Trusted Hosted Sources on `P2PRegistry`
+
+For non-grid clients, `P2PRegistry` can now treat selected hosted registries as trusted import sources for
+public `AGENT` listings.
+
+Public functions:
+
+- `addTrustedRegistrySource(...)`
+- `removeTrustedRegistrySource(...)`
+- `getTrustedRegistrySourceIds()`
+- `pullTrustedRegistrySources(...)`
+- `startTrustedRegistryAutoRefresh(...)`
+- `stopTrustedRegistryAutoRefresh()`
+- `isTrustedRegistryAutoRefreshRunning()`
+- `getTrustedRegistryImportCollisions()`
+
+Behavior:
+
+- imported listings materialize directly into the normal client catalog
+- imports are tracked per source so refresh/removal can clean up stale entries
+- per-source admission filters can reject listings before import
+- collisions are recorded and skipped instead of overwritten
 
 ### Coder-Facing Client Example
 
@@ -274,6 +299,7 @@ val result = P2PHostedRegistryClient.searchListings(
 `P2PHostedRegistryTools.registerAndEnable(context)` exposes read tools by default:
 
 - `search_p2p_registry_listings`
+- `search_p2p_agent_listings`
 - `get_p2p_registry_listing`
 - `list_trusted_grid_registries`
 
@@ -282,6 +308,15 @@ Opting into write tools adds:
 - `publish_p2p_registry_listing`
 - `renew_p2p_registry_listing`
 - `remove_p2p_registry_listing`
+
+### HTTP Exposure
+
+Hosted registries now have a dedicated HTTP adapter route:
+
+- `POST /p2p/registry`
+
+`P2PHostedRegistryClient` automatically targets this route for `Transport.Http` hosted-registry calls while
+`Transport.Tpipe` and stdio keep using the existing internal path.
 
 #### Agent Management
 

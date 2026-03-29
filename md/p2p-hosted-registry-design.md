@@ -14,7 +14,9 @@ existing `DistributionGrid` handshake, session, or trust-verification rules.
 
 ## Core Design Rules
 
-- Hosted registries use normal `P2PRequest` and `P2PResponse` transport, not a separate REST catalog API.
+- Hosted registries use normal `P2PRequest` and `P2PResponse` transport internally.
+- HTTP exposure is provided through a dedicated `POST /p2p/registry` adapter route, not a second hosted-registry
+  service implementation.
 - One hosted registry service may expose three listing kinds:
   - `AGENT`
   - `GRID_NODE`
@@ -62,6 +64,7 @@ These models unify human search/publish flows and agent PCP tool flows on the sa
   - pull-to-local-registry import
 - `P2PHostedRegistryTools` provides PCP-callable agent tools for:
   - `search_p2p_registry_listings`
+  - `search_p2p_agent_listings`
   - `get_p2p_registry_listing`
   - `list_trusted_grid_registries`
   - `publish_p2p_registry_listing`
@@ -69,6 +72,26 @@ These models unify human search/publish flows and agent PCP tool flows on the sa
   - `remove_p2p_registry_listing`
 
 Write tools are opt-in when enabling the PCP surface.
+
+### Plain P2P trusted-source integration
+
+Hosted registries also integrate with plain `P2PRegistry` through a lighter trusted-source path:
+
+- `P2PTrustedRegistrySource`
+  - source id
+  - hosted-registry transport
+  - structured query
+  - optional auth values
+  - optional per-source admission filter
+  - auto-pull-on-register flag
+  - include-in-auto-refresh flag
+- source-tracked imports live directly in the normal client catalog
+- only `AGENT` listings are imported into plain `P2PRegistry`
+- imported entries are tracked by source so refresh/removal can clean up only source-owned records
+- collisions are rejected and recorded instead of overwritten
+
+This path is intentionally lighter than `DistributionGrid` trust verification. It is for plain P2P
+agent discovery/import, not grid routing trust.
 
 ### DistributionGrid integration
 
@@ -111,8 +134,12 @@ bootstrap-catalog sources. Public publish/renew/remove remain explicit runtime a
 - Keep hosted-registry policy distinct from grid trust:
   - hosted registry policy decides who may read or mutate listings
   - `DistributionGridTrustVerifier` still decides what grid advertisements are admissible
+- Keep hosted-registry trusted-source admission distinct from full grid trust:
+  - `P2PTrustedRegistrySource.admissionFilter` is only a lightweight local import gate
+  - it must not be treated as equivalent to `DistributionGridTrustVerifier`
 - `pullTrustedBootstrapCatalogs(...)` only imports `GRID_REGISTRY` advertisements that still pass verifier checks
 - Public node and registry listing publication does not bypass later handshake/session validation
+- Plain `P2PRegistry` trusted imports reject duplicate agent-name collisions instead of overwriting existing entries
 
 ## Deferred Work
 

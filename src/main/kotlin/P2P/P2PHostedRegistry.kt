@@ -1102,6 +1102,57 @@ object P2PHostedRegistryClient
             )
     }
 
+    suspend fun searchAgentListings(
+        transport: P2PTransport,
+        query: P2PHostedRegistryQuery = P2PHostedRegistryQuery(),
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryQueryResult
+    {
+        return searchListings(
+            transport = transport,
+            query = query.deepCopy<P2PHostedRegistryQuery>().apply {
+                listingKinds = mutableListOf(P2PHostedListingKind.AGENT)
+            },
+            authBody = authBody,
+            transportAuthBody = transportAuthBody
+        )
+    }
+
+    suspend fun searchGridNodeListings(
+        transport: P2PTransport,
+        query: P2PHostedRegistryQuery = P2PHostedRegistryQuery(),
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryQueryResult
+    {
+        return searchListings(
+            transport = transport,
+            query = query.deepCopy<P2PHostedRegistryQuery>().apply {
+                listingKinds = mutableListOf(P2PHostedListingKind.GRID_NODE)
+            },
+            authBody = authBody,
+            transportAuthBody = transportAuthBody
+        )
+    }
+
+    suspend fun searchGridRegistryListings(
+        transport: P2PTransport,
+        query: P2PHostedRegistryQuery = P2PHostedRegistryQuery(),
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryQueryResult
+    {
+        return searchListings(
+            transport = transport,
+            query = query.deepCopy<P2PHostedRegistryQuery>().apply {
+                listingKinds = mutableListOf(P2PHostedListingKind.GRID_REGISTRY)
+            },
+            authBody = authBody,
+            transportAuthBody = transportAuthBody
+        )
+    }
+
     suspend fun getListing(
         transport: P2PTransport,
         listingId: String,
@@ -1255,9 +1306,13 @@ object P2PHostedRegistryClient
         val resolvedTransportAuth = transportAuthBody.ifBlank {
             AuthRegistry.getToken(transport.transportAddress)
         }
+        val resolvedTransport = transport.copy(
+            transportAddress = resolveHostedRegistryTransportAddress(transport),
+            transportAuthBody = resolvedTransportAuth
+        )
         val response = P2PRegistry.externalP2PCall(
             P2PRequest(
-                transport = transport.copy(transportAuthBody = resolvedTransportAuth),
+                transport = resolvedTransport,
                 prompt = MultimodalContent(
                     text = serialize(
                         P2PHostedRegistryRpcMessage(
@@ -1298,5 +1353,24 @@ object P2PHostedRegistryClient
             accepted = false,
             rejectionReason = reason
         )
+    }
+
+    private fun resolveHostedRegistryTransportAddress(transport: P2PTransport): String
+    {
+        if(transport.transportMethod != Transport.Http)
+        {
+            return transport.transportAddress
+        }
+
+        val trimmed = transport.transportAddress.trimEnd('/')
+        if(trimmed.endsWith("/p2p/registry"))
+        {
+            return trimmed
+        }
+        if(trimmed.endsWith("/p2p"))
+        {
+            return "$trimmed/registry"
+        }
+        return "$trimmed/p2p/registry"
     }
 }

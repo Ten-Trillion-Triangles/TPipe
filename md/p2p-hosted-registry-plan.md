@@ -14,25 +14,25 @@ Use this file for the current task only. Durable implementation truth belongs in
 
 ## Current Task
 
-- Task: land the first hosted public P2P registry service, client, PCP tools, and `DistributionGrid` bootstrap/publish integration.
-- Status: in progress
-- Exact progress: the service contracts, in-memory store, P2P transport RPC service, human client, PCP tools, and first `DistributionGrid` bootstrap/publish hooks are implemented and under focused verification.
+- Task: extend the hosted-registry slice with plain `P2PRegistry` trusted hosted sources, source-tracked imports, optional refresh, and a dedicated HTTP route.
+- Status: complete
+- Exact progress: trusted hosted-registry sources now exist on `P2PRegistry`, imports are source-tracked with collision diagnostics, the optional auto-refresh ticker is implemented, and hosted registries are reachable through `/p2p/registry`.
 - Last updated: 2026-03-28
 - Files in scope:
   - `src/main/kotlin/P2P/P2PHostedRegistryModels.kt`
   - `src/main/kotlin/P2P/P2PHostedRegistry.kt`
   - `src/main/kotlin/P2P/P2PHostedRegistryTools.kt`
   - `src/main/kotlin/P2P/P2PRegistry.kt`
-  - `src/main/kotlin/Pipeline/DistributionGridProtocolModels.kt`
-  - `src/main/kotlin/Pipeline/DistributionGrid.kt`
-  - `src/main/kotlin/Pipeline/DistributionGridDsl.kt`
+  - `src/main/kotlin/Routing.kt`
   - `src/test/kotlin/P2PHostedRegistryTest.kt`
+  - `src/test/kotlin/P2PHostedRegistryHttpRouteTest.kt`
   - `src/test/kotlin/P2PHostedRegistryToolsTest.kt`
+  - `src/test/kotlin/P2PRegistryTrustedRegistrySourceTest.kt`
   - `src/test/kotlin/Pipeline/DistributionGridHostedRegistryIntegrationTest.kt`
-- Last completed step: landed the hosted-registry service/client path and fixed the focused integration harness so the new tests exercise the real runtime path.
-- Current blocker: broader verification and public-doc sync still need to be finished.
-- Next atomic step: run the hosted-registry and wider grid suites serially, then sync public docs with the shipped bootstrap-catalog and public-listing surface.
-- Verification target: hosted-registry unit coverage, grid hosted-registry integration coverage, and existing `DistributionGrid*` suites all pass together.
+- Last completed step: landed trusted-source lifecycle management on `P2PRegistry`, added the dedicated hosted-registry HTTP route, and reran focused hosted-registry plus broader `DistributionGrid*` verification.
+- Current blocker: none
+- Next atomic step: keep the hosted-registry and trusted-source behavior stable and only extend it additively from here.
+- Verification target: hosted-registry unit coverage, trusted-source lifecycle coverage, HTTP route coverage, and existing `DistributionGrid*` suites all pass together.
 
 ## Upcoming Queue
 

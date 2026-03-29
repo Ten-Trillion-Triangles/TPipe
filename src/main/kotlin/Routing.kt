@@ -31,7 +31,12 @@ fun Application.configureRouting()
         {
             try
             {
-                val request = call.receive<P2PRequest>()
+                val request = call.receive<P2PRequest>().apply {
+                    if(transport.transportAuthBody.isBlank())
+                    {
+                        transport.transportAuthBody = call.request.header("Authorization").orEmpty()
+                    }
+                }
 
                 // Handle global authentication if set
                 val authMechanism = P2PRegistry.globalAuthMechanism
@@ -54,6 +59,41 @@ fun Application.configureRouting()
             {
                 call.respond(P2PResponse().apply {
                     rejection = P2PRejection(P2PError.transport, "Failed to process P2P request: ${e.message}")
+                })
+            }
+        }
+
+        post("/p2p/registry")
+        {
+            try
+            {
+                val request = call.receive<P2PRequest>().apply {
+                    if(transport.transportAuthBody.isBlank())
+                    {
+                        transport.transportAuthBody = call.request.header("Authorization").orEmpty()
+                    }
+                }
+
+                val authMechanism = P2PRegistry.globalAuthMechanism
+                if(authMechanism != null)
+                {
+                    val isAuthorized = authMechanism(request.transport.transportAuthBody)
+                    if(!isAuthorized)
+                    {
+                        call.respond(P2PResponse().apply {
+                            rejection = P2PRejection(P2PError.auth, "Unauthorized P2P hosted registry request")
+                        })
+                        return@post
+                    }
+                }
+
+                val response = P2PRegistry.executeP2pRequest(request)
+                call.respond(response)
+            }
+            catch(e: Exception)
+            {
+                call.respond(P2PResponse().apply {
+                    rejection = P2PRejection(P2PError.transport, "Failed to process hosted registry request: ${e.message}")
                 })
             }
         }

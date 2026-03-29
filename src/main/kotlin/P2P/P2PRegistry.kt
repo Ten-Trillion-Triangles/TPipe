@@ -49,6 +49,40 @@ data class P2PAgentListing(
 )
 
 /**
+ * Trusted hosted-registry source used by plain P2P clients to import public AGENT listings into the local
+ * client-side catalog.
+ */
+data class P2PTrustedRegistrySource(
+    var sourceId: String = "",
+    var transport: P2PTransport = P2PTransport(),
+    var query: P2PHostedRegistryQuery = P2PHostedRegistryQuery(
+        listingKinds = mutableListOf(P2PHostedListingKind.AGENT)
+    ),
+    var autoPullOnRegister: Boolean = false,
+    var includeInAutoRefresh: Boolean = true,
+    var authBody: String = "",
+    var transportAuthBody: String = "",
+    var admissionFilter: (suspend (source: P2PTrustedRegistrySource, listing: P2PHostedRegistryListing) -> String?)? = null
+)
+
+/**
+ * Diagnostic record for a hosted-registry import collision that was rejected instead of being allowed to overwrite an
+ * existing agent entry.
+ */
+data class P2PTrustedRegistryImportCollision(
+    var sourceId: String = "",
+    var listingId: String = "",
+    var agentName: String = "",
+    var reason: String = "",
+    var recordedAtEpochMillis: Long = 0L
+)
+
+private data class P2PTrustedImportedAgentRecord(
+    var listingId: String,
+    var agentName: String
+)
+
+/**
  * Registry for P2P. Records pipelines, or containers of pipelines, their requirements to allow p2p, and transport path.
  * Each container or pipeline name can only be registered once. Unlike other global objects in TPipe, fields here
  * will always be entirely public so that they can be accessed from anywhere. And eventually, be addressable by a
@@ -94,6 +128,32 @@ object P2PRegistry
      * - **PCP Stdio:** Extracted from the `authBody` key within `PcPRequest.callParams`.
      */
     var globalAuthMechanism: (suspend (authBody: String) -> Boolean)? = null
+
+    /**
+     * Trusted hosted-registry sources used to import public AGENT listings into the client-side remote catalog.
+     */
+    private val trustedRegistrySourcesById = linkedMapOf<String, P2PTrustedRegistrySource>()
+
+    /**
+     * Tracks which agent names are currently imported from which trusted source so refresh and removal can clean up
+     * only source-owned entries.
+     */
+    private val trustedImportedAgentsBySourceId = linkedMapOf<String, MutableMap<String, P2PTrustedImportedAgentRecord>>()
+
+    /**
+     * Reverse lookup from imported agent name to owning trusted source id.
+     */
+    private val trustedImportedSourceIdByAgentName = linkedMapOf<String, String>()
+
+    /**
+     * Collision diagnostics for rejected trusted hosted-registry imports.
+     */
+    private val trustedRegistryImportCollisions = linkedMapOf<Pair<String, String>, P2PTrustedRegistryImportCollision>()
+
+    private val trustedRegistryStateMutex = Mutex()
+    private val trustedRegistryRefreshScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    @Volatile
+    private var trustedRegistryRefreshJob: Job? = null
 
 //-----------------------------------------------Constructor------------------------------------------------------------
 
@@ -159,6 +219,195 @@ object P2PRegistry
             clientAgentList[agentName] = descriptor
             requestTemplates[agentName] = descriptor.requestTemplate?.deepCopy<P2PRequest>() ?: P2PRequest()
         }
+    }
+
+    /**
+     * List the imported remote-client agent descriptors currently visible to simplified agent requests.
+     */
+    fun listClientAgents(): List<P2PDescriptor>
+    {
+        return clientAgentList.values.map { it.deepCopy<P2PDescriptor>() }
+    }
+
+    /**
+     * Register one trusted hosted-registry source.
+     *
+     * If [P2PTrustedRegistrySource.autoPullOnRegister] is true, one pull runs immediately after registration.
+     */
+    suspend fun addTrustedRegistrySource(source: P2PTrustedRegistrySource)
+    {
+        require(source.sourceId.isNotBlank()) { "Trusted registry source requires a nonblank sourceId." }
+        require(source.transport.transportAddress.isNotBlank()) { "Trusted registry source '${source.sourceId}' requires a transport address." }
+
+        val normalizedSource = source.copy(
+            transport = source.transport.deepCopy(),
+            query = source.query.deepCopy<P2PHostedRegistryQuery>().apply {
+                if(listingKinds.isEmpty())
+                {
+                    listingKinds.add(P2PHostedListingKind.AGENT)
+                }
+            }
+        )
+
+        trustedRegistryStateMutex.withLock {
+            trustedRegistrySourcesById[normalizedSource.sourceId] = normalizedSource
+        }
+
+        if(normalizedSource.autoPullOnRegister)
+        {
+            pullTrustedRegistrySources(listOf(normalizedSource.sourceId))
+        }
+    }
+
+    /**
+     * Remove one trusted hosted-registry source and any agent listings it imported.
+     */
+    suspend fun removeTrustedRegistrySource(sourceId: String)
+    {
+        trustedRegistryStateMutex.withLock {
+            trustedRegistrySourcesById.remove(sourceId)
+            removeImportedAgentsLocked(sourceId)
+        }
+    }
+
+    /**
+     * Read the configured trusted hosted-registry source ids.
+     */
+    suspend fun getTrustedRegistrySourceIds(): List<String>
+    {
+        return trustedRegistryStateMutex.withLock {
+            trustedRegistrySourcesById.keys.toList()
+        }
+    }
+
+    /**
+     * Read the recorded trusted hosted-registry import collisions.
+     */
+    suspend fun getTrustedRegistryImportCollisions(): List<P2PTrustedRegistryImportCollision>
+    {
+        return trustedRegistryStateMutex.withLock {
+            trustedRegistryImportCollisions.values.map { it.copy() }
+        }
+    }
+
+    /**
+     * Remove all configured trusted sources, imported entries, collision diagnostics, and any active refresh loop.
+     */
+    suspend fun clearTrustedRegistryImportState()
+    {
+        stopTrustedRegistryAutoRefresh()
+        trustedRegistryStateMutex.withLock {
+            trustedRegistrySourcesById.clear()
+            trustedImportedAgentsBySourceId.keys.toList().forEach { sourceId ->
+                removeImportedAgentsLocked(sourceId)
+            }
+            trustedImportedAgentsBySourceId.clear()
+            trustedImportedSourceIdByAgentName.clear()
+            trustedRegistryImportCollisions.clear()
+        }
+    }
+
+    /**
+     * Pull one or more trusted hosted-registry sources and reconcile their imported AGENT listings into the live
+     * client-side catalog.
+     *
+     * A failed pull leaves the previous successful imports for that source intact.
+     */
+    suspend fun pullTrustedRegistrySources(sourceIds: List<String> = emptyList())
+    {
+        val sources = trustedRegistryStateMutex.withLock {
+            val ids = if(sourceIds.isEmpty()) trustedRegistrySourcesById.keys.toList() else sourceIds
+            ids.mapNotNull { sourceId -> trustedRegistrySourcesById[sourceId]?.copy(
+                transport = trustedRegistrySourcesById[sourceId]!!.transport.deepCopy(),
+                query = trustedRegistrySourcesById[sourceId]!!.query.deepCopy()
+            ) }
+        }
+
+        sources.forEach { source ->
+            val result = P2PHostedRegistryClient.searchListings(
+                transport = source.transport,
+                query = source.query.deepCopy<P2PHostedRegistryQuery>().apply {
+                    if(listingKinds.isEmpty())
+                    {
+                        listingKinds.add(P2PHostedListingKind.AGENT)
+                    }
+                },
+                authBody = source.authBody,
+                transportAuthBody = source.transportAuthBody
+            )
+
+            if(!result.accepted)
+            {
+                return@forEach
+            }
+
+            val acceptedListings = mutableListOf<P2PHostedRegistryListing>()
+            result.results.forEach { listing ->
+                if(listing.kind != P2PHostedListingKind.AGENT)
+                {
+                    return@forEach
+                }
+
+                val descriptor = listing.publicDescriptor ?: return@forEach
+                if(descriptor.agentName.isBlank())
+                {
+                    return@forEach
+                }
+
+                val rejection = source.admissionFilter?.invoke(source, listing.deepCopy())
+                if(!rejection.isNullOrBlank())
+                {
+                    return@forEach
+                }
+
+                acceptedListings.add(listing.deepCopy())
+            }
+
+            trustedRegistryStateMutex.withLock {
+                reconcileTrustedSourceLocked(source, acceptedListings)
+            }
+        }
+    }
+
+    /**
+     * Start an opt-in background refresh loop for trusted hosted-registry sources.
+     */
+    fun startTrustedRegistryAutoRefresh(intervalMillis: Long)
+    {
+        require(intervalMillis > 0L) { "Trusted registry auto-refresh interval must be greater than zero." }
+        stopTrustedRegistryAutoRefresh()
+        trustedRegistryRefreshJob = trustedRegistryRefreshScope.launch {
+            while(isActive)
+            {
+                val sourceIds = trustedRegistryStateMutex.withLock {
+                    trustedRegistrySourcesById.values
+                        .filter { it.includeInAutoRefresh }
+                        .map { it.sourceId }
+                }
+                if(sourceIds.isNotEmpty())
+                {
+                    pullTrustedRegistrySources(sourceIds)
+                }
+                delay(intervalMillis)
+            }
+        }
+    }
+
+    /**
+     * Stop the background refresh loop for trusted hosted-registry sources.
+     */
+    fun stopTrustedRegistryAutoRefresh()
+    {
+        trustedRegistryRefreshJob?.cancel()
+        trustedRegistryRefreshJob = null
+    }
+
+    /**
+     * Check whether the trusted hosted-registry auto-refresh loop is currently active.
+     */
+    fun isTrustedRegistryAutoRefreshRunning(): Boolean
+    {
+        return trustedRegistryRefreshJob?.isActive == true
     }
 
 
@@ -896,5 +1145,112 @@ object P2PRegistry
 
     }
 
+    private fun reconcileTrustedSourceLocked(
+        source: P2PTrustedRegistrySource,
+        acceptedListings: List<P2PHostedRegistryListing>
+    )
+    {
+        val existingRecords = trustedImportedAgentsBySourceId.getOrPut(source.sourceId) { linkedMapOf() }
+        val desiredByListingId = acceptedListings.associateBy { it.listingId }
+
+        val staleListingIds = existingRecords.keys.filter { it !in desiredByListingId.keys }
+        staleListingIds.forEach { listingId ->
+            val staleRecord = existingRecords.remove(listingId) ?: return@forEach
+            trustedImportedSourceIdByAgentName.remove(staleRecord.agentName)
+            clientAgentList.remove(staleRecord.agentName)
+            requestTemplates.remove(staleRecord.agentName)
+        }
+
+        acceptedListings.forEach { listing ->
+            val descriptor = listing.publicDescriptor?.deepCopy<P2PDescriptor>() ?: return@forEach
+            val agentName = descriptor.agentName
+            val listingId = listing.listingId
+            val existingRecord = existingRecords[listingId]
+
+            if(existingRecord != null && existingRecord.agentName == agentName)
+            {
+                clientAgentList[agentName] = descriptor
+                requestTemplates[agentName] = descriptor.requestTemplate?.deepCopy<P2PRequest>() ?: P2PRequest()
+                return@forEach
+            }
+
+            val importedOwner = trustedImportedSourceIdByAgentName[agentName]
+            when
+            {
+                importedOwner != null && importedOwner != source.sourceId ->
+                {
+                    recordTrustedImportCollisionLocked(
+                        sourceId = source.sourceId,
+                        listingId = listingId,
+                        agentName = agentName,
+                        reason = "Agent name '$agentName' is already imported from trusted source '$importedOwner'."
+                    )
+                    return@forEach
+                }
+
+                importedOwner == null && clientAgentList.containsKey(agentName) ->
+                {
+                    recordTrustedImportCollisionLocked(
+                        sourceId = source.sourceId,
+                        listingId = listingId,
+                        agentName = agentName,
+                        reason = "Agent name '$agentName' already exists in the local client catalog."
+                    )
+                    return@forEach
+                }
+
+                existingRecords.values.any { it.agentName == agentName && it.listingId != listingId } ->
+                {
+                    recordTrustedImportCollisionLocked(
+                        sourceId = source.sourceId,
+                        listingId = listingId,
+                        agentName = agentName,
+                        reason = "Trusted source '${source.sourceId}' returned duplicate agent name '$agentName' under a different listing id."
+                    )
+                    return@forEach
+                }
+            }
+
+            clientAgentList[agentName] = descriptor
+            requestTemplates[agentName] = descriptor.requestTemplate?.deepCopy<P2PRequest>() ?: P2PRequest()
+            existingRecords[listingId] = P2PTrustedImportedAgentRecord(
+                listingId = listingId,
+                agentName = agentName
+            )
+            trustedImportedSourceIdByAgentName[agentName] = source.sourceId
+        }
+
+        if(existingRecords.isEmpty())
+        {
+            trustedImportedAgentsBySourceId.remove(source.sourceId)
+        }
+    }
+
+    private fun removeImportedAgentsLocked(sourceId: String)
+    {
+        val importedRecords = trustedImportedAgentsBySourceId.remove(sourceId).orEmpty()
+        importedRecords.values.forEach { record ->
+            trustedImportedSourceIdByAgentName.remove(record.agentName)
+            clientAgentList.remove(record.agentName)
+            requestTemplates.remove(record.agentName)
+        }
+    }
+
+    private fun recordTrustedImportCollisionLocked(
+        sourceId: String,
+        listingId: String,
+        agentName: String,
+        reason: String
+    )
+    {
+        trustedRegistryImportCollisions[Pair(sourceId, agentName)] =
+            P2PTrustedRegistryImportCollision(
+                sourceId = sourceId,
+                listingId = listingId,
+                agentName = agentName,
+                reason = reason,
+                recordedAtEpochMillis = System.currentTimeMillis()
+            )
+    }
 
 }

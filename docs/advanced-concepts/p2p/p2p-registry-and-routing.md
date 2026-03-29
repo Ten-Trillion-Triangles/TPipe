@@ -88,6 +88,7 @@ Hosted registries support:
 - structured filtering by kind, category, tag, transport, auth requirement, content type, capability, and trust-domain metadata
 - text search across titles, summaries, descriptions, categories, tags, and capability labels
 - import of sanitized `AGENT` listings into the local static registry through `P2PHostedRegistryClient.pullListingsToLocalRegistry(...)`
+- import into plain `P2PRegistry` trusted sources with collision-safe source tracking
 
 Example:
 
@@ -104,6 +105,38 @@ val hostedResults = P2PHostedRegistryClient.searchListings(
 
 Hosted registries are still just P2P services under the hood, so they can be exposed in-process, over HTTP
 `/p2p`, or over stdio hosts without a second API stack.
+
+### Trusted Hosted Sources for Plain P2P Clients
+
+If you are not using `DistributionGrid` but still want structured remote discovery, `P2PRegistry` now supports
+trusted hosted-registry sources:
+
+```kotlin
+P2PRegistry.addTrustedRegistrySource(
+    P2PTrustedRegistrySource(
+        sourceId = "public-agent-catalog",
+        transport = P2PTransport(Transport.Http, "https://catalog.example.com"),
+        autoPullOnRegister = true
+    )
+)
+```
+
+This path:
+
+- imports only `AGENT` listings into the normal client catalog
+- tracks which source owns each imported entry
+- supports per-source admission filters
+- rejects duplicate collisions instead of overwriting existing entries
+- supports explicit pull plus optional auto-refresh
+
+### Dedicated HTTP Route
+
+Hosted registries now have a focused HTTP adapter endpoint:
+
+- `POST /p2p/registry`
+
+`P2PHostedRegistryClient` uses this route automatically for `Transport.Http` calls, while the generic `/p2p`
+route remains available for the broader P2P runtime.
 
 ## Request Validation
 

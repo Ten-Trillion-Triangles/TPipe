@@ -221,6 +221,9 @@ Hosted bootstrap catalogs are still discovery aids only. Pulled `GRID_REGISTRY` 
 the configured `DistributionGridTrustVerifier`, and later remote routing still uses the normal handshake and
 session rules.
 
+For non-grid clients that only need plain remote agent discovery/import, use `P2PRegistry` trusted hosted sources
+instead. That lighter path imports only `AGENT` listings and does not replace grid trust verification.
+
 ### Public Listing Helpers
 
 `DistributionGrid` can also publish its own outward node or registry state into a hosted public catalog:

@@ -34,6 +34,22 @@ object P2PHostedRegistryTools
         )
     }
 
+    suspend fun searchP2pAgentListings(
+        transportAddress: String,
+        transportMethod: Transport = Transport.Tpipe,
+        queryJson: String = "",
+        authBody: String = ""
+    ): P2PHostedRegistryQueryResult
+    {
+        val query = deserialize<P2PHostedRegistryQuery>(queryJson, useRepair = false)
+            ?: P2PHostedRegistryQuery()
+        return P2PHostedRegistryClient.searchAgentListings(
+            transport = P2PTransport(transportMethod = transportMethod, transportAddress = transportAddress),
+            query = query,
+            authBody = authBody
+        )
+    }
+
     suspend fun getP2pRegistryListing(
         transportAddress: String,
         listingId: String,
@@ -149,6 +165,7 @@ object P2PHostedRegistryTools
     )
     {
         FunctionRegistry.registerFunction("search_p2p_registry_listings", ::searchP2pRegistryListings)
+        FunctionRegistry.registerFunction("search_p2p_agent_listings", ::searchP2pAgentListings)
         FunctionRegistry.registerFunction("get_p2p_registry_listing", ::getP2pRegistryListing)
         FunctionRegistry.registerFunction("list_trusted_grid_registries", ::listTrustedGridRegistries)
 
@@ -170,6 +187,15 @@ object P2PHostedRegistryTools
         addIfMissing(TPipeContextOptions().apply {
             functionName = "search_p2p_registry_listings"
             description = "Search a hosted public P2P registry for agent, grid node, or grid registry listings."
+            params["transportAddress"] = ContextOptionParameter(ParamType.String, "Hosted registry transport address.", emptyList())
+            params["transportMethod"] = ContextOptionParameter(ParamType.String, "Transport method name such as Tpipe, Http, or Stdio.", emptyList())
+            params["queryJson"] = ContextOptionParameter(ParamType.String, "Serialized P2PHostedRegistryQuery JSON.", emptyList(), isRequired = false)
+            params["authBody"] = ContextOptionParameter(ParamType.String, "Optional auth token for registry hosts that gate reads.", emptyList(), isRequired = false)
+        })
+
+        addIfMissing(TPipeContextOptions().apply {
+            functionName = "search_p2p_agent_listings"
+            description = "Search a hosted public P2P registry and return only AGENT listings."
             params["transportAddress"] = ContextOptionParameter(ParamType.String, "Hosted registry transport address.", emptyList())
             params["transportMethod"] = ContextOptionParameter(ParamType.String, "Transport method name such as Tpipe, Http, or Stdio.", emptyList())
             params["queryJson"] = ContextOptionParameter(ParamType.String, "Serialized P2PHostedRegistryQuery JSON.", emptyList(), isRequired = false)
