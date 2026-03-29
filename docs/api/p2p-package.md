@@ -232,6 +232,7 @@ existing P2P transport path.
 - **`P2PHostedRegistry`**: `P2PInterface` implementation that exposes hosted-registry RPC over normal P2P transport
 - **`P2PHostedRegistryStore`**: storage contract for listings and leases
 - **`InMemoryP2PHostedRegistryStore`**: first shipped store implementation
+- **`FileBackedP2PHostedRegistryStore`**: durable JSON-backed hosted-registry store
 - **`P2PHostedRegistryClient`**: coder-facing client helpers for info, search, publish, renew, delete, and import
 - **`P2PHostedRegistryTools`**: PCP-callable tool bundle for agents
 - **`P2PTrustedRegistrySource`**: plain `P2PRegistry` source record for trusted hosted-registry imports
@@ -460,3 +461,8 @@ Registry handles both local TPipe agents and external remote agents with unified
 
 ### Thread Safety
 Mutex protection ensures safe concurrent agent registration and request processing in multi-threaded environments.
+Hosted registries now also expose minimal governance/lifecycle support:
+
+- operator moderation
+- listing audit records
+- registry info with listing counts and store kind

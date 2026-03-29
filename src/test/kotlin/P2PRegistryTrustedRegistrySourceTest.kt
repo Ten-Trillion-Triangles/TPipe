@@ -13,6 +13,7 @@ import com.TTT.P2P.P2PRegistry
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PTransport
+import com.TTT.P2P.P2PTrustedRegistryAdmissionPolicy
 import com.TTT.P2P.P2PTrustedRegistrySource
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.PipeContextProtocol.Transport
@@ -233,6 +234,49 @@ class P2PRegistryTrustedRegistrySourceTest
         }
     }
 
+    @Test
+    fun trustedSourceAdmissionPolicyCanRequireVerificationAndExposeProvenance()
+    {
+        runBlocking {
+            val transport = P2PTransport(Transport.Tpipe, "trusted-source-provenance")
+            val hostedRegistry = hostedRegistry(transport)
+
+            try
+            {
+                registerHostedRegistry(hostedRegistry, transport)
+                publishAgentListing(
+                    transport = transport,
+                    agentName = "verified-agent",
+                    title = "Verified Agent",
+                    attestationRef = "signed-agent"
+                )
+
+                P2PRegistry.addTrustedRegistrySource(
+                    P2PTrustedRegistrySource(
+                        sourceId = "verified-source",
+                        transport = transport,
+                        autoPullOnRegister = true,
+                        admissionPolicy = P2PTrustedRegistryAdmissionPolicy(
+                            requireVerificationEvidence = true,
+                            sourceLabel = "public-registry"
+                        )
+                    )
+                )
+
+                val imported = P2PRegistry.listTrustedImportedAgents()
+                assertEquals(1, imported.size)
+                assertEquals("verified-agent", imported.first().agentName)
+                assertEquals("signed-agent", imported.first().attestationRef)
+                assertEquals("public-registry", imported.first().sourceLabel)
+            }
+            finally
+            {
+                P2PRegistry.clearTrustedRegistryImportState()
+                P2PRegistry.remove(transport)
+            }
+        }
+    }
+
     private fun hostedRegistry(transport: P2PTransport): P2PHostedRegistry
     {
         return P2PHostedRegistry(
@@ -255,7 +299,8 @@ class P2PRegistryTrustedRegistrySourceTest
     private suspend fun publishAgentListing(
         transport: P2PTransport,
         agentName: String,
-        title: String
+        title: String,
+        attestationRef: String = ""
     ): com.TTT.P2P.P2PHostedRegistryMutationResult
     {
         return P2PHostedRegistryClient.publishListing(
@@ -288,7 +333,8 @@ class P2PRegistryTrustedRegistrySourceTest
                         contextProtocol = ContextProtocol.none,
                         supportedContentTypes = mutableListOf(SupportedContentTypes.text),
                         requestTemplate = P2PRequest()
-                    )
+                    ),
+                    attestationRef = attestationRef
                 )
             )
         )

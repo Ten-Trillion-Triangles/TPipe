@@ -14,9 +14,9 @@ Use this file for the current task only. Durable implementation truth belongs in
 
 ## Current Task
 
-- Task: extend the hosted-registry slice with plain `P2PRegistry` trusted hosted sources, source-tracked imports, optional refresh, and a dedicated HTTP route.
-- Status: complete
-- Exact progress: trusted hosted-registry sources now exist on `P2PRegistry`, imports are source-tracked with collision diagnostics, the optional auto-refresh ticker is implemented, and hosted registries are reachable through `/p2p/registry`.
+- Task: hosted-registry productionization and completion rollout.
+- Status: in progress
+- Exact progress: the durable file-backed store, minimal governance and audit surfaces, lightweight plain-P2P trusted import policy/provenance, and `DistributionGrid` public-listing update/auto-renew helpers are now landed. The remaining work is the broader completion layer: richer search ergonomics, more complete observability, and defaults/docs polish.
 - Last updated: 2026-03-28
 - Files in scope:
   - `src/main/kotlin/P2P/P2PHostedRegistryModels.kt`
@@ -24,19 +24,38 @@ Use this file for the current task only. Durable implementation truth belongs in
   - `src/main/kotlin/P2P/P2PHostedRegistryTools.kt`
   - `src/main/kotlin/P2P/P2PRegistry.kt`
   - `src/main/kotlin/Routing.kt`
-  - `src/test/kotlin/P2PHostedRegistryTest.kt`
-  - `src/test/kotlin/P2PHostedRegistryHttpRouteTest.kt`
-  - `src/test/kotlin/P2PHostedRegistryToolsTest.kt`
-  - `src/test/kotlin/P2PRegistryTrustedRegistrySourceTest.kt`
-  - `src/test/kotlin/Pipeline/DistributionGridHostedRegistryIntegrationTest.kt`
-- Last completed step: landed trusted-source lifecycle management on `P2PRegistry`, added the dedicated hosted-registry HTTP route, and reran focused hosted-registry plus broader `DistributionGrid*` verification.
+  - `src/main/kotlin/Pipeline/DistributionGrid.kt`
+  - `src/main/kotlin/Pipeline/DistributionGridDsl.kt`
+  - future durable-store and governance files under `src/main/kotlin/P2P`
+  - hosted-registry and grid integration tests under `src/test/kotlin`
+- Last completed step: landed the durable file-backed hosted-registry store, minimal operator moderation/audit support, plain-P2P trusted import policy/provenance, `DistributionGrid` update/auto-renew helpers, and reran focused plus broader hosted-registry/`DistributionGrid*` verification.
 - Current blocker: none
-- Next atomic step: keep the hosted-registry and trusted-source behavior stable and only extend it additively from here.
-- Verification target: hosted-registry unit coverage, trusted-source lifecycle coverage, HTTP route coverage, and existing `DistributionGrid*` suites all pass together.
+- Next atomic step: finish the remaining completion work around richer search ergonomics, broader hosted-registry observability, and public docs/defaults polish without changing the existing hosted-registry or `DistributionGrid` trust model.
+- Verification target: hosted-registry unit coverage, trusted-source lifecycle coverage, HTTP route coverage, durable-store/governance coverage, and existing `DistributionGrid*` suites all pass together.
 
 ## Upcoming Queue
 
-- `Hosted registry rollout completion`
-  Scope: broader verification, public docs, and any targeted fixes needed to keep the hosted-registry rollout aligned with the existing P2P and DistributionGrid trust model.
-  Must not touch: the previously shipped DistributionGrid Phase 5 through Phase 8 runtime semantics except where hosted-registry bootstrap/publish integration requires additive hooks.
-  Verification target: hosted registry remains additive, lease-based, sanitized, and trust-gated.
+- `Phase A: Durable hosted-registry persistence`
+  Scope: file-backed store, startup reload, expiry sweep, index rebuild, durable mutation path, focused durable-store tests.
+  Must not touch: the existing hosted-registry wire contract, `P2PRegistry` trusted-source semantics, or `DistributionGrid` runtime trust behavior.
+  Verification target: in-memory and durable stores both satisfy the same hosted-registry service contract.
+
+- `Phase B: Governance and search hardening`
+  Scope: operator controls, audit trail, moderation state handling, registry info/status expansion, stable pagination and richer sorting/filtering.
+  Must not touch: public listing sanitization rules or the additive nature of the hosted-registry subsystem.
+  Verification target: policy rejections, owner/operator mutations, and structured search all behave deterministically.
+
+- `Phase C: Plain P2P trusted-import completion`
+  Scope: optional trusted-import policy object, provenance inspection, stronger freshness rules, collision/provenance observability.
+  Must not touch: `DistributionGridTrustVerifier` or grid-specific trust semantics.
+  Verification target: plain `P2PRegistry` imports remain lighter than grid trust, but no longer feel under-specified.
+
+- `Phase D: DistributionGrid hosted-listing completion`
+  Scope: full listing lifecycle coverage for publish, renew, update, remove, republish, and bootstrap observability.
+  Must not touch: the shipped Phase 5 through Phase 8 `DistributionGrid` routing, handshake, durability, or retry semantics except for additive hosted-registry hooks.
+  Verification target: hosted catalogs improve discovery/bootstrap only; trust verifier and handshake/session checks still govern real routing.
+
+- `Phase E: Defaults and docs polish`
+  Scope: optional `TPipe-Defaults` helpers, plain P2P and grid examples, broader public-doc polish.
+  Must not touch: core provider-agnostic runtime behavior.
+  Verification target: ergonomic additions stay thin and do not create shadow configuration paths.

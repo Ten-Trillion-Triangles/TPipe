@@ -25,6 +25,7 @@ import com.TTT.P2P.P2PHostedRegistryPublishRequest
 import com.TTT.P2P.P2PHostedRegistryQuery
 import com.TTT.P2P.P2PHostedRegistryRemoveRequest
 import com.TTT.P2P.P2PHostedRegistryRenewRequest
+import com.TTT.P2P.P2PHostedRegistryUpdateRequest
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRejection
 import com.TTT.P2P.P2PRegistry
@@ -48,6 +49,12 @@ import com.TTT.Util.RuntimeState
 import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Internal binding record for a router, worker, or attached local peer.
@@ -167,6 +174,10 @@ class DistributionGrid : P2PInterface
     private val localRegistrationLeasesById = linkedMapOf<String, DistributionGridRegistrationLease>()
     @RuntimeState
     private val localRegistrationLeaseIdsByNodeId = linkedMapOf<String, String>()
+    @RuntimeState
+    private val publicListingRenewJobsById = linkedMapOf<String, Job>()
+    @RuntimeState
+    private val publicListingRenewScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     @RuntimeState
     private val gridId = UUID.randomUUID().toString()
@@ -1882,36 +1893,44 @@ class DistributionGrid : P2PInterface
         transportAuthBody: String = ""
     ): P2PHostedRegistryMutationResult
     {
-        val descriptor = p2pDescriptor?.deepCopy()
+        val listing = buildPublicNodeHostedListing(options)
             ?: return buildHostedRegistryMutationFailure(
-                "DistributionGrid cannot publish a public node listing without a node descriptor."
+                "DistributionGrid cannot publish a public node listing without a node descriptor and grid metadata."
             )
-        val metadata = descriptor.distributionGridMetadata?.deepCopy()
-            ?: return buildHostedRegistryMutationFailure(
-                "DistributionGrid cannot publish a public node listing without grid metadata."
-            )
-        val now = System.currentTimeMillis()
-        val listing = P2PHostedRegistryListing(
-            kind = P2PHostedListingKind.GRID_NODE,
-            metadata = P2PHostedListingMetadata(
-                title = options.title.ifBlank { descriptor.agentName.ifBlank { metadata.nodeId } },
-                summary = options.summary.ifBlank { descriptor.agentDescription },
-                categories = options.categories.toMutableList(),
-                tags = options.tags.toMutableList()
-            ),
-            publicDescriptor = descriptor.deepCopy(),
-            gridNodeAdvertisement = DistributionGridNodeAdvertisement(
-                descriptor = descriptor.deepCopy(),
-                metadata = metadata.deepCopy(),
-                registryId = metadata.registryMemberships.firstOrNull().orEmpty(),
-                discoveredAtEpochMillis = now,
-                expiresAtEpochMillis = now + options.requestedLeaseSeconds.coerceAtLeast(1) * 1000L
-            )
-        )
 
         return P2PHostedRegistryClient.publishListing(
             transport = transport,
             request = P2PHostedRegistryPublishRequest(
+                listing = listing,
+                requestedLeaseSeconds = options.requestedLeaseSeconds
+            ),
+            authBody = authBody,
+            transportAuthBody = transportAuthBody
+        )
+    }
+
+    /**
+     * Update one previously published public node listing.
+     */
+    suspend fun updatePublicNodeListing(
+        transport: P2PTransport,
+        listingId: String,
+        leaseId: String,
+        options: DistributionGridPublicListingOptions = DistributionGridPublicListingOptions(),
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryMutationResult
+    {
+        val listing = buildPublicNodeHostedListing(options)
+            ?: return buildHostedRegistryMutationFailure(
+                "DistributionGrid cannot update a public node listing without a node descriptor and grid metadata."
+            )
+
+        return P2PHostedRegistryClient.updateListing(
+            transport = transport,
+            request = P2PHostedRegistryUpdateRequest(
+                listingId = listingId,
+                leaseId = leaseId,
                 listing = listing,
                 requestedLeaseSeconds = options.requestedLeaseSeconds
             ),
@@ -1976,35 +1995,44 @@ class DistributionGrid : P2PInterface
         transportAuthBody: String = ""
     ): P2PHostedRegistryMutationResult
     {
-        val metadata = registryMetadata?.deepCopy()
+        val listing = buildPublicRegistryHostedListing(options)
             ?: return buildHostedRegistryMutationFailure(
-                "DistributionGrid cannot publish a public registry listing without registry metadata."
+                "DistributionGrid cannot publish a public registry listing without registry metadata and a node descriptor."
             )
-        val nodeDescriptor = p2pDescriptor?.deepCopy()
-            ?: return buildHostedRegistryMutationFailure(
-                "DistributionGrid cannot publish a public registry listing without a node descriptor."
-            )
-        val advertisement = DistributionGridRegistryAdvertisement(
-            transport = resolveCurrentTransport(),
-            metadata = metadata,
-            discoveredAtEpochMillis = System.currentTimeMillis(),
-            expiresAtEpochMillis = System.currentTimeMillis() + options.requestedLeaseSeconds.coerceAtLeast(1) * 1000L
-        )
-        val listing = P2PHostedRegistryListing(
-            kind = P2PHostedListingKind.GRID_REGISTRY,
-            metadata = P2PHostedListingMetadata(
-                title = options.title.ifBlank { metadata.registryId.ifBlank { nodeDescriptor.agentName } },
-                summary = options.summary.ifBlank { nodeDescriptor.agentDescription },
-                categories = options.categories.toMutableList(),
-                tags = options.tags.toMutableList()
-            ),
-            publicDescriptor = nodeDescriptor.deepCopy(),
-            gridRegistryAdvertisement = advertisement
-        )
 
         return P2PHostedRegistryClient.publishListing(
             transport = transport,
             request = P2PHostedRegistryPublishRequest(
+                listing = listing,
+                requestedLeaseSeconds = options.requestedLeaseSeconds
+            ),
+            authBody = authBody,
+            transportAuthBody = transportAuthBody
+        )
+    }
+
+    /**
+     * Update one previously published public registry listing.
+     */
+    suspend fun updatePublicRegistryListing(
+        transport: P2PTransport,
+        listingId: String,
+        leaseId: String,
+        options: DistributionGridPublicListingOptions = DistributionGridPublicListingOptions(),
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryMutationResult
+    {
+        val listing = buildPublicRegistryHostedListing(options)
+            ?: return buildHostedRegistryMutationFailure(
+                "DistributionGrid cannot update a public registry listing without registry metadata and a node descriptor."
+            )
+
+        return P2PHostedRegistryClient.updateListing(
+            transport = transport,
+            request = P2PHostedRegistryUpdateRequest(
+                listingId = listingId,
+                leaseId = leaseId,
                 listing = listing,
                 requestedLeaseSeconds = options.requestedLeaseSeconds
             ),
@@ -2053,6 +2081,78 @@ class DistributionGrid : P2PInterface
             authBody = authBody,
             transportAuthBody = transportAuthBody
         )
+    }
+
+    /**
+     * Start an opt-in renewal loop for one hosted public node listing.
+     */
+    fun startPublicNodeListingAutoRenew(
+        transport: P2PTransport,
+        listingId: String,
+        leaseId: String,
+        requestedLeaseSeconds: Int = 3600,
+        renewEveryMillis: Long = (requestedLeaseSeconds.coerceAtLeast(1) * 1000L / 2L).coerceAtLeast(1_000L),
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): String
+    {
+        require(renewEveryMillis > 0L) { "Public listing auto-renew interval must be greater than zero." }
+        val renewalId = UUID.randomUUID().toString()
+        publicListingRenewJobsById[renewalId] = publicListingRenewScope.launch {
+            while(true)
+            {
+                delay(renewEveryMillis)
+                renewPublicNodeListing(
+                    transport = transport,
+                    listingId = listingId,
+                    leaseId = leaseId,
+                    requestedLeaseSeconds = requestedLeaseSeconds,
+                    authBody = authBody,
+                    transportAuthBody = transportAuthBody
+                )
+            }
+        }
+        return renewalId
+    }
+
+    /**
+     * Start an opt-in renewal loop for one hosted public registry listing.
+     */
+    fun startPublicRegistryListingAutoRenew(
+        transport: P2PTransport,
+        listingId: String,
+        leaseId: String,
+        requestedLeaseSeconds: Int = 3600,
+        renewEveryMillis: Long = (requestedLeaseSeconds.coerceAtLeast(1) * 1000L / 2L).coerceAtLeast(1_000L),
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): String
+    {
+        return startPublicNodeListingAutoRenew(
+            transport = transport,
+            listingId = listingId,
+            leaseId = leaseId,
+            requestedLeaseSeconds = requestedLeaseSeconds,
+            renewEveryMillis = renewEveryMillis,
+            authBody = authBody,
+            transportAuthBody = transportAuthBody
+        )
+    }
+
+    /**
+     * Stop one opt-in public listing renewal loop.
+     */
+    fun stopPublicListingAutoRenew(renewalId: String)
+    {
+        publicListingRenewJobsById.remove(renewalId)?.cancel()
+    }
+
+    /**
+     * Inspect active public listing renewal loop ids.
+     */
+    fun getPublicListingAutoRenewIds(): List<String>
+    {
+        return publicListingRenewJobsById.keys.toList()
     }
 
     /**
@@ -6245,6 +6345,58 @@ class DistributionGrid : P2PInterface
         return P2PHostedRegistryMutationResult(
             accepted = false,
             rejectionReason = reason
+        )
+    }
+
+    private fun buildPublicNodeHostedListing(
+        options: DistributionGridPublicListingOptions
+    ): P2PHostedRegistryListing?
+    {
+        val descriptor = p2pDescriptor?.deepCopy() ?: return null
+        val metadata = descriptor.distributionGridMetadata?.deepCopy() ?: return null
+        val now = System.currentTimeMillis()
+        return P2PHostedRegistryListing(
+            kind = P2PHostedListingKind.GRID_NODE,
+            metadata = P2PHostedListingMetadata(
+                title = options.title.ifBlank { descriptor.agentName.ifBlank { metadata.nodeId } },
+                summary = options.summary.ifBlank { descriptor.agentDescription },
+                categories = options.categories.toMutableList(),
+                tags = options.tags.toMutableList()
+            ),
+            publicDescriptor = descriptor.deepCopy(),
+            gridNodeAdvertisement = DistributionGridNodeAdvertisement(
+                descriptor = descriptor.deepCopy(),
+                metadata = metadata.deepCopy(),
+                registryId = metadata.registryMemberships.firstOrNull().orEmpty(),
+                discoveredAtEpochMillis = now,
+                expiresAtEpochMillis = now + options.requestedLeaseSeconds.coerceAtLeast(1) * 1000L
+            )
+        )
+    }
+
+    private fun buildPublicRegistryHostedListing(
+        options: DistributionGridPublicListingOptions
+    ): P2PHostedRegistryListing?
+    {
+        val metadata = registryMetadata?.deepCopy() ?: return null
+        val nodeDescriptor = p2pDescriptor?.deepCopy() ?: return null
+        val now = System.currentTimeMillis()
+        val advertisement = DistributionGridRegistryAdvertisement(
+            transport = resolveCurrentTransport(),
+            metadata = metadata,
+            discoveredAtEpochMillis = now,
+            expiresAtEpochMillis = now + options.requestedLeaseSeconds.coerceAtLeast(1) * 1000L
+        )
+        return P2PHostedRegistryListing(
+            kind = P2PHostedListingKind.GRID_REGISTRY,
+            metadata = P2PHostedListingMetadata(
+                title = options.title.ifBlank { metadata.registryId.ifBlank { nodeDescriptor.agentName } },
+                summary = options.summary.ifBlank { nodeDescriptor.agentDescription },
+                categories = options.categories.toMutableList(),
+                tags = options.tags.toMutableList()
+            ),
+            publicDescriptor = nodeDescriptor.deepCopy(),
+            gridRegistryAdvertisement = advertisement
         )
     }
 

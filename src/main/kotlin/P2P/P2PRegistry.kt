@@ -62,7 +62,20 @@ data class P2PTrustedRegistrySource(
     var includeInAutoRefresh: Boolean = true,
     var authBody: String = "",
     var transportAuthBody: String = "",
+    var admissionPolicy: P2PTrustedRegistryAdmissionPolicy? = null,
     var admissionFilter: (suspend (source: P2PTrustedRegistrySource, listing: P2PHostedRegistryListing) -> String?)? = null
+)
+
+/**
+ * Lightweight trusted-import policy for plain P2P hosted-registry sources.
+ *
+ * This remains intentionally lighter than DistributionGrid trust verification.
+ */
+data class P2PTrustedRegistryAdmissionPolicy(
+    var requireVerificationEvidence: Boolean = false,
+    var minimumRemainingLeaseMillis: Long = 0L,
+    var requireActiveModerationState: Boolean = true,
+    var sourceLabel: String = ""
 )
 
 /**
@@ -79,7 +92,22 @@ data class P2PTrustedRegistryImportCollision(
 
 private data class P2PTrustedImportedAgentRecord(
     var listingId: String,
-    var agentName: String
+    var agentName: String,
+    var importedAtEpochMillis: Long,
+    var attestationRef: String = "",
+    var sourceLabel: String = ""
+)
+
+/**
+ * Inspectable provenance record for one trusted hosted-registry agent import.
+ */
+data class P2PTrustedImportedAgentInfo(
+    var listingId: String = "",
+    var agentName: String = "",
+    var sourceId: String = "",
+    var importedAtEpochMillis: Long = 0L,
+    var attestationRef: String = "",
+    var sourceLabel: String = ""
 )
 
 /**
@@ -291,6 +319,27 @@ object P2PRegistry
     }
 
     /**
+     * Inspect the currently imported trusted hosted-registry agents together with their provenance metadata.
+     */
+    suspend fun listTrustedImportedAgents(): List<P2PTrustedImportedAgentInfo>
+    {
+        return trustedRegistryStateMutex.withLock {
+            trustedImportedAgentsBySourceId.flatMap { (sourceId, records) ->
+                records.values.map { record ->
+                    P2PTrustedImportedAgentInfo(
+                        listingId = record.listingId,
+                        agentName = record.agentName,
+                        sourceId = sourceId,
+                        importedAtEpochMillis = record.importedAtEpochMillis,
+                        attestationRef = record.attestationRef,
+                        sourceLabel = record.sourceLabel
+                    )
+                }
+            }
+        }
+    }
+
+    /**
      * Remove all configured trusted sources, imported entries, collision diagnostics, and any active refresh loop.
      */
     suspend fun clearTrustedRegistryImportState()
@@ -350,6 +399,12 @@ object P2PRegistry
 
                 val descriptor = listing.publicDescriptor ?: return@forEach
                 if(descriptor.agentName.isBlank())
+                {
+                    return@forEach
+                }
+
+                val policyRejection = evaluateTrustedAdmissionPolicy(source, listing)
+                if(!policyRejection.isNullOrBlank())
                 {
                     return@forEach
                 }
@@ -1215,7 +1270,14 @@ object P2PRegistry
             requestTemplates[agentName] = descriptor.requestTemplate?.deepCopy<P2PRequest>() ?: P2PRequest()
             existingRecords[listingId] = P2PTrustedImportedAgentRecord(
                 listingId = listingId,
-                agentName = agentName
+                agentName = agentName,
+                importedAtEpochMillis = System.currentTimeMillis(),
+                attestationRef = listing.attestationRef.ifBlank {
+                    listing.gridNodeAdvertisement?.attestationRef
+                        ?: listing.gridRegistryAdvertisement?.attestationRef
+                        ?: ""
+                },
+                sourceLabel = source.admissionPolicy?.sourceLabel.orEmpty()
             )
             trustedImportedSourceIdByAgentName[agentName] = source.sourceId
         }
@@ -1251,6 +1313,40 @@ object P2PRegistry
                 reason = reason,
                 recordedAtEpochMillis = System.currentTimeMillis()
             )
+    }
+
+    private fun evaluateTrustedAdmissionPolicy(
+        source: P2PTrustedRegistrySource,
+        listing: P2PHostedRegistryListing
+    ): String?
+    {
+        val policy = source.admissionPolicy ?: return null
+        if(policy.requireActiveModerationState && listing.moderationState != P2PHostedModerationState.ACTIVE)
+        {
+            return "Listing '${listing.listingId}' is not active."
+        }
+
+        if(policy.requireVerificationEvidence)
+        {
+            val hasEvidence = listing.attestationRef.isNotBlank() ||
+                listing.gridNodeAdvertisement?.attestationRef?.isNotBlank() == true ||
+                listing.gridRegistryAdvertisement?.attestationRef?.isNotBlank() == true
+            if(!hasEvidence)
+            {
+                return "Listing '${listing.listingId}' is missing required verification evidence."
+            }
+        }
+
+        if(policy.minimumRemainingLeaseMillis > 0L)
+        {
+            val expiresAt = listing.lease?.expiresAtEpochMillis ?: 0L
+            if(expiresAt <= 0L || (expiresAt - System.currentTimeMillis()) < policy.minimumRemainingLeaseMillis)
+            {
+                return "Listing '${listing.listingId}' does not satisfy the minimum remaining lease threshold."
+            }
+        }
+
+        return null
     }
 
 }

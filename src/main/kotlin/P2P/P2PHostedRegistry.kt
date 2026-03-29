@@ -22,6 +22,9 @@ private const val HOSTED_REGISTRY_PUBLISH_PAYLOAD = "P2PHostedRegistryPublishReq
 private const val HOSTED_REGISTRY_UPDATE_PAYLOAD = "P2PHostedRegistryUpdateRequest"
 private const val HOSTED_REGISTRY_RENEW_PAYLOAD = "P2PHostedRegistryRenewRequest"
 private const val HOSTED_REGISTRY_REMOVE_PAYLOAD = "P2PHostedRegistryRemoveRequest"
+private const val HOSTED_REGISTRY_MODERATE_PAYLOAD = "P2PHostedRegistryModerateRequest"
+private const val HOSTED_REGISTRY_AUDIT_QUERY_PAYLOAD = "P2PHostedRegistryAuditQuery"
+private const val HOSTED_REGISTRY_AUDIT_RESULT_PAYLOAD = "P2PHostedRegistryAuditQueryResult"
 private const val HOSTED_REGISTRY_MUTATION_RESULT_PAYLOAD = "P2PHostedRegistryMutationResult"
 
 /**
@@ -55,6 +58,16 @@ interface P2PHostedRegistryPolicy
         listing: P2PHostedRegistryListing
     ): Boolean
 
+    suspend fun canModerate(
+        context: P2PHostedRegistryAccessContext,
+        listing: P2PHostedRegistryListing
+    ): Boolean
+
+    suspend fun canReadAudit(
+        context: P2PHostedRegistryAccessContext,
+        listingId: String
+    ): Boolean
+
     fun resolveOwnerRef(context: P2PHostedRegistryAccessContext): String
 
     fun sanitizeListing(listing: P2PHostedRegistryListing): P2PHostedRegistryListing
@@ -69,6 +82,7 @@ data class P2PHostedRegistryPolicySettings(
     var requireAuthForRead: Boolean = false,
     var requireAuthForWrite: Boolean = true,
     var allowAnonymousPublish: Boolean = false,
+    var operatorRefs: MutableSet<String> = mutableSetOf(),
     var allowedKinds: MutableSet<P2PHostedListingKind> = mutableSetOf(
         P2PHostedListingKind.AGENT,
         P2PHostedListingKind.GRID_NODE,
@@ -83,6 +97,11 @@ class DefaultP2PHostedRegistryPolicy(
     private val settings: P2PHostedRegistryPolicySettings = P2PHostedRegistryPolicySettings()
 ) : P2PHostedRegistryPolicy
 {
+    private fun isOperator(principalRef: String): Boolean
+    {
+        return principalRef.isNotBlank() && principalRef in settings.operatorRefs
+    }
+
     override suspend fun canRead(
         context: P2PHostedRegistryAccessContext,
         query: P2PHostedRegistryQuery?
@@ -129,6 +148,11 @@ class DefaultP2PHostedRegistryPolicy(
         listing: P2PHostedRegistryListing
     ): Boolean
     {
+        if(isOperator(context.principalRef))
+        {
+            return true
+        }
+
         val ownerRef = listing.lease?.ownerRef.orEmpty()
         if(ownerRef.isNotBlank())
         {
@@ -136,6 +160,22 @@ class DefaultP2PHostedRegistryPolicy(
         }
 
         return !settings.requireAuthForWrite || context.principalRef.isNotBlank()
+    }
+
+    override suspend fun canModerate(
+        context: P2PHostedRegistryAccessContext,
+        listing: P2PHostedRegistryListing
+    ): Boolean
+    {
+        return isOperator(context.principalRef)
+    }
+
+    override suspend fun canReadAudit(
+        context: P2PHostedRegistryAccessContext,
+        listingId: String
+    ): Boolean
+    {
+        return isOperator(context.principalRef)
     }
 
     override fun resolveOwnerRef(context: P2PHostedRegistryAccessContext): String
@@ -166,7 +206,8 @@ class DefaultP2PHostedRegistryPolicy(
             requireAuthForRead = settings.requireAuthForRead,
             requireAuthForWrite = settings.requireAuthForWrite,
             allowAnonymousPublish = settings.allowAnonymousPublish,
-            supportedListingKinds = settings.allowedKinds.toMutableList()
+            supportedListingKinds = settings.allowedKinds.toMutableList(),
+            operatorManaged = settings.operatorRefs.isNotEmpty()
         )
     }
 
@@ -214,6 +255,9 @@ interface P2PHostedRegistryStore
     suspend fun getListing(listingId: String): P2PHostedRegistryListing?
     suspend fun removeListing(listingId: String): Boolean
     suspend fun listListings(): List<P2PHostedRegistryListing>
+    suspend fun appendAuditRecord(record: P2PHostedRegistryAuditRecord)
+    suspend fun listAuditRecords(): List<P2PHostedRegistryAuditRecord>
+    fun describeStoreKind(): String
 }
 
 /**
@@ -223,6 +267,7 @@ class InMemoryP2PHostedRegistryStore : P2PHostedRegistryStore
 {
     private val mutex = Mutex()
     private val listingsById = linkedMapOf<String, P2PHostedRegistryListing>()
+    private val auditRecords = mutableListOf<P2PHostedRegistryAuditRecord>()
 
     override suspend fun upsert(listing: P2PHostedRegistryListing): P2PHostedRegistryListing
     {
@@ -252,6 +297,140 @@ class InMemoryP2PHostedRegistryStore : P2PHostedRegistryStore
         return mutex.withLock {
             listingsById.values.map { it.deepCopy<P2PHostedRegistryListing>() }
         }
+    }
+
+    override suspend fun appendAuditRecord(record: P2PHostedRegistryAuditRecord)
+    {
+        mutex.withLock {
+            auditRecords.add(record.deepCopy())
+        }
+    }
+
+    override suspend fun listAuditRecords(): List<P2PHostedRegistryAuditRecord>
+    {
+        return mutex.withLock {
+            auditRecords.map { it.deepCopy<P2PHostedRegistryAuditRecord>() }
+        }
+    }
+
+    override fun describeStoreKind(): String = "memory"
+}
+
+@kotlinx.serialization.Serializable
+private data class P2PHostedRegistryFileSnapshot(
+    var listings: MutableList<P2PHostedRegistryListing> = mutableListOf(),
+    var auditRecords: MutableList<P2PHostedRegistryAuditRecord> = mutableListOf()
+)
+
+/**
+ * Simple durable file-backed hosted-registry store.
+ */
+class FileBackedP2PHostedRegistryStore(
+    private val filePath: String
+) : P2PHostedRegistryStore
+{
+    private val mutex = Mutex()
+
+    override suspend fun upsert(listing: P2PHostedRegistryListing): P2PHostedRegistryListing
+    {
+        return mutex.withLock {
+            val snapshot = readSnapshotLocked()
+            val stored = listing.deepCopy<P2PHostedRegistryListing>()
+            val existingIndex = snapshot.listings.indexOfFirst { it.listingId == stored.listingId }
+            if(existingIndex >= 0)
+            {
+                snapshot.listings[existingIndex] = stored
+            }
+            else
+            {
+                snapshot.listings.add(stored)
+            }
+            writeSnapshotLocked(snapshot)
+            stored.deepCopy()
+        }
+    }
+
+    override suspend fun getListing(listingId: String): P2PHostedRegistryListing?
+    {
+        return mutex.withLock {
+            readSnapshotLocked().listings.firstOrNull { it.listingId == listingId }?.deepCopy()
+        }
+    }
+
+    override suspend fun removeListing(listingId: String): Boolean
+    {
+        return mutex.withLock {
+            val snapshot = readSnapshotLocked()
+            val removed = snapshot.listings.removeIf { it.listingId == listingId }
+            if(removed)
+            {
+                writeSnapshotLocked(snapshot)
+            }
+            removed
+        }
+    }
+
+    override suspend fun listListings(): List<P2PHostedRegistryListing>
+    {
+        return mutex.withLock {
+            readSnapshotLocked().listings.map { it.deepCopy<P2PHostedRegistryListing>() }
+        }
+    }
+
+    override suspend fun appendAuditRecord(record: P2PHostedRegistryAuditRecord)
+    {
+        mutex.withLock {
+            val snapshot = readSnapshotLocked()
+            snapshot.auditRecords.add(record.deepCopy())
+            writeSnapshotLocked(snapshot)
+        }
+    }
+
+    override suspend fun listAuditRecords(): List<P2PHostedRegistryAuditRecord>
+    {
+        return mutex.withLock {
+            readSnapshotLocked().auditRecords.map { it.deepCopy<P2PHostedRegistryAuditRecord>() }
+        }
+    }
+
+    override fun describeStoreKind(): String = "file-json"
+
+    private fun readSnapshotLocked(): P2PHostedRegistryFileSnapshot
+    {
+        val path = java.nio.file.Paths.get(filePath)
+        if(!java.nio.file.Files.exists(path))
+        {
+            return P2PHostedRegistryFileSnapshot()
+        }
+
+        val content = java.nio.file.Files.readString(path)
+        if(content.isBlank())
+        {
+            return P2PHostedRegistryFileSnapshot()
+        }
+
+        return deserialize<P2PHostedRegistryFileSnapshot>(content, useRepair = false)
+            ?: P2PHostedRegistryFileSnapshot()
+    }
+
+    private fun writeSnapshotLocked(snapshot: P2PHostedRegistryFileSnapshot)
+    {
+        val path = java.nio.file.Paths.get(filePath)
+        java.nio.file.Files.createDirectories(path.parent ?: path.toAbsolutePath().parent)
+        val tempPath = java.nio.file.Paths.get("$filePath.tmp")
+        java.nio.file.Files.writeString(
+            tempPath,
+            serialize(snapshot),
+            java.nio.file.StandardOpenOption.CREATE,
+            java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
+            java.nio.file.StandardOpenOption.WRITE
+        )
+        java.nio.file.Files.move(
+            tempPath,
+            path,
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE
+        )
     }
 }
 
@@ -341,11 +520,19 @@ class P2PHostedRegistry(
 
         return when(rpcMessage.messageType)
         {
-            P2PHostedRegistryRpcType.REGISTRY_INFO -> buildRpcResponse(
-                messageType = P2PHostedRegistryRpcType.REGISTRY_INFO,
-                payloadType = HOSTED_REGISTRY_INFO_PAYLOAD,
-                payload = policy.info(registryName)
-            )
+            P2PHostedRegistryRpcType.REGISTRY_INFO -> {
+                purgeExpiredListings()
+                val listings = store.listListings()
+                buildRpcResponse(
+                    messageType = P2PHostedRegistryRpcType.REGISTRY_INFO,
+                    payloadType = HOSTED_REGISTRY_INFO_PAYLOAD,
+                    payload = policy.info(registryName).apply {
+                        listingCount = listings.size
+                        activeListingCount = listings.count { it.moderationState == P2PHostedModerationState.ACTIVE }
+                        durableStoreKind = store.describeStoreKind()
+                    }
+                )
+            }
 
             P2PHostedRegistryRpcType.SEARCH_LISTINGS -> handleSearch(request = request, context = context, rpcMessage = rpcMessage)
             P2PHostedRegistryRpcType.GET_LISTING -> handleGet(context, rpcMessage)
@@ -353,6 +540,8 @@ class P2PHostedRegistry(
             P2PHostedRegistryRpcType.UPDATE_LISTING -> handleUpdate(context, rpcMessage)
             P2PHostedRegistryRpcType.RENEW_LISTING -> handleRenew(context, rpcMessage)
             P2PHostedRegistryRpcType.REMOVE_LISTING -> handleRemove(context, rpcMessage)
+            P2PHostedRegistryRpcType.MODERATE_LISTING -> handleModerate(context, rpcMessage)
+            P2PHostedRegistryRpcType.LIST_AUDIT_LOG -> handleListAudit(context, rpcMessage)
         }
     }
 
@@ -479,6 +668,12 @@ class P2PHostedRegistry(
         }
 
         val stored = store.upsert(policy.sanitizeListing(candidate))
+        appendAuditRecord(
+            listing = stored,
+            action = P2PHostedRegistryAuditAction.PUBLISH,
+            principalRef = context.principalRef,
+            reason = ""
+        )
         return buildRpcResponse(
             messageType = P2PHostedRegistryRpcType.PUBLISH_LISTING,
             payloadType = HOSTED_REGISTRY_MUTATION_RESULT_PAYLOAD,
@@ -548,6 +743,12 @@ class P2PHostedRegistry(
             requestedLeaseSeconds = request.requestedLeaseSeconds
         )
         val stored = store.upsert(policy.sanitizeListing(candidate))
+        appendAuditRecord(
+            listing = stored,
+            action = P2PHostedRegistryAuditAction.UPDATE,
+            principalRef = context.principalRef,
+            reason = ""
+        )
         return buildRpcResponse(
             messageType = P2PHostedRegistryRpcType.UPDATE_LISTING,
             payloadType = HOSTED_REGISTRY_MUTATION_RESULT_PAYLOAD,
@@ -604,6 +805,12 @@ class P2PHostedRegistry(
             metadata.updatedAtEpochMillis = System.currentTimeMillis()
         }
         val stored = store.upsert(renewed)
+        appendAuditRecord(
+            listing = stored,
+            action = P2PHostedRegistryAuditAction.RENEW,
+            principalRef = context.principalRef,
+            reason = ""
+        )
         return buildRpcResponse(
             messageType = P2PHostedRegistryRpcType.RENEW_LISTING,
             payloadType = HOSTED_REGISTRY_MUTATION_RESULT_PAYLOAD,
@@ -653,6 +860,12 @@ class P2PHostedRegistry(
         }
 
         store.removeListing(request.listingId)
+        appendAuditRecord(
+            listing = existing,
+            action = P2PHostedRegistryAuditAction.REMOVE,
+            principalRef = context.principalRef,
+            reason = ""
+        )
         return buildRpcResponse(
             messageType = P2PHostedRegistryRpcType.REMOVE_LISTING,
             payloadType = HOSTED_REGISTRY_MUTATION_RESULT_PAYLOAD,
@@ -660,6 +873,111 @@ class P2PHostedRegistry(
                 accepted = true,
                 listing = existing.deepCopy(),
                 lease = existing.lease?.deepCopy()
+            )
+        )
+    }
+
+    private suspend fun handleModerate(
+        context: P2PHostedRegistryAccessContext,
+        rpcMessage: P2PHostedRegistryRpcMessage
+    ): P2PResponse
+    {
+        val request = deserialize<P2PHostedRegistryModerateRequest>(
+            rpcMessage.payloadJson,
+            useRepair = false
+        ) ?: return P2PResponse(
+            rejection = P2PRejection(P2PError.json, "Failed to deserialize hosted-registry moderate request.")
+        )
+
+        val existing = store.getListing(request.listingId)
+        if(existing == null)
+        {
+            return buildRpcResponse(
+                messageType = P2PHostedRegistryRpcType.MODERATE_LISTING,
+                payloadType = HOSTED_REGISTRY_MUTATION_RESULT_PAYLOAD,
+                payload = P2PHostedRegistryMutationResult(
+                    accepted = false,
+                    rejectionReason = "Hosted registry listing was not found."
+                )
+            )
+        }
+
+        if(!policy.canModerate(context, existing))
+        {
+            return buildRpcResponse(
+                messageType = P2PHostedRegistryRpcType.MODERATE_LISTING,
+                payloadType = HOSTED_REGISTRY_MUTATION_RESULT_PAYLOAD,
+                payload = P2PHostedRegistryMutationResult(
+                    accepted = false,
+                    rejectionReason = "Hosted registry moderation access was denied."
+                )
+            )
+        }
+
+        val moderated = existing.deepCopy<P2PHostedRegistryListing>().apply {
+            moderationState = request.moderationState
+            metadata.updatedAtEpochMillis = System.currentTimeMillis()
+        }
+        val stored = store.upsert(moderated)
+        appendAuditRecord(
+            listing = stored,
+            action = P2PHostedRegistryAuditAction.MODERATE,
+            principalRef = context.principalRef,
+            reason = request.reason,
+            moderationState = request.moderationState
+        )
+        return buildRpcResponse(
+            messageType = P2PHostedRegistryRpcType.MODERATE_LISTING,
+            payloadType = HOSTED_REGISTRY_MUTATION_RESULT_PAYLOAD,
+            payload = P2PHostedRegistryMutationResult(
+                accepted = true,
+                listing = stored.deepCopy(),
+                lease = stored.lease?.deepCopy()
+            )
+        )
+    }
+
+    private suspend fun handleListAudit(
+        context: P2PHostedRegistryAccessContext,
+        rpcMessage: P2PHostedRegistryRpcMessage
+    ): P2PResponse
+    {
+        val request = deserialize<P2PHostedRegistryAuditQuery>(
+            rpcMessage.payloadJson,
+            useRepair = false
+        ) ?: return P2PResponse(
+            rejection = P2PRejection(P2PError.json, "Failed to deserialize hosted-registry audit query.")
+        )
+
+        if(!policy.canReadAudit(context, request.listingId))
+        {
+            return buildRpcResponse(
+                messageType = P2PHostedRegistryRpcType.LIST_AUDIT_LOG,
+                payloadType = HOSTED_REGISTRY_AUDIT_RESULT_PAYLOAD,
+                payload = P2PHostedRegistryAuditQueryResult(
+                    accepted = false,
+                    rejectionReason = "Hosted registry audit access was denied."
+                )
+            )
+        }
+
+        val filtered = store.listAuditRecords()
+            .filter { request.listingId.isBlank() || it.listingId == request.listingId }
+            .sortedByDescending { it.occurredAtEpochMillis }
+        val paged = filtered
+            .drop(request.offset.coerceAtLeast(0))
+            .take(request.limit.coerceAtLeast(1))
+            .map { it.deepCopy<P2PHostedRegistryAuditRecord>() }
+            .toMutableList()
+
+        return buildRpcResponse(
+            messageType = P2PHostedRegistryRpcType.LIST_AUDIT_LOG,
+            payloadType = HOSTED_REGISTRY_AUDIT_RESULT_PAYLOAD,
+            payload = P2PHostedRegistryAuditQueryResult(
+                accepted = true,
+                rejectionReason = "",
+                totalCount = filtered.size,
+                results = paged
             )
         )
     }
@@ -672,6 +990,12 @@ class P2PHostedRegistry(
             if(expiresAt in 1 until now)
             {
                 store.removeListing(listing.listingId)
+                appendAuditRecord(
+                    listing = listing,
+                    action = P2PHostedRegistryAuditAction.EXPIRE,
+                    principalRef = "",
+                    reason = "Lease expired."
+                )
             }
         }
     }
@@ -937,12 +1261,18 @@ class P2PHostedRegistry(
     {
         return when(query.sortMode)
         {
-            P2PHostedRegistrySortMode.TITLE -> compareBy { it.metadata.title.lowercase() }
+            P2PHostedRegistrySortMode.TITLE -> compareBy<P2PHostedRegistryListing> { it.metadata.title.lowercase() }
+                .thenBy { it.listingId }
             P2PHostedRegistrySortMode.UPDATED_AT -> compareByDescending<P2PHostedRegistryListing> { it.metadata.updatedAtEpochMillis }
                 .thenBy { it.metadata.title.lowercase() }
+                .thenBy { it.listingId }
+            P2PHostedRegistrySortMode.CREATED_AT -> compareByDescending<P2PHostedRegistryListing> { it.metadata.createdAtEpochMillis }
+                .thenByDescending { it.metadata.updatedAtEpochMillis }
+                .thenBy { it.listingId }
             P2PHostedRegistrySortMode.RELEVANCE -> compareByDescending<P2PHostedRegistryListing> {
                 relevanceScore(it, query.textQuery)
             }.thenByDescending { it.metadata.updatedAtEpochMillis }
+                .thenBy { it.listingId }
         }
     }
 
@@ -1037,6 +1367,28 @@ class P2PHostedRegistry(
                         payloadJson = serialize(payload)
                     )
                 )
+            )
+        )
+    }
+
+    private suspend fun appendAuditRecord(
+        listing: P2PHostedRegistryListing,
+        action: P2PHostedRegistryAuditAction,
+        principalRef: String,
+        reason: String,
+        moderationState: P2PHostedModerationState? = null
+    )
+    {
+        store.appendAuditRecord(
+            P2PHostedRegistryAuditRecord(
+                recordId = UUID.randomUUID().toString(),
+                listingId = listing.listingId,
+                listingKind = listing.kind,
+                action = action,
+                principalRef = principalRef,
+                reason = reason,
+                moderationState = moderationState,
+                occurredAtEpochMillis = System.currentTimeMillis()
             )
         )
     }
@@ -1271,6 +1623,63 @@ object P2PHostedRegistryClient
         }
         return deserialize<P2PHostedRegistryMutationResult>(response.payloadJson, useRepair = false)
             ?: failedMutation("Hosted registry delete returned an unreadable payload.")
+    }
+
+    suspend fun moderateListing(
+        transport: P2PTransport,
+        request: P2PHostedRegistryModerateRequest,
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryMutationResult
+    {
+        val response = send(
+            transport = transport,
+            authBody = authBody,
+            transportAuthBody = transportAuthBody,
+            messageType = P2PHostedRegistryRpcType.MODERATE_LISTING,
+            payloadType = HOSTED_REGISTRY_MODERATE_PAYLOAD,
+            payloadJson = serialize(request)
+        ) ?: return failedMutation("Hosted registry moderation failed before a response was received.")
+
+        if(response.payloadType != HOSTED_REGISTRY_MUTATION_RESULT_PAYLOAD)
+        {
+            return failedMutation("Hosted registry moderation returned an unexpected payload type '${response.payloadType}'.")
+        }
+        return deserialize<P2PHostedRegistryMutationResult>(response.payloadJson, useRepair = false)
+            ?: failedMutation("Hosted registry moderation returned an unreadable payload.")
+    }
+
+    suspend fun listAuditRecords(
+        transport: P2PTransport,
+        query: P2PHostedRegistryAuditQuery = P2PHostedRegistryAuditQuery(),
+        authBody: String = "",
+        transportAuthBody: String = ""
+    ): P2PHostedRegistryAuditQueryResult
+    {
+        val response = send(
+            transport = transport,
+            authBody = authBody,
+            transportAuthBody = transportAuthBody,
+            messageType = P2PHostedRegistryRpcType.LIST_AUDIT_LOG,
+            payloadType = HOSTED_REGISTRY_AUDIT_QUERY_PAYLOAD,
+            payloadJson = serialize(query)
+        ) ?: return P2PHostedRegistryAuditQueryResult(
+            accepted = false,
+            rejectionReason = "Hosted registry audit query failed before a response was received."
+        )
+
+        if(response.payloadType != HOSTED_REGISTRY_AUDIT_RESULT_PAYLOAD)
+        {
+            return P2PHostedRegistryAuditQueryResult(
+                accepted = false,
+                rejectionReason = "Hosted registry audit query returned an unexpected payload type '${response.payloadType}'."
+            )
+        }
+        return deserialize<P2PHostedRegistryAuditQueryResult>(response.payloadJson, useRepair = false)
+            ?: P2PHostedRegistryAuditQueryResult(
+                accepted = false,
+                rejectionReason = "Hosted registry audit query returned an unreadable payload."
+            )
     }
 
     suspend fun pullListingsToLocalRegistry(

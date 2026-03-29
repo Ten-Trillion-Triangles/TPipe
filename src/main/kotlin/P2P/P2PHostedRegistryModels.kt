@@ -46,6 +46,7 @@ enum class P2PHostedRegistrySortMode
 {
     RELEVANCE,
     UPDATED_AT,
+    CREATED_AT,
     TITLE
 }
 
@@ -61,7 +62,23 @@ enum class P2PHostedRegistryRpcType
     PUBLISH_LISTING,
     UPDATE_LISTING,
     RENEW_LISTING,
-    REMOVE_LISTING
+    REMOVE_LISTING,
+    MODERATE_LISTING,
+    LIST_AUDIT_LOG
+}
+
+/**
+ * Auditable hosted-registry actions.
+ */
+@Serializable
+enum class P2PHostedRegistryAuditAction
+{
+    PUBLISH,
+    UPDATE,
+    RENEW,
+    REMOVE,
+    MODERATE,
+    EXPIRE
 }
 
 /**
@@ -202,6 +219,52 @@ data class P2PHostedRegistryMutationResult(
 )
 
 /**
+ * Operator moderation request for one listing.
+ */
+@Serializable
+data class P2PHostedRegistryModerateRequest(
+    var listingId: String = "",
+    var moderationState: P2PHostedModerationState = P2PHostedModerationState.ACTIVE,
+    var reason: String = ""
+)
+
+/**
+ * Audit record for one hosted-registry lifecycle action.
+ */
+@Serializable
+data class P2PHostedRegistryAuditRecord(
+    var recordId: String = "",
+    var listingId: String = "",
+    var listingKind: P2PHostedListingKind = P2PHostedListingKind.AGENT,
+    var action: P2PHostedRegistryAuditAction = P2PHostedRegistryAuditAction.PUBLISH,
+    var principalRef: String = "",
+    var reason: String = "",
+    var moderationState: P2PHostedModerationState? = null,
+    var occurredAtEpochMillis: Long = 0L
+)
+
+/**
+ * Query one hosted-registry audit trail.
+ */
+@Serializable
+data class P2PHostedRegistryAuditQuery(
+    var listingId: String = "",
+    var offset: Int = 0,
+    var limit: Int = 100
+)
+
+/**
+ * Audit query response.
+ */
+@Serializable
+data class P2PHostedRegistryAuditQueryResult(
+    var accepted: Boolean = true,
+    var rejectionReason: String = "",
+    var totalCount: Int = 0,
+    var results: MutableList<P2PHostedRegistryAuditRecord> = mutableListOf()
+)
+
+/**
  * Exposed service metadata so clients can introspect listing kinds, policy posture, and protocol support.
  */
 @Serializable
@@ -215,7 +278,12 @@ data class P2PHostedRegistryInfo(
     ),
     var requireAuthForRead: Boolean = false,
     var requireAuthForWrite: Boolean = true,
-    var allowAnonymousPublish: Boolean = false
+    var allowAnonymousPublish: Boolean = false,
+    var listingCount: Int = 0,
+    var activeListingCount: Int = 0,
+    var durableStoreKind: String = "memory",
+    var auditEnabled: Boolean = true,
+    var operatorManaged: Boolean = false
 )
 
 /**

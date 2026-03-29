@@ -125,6 +125,8 @@ This path:
 
 - imports only `AGENT` listings into the normal client catalog
 - tracks which source owns each imported entry
+- can enforce a lightweight trusted-import policy for freshness/verification
+- exposes provenance for imported entries
 - supports per-source admission filters
 - rejects duplicate collisions instead of overwriting existing entries
 - supports explicit pull plus optional auto-refresh

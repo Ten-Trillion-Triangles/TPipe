@@ -244,6 +244,17 @@ val result = grid.publishPublicNodeListing(
 These helpers sanitize public listing data and keep hosted-catalog visibility separate from actual runtime trust,
 handshake, and session enforcement.
 
+The hosted-listing helper surface also supports:
+
+- `updatePublicNodeListing(...)`
+- `updatePublicRegistryListing(...)`
+- `startPublicNodeListingAutoRenew(...)`
+- `startPublicRegistryListingAutoRenew(...)`
+- `stopPublicListingAutoRenew(...)`
+
+The renewal helpers are opt-in. `DistributionGrid` does not auto-publish or auto-renew public listings unless the
+caller explicitly starts those loops.
+
 ### DSL blocks
 
 The `distributionGrid { }` builder supports these top-level blocks:

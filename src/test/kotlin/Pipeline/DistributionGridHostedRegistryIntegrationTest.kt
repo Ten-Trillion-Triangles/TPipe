@@ -22,6 +22,7 @@ import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.Transport
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -176,6 +177,99 @@ class DistributionGridHostedRegistryIntegrationTest
                 assertEquals("public-grid-node", searchResult.results.first().gridNodeAdvertisement!!.metadata.nodeId)
             }
 
+            finally
+            {
+                P2PRegistry.remove(hostedRegistryTransport)
+            }
+        }
+    }
+
+    @Test
+    fun gridCanUpdateAndAutoRenewPublicNodeListings()
+    {
+        runBlocking {
+            val hostedRegistryTransport = P2PTransport(
+                transportMethod = Transport.Tpipe,
+                transportAddress = "grid-node-update-registry"
+            )
+            val hostedRegistry = P2PHostedRegistry(
+                registryName = "grid-node-update-registry",
+                transport = hostedRegistryTransport,
+                store = InMemoryP2PHostedRegistryStore(),
+                policy = DefaultP2PHostedRegistryPolicy(
+                    P2PHostedRegistryPolicySettings(
+                        operatorRefs = mutableSetOf("operator-token")
+                    )
+                )
+            )
+
+            try
+            {
+                P2PRegistry.register(
+                    agent = hostedRegistry,
+                    transport = hostedRegistryTransport,
+                    descriptor = hostedRegistry.getP2pDescription(),
+                    requirements = hostedRegistry.getP2pRequirements()
+                )
+
+                val grid = simpleGrid(
+                    nodeId = "renewable-grid-node",
+                    transportAddress = "renewable-grid-node"
+                )
+                grid.init()
+
+                val published = grid.publishPublicNodeListing(
+                    transport = hostedRegistryTransport,
+                    options = DistributionGridPublicListingOptions(
+                        title = "Renewable Grid Node",
+                        summary = "Initial summary",
+                        categories = mutableListOf("grid/node"),
+                        tags = mutableListOf("renewable"),
+                        requestedLeaseSeconds = 2
+                    ),
+                    authBody = "publisher-token"
+                )
+                assertTrue(published.accepted, published.rejectionReason)
+
+                val updated = grid.updatePublicNodeListing(
+                    transport = hostedRegistryTransport,
+                    listingId = published.listing!!.listingId,
+                    leaseId = published.lease!!.leaseId,
+                    options = DistributionGridPublicListingOptions(
+                        title = "Renewable Grid Node",
+                        summary = "Updated summary",
+                        categories = mutableListOf("grid/node"),
+                        tags = mutableListOf("renewable", "updated"),
+                        requestedLeaseSeconds = 2
+                    ),
+                    authBody = "publisher-token"
+                )
+                assertTrue(updated.accepted, updated.rejectionReason)
+                assertEquals("Updated summary", updated.listing!!.metadata.summary)
+
+                val renewalId = grid.startPublicNodeListingAutoRenew(
+                    transport = hostedRegistryTransport,
+                    listingId = published.listing!!.listingId,
+                    leaseId = published.lease!!.leaseId,
+                    requestedLeaseSeconds = 2,
+                    renewEveryMillis = 300L,
+                    authBody = "publisher-token"
+                )
+                assertTrue(grid.getPublicListingAutoRenewIds().contains(renewalId))
+
+                delay(700L)
+
+                val auditResult = P2PHostedRegistryClient.listAuditRecords(
+                    transport = hostedRegistryTransport,
+                    authBody = "operator-token"
+                )
+                assertTrue(auditResult.accepted, auditResult.rejectionReason)
+                assertTrue(auditResult.results.any { it.action.name == "UPDATE" })
+                assertTrue(auditResult.results.any { it.action.name == "RENEW" })
+
+                grid.stopPublicListingAutoRenew(renewalId)
+                assertTrue(!grid.getPublicListingAutoRenewIds().contains(renewalId))
+            }
             finally
             {
                 P2PRegistry.remove(hostedRegistryTransport)

@@ -15,15 +15,27 @@ The first hosted-registry slice is now implemented in code:
 - `P2PRegistry` can import sanitized hosted `AGENT` listings into the local static registry
 - `P2PRegistry` now supports trusted hosted-registry sources with:
   - per-source admission filters
+  - optional lightweight admission policy
   - live imported-agent ownership tracking
+  - import provenance inspection
   - rejected-collision diagnostics
   - on-demand pull plus opt-in auto-refresh
 - `DistributionGrid` can:
   - configure hosted bootstrap catalog sources
   - auto-pull trusted `GRID_REGISTRY` listings on init
   - publish, renew, and remove public node or registry listings
+  - update public node or registry listings
+  - run opt-in public-listing auto-renew loops
 - the grid DSL now exposes `bootstrapCatalogSource(...)`
 - hosted registries are now reachable over a dedicated HTTP `POST /p2p/registry` route
+- hosted registries now support:
+  - a durable file-backed JSON store
+  - operator moderation
+  - audit trails for listing lifecycle events
+  - richer registry info with store kind and listing counts
+
+This means the foundational feature is shipped. The remaining work is now production-completion work rather than
+first-time feature invention.
 
 ## Implemented Files
 
@@ -63,5 +75,55 @@ Result:
 
 ## Known Remaining Work
 
-- the first slice still ships only an in-memory hosted-registry store; durable backing stores remain future work
+- search is functional but not yet “large catalog” complete:
+  - pagination hardening
+  - richer sorting
+  - faceting and stronger capability matching
 - plain `P2PRegistry` trusted imports remain intentionally lighter than `DistributionGrid` trust verification
+- `DistributionGrid` hosted-listing integration still has room for broader observability around long-lived public-node deployments
+- defaults/documentation polish for hosted-registry configuration is still future work
+
+## Completion Roadmap
+
+### Phase A: Durable hosted-registry persistence
+
+Target outcomes:
+
+- at least one durable `P2PHostedRegistryStore` backend
+- startup reload and index rebuild
+- expiry sweep and durable mutation tests
+
+### Phase B: Governance and search hardening
+
+Target outcomes:
+
+- explicit operator/admin controls and audit trail
+- stronger structured search and pagination behavior
+- broader registry info/status surfaces
+
+### Phase C: Plain P2P trusted-import completion
+
+Target outcomes:
+
+- optional trusted-import policy layer beyond a raw callback
+- provenance and trust-label inspection for imported agent listings
+- stronger collision and freshness diagnostics
+
+### Phase D: `DistributionGrid` hosted-listing completion
+
+Target outcomes:
+
+- fuller publish, renew, update, remove, and republish coverage
+- clearer bootstrap and publication observability
+- optional scheduled renew ergonomics
+
+### Phase E: Defaults and documentation polish
+
+Target outcomes:
+
+- additive defaults/helpers where useful
+- better public examples for hosted registry hosts, plain P2P trusted imports, and grid bootstrap/publication flows
+
+## Revision Log
+
+- 2026-03-28: Expanded the steering set from “first slice shipped” into a full completion roadmap covering durable stores, governance, search hardening, plain-P2P trusted import completion, grid lifecycle completion, and final ergonomics/docs polish.

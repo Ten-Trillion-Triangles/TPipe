@@ -2,13 +2,17 @@ package com.TTT
 
 import com.TTT.P2P.ContextProtocol
 import com.TTT.P2P.DefaultP2PHostedRegistryPolicy
+import com.TTT.P2P.FileBackedP2PHostedRegistryStore
 import com.TTT.P2P.InMemoryP2PHostedRegistryStore
 import com.TTT.P2P.P2PDescriptor
+import com.TTT.P2P.P2PHostedModerationState
 import com.TTT.P2P.P2PHostedListingKind
 import com.TTT.P2P.P2PHostedListingMetadata
+import com.TTT.P2P.P2PHostedRegistryAuditQuery
 import com.TTT.P2P.P2PHostedRegistry
 import com.TTT.P2P.P2PHostedRegistryClient
 import com.TTT.P2P.P2PHostedRegistryListing
+import com.TTT.P2P.P2PHostedRegistryModerateRequest
 import com.TTT.P2P.P2PHostedRegistryPolicySettings
 import com.TTT.P2P.P2PHostedRegistryPublishRequest
 import com.TTT.P2P.P2PHostedRegistryQuery
@@ -18,6 +22,7 @@ import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.PipeContextProtocol.Transport
 import kotlinx.coroutines.runBlocking
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -260,6 +265,193 @@ class P2PHostedRegistryTest
                 assertTrue(published.rejectionReason.contains("denied", ignoreCase = true))
             }
 
+            finally
+            {
+                P2PRegistry.remove(transport)
+            }
+        }
+    }
+
+    @Test
+    fun fileBackedHostedRegistryPersistsListingsAcrossRestart()
+    {
+        runBlocking {
+            val tempFile = Files.createTempFile("hosted-registry-store", ".json")
+            val transport = P2PTransport(
+                transportMethod = Transport.Tpipe,
+                transportAddress = "durable-hosted-registry"
+            )
+
+            val firstInstance = P2PHostedRegistry(
+                registryName = "durable-hosted-registry",
+                transport = transport,
+                store = FileBackedP2PHostedRegistryStore(tempFile.toString())
+            )
+
+            try
+            {
+                P2PRegistry.register(
+                    agent = firstInstance,
+                    transport = transport,
+                    descriptor = firstInstance.getP2pDescription(),
+                    requirements = firstInstance.getP2pRequirements()
+                )
+
+                val published = P2PHostedRegistryClient.publishListing(
+                    transport = transport,
+                    authBody = "publisher-token",
+                    request = P2PHostedRegistryPublishRequest(
+                        requestedLeaseSeconds = 300,
+                        listing = P2PHostedRegistryListing(
+                            kind = P2PHostedListingKind.AGENT,
+                            metadata = P2PHostedListingMetadata(title = "Durable Agent"),
+                            publicDescriptor = P2PDescriptor(
+                                agentName = "durable-agent",
+                                agentDescription = "Durable listing",
+                                transport = P2PTransport(
+                                    transportMethod = Transport.Http,
+                                    transportAddress = "https://example.com/durable-agent"
+                                ),
+                                requiresAuth = false,
+                                usesConverse = false,
+                                allowsAgentDuplication = false,
+                                allowsCustomContext = false,
+                                allowsCustomAgentJson = false,
+                                recordsInteractionContext = false,
+                                recordsPromptContent = false,
+                                allowsExternalContext = false,
+                                contextProtocol = ContextProtocol.none,
+                                supportedContentTypes = mutableListOf(SupportedContentTypes.text)
+                            )
+                        )
+                    )
+                )
+                assertTrue(published.accepted, published.rejectionReason)
+            }
+            finally
+            {
+                P2PRegistry.remove(transport)
+            }
+
+            val secondInstance = P2PHostedRegistry(
+                registryName = "durable-hosted-registry",
+                transport = transport,
+                store = FileBackedP2PHostedRegistryStore(tempFile.toString())
+            )
+
+            try
+            {
+                P2PRegistry.register(
+                    agent = secondInstance,
+                    transport = transport,
+                    descriptor = secondInstance.getP2pDescription(),
+                    requirements = secondInstance.getP2pRequirements()
+                )
+
+                val result = P2PHostedRegistryClient.searchListings(
+                    transport = transport,
+                    query = P2PHostedRegistryQuery(textQuery = "durable")
+                )
+                assertTrue(result.accepted, result.rejectionReason)
+                assertEquals(1, result.totalCount)
+
+                val info = P2PHostedRegistryClient.getRegistryInfo(transport)
+                assertNotNull(info)
+                assertEquals("file-json", info.durableStoreKind)
+                assertEquals(1, info.listingCount)
+            }
+            finally
+            {
+                P2PRegistry.remove(transport)
+                Files.deleteIfExists(tempFile)
+            }
+        }
+    }
+
+    @Test
+    fun hostedRegistrySupportsModerationAndAuditForOperators()
+    {
+        runBlocking {
+            val transport = P2PTransport(
+                transportMethod = Transport.Tpipe,
+                transportAddress = "moderated-hosted-registry"
+            )
+            val hostedRegistry = P2PHostedRegistry(
+                registryName = "moderated-hosted-registry",
+                transport = transport,
+                store = InMemoryP2PHostedRegistryStore(),
+                policy = DefaultP2PHostedRegistryPolicy(
+                    P2PHostedRegistryPolicySettings(
+                        operatorRefs = mutableSetOf("operator-token")
+                    )
+                )
+            )
+
+            try
+            {
+                P2PRegistry.register(
+                    agent = hostedRegistry,
+                    transport = transport,
+                    descriptor = hostedRegistry.getP2pDescription(),
+                    requirements = hostedRegistry.getP2pRequirements()
+                )
+
+                val published = P2PHostedRegistryClient.publishListing(
+                    transport = transport,
+                    authBody = "publisher-token",
+                    request = P2PHostedRegistryPublishRequest(
+                        listing = P2PHostedRegistryListing(
+                            kind = P2PHostedListingKind.AGENT,
+                            metadata = P2PHostedListingMetadata(title = "Moderated Agent"),
+                            publicDescriptor = P2PDescriptor(
+                                agentName = "moderated-agent",
+                                agentDescription = "Moderated listing",
+                                transport = P2PTransport(
+                                    transportMethod = Transport.Http,
+                                    transportAddress = "https://example.com/moderated-agent"
+                                ),
+                                requiresAuth = false,
+                                usesConverse = false,
+                                allowsAgentDuplication = false,
+                                allowsCustomContext = false,
+                                allowsCustomAgentJson = false,
+                                recordsInteractionContext = false,
+                                recordsPromptContent = false,
+                                allowsExternalContext = false,
+                                contextProtocol = ContextProtocol.none
+                            )
+                        )
+                    )
+                )
+                assertTrue(published.accepted, published.rejectionReason)
+
+                val moderated = P2PHostedRegistryClient.moderateListing(
+                    transport = transport,
+                    authBody = "operator-token",
+                    request = P2PHostedRegistryModerateRequest(
+                        listingId = published.listing!!.listingId,
+                        moderationState = P2PHostedModerationState.HIDDEN,
+                        reason = "Hidden by operator"
+                    )
+                )
+                assertTrue(moderated.accepted, moderated.rejectionReason)
+
+                val searchResult = P2PHostedRegistryClient.searchListings(
+                    transport = transport,
+                    query = P2PHostedRegistryQuery(textQuery = "Moderated Agent")
+                )
+                assertTrue(searchResult.accepted, searchResult.rejectionReason)
+                assertEquals(0, searchResult.totalCount)
+
+                val auditResult = P2PHostedRegistryClient.listAuditRecords(
+                    transport = transport,
+                    authBody = "operator-token",
+                    query = P2PHostedRegistryAuditQuery(listingId = published.listing!!.listingId)
+                )
+                assertTrue(auditResult.accepted, auditResult.rejectionReason)
+                assertTrue(auditResult.results.any { it.action.name == "PUBLISH" })
+                assertTrue(auditResult.results.any { it.action.name == "MODERATE" })
+            }
             finally
             {
                 P2PRegistry.remove(transport)
