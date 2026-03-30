@@ -1,5 +1,6 @@
 package com.TTT.Util
 
+import com.TTT.Context.Dictionary
 import java.text.Normalizer
 
 /**
@@ -250,6 +251,9 @@ private val COMMON_CAPITALIZED_SENTENCE_WORDS = setOf(
 )
 
 private val TOKEN_PATTERN = Regex("[A-Za-z0-9]+")
+private val COMMON_ENGLISH_WORDS: Set<String> by lazy {
+    Dictionary.words.map { it.lowercase() }.toSet()
+}
 
 private object SemanticCompressionLexicon
 {
@@ -741,7 +745,18 @@ private fun collectProperNounCandidates(
             val lowerPhrase = phrase.lowercase()
             val repeatedEnough = candidate.count >= properNounReplacementThreshold(phrase)
             val isValidProperNoun = candidate.seenNotAtSentenceStart
+            val capitalizedEverywhere = appearsCapitalizedEverywhere(
+                input = input,
+                phrase = phrase,
+                connectorSet = connectorSet
+            )
+            val hasNonCommonEnglishToken = phraseHasNonCommonEnglishToken(
+                phrase = phrase,
+                connectorSet = connectorSet
+            )
             repeatedEnough && isValidProperNoun && 
+                capitalizedEverywhere &&
+                hasNonCommonEnglishToken &&
                 phrase !in commonCapitalizedSentenceWords &&
                 lowerPhrase !in PRONOUNS
         }
@@ -932,6 +947,29 @@ private fun isProperNounToken(
         token.firstOrNull()?.isUpperCase() == true
 }
 
+private fun appearsCapitalizedEverywhere(
+    input: String,
+    phrase: String,
+    connectorSet: Set<String>
+): Boolean
+{
+    val pattern = Regex("\\b${Regex.escape(phrase)}\\b", RegexOption.IGNORE_CASE)
+    val matches = pattern.findAll(input).toList()
+
+    if(matches.isEmpty())
+    {
+        return false
+    }
+
+    return matches.all { match ->
+        val tokens = match.value.split(Regex("\\s+")).filter { it.isNotBlank() }
+        tokens.all { token ->
+            val normalized = token.trim('\"', '\'', '“', '”', '‘', '’', ',', '.', '!', '?', ':', ';', ')', '(', '[', ']', '{', '}', '—', '-', '…')
+            normalized.lowercase() in connectorSet || normalized.firstOrNull()?.isUpperCase() == true
+        }
+    }
+}
+
 private fun toLegendCode(index: Int): String
 {
     val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -970,6 +1008,32 @@ private fun properNounReplacementThreshold(phrase: String): Int
         tokenCount == 3 -> 4
         tokenCount in 4..5 -> 3
         else -> 2
+    }
+}
+
+private fun phraseHasNonCommonEnglishToken(
+    phrase: String,
+    connectorSet: Set<String>
+): Boolean
+{
+    val tokens = phrase.split(Regex("\\s+")).filter { it.isNotBlank() }
+
+    if(tokens.size <= 2)
+    {
+        return true
+    }
+
+    return tokens.any { token ->
+        val normalized = token.trim('\"', '\'', '“', '”', '‘', '’', ',', '.', '!', '?', ':', ';', ')', '(', '[', ']', '{', '}', '—', '-', '…')
+        if(normalized.isBlank())
+        {
+            false
+        }
+        else
+        {
+            val lower = normalized.lowercase()
+            lower !in connectorSet && lower !in COMMON_ENGLISH_WORDS
+        }
     }
 }
 

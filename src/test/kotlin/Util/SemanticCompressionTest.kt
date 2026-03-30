@@ -145,6 +145,57 @@ class SemanticCompressionTest
     }
 
     @Test
+    fun semanticCompressionRejectsWordsThatAreNotCapitalizedEverywhere()
+    {
+        val input = """
+            Alice Johnson reviewed the launch plan.
+            We discussed alice johnson in the hallway.
+            Alice Johnson met Bob Smith in the afternoon.
+            Bob Smith thanked Alice Johnson afterward.
+            Alice Johnson and Bob Smith finalized the notes.
+            Alice Johnson confirmed the schedule.
+        """.trimIndent()
+
+        val result = semanticCompress(input)
+
+        assertFalse(
+            result.legend.contains("Alice Johnson"),
+            "A phrase should not receive a legend if any occurrence is lowercase"
+        )
+    }
+
+    @Test
+    fun semanticCompressionKeysOnlyTrueProperNounsNotOrdinaryTitleCasedPhrases()
+    {
+        val input = buildString {
+            repeat(6) {
+                append("Ben Mendelson met Alice Johnson near the Dark Blue Suit display at Project Atlas. ")
+                append("Alice Johnson reviewed the Dark Blue Suit notes for Project Atlas while Ben Mendelson watched. ")
+            }
+        }.trim()
+
+        val result = semanticCompress(input)
+        val keyedPhrases = result.legendMap.values.toSet()
+        val expectedProperNouns = setOf(
+            "Alice Johnson",
+            "Project Atlas"
+        )
+
+        assertTrue(
+            expectedProperNouns.all { it in keyedPhrases },
+            "The compressor should key the repeated proper nouns"
+        )
+        assertFalse(
+            keyedPhrases.contains("Dark Blue Suit"),
+            "Ordinary title-cased phrases should not be treated as proper nouns"
+        )
+        assertTrue(
+            keyedPhrases.all { it in expectedProperNouns },
+            "Only true proper nouns should appear in the legend: $keyedPhrases"
+        )
+    }
+
+    @Test
     fun semanticCompressionPreservesPronouns()
     {
         val input = "I and we should make sure that he and she can see it and what they know about where we are."
