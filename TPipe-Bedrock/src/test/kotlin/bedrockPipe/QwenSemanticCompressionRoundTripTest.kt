@@ -26,6 +26,8 @@ import kotlin.io.path.deleteIfExists
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 
 private const val QWEN_30B_MODEL_ID = "qwen.qwen3-coder-30b-a3b-v1:0"
@@ -59,14 +61,11 @@ class QwenSemanticCompressionRoundTripTest
         val inferenceConfigPath = Files.createTempFile("tpipe-qwen-inference", ".txt")
         val originalPrompt = buildRoundTripPromptFixture()
         val compression = semanticCompress(originalPrompt)
-        val compressedPrompt = if(compression.legend.isNotBlank())
-        {
-            "${compression.legend}\n\n${compression.compressedText}"
-        }
-        else
-        {
-            compression.compressedText
-        }
+        assertFalse(
+            compression.legend.isNotBlank(),
+            "This chapter-style fixture should not generate a legend; if decompression mentions one, it is hallucinating it"
+        )
+        val compressedPrompt = compression.compressedText
 
         assertTrue(compression.compressedText.contains("¶"), "Compressed prompt should preserve paragraph breaks with pilcrows")
         println("Semantic compression lengths: original=${originalPrompt.length} compressed=${compression.compressedText.length}")
@@ -75,6 +74,7 @@ class QwenSemanticCompressionRoundTripTest
         val pipelineTracePath = File(resultTraceDir, "pipeline.html")
         val pipelineJsonTracePath = File(resultTraceDir, "pipeline.json")
         val agentTracePath = File(resultTraceDir, "agent.html")
+        val agentJsonTracePath = File(resultTraceDir, "agent.json")
         val reasoningTracePath = File(resultTraceDir, "reasoning.html")
 
         bedrockEnv.resetInferenceConfig()
@@ -161,6 +161,11 @@ class QwenSemanticCompressionRoundTripTest
                     println("Result text preview=${result.text.take(1000)}")
                     println("Sentence count: original=${countSentenceUnits(originalPrompt)} restored=${countSentenceUnits(result.text)}")
                     println("Reconstruction similarity score: output=${reconstructionSimilarityScore(originalPrompt, result.text)} compressed=${reconstructionSimilarityScore(originalPrompt, compressedPrompt)}")
+                    assertEquals(
+                        compression.compressedText,
+                        compressedPrompt,
+                        "When no legend is produced, the compressed prompt should be just the compressed body"
+                    )
 
                     val reasoningTrace = PipeTracer.exportTrace(pipeline.getTraceId(), TraceFormat.HTML)
                     println("Trace length=${reasoningTrace.length}")
@@ -178,6 +183,7 @@ class QwenSemanticCompressionRoundTripTest
                         pipelineTracePath = pipelineTracePath,
                         pipelineJsonTracePath = pipelineJsonTracePath,
                         agentTracePath = agentTracePath,
+                        agentJsonTracePath = agentJsonTracePath,
                         reasoningTracePath = reasoningTracePath
                     )
                     println("Saved trace artifacts under ${resultTraceDir.absolutePath}")
@@ -205,6 +211,7 @@ class QwenSemanticCompressionRoundTripTest
         pipelineTracePath: File,
         pipelineJsonTracePath: File,
         agentTracePath: File,
+        agentJsonTracePath: File,
         reasoningTracePath: File
     )
     {
@@ -213,15 +220,17 @@ class QwenSemanticCompressionRoundTripTest
         val pipelineHtmlTrace = PipeTracer.exportTrace(pipeline.getTraceId(), TraceFormat.HTML)
         val pipelineJsonTrace = PipeTracer.exportTrace(pipeline.getTraceId(), TraceFormat.JSON)
         val agentTrace = PipeTracer.exportTrace(resolveTraceId(qwenPipe), TraceFormat.HTML)
+        val agentJsonTrace = PipeTracer.exportTrace(resolveTraceId(qwenPipe), TraceFormat.JSON)
         val reasoningTrace = PipeTracer.exportTrace(resolveTraceId(reasoningPipe), TraceFormat.HTML)
 
         writeTraceFile(pipelineTracePath, pipelineHtmlTrace, "pipeline HTML")
         writeTraceFile(pipelineJsonTracePath, pipelineJsonTrace, "pipeline JSON")
         writeTraceFile(agentTracePath, agentTrace, "agent HTML")
+        writeTraceFile(agentJsonTracePath, agentJsonTrace, "agent JSON")
         writeTraceFile(reasoningTracePath, reasoningTrace, "reasoning HTML")
 
         println("Saved trace artifacts under ${traceDir.absolutePath}")
-        println("Trace sizes: pipelineHtml=${pipelineHtmlTrace.length}, pipelineJson=${pipelineJsonTrace.length}, agent=${agentTrace.length}, reasoning=${reasoningTrace.length}")
+        println("Trace sizes: pipelineHtml=${pipelineHtmlTrace.length}, pipelineJson=${pipelineJsonTrace.length}, agentHtml=${agentTrace.length}, agentJson=${agentJsonTrace.length}, reasoningHtml=${reasoningTrace.length}")
     }
 
     private fun writeTraceFile(path: File, content: String, label: String)

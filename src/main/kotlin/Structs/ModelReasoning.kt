@@ -452,11 +452,16 @@ data class ChainOfDraftResponse(
 /**
  * The reasoning pipe's analysis of the legend mappings present in the compressed prompt.
  *
+ * @param doesLegendExist Top labeled boolean used to force the llm to predict against weather there is or
+ * is not a legend present at all. This is required because without this smaller models tend to just hallucinate
+ * values to fulfil the desire to have non-empty values in the json output. But by forcing it to acknowledge that
+ * no legend exists when it's empty, it should prevent the hallucinated values from appearing.
  * @param codesFound The 2-character legend codes discovered in the compressed text.
  * @param mappings Human-readable summary of each code-to-phrase mapping.
  */
 @kotlinx.serialization.Serializable
 data class LegendAnalysis(
+    var doesLegendExist: Boolean = false,
     var codesFound: List<String> = listOf(),
     var mappings: List<String> = listOf()
 )
