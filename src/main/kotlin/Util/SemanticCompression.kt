@@ -35,6 +35,9 @@ data class SemanticCompressionResult(
     val legendMap: Map<String, String>
 )
 
+private const val PARAGRAPH_MARKER = "¶"
+private val PARAGRAPH_BREAK_PATTERN = Regex("(?:\\r?\\n\\s*){2,}")
+
 /**
  * Builds the system-prompt prelude that teaches the model how to read a semantic-compressed prompt.
  *
@@ -56,6 +59,8 @@ fun buildSemanticDecompressionInstructions(): String
         |must be restored as closely as possible.
         |The compression removed common function words, common phrases, Unicode characters, and most punctuation
         |outside quoted text, while repeated proper nouns were replaced with short codes that must be expanded back.
+        |Paragraph breaks are represented with the pilcrow character `¶`; treat each pilcrow as a paragraph
+        |boundary and restore it as a blank line between paragraphs.
         |Use inference to restore omitted articles, conjunctions, prepositions, auxiliaries, and punctuation so the
         |final reconstruction matches the original meaning, sentence structure, and wording as closely as possible.
         |Do not leave the text compressed, and do not preserve the compressed style in the final output.
@@ -72,7 +77,7 @@ fun buildSemanticDecompressionInstructions(): String
         |8. Replace codes only in unquoted text.
         |9. Leave quoted text exactly as written.
         |10. Reconstruct the source sentence-by-sentence before you write the final restored content.
-        |11. Preserve paragraph boundaries whenever they can be recovered from the compressed text.
+        |11. Treat the pilcrow character `¶` as an explicit paragraph boundary and restore a blank line there.
         |12. Restore the prompt as faithfully as possible, not as a summary.
         |13. Do not invent unrelated meaning or rewrite quoted spans.
         |14. After the compressed prompt has been reconstructed, continue with the rest of the system prompt
@@ -412,17 +417,17 @@ fun semanticCompress(
         }
         .toMap()
 
-    var compressed = expandedContractions
-    compressed = replaceProperNouns(compressed, phraseToCode)
-    compressed = removeCommonPhrases(
-        compressed,
-        SemanticCompressionLexicon.buildPhrasePattern(allPhrases)
-    )
-    compressed = removeStopWords(
-        compressed,
-        stopWords
-    )
-    compressed = collapseWhitespace(removePunctuation(compressed))
+    val compressedParagraphs = splitParagraphBlocks(expandedContractions)
+        .mapNotNull { paragraph ->
+            compressParagraph(
+                paragraph = paragraph,
+                phraseToCode = phraseToCode,
+                stopWords = stopWords,
+                allPhrases = allPhrases
+            )
+        }
+
+    val compressed = compressedParagraphs.joinToString(" $PARAGRAPH_MARKER ")
 
     val restored = restoreQuotedSpans(compressed, quoteSpans)
     val legendMap = phraseToCode.entries.associate { (phrase, code) ->
@@ -435,6 +440,38 @@ fun semanticCompress(
         legend = legendText,
         legendMap = legendMap
     )
+}
+
+private fun splitParagraphBlocks(input: String): List<String>
+{
+    return PARAGRAPH_BREAK_PATTERN.split(input)
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+}
+
+private fun compressParagraph(
+    paragraph: String,
+    phraseToCode: Map<String, String>,
+    stopWords: Set<String>,
+    allPhrases: Collection<String>
+): String?
+{
+    if(paragraph.isBlank())
+    {
+        return null
+    }
+
+    var compressed = paragraph
+    compressed = replaceProperNouns(compressed, phraseToCode)
+    compressed = removeCommonPhrases(
+        compressed,
+        SemanticCompressionLexicon.buildPhrasePattern(allPhrases)
+    )
+    compressed = removeStopWords(
+        compressed,
+        stopWords
+    )
+    return collapseWhitespace(removePunctuation(compressed))
 }
 
 private fun maskQuotedSpans(

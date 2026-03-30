@@ -241,9 +241,10 @@ Reserves the semantic decompression hook for system-prompt injection.
 prelude. When semantic compression is also enabled, TPipe inserts a short instruction block at the very top of
 the rebuilt system prompt that tells the model that the user prompt was compressed using TPipe Semantic
 Compression, explains that the compressed text should be reconstructed as closely as possible to the original
-intent and data, explains the `Legend:` / `code: phrase` format and the blank-line boundary, instructs it to
-read the legend first, expand repeated proper-noun codes, restore omitted glue words and syntax as faithfully
-as possible, preserve quoted spans, and then continue with the rest of the prompt.
+    intent and data, explains the `Legend:` / `code: phrase` format and the blank-line boundary, instructs it to
+    read the legend first, expand repeated proper-noun codes, restore omitted glue words and syntax as faithfully
+    as possible, treat `¶` as a paragraph break, preserve quoted spans, and then continue with the rest of the
+    prompt.
 
 #### `compressPrompt(prompt: String, settings: SemanticCompressionSettings = SemanticCompressionSettings()): SemanticCompressionResult`
 Compresses a prompt string using TPipe's semantic compression rules.
@@ -444,12 +445,14 @@ Sets advanced token budgeting configuration with support for dynamic user prompt
 **Semantic Compression:** When `TokenBudgetSettings.compressUserPrompt` is `true`, TPipe will attempt semantic compression on the natural-language user prompt before truncation. This is designed for human language prompts only; structured payloads such as JSON, code, XML, or schema fragments are left to the standard budget and truncation path.
 The default compressor lexicon is resource-backed, with stop-word and phrase tables loaded from
 `src/main/resources/semantic-compression/` and merged with any caller-provided additions.
-Common contractions are expanded before function-word stripping, and the audit helper can be used to
-surface recurring prompt boilerplate that should be added to the lexicon next.
+Common contractions are expanded before function-word stripping, paragraph breaks survive as pilcrow markers
+(`¶`), and the audit helper can be used to surface recurring prompt boilerplate that should be added to the
+lexicon next.
 
 **Fluent Builders:** Call `enableSemanticCompression()` to turn this path on from the `Pipe` API, and call
 `enableSemanticDecompression()` to prepend the decompression prelude that explains how the compressed prompt
-should be expanded again before the rest of the system prompt is processed.
+should be expanded again before the rest of the system prompt is processed, including how to read `¶` as a
+paragraph boundary.
 
 **Dynamic Allocation Process:**
 1. **Automatic Sizing**: TPipe counts tokens in the actual user prompt and allocates that exact amount

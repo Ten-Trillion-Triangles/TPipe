@@ -425,6 +425,7 @@ class SystemPromptInjectionTest
         assertTrue(prompt.contains("sentence structure"), "The prelude should preserve sentence structure")
         assertTrue(prompt.contains("sentence-by-sentence"), "The prelude should require sentence-by-sentence reconstruction")
         assertTrue(prompt.contains("paragraph boundaries"), "The prelude should mention paragraph boundaries")
+        assertTrue(prompt.contains("¶"), "The prelude should explain that pilcrows mark paragraph breaks")
         assertTrue(prompt.contains("Legend:"), "The prelude should explain how the legend is introduced")
         assertTrue(prompt.contains("code: phrase"), "The prelude should explain the legend line format")
         assertTrue(prompt.contains("first blank line"), "The prelude should define the legend boundary")

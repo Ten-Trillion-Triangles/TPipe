@@ -122,6 +122,7 @@ class SemanticCompressionBuilderTest
         assertTrue(prompt.contains("Legend:"), "Prelude should explain the legend heading")
         assertTrue(prompt.contains("code: phrase"), "Prelude should explain the legend entry format")
         assertTrue(prompt.contains("first blank line"), "Prelude should explain where the legend block ends")
+        assertTrue(prompt.contains("¶"), "Prelude should explain that pilcrows mark paragraph breaks")
         assertTrue(prompt.contains("sentence structure"), "Prelude should explain that sentence structure must be preserved")
         assertTrue(prompt.contains("sentence-by-sentence"), "Prelude should require sentence-by-sentence reconstruction")
         assertTrue(prompt.contains("paragraph boundaries"), "Prelude should mention paragraph preservation")

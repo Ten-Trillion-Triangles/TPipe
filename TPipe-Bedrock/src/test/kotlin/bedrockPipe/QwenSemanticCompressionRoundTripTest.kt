@@ -39,6 +39,12 @@ class QwenSemanticCompressionRoundTripTest
     {
         TestCredentialUtils.requireAwsCredentials()
 
+        val originalConfigDir = TPipeConfig.configDir
+        val originalInstanceId = TPipeConfig.instanceID
+        val traceRoot = File(System.getProperty("user.home"), ".tpipe").absoluteFile
+        TPipeConfig.configDir = traceRoot.absolutePath
+        TPipeConfig.instanceID = "QwenSemanticCompressionRoundTripTest-${System.nanoTime()}"
+
         val traceConfig = TraceConfig(
             enabled = true,
             outputFormat = TraceFormat.HTML,
@@ -48,6 +54,7 @@ class QwenSemanticCompressionRoundTripTest
         )
 
         println("Using Qwen foundation model $QWEN_30B_MODEL_ID ($QWEN_30B_MODEL_ARN) in $QWEN_30B_REGION")
+        println("Saving round-trip trace artifacts under ${TPipeConfig.getTraceDir()}/Library/qwen-semantic-compression-round-trip")
 
         val inferenceConfigPath = Files.createTempFile("tpipe-qwen-inference", ".txt")
         val originalPrompt = buildRoundTripPromptFixture()
@@ -61,6 +68,7 @@ class QwenSemanticCompressionRoundTripTest
             compression.compressedText
         }
 
+        assertTrue(compression.compressedText.contains("¶"), "Compressed prompt should preserve paragraph breaks with pilcrows")
         println("Semantic compression lengths: original=${originalPrompt.length} compressed=${compression.compressedText.length}")
 
         val resultTraceDir = File(TPipeConfig.getTraceDir(), "Library/qwen-semantic-compression-round-trip")
@@ -73,114 +81,119 @@ class QwenSemanticCompressionRoundTripTest
         bedrockEnv.setInferenceConfigFile(inferenceConfigPath.toFile())
         inferenceConfigPath.toFile().writeText("$QWEN_30B_MODEL_ID=\n")
 
-        val reasoningPipe = (ReasoningBuilder.reasonWithBedrock(
-            BedrockConfiguration(
-                region = QWEN_30B_REGION,
-                model = QWEN_30B_MODEL_ID,
-                inferenceProfile = "",
-                useConverseApi = true
-            ),
-            ReasoningSettings(
-                reasoningMethod = ReasoningMethod.SemanticDecompression,
-                depth = ReasoningDepth.High,
-                duration = ReasoningDuration.Long,
-                reasoningInjector = ReasoningInjector.BeforeUserPrompt,
-                numberOfRounds = 1,
-                focusPoints = mutableMapOf()
-            ),
-            PipeSettings(
-                pipeName = "qwen semantic decompression reasoning",
-                provider = ProviderName.Aws,
-                model = QWEN_30B_MODEL_ID,
-                temperature = 0.1,
-                topP = 0.2,
-                maxTokens = 4096,
-                contextWindowSize = 10000
-            )
-        ) as BedrockMultimodalPipe).apply {
-            setPipeName("qwen semantic decompression reasoning")
-            setReadTimeout(600)
-            enableMaxTokenOverflow()
-            enableTracing(traceConfig)
-        }
-
-        val qwenPipe = BedrockMultimodalPipe().apply {
-            setProvider(ProviderName.Aws)
-            setModel(QWEN_30B_MODEL_ID)
-            setRegion(QWEN_30B_REGION)
-            useConverseApi()
-            setPipeName("qwen semantic compression decompressor")
-            setTemperature(0.1)
-            setTopP(0.2)
-            setMaxTokens(8192)
-            setReadTimeout(600)
-            enableMaxTokenOverflow()
-            setReasoningPipe(reasoningPipe)
-            setSystemPrompt(
-                buildSemanticDecompressionInstructions() + "\n\n" + """
-                    You are a reconstruction agent for a TPipe semantic-compressed prompt.
-                    Rebuild the original text into normal, fully readable English.
-                    Restore omitted grammar, glue words, and syntax wherever needed to recover the original meaning.
-                    Preserve quoted spans exactly.
-                    Return only the reconstructed text with no summary, no commentary, and no compressed style.
-                """.trimIndent()
-            )
-            enableTracing(traceConfig)
-        }
-        println("Reasoning method=${reasoningPipe.pipeMetadata["reasoningMethod"]}")
-
-        val pipeline = Pipeline().apply {
-            setPipelineName("qwen semantic compression round trip")
-            add(qwenPipe)
-            enableTracing(traceConfig)
-        }
-
-        PipeTracer.enable()
-
         try
         {
-            runBlocking(Dispatchers.IO)
+            val reasoningPipe = (ReasoningBuilder.reasonWithBedrock(
+                BedrockConfiguration(
+                    region = QWEN_30B_REGION,
+                    model = QWEN_30B_MODEL_ID,
+                    inferenceProfile = "",
+                    useConverseApi = true
+                ),
+                ReasoningSettings(
+                    reasoningMethod = ReasoningMethod.SemanticDecompression,
+                    depth = ReasoningDepth.High,
+                    duration = ReasoningDuration.Long,
+                    reasoningInjector = ReasoningInjector.BeforeUserPrompt,
+                    numberOfRounds = 1,
+                    focusPoints = mutableMapOf()
+                ),
+                PipeSettings(
+                    pipeName = "qwen semantic decompression reasoning",
+                    provider = ProviderName.Aws,
+                    model = QWEN_30B_MODEL_ID,
+                    temperature = 0.1,
+                    topP = 0.2,
+                    maxTokens = 4096,
+                    contextWindowSize = 10000
+                )
+            ) as BedrockMultimodalPipe).apply {
+                setPipeName("qwen semantic decompression reasoning")
+                setReadTimeout(600)
+                enableMaxTokenOverflow()
+                enableTracing(traceConfig)
+            }
+
+            val qwenPipe = BedrockMultimodalPipe().apply {
+                setProvider(ProviderName.Aws)
+                setModel(QWEN_30B_MODEL_ID)
+                setRegion(QWEN_30B_REGION)
+                useConverseApi()
+                setPipeName("qwen semantic compression decompressor")
+                setTemperature(0.1)
+                setTopP(0.2)
+                setMaxTokens(8192)
+                setReadTimeout(600)
+                enableMaxTokenOverflow()
+                setReasoningPipe(reasoningPipe)
+                setSystemPrompt(
+                    buildSemanticDecompressionInstructions() + "\n\n" + """
+                        You are a reconstruction agent for a TPipe semantic-compressed prompt.
+                        Rebuild the original text into normal, fully readable English.
+                        Restore omitted grammar, glue words, and syntax wherever needed to recover the original meaning.
+                        Preserve quoted spans exactly.
+                        Return only the reconstructed text with no summary, no commentary, and no compressed style.
+                    """.trimIndent()
+                )
+                enableTracing(traceConfig)
+            }
+            println("Reasoning method=${reasoningPipe.pipeMetadata["reasoningMethod"]}")
+
+            val pipeline = Pipeline().apply {
+                setPipelineName("qwen semantic compression round trip")
+                add(qwenPipe)
+                enableTracing(traceConfig)
+            }
+
+            PipeTracer.enable()
+
+            try
             {
-                pipeline.init(initPipes = true)
-                qwenPipe.addTraceId(resolveTraceId(qwenPipe))
-                reasoningPipe.addTraceId(resolveTraceId(reasoningPipe))
-                val result = pipeline.execute(MultimodalContent(text = compressedPrompt))
-                println("Original prompt length=${originalPrompt.length}")
-                println("Compressed prompt length=${compressedPrompt.length}")
-                println("Result text length=${result.text.length}")
-                println("Result text preview=${result.text.take(1000)}")
-                println("Sentence count: original=${countSentenceUnits(originalPrompt)} restored=${countSentenceUnits(result.text)}")
-                println("Reconstruction similarity score: output=${reconstructionSimilarityScore(originalPrompt, result.text)} compressed=${reconstructionSimilarityScore(originalPrompt, compressedPrompt)}")
+                runBlocking(Dispatchers.IO)
+                {
+                    pipeline.init(initPipes = true)
+                    qwenPipe.addTraceId(resolveTraceId(qwenPipe))
+                    reasoningPipe.addTraceId(resolveTraceId(reasoningPipe))
+                    val result = pipeline.execute(MultimodalContent(text = compressedPrompt))
+                    println("Original prompt length=${originalPrompt.length}")
+                    println("Compressed prompt length=${compressedPrompt.length}")
+                    println("Result text length=${result.text.length}")
+                    println("Result text preview=${result.text.take(1000)}")
+                    println("Sentence count: original=${countSentenceUnits(originalPrompt)} restored=${countSentenceUnits(result.text)}")
+                    println("Reconstruction similarity score: output=${reconstructionSimilarityScore(originalPrompt, result.text)} compressed=${reconstructionSimilarityScore(originalPrompt, compressedPrompt)}")
 
-                val reasoningTrace = PipeTracer.exportTrace(pipeline.getTraceId(), TraceFormat.HTML)
-                println("Trace length=${reasoningTrace.length}")
-
+                    val reasoningTrace = PipeTracer.exportTrace(pipeline.getTraceId(), TraceFormat.HTML)
+                    println("Trace length=${reasoningTrace.length}")
+                }
+            }
+            finally
+            {
+                try
+                {
+                    writeTraceArtifacts(
+                        traceDir = resultTraceDir,
+                        pipeline = pipeline,
+                        qwenPipe = qwenPipe,
+                        reasoningPipe = reasoningPipe,
+                        pipelineTracePath = pipelineTracePath,
+                        pipelineJsonTracePath = pipelineJsonTracePath,
+                        agentTracePath = agentTracePath,
+                        reasoningTracePath = reasoningTracePath
+                    )
+                    println("Saved trace artifacts under ${resultTraceDir.absolutePath}")
+                }
+                finally
+                {
+                    PipeTracer.disable()
+                    bedrockEnv.resetInferenceConfig()
+                    inferenceConfigPath.deleteIfExists()
+                }
             }
         }
         finally
         {
-            try
-            {
-                writeTraceArtifacts(
-                    traceDir = resultTraceDir,
-                    pipeline = pipeline,
-                    qwenPipe = qwenPipe,
-                    reasoningPipe = reasoningPipe,
-                    pipelineTracePath = pipelineTracePath,
-                    pipelineJsonTracePath = pipelineJsonTracePath,
-                    agentTracePath = agentTracePath,
-                    reasoningTracePath = reasoningTracePath
-                )
-            }
-            catch(traceError: Throwable)
-            {
-                println("Unable to save Qwen round-trip traces: ${traceError.message}")
-                traceError.printStackTrace()
-            }
-
-            PipeTracer.disable()
-            bedrockEnv.resetInferenceConfig()
-            inferenceConfigPath.deleteIfExists()
+            TPipeConfig.configDir = originalConfigDir
+            TPipeConfig.instanceID = originalInstanceId
         }
     }
 
@@ -228,24 +241,32 @@ class QwenSemanticCompressionRoundTripTest
     private fun buildRoundTripPromptFixture(): String
     {
         return """
-            It was a hot day in late July when I first discussed the book with Ben Mendelson. I had arrived at 5:00 am to open up, as I was the dayshift manager (our firm ran 24 hours a day). Ben had come to the office before anyone else. He was pinstriped in dark blue. He threw his briefcase off to the side. It was mostly an ornament of his position (nobody brought their papers home, thanks to our ample storage space, so it was always empty). He smiled at me as he entered my office. “Got a pen?”
-            	I tossed him a solid gold one from my desk (a gift to me from my late friend Joe). He caught it even as it traveled at 200 miles per hour (something which he was known to do). He sat down on the other side of the desk from me and began to write on my notepad. He wrote the date and time, Benign Skies, and then he wrote the word “lover,” and then he wrote the words “love,” and “hate.” He wrote these last two words each 42  times on the page, and next to each in accordance to his feelings he wrote the names of his parents, his siblings and grandparents, and finally the names of his friends. He ran out of space and began scribbling in the margins. I laughed, asking, “Need more paper?” He shook his head.
-            	“I’m pretty sure I’ve got everyone.”
-            	We sat down together on the couch in the lounge room. He handed me the book whose name he had written down and which he had brought in his briefcase. “Benign Skies?” He nodded. I cracked open the cover and started from the first page. I attempted to skim it, but found that even as I flipped the pages like slides of a flipbook, I couldn’t reach the end—it was an infinitely long book. That was the first oddity. 
-            	Concluding that I couldn’t skim it, I resigned to read it normally. It was impossible to concentrate properly on what the author had written because he repeated himself frequently. He repeated every line three times, sometimes in the same sentence or the same page, and sometimes not. He repeated the same sentences and the same phrases. He repeated the same words. I thought it was strange he would repeat himself so much, at first assuming the author to be schizophrenic, only to realize that it was intentional. He repeated the same sentences and the same phrases, three times in different places in the book. He repeated the same words.
-            	“...he was born in a small town in rural Maine. He grew up in a house with no electricity and no running water. His father was a drunk. His mother died giving birth to his youngest brother.” 
-            	"Benjamin Mendelson was born in a small hospital in Portland, Maine on October 12th 1952….Ben was raised by his loving family until he left home at 17 years old….Ben spent most of his life living in poverty….Ben's father died young….Ben's mother died when she gave birth to his youngest child….Ben has always loved books….Ben loves dogs….Ben has two brothers named Larry and Richard….Ben loves two women named Lila and Jane….Ben has two children named Sam and Hannah….Ben has two cats named Mr. Whiskers and Spot…"
-            	I closed the book to double check what I had seen on the front cover. The author was Gabe Anderson. “Weird,” I said, resuming. “Impossible,” said Ben. His voice sounded like it came from miles away. And I agreed: it was impossible. The author described himself as Benjamin Mendelson, but claimed to be Benjamin Mendelson’s father. He wrote that his father had died when he was born (“My father died when I was born,”), but also wrote that Ben’s father had died 29 years earlier, when Ben was 6 months old (“My father died when I was 6 months old.”). He wrote that he had two brothers, but Ben’s father had four. He wrote that his mother had died young, but Ben’s mother had lived until Ben was 45.
-            	The worst part of all was that the author had written that he was a writer. That wasn’t true at all (obvious, given the quality of the writing). Ben was an accountant, and he worked at the same firm as me. I’d been working there for 8 years, and Ben joined the year after I graduated from college. 
-            	I bookmarked my place. “Ben, this is ridiculous.” He pushed it back into my hands.
-            	“Finish it tonight,” he said. “You’ll see.”
-            	I stayed awake until four in the morning on Monday, to read the whole thing before I saw Ben again. When I finished, I felt nauseous. I couldn’t believe that anyone would do such a thing to his own father. After lunch, Ben and I returned to the couch in the lounge room. There was something sinister about this book, and we knew we needed to do something about it. But we also knew that we would be accused of being crazy if we tried to talk about it to anyone else at the firm. Of course they would: we had no evidence, and no idea even of what was wrong with the book, aside from the seemingly infinite length, and the fact that Ben, the author, could not remove from the cover the name of the man who had slaughtered his grandparents to replace it with his own. We needed a witness, someone else who had read the book and understood the horrifying properties. 
-            	“That’s why I wrote the list,” said Ben, handing it to me. “We need to show it to these people.” He tapped on the left side of the page, where the list of “love” was written. I looked it over. “And the ones on the right? The ones you hate?” He looked at me. His eyes were grave.
-            	“Whatever happens,” said Ben, “especially if something should happen to me, keep the book away from them. You can’t know what will happen if they find out this exists.”
-            	Ben frowned. The weight of the world showed in the lines on his face as he said, “but, I still don’t know how to prove what we know.” 
-            	I looked at him, and then I pointed at myself, and then I pointed at Ben, and then I pointed at the book. 
-            	“I think the answer is obvious,” I said.
-            	Ben nodded, and we both smiled.
+            It was a hot summer day in late July when I first met Ben Mendelson. He had come to the office early, wearing a dark blue suit. He had a briefcase in his hand. He smiled at me and asked if he could borrow a pen. I handed him one. Then he began to write.
+            He wrote the date and time, and then the name of a book, and then he wrote the word 'lover', and then he wrote the words 'love' and 'hate'. Then he wrote the names of his parents and his siblings and his grandparents, and then he wrote the names of his friends. I watched him write the names and then I went to get another pen and paper so he could keep going. But he stopped writing.
+            "Is something wrong?" I asked him.
+            "No, nothing," he said. "Just wanted to make sure I had everyone."
+
+            We sat together on the couch. I tried to read the book he had written down. It was called The Great American Novel. I thought it might be interesting, but the title was so long that I couldn't find the end of it. I started reading it anyway, and I found it hard to concentrate on the story because the author kept repeating himself. I thought it was strange that he would repeat himself so much, but then I realized he was doing it on purpose. He repeated the same lines three times each in different places in the book. He repeated the same sentences and the same phrases. He repeated the same words.
+            "…he was born in a small town in Maine. He grew up in a house that had no electricity and no running water. His father was a drunk and his mother died giving birth to his youngest brother."
+            Then it took a turn towards insanity.
+            "Benjamin Mendelson was born in a small hospital in Portland Maine on October 12th 1952… Ben was raised by his loving family until he left home at seventeen years old… Ben spent most of his life living in poverty… Ben's father died young… Ben's mother died when she gave birth to her youngest child… Ben has always loved books… Ben loves dogs… Ben has two brothers named Larry and Richard… Ben loves two women named Lila and Jane… Ben has two children named Sam and Hannah… Ben has two cats named Mr. Whiskers and Spot…"
+
+            There were so many things wrong with this book that I didn't understand what was happening until later that night when I finally finished reading it all. The author had described himself as Benjamin Mendelson but then he also claimed to be Benjamin Mendelson's father. He wrote that his father had died when he was born: "My father died when I was born." However, his father had actually died twenty-nine years earlier when Ben was only six months old: "My father died when I was six months old."
+            He wrote that he had two brothers, but his father had four. And he wrote that he had a mother who had died, but his mother had actually lived until Ben was forty-five years old.
+            And the worst thing of all was that the author had written that he was a writer. That wasn't true at all. He was an accountant, and he worked at the same firm as me. I had been working there for eight years and he'd been there since the year after I graduated college.
+
+            "What did you think?" Ben asked me when he came back to work the following Monday.
+            I told him I hadn't finished the book yet. He laughed.
+            "You're funny," he said. "You'll finish it tonight. You'll see."
+            When I finished it, I felt sick. I thought I was going to throw up. I couldn't believe that someone would do that to his own father. When Ben came back from lunch an hour later, we sat together on my couch again and talked about what we were going to do next. We decided we should tell someone about this book, but we were afraid to talk about it in front of anyone else at work without knowing exactly what we were talking about first. We worried that maybe someone would accuse us of being crazy. So we waited until we knew we had a witness.
+
+            "I've been thinking about the names," Ben said. "Why did you ask me to write down all the names of my family members? I can't remember a lot of them."
+            "I don't know," I said. "Maybe because we needed to be sure that everyone in the book was real."
+            Ben nodded and smiled, but then he got serious.
+            "So how are we going to prove this?"
+            I looked at him and then I pointed at myself and then I pointed at Ben and then I pointed at the book.
+            "I think the answer is obvious," I said.
+            Ben nodded, and we both smiled.
         """.trimIndent()
     }
 

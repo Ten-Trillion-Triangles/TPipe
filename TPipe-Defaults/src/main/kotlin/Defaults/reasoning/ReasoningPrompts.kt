@@ -328,8 +328,10 @@ object ReasoningPrompts
             6. Common English function words (stop words) are stripped: articles (a, an, the), pronouns,
                prepositions, auxiliaries, conjunctions, and discourse fillers (basically, literally,
                honestly, actually, etc.).
-            7. Punctuation is removed except colons (used in the legend format).
-            8. All whitespace is collapsed to single spaces.
+            7. Paragraph boundaries are preserved with the pilcrow character `¶`, which means "start a new
+               paragraph" when the prompt is reconstructed.
+            8. Punctuation is removed except colons (used in the legend format) and the pilcrow separator.
+            9. All other whitespace is collapsed to single spaces.
             
             YOUR DECOMPRESSION PROCESS:
             1. Read the legend block first. It starts with "Legend:" and contains "CODE: phrase" lines
@@ -338,11 +340,13 @@ object ReasoningPrompts
                code-to-phrase mappings.
             3. Scan the compressed body and expand all legend codes back to their original phrases.
                Only expand codes in unquoted text. Leave quoted spans exactly as written.
+               Treat every `¶` as a paragraph break and restore the text with a blank line there.
             4. Identify what task the parent pipe is being asked to perform from the decompressed content.
             5. Restore omitted function words, articles, conjunctions, prepositions, auxiliaries, and
                punctuation using inference from the surrounding content words.
             6. Reconstruct the source sentence-by-sentence before you write the final restored content.
-            7. Preserve paragraph boundaries whenever they are recoverable from the compressed text.
+            7. Preserve paragraph boundaries whenever they are recoverable from the compressed text,
+               especially the explicit `¶` marker.
             8. Preserve quoted spans exactly and surface them explicitly in the quoteSpans field.
             9. Extract the key data points that are critical to the identified task.
             10. If the task itself requires full decompression, produce a complete faithful restoration

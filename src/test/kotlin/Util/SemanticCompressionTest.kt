@@ -194,4 +194,22 @@ class SemanticCompressionTest
         // Whitespace is collapsed
         assertFalse(result.compressedText.contains("   "), "Multiple spaces should be collapsed")
     }
+
+    @Test
+    fun semanticCompressionPreservesParagraphBreaksWithPilcrowMarkers()
+    {
+        val input = """
+            Alice Johnson met Bob Smith in the morning.
+            They reviewed the launch plan together.
+
+            Later that day, Alice Johnson and Bob Smith sent the final update.
+            They confirmed the launch plan was ready.
+        """.trimIndent()
+
+        val result = semanticCompress(input)
+
+        assertTrue(result.compressedText.contains("¶"), "Paragraph breaks should survive compression as pilcrow markers")
+        assertFalse(result.compressedText.contains("\n\n"), "Paragraph breaks should no longer be flattened into blank lines")
+        assertTrue(result.compressedText.contains("Alice Johnson") || result.legend.contains("Alice Johnson"), "Repeated proper nouns should still be represented")
+    }
 }
