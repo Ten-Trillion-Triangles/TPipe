@@ -1,6 +1,8 @@
 package com.TTT.Debug
 
+import com.TTT.Config.TPipeConfig
 import com.TTT.Pipe.MultimodalContent
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -53,6 +55,29 @@ class DistributionGridTraceVisualizationTest
         assertTrue(markdown.contains("Bootstrap Catalog"))
 
         PipeTracer.clearTrace(traceId)
+    }
+
+    @Test
+    fun generateDistributionGridHtmlTraceFileInDefaultTraceDirectory()
+    {
+        val visualizer = TraceVisualizer()
+        val htmlReport = visualizer.generateHtmlReport(generateMockDistributionGridTrace())
+        val traceDir = File(TPipeConfig.getTraceDir(), "Library/distribution-grid-trace-visualization")
+        if(!traceDir.exists())
+        {
+            traceDir.mkdirs()
+        }
+
+        val outputFile = File(traceDir, "distribution-grid.html")
+        outputFile.writeText(htmlReport)
+
+        assertTrue(traceDir.exists())
+        assertTrue(outputFile.exists())
+        assertTrue(outputFile.length() > 0L)
+        assertTrue(htmlReport.contains("TPipe DistributionGrid Execution Analysis"))
+        assertTrue(htmlReport.contains("Grid State"))
+        assertTrue(htmlReport.contains("Grid Orchestration Flow"))
+        assertTrue(htmlReport.contains("Discovery, Registry, and Public Listing Activity"))
     }
 
     private fun generateMockDistributionGridTrace(): List<TraceEvent>
