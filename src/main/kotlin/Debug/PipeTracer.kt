@@ -206,22 +206,7 @@ object PipeTracer {
     
     private fun exportAsMarkdown(trace: List<TraceEvent>): String
     {
-        val md = StringBuilder()
-        md.append("# TPipe Trace Report\n\n")
-        md.append("| Timestamp | Pipe | Event | Phase | Status |\n")
-        md.append("|-----------|------|-------|-------|--------|\n")
-        
-        trace.forEach { event ->
-            val status = when(event.eventType)
-            {
-                TraceEventType.PIPE_SUCCESS, TraceEventType.API_CALL_SUCCESS, TraceEventType.VALIDATION_SUCCESS -> "✅ SUCCESS"
-                TraceEventType.PIPE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE -> "❌ FAILURE"
-                else -> "ℹ️ INFO"
-            }
-            md.append("| ${event.timestamp} | ${event.pipeName} | ${event.eventType} | ${event.phase} | $status |\n")
-        }
-        
-        return md.toString()
+        return TraceVisualizer().generateMarkdownOutput(trace)
     }
     
 

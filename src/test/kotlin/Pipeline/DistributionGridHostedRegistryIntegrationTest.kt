@@ -1,5 +1,7 @@
 package com.TTT.Pipeline
 
+import com.TTT.Debug.TraceFormat
+import com.TTT.Debug.TraceEventType
 import com.TTT.P2P.ContextProtocol
 import com.TTT.P2P.DefaultP2PHostedRegistryPolicy
 import com.TTT.P2P.InMemoryP2PHostedRegistryStore
@@ -104,6 +106,7 @@ class DistributionGridHostedRegistryIntegrationTest
                         autoPullOnInit = true
                     )
                 )
+                grid.enableTracing()
 
                 grid.init()
 
@@ -115,6 +118,7 @@ class DistributionGridHostedRegistryIntegrationTest
                 assertTrue(sourceStatus.lastSuccessfulPullEpochMillis > 0L)
                 assertEquals(1, sourceStatus.acceptedRegistryCount)
                 assertEquals(0, sourceStatus.trustRejectedCount)
+
             }
 
             finally
@@ -152,6 +156,7 @@ class DistributionGridHostedRegistryIntegrationTest
                     nodeId = "public-grid-node",
                     transportAddress = "public-grid-node"
                 )
+                grid.enableTracing()
                 grid.init()
 
                 val publishResult = grid.publishPublicNodeListing(
@@ -182,6 +187,9 @@ class DistributionGridHostedRegistryIntegrationTest
                 assertTrue(searchResult.accepted, searchResult.rejectionReason)
                 assertEquals(1, searchResult.totalCount)
                 assertEquals("public-grid-node", searchResult.results.first().gridNodeAdvertisement!!.metadata.nodeId)
+
+                val traceReport = grid.getTraceReport(TraceFormat.JSON)
+                assertTrue(traceReport.contains(TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING.name))
             }
 
             finally
@@ -367,6 +375,7 @@ class DistributionGridHostedRegistryIntegrationTest
             )
         )
     }
+
 }
 
 private class GridExecutionInterface(

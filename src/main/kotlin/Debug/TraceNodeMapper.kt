@@ -53,6 +53,34 @@ object TraceNodeMapper
             event.eventType.name.startsWith("SPLITTER_") -> "${event.pipeName}-${event.eventType.name}"
             event.eventType.name.startsWith("MANIFOLD_") -> "${event.pipeName}-${event.eventType.name}"
             event.eventType.name.startsWith("JUNCTION_") -> "${event.pipeName}-${event.eventType.name}"
+            event.eventType.name.startsWith("DISTRIBUTION_GRID_") ->
+            {
+                val taskId = event.metadata["taskId"]?.toString()?.takeIf { it.isNotBlank() }
+                val peerKey = event.metadata["peerKey"]?.toString()?.takeIf { it.isNotBlank() }
+                val targetNodeId = event.metadata["targetNodeId"]?.toString()?.takeIf { it.isNotBlank() }
+                when(event.eventType)
+                {
+                    TraceEventType.DISTRIBUTION_GRID_PEER_HANDOFF,
+                    TraceEventType.DISTRIBUTION_GRID_PEER_RESPONSE,
+                    TraceEventType.DISTRIBUTION_GRID_SESSION_HANDSHAKE ->
+                        "DistributionGrid-Remote-${peerKey ?: targetNodeId ?: taskId ?: "unknown"}-${event.eventType.name}"
+
+                    TraceEventType.DISTRIBUTION_GRID_REGISTRY_PROBE,
+                    TraceEventType.DISTRIBUTION_GRID_REGISTRY_REGISTRATION,
+                    TraceEventType.DISTRIBUTION_GRID_REGISTRY_LEASE_RENEWAL,
+                    TraceEventType.DISTRIBUTION_GRID_REGISTRY_QUERY ->
+                        "DistributionGrid-Registry-${event.metadata["registryId"] ?: "unknown"}-${event.eventType.name}"
+
+                    TraceEventType.DISTRIBUTION_GRID_BOOTSTRAP_CATALOG_PULL ->
+                        "DistributionGrid-Catalog-${event.metadata["sourceId"] ?: "unknown"}-${event.eventType.name}"
+
+                    TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING,
+                    TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING_AUTO_RENEW ->
+                        "DistributionGrid-Listing-${event.metadata["listingId"] ?: event.metadata["renewalId"] ?: "unknown"}-${event.eventType.name}"
+
+                    else -> "${event.pipeName}-${event.eventType.name}"
+                }
+            }
             event.eventType.name.startsWith("MANAGER_") -> "${event.pipeName}-${event.eventType.name}"
             event.eventType.name.startsWith("AGENT_") -> "${event.pipeName}-${event.eventType.name}-${event.metadata["agentName"] ?: "unknown"}"
             else -> event.pipeName

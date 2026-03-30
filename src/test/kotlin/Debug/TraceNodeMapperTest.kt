@@ -31,8 +31,40 @@ class TraceNodeMapperTest
         assertTrue(nodes[0].nodeId.startsWith("node-"))
         assertEquals("TestPipe", nodes[0].pipeName)
     }
-    
-    private fun createTraceEvent(pipeName: String, eventType: TraceEventType): TraceEvent 
+
+    @Test
+    fun testDistributionGridEventsUseGridAwareNodeKeys()
+    {
+        val events = listOf(
+            createTraceEvent(
+                pipeName = "DistributionGrid-node-a",
+                eventType = TraceEventType.DISTRIBUTION_GRID_PEER_HANDOFF,
+                metadata = mapOf("peerKey" to "peer-b", "targetNodeId" to "node-b")
+            ),
+            createTraceEvent(
+                pipeName = "DistributionGrid-node-a",
+                eventType = TraceEventType.DISTRIBUTION_GRID_REGISTRY_QUERY,
+                metadata = mapOf("registryId" to "registry-1")
+            ),
+            createTraceEvent(
+                pipeName = "DistributionGrid-node-a",
+                eventType = TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING,
+                metadata = mapOf("listingId" to "listing-123", "listingKind" to "GRID_NODE")
+            )
+        )
+
+        val nodes = TraceNodeMapper.mapEventsToNodes(events)
+
+        assertTrue(nodes.any { it.pipeName.contains("DistributionGrid-Remote-peer-b") })
+        assertTrue(nodes.any { it.pipeName.contains("DistributionGrid-Registry-registry-1") })
+        assertTrue(nodes.any { it.pipeName.contains("DistributionGrid-Listing-listing-123") })
+    }
+
+    private fun createTraceEvent(
+        pipeName: String,
+        eventType: TraceEventType,
+        metadata: Map<String, Any> = emptyMap()
+    ): TraceEvent
     {
         return TraceEvent(
             timestamp = System.currentTimeMillis(),
@@ -41,7 +73,8 @@ class TraceNodeMapperTest
             eventType = eventType,
             phase = TracePhase.EXECUTION,
             content = null,
-            contextSnapshot = null
+            contextSnapshot = null,
+            metadata = metadata
         )
     }
 }

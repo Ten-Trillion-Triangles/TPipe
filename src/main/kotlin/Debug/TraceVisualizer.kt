@@ -22,8 +22,13 @@ class TraceVisualizer
         // heading and event symbols for Junction's discussion/workflow lifecycle.
         val isManifoldTrace = trace.any { it.eventType.name.startsWith("MANIFOLD_") }
         val isJunctionTrace = trace.any { it.eventType.name.startsWith("JUNCTION_") }
-        
-        if(isJunctionTrace)
+        val isDistributionGridTrace = trace.any { it.eventType.name.startsWith("DISTRIBUTION_GRID_") }
+
+        if(isDistributionGridTrace)
+        {
+            flowChart.append("=== DistributionGrid Orchestration Flow ===\n")
+        }
+        else if(isJunctionTrace)
         {
             flowChart.append("=== Junction Discussion Flow ===\n")
         }
@@ -78,6 +83,31 @@ class TraceVisualizer
                 TraceEventType.JUNCTION_PHASE_END -> "🔁"
                 TraceEventType.JUNCTION_HANDOFF -> "📦"
 
+                // DistributionGrid orchestration events
+                TraceEventType.DISTRIBUTION_GRID_START -> "🧭"
+                TraceEventType.DISTRIBUTION_GRID_END -> "🏁"
+                TraceEventType.DISTRIBUTION_GRID_SUCCESS -> "✅"
+                TraceEventType.DISTRIBUTION_GRID_FAILURE -> "❌"
+                TraceEventType.DISTRIBUTION_GRID_ROUTER_DECISION -> "🧠"
+                TraceEventType.DISTRIBUTION_GRID_LOCAL_WORKER_DISPATCH -> "🛠️"
+                TraceEventType.DISTRIBUTION_GRID_LOCAL_WORKER_RESPONSE -> "📥"
+                TraceEventType.DISTRIBUTION_GRID_PEER_HANDOFF -> "📤"
+                TraceEventType.DISTRIBUTION_GRID_PEER_RESPONSE -> "📬"
+                TraceEventType.DISTRIBUTION_GRID_SESSION_HANDSHAKE -> "🤝"
+                TraceEventType.DISTRIBUTION_GRID_POLICY_EVALUATION -> "🛡️"
+                TraceEventType.DISTRIBUTION_GRID_MEMORY_ENVELOPE -> "🧠"
+                TraceEventType.DISTRIBUTION_GRID_BOOTSTRAP_CATALOG_PULL -> "🗂️"
+                TraceEventType.DISTRIBUTION_GRID_REGISTRY_PROBE -> "🔎"
+                TraceEventType.DISTRIBUTION_GRID_REGISTRY_REGISTRATION -> "🪪"
+                TraceEventType.DISTRIBUTION_GRID_REGISTRY_LEASE_RENEWAL -> "♻️"
+                TraceEventType.DISTRIBUTION_GRID_REGISTRY_QUERY -> "📚"
+                TraceEventType.DISTRIBUTION_GRID_DISCOVERY_ADMISSION -> "🧾"
+                TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING -> "📣"
+                TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING_AUTO_RENEW -> "⏱️"
+                TraceEventType.DISTRIBUTION_GRID_DURABILITY_CHECKPOINT -> "💾"
+                TraceEventType.DISTRIBUTION_GRID_PAUSE -> "⏸️"
+                TraceEventType.DISTRIBUTION_GRID_RESUME -> "▶️"
+
                 // Manager decision events
                 TraceEventType.MANAGER_DECISION -> "🧠"
                 TraceEventType.MANAGER_TASK_ANALYSIS -> "🔍"
@@ -116,13 +146,27 @@ class TraceVisualizer
      */
     fun generateTimeline(trace: List<TraceEvent>): String {
         val timeline = StringBuilder()
-        timeline.append("=== Execution Timeline ===\n")
+        val heading = when {
+            trace.any { it.eventType.name.startsWith("DISTRIBUTION_GRID_") } -> "=== DistributionGrid Timeline ===\n"
+            trace.any { it.eventType.name.startsWith("JUNCTION_") } -> "=== Junction Timeline ===\n"
+            trace.any { it.eventType.name.startsWith("MANIFOLD_") } -> "=== Manifold Timeline ===\n"
+            else -> "=== Execution Timeline ===\n"
+        }
+        timeline.append(heading)
         
         val startTime = trace.firstOrNull()?.timestamp ?: 0L
         
         trace.forEach { event ->
             val elapsed = event.timestamp - startTime
-            timeline.append("[${elapsed}ms] ${event.pipeName}: ${event.eventType} (${event.phase})\n")
+            val label = when {
+                event.eventType.name.startsWith("DISTRIBUTION_GRID_") -> mapDistributionGridNodeName(event)
+                event.eventType.name.startsWith("JUNCTION_") -> mapJunctionNodeName(event)
+                event.eventType.name.startsWith("MANIFOLD_") ||
+                    event.eventType.name.startsWith("MANAGER_") ||
+                    event.eventType in listOf(TraceEventType.AGENT_DISPATCH, TraceEventType.AGENT_RESPONSE) -> mapManifoldNodeName(event)
+                else -> event.pipeName
+            }
+            timeline.append("[${elapsed}ms] ${label}: ${event.eventType} (${event.phase})\n")
             
             if(event.error != null)
             {
@@ -141,7 +185,13 @@ class TraceVisualizer
      */
     fun generateConsoleOutput(trace: List<TraceEvent>): String {
         val output = StringBuilder()
-        output.append("=== TPipe Execution Trace ===\n")
+        val heading = when {
+            trace.any { it.eventType.name.startsWith("DISTRIBUTION_GRID_") } -> "=== TPipe DistributionGrid Trace ===\n"
+            trace.any { it.eventType.name.startsWith("JUNCTION_") } -> "=== TPipe Junction Trace ===\n"
+            trace.any { it.eventType.name.startsWith("MANIFOLD_") } -> "=== TPipe Manifold Trace ===\n"
+            else -> "=== TPipe Execution Trace ===\n"
+        }
+        output.append(heading)
         
         trace.forEach { event ->
             val status = when(event.eventType) {
@@ -150,7 +200,16 @@ class TraceVisualizer
                 else -> "[INFO]"
             }
             
-            output.append("$status ${event.pipeName} - ${event.eventType} (${event.phase})\n")
+            val label = when {
+                event.eventType.name.startsWith("DISTRIBUTION_GRID_") -> mapDistributionGridNodeName(event)
+                event.eventType.name.startsWith("JUNCTION_") -> mapJunctionNodeName(event)
+                event.eventType.name.startsWith("MANIFOLD_") ||
+                    event.eventType.name.startsWith("MANAGER_") ||
+                    event.eventType in listOf(TraceEventType.AGENT_DISPATCH, TraceEventType.AGENT_RESPONSE) -> mapManifoldNodeName(event)
+                else -> event.pipeName
+            }
+
+            output.append("$status $label - ${event.eventType} (${event.phase})\n")
             
             if(event.error != null)
             {
@@ -164,6 +223,41 @@ class TraceVisualizer
         }
         
         return output.toString()
+    }
+
+    /**
+     * Render Markdown output for trace streams.
+     */
+    fun generateMarkdownOutput(trace: List<TraceEvent>): String {
+        val heading = when {
+            trace.any { it.eventType.name.startsWith("DISTRIBUTION_GRID_") } -> "# TPipe DistributionGrid Trace Report\n\n"
+            trace.any { it.eventType.name.startsWith("JUNCTION_") } -> "# TPipe Junction Trace Report\n\n"
+            trace.any { it.eventType.name.startsWith("MANIFOLD_") } -> "# TPipe Manifold Trace Report\n\n"
+            else -> "# TPipe Trace Report\n\n"
+        }
+        val md = StringBuilder(heading)
+        md.append("| Timestamp | Node | Event | Phase | Status |\n")
+        md.append("|-----------|------|-------|-------|--------|\n")
+
+        trace.forEach { event ->
+            val label = when {
+                event.eventType.name.startsWith("DISTRIBUTION_GRID_") -> mapDistributionGridNodeName(event)
+                event.eventType.name.startsWith("JUNCTION_") -> mapJunctionNodeName(event)
+                event.eventType.name.startsWith("MANIFOLD_") ||
+                    event.eventType.name.startsWith("MANAGER_") ||
+                    event.eventType in listOf(TraceEventType.AGENT_DISPATCH, TraceEventType.AGENT_RESPONSE) -> mapManifoldNodeName(event)
+                else -> event.pipeName
+            }
+
+            val status = when {
+                event.eventType.name.contains("SUCCESS") -> "SUCCESS"
+                event.eventType.name.contains("FAILURE") -> "FAILURE"
+                else -> "INFO"
+            }
+            md.append("| ${event.timestamp} | $label | ${event.eventType} | ${event.phase} | $status |\n")
+        }
+
+        return md.toString()
     }
     
     /**
@@ -180,8 +274,12 @@ class TraceVisualizer
         // discussion and workflow phase events, and those need to be grouped differently from plain pipes.
         val isJunctionTrace = trace.any { it.eventType.name.startsWith("JUNCTION_") }
         val isManifoldTrace = trace.any { it.eventType.name.startsWith("MANIFOLD_") }
-        
-        return if(isJunctionTrace) {
+        val isDistributionGridTrace = trace.any { it.eventType.name.startsWith("DISTRIBUTION_GRID_") }
+
+        return if(isDistributionGridTrace) {
+            generateDistributionGridHtmlReport(trace)
+        }
+        else if(isJunctionTrace) {
             generateJunctionHtmlReport(trace)
         }
         else if(isManifoldTrace) {
@@ -679,6 +777,125 @@ class TraceVisualizer
             </html>
         """.trimIndent()
     }
+
+    /**
+     * Generates DistributionGrid-specific HTML report with unified execution, discovery, and hosted-listing views.
+     */
+    private fun generateDistributionGridHtmlReport(trace: List<TraceEvent>): String
+    {
+        val nodes = buildDistributionGridNodes(trace)
+        val mermaidGraph = generateDistributionGridMermaidGraph(nodes, trace)
+        val orchestrationTable = generateOrchestrationTable(trace, ::mapDistributionGridNodeName)
+        val activityTable = generateDistributionGridActivityTable(trace)
+        val stateRibbon = buildDistributionGridStateRibbon(trace)
+        val javascript = TraceInteractivity.generateJavaScript(nodes)
+
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>TPipe DistributionGrid Execution Analysis</title>
+                <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+                <style>
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 24px; background: #f1f5f9; color: #1e293b; }
+                    .container { max-width: 1280px; margin: 0 auto; background: white; padding: 28px; border-radius: 14px; box-shadow: 0 22px 50px rgba(15,23,42,0.16); }
+                    h1 { color: #0f172a; text-align: center; margin-bottom: 28px; font-size: 2rem; letter-spacing: -0.02em; }
+                    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 18px; margin: 18px 0 34px; }
+                    .summary-card { background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%); border-radius: 14px; padding: 18px 20px; border: 1px solid rgba(59,130,246,0.18); box-shadow: inset 0 1px 0 rgba(255,255,255,0.7); }
+                    .summary-card h3 { margin: 0 0 8px; font-size: 0.8rem; letter-spacing: 0.12em; color: #475569; text-transform: uppercase; }
+                    .summary-card .value { font-size: 1.75rem; font-weight: 600; color: #0f172a; }
+                    .summary-card .subtext { font-size: 0.92rem; color: #64748b; margin-top: 8px; line-height: 1.4; }
+                    .state-ribbon { margin: 22px 0 30px; padding: 20px 22px; border-radius: 14px; border: 1px solid rgba(14,165,233,0.22); background: linear-gradient(135deg, rgba(239,246,255,0.96) 0%, rgba(236,253,245,0.96) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.75); }
+                    .state-ribbon h2 { margin-top: 0; margin-bottom: 16px; font-size: 1.15rem; color: #075985; }
+                    .state-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+                    .state-card { background: rgba(255,255,255,0.9); border-radius: 12px; padding: 16px 18px; border: 1px solid rgba(14,165,233,0.16); box-shadow: 0 8px 18px rgba(15,23,42,0.06); }
+                    .state-card h3 { margin: 0 0 8px; font-size: 0.78rem; letter-spacing: 0.12em; color: #0369a1; text-transform: uppercase; }
+                    .state-card .value { font-size: 1rem; font-weight: 600; color: #0f172a; line-height: 1.45; word-break: break-word; }
+                    .state-card .subtext { font-size: 0.85rem; color: #64748b; margin-top: 6px; line-height: 1.35; }
+                    .grid-section { margin: 28px 0; padding: 22px; border-radius: 14px; border: 1px solid rgba(148,163,184,0.22); background: #f8fafc; box-shadow: inset 0 1px 0 rgba(255,255,255,0.9); }
+                    .grid-section h2 { margin-top: 0; margin-bottom: 18px; font-size: 1.25rem; color: #1e293b; }
+                    .orchestration { border-left: 5px solid #0284c7; }
+                    .activity { border-left: 5px solid #10b981; }
+                    .mermaid { text-align: center; background: white; padding: 24px; border-radius: 12px; border: 1px solid rgba(148,163,184,0.25); box-shadow: 0 10px 20px rgba(15,23,42,0.08); }
+                    .event-feed { display: flex; flex-direction: column; gap: 18px; }
+                    .event-card { position: relative; padding: 20px 22px; border-radius: 14px; border: 1px solid rgba(148,163,184,0.25); background: white; box-shadow: 0 8px 18px rgba(15,23,42,0.08); transition: transform 0.18s ease, box-shadow 0.18s ease; }
+                    .event-card:hover { transform: translateY(-2px); box-shadow: 0 14px 26px rgba(15,23,42,0.12); }
+                    .event-card.highlighted { border-color: #facc15; box-shadow: 0 0 0 3px rgba(250,204,21,0.35); }
+                    .event-card.success { border-left: 4px solid rgba(16,185,129,0.8); }
+                    .event-card.failure { border-left: 4px solid rgba(239,68,68,0.85); }
+                    .event-card.warning { border-left: 4px solid rgba(251,191,36,0.9); }
+                    .event-card.info { border-left: 4px solid rgba(2,132,199,0.85); }
+                    .event-header { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; margin-bottom: 16px; }
+                    .event-time { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #64748b; padding: 4px 10px; border-radius: 9999px; background: rgba(226,232,240,0.6); border: 1px solid rgba(148,163,184,0.35); }
+                    .event-badge { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 9999px; font-weight: 600; font-size: 0.88rem; text-transform: capitalize; }
+                    .event-badge.success { background: rgba(220,252,231,0.9); color: #166534; }
+                    .event-badge.failure { background: rgba(254,226,226,0.9); color: #991b1b; }
+                    .event-badge.warning { background: rgba(254,243,199,0.9); color: #92400e; }
+                    .event-badge.info { background: rgba(224,242,254,0.95); color: #075985; }
+                    .badge-icon { font-size: 1rem; }
+                    .phase-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 9999px; border: 1px solid rgba(148,163,184,0.35); background: rgba(148,163,184,0.15); font-size: 0.85rem; color: #475569; letter-spacing: 0.02em; }
+                    .node-tag { padding: 6px 11px; border-radius: 999px; background: rgba(14,165,233,0.12); color: #0369a1; font-size: 0.88rem; font-weight: 500; }
+                    .event-body { display: grid; gap: 18px; }
+                    .event-section h4 { margin: 0 0 8px; font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #475569; }
+                    .metadata-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+                    .metadata-item { padding: 10px 12px; border-radius: 10px; background: rgba(148,163,184,0.1); border: 1px solid rgba(148,163,184,0.18); }
+                    .metadata-item strong { display: block; font-size: 0.75rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+                    .metadata-item span { color: #0f172a; font-weight: 500; word-break: break-word; font-size: 0.92rem; }
+                    .empty-state { margin: 0; color: #94a3b8; font-size: 0.9rem; font-style: italic; }
+                    details.event-details { border: 1px solid rgba(148,163,184,0.25); border-radius: 10px; background: rgba(248,250,252,0.8); padding: 12px 14px; }
+                    details.event-details summary { cursor: pointer; font-weight: 600; color: #334155; font-size: 0.95rem; list-style: none; display: flex; align-items: center; gap: 8px; }
+                    details.event-details summary::before { content: "⤵"; transition: transform 0.2s ease; font-size: 0.9rem; }
+                    details.event-details[open] summary::before { transform: rotate(-180deg); }
+                    .content-preview { margin: 14px 4px 6px; border-radius: 10px; background: white; border: 1px solid rgba(148,163,184,0.25); padding: 14px; }
+                    .content-preview pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: 'JetBrains Mono', monospace; font-size: 0.84rem; line-height: 1.5; color: #0f172a; }
+                    .context-chip { display: inline-flex; margin-top: 10px; padding: 6px 10px; border-radius: 9999px; background: rgba(14,165,233,0.12); color: #0369a1; font-weight: 600; font-size: 0.84rem; }
+                    .error-block { margin: 0; padding: 12px 14px; background: rgba(254,226,226,0.75); border-radius: 10px; color: #991b1b; border: 1px solid rgba(248,113,113,0.35); font-family: 'JetBrains Mono', monospace; font-size: 0.84rem; white-space: pre-wrap; }
+                    table { width: 100%; border-collapse: collapse; }
+                    th { background-color: #0f172a; color: #e2e8f0; padding: 12px 18px; font-weight: 600; font-size: 0.92rem; text-align: left; letter-spacing: 0.04em; }
+                    td { background: white; padding: 14px 18px; border-bottom: 1px solid rgba(148,163,184,0.25); font-size: 0.92rem; vertical-align: top; }
+                    tr:last-child td { border-bottom: none; }
+                    .trace-item { cursor: pointer; }
+                    .trace-item.highlighted { background-color: rgba(250,204,21,0.18) !important; }
+                    .flash-highlight { animation: flashEffect 2s ease-in-out; }
+                    @keyframes flashEffect { 0%, 100% { background-color: inherit; } 50% { background-color: rgba(250,204,21,0.35); } }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>🧭 TPipe DistributionGrid Execution Analysis</h1>
+
+                    ${buildDistributionGridSummary(trace)}
+
+                    $stateRibbon
+
+                    <div class="grid-section orchestration">
+                        <h2>📊 Grid Orchestration Flow</h2>
+                        <div class="mermaid">$mermaidGraph</div>
+                    </div>
+
+                    <div class="grid-section orchestration">
+                        <h2>🎯 Routing, Handoff, and Decision Timeline</h2>
+                        $orchestrationTable
+                    </div>
+
+                    <div class="grid-section activity">
+                        <h2>🗂️ Discovery, Registry, and Public Listing Activity</h2>
+                        $activityTable
+                    </div>
+                </div>
+
+                <script>
+                    mermaid.initialize({
+                        startOnLoad: true,
+                        theme: 'default',
+                        flowchart: { useMaxWidth: true, htmlLabels: true }
+                    });
+                </script>
+                $javascript
+            </body>
+            </html>
+        """.trimIndent()
+    }
     
     /**
      * Generates standard HTML report for non-Manifold traces.
@@ -855,6 +1072,288 @@ class TraceVisualizer
                 </div>
             </div>
         """.trimIndent()
+    }
+
+    private fun buildDistributionGridSummary(trace: List<TraceEvent>): String {
+        if(trace.isEmpty()) return ""
+
+        val totalEvents = trace.size
+        val failureCount = trace.count { classifyEventSeverity(it) == EventSeverity.FAILURE }
+        val successCount = trace.count { classifyEventSeverity(it) == EventSeverity.SUCCESS }
+        val start = trace.first().timestamp
+        val end = trace.last().timestamp
+        val durationMs = (end - start).coerceAtLeast(0L)
+        val taskIds = trace.mapNotNull { it.metadata["taskId"]?.toString()?.takeIf { value -> value.isNotBlank() } }.distinct()
+        val remoteHandoffs = trace.count { it.eventType == TraceEventType.DISTRIBUTION_GRID_PEER_HANDOFF }
+        val discoveryEvents = trace.count {
+            it.eventType in listOf(
+                TraceEventType.DISTRIBUTION_GRID_BOOTSTRAP_CATALOG_PULL,
+                TraceEventType.DISTRIBUTION_GRID_REGISTRY_PROBE,
+                TraceEventType.DISTRIBUTION_GRID_REGISTRY_REGISTRATION,
+                TraceEventType.DISTRIBUTION_GRID_REGISTRY_LEASE_RENEWAL,
+                TraceEventType.DISTRIBUTION_GRID_REGISTRY_QUERY,
+                TraceEventType.DISTRIBUTION_GRID_DISCOVERY_ADMISSION
+            )
+        }
+        val listingEvents = trace.count {
+            it.eventType == TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING ||
+                it.eventType == TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING_AUTO_RENEW
+        }
+
+        return """
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <h3>Total Events</h3>
+                    <div class="value">$totalEvents</div>
+                    <div class="subtext">Across ${trace.map { it.phase }.distinct().size} phases</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Execution Time</h3>
+                    <div class="value">${formatDuration(durationMs)}</div>
+                    <div class="subtext">Remote handoffs: $remoteHandoffs</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Outcome</h3>
+                    <div class="value">${successCount} ✓ / $failureCount ✕</div>
+                    <div class="subtext">Success vs failure events</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Task Scope</h3>
+                    <div class="value">${taskIds.size}</div>
+                    <div class="subtext">${if(taskIds.isEmpty()) "No task ids captured" else taskIds.joinToString(", ") { escapeHtml(it) }}</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Discovery Activity</h3>
+                    <div class="value">$discoveryEvents</div>
+                    <div class="subtext">Bootstrap, registry, and admission activity</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Public Listing Activity</h3>
+                    <div class="value">$listingEvents</div>
+                    <div class="subtext">Publish, update, renew, remove, and auto-renew</div>
+                </div>
+            </div>
+        """.trimIndent()
+    }
+
+    private fun buildDistributionGridStateRibbon(trace: List<TraceEvent>): String {
+        if(trace.isEmpty()) return ""
+
+        val latestEvent = trace.last()
+        val latestDecision = trace.lastOrNull { it.eventType == TraceEventType.DISTRIBUTION_GRID_ROUTER_DECISION }
+        val latestHandoff = trace.lastOrNull { it.eventType == TraceEventType.DISTRIBUTION_GRID_PEER_HANDOFF }
+        val latestResponse = trace.lastOrNull { it.eventType == TraceEventType.DISTRIBUTION_GRID_PEER_RESPONSE }
+        val latestCatalogPull = trace.lastOrNull { it.eventType == TraceEventType.DISTRIBUTION_GRID_BOOTSTRAP_CATALOG_PULL }
+        val latestListing = trace.lastOrNull {
+            it.eventType == TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING ||
+                it.eventType == TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING_AUTO_RENEW
+        }
+
+        val stateCards = listOf(
+            stateCard(
+                title = "Current Event",
+                value = latestEvent.eventType.name.lowercase().replace('_', ' '),
+                subtext = mapDistributionGridNodeName(latestEvent)
+            ),
+            stateCard(
+                title = "Task",
+                value = latestEvent.metadata["taskId"]?.toString().orEmpty().ifBlank { "Unknown" },
+                subtext = "Latest task identity"
+            ),
+            stateCard(
+                title = "Node",
+                value = latestEvent.metadata["nodeId"]?.toString().orEmpty().ifBlank { latestEvent.pipeName },
+                subtext = "Owning grid node"
+            ),
+            stateCard(
+                title = "Last Decision",
+                value = latestDecision?.metadata?.get("directiveKind")?.toString().orEmpty().ifBlank { "Unknown" },
+                subtext = latestDecision?.metadata?.get("targetNodeId")?.toString().orEmpty().ifBlank { "No target recorded" }
+            ),
+            stateCard(
+                title = "Latest Handoff",
+                value = latestHandoff?.metadata?.get("peerKey")?.toString().orEmpty().ifBlank { "None" },
+                subtext = latestHandoff?.metadata?.get("targetNodeId")?.toString().orEmpty().ifBlank { "No remote target recorded" }
+            ),
+            stateCard(
+                title = "Latest Response",
+                value = latestResponse?.metadata?.get("outcomeStatus")?.toString().orEmpty().ifBlank { "Unknown" },
+                subtext = latestResponse?.metadata?.get("peerKey")?.toString().orEmpty().ifBlank { "No peer response yet" }
+            ),
+            stateCard(
+                title = "Latest Catalog Pull",
+                value = latestCatalogPull?.metadata?.get("sourceId")?.toString().orEmpty().ifBlank { "None" },
+                subtext = latestCatalogPull?.metadata?.get("acceptedCount")?.toString().orEmpty().ifBlank { "No bootstrap pull recorded" }
+            ),
+            stateCard(
+                title = "Latest Listing Activity",
+                value = latestListing?.metadata?.get("operation")?.toString().orEmpty().ifBlank { "None" },
+                subtext = latestListing?.metadata?.get("listingKind")?.toString().orEmpty().ifBlank { "No listing activity recorded" }
+            ),
+            stateCard(
+                title = "Recent Path",
+                value = buildDistributionGridPathPreview(trace),
+                subtext = "Last orchestration hops"
+            )
+        )
+
+        return """
+            <div class="state-ribbon">
+                <h2>🧭 Grid State</h2>
+                <div class="state-grid">
+                    ${stateCards.joinToString("")}
+                </div>
+            </div>
+        """.trimIndent()
+    }
+
+    private fun buildDistributionGridPathPreview(trace: List<TraceEvent>): String {
+        val path = trace
+            .map { mapDistributionGridNodeName(it) }
+            .fold(mutableListOf<String>()) { acc, label ->
+                if(acc.lastOrNull() != label)
+                {
+                    acc.add(label)
+                }
+                acc
+            }
+            .takeLast(7)
+
+        return if(path.isEmpty()) "DistributionGrid" else path.joinToString(" → ")
+    }
+
+    private fun buildDistributionGridNodes(trace: List<TraceEvent>): List<TraceNode> {
+        val nodeGroups = linkedMapOf<String, MutableList<TraceEvent>>()
+
+        trace.forEach { event ->
+            val label = mapDistributionGridNodeName(event)
+            val events = nodeGroups.getOrPut(label) { mutableListOf() }
+            events.add(event)
+        }
+
+        return nodeGroups.entries.mapIndexed { index, (label, events) ->
+            TraceNode(
+                nodeId = "node-${sanitizeNodeId(label)}-$index",
+                pipeName = label,
+                eventIds = events.map { it.id },
+                status = when {
+                    events.any { it.eventType.name.contains("FAILURE") } -> NodeStatus.FAILURE
+                    events.any { it.eventType.name.contains("SUCCESS") } -> NodeStatus.SUCCESS
+                    else -> NodeStatus.INFO
+                }
+            )
+        }
+    }
+
+    private fun mapDistributionGridNodeName(event: TraceEvent): String {
+        val taskId = event.metadata["taskId"]?.toString()?.takeIf { it.isNotBlank() }
+        return when(event.eventType)
+        {
+            TraceEventType.DISTRIBUTION_GRID_START,
+            TraceEventType.DISTRIBUTION_GRID_END,
+            TraceEventType.DISTRIBUTION_GRID_SUCCESS,
+            TraceEventType.DISTRIBUTION_GRID_FAILURE,
+            TraceEventType.DISTRIBUTION_GRID_INIT,
+            TraceEventType.DISTRIBUTION_GRID_VALIDATION_START,
+            TraceEventType.DISTRIBUTION_GRID_VALIDATION_SUCCESS,
+            TraceEventType.DISTRIBUTION_GRID_VALIDATION_FAILURE,
+            TraceEventType.DISTRIBUTION_GRID_PAUSE,
+            TraceEventType.DISTRIBUTION_GRID_RESUME,
+            TraceEventType.DISTRIBUTION_GRID_RUNTIME_RESET -> DISTRIBUTION_GRID_NODE_NAME
+
+            TraceEventType.DISTRIBUTION_GRID_ROUTER_DECISION -> "Router"
+            TraceEventType.DISTRIBUTION_GRID_LOCAL_WORKER_DISPATCH,
+            TraceEventType.DISTRIBUTION_GRID_LOCAL_WORKER_RESPONSE -> "Local Worker"
+
+            TraceEventType.DISTRIBUTION_GRID_PEER_HANDOFF,
+            TraceEventType.DISTRIBUTION_GRID_PEER_RESPONSE,
+            TraceEventType.DISTRIBUTION_GRID_SESSION_HANDSHAKE,
+            TraceEventType.DISTRIBUTION_GRID_RETURN_ROUTING ->
+                "Remote Peer: ${event.metadata["peerKey"] ?: event.metadata["targetNodeId"] ?: taskId ?: "unknown"}"
+
+            TraceEventType.DISTRIBUTION_GRID_BOOTSTRAP_CATALOG_PULL ->
+                "Bootstrap Catalog: ${event.metadata["sourceId"] ?: "unknown"}"
+
+            TraceEventType.DISTRIBUTION_GRID_REGISTRY_PROBE,
+            TraceEventType.DISTRIBUTION_GRID_REGISTRY_REGISTRATION,
+            TraceEventType.DISTRIBUTION_GRID_REGISTRY_LEASE_RENEWAL,
+            TraceEventType.DISTRIBUTION_GRID_REGISTRY_QUERY,
+            TraceEventType.DISTRIBUTION_GRID_DISCOVERY_ADMISSION ->
+                "Registry: ${event.metadata["registryId"] ?: event.metadata["sourceId"] ?: "unknown"}"
+
+            TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING,
+            TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING_AUTO_RENEW ->
+                "Public Listing: ${event.metadata["listingKind"] ?: event.metadata["listingId"] ?: "unknown"}"
+
+            TraceEventType.DISTRIBUTION_GRID_MEMORY_ENVELOPE -> "Memory & Privacy"
+            TraceEventType.DISTRIBUTION_GRID_POLICY_EVALUATION -> "Policy"
+            TraceEventType.DISTRIBUTION_GRID_LOOP_GUARD -> "Loop Guard"
+            TraceEventType.DISTRIBUTION_GRID_DURABILITY_CHECKPOINT -> "Durability"
+            else -> if(event.pipeName.isNotBlank()) event.pipeName else DISTRIBUTION_GRID_NODE_NAME
+        }
+    }
+
+    private fun generateDistributionGridMermaidGraph(nodes: List<TraceNode>, trace: List<TraceEvent>): String {
+        return generateManifoldMermaidGraph(nodes, trace, ::mapDistributionGridNodeName)
+    }
+
+    private fun generateDistributionGridActivityTable(trace: List<TraceEvent>): String {
+        val categories = linkedMapOf(
+            "Bootstrap Catalog Pulls" to trace.filter { it.eventType == TraceEventType.DISTRIBUTION_GRID_BOOTSTRAP_CATALOG_PULL },
+            "Registry Discovery & Membership" to trace.filter {
+                it.eventType in listOf(
+                    TraceEventType.DISTRIBUTION_GRID_REGISTRY_PROBE,
+                    TraceEventType.DISTRIBUTION_GRID_REGISTRY_REGISTRATION,
+                    TraceEventType.DISTRIBUTION_GRID_REGISTRY_LEASE_RENEWAL,
+                    TraceEventType.DISTRIBUTION_GRID_REGISTRY_QUERY,
+                    TraceEventType.DISTRIBUTION_GRID_DISCOVERY_ADMISSION
+                )
+            },
+            "Public Listing Lifecycle" to trace.filter {
+                it.eventType == TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING ||
+                    it.eventType == TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING_AUTO_RENEW
+            },
+            "Memory / Policy / Durability" to trace.filter {
+                it.eventType in listOf(
+                    TraceEventType.DISTRIBUTION_GRID_MEMORY_ENVELOPE,
+                    TraceEventType.DISTRIBUTION_GRID_POLICY_EVALUATION,
+                    TraceEventType.DISTRIBUTION_GRID_DURABILITY_CHECKPOINT
+                )
+            }
+        )
+
+        val table = StringBuilder()
+        table.append("<table><tr><th>Area</th><th>Events</th><th>Latest Status</th><th>Latest Detail</th></tr>")
+        categories.forEach { (label, events) ->
+            val latest = events.lastOrNull()
+            table.append(
+                "<tr>" +
+                    "<td>${escapeHtml(label)}</td>" +
+                    "<td>${events.size}</td>" +
+                    "<td>${escapeHtml(latest?.eventType?.name?.lowercase()?.replace('_', ' ') ?: "none")}</td>" +
+                    "<td>${escapeHtml(buildDistributionGridActivityPreview(latest))}</td>" +
+                "</tr>"
+            )
+        }
+        table.append("</table>")
+        return table.toString()
+    }
+
+    private fun buildDistributionGridActivityPreview(event: TraceEvent?): String {
+        event ?: return "No activity recorded"
+        return listOf(
+            event.metadata["sourceId"]?.toString(),
+            event.metadata["registryId"]?.toString(),
+            event.metadata["listingId"]?.toString(),
+            event.metadata["operation"]?.toString(),
+            event.metadata["reason"]?.toString(),
+            event.metadata["acceptedCount"]?.toString(),
+            event.metadata["targetNodeId"]?.toString()
+        )
+            .filterNotNull()
+            .firstOrNull { it.isNotBlank() }
+            ?: event.content?.text?.takeIf { it.isNotBlank() }
+            ?: "No detail"
     }
 
     private fun buildJunctionStateRibbon(trace: List<TraceEvent>): String {
@@ -1364,6 +1863,7 @@ class TraceVisualizer
         return when {
             nodeKey.contains("-SPLITTER_") -> splitLabel("-SPLITTER_", nodeKey)
             nodeKey.contains("-MANIFOLD_") -> splitLabel("-MANIFOLD_", nodeKey)
+            nodeKey.contains("-DISTRIBUTION_GRID_") -> splitLabel("-DISTRIBUTION_GRID_", nodeKey)
             nodeKey.contains("-MANAGER_") -> splitLabel("-MANAGER_", nodeKey)
             nodeKey.contains("-AGENT_") -> {
                 val index = nodeKey.indexOf("-AGENT_")
@@ -1471,6 +1971,7 @@ class TraceVisualizer
     }
 
     companion object {
+        private const val DISTRIBUTION_GRID_NODE_NAME = "DistributionGrid"
         private const val MANIFOLD_NODE_NAME = "Manifold"
         private const val JUNCTION_NODE_NAME = "Junction"
         private const val MANAGER_NODE_NAME = "Manager"

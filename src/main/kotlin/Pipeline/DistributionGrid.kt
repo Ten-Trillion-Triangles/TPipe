@@ -1574,6 +1574,15 @@ class DistributionGrid : P2PInterface
 
         val discoveredAdvertisements = mutableListOf<DistributionGridRegistryAdvertisement>()
         bootstrapRegistriesById.values.toList().forEach { bootstrapRegistry ->
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_REGISTRY_PROBE,
+                TracePhase.P2P_TRANSPORT,
+                metadata = mapOf(
+                    "registryId" to bootstrapRegistry.metadata.registryId,
+                    "targetNodeId" to bootstrapRegistry.metadata.registryId,
+                    "operation" to "probe"
+                )
+            )
             val response = sendRegistryRpcRequest(
                 advertisement = bootstrapRegistry,
                 rpcMessage = DistributionGridRpcMessage(
@@ -1611,6 +1620,29 @@ class DistributionGrid : P2PInterface
             {
                 discoveredRegistriesById[advertisement.metadata.registryId] = advertisement.deepCopy()
                 discoveredAdvertisements.add(advertisement.deepCopy())
+                trace(
+                    TraceEventType.DISTRIBUTION_GRID_DISCOVERY_ADMISSION,
+                    TracePhase.VALIDATION,
+                    metadata = mapOf(
+                        "registryId" to advertisement.metadata.registryId,
+                        "accepted" to true,
+                        "sourceId" to bootstrapRegistry.metadata.registryId,
+                        "reason" to "trusted-bootstrap-registry"
+                    )
+                )
+            }
+            else
+            {
+                trace(
+                    TraceEventType.DISTRIBUTION_GRID_DISCOVERY_ADMISSION,
+                    TracePhase.VALIDATION,
+                    metadata = mapOf(
+                        "registryId" to advertisement.metadata.registryId,
+                        "accepted" to false,
+                        "sourceId" to bootstrapRegistry.metadata.registryId,
+                        "reason" to failure.reason
+                    )
+                )
             }
         }
 
@@ -1652,6 +1684,15 @@ class DistributionGrid : P2PInterface
                 payloadJson = serialize(request)
             )
         )
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_REGISTRY_REGISTRATION,
+            TracePhase.P2P_TRANSPORT,
+            metadata = mapOf(
+                "registryId" to registryId,
+                "nodeId" to request.metadata.nodeId.ifBlank { resolveCurrentNodeId() },
+                "requestedLeaseSeconds" to request.requestedLeaseSeconds
+            )
+        )
 
         val lease = extractRegistryLeaseFromResponse(
             response = response,
@@ -1661,6 +1702,16 @@ class DistributionGrid : P2PInterface
         ) ?: return null
         activeRegistryLeasesById[registryId] = lease.deepCopy()
         syncRegistryMembershipsFromActiveLeases()
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_REGISTRY_REGISTRATION,
+            TracePhase.CLEANUP,
+            metadata = mapOf(
+                "registryId" to registryId,
+                "leaseId" to lease.leaseId,
+                "grantedLeaseSeconds" to lease.grantedLeaseSeconds,
+                "accepted" to true
+            )
+        )
         return lease.deepCopy()
     }
 
@@ -1696,6 +1747,15 @@ class DistributionGrid : P2PInterface
                 payloadJson = serialize(request)
             )
         )
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_REGISTRY_LEASE_RENEWAL,
+            TracePhase.P2P_TRANSPORT,
+            metadata = mapOf(
+                "registryId" to registryId,
+                "leaseId" to existingLease.leaseId,
+                "requestedLeaseSeconds" to request.requestedLeaseSeconds
+            )
+        )
 
         val renewedLease = extractRegistryLeaseFromResponse(
             response = response,
@@ -1705,6 +1765,16 @@ class DistributionGrid : P2PInterface
         ) ?: return null
         activeRegistryLeasesById[registryId] = renewedLease.deepCopy()
         syncRegistryMembershipsFromActiveLeases()
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_REGISTRY_LEASE_RENEWAL,
+            TracePhase.CLEANUP,
+            metadata = mapOf(
+                "registryId" to registryId,
+                "leaseId" to renewedLease.leaseId,
+                "grantedLeaseSeconds" to renewedLease.grantedLeaseSeconds,
+                "accepted" to true
+            )
+        )
         return renewedLease.deepCopy()
     }
 
@@ -1775,6 +1845,15 @@ class DistributionGrid : P2PInterface
         val verifiedCandidates = mutableListOf<DistributionGridNodeAdvertisement>()
         targetRegistryIds.forEach { registryId ->
             val registryAdvertisement = resolveRegistryAdvertisement(registryId) ?: return@forEach
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_REGISTRY_QUERY,
+                TracePhase.P2P_TRANSPORT,
+                metadata = mapOf(
+                    "registryId" to registryId,
+                    "queryKinds" to query.requiredCapabilities.joinToString(","),
+                    "queryTransport" to query.acceptedTransports.joinToString(",") { transport -> transport.name }
+                )
+            )
             val response = sendRegistryRpcRequest(
                 advertisement = registryAdvertisement,
                 rpcMessage = DistributionGridRpcMessage(
@@ -1824,7 +1903,30 @@ class DistributionGrid : P2PInterface
                             registryId = normalizedCandidate.registryId
                         )] = normalizedCandidate.deepCopy()
                         verifiedCandidates.add(normalizedCandidate.deepCopy())
+                        trace(
+                            TraceEventType.DISTRIBUTION_GRID_DISCOVERY_ADMISSION,
+                            TracePhase.VALIDATION,
+                            metadata = mapOf(
+                                "registryId" to registryId,
+                                "targetNodeId" to resolvedNodeId,
+                                "accepted" to true,
+                                "reason" to "trusted-node-advertisement"
+                            )
+                        )
                     }
+                }
+                else
+                {
+                    trace(
+                        TraceEventType.DISTRIBUTION_GRID_DISCOVERY_ADMISSION,
+                        TracePhase.VALIDATION,
+                        metadata = mapOf(
+                            "registryId" to registryId,
+                            "targetNodeId" to resolveDiscoveredNodeId(candidate),
+                            "accepted" to false,
+                            "reason" to failure.reason
+                        )
+                    )
                 }
             }
         }
@@ -1859,6 +1961,14 @@ class DistributionGrid : P2PInterface
         targetSourceIds.forEach { sourceId ->
             val source = bootstrapCatalogSourcesById[sourceId] ?: return@forEach
             val pullStartedAt = System.currentTimeMillis()
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_BOOTSTRAP_CATALOG_PULL,
+                TracePhase.P2P_TRANSPORT,
+                metadata = mapOf(
+                    "sourceId" to sourceId,
+                    "operation" to "start"
+                )
+            )
             bootstrapCatalogSourceStatusById[sourceId] =
                 (bootstrapCatalogSourceStatusById[sourceId]
                     ?: DistributionGridBootstrapCatalogSourceStatus(sourceId = sourceId)).copy(
@@ -1872,6 +1982,19 @@ class DistributionGrid : P2PInterface
             )
             if(!result.accepted)
             {
+                trace(
+                    TraceEventType.DISTRIBUTION_GRID_BOOTSTRAP_CATALOG_PULL,
+                    TracePhase.CLEANUP,
+                    metadata = mapOf(
+                        "sourceId" to sourceId,
+                        "operation" to "rejected",
+                        "acceptedCount" to 0,
+                        "trustRejectedCount" to 0,
+                        "reason" to result.rejectionReason.ifBlank {
+                            "Hosted bootstrap catalog pull was rejected."
+                        }
+                    )
+                )
                 bootstrapCatalogSourceStatusById[sourceId] =
                     (bootstrapCatalogSourceStatusById[sourceId]
                         ?: DistributionGridBootstrapCatalogSourceStatus(sourceId = sourceId)).copy(
@@ -1904,12 +2027,43 @@ class DistributionGrid : P2PInterface
                     discoveredRegistriesById[candidate.metadata.registryId] = candidate.deepCopy()
                     acceptedAdvertisements.add(candidate.deepCopy())
                     acceptedCount++
+                    trace(
+                        TraceEventType.DISTRIBUTION_GRID_DISCOVERY_ADMISSION,
+                        TracePhase.VALIDATION,
+                        metadata = mapOf(
+                            "sourceId" to sourceId,
+                            "registryId" to candidate.metadata.registryId,
+                            "accepted" to true,
+                            "reason" to "trusted-hosted-bootstrap-listing"
+                        )
+                    )
                 }
                 else
                 {
                     trustRejectedCount++
+                    trace(
+                        TraceEventType.DISTRIBUTION_GRID_DISCOVERY_ADMISSION,
+                        TracePhase.VALIDATION,
+                        metadata = mapOf(
+                            "sourceId" to sourceId,
+                            "registryId" to candidate.metadata.registryId,
+                            "accepted" to false,
+                            "reason" to failure.reason
+                        )
+                    )
                 }
             }
+
+            trace(
+                TraceEventType.DISTRIBUTION_GRID_BOOTSTRAP_CATALOG_PULL,
+                TracePhase.CLEANUP,
+                metadata = mapOf(
+                    "sourceId" to sourceId,
+                    "operation" to "complete",
+                    "acceptedCount" to acceptedCount,
+                    "trustRejectedCount" to trustRejectedCount
+                )
+            )
 
             bootstrapCatalogSourceStatusById[sourceId] =
                 (bootstrapCatalogSourceStatusById[sourceId]
@@ -1940,7 +2094,7 @@ class DistributionGrid : P2PInterface
                 "DistributionGrid cannot publish a public node listing without a node descriptor and grid metadata."
             )
 
-        return P2PHostedRegistryClient.publishListing(
+        val result = P2PHostedRegistryClient.publishListing(
             transport = transport,
             request = P2PHostedRegistryPublishRequest(
                 listing = listing,
@@ -1949,6 +2103,14 @@ class DistributionGrid : P2PInterface
             authBody = authBody,
             transportAuthBody = transportAuthBody
         )
+        tracePublicListingOperation(
+            operation = "publish",
+            listingKind = P2PHostedListingKind.GRID_NODE,
+            result = result,
+            requestedLeaseSeconds = options.requestedLeaseSeconds,
+            transport = transport
+        )
+        return result
     }
 
     /**
@@ -1968,7 +2130,7 @@ class DistributionGrid : P2PInterface
                 "DistributionGrid cannot update a public node listing without a node descriptor and grid metadata."
             )
 
-        return P2PHostedRegistryClient.updateListing(
+        val result = P2PHostedRegistryClient.updateListing(
             transport = transport,
             request = P2PHostedRegistryUpdateRequest(
                 listingId = listingId,
@@ -1979,6 +2141,15 @@ class DistributionGrid : P2PInterface
             authBody = authBody,
             transportAuthBody = transportAuthBody
         )
+        tracePublicListingOperation(
+            operation = "update",
+            listingKind = P2PHostedListingKind.GRID_NODE,
+            result = result,
+            requestedLeaseSeconds = options.requestedLeaseSeconds,
+            transport = transport,
+            listingId = listingId
+        )
+        return result
     }
 
     /**
@@ -1993,7 +2164,7 @@ class DistributionGrid : P2PInterface
         transportAuthBody: String = ""
     ): P2PHostedRegistryMutationResult
     {
-        return P2PHostedRegistryClient.renewListing(
+        val result = P2PHostedRegistryClient.renewListing(
             transport = transport,
             request = P2PHostedRegistryRenewRequest(
                 listingId = listingId,
@@ -2003,6 +2174,15 @@ class DistributionGrid : P2PInterface
             authBody = authBody,
             transportAuthBody = transportAuthBody
         )
+        tracePublicListingOperation(
+            operation = "renew",
+            listingKind = P2PHostedListingKind.GRID_NODE,
+            result = result,
+            requestedLeaseSeconds = requestedLeaseSeconds,
+            transport = transport,
+            listingId = listingId
+        )
+        return result
     }
 
     /**
@@ -2016,7 +2196,7 @@ class DistributionGrid : P2PInterface
         transportAuthBody: String = ""
     ): P2PHostedRegistryMutationResult
     {
-        return P2PHostedRegistryClient.removeListing(
+        val result = P2PHostedRegistryClient.removeListing(
             transport = transport,
             request = P2PHostedRegistryRemoveRequest(
                 listingId = listingId,
@@ -2025,6 +2205,15 @@ class DistributionGrid : P2PInterface
             authBody = authBody,
             transportAuthBody = transportAuthBody
         )
+        tracePublicListingOperation(
+            operation = "remove",
+            listingKind = P2PHostedListingKind.GRID_NODE,
+            result = result,
+            requestedLeaseSeconds = 0,
+            transport = transport,
+            listingId = listingId
+        )
+        return result
     }
 
     /**
@@ -2042,7 +2231,7 @@ class DistributionGrid : P2PInterface
                 "DistributionGrid cannot publish a public registry listing without registry metadata and a node descriptor."
             )
 
-        return P2PHostedRegistryClient.publishListing(
+        val result = P2PHostedRegistryClient.publishListing(
             transport = transport,
             request = P2PHostedRegistryPublishRequest(
                 listing = listing,
@@ -2051,6 +2240,14 @@ class DistributionGrid : P2PInterface
             authBody = authBody,
             transportAuthBody = transportAuthBody
         )
+        tracePublicListingOperation(
+            operation = "publish",
+            listingKind = P2PHostedListingKind.GRID_REGISTRY,
+            result = result,
+            requestedLeaseSeconds = options.requestedLeaseSeconds,
+            transport = transport
+        )
+        return result
     }
 
     /**
@@ -2070,7 +2267,7 @@ class DistributionGrid : P2PInterface
                 "DistributionGrid cannot update a public registry listing without registry metadata and a node descriptor."
             )
 
-        return P2PHostedRegistryClient.updateListing(
+        val result = P2PHostedRegistryClient.updateListing(
             transport = transport,
             request = P2PHostedRegistryUpdateRequest(
                 listingId = listingId,
@@ -2081,6 +2278,15 @@ class DistributionGrid : P2PInterface
             authBody = authBody,
             transportAuthBody = transportAuthBody
         )
+        tracePublicListingOperation(
+            operation = "update",
+            listingKind = P2PHostedListingKind.GRID_REGISTRY,
+            result = result,
+            requestedLeaseSeconds = options.requestedLeaseSeconds,
+            transport = transport,
+            listingId = listingId
+        )
+        return result
     }
 
     /**
@@ -2095,14 +2301,25 @@ class DistributionGrid : P2PInterface
         transportAuthBody: String = ""
     ): P2PHostedRegistryMutationResult
     {
-        return renewPublicNodeListing(
+        val result = P2PHostedRegistryClient.renewListing(
             transport = transport,
-            listingId = listingId,
-            leaseId = leaseId,
-            requestedLeaseSeconds = requestedLeaseSeconds,
+            request = P2PHostedRegistryRenewRequest(
+                listingId = listingId,
+                leaseId = leaseId,
+                requestedLeaseSeconds = requestedLeaseSeconds
+            ),
             authBody = authBody,
             transportAuthBody = transportAuthBody
         )
+        tracePublicListingOperation(
+            operation = "renew",
+            listingKind = P2PHostedListingKind.GRID_REGISTRY,
+            result = result,
+            requestedLeaseSeconds = requestedLeaseSeconds,
+            transport = transport,
+            listingId = listingId
+        )
+        return result
     }
 
     /**
@@ -2116,13 +2333,24 @@ class DistributionGrid : P2PInterface
         transportAuthBody: String = ""
     ): P2PHostedRegistryMutationResult
     {
-        return removePublicNodeListing(
+        val result = P2PHostedRegistryClient.removeListing(
             transport = transport,
-            listingId = listingId,
-            leaseId = leaseId,
+            request = P2PHostedRegistryRemoveRequest(
+                listingId = listingId,
+                leaseId = leaseId
+            ),
             authBody = authBody,
             transportAuthBody = transportAuthBody
         )
+        tracePublicListingOperation(
+            operation = "remove",
+            listingKind = P2PHostedListingKind.GRID_REGISTRY,
+            result = result,
+            requestedLeaseSeconds = 0,
+            transport = transport,
+            listingId = listingId
+        )
+        return result
     }
 
     /**
@@ -2190,6 +2418,18 @@ class DistributionGrid : P2PInterface
                     lastRenewSuccessEpochMillis = if(renewResult.accepted) System.currentTimeMillis() else 0L,
                     lastFailureReason = if(renewResult.accepted) "" else renewResult.rejectionReason
                 )
+                trace(
+                    TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING_AUTO_RENEW,
+                    TracePhase.CLEANUP,
+                    metadata = mapOf(
+                        "renewalId" to renewalId,
+                        "listingId" to listingId,
+                        "listingKind" to P2PHostedListingKind.GRID_NODE.name,
+                        "accepted" to renewResult.accepted,
+                        "reason" to renewResult.rejectionReason,
+                        "transportAddress" to transport.transportAddress
+                    )
+                )
             }
         }
         return renewalId
@@ -2239,6 +2479,15 @@ class DistributionGrid : P2PInterface
         publicListingRenewStatusById[renewalId] = publicListingRenewStatusById[renewalId]
             ?.copy(active = false)
             ?: return
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING_AUTO_RENEW,
+            TracePhase.CLEANUP,
+            metadata = mapOf(
+                "renewalId" to renewalId,
+                "operation" to "stop",
+                "active" to false
+            )
+        )
     }
 
     /**
@@ -4397,12 +4646,13 @@ class DistributionGrid : P2PInterface
         {
             store.saveState(durableState)
             trace(
-                TraceEventType.DISTRIBUTION_GRID_POLICY_EVALUATION,
+                TraceEventType.DISTRIBUTION_GRID_DURABILITY_CHECKPOINT,
                 TracePhase.CONTEXT_PREPARATION,
                 metadata = mapOf(
                     "taskId" to envelope.taskId,
                     "checkpointReason" to checkpointReason,
-                    "durabilityAction" to "save"
+                    "durabilityAction" to "save",
+                    "accepted" to true
                 )
             )
             true
@@ -4414,12 +4664,13 @@ class DistributionGrid : P2PInterface
                 "Durability checkpoint '$checkpointReason' failed: ${error.message ?: error::class.simpleName.orEmpty()}"
             )
             trace(
-                TraceEventType.DISTRIBUTION_GRID_FAILURE,
+                TraceEventType.DISTRIBUTION_GRID_DURABILITY_CHECKPOINT,
                 TracePhase.CONTEXT_PREPARATION,
                 metadata = mapOf(
                     "taskId" to envelope.taskId,
                     "checkpointReason" to checkpointReason,
-                    "durabilityAction" to "save"
+                    "durabilityAction" to "save",
+                    "accepted" to false
                 ),
                 error = error
             )
@@ -4449,12 +4700,13 @@ class DistributionGrid : P2PInterface
         {
             store.archiveState(taskId)
             trace(
-                TraceEventType.DISTRIBUTION_GRID_POLICY_EVALUATION,
+                TraceEventType.DISTRIBUTION_GRID_DURABILITY_CHECKPOINT,
                 TracePhase.CLEANUP,
                 metadata = mapOf(
                     "taskId" to taskId,
                     "checkpointReason" to checkpointReason,
-                    "durabilityAction" to "archive"
+                    "durabilityAction" to "archive",
+                    "accepted" to true
                 )
             )
         }
@@ -4465,12 +4717,13 @@ class DistributionGrid : P2PInterface
                 "Durability archive '$checkpointReason' failed: ${error.message ?: error::class.simpleName.orEmpty()}"
             )
             trace(
-                TraceEventType.DISTRIBUTION_GRID_FAILURE,
+                TraceEventType.DISTRIBUTION_GRID_DURABILITY_CHECKPOINT,
                 TracePhase.CLEANUP,
                 metadata = mapOf(
                     "taskId" to taskId,
                     "checkpointReason" to checkpointReason,
-                    "durabilityAction" to "archive"
+                    "durabilityAction" to "archive",
+                    "accepted" to false
                 ),
                 error = error
             )
@@ -8162,6 +8415,30 @@ class DistributionGrid : P2PInterface
         )
 
         PipeTracer.addEvent(gridId, event)
+    }
+
+    private fun tracePublicListingOperation(
+        operation: String,
+        listingKind: P2PHostedListingKind,
+        result: P2PHostedRegistryMutationResult,
+        requestedLeaseSeconds: Int,
+        transport: P2PTransport,
+        listingId: String = ""
+    )
+    {
+        trace(
+            TraceEventType.DISTRIBUTION_GRID_PUBLIC_LISTING,
+            if(result.accepted) TracePhase.CLEANUP else TracePhase.VALIDATION,
+            metadata = mapOf(
+                "operation" to operation,
+                "listingKind" to listingKind.name,
+                "listingId" to result.listing?.listingId.orEmpty().ifBlank { listingId },
+                "accepted" to result.accepted,
+                "requestedLeaseSeconds" to requestedLeaseSeconds,
+                "transportAddress" to transport.transportAddress,
+                "reason" to result.rejectionReason
+            )
+        )
     }
 
     /**
