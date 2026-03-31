@@ -213,10 +213,10 @@ budget is satisfied.
 Persist histories alongside other context data by using the shared `serialize` helpers:
 
 ```kotlin
-import com.TTT.Util.serialize
+import com.TTT.Util.serializeConverseHistory
 import com.TTT.Util.deserialize
 
-val json = serialize(history)
+val json = serializeConverseHistory(history)
 val restored = deserialize<ConverseHistory>(json)
 ```
 

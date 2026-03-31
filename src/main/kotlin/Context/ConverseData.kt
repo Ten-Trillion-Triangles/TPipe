@@ -4,6 +4,8 @@ import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.Util.extractJson
 import java.util.UUID
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 
 /**
  * Determines chat role of a ConverseData object. This allows the llm to know what the context of what it's
@@ -24,10 +26,12 @@ enum class ConverseRole
  * and api structuring.
  * @param content TPipe multimodal content that makes up the actual generated output of the llm or user request.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @kotlinx.serialization.Serializable
 data class ConverseData(
     var role: ConverseRole,
     var content: MultimodalContent,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     internal var uuid: String = ""
 )
 {
@@ -53,8 +57,10 @@ data class ConverseData(
  * Actual class that stores a user to agent conversation history. Houses an array of ConverseData to keep each
  * turn of conversation in order.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @kotlinx.serialization.Serializable
 data class ConverseHistory(
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val history:  MutableList<ConverseData> = mutableListOf()
 )
 {

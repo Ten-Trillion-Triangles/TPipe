@@ -47,6 +47,7 @@ import com.TTT.Util.buildSemanticDecompressionInstructions
 import com.TTT.Util.semanticCompress
 import com.TTT.Util.SemanticCompressionResult
 import com.TTT.Util.SemanticCompressionSettings
+import com.TTT.Util.serializeConverseHistory
 import com.TTT.Util.serialize
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CancellationException
@@ -1760,7 +1761,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         converseHistory.add(userPromptConverseData)
 
         //Push back to the user prompt now merging the two together.
-        val fullPrompt = serialize(converseHistory, encodedefault = false)
+        val fullPrompt = serializeConverseHistory(converseHistory)
         userPrompt.text = fullPrompt
 
         //Finally clear away the system prompt to stop duplication.
@@ -4804,7 +4805,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                                 truncationSettings
                             )
 
-                            val newUserPrompt = serialize(truncateWindow.converseHistory, encodedefault = false)
+                            val newUserPrompt = serializeConverseHistory(truncateWindow.converseHistory)
                             content.text = newUserPrompt
                         }
 
@@ -5102,7 +5103,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             {
                 existingHistory.add(converseRole, content)
                 pipeMetadata["wrappedConverseHistory"] = existingHistory
-                return MultimodalContent(text = serialize(existingHistory))
+                return MultimodalContent(text = serializeConverseHistory(existingHistory))
             }
 
             return content
@@ -6259,7 +6260,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     //Emplace back the addendum on focusing on a specific aspect.
                     dataTarget.content.text = dataTarget.content.text + " ${focusMessage}"
                     history.history.last().content = dataTarget.content
-                    val newJson = serialize(history, encodedefault = false)
+                    val newJson = serializeConverseHistory(history)
 
                     //Emplace back the text to the content object.
                     contentCopy.text = newJson
@@ -6281,7 +6282,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         val tempContentObj = MultimodalContent(focusMessage)
                         val newData = ConverseData(ConverseRole.system, tempContentObj)
                         extractedHistory.add(newData)
-                        val newJson = serialize(extractedHistory, encodedefault = false)
+                        val newJson = serializeConverseHistory(extractedHistory)
                         contentCopy.text = newJson
                     }
 
@@ -6383,7 +6384,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         MultimodalContent(text = roundStreamBlock)
                     )
                 )
-                val updatedHistoryJson = serialize(updatedHistory, encodedefault = false)
+                val updatedHistoryJson = serializeConverseHistory(updatedHistory)
                 contentCopy.text = updatedHistoryJson
 
                 if(reasoningStream.isNotEmpty())
@@ -6651,7 +6652,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                          */
                         if(converseHistory != null)
                         {
-                            val newConverseJson = serialize(converseHistory, encodedefault = false)
+                            val newConverseJson = serializeConverseHistory(converseHistory)
                             content.text = newConverseJson
                             break
                         }
@@ -6700,7 +6701,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                          */
                         if(converseHistory != null)
                         {
-                            val newConverseJson = serialize(converseHistory, encodedefault = false)
+                            val newConverseJson = serializeConverseHistory(converseHistory)
                             content.text = newConverseJson
                             break
                         }

@@ -4,6 +4,7 @@ import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.Pipe
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipeline.Pipeline
+import com.TTT.Context.ConverseHistory
 import kotlinx.coroutines.*
 import kotlinx.io.IOException
 import kotlinx.serialization.json.Json
@@ -70,6 +71,15 @@ inline fun <reified T> serialize(obj: T, encodedefault : Boolean = true): String
     }
 
     return ""
+}
+
+/**
+ * Serializes a converse history using the compact form so default-valued history fields do not leak into prompt
+ * payloads or traces.
+ */
+fun serializeConverseHistory(history: ConverseHistory): String
+{
+    return serialize(history, encodedefault = false)
 }
 
 
@@ -1513,6 +1523,5 @@ fun deleteFile(filePath: String): Boolean {
         return false
     }
 }
-
 
 

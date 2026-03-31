@@ -25,6 +25,7 @@ import com.TTT.Pipe.toTokenBudgetSettings
 import com.TTT.Pipe.toTruncationSettings
 import com.TTT.PipeContextProtocol.Transport
 import com.TTT.Util.extractJson
+import com.TTT.Util.serializeConverseHistory
 import com.TTT.Util.serialize
 import com.TTT.Debug.*
 import com.TTT.Enums.ContextWindowSettings
@@ -965,7 +966,7 @@ class Manifold : P2PInterface
         val resolvedBudget = resolveManagerBudgetConfiguration() ?: return
         val converseHistory = extractJson<ConverseHistory>(workingContentObject.text) ?: return
         val truncationSettings = resolvedBudget.budget.toTruncationSettings(getPrimaryManagerPipe())
-        val usedTokens = Dictionary.countTokens(serialize(converseHistory, encodedefault = false), truncationSettings)
+        val usedTokens = Dictionary.countTokens(serializeConverseHistory(converseHistory), truncationSettings)
         if(usedTokens <= resolvedBudget.historyTokenBudget)
         {
             return
@@ -979,7 +980,7 @@ class Manifold : P2PInterface
             truncationMethod,
             truncationSettings
         )
-        workingContentObject.text = serialize(holdingWindow.converseHistory, encodedefault = false)
+        workingContentObject.text = serializeConverseHistory(holdingWindow.converseHistory)
     }
 
 //=================================================Execution============================================================
@@ -1031,7 +1032,7 @@ class Manifold : P2PInterface
             val newConverseHistory = ConverseHistory()
             newConverseHistory.add(ConverseRole.user, content)
 
-            val converseHistoryAsJson = serialize(newConverseHistory, encodedefault = false)
+            val converseHistoryAsJson = serializeConverseHistory(newConverseHistory)
             content.text = converseHistoryAsJson
             workingContentObject = MultimodalContent(content.text, content.binaryContent.toMutableList(), content.terminatePipeline)
         }
@@ -1266,7 +1267,7 @@ class Manifold : P2PInterface
             if(previousConverseHistory != null)
             {
                 previousConverseHistory.add(ConverseRole.system, managerResult)
-                workingContentObject.text = serialize(previousConverseHistory, encodedefault = false)
+                workingContentObject.text = serializeConverseHistory(previousConverseHistory)
                 
                 // === TRACING: Converse history update ===
                 if(tracingEnabled)
@@ -1311,7 +1312,7 @@ class Manifold : P2PInterface
                 val workerConverseHistory = extractJson<ConverseHistory>(workingContentObject.text)
                 if(workerConverseHistory != null)
                 {
-                    agentRequest.prompt = serialize(workerConverseHistory, encodedefault = false)
+                    agentRequest.prompt = serializeConverseHistory(workerConverseHistory)
                     agentRequest.promptSchema = InputSchema.json
                     agentRequest.content = ""
                 }
@@ -1464,7 +1465,7 @@ class Manifold : P2PInterface
                 }
 
                 //Push agent's response back to the converse history and working content object.
-                workingContentObject.text = serialize(converseHistory, encodedefault = false)
+                workingContentObject.text = serializeConverseHistory(converseHistory)
 
                 /**
                  * Next, it's very important that we now wipe the text of the response so that we can safely merge

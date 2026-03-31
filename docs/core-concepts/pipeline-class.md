@@ -337,7 +337,7 @@ runBlocking {
 - **Reference Sharing**: All pipelines bound to the same `ConverseHistory` object share the same memory reference. Updates from any pipeline are immediately visible to all others.
 - **UUID Deduplication**: Each conversation turn has a unique UUID to prevent duplicate entries.
 - **Sub-Pipe Visibility**: When `includePipeContent = true`, only direct pipes in the pipeline are tracked. Branch pipes, validator pipes, and transformation pipes within individual pipes are not visible in the history.
-- **Serialization**: The conversation history can be serialized to JSON for storage or display using `serialize(history)`.
+- **Serialization**: The conversation history can be serialized to JSON for storage or display using `serializeConverseHistory(history)`.
 
 ## Pipeline Execution Flow
 
