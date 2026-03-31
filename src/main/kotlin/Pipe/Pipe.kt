@@ -4470,8 +4470,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
 //============================================= functions ============================================================//
 
     /**
-     * Selects the global context mode based on the pageKeyList. If the list is empty, it returns the example for MiniBank.
-     * Otherwise, it returns the example for contextWindow.
+     * Selects the global context mode based on the pageKeyList. If the list is empty, it returns the example for ContextWindow.
+     * Otherwise, it returns the example for MiniBank.
      *
      * @return The selected global context mode as a string.
      */
@@ -4479,10 +4479,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         if(pageKeyList.isEmpty())
         {
-            return examplePromptFor(MiniBank::class)
+            return examplePromptFor(ContextWindow::class)
         }
 
-        return examplePromptFor(contextWindow::class)
+        return examplePromptFor(MiniBank::class)
     }
 
     /**
