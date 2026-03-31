@@ -4,6 +4,7 @@ import com.TTT.Debug.EventPriorityMapper
 import com.TTT.Debug.FailureAnalysis
 import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceConfig
+import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Debug.TraceEvent
 import com.TTT.Debug.TraceEventType
 import com.TTT.Debug.TraceFormat
@@ -3542,6 +3543,8 @@ class DistributionGrid : P2PInterface
         trace(
             TraceEventType.DISTRIBUTION_GRID_PEER_HANDOFF,
             TracePhase.AGENT_COMMUNICATION,
+            content = shapedOutboundEnvelope.content,
+            tracePolicy = shapedOutboundEnvelope.tracePolicy,
             metadata = mapOf(
                 "taskId" to shapedOutboundEnvelope.taskId,
                 "peerKey" to peerKey,
@@ -3657,6 +3660,8 @@ class DistributionGrid : P2PInterface
         trace(
             TraceEventType.DISTRIBUTION_GRID_PEER_RESPONSE,
             TracePhase.AGENT_COMMUNICATION,
+            content = response.output?.deepCopy(),
+            tracePolicy = preparedEnvelope.tracePolicy,
             metadata = mapOf(
                 "taskId" to preparedEnvelope.taskId,
                 "peerKey" to peerKey,
@@ -4019,6 +4024,8 @@ class DistributionGrid : P2PInterface
         trace(
             TraceEventType.DISTRIBUTION_GRID_START,
             TracePhase.ORCHESTRATION,
+            content = envelope.content,
+            tracePolicy = envelope.tracePolicy,
             metadata = mapOf(
                 "taskId" to envelope.taskId,
                 "currentNodeId" to envelope.currentNodeId
@@ -4057,9 +4064,13 @@ class DistributionGrid : P2PInterface
             trace(
                 TraceEventType.DISTRIBUTION_GRID_ROUTER_DECISION,
                 TracePhase.ORCHESTRATION,
+                content = preparedEnvelope.content,
+                tracePolicy = preparedEnvelope.tracePolicy,
                 metadata = mapOf(
                     "taskId" to preparedEnvelope.taskId,
-                    "directive" to directive.kind.name
+                    "directive" to directive.kind.name,
+                    "notes" to directive.notes,
+                    "targetPeerId" to directive.targetPeerId
                 )
             )
 
@@ -4246,6 +4257,8 @@ class DistributionGrid : P2PInterface
         trace(
             TraceEventType.DISTRIBUTION_GRID_LOCAL_WORKER_DISPATCH,
             TracePhase.EXECUTION,
+            content = envelope.content,
+            tracePolicy = envelope.tracePolicy,
             metadata = mapOf(
                 "taskId" to envelope.taskId,
                 "workerBindingKey" to workerBinding!!.bindingKey
@@ -4260,6 +4273,8 @@ class DistributionGrid : P2PInterface
             trace(
                 TraceEventType.DISTRIBUTION_GRID_LOCAL_WORKER_RESPONSE,
                 TracePhase.EXECUTION,
+                content = workerResult,
+                tracePolicy = envelope.tracePolicy,
                 metadata = mapOf(
                     "taskId" to envelope.taskId,
                     "workerBindingKey" to workerBinding!!.bindingKey,
@@ -4391,6 +4406,8 @@ class DistributionGrid : P2PInterface
         trace(
             TraceEventType.DISTRIBUTION_GRID_SUCCESS,
             TracePhase.CLEANUP,
+            content = finalOutput,
+            tracePolicy = envelope.tracePolicy,
             metadata = mapOf(
                 "taskId" to envelope.taskId,
                 "directive" to directiveKind.name,
@@ -4401,6 +4418,8 @@ class DistributionGrid : P2PInterface
         trace(
             TraceEventType.DISTRIBUTION_GRID_END,
             TracePhase.CLEANUP,
+            content = finalOutput,
+            tracePolicy = envelope.tracePolicy,
             metadata = mapOf(
                 "taskId" to envelope.taskId,
                 "status" to DistributionGridOutcomeStatus.SUCCESS.name
@@ -4498,6 +4517,8 @@ class DistributionGrid : P2PInterface
         trace(
             TraceEventType.DISTRIBUTION_GRID_FAILURE,
             TracePhase.CLEANUP,
+            content = failureOutput,
+            tracePolicy = preparedEnvelope.tracePolicy,
             metadata = mapOf(
                 "taskId" to preparedEnvelope.taskId,
                 "directive" to directiveKind.name,
@@ -4509,6 +4530,8 @@ class DistributionGrid : P2PInterface
         trace(
             TraceEventType.DISTRIBUTION_GRID_END,
             TracePhase.CLEANUP,
+            content = failureOutput,
+            tracePolicy = preparedEnvelope.tracePolicy,
             metadata = mapOf(
                 "taskId" to preparedEnvelope.taskId,
                 "status" to DistributionGridOutcomeStatus.FAILURE.name
@@ -8395,6 +8418,8 @@ class DistributionGrid : P2PInterface
     private fun trace(
         eventType: TraceEventType,
         phase: TracePhase,
+        content: MultimodalContent? = null,
+        tracePolicy: DistributionGridTracePolicy? = null,
         metadata: Map<String, Any> = emptyMap(),
         error: Throwable? = null
     )
@@ -8402,15 +8427,27 @@ class DistributionGrid : P2PInterface
         if(!tracingEnabled) return
         if(!EventPriorityMapper.shouldTrace(eventType, traceConfig.detailLevel)) return
 
+        val contentSnapshot = buildTraceContentSnapshot(content, tracePolicy)
+
         val event = TraceEvent(
             timestamp = System.currentTimeMillis(),
             pipeId = gridId,
             pipeName = "DistributionGrid-${p2pDescriptor?.agentName ?: "unbound"}",
             eventType = eventType,
             phase = phase,
-            content = null,
+            content = contentSnapshot,
             contextSnapshot = null,
-            metadata = if(traceConfig.includeMetadata) buildTraceMetadata(metadata, error) else emptyMap(),
+            metadata = if(traceConfig.includeMetadata) {
+                buildTraceMetadata(
+                    baseMetadata = metadata,
+                    error = error,
+                    tracePolicy = tracePolicy,
+                    contentRequested = content != null,
+                    contentCaptured = contentSnapshot != null
+                )
+            } else {
+                emptyMap()
+            },
             error = error
         )
 
@@ -8450,7 +8487,10 @@ class DistributionGrid : P2PInterface
      */
     private fun buildTraceMetadata(
         baseMetadata: Map<String, Any>,
-        error: Throwable?
+        error: Throwable?,
+        tracePolicy: DistributionGridTracePolicy?,
+        contentRequested: Boolean,
+        contentCaptured: Boolean
     ): Map<String, Any>
     {
         val metadata = mutableMapOf<String, Any>(
@@ -8461,8 +8501,21 @@ class DistributionGrid : P2PInterface
             "workerBound" to (workerBinding != null),
             "localPeerCount" to localPeerBindingsByKey.size,
             "externalPeerCount" to externalPeerDescriptorsByKey.size,
-            "maxHops" to maxHops
+            "maxHops" to maxHops,
+            "traceDetailLevel" to traceConfig.detailLevel.name,
+            "traceIncludeContext" to traceConfig.includeContext,
+            "traceIncludeMetadata" to traceConfig.includeMetadata,
+            "contentRequested" to contentRequested,
+            "contentCaptured" to contentCaptured
         )
+
+        if(tracePolicy != null)
+        {
+            metadata["tracePolicyAllowTracing"] = tracePolicy.allowTracing
+            metadata["tracePolicyAllowTracePersistence"] = tracePolicy.allowTracePersistence
+            metadata["tracePolicyRequireRedaction"] = tracePolicy.requireRedaction
+            metadata["tracePolicyRejectNonCompliantNodes"] = tracePolicy.rejectNonCompliantNodes
+        }
 
         metadata.putAll(baseMetadata)
 
@@ -8473,6 +8526,50 @@ class DistributionGrid : P2PInterface
         }
 
         return metadata
+    }
+
+    private fun shouldIncludeContent(detailLevel: TraceDetailLevel): Boolean
+    {
+        return when(detailLevel)
+        {
+            TraceDetailLevel.MINIMAL -> false
+            TraceDetailLevel.NORMAL -> false
+            TraceDetailLevel.VERBOSE -> traceConfig.includeContext
+            TraceDetailLevel.DEBUG -> traceConfig.includeContext
+        }
+    }
+
+    private fun buildTraceContentSnapshot(
+        content: MultimodalContent?,
+        tracePolicy: DistributionGridTracePolicy?
+    ): MultimodalContent?
+    {
+        if(content == null || !shouldIncludeContent(traceConfig.detailLevel))
+        {
+            return null
+        }
+
+        if(tracePolicy == null)
+        {
+            return content.deepCopy()
+        }
+
+        if(!tracePolicy.allowTracing)
+        {
+            return MultimodalContent(text = "TRACE CONTENT SUPPRESSED: tracing disabled by negotiated policy.")
+        }
+
+        if(!tracePolicy.allowTracePersistence)
+        {
+            return MultimodalContent(text = "TRACE CONTENT SUPPRESSED: trace persistence denied by negotiated policy.")
+        }
+
+        if(tracePolicy.requireRedaction)
+        {
+            return MultimodalContent(text = "REDACTED BY DISTRIBUTION GRID TRACE POLICY.")
+        }
+
+        return content.deepCopy()
     }
 
     /**

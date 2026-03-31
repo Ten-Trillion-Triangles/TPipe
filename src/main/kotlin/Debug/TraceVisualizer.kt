@@ -1672,7 +1672,14 @@ class TraceVisualizer
     private fun formatContentSummary(event: TraceEvent, summaryLabel: String): String {
         val parts = mutableListOf<String>()
         event.content?.text?.takeIf { it.isNotBlank() }?.let { text ->
-            val preview = if(text.length > 220) "${text.take(220)}…" else text
+            val traceDetailLevel = event.metadata["traceDetailLevel"]?.toString().orEmpty()
+            val preview = if(traceDetailLevel.equals("DEBUG", ignoreCase = true)) {
+                text
+            } else if(text.length > 220) {
+                "${text.take(220)}…"
+            } else {
+                text
+            }
             parts.add("<div class=\"content-preview\"><pre>${escapeHtml(preview)}</pre></div>")
         }
         event.contextSnapshot?.let { snapshot ->
