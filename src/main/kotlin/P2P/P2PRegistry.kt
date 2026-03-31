@@ -1246,9 +1246,11 @@ object P2PRegistry
 
                 if(sessionResponse.error.isEmpty())
                 {
-                    return deserialize<P2PResponse>(sessionResponse.output) ?: P2PResponse().apply {
-                        rejection = P2PRejection(P2PError.transport, "Failed to deserialize P2PResponse from session output")
-                    }
+                    return deserialize<P2PResponse>(sessionResponse.output)
+                        ?: extractJson<P2PResponse>(sessionResponse.output)
+                        ?: P2PResponse().apply {
+                            rejection = P2PRejection(P2PError.transport, "Failed to deserialize P2PResponse from session output")
+                        }
                 }
                 else
                 {

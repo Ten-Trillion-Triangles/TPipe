@@ -149,28 +149,51 @@ object StdioSessionManager
             writer.newLine()
             writer.flush()
             
-            // Read response with timeout
+            // Read response with timeout and a short settle window so slow stdio hosts can finish writing
+            // their protocol payload after any startup or debug noise.
             val output = StringBuilder()
-            
-            // Simple timeout mechanism - read available lines
-            var attempts = 0
-            while(attempts < 10 && !reader.ready())
+            val timeoutMs = 30_000L
+            val initialWaitMs = 5_000L
+            val settleWindowMs = 250L
+            val settlePollMs = 50L
+            val startTime = System.currentTimeMillis()
+            var sawOutput = false
+            var settledAt: Long? = null
+
+            while(System.currentTimeMillis() - startTime < timeoutMs)
             {
-                Thread.sleep(100)
-                attempts++
-            }
-            
-            while(reader.ready())
-            {
-                val line = reader.readLine()
-                if(line != null)
+                if(reader.ready())
                 {
-                    output.appendLine(line)
+                    val line = reader.readLine()
+                    if(line != null)
+                    {
+                        output.appendLine(line)
+                        sawOutput = true
+                        settledAt = null
+                    }
+                    else
+                    {
+                        break
+                    }
                 }
-                else
+                else if(sawOutput)
+                {
+                    val settledAtValue = settledAt
+                    if(settledAtValue == null)
+                    {
+                        settledAt = System.currentTimeMillis()
+                    }
+                    else if(System.currentTimeMillis() - settledAtValue >= settleWindowMs)
+                    {
+                        break
+                    }
+                }
+                else if(System.currentTimeMillis() - startTime >= initialWaitMs)
                 {
                     break
                 }
+
+                Thread.sleep(settlePollMs)
             }
             
             SessionResponse(

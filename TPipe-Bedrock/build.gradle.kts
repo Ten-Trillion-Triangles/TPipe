@@ -25,6 +25,8 @@ repositories {
 
 dependencies {
     testImplementation(kotlin("test"))
+    testImplementation("io.ktor:ktor-server-core:${libs.versions.ktor.version.get()}")
+    testImplementation("io.ktor:ktor-server-netty:${libs.versions.ktor.version.get()}")
     testImplementation(project(":TPipe-Defaults"))
     implementation(project(":"))
     
