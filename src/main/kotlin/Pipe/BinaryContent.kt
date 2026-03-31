@@ -6,6 +6,8 @@ import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.Util.deepCopy
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import java.util.Base64
 
@@ -111,13 +113,13 @@ sealed class BinaryContent
  * video, or other binary data.
  */
 @Serializable
-data class MultimodalContent(
+data class MultimodalContent @OptIn(ExperimentalSerializationApi::class) constructor(
     var text: String = "",
     var binaryContent: MutableList<BinaryContent> = mutableListOf(),
-    var terminatePipeline: Boolean = false,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)var terminatePipeline: Boolean = false,
     var context: ContextWindow = ContextWindow(),
     var miniBankContext: MiniBank = MiniBank(),
-    var tools: PcPRequest = PcPRequest(),
+    @EncodeDefault(mode = EncodeDefault.Mode.NEVER)var tools: PcPRequest = PcPRequest(),
     @kotlinx.serialization.Transient var modelReasoning: String = "",
     var useSnapshot: Boolean = false,
     @kotlinx.serialization.Transient var pipeError: PipeError? = null
