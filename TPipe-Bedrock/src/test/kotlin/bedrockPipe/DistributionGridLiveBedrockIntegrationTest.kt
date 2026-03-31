@@ -44,6 +44,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 private const val GRID_DIRECTIVE_METADATA_KEY = "distributionGridDirective"
 private const val QWEN_30B_MODEL_ID = "qwen.qwen3-coder-30b-a3b-v1:0"
@@ -228,8 +229,8 @@ private class LiveBedrockRoleContainer(
     private var transport: P2PTransport? = null
     private var containerRef: Any? = null
 
-    var requestCount: Int = 0
-        private set
+    private val _requestCount = AtomicInteger(0)
+    val requestCount: Int get() = _requestCount.get()
 
     override fun setP2pDescription(description: P2PDescriptor)
     {
@@ -282,7 +283,7 @@ private class LiveBedrockRoleContainer(
 
     override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
     {
-        requestCount += 1
+        _requestCount.incrementAndGet()
         val original = content.deepCopy()
         val output = pipeline.execute(content)
         return adapter.adapt(output, original)
@@ -290,7 +291,7 @@ private class LiveBedrockRoleContainer(
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {
-        requestCount += 1
+        _requestCount.incrementAndGet()
         val response = pipeline.executeP2PRequest(request) ?: return null
         val output = response.output ?: return response
         val normalized = adapter.adapt(output, request.prompt.deepCopy())

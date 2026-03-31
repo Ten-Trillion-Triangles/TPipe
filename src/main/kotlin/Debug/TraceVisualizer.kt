@@ -602,9 +602,10 @@ class TraceVisualizer
                     .event-body { display: grid; gap: 18px; }
                     .event-section h4 { margin: 0 0 8px; font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #475569; }
                     .metadata-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-                    .metadata-item { padding: 10px 12px; border-radius: 10px; background: rgba(148,163,184,0.1); border: 1px solid rgba(148,163,184,0.18); }
-                    .metadata-item strong { display: block; font-size: 0.75rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
-                    .metadata-item span { color: #0f172a; font-weight: 500; word-break: break-word; font-size: 0.92rem; }
+                    .metadata-grid > .metadata-item { min-width: 0; }
+                    .metadata-item { min-width: 0; padding: 10px 12px; border-radius: 10px; background: rgba(148,163,184,0.1); border: 1px solid rgba(148,163,184,0.18); }
+                    .metadata-item strong { display: block; font-size: 0.75rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; white-space: normal; overflow-wrap: anywhere; word-break: break-word; line-height: 1.25; }
+                    .metadata-item span { color: #0f172a; font-weight: 500; word-break: break-word; overflow-wrap: anywhere; font-size: 0.92rem; line-height: 1.35; }
                     .empty-state { margin: 0; color: #94a3b8; font-size: 0.9rem; font-style: italic; }
                     details.event-details { border: 1px solid rgba(148,163,184,0.25); border-radius: 10px; background: rgba(248,250,252,0.8); padding: 12px 14px; }
                     details.event-details summary { cursor: pointer; font-weight: 600; color: #334155; font-size: 0.95rem; list-style: none; display: flex; align-items: center; gap: 8px; }
@@ -719,9 +720,10 @@ class TraceVisualizer
                     .event-body { display: grid; gap: 18px; }
                     .event-section h4 { margin: 0 0 8px; font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #475569; }
                     .metadata-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-                    .metadata-item { padding: 10px 12px; border-radius: 10px; background: rgba(148,163,184,0.1); border: 1px solid rgba(148,163,184,0.18); }
-                    .metadata-item strong { display: block; font-size: 0.75rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
-                    .metadata-item span { color: #0f172a; font-weight: 500; word-break: break-word; font-size: 0.92rem; }
+                    .metadata-grid > .metadata-item { min-width: 0; }
+                    .metadata-item { min-width: 0; padding: 10px 12px; border-radius: 10px; background: rgba(148,163,184,0.1); border: 1px solid rgba(148,163,184,0.18); }
+                    .metadata-item strong { display: block; font-size: 0.75rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; white-space: normal; overflow-wrap: anywhere; word-break: break-word; line-height: 1.25; }
+                    .metadata-item span { color: #0f172a; font-weight: 500; word-break: break-word; overflow-wrap: anywhere; font-size: 0.92rem; line-height: 1.35; }
                     .empty-state { margin: 0; color: #94a3b8; font-size: 0.9rem; font-style: italic; }
                     details.event-details { border: 1px solid rgba(148,163,184,0.25); border-radius: 10px; background: rgba(248,250,252,0.8); padding: 12px 14px; }
                     details.event-details summary { cursor: pointer; font-weight: 600; color: #334155; font-size: 0.95rem; list-style: none; display: flex; align-items: center; gap: 8px; }
@@ -838,9 +840,10 @@ class TraceVisualizer
                     .event-body { display: grid; gap: 18px; }
                     .event-section h4 { margin: 0 0 8px; font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #475569; }
                     .metadata-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-                    .metadata-item { padding: 10px 12px; border-radius: 10px; background: rgba(148,163,184,0.1); border: 1px solid rgba(148,163,184,0.18); }
-                    .metadata-item strong { display: block; font-size: 0.75rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
-                    .metadata-item span { color: #0f172a; font-weight: 500; word-break: break-word; font-size: 0.92rem; }
+                    .metadata-grid > .metadata-item { min-width: 0; }
+                    .metadata-item { min-width: 0; padding: 10px 12px; border-radius: 10px; background: rgba(148,163,184,0.1); border: 1px solid rgba(148,163,184,0.18); }
+                    .metadata-item strong { display: block; font-size: 0.75rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; white-space: normal; overflow-wrap: anywhere; word-break: break-word; line-height: 1.25; }
+                    .metadata-item span { color: #0f172a; font-weight: 500; word-break: break-word; overflow-wrap: anywhere; font-size: 0.92rem; line-height: 1.35; }
                     .empty-state { margin: 0; color: #94a3b8; font-size: 0.9rem; font-style: italic; }
                     details.event-details { border: 1px solid rgba(148,163,184,0.25); border-radius: 10px; background: rgba(248,250,252,0.8); padding: 12px 14px; }
                     details.event-details summary { cursor: pointer; font-weight: 600; color: #334155; font-size: 0.95rem; list-style: none; display: flex; align-items: center; gap: 8px; }

@@ -23,6 +23,9 @@ class DistributionGridTraceVisualizationTest
         assertTrue(htmlReport.contains("Public Listing"))
         assertTrue(htmlReport.contains("Remote Peer"))
         assertTrue(htmlReport.contains("Router"))
+        assertTrue(htmlReport.contains("tracePolicyAllowTracePersistence"))
+        assertTrue(htmlReport.contains("overflow-wrap: anywhere;"))
+        assertTrue(htmlReport.contains("min-width: 0;"))
     }
 
     @Test
@@ -78,6 +81,8 @@ class DistributionGridTraceVisualizationTest
         assertTrue(htmlReport.contains("Grid State"))
         assertTrue(htmlReport.contains("Grid Orchestration Flow"))
         assertTrue(htmlReport.contains("Discovery, Registry, and Public Listing Activity"))
+        assertTrue(htmlReport.contains("tracePolicyAllowTracePersistence"))
+        assertTrue(htmlReport.contains("overflow-wrap: anywhere;"))
     }
 
     private fun generateMockDistributionGridTrace(): List<TraceEvent>
@@ -93,6 +98,22 @@ class DistributionGridTraceVisualizationTest
                 content = MultimodalContent("Start task"),
                 contextSnapshot = null,
                 metadata = mapOf("taskId" to "task-123", "nodeId" to "node-a")
+            ),
+            TraceEvent(
+                timestamp = baseTime + 15,
+                pipeId = "grid-001",
+                pipeName = "DistributionGrid-node-a",
+                eventType = TraceEventType.DISTRIBUTION_GRID_POLICY_EVALUATION,
+                phase = TracePhase.ORCHESTRATION,
+                content = MultimodalContent("Policy debug"),
+                contextSnapshot = null,
+                metadata = mapOf(
+                    "tracePolicyAllowTracing" to true,
+                    "tracePolicyAllowTracePersistence" to true,
+                    "tracePolicyRequireRedaction" to false,
+                    "tracePolicyRejectNonCompliantNodes" to true,
+                    "currentNodeId" to "node-a"
+                )
             ),
             TraceEvent(
                 timestamp = baseTime + 30,
