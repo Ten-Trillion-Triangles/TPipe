@@ -69,3 +69,5 @@ TPipe_Comprehensive_Usage_Examples.md
 node_modules/
 /.gemini
 /.kiro
+/docs/maestro
+docs/licensing/dependency-audit.md
