@@ -125,4 +125,4 @@ graph TD
 
 ---
 
-These examples demonstrate that TPipe is more than a library—it is the environment that makes complex, long-running, and mission-critical AI applications possible.
+These examples can be found here: 
