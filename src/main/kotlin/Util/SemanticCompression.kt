@@ -37,7 +37,7 @@ data class SemanticCompressionResult(
 )
 
 private const val PARAGRAPH_MARKER = "¶"
-private val PARAGRAPH_BREAK_PATTERN = Regex("(?:\\r?\\n\\s*){2,}")
+private val PARAGRAPH_BREAK_PATTERN = Regex("(?:(?:\\r?\\n[ \\t]*){2,}|(?:\\r?\\n)+\\t+)")
 
 /**
  * Builds the system-prompt prelude that teaches the model how to read a semantic-compressed prompt.

@@ -263,4 +263,17 @@ class SemanticCompressionTest
         assertFalse(result.compressedText.contains("\n\n"), "Paragraph breaks should no longer be flattened into blank lines")
         assertTrue(result.compressedText.contains("Alice Johnson") || result.legend.contains("Alice Johnson"), "Repeated proper nouns should still be represented")
     }
+
+    @Test
+    fun semanticCompressionTreatsTabIndentedLinesAsParagraphBoundaries()
+    {
+        val input = "Alpha\n\tBravo\r\n\tCharlie"
+        val result = semanticCompress(input)
+
+        assertEquals(
+            "Alpha ¶ Bravo ¶ Charlie",
+            result.compressedText,
+            "Tab-indented lines after a line break should become pilcrow-separated paragraphs"
+        )
+    }
 }

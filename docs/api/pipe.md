@@ -446,8 +446,8 @@ Sets advanced token budgeting configuration with support for dynamic user prompt
 The default compressor lexicon is resource-backed, with stop-word and phrase tables loaded from
 `src/main/resources/semantic-compression/` and merged with any caller-provided additions.
 Common contractions are expanded before function-word stripping, paragraph breaks survive as pilcrow markers
-(`¶`), and the audit helper can be used to surface recurring prompt boilerplate that should be added to the
-lexicon next.
+(`¶`) including tab-indented lines that start after a line break, and the audit helper can be used to surface
+recurring prompt boilerplate that should be added to the lexicon next.
 
 **Fluent Builders:** Call `enableSemanticCompression()` to turn this path on from the `Pipe` API, and call
 `enableSemanticDecompression()` to prepend the decompression prelude that explains how the compressed prompt

@@ -12,7 +12,7 @@ LLM or probabilistic summarizer. It:
 - normalizes compressible text to ASCII
 - removes common function words and prompt filler phrases
 - replaces repeated proper nouns with 2-character codes that advance as `AA`, `AB`, `AC`, and so on
-- preserves paragraph breaks with the pilcrow marker `¶`
+- preserves paragraph breaks with the pilcrow marker `¶`, including tab-indented lines that begin after a line break
 - strips punctuation and syntactic noise except colons and the pilcrow separator
 
 The built-in stop-word, phrase, connector, and sentence-filler tables are loaded from resource files under
