@@ -1,6 +1,6 @@
 # Headless Use-Cases: TPipe in the Field
 
-TPipe is designed for "headless-first" operations—systems that run autonomously, reliably, and without constant human supervision. These case studies illustrate how TPipe's architectural advantages translate into real-world system reliability.
+TPipe is designed for headless-first operations—systems that run autonomously, reliably, and without constant human supervision. These case studies illustrate how TPipe's architectural advantages translate into real-world system reliability.
 
 ## TStep: The Agentic Substrate Debugger
 
