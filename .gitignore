@@ -67,3 +67,6 @@ dynamic-fill-implementation-plan.md
 TPipe_Comprehensive_Usage_Examples.md
 *.salive
 node_modules/
+/.github
+/docs/licensing
+/docs/maestro
