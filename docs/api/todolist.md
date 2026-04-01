@@ -731,7 +731,7 @@ ContextBank.emplaceTodoList("critical-tasks", todoList, writeToDisk = true)
 
 ### Work History
 
-**Record meaningful progress:**
+**Record Meaningful Progress:**
 ```kotlin
 todoList.workHistory.add(
     ConverseRole.agent,
@@ -765,4 +765,7 @@ for (task in todoList.tasks.tasks) {
 ```kotlin
 // Let AI pick the best task to work on
 pipe.execute("Work on the most important task")
+```
+``
+)
 ```

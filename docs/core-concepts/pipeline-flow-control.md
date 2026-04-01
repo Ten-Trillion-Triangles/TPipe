@@ -142,7 +142,7 @@ content.passPipeline = true  // Exit pipeline early as successful completion
 - Treats the early exit as successful completion
 - Returns content to caller as valid result
 
-**Use cases**: Task completed early, no further processing needed, successful shortcut
+**Use cases**: Task completed early, no further processing needed, successful shortcut.
 
 #### Terminate Pipeline (Error Exit)  
 ```kotlin

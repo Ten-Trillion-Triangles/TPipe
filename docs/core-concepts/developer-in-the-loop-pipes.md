@@ -98,7 +98,7 @@ val publishingPipe = BedrockPipe()
     .setValidatorPipe(contentValidator)
     .setValidatorFunction { content ->
         // Parse AI validation result from validator pipe
-        // Note: content here is the ORIGINAL generated content
+        // Content here is the ORIGINAL generated content
         val validation = Json.decodeFromString<ValidationResult>(content.text)
         validation.valid && validation.score >= 80
     }

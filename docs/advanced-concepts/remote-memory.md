@@ -456,7 +456,7 @@ class DistributedAgent(private val config: AgentConfig)
             sharedContext.addText("${config.agentId}: ${result.text}")
             MemoryClient.emplaceContextWindow("shared-knowledge", sharedContext)
             
-            // Mark task complete
+            // Mark the task as completed in local state and persist to remote memory
             task.completed = true
             MemoryClient.emplaceTodoList(config.todoKey, tasks)
         }
