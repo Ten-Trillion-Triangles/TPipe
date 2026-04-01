@@ -71,3 +71,8 @@ node_modules/
 /.kiro
 /docs/maestro
 docs/licensing/dependency-audit.md
+
+.gemini/
+gha-creds-*.json
+/.github/commands
+/.github/workflows

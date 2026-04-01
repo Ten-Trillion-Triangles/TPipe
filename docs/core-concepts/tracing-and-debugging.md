@@ -30,7 +30,7 @@ TPipe tracing is a built-in monitoring system that:
 ### Basic Tracing
 ```kotlin
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .enableTracing()  // Enable basic tracing
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
 
@@ -59,7 +59,7 @@ val result = runBlocking { pipeline.execute("Complex input requiring analysis") 
 val debugMode = System.getProperty("debug", "false").toBoolean()
 
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .apply { 
         if (debugMode) {
             enableTracing()
@@ -84,7 +84,7 @@ val traceConfig = TraceConfig(
 )
 
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .enableTracing(traceConfig)
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
 ```
@@ -131,7 +131,7 @@ HTML trace reports include collapsible sections for verbose content, improving r
 
 ```kotlin
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .enableTracing(TraceConfig(
         detailLevel = TraceDetailLevel.DEBUG,
         outputFormat = TraceFormat.HTML
@@ -204,7 +204,7 @@ Token-related metadata displays with color coding and bold formatting for quick 
 
 ```kotlin
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .enableTracing(TraceConfig(
         detailLevel = TraceDetailLevel.DEBUG,
         outputFormat = TraceFormat.HTML,
@@ -364,7 +364,7 @@ TracePhase.CLEANUP          // Resource cleanup
 ### Debugging Context Issues
 ```kotlin
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant with access to context.")
+    .setSystemPrompt("You are a Manuscript Orchestrator responsible for cross-referencing archival data.")
     .pullGlobalContext()
     .setPageKey("userProfile")
     .autoInjectContext("Use the provided context to personalize responses.")
@@ -408,7 +408,7 @@ val result = runBlocking { pipe.execute("Create a user profile for John Doe") }
 ### Debugging Exception Handling
 ```kotlin
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
     .setExceptionFunction { content, exception ->
         println("=== Exception Debug Information ===")
@@ -525,7 +525,7 @@ val contextFlowPipeline = Pipeline()
 ### Custom Trace Metadata
 ```kotlin
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .enableTracing()
     .setTransformationFunction { content ->
         // Add custom trace information
@@ -549,7 +549,7 @@ val pipe = BedrockPipe()
 ### Conditional Detailed Tracing
 ```kotlin
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .setValidatorFunction { content ->
         val isValid = validateContent(content.text)
         
@@ -587,7 +587,7 @@ class PerformanceProfiler {
 val profiler = PerformanceProfiler()
 
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .enableTracing()
     .setPreValidationFunction { contextWindow, content ->
         profiler.startTiming("contextProcessing")
@@ -608,7 +608,7 @@ val pipe = BedrockPipe()
 ### Token Usage Analysis
 ```kotlin
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .enableTracing()
     .setTokenBudget(TokenBudgetSettings(
         maxTokens = 2000,
@@ -627,7 +627,7 @@ val pipe = BedrockPipe()
 ### API Call Performance
 ```kotlin
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .enableTracing()
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
 
@@ -644,7 +644,7 @@ val pipe = BedrockPipe()
 ```kotlin
 // Enable tracing based on environment
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .apply {
         if (System.getenv("ENVIRONMENT") == "development") {
             enableTracing()
@@ -670,7 +670,7 @@ val pipe = BedrockPipe()
 ```kotlin
 // Only trace specific operations
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .setValidatorFunction { content ->
         val isValid = validateContent(content.text)
         
@@ -703,7 +703,7 @@ val pipe = BedrockPipe()
 ```kotlin
 // Clean up sensitive information in traces
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .enableTracing(TraceConfig().apply {
         contentFilter = { content ->
             // Remove sensitive information from traces

@@ -27,7 +27,7 @@ Errors flow through three levels:
 ```kotlin
 val pipe = BedrockPipe()
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
 
 val result = pipe.execute("What is AI?")
 

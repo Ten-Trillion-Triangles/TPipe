@@ -1,23 +1,61 @@
-# TPipe - The Agent Operating Environment
+# TPipe: The Agent Operating Environment
 
-TPipe is an Agent Operating Environment designed for engineering robust, deterministic AI systems that can be embedded anywhere. Think of it as **Municipal Plumbing** for your LLMs: data flows through **Pipes** (Valves), gets routed along **Pipelines** (Mainlines), and pools into your ContextWindow and ContextBank (Reservoirs). Built on Kotlin and GraalVM, it provides strict resource accounting, secure sandboxing, and structured reasoning for production-grade multi-agent swarms.
+**TPipe is the Agent Operating Environment for engineering robust, deterministic AI systems.**
 
-> 💡 **Tip:** Whether you are building a simple chatbot or a massive multi-agent swarm, TPipe gives you the deterministic control and "Developer-in-the-loop" validation you need to keep your AI on track.
+TPipe provides the managed substrate for AI agents, moving beyond simple library wrappers into a production-grade runtime. It treats LLM interactions as data flowing through a managed plumbing system: **Pipes** (Valves) transport data, **Pipelines** (Mainlines) route it, and **ContextWindow**/**ContextBank** (Reservoirs) provide persistent state. Built on Kotlin and GraalVM, it provides strict resource accounting, secure sandboxing, and structured reasoning for production-grade autonomous systems.
+
+## Different by Design: Substrate vs. Harness
+
+TPipe is a **Substrate**, not just a harness or a library. It provides the "municipal plumbing" that agents inhabit, managing memory, enforcing protocols, and governing resources.
+
+### Traditional Harness
+```mermaid
+graph LR
+    App --> Library --> LLM
+```
+
+### TPipe Substrate
+```mermaid
+graph TD
+    subgraph Substrate [TPipe Operating Environment]
+        P[Pipes] <--> CB[(ContextBank)]
+        P <--> PCP{PCP Protocol}
+        P <--> TB[Token Budget]
+    end
+    App --> P
+    P --> LLM
+```
+
+## Core Pillars
+
+### 1. Runtime Control
+*   **Deterministic Pipelines**: Orchestrate multi-stage AI workflows with sophisticated error handling and recovery.
+*   **Pause/Resume/Jump**: Granular control over execution flow with declarative pause points for developer-in-the-loop validation.
+*   **Resource Governance**: Strict token budgeting, automatic truncation, and cost enforcement.
+
+### 2. Long-horizon Coherence
+*   **ContextBank**: A global, persistent memory layer that maintains state across sessions and distributed systems.
+*   **Semantic Compression**: Reduce prompt overhead through natural language legends and automatic context injection.
+*   **Managed Reservoirs**: Hierarchical memory management with Page Keys and MiniBanks.
+
+### 3. Bounded Autonomy
+*   **Pipe Context Protocol (PCP)**: Secure, multi-language tool execution (Kotlin, JS, Python) with strict AST validation.
+*   **Memory Introspection**: Controlled agent access to their own memory systems for self-correction.
+*   **Guardrails & Security**: Built-in content moderation, DNS rebinding protection, and secure sandboxing.
+
+## Case Studies
+Explore how TPipe is used in the field for high-stakes automation:
+- [Headless Use-Cases: TPipe in the Field](docs/case-studies/headless-use-cases.md)
 
 ## Documentation
 
 ### 🚀 Getting Started
-
-Start here for installation and your first TPipe application:
-
 - [Installation and Setup](docs/getting-started/installation-and-setup.md) - Requirements, installation, and environment setup
 - [First Steps](docs/getting-started/first-steps.md) - Your first pipe and pipeline
 
 ### 🧠 Core Concepts
-
-Essential TPipe features organized by complexity:
-
 #### Fundamentals
+- [Why TPipe? Architectural Deep Dive](docs/core-concepts/why-tpipe.md) - The paradigm shift from libraries to substrates
 - [Pipe Class - Core Concepts](docs/core-concepts/pipe-class.md) - Understanding the fundamental Pipe class
 - [Pipeline Class - Orchestrating Multiple Pipes](docs/core-concepts/pipeline-class.md) - Chaining pipes together
 - [JSON Schema and System Prompts](docs/core-concepts/json-and-system-prompts.md) - Structured AI interactions
@@ -47,9 +85,6 @@ Essential TPipe features organized by complexity:
 - [Tracing and Debugging](docs/core-concepts/tracing-and-debugging.md) - Monitoring and troubleshooting
 
 ### 🏗️ Container Architecture
-
-Advanced pipeline orchestration and multi-agent systems:
-
 - [Container Overview](docs/containers/container-overview.md) - Introduction to TPipe containers
 - [Manifold - Multi-Agent Orchestration](docs/containers/manifold.md) - Coordinating multiple AI agents
 - [Manifold DSL Builder](docs/containers/manifold.md#dsl-builder) - Build and initialize manifolds in one Kotlin DSL block
@@ -62,9 +97,6 @@ Advanced pipeline orchestration and multi-agent systems:
 - [Cross-Cutting Topics](docs/containers/cross-cutting-topics.md) - Shared container concepts
 
 ### 🔧 Advanced Concepts
-
-Complex features and protocol integration:
-
 #### Pipe Context Protocol (PCP)
 - [Pipe Context Protocol Overview](docs/advanced-concepts/pipe-context-protocol.md) - TPipe's native tool protocol
 - [Basic PCP Usage](docs/advanced-concepts/basic-pcp-usage.md) - Getting started with PCP
@@ -88,18 +120,12 @@ Complex features and protocol integration:
 - [P2P Requirements and Validation](docs/advanced-concepts/p2p/p2p-requirements-and-validation.md) - Security and validation
 
 ### ☁️ Provider Integration
-
-Integration guides for different AI providers:
-
-#### AWS Bedrock
-- [Getting Started with TPipe-Bedrock](docs/bedrock/getting-started.md) - Setup, configuration, and first steps
+- [AWS Bedrock Getting Started](docs/bedrock/getting-started.md) - Setup, configuration, and first steps
 - [AWS Bedrock Inference Binding](docs/bedrock/inference-binding.md) - Cross-region model access and configuration
 - [AWS Bedrock Guardrails](docs/bedrock/guardrails.md) - Content safety and moderation with Guardrails
+- [Ollama Getting Started](docs/ollama/getting-started.md) - Running TPipe with local models
 
 ### 📚 API Reference
-
-Complete API documentation for all TPipe components:
-
 #### Core APIs
 - [Pipe Class API](docs/api/pipe.md) - Complete Pipe class reference
 - [Pipeline Class API](docs/api/pipeline.md) - Pipeline orchestration methods
@@ -135,35 +161,12 @@ import bedrockPipe.BedrockPipe
 val pipe = BedrockPipe()
     .setRegion("us-east-1")
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .setTemperature(0.7)
 
-val result = pipe.execute("What is artificial intelligence?")
+val result = pipe.execute("Analyze the following log entries for security vulnerabilities...")
 println(result.text)
 ```
-
-## Key Features
-
-- **Multi-stage AI workflows** with sophisticated error handling
-- **Timeout and retry system** with automatic recovery from transient failures and hanging LLM calls
-- **Pipeline pause/resume control** with declarative pause points and developer-in-the-loop workflows
-- **Global context sharing** across applications via ContextBank
-- **Remote memory hosting** for distributed agent systems with MemoryServer and MemoryClient
-- **Memory introspection** for autonomous agents with controlled memory access
-- **Retrieval functions** for lazy-loading context from databases and APIs
-- **Context access control** with ContextLock enforcement for secure lorebook and page management
-- **Developer-in-the-loop integration** with code and AI-powered validation
-- **Chain-of-thought reasoning** with multiple strategies and focus points
-- **Multi-provider AI support** (AWS Bedrock, Ollama, extensible architecture)
-- **Kotlin and JavaScript scripting** in PCP alongside Python and native functions
-- **Comprehensive debugging** with detailed tracing and monitoring
-- **Remote trace dashboard** with TraceServer for centralized real-time trace viewing
-- **Multi-Stream and Independent Tracing** for parallel pipelines and complex orchestration
-- **Unified authentication** with AuthRegistry for automatic credential injection across remote services
-- **Cross-region inference** with automatic profile binding for AWS Bedrock
-- **Service tier optimization** for AWS Bedrock (Reserved, Priority, Standard, Flex)
-- **Content safety with AWS Bedrock Guardrails** for automatic content moderation and policy enforcement
-- **Enhanced security** with DNS rebinding protection, AST-based Python validation, and UUID session IDs
 
 ## Requirements
 
@@ -180,3 +183,13 @@ dependencies {
     implementation("com.TTT:TPipe-Ollama:1.0.0")   // For Ollama
 }
 ```
+
+## Licensing
+
+TPipe is dual-licensed to meet the needs of both open-source developers and enterprise organizations.
+
+*   **Open Source**: Licensed under the **GNU Affero General Public License v3 (AGPL-3.0)**.
+*   **Commercial**: For closed-source commercial applications and proprietary integrations.
+*   **Enterprise**: Custom support, SLA, and feature prioritization for large-scale deployments.
+
+Contact [contact@tentrilliontriangles.com] for commercial and enterprise inquiries.

@@ -44,7 +44,7 @@ val pipe = BedrockPipe()
     .setJsonOutput("""{"answer": "string", "confidence": 0.0}""")
     
     // Set system prompt (merged mode activates automatically)
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
 
 val response = pipe.execute("Find customer John Doe and tell me his status")
 ```

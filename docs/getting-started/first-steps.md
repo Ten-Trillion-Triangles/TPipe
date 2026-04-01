@@ -1,6 +1,6 @@
 # First Steps - Hello World with TPipe
 
-> 💡 **Tip:** > 💡 **Tip:** This guide walks you through creating your first TPipe application. Think of your first `Pipe` as connecting your main water line—once it's flowing, you can route it anywhere. Think of your first `Pipe` as connecting your main water line—once it's flowing, you can route it anywhere.
+> 💡 **Tip:** This guide walks you through creating your first TPipe application. Think of your first `Pipe` as connecting your main water line—once it's flowing, you can route it anywhere.
 
 ## Prerequisites
 
@@ -112,7 +112,7 @@ val pipe = BedrockPipe()
         }
     
     runBlocking {
-        pipe.generateText("Tell me a short story.")
+        pipe.generateText("Summarize these system logs: [2026-03-31 10:15:02] ERROR: Connection timeout in module 'auth-service'. [2026-03-31 10:15:05] INFO: Retrying connection...")
         println("\nDone!")
     }
 }

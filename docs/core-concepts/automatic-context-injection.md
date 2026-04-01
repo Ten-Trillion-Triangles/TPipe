@@ -193,7 +193,7 @@ The context **schema** is automatically injected into the system prompt in this 
 
 ```kotlin
 val pipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .pullGlobalContext()
     .autoInjectContext("The user prompt contains context data in the following schema format.")
     .setFooterPrompt("Always be concise and accurate.")
@@ -201,7 +201,7 @@ val pipe = BedrockPipe()
 
 **Final system prompt**:
 ```
-You are a helpful assistant.
+You are an automated security auditor responsible for identifying PII leakage in application logs.
 
 The user prompt contains context data in the following schema format.
 

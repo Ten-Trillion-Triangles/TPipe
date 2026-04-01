@@ -39,7 +39,7 @@ val pipe = BedrockPipe()
     .setRegion("us-west-2")
     .setMaxTokens(1000)
     .setTemperature(0.7)
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
 ```
 
 ## Basic Settings
@@ -76,16 +76,17 @@ The system prompt defines the AI's behavior and role:
 
 ```kotlin
 // Basic system prompt
-pipe.setSystemPrompt("You are a helpful assistant.")
+pipe.setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
 
 // Multi-line system prompt
 pipe.setSystemPrompt("""
-    You are a helpful AI assistant.
+    You are a manuscript orchestrator responsible for maintaining consistency 
+    across a multi-chapter technical document.
     
     Guidelines:
-    - Be concise and accurate
-    - Ask for clarification when needed
-    - Provide examples when helpful
+    - Ensure technical terms are used consistently
+    - Flag contradictions between chapters
+    - Maintain a formal, authoritative tone
 """.trimIndent())
 ```
 
@@ -93,40 +94,40 @@ pipe.setSystemPrompt("""
 
 ```kotlin
 // Set a name for this pipe instance (useful for debugging/tracing)
-pipe.setPipeName("my-chat-bot")
+pipe.setPipeName("security-auditor")
 ```
 
 ## Configuration Examples
 
-### Basic Chat Bot
+### Security Audit Agent
 
 ```kotlin
-val chatBot = BedrockPipe()
+val securityAuditor = BedrockPipe()
     .setModel("anthropic.claude-3-haiku-20240307-v1:0")
     .setRegion("us-west-2")
     .setMaxTokens(500)
     .setTemperature(0.7)
-    .setSystemPrompt("You are a friendly chat bot. Keep responses brief and helpful.")
-    .setPipeName("chat-bot")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
+    .setPipeName("security-auditor")
 ```
 
-### Creative Writing Assistant
+### Manuscript Orchestrator
 
 ```kotlin
-val writer = BedrockPipe()
+val orchestrator = BedrockPipe()
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
     .setRegion("us-west-2")
     .setMaxTokens(2000)
     .setTemperature(0.9)  // Higher temperature for creativity
     .setSystemPrompt("""
-        You are a creative writing assistant.
+        You are a manuscript orchestrator.
         Help users with:
-        - Story ideas and plot development
-        - Character creation
-        - Writing style improvements
-        - Grammar and structure
+        - Maintaining consistency across chapters
+        - Character development tracking
+        - Technical terminology alignment
+        - Structural integrity of the document
     """.trimIndent())
-    .setPipeName("creative-writer")
+    .setPipeName("manuscript-orchestrator")
 ```
 
 ### Code Assistant
@@ -218,8 +219,8 @@ The system prompt undergoes several processing steps:
 ```kotlin
 // The final system prompt may include additional instructions
 // beyond what you explicitly set
-pipe.setSystemPrompt("You are helpful.")
-// Final prompt might be: "You are helpful.\n\n[JSON instructions]\n\n[Context instructions]"
+pipe.setSystemPrompt("You are an automated security auditor.")
+// Final prompt might be: "You are an automated security auditor.\n\n[JSON instructions]\n\n[Context instructions]"
 ```
 
 ## Conversation History Wrapping
@@ -232,7 +233,7 @@ Individual pipes can automatically wrap their outputs into conversation history 
 val conversationPipe = BedrockPipe()
     .setModel("anthropic.claude-3-haiku-20240307-v1:0")
     .setRegion("us-west-2")
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .wrapContentWithConverse()  // Enable automatic wrapping
 ```
 
@@ -290,7 +291,7 @@ For models that work better with conversation format than system prompts, you ca
 ```kotlin
 val conversationPipe = BedrockPipe()
     .setModel("anthropic.claude-3-haiku-20240307-v1:0")
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .copySystemToUserPrompt()  // Convert system prompt to conversation format
 ```
 

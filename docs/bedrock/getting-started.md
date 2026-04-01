@@ -134,7 +134,7 @@ fun main() {
     val pipe = BedrockPipe()
         .setRegion("us-east-1")
         .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
-        .setSystemPrompt("You are a helpful assistant.")
+        .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
         .setTemperature(0.7)
         .setMaxTokens(1000)
     
@@ -152,7 +152,7 @@ fun main() {
         val pipe = BedrockPipe()
             .setRegion("us-east-1")
             .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
-            .setSystemPrompt("You are a helpful assistant.")
+            .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
             .setTemperature(0.7)
             .setMaxTokens(1000)
         
@@ -282,7 +282,7 @@ val reservedPipe = BedrockPipe()
 - Routine document processing
 
 **Priority**
-- Customer-facing chatbots
+- Customer-facing autonomous systems
 - Real-time language translation
 - Mission-critical applications
 - Time-sensitive workflows
@@ -334,7 +334,7 @@ import com.TTT.Context.ContextWindow
 val pipe = BedrockPipe()
     .setRegion("us-east-1")
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
-    .setSystemPrompt("You are a knowledgeable assistant with access to context.")
+    .setSystemPrompt("You are a Manuscript Orchestrator responsible for cross-referencing archival data.")
     .pullGlobalContext()
     .autoInjectContext("Use the provided context to answer questions accurately.")
 
@@ -363,7 +363,7 @@ val pipe = BedrockPipe()
         identifier = "abc123def456",  // Your guardrail ID from AWS Console
         version = "1"                  // Version number or "DRAFT"
     )
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
 
 runBlocking {
     pipe.init()

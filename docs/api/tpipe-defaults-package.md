@@ -365,7 +365,7 @@ data class ReasoningSettings(
     var reasoningMethod: ReasoningMethod = ReasoningMethod.StructuredCot,
     var depth: ReasoningDepth = ReasoningDepth.Med,
     var duration: ReasoningDuration = ReasoningDuration.Med,
-    var roleCharacter: String = "You are a helpful assistant.",
+    var roleCharacter: String = "You are an automated security auditor responsible for identifying PII leakage in application logs.",
     var reasoningInjector: ReasoningInjector = ReasoningInjector.SystemPrompt,
     var numberOfRounds: Int = 1,
     var focusPoints: MutableMap<Int, String> = mutableMapOf(),

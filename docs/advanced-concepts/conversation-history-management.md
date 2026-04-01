@@ -57,7 +57,7 @@ Ordered list of `ConverseData` entries. Adding an item that already exists (same
 
 ```kotlin
 val history = ConverseHistory()
-history.add(ConverseRole.system, MultimodalContent("You are a helpful assistant."))
+history.add(ConverseRole.system, MultimodalContent("You are an automated security auditor responsible for identifying PII leakage in application logs."))
 history.add(turn)
 ```
 
@@ -93,7 +93,7 @@ Individual pipes can automatically manage conversation history without manual co
 ```kotlin
 val conversationPipe = BedrockPipe()
     .setModel("anthropic.claude-3-haiku-20240307-v1:0")
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .wrapContentWithConverse()  // Enable automatic wrapping
 ```
 
@@ -130,7 +130,7 @@ For models that work better with conversation format than system prompts:
 
 ```kotlin
 val conversationPipe = BedrockPipe()
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .copySystemToUserPrompt()  // Convert to conversation format
 ```
 

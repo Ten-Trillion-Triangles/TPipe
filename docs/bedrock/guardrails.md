@@ -74,7 +74,7 @@ val pipe = BedrockPipe()
         identifier = "abc123def456",  // Your guardrail ID
         version = "1"                  // Version number or "DRAFT"
     )
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
 
 runBlocking {
     pipe.init()
@@ -222,7 +222,7 @@ val pipe = BedrockPipe()
     .setRegion("us-east-1")
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
     .setGuardrail("abc123def456", "1")
-    .setSystemPrompt("You are a helpful assistant.")
+    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
 
 runBlocking {
     pipe.init()
@@ -485,7 +485,7 @@ val pipe = BedrockPipe()
 ### 4. Use Different Guardrails for Different Use Cases
 
 ```kotlin
-// Strict guardrail for public-facing chatbot
+// Strict guardrail for public-facing autonomous system
 val publicPipe = BedrockPipe()
     .setGuardrail("strict-public-guardrail", "1")
 

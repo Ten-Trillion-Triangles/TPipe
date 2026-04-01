@@ -261,7 +261,7 @@ fun setupInferenceBinding() {
     val pipe = BedrockPipe()
         .setRegion("us-east-1")
         .setModel("amazon.nova-pro-v1:0")  // Uses bound profile automatically
-        .setSystemPrompt("You are a helpful assistant.")
+        .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     
     val result = runBlocking { pipe.execute("Hello world") }
 }
