@@ -2,11 +2,43 @@ package bedrockPipe
 
 import com.TTT.Util.semanticCompress
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SemanticCompressionLegendKeyingTest
 {
+    @Test
+    fun semanticCompressionTripsLegendAndKeysExpectedProperNouns()
+    {
+        val input = buildString {
+            repeat(6) {
+                append("Alice Johnson reviewed the launch notes for Project Atlas with Bob Smith. ")
+                append("Project Atlas needed Alice Johnson to confirm the launch notes before Bob Smith sent the update. ")
+            }
+        }.trim()
+
+        val result = semanticCompress(input)
+
+        assertTrue(result.legend.isNotBlank(), "The compressor should generate a legend for repeated proper nouns")
+        assertTrue(result.legend.startsWith("Legend:"), "The legend should use the expected header")
+        assertTrue(result.legendMap.isNotEmpty(), "The legend map should contain decoded proper nouns")
+        assertEquals("Alice Johnson", result.legendMap["AA"], "AA should decode to the first repeated proper noun")
+        assertEquals("Project Atlas", result.legendMap["AB"], "AB should decode to the second repeated proper noun")
+        assertTrue(
+            result.legend.contains("AA: Alice Johnson"),
+            "The formatted legend should include the Alice Johnson mapping"
+        )
+        assertTrue(
+            result.legend.contains("AB: Project Atlas"),
+            "The formatted legend should include the Project Atlas mapping"
+        )
+        assertTrue(
+            result.legendMap.values.containsAll(setOf("Alice Johnson", "Project Atlas")),
+            "The legend map should contain the expected proper nouns"
+        )
+    }
+
     @Test
     fun semanticCompressionKeysOnlyTrueProperNounsNotOrdinaryTitleCasedPhrases()
     {
