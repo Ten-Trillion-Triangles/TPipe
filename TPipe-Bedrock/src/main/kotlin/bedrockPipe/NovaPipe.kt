@@ -18,7 +18,6 @@ class NovaPipe : BedrockPipe()
 
     override suspend fun init(): Pipe 
     {
-        bedrockEnv.bindInferenceProfile("amazon.nova-pro-v1:0", "arn:aws:bedrock:us-east-2:521369004927:inference-profile/us.amazon.nova-pro-v1:0")
         return super.init()
     }
 }
