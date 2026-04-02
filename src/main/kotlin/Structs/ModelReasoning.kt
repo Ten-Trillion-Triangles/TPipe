@@ -467,6 +467,38 @@ data class LegendAnalysis(
 )
 
 /**
+ * Evidence evaluation for a single content hypothesis during the content identification reasoning phase.
+ *
+ * @param hypothesis A plausible interpretation of what the compressed content is or represents.
+ * @param supportingEvidence Textual evidence from the legend-expanded content that supports this hypothesis.
+ * @param contradictingEvidence Textual evidence from the legend-expanded content that contradicts this hypothesis.
+ * @param likelihood A qualitative likelihood rating for this hypothesis (e.g. "high", "medium", "low").
+ */
+@kotlinx.serialization.Serializable
+data class ContentHypothesisEvidence(
+    var hypothesis: String = "",
+    var supportingEvidence: List<String> = listOf(),
+    var contradictingEvidence: List<String> = listOf(),
+    var likelihood: String = ""
+)
+
+/**
+ * Structured reasoning phase that forces the model to enumerate, evaluate, and narrow down what the
+ * compressed content actually is before proceeding to task identification. This gate sits after legend
+ * expansion and before task identification so the model cannot jump to conclusions about the content.
+ *
+ * @param hypotheses All plausible interpretations of what the compressed content could be.
+ * @param evidenceAnalysis Per-hypothesis evidence evaluation with supporting and contradicting signals.
+ * @param selectedInterpretation The final conclusion about what the content is, backed by the evidence analysis.
+ */
+@kotlinx.serialization.Serializable
+data class ContentIdentification(
+    var hypotheses: List<String> = listOf(),
+    var evidenceAnalysis: List<ContentHypothesisEvidence> = listOf(),
+    var selectedInterpretation: String = ""
+)
+
+/**
  * Identification of the task the parent pipe is being asked to perform, extracted from the compressed content.
  *
  * @param taskDescription What the parent pipe is being asked to do.
@@ -498,7 +530,10 @@ data class DecompressionStrategy(
  * Response structure for the SemanticDecompression reasoning method.
  *
  * @param legendAnalysis The pipe's understanding of the legend mappings.
- * @param taskIdentification What the parent pipe is being asked to do.
+ * @param contentIdentification Structured reasoning about what the compressed content is, evaluated
+ * through hypothesis enumeration and evidence analysis before task identification.
+ * @param taskIdentification What the parent pipe is being asked to do. Serves as the conclusion
+ * of the content identification reasoning chain.
  * @param keyDataPoints Critical information extracted and decompressed from the prompt.
  * @param quoteSpans Quoted spans recovered exactly as written so surface-form fidelity stays visible.
  * @param restoredSentences Sentence-by-sentence reconstruction of the decompressed text.
@@ -509,6 +544,7 @@ data class DecompressionStrategy(
 @kotlinx.serialization.Serializable
 data class SemanticDecompressionResponse(
     var legendAnalysis: LegendAnalysis = LegendAnalysis(),
+    var contentIdentification: ContentIdentification = ContentIdentification(),
     var taskIdentification: TaskIdentification = TaskIdentification(),
     var keyDataPoints: List<String> = listOf(),
     var quoteSpans: List<String> = listOf(),
@@ -522,6 +558,33 @@ data class SemanticDecompressionResponse(
         if(legendAnalysis.mappings.isNotEmpty())
         {
             append("Legend mappings found: ${legendAnalysis.mappings.joinToString(", ")}. ")
+        }
+
+        //Emit content identification reasoning before task identification.
+        if(contentIdentification.hypotheses.isNotEmpty())
+        {
+            append("Content hypotheses considered: ${contentIdentification.hypotheses.joinToString("; ")}. ")
+        }
+
+        if(contentIdentification.evidenceAnalysis.isNotEmpty())
+        {
+            for(evidence in contentIdentification.evidenceAnalysis)
+            {
+                append("Hypothesis: ${evidence.hypothesis} [${evidence.likelihood}] - ")
+                if(evidence.supportingEvidence.isNotEmpty())
+                {
+                    append("supports: ${evidence.supportingEvidence.joinToString(", ")}; ")
+                }
+                if(evidence.contradictingEvidence.isNotEmpty())
+                {
+                    append("contradicts: ${evidence.contradictingEvidence.joinToString(", ")}; ")
+                }
+            }
+        }
+
+        if(contentIdentification.selectedInterpretation.isNotEmpty())
+        {
+            append("Selected interpretation: ${contentIdentification.selectedInterpretation}. ")
         }
 
         append("Task identified: ${taskIdentification.taskDescription}. ")
