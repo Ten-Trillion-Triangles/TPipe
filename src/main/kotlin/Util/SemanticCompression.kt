@@ -1,5 +1,6 @@
 package com.TTT.Util
 
+import com.TTT.Context.Dictionary
 import java.text.Normalizer
 
 /**
@@ -35,6 +36,9 @@ data class SemanticCompressionResult(
     val legendMap: Map<String, String>
 )
 
+private const val PARAGRAPH_MARKER = "¶"
+private val PARAGRAPH_BREAK_PATTERN = Regex("(?:(?:\\r?\\n[ \\t]*){2,}|(?:\\r?\\n)+\\t+)")
+
 /**
  * Builds the system-prompt prelude that teaches the model how to read a semantic-compressed prompt.
  *
@@ -56,6 +60,8 @@ fun buildSemanticDecompressionInstructions(): String
         |must be restored as closely as possible.
         |The compression removed common function words, common phrases, Unicode characters, and most punctuation
         |outside quoted text, while repeated proper nouns were replaced with short codes that must be expanded back.
+        |Paragraph breaks are represented with the pilcrow character `¶`; treat each pilcrow as a paragraph
+        |boundary and restore it as a blank line between paragraphs.
         |Use inference to restore omitted articles, conjunctions, prepositions, auxiliaries, and punctuation so the
         |final reconstruction matches the original meaning, sentence structure, and wording as closely as possible.
         |Do not leave the text compressed, and do not preserve the compressed style in the final output.
@@ -72,7 +78,7 @@ fun buildSemanticDecompressionInstructions(): String
         |8. Replace codes only in unquoted text.
         |9. Leave quoted text exactly as written.
         |10. Reconstruct the source sentence-by-sentence before you write the final restored content.
-        |11. Preserve paragraph boundaries whenever they can be recovered from the compressed text.
+        |11. Treat the pilcrow character `¶` as an explicit paragraph boundary and restore a blank line there.
         |12. Restore the prompt as faithfully as possible, not as a summary.
         |13. Do not invent unrelated meaning or rewrite quoted spans.
         |14. After the compressed prompt has been reconstructed, continue with the rest of the system prompt
@@ -245,6 +251,9 @@ private val COMMON_CAPITALIZED_SENTENCE_WORDS = setOf(
 )
 
 private val TOKEN_PATTERN = Regex("[A-Za-z0-9]+")
+private val COMMON_ENGLISH_WORDS: Set<String> by lazy {
+    Dictionary.words.map { it.lowercase() }.toSet()
+}
 
 private object SemanticCompressionLexicon
 {
@@ -412,17 +421,17 @@ fun semanticCompress(
         }
         .toMap()
 
-    var compressed = expandedContractions
-    compressed = replaceProperNouns(compressed, phraseToCode)
-    compressed = removeCommonPhrases(
-        compressed,
-        SemanticCompressionLexicon.buildPhrasePattern(allPhrases)
-    )
-    compressed = removeStopWords(
-        compressed,
-        stopWords
-    )
-    compressed = collapseWhitespace(removePunctuation(compressed))
+    val compressedParagraphs = splitParagraphBlocks(expandedContractions)
+        .mapNotNull { paragraph ->
+            compressParagraph(
+                paragraph = paragraph,
+                phraseToCode = phraseToCode,
+                stopWords = stopWords,
+                allPhrases = allPhrases
+            )
+        }
+
+    val compressed = compressedParagraphs.joinToString(" $PARAGRAPH_MARKER ")
 
     val restored = restoreQuotedSpans(compressed, quoteSpans)
     val legendMap = phraseToCode.entries.associate { (phrase, code) ->
@@ -435,6 +444,38 @@ fun semanticCompress(
         legend = legendText,
         legendMap = legendMap
     )
+}
+
+private fun splitParagraphBlocks(input: String): List<String>
+{
+    return PARAGRAPH_BREAK_PATTERN.split(input)
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+}
+
+private fun compressParagraph(
+    paragraph: String,
+    phraseToCode: Map<String, String>,
+    stopWords: Set<String>,
+    allPhrases: Collection<String>
+): String?
+{
+    if(paragraph.isBlank())
+    {
+        return null
+    }
+
+    var compressed = paragraph
+    compressed = replaceProperNouns(compressed, phraseToCode)
+    compressed = removeCommonPhrases(
+        compressed,
+        SemanticCompressionLexicon.buildPhrasePattern(allPhrases)
+    )
+    compressed = removeStopWords(
+        compressed,
+        stopWords
+    )
+    return collapseWhitespace(removePunctuation(compressed))
 }
 
 private fun maskQuotedSpans(
@@ -704,7 +745,18 @@ private fun collectProperNounCandidates(
             val lowerPhrase = phrase.lowercase()
             val repeatedEnough = candidate.count >= properNounReplacementThreshold(phrase)
             val isValidProperNoun = candidate.seenNotAtSentenceStart
+            val capitalizedEverywhere = appearsCapitalizedEverywhere(
+                input = input,
+                phrase = phrase,
+                connectorSet = connectorSet
+            )
+            val hasNonCommonEnglishToken = phraseHasNonCommonEnglishToken(
+                phrase = phrase,
+                connectorSet = connectorSet
+            )
             repeatedEnough && isValidProperNoun && 
+                capitalizedEverywhere &&
+                hasNonCommonEnglishToken &&
                 phrase !in commonCapitalizedSentenceWords &&
                 lowerPhrase !in PRONOUNS
         }
@@ -895,6 +947,29 @@ private fun isProperNounToken(
         token.firstOrNull()?.isUpperCase() == true
 }
 
+private fun appearsCapitalizedEverywhere(
+    input: String,
+    phrase: String,
+    connectorSet: Set<String>
+): Boolean
+{
+    val pattern = Regex("\\b${Regex.escape(phrase)}\\b", RegexOption.IGNORE_CASE)
+    val matches = pattern.findAll(input).toList()
+
+    if(matches.isEmpty())
+    {
+        return false
+    }
+
+    return matches.all { match ->
+        val tokens = match.value.split(Regex("\\s+")).filter { it.isNotBlank() }
+        tokens.all { token ->
+            val normalized = token.trim('\"', '\'', '“', '”', '‘', '’', ',', '.', '!', '?', ':', ';', ')', '(', '[', ']', '{', '}', '—', '-', '…')
+            normalized.lowercase() in connectorSet || normalized.firstOrNull()?.isUpperCase() == true
+        }
+    }
+}
+
 private fun toLegendCode(index: Int): String
 {
     val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -933,6 +1008,32 @@ private fun properNounReplacementThreshold(phrase: String): Int
         tokenCount == 3 -> 4
         tokenCount in 4..5 -> 3
         else -> 2
+    }
+}
+
+private fun phraseHasNonCommonEnglishToken(
+    phrase: String,
+    connectorSet: Set<String>
+): Boolean
+{
+    val tokens = phrase.split(Regex("\\s+")).filter { it.isNotBlank() }
+
+    if(tokens.size <= 2)
+    {
+        return true
+    }
+
+    return tokens.any { token ->
+        val normalized = token.trim('\"', '\'', '“', '”', '‘', '’', ',', '.', '!', '?', ':', ';', ')', '(', '[', ']', '{', '}', '—', '-', '…')
+        if(normalized.isBlank())
+        {
+            false
+        }
+        else
+        {
+            val lower = normalized.lowercase()
+            lower !in connectorSet && lower !in COMMON_ENGLISH_WORDS
+        }
     }
 }
 

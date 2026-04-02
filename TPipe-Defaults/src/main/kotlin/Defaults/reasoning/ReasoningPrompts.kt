@@ -328,8 +328,10 @@ object ReasoningPrompts
             6. Common English function words (stop words) are stripped: articles (a, an, the), pronouns,
                prepositions, auxiliaries, conjunctions, and discourse fillers (basically, literally,
                honestly, actually, etc.).
-            7. Punctuation is removed except colons (used in the legend format).
-            8. All whitespace is collapsed to single spaces.
+            7. Paragraph boundaries are preserved with the pilcrow character `¶`, which means "start a new
+               paragraph" when the prompt is reconstructed.
+            8. Punctuation is removed except colons (used in the legend format) and the pilcrow separator.
+            9. All other whitespace is collapsed to single spaces.
             
             YOUR DECOMPRESSION PROCESS:
             1. Read the legend block first. It starts with "Legend:" and contains "CODE: phrase" lines
@@ -338,22 +340,42 @@ object ReasoningPrompts
                code-to-phrase mappings.
             3. Scan the compressed body and expand all legend codes back to their original phrases.
                Only expand codes in unquoted text. Leave quoted spans exactly as written.
-            4. Identify what task the parent pipe is being asked to perform from the decompressed content.
-            5. Restore omitted function words, articles, conjunctions, prepositions, auxiliaries, and
+               Treat every `¶` as a paragraph break and restore the text with a blank line there.
+            4. CONTENT IDENTIFICATION GATE — Before identifying the task, you must reason about what
+               the expanded content actually is:
+               a. Enumerate all plausible interpretations of what this content could be (e.g. a system
+                  prompt, a user request, a technical document, a conversation transcript, code
+                  documentation, a data record, a narrative, etc.).
+               b. For each hypothesis, cite specific textual evidence from the legend-expanded content
+                  that supports it and any evidence that contradicts it.
+               c. Assign a likelihood rating (high, medium, low) to each hypothesis based on the
+                  weight of evidence.
+               d. Select the most likely interpretation and state your conclusion with justification.
+               You MUST complete this reasoning before proceeding to task identification.
+            5. Identify what task the parent pipe is being asked to perform based on your selected
+               content interpretation from step 4.
+            6. Restore omitted function words, articles, conjunctions, prepositions, auxiliaries, and
                punctuation using inference from the surrounding content words.
-            6. Reconstruct the source sentence-by-sentence before you write the final restored content.
-            7. Preserve paragraph boundaries whenever they are recoverable from the compressed text.
-            8. Preserve quoted spans exactly and surface them explicitly in the quoteSpans field.
-            9. Extract the key data points that are critical to the identified task.
-            10. If the task itself requires full decompression, produce a complete faithful restoration
+            7. Reconstruct the source sentence-by-sentence before you write the final restored content.
+            8. Preserve paragraph boundaries whenever they are recoverable from the compressed text,
+               especially the explicit `¶` marker.
+            9. Preserve quoted spans exactly and surface them explicitly in the quoteSpans field.
+            10. Extract the key data points that are critical to the identified task.
+            11. If the task itself requires full decompression, produce a complete faithful restoration
                 of the original text in the restoredContent field.
-            11. If the task is something else (analysis, summarization, etc.), produce a restoration of
+            12. If the task is something else (analysis, summarization, etc.), produce a restoration of
                 the task-relevant portions in restoredContent and capture the critical information in
                 keyDataPoints.
 
             OUTPUT SHAPE:
             - legendAnalysis: summarize the codes found and what they map to.
+            - contentIdentification: your structured reasoning about what the content is.
+              - hypotheses: list all plausible interpretations you considered.
+              - evidenceAnalysis: for each hypothesis, provide supportingEvidence, contradictingEvidence,
+                and a likelihood rating.
+              - selectedInterpretation: your final conclusion about what the content is.
             - taskIdentification: describe the task and whether full decompression is required.
+              This must follow from your contentIdentification conclusion.
             - keyDataPoints: capture the critical recovered facts.
             - quoteSpans: list quoted spans exactly as written.
             - restoredSentences: reconstruct the source sentence-by-sentence.
@@ -369,6 +391,9 @@ object ReasoningPrompts
             - Do not paraphrase when the original wording can be recovered from context.
             - When in doubt about a restoration, prefer the most natural reading that preserves the
               original meaning and the original sentence structure.
+            - You MUST complete the content identification gate (step 4) before task identification.
+              Do not jump directly to identifying the task without first reasoning about what the
+              content is through hypothesis enumeration and evidence evaluation.
         """.trimIndent()
     }
 
@@ -427,9 +452,9 @@ object ReasoningPrompts
 
             ReasoningMethod.SemanticDecompression -> when(depth)
             {
-                ReasoningDepth.Low -> "MANDATORY: Analyze the legend and identify the task with 3-5 total reasoning steps. Expand legend codes. Identify the core task only. Extract 2-3 key data points. Preserve quote spans. Reconstruct sentence-by-sentence with minimal supporting context."
-                ReasoningDepth.Med -> "MANDATORY: Analyze the legend, identify the task, and extract key data with 6-10 total reasoning steps. Expand all legend codes. Identify the task and its requirements. Extract 4-6 key data points. Preserve quote spans and paragraph boundaries. Reconstruct the text sentence-by-sentence with inferred function words."
-                ReasoningDepth.High -> "MANDATORY: Full decompression analysis with 10+ total reasoning steps. Expand all legend codes. Identify the task and all sub-requirements. Extract all key data points exhaustively. Preserve quote spans exactly. Attempt complete faithful restoration of the original text sentence-by-sentence and paragraph-by-paragraph with all inferred function words, punctuation, and syntax."
+                ReasoningDepth.Low -> "MANDATORY: Analyze the legend and identify the content with 3-5 total reasoning steps. Expand legend codes. Generate 2-3 hypotheses about what the content is, evaluate each briefly, and select the most likely interpretation. Identify the core task only. Extract 2-3 key data points. Preserve quote spans. Reconstruct sentence-by-sentence with minimal supporting context."
+                ReasoningDepth.Med -> "MANDATORY: Analyze the legend, reason about content identity, and extract key data with 6-10 total reasoning steps. Expand all legend codes. Generate 3-5 hypotheses about what the content could be, evaluate each with supporting and contradicting evidence, assign likelihood ratings, and select the most likely interpretation. Identify the task and its requirements. Extract 4-6 key data points. Preserve quote spans and paragraph boundaries. Reconstruct the text sentence-by-sentence with inferred function words."
+                ReasoningDepth.High -> "MANDATORY: Full decompression analysis with 10+ total reasoning steps. Expand all legend codes. Generate 5+ hypotheses about what the content could be, exhaustively evaluate each with all available supporting and contradicting evidence, assign likelihood ratings with detailed justification, and select the most likely interpretation with a thorough rationale. Identify the task and all sub-requirements. Extract all key data points exhaustively. Preserve quote spans exactly. Attempt complete faithful restoration of the original text sentence-by-sentence and paragraph-by-paragraph with all inferred function words, punctuation, and syntax."
             }
         }
     }
@@ -489,9 +514,9 @@ object ReasoningPrompts
 
             ReasoningMethod.SemanticDecompression -> when(duration)
             {
-                ReasoningDuration.Short -> "REQUIRED: Your reasoning output MUST be 40-60% of normal length. Concise legend analysis. Brief task identification. List key data points without elaboration. Preserve quote spans and sentence structure. Minimal restoration notes in decompressionStrategy."
-                ReasoningDuration.Med -> "REQUIRED: Your reasoning output MUST be 90-110% of normal length. Standard legend analysis with all mappings noted. Clear task identification with requirements. Key data points with context. Preserve quote spans, restoredSentences, and restoredParagraphs. Balanced restoration notes explaining inference choices."
-                ReasoningDuration.Long -> "REQUIRED: Your reasoning output MUST be 150-200% of normal length. Verbose legend analysis explaining what each mapping represents. Detailed task identification with all sub-requirements. Exhaustive key data points with full context. Explicitly reconstruct sentence-by-sentence and paragraph-by-paragraph. Comprehensive restoration notes justifying every inference and function word restoration."
+                ReasoningDuration.Short -> "REQUIRED: Your reasoning output MUST be 40-60% of normal length. Concise legend analysis. Brief content identification with hypotheses listed and a short justification for the selected interpretation. Brief task identification. List key data points without elaboration. Preserve quote spans and sentence structure. Minimal restoration notes in decompressionStrategy."
+                ReasoningDuration.Med -> "REQUIRED: Your reasoning output MUST be 90-110% of normal length. Standard legend analysis with all mappings noted. Content identification with each hypothesis evaluated using supporting and contradicting evidence and likelihood ratings. Clear task identification with requirements. Key data points with context. Preserve quote spans, restoredSentences, and restoredParagraphs. Balanced restoration notes explaining inference choices."
+                ReasoningDuration.Long -> "REQUIRED: Your reasoning output MUST be 150-200% of normal length. Verbose legend analysis explaining what each mapping represents. Exhaustive content identification with detailed evidence analysis per hypothesis, thorough likelihood justifications, and a comprehensive rationale for the selected interpretation. Detailed task identification with all sub-requirements. Exhaustive key data points with full context. Explicitly reconstruct sentence-by-sentence and paragraph-by-paragraph. Comprehensive restoration notes justifying every inference and function word restoration."
             }
         }
     }

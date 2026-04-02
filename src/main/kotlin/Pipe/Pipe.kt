@@ -4786,6 +4786,21 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         content.metadata["semanticCompressionLegend"] = compressionResult.legend
                         content.metadata["semanticCompressionLegendMap"] = compressionResult.legendMap
                         content.metadata["semanticCompressionTokenCost"] = userPromptTokenCost
+                        pipeMetadata["semanticCompressionApplied"] = true
+                        pipeMetadata["semanticCompressionLegend"] = compressionResult.legend
+                        pipeMetadata["semanticCompressionLegendMap"] = compressionResult.legendMap
+                        pipeMetadata["semanticCompressionTokenCost"] = userPromptTokenCost
+                        trace(
+                            TraceEventType.CONTEXT_PREPARED,
+                            TracePhase.CONTEXT_PREPARATION,
+                            content.deepCopy(),
+                            metadata = mapOf(
+                                "semanticCompressionApplied" to true,
+                                "semanticCompressionLegend" to compressionResult.legend,
+                                "semanticCompressionLegendMap" to compressionResult.legendMap,
+                                "semanticCompressionTokenCost" to userPromptTokenCost
+                            )
+                        )
                     }
                 }
 

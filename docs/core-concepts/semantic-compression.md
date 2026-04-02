@@ -12,7 +12,8 @@ LLM or probabilistic summarizer. It:
 - normalizes compressible text to ASCII
 - removes common function words and prompt filler phrases
 - replaces repeated proper nouns with 2-character codes that advance as `AA`, `AB`, `AC`, and so on
-- strips punctuation and syntactic noise except colons
+- preserves paragraph breaks with the pilcrow marker `¶`, including tab-indented lines that begin after a line break
+- strips punctuation and syntactic noise except colons and the pilcrow separator
 
 The built-in stop-word, phrase, connector, and sentence-filler tables are loaded from resource files under
 `src/main/resources/semantic-compression/`, so the lexicon can grow without turning the compressor into a
@@ -72,8 +73,8 @@ prelude at the very top of the rebuilt system prompt. That prelude tells the mod
 compressed using TPipe Semantic Compression, explains that the compressed text is meant to be reconstructed
 as closely as possible to the original intent and data, explains that the legend starts with `Legend:` and
 contains `code: phrase` lines until the first blank line, and instructs the model to read the legend first,
-expand the 2-character codes, restore omitted glue words and syntax as faithfully as possible, preserve quoted
-spans verbatim, and then continue with the rest of the system instructions.
+expand the 2-character codes, restore omitted glue words and syntax as faithfully as possible, treat `¶` as a
+paragraph break, preserve quoted spans verbatim, and then continue with the rest of the system instructions.
 
 The dedicated `ReasoningMethod.SemanticDecompression` path is the official nested reasoning implementation for
 that decompression work. The runtime injects the compression legend map into the reasoning pipe when this method
