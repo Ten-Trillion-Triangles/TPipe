@@ -1015,7 +1015,7 @@ open class BedrockPipe : Pipe()
      * This method contains all the shared logic for both generateText() and generateContent().
      * 
      * @param client The BedrockRuntimeClient instance
-     * @param requestedModelId The model identifier
+     * @param requestedModelId The original model identifier used for model-family format selection
      * @param fullPrompt The complete prompt to send to the model
      * @return MultimodalContent containing both text and reasoning
      */
@@ -1030,8 +1030,8 @@ open class BedrockPipe : Pipe()
         // Use unified result object
         var result = if(useConverseApi)
         {
-            // Converse API path
-            generateWithConverseApi(client, requestedModelId, fullPrompt)
+            // Converse API path — pass requestedModelId for format selection, targetModelId for the API call
+            generateWithConverseApi(client, requestedModelId, targetModelId, fullPrompt)
         }
         else
         {
@@ -1086,7 +1086,7 @@ open class BedrockPipe : Pipe()
         // Attempt streaming if enabled
         if(streamingEnabled)
         {
-            val streamingResult = executeInvokeStream(client, requestedModelId, requestJson)
+            val streamingResult = executeInvokeStream(client, targetModelId, requestJson)
             if(streamingResult != null)
             {
                 return streamingResult
@@ -3952,12 +3952,12 @@ put("system", if(enableCaching && cacheControl != null) {
      * @param prompt The formatted prompt text
      * @return Generated text response
      */
-    private suspend fun generateWithConverseApi(client: BedrockRuntimeClient, modelId: String, prompt: String): MultimodalContent
+    private suspend fun generateWithConverseApi(client: BedrockRuntimeClient, modelId: String, resolvedModelId: String, prompt: String): MultimodalContent
     {
         return try {
             val converseRequest = when
             {
-                modelId.contains("qwen") -> buildQwenConverseRequest(prompt, modelId)
+                modelId.contains("qwen") -> buildQwenConverseRequest(prompt, resolvedModelId)
                 isGlmModel(modelId) -> buildGlmConverseRequest(prompt)
                 modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(prompt)
                 modelId.contains("amazon.nova") -> buildNovaConverseRequest(prompt)
@@ -3968,7 +3968,8 @@ put("system", if(enableCaching && cacheControl != null) {
                 modelId.contains("cohere.command") -> buildCohereConverseRequest(prompt)
                 modelId.contains("meta.llama") -> buildLlamaConverseRequest(prompt)
                 modelId.contains("mistral") -> buildMistralConverseRequest(prompt)
-                modelId.contains("deepseek") -> buildDeepSeekConverseRequestObject(modelId, prompt)
+                modelId.contains("deepseek") -> buildDeepSeekConverseRequestObject(resolvedModelId, prompt)
+                modelId.contains("openai.gpt-oss") -> buildGptOssConverseRequest(resolvedModelId, prompt)
                 else -> buildGenericConverseRequest(prompt) // Fallback
             }
             
@@ -4094,11 +4095,11 @@ put("system", if(enableCaching && cacheControl != null) {
      * @param prompt User prompt text
      * @return ConverseRequest for the specified model or null if unsupported
      */
-    private fun buildConverseRequestForStreaming(modelId: String, prompt: String): ConverseRequest? {
+    private fun buildConverseRequestForStreaming(modelId: String, resolvedModelId: String, prompt: String): ConverseRequest? {
         return when {
-            modelId.contains("openai.gpt-oss") -> buildGptOssConverseRequest(modelId, prompt)
-            modelId.contains("deepseek" ) -> buildDeepSeekConverseRequestObject(modelId, prompt)
-            modelId.contains("qwen") -> buildQwenConverseRequest(prompt, modelId)
+            modelId.contains("openai.gpt-oss") -> buildGptOssConverseRequest(resolvedModelId, prompt)
+            modelId.contains("deepseek" ) -> buildDeepSeekConverseRequestObject(resolvedModelId, prompt)
+            modelId.contains("qwen") -> buildQwenConverseRequest(prompt, resolvedModelId)
             isGlmModel(modelId) -> buildGlmConverseRequest(prompt)
             modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(prompt)
             modelId.contains("amazon.nova") -> buildNovaConverseRequest(prompt)
@@ -4202,7 +4203,7 @@ put("system", if(enableCaching && cacheControl != null) {
 
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
               metadata = mapOf("apiType" to "DeepSeek ConverseAPI", "modelId" to modelId, "streaming" to false))
-        val converseResult = generateWithConverseApi(client, modelId, prompt)
+        val converseResult = generateWithConverseApi(client, modelId, modelId, prompt)
 
         if(converseResult.text.isEmpty() || converseResult.text.contains("SdkUnknown"))
         {
@@ -4244,7 +4245,7 @@ put("system", if(enableCaching && cacheControl != null) {
     ): String {
         if(streamingEnabled)
         {
-            val streamingRequest = buildConverseRequestForStreaming(modelId, prompt)
+            val streamingRequest = buildConverseRequestForStreaming(modelId, modelId, prompt)
             if(streamingRequest != null)
             {
                 val streamingResult = executeConverseStream(client, modelId, streamingRequest, "ConverseStream")
@@ -4257,7 +4258,7 @@ put("system", if(enableCaching && cacheControl != null) {
 
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
               metadata = mapOf("apiType" to "ConverseAPI", "modelId" to modelId, "streaming" to false))
-        val result = generateWithConverseApi(client, modelId, prompt)
+        val result = generateWithConverseApi(client, modelId, modelId, prompt)
         trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
               metadata = mapOf("responseLength" to result.text.length, "modelId" to modelId, "streaming" to false))
         return result.text
