@@ -41,7 +41,6 @@ everything
 everywhere
 fairly
 finally
-first
 frankly
 furthermore
 generally
@@ -141,19 +140,9 @@ gimme
 cuz
 shall
 ought
-need
 needs
 needed
-must
 might
-could
-should
-would
-re
-ve
-ll
-d
-m
 nt
 uh
 um
@@ -181,7 +170,6 @@ same
 some
 any
 either
-neither
 each
 every
 few

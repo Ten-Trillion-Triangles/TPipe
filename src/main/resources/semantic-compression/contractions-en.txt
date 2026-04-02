@@ -99,6 +99,5 @@ ain=am not
 em=them
 re=are
 ve=have
-d=would
 m=am
 nt=not
