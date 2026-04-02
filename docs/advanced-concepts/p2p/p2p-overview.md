@@ -71,7 +71,10 @@ val response = P2PRegistry.sendP2pRequest(request)
 
 ## Transport Support
 
-Currently only `Transport.Tpipe` (in-process) is implemented. HTTP, STDIO, and Python transports are planned but not yet available.
+P2P uses `Transport.Tpipe`, `Transport.Http`, and `Transport.Stdio`.
+
+`Transport.Python`, `Transport.Kotlin`, `Transport.JavaScript`, `Transport.Unknown`, and `Transport.Auto`
+are not used for P2P.
 
 ## When to Use P2P
 

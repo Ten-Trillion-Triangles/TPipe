@@ -201,18 +201,22 @@ when {
 }
 ```
 
-## Transport Limitations
+## Transport Support
 
-Currently only `Transport.Tpipe` (in-process) is supported. Remote transports will throw:
+P2PRegistry supports these transports:
+
+- `Transport.Tpipe`
+- `Transport.Http`
+- `Transport.Stdio`
 
 ```kotlin
-// This works
 P2PTransport(Transport.Tpipe, "local-agent")
-
-// These throw IllegalArgumentException
 P2PTransport(Transport.Http, "https://remote-agent")
 P2PTransport(Transport.Stdio, "/path/to/agent")
 ```
+
+`Transport.Python`, `Transport.Kotlin`, `Transport.JavaScript`, `Transport.Unknown`, and `Transport.Auto`
+are not used for P2P.
 
 ## Registry State
 
