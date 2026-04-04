@@ -23,11 +23,7 @@ class KotlinSecurityManager
         val warnings = mutableListOf<String>()
 
         validateImports(script, context, errors)
-        validateMemoryAccess(script, context, errors)
-        validateFileAccess(script, context, errors)
-        validateNetworkAccess(script, context, errors)
-        validateProcessExecution(script, context, errors)
-        validateReflection(script, context, errors)
+        validateGeneralSecurity(script, context, errors)
 
         return KotlinValidationResult(
             isValid = errors.isEmpty(),
@@ -38,12 +34,17 @@ class KotlinSecurityManager
 
     private fun validateImports(script: String, context: KotlinContext, errors: MutableList<String>)
     {
-        val importPattern = Regex("import\\s+([\\w.*]+)")
+        val importPattern = Regex("import\\s+([\\w.*]+)(?:\\s+as\\s+\\w+)?")
         val imports = importPattern.findAll(script).map { it.groupValues[1] }.toList()
 
-        if(context.allowedImports.isNotEmpty())
-        {
-            imports.forEach { import ->
+        val blockedImports = if(context.blockedImports.isNotEmpty())
+            context.blockedImports.toSet()
+        else
+            KotlinConstants.DANGEROUS_IMPORTS
+
+        imports.forEach { import ->
+            if(context.allowedImports.isNotEmpty())
+            {
                 val isAllowed = context.allowedImports.any { allowed ->
                     import == allowed || import.startsWith("$allowed.")
                 }
@@ -52,28 +53,21 @@ class KotlinSecurityManager
                     errors.add("Import '$import' is not allowed")
                 }
             }
-        }
-        else
-        {
-            val blockedImports = if(context.blockedImports.isNotEmpty())
-                context.blockedImports.toSet()
             else
-                KotlinConstants.DANGEROUS_IMPORTS
-
-            imports.forEach { import ->
+            {
                 val isBlocked = blockedImports.any { blocked ->
-                    import == blocked || import.startsWith("$blocked.")
+                    import == blocked || import.startsWith("$blocked.") ||
+                            (import.endsWith(".*") && blocked.startsWith(import.substringBeforeLast("*"))) ||
+                            (blocked.endsWith(".*") && import.startsWith(blocked.substringBeforeLast("*")))
                 }
                 if(isBlocked)
                 {
-                    errors.add("Import '$import' is not allowed")
+                    errors.add("Import '$import' is not allowed (blocked)")
                 }
             }
-        }
 
-        if(context.allowedPackages.isNotEmpty())
-        {
-            imports.forEach { import ->
+            if(context.allowedPackages.isNotEmpty())
+            {
                 val packageName = import.substringBeforeLast(".", "")
                 val isAllowed = context.allowedPackages.any { allowed ->
                     packageName.startsWith(allowed)
@@ -86,35 +80,32 @@ class KotlinSecurityManager
         }
     }
 
-    private fun validateMemoryAccess(script: String, context: KotlinContext, errors: MutableList<String>)
+    private fun validateGeneralSecurity(script: String, context: KotlinContext, errors: MutableList<String>)
     {
-        if(!context.allowTpipeIntrospection)
-        {
-            if(script.contains("PcpRegistry") || script.contains("PcpContext"))
+        // 1. Check for dangerous functions and qualified names
+        val dangerousItems = KotlinConstants.DANGEROUS_FUNCTIONS + KotlinConstants.DANGEROUS_IMPORTS
+
+        dangerousItems.forEach { item ->
+            val itemPattern = Regex("\\b${item.replace(".", "\\.")}\\b")
+            if(itemPattern.containsMatchIn(script))
             {
-                errors.add("TPipe introspection is disabled")
+                errors.add("Potentially dangerous usage of '$item'")
             }
         }
 
-        if(!context.allowHostApplicationAccess)
-        {
-            context.exposedBindings.keys.forEach { binding ->
-                if(script.contains(binding))
-                {
-                    errors.add("Host application access is disabled, cannot use binding '$binding'")
-                }
+        // 2. Check for dangerous patterns
+        KotlinConstants.DANGEROUS_PATTERNS.forEach { pattern ->
+            if(Regex(pattern).containsMatchIn(script))
+            {
+                errors.add("Dangerous pattern found: '$pattern'")
             }
         }
 
+        // 3. Conditional security based on context permissions
         if(!context.allowReflection)
         {
-            val reflectionPatterns = listOf("::class", "KClass", "java.lang.reflect", "Class.forName")
-            reflectionPatterns.forEach { pattern ->
-                if(script.contains(pattern))
-                {
-                    errors.add("Reflection is disabled")
-                    return
-                }
+            listOf("::class", "KClass", "java.lang.reflect", "kotlin.reflect").forEach { ref ->
+                if(script.contains(ref)) errors.add("Reflection is disabled: '$ref'")
             }
         }
 
@@ -125,62 +116,36 @@ class KotlinSecurityManager
                 errors.add("ClassLoader access is disabled")
             }
         }
-    }
 
-    private fun validateFileAccess(script: String, context: KotlinContext, errors: MutableList<String>)
-    {
-        val filePatterns = listOf("File(", "readText", "writeText", "delete(", "readBytes", "writeBytes")
-        val hasFileOperations = filePatterns.any { script.contains(it) }
-
-        if(hasFileOperations)
+        if(!context.allowTpipeIntrospection)
         {
-            if(!context.allowFileRead && !context.allowFileWrite && !context.allowFileDelete)
+            if(script.contains("PcpRegistry") || script.contains("PcpContext"))
             {
-                errors.add("File operations are disabled")
+                errors.add("TPipe introspection is disabled")
             }
         }
-    }
 
-    private fun validateNetworkAccess(script: String, context: KotlinContext, errors: MutableList<String>)
-    {
+        if(!context.allowFileRead && !context.allowFileWrite && !context.allowFileDelete)
+        {
+            val filePatterns = listOf("File(", "FileInputStream", "FileOutputStream", "FileReader", "FileWriter", "readText", "readLine", "readBytes")
+            filePatterns.forEach { p ->
+                if(script.contains(p)) errors.add("File access is restricted: '$p'")
+            }
+        }
+
         if(!context.allowNetworkAccess)
         {
-            val networkPatterns = listOf("Socket", "URL(", "HttpURLConnection", "ServerSocket")
-            networkPatterns.forEach { pattern ->
-                if(script.contains(pattern))
-                {
-                    errors.add("Network access is disabled")
-                    return
-                }
+            val networkPatterns = listOf("Socket", "URL(", "HttpURLConnection", "ServerSocket", "java.net")
+            networkPatterns.forEach { p ->
+                if(script.contains(p)) errors.add("Network access is restricted: '$p'")
             }
         }
-    }
 
-    private fun validateProcessExecution(script: String, context: KotlinContext, errors: MutableList<String>)
-    {
         if(!context.allowProcessExecution)
         {
-            val processPatterns = listOf("ProcessBuilder", "Runtime.getRuntime", "exec(")
-            processPatterns.forEach { pattern ->
-                if(script.contains(pattern))
-                {
-                    errors.add("Process execution is disabled")
-                    return
-                }
-            }
-        }
-    }
-
-    private fun validateReflection(script: String, context: KotlinContext, errors: MutableList<String>)
-    {
-        if(!context.allowReflection)
-        {
-            KotlinConstants.DANGEROUS_PATTERNS.forEach { pattern ->
-                if(Regex(pattern).containsMatchIn(script))
-                {
-                    errors.add("Pattern '$pattern' is not allowed (reflection disabled)")
-                    return
-                }
+            val processPatterns = listOf("ProcessBuilder", "Runtime.getRuntime", "exec(", "java.lang.Process")
+            processPatterns.forEach { p ->
+                if(script.contains(p)) errors.add("Process execution is restricted: '$p'")
             }
         }
     }
