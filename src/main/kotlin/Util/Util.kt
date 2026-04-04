@@ -1443,7 +1443,7 @@ fun getLowestContextWindowSize(pipes:  List<Pipe>) : Int
     for(pipe in pipes)
     {
         val pipeSettings = pipe.toPipeSettings()
-        val contextWindowSize = pipeSettings.contextWindowSize
+        val contextWindowSize = pipeSettings.contextWindowSize ?: Int.MAX_VALUE
         if(contextWindowSize < lowest)
         {
             lowest = contextWindowSize

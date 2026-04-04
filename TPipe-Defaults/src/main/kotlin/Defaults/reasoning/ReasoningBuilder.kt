@@ -160,7 +160,7 @@ object ReasoningBuilder
      * Alter the target pipe to have the reasoning defaults applied to it, turning it into a reasoning system
      * for llm's that don't natively support it.
      */
-    fun assignDefaults(settings: ReasoningSettings, pipeSettings: PipeSettings, targetPipe: Pipe)
+    fun assignDefaults(settings: ReasoningSettings, pipeSettings: PipeSettings?, targetPipe: Pipe)
     {
         var targetSystemPrompt = ""
 
@@ -248,25 +248,18 @@ object ReasoningBuilder
             }
         }
 
+        /**
+         * Copy settings over before the reasoning prompt is assembled so the reasoning pipe starts from the same
+         * baseline configuration as the caller's snapshot.
+         */
+        pipeSettings?.let { targetPipe.applyPipeSettings(it) }
+        targetPipe.requireJsonPromptInjection()
+
         //Assign our system prompt to order the pipe to reason/think.
         targetPipe.setSystemPrompt(targetSystemPrompt)
-
-        /**
-         * Copy settings over. This can be pre-assigned, or captured from a Pipe. Ideally this function will be called
-         * internally by another helper function that abstracts many of the steps we have to apply here.
-         */
-        targetPipe.setTemperature(pipeSettings.temperature)
-            .setTopP(pipeSettings.topP)
-            .setTopK(pipeSettings.topK)
-            .setMaxTokens(pipeSettings.maxTokens)
-            .setContextWindowSize(pipeSettings.contextWindowSize)
-            .requireJsonPromptInjection()
         
         // Apply token budget settings if provided
-        if(pipeSettings.tokenBudgetSettings != null)
-        {
-            targetPipe.setTokenBudget(pipeSettings.tokenBudgetSettings!!)
-        }
+        pipeSettings?.tokenBudgetSettings?.let { targetPipe.setTokenBudget(it) }
         // Type-safe JSON output using cast
         when(jsonOutputClass)
         {
@@ -347,7 +340,7 @@ object ReasoningBuilder
     fun reasonWithBedrock(
         bedrockConfig: BedrockConfiguration,
         reasoningSettings: ReasoningSettings,
-        pipeSettings: PipeSettings) : Pipe
+        pipeSettings: PipeSettings?) : Pipe
     {
         val bedrockPipe = createBedrockPipe(bedrockConfig)
         assignDefaults(reasoningSettings, pipeSettings, bedrockPipe)
@@ -370,7 +363,7 @@ object ReasoningBuilder
     fun reasonWithOllama(
         ollamaConfig: OllamaConfiguration,
         reasoningSettings: ReasoningSettings,
-        pipeSettings: PipeSettings) : Pipe
+        pipeSettings: PipeSettings?) : Pipe
     {
         val ollamaPipe = createOllamaPipe(ollamaConfig)
         assignDefaults(reasoningSettings, pipeSettings, ollamaPipe)

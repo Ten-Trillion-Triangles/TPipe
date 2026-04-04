@@ -6824,18 +6824,18 @@ abstract class Pipe : P2PInterface, ProviderInterface
             promptMode = promptMode,
             systemPrompt = systemPrompt,
             userPrompt = userPrompt,
-            multimodalInput = multimodalInput,
+            multimodalInput = multimodalInput.deepCopy(),
             jsonInput = jsonInput,
             jsonOutput = jsonOutput,
-            pcpContext = pcpContext,
+            pcpContext = pcpContext.deepCopy(),
             supportsNativeJson = supportsNativeJson,
             temperature = temperature,
             topP = topP,
             topK = topK,
             maxTokens = maxTokens,
             contextWindowSize = contextWindowSize,
-            contextWindow = contextWindow,
-            miniContextBank = miniContextBank,
+            contextWindow = contextWindow.deepCopy(),
+            miniContextBank = miniContextBank.deepCopy(),
             readFromGlobalContext = readFromGlobalContext,
             readFromPipelineContext = readFromPipelineContext,
             updatePipelineContextOnExit = updatePipelineContextOnExit,
@@ -6849,11 +6849,11 @@ abstract class Pipe : P2PInterface, ProviderInterface
             modelReasoningSettingsV2 = modelReasoningSettingsV2,
             modelReasoningSettingsV3 = modelReasoningSettingsV3,
             pageKey = pageKey,
-            pageKeyList = pageKeyList,
+            pageKeyList = pageKeyList.toMutableList(),
             contextWindowTruncation = contextWindowTruncation,
             truncateContextAsString = truncateContextAsString,
             repetitionPenalty = repetitionPenalty,
-            stopSequences = stopSequences,
+            stopSequences = stopSequences.toList(),
             multiplyWindowSizeBy = multiplyWindowSizeBy,
             countSubWordsInFirstWord = countSubWordsInFirstWord,
             favorWholeWords = favorWholeWords,
@@ -6865,8 +6865,91 @@ abstract class Pipe : P2PInterface, ProviderInterface
             tracingEnabled = tracingEnabled,
             pipeId = pipeId,
             currentPipelineId = currentPipelineId,
-            tokenBudgetSettings = tokenBudgetSettings
+            tokenBudgetSettings = tokenBudgetSettings?.deepCopy()
         )
+    }
+
+    /**
+     * Applies a detached pipe-settings snapshot to this pipe.
+     *
+     * The incoming settings are deep-copied first so the caller can reuse or mutate their snapshot after hydration
+     * without affecting this pipe.
+     *
+     * @param settings Snapshot of pipe configuration to copy into this pipe.
+     * @return This pipe for chaining.
+     */
+    fun applyPipeSettings(settings: PipeSettings): Pipe
+    {
+        val snapshot = settings.deepCopy()
+
+        snapshot.pipeName?.let { setPipeName(it) }
+        snapshot.provider?.let { setProvider(it) }
+        snapshot.model?.let { setModel(it) }
+        snapshot.promptMode?.let { setPromptMode(it) }
+
+        snapshot.supportsNativeJson?.let { supportsNativeJson = it }
+
+        snapshot.multimodalInput?.let { setMultimodalInput(it) }
+        snapshot.jsonInput?.let { setJsonInput(it) }
+        snapshot.jsonOutput?.let { setJsonOutput(it) }
+        snapshot.pcpContext?.let { setPcPContext(it) }
+        snapshot.systemPrompt?.let { setSystemPrompt(it) }
+        snapshot.userPrompt?.let { setUserPrompt(it) }
+
+        snapshot.temperature?.let { setTemperature(it) }
+        snapshot.topP?.let { setTopP(it) }
+        snapshot.topK?.let { setTopK(it) }
+        snapshot.maxTokens?.let { setMaxTokens(it) }
+        snapshot.contextWindowSize?.let { setContextWindowSize(it) }
+
+        snapshot.contextWindow?.let { contextWindow = it }
+        snapshot.miniContextBank?.let { miniContextBank = it }
+
+        snapshot.readFromGlobalContext?.let { readFromGlobalContext = it }
+        snapshot.readFromPipelineContext?.let { readFromPipelineContext = it }
+        snapshot.updatePipelineContextOnExit?.let { updatePipelineContextOnExit = it }
+        snapshot.autoInjectContext?.let { autoInjectContext = it }
+        snapshot.autoTruncateContext?.let { autoTruncateContext = it }
+        snapshot.emplaceLorebook?.let { emplaceLorebook = it }
+        snapshot.appendLoreBook?.let { appendLoreBook = it }
+        snapshot.loreBookFillMode?.let { loreBookFillMode = it }
+        snapshot.loreBookFillAndSplitMode?.let { loreBookFillAndSplitMode = it }
+        snapshot.useModelReasoning?.let { useModelReasoning = it }
+        snapshot.modelReasoningSettingsV2?.let { modelReasoningSettingsV2 = it }
+        snapshot.modelReasoningSettingsV3?.let { modelReasoningSettingsV3 = it }
+        snapshot.pageKey?.let { pageKey = it }
+        snapshot.pageKeyList?.let { pageKeyList = it.toMutableList() }
+        snapshot.contextWindowTruncation?.let { contextWindowTruncation = it }
+        snapshot.truncateContextAsString?.let { truncateContextAsString = it }
+        snapshot.repetitionPenalty?.let { repetitionPenalty = it }
+        snapshot.stopSequences?.let { stopSequences = it.toList() }
+        snapshot.multiplyWindowSizeBy?.let { multiplyWindowSizeBy = it }
+        snapshot.countSubWordsInFirstWord?.let { countSubWordsInFirstWord = it }
+        snapshot.favorWholeWords?.let { favorWholeWords = it }
+        snapshot.countOnlyFirstWordFound?.let { countOnlyFirstWordFound = it }
+        snapshot.splitForNonWordChar?.let { splitForNonWordChar = it }
+        snapshot.alwaysSplitIfWholeWordExists?.let { alwaysSplitIfWholeWordExists = it }
+        snapshot.countSubWordsIfSplit?.let { countSubWordsIfSplit = it }
+        snapshot.nonWordSplitCount?.let { nonWordSplitCount = it }
+        snapshot.pipeId?.let { pipeId = it }
+        snapshot.currentPipelineId?.let { currentPipelineId = it }
+
+        snapshot.tracingEnabled?.let {
+            if(it)
+            {
+                enableTracing()
+            }
+            else
+            {
+                disableTracing()
+                comprehensiveTokenTracking = false
+                pipeTokenUsage = TokenUsage()
+            }
+        }
+
+        snapshot.tokenBudgetSettings?.let { setTokenBudget(it) }
+
+        return this
     }
 
     /**
