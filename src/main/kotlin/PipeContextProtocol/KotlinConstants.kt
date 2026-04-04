@@ -12,19 +12,34 @@ object KotlinConstants
         "java.lang.ProcessBuilder",
         "java.lang.Runtime",
         "java.io.File",
+        "java.io.FileInputStream",
+        "java.io.FileOutputStream",
+        "java.io.FileReader",
+        "java.io.FileWriter",
+        "java.io.RandomAccessFile",
         "java.nio.file",
         "kotlin.io.path",
         "java.net.Socket",
-        "java.net.ServerSocket"
+        "java.net.ServerSocket",
+        "java.net.URL",
+        "java.net.HttpURLConnection",
+        "java.lang.reflect",
+        "kotlin.reflect"
     )
 
     /**
-     * Dangerous function calls that should be blocked by default.
+     * Dangerous function calls and property accesses that should be blocked by default.
      */
     val DANGEROUS_FUNCTIONS = setOf(
         "System.exit",
         "Runtime.getRuntime",
-        "Thread.stop"
+        "Thread.stop",
+        "Thread.suspend",
+        "Thread.resume",
+        "System.setProperty",
+        "System.setProperties",
+        "System.load",
+        "System.loadLibrary"
     )
 
     /**
@@ -32,7 +47,13 @@ object KotlinConstants
      */
     val DANGEROUS_PATTERNS = listOf(
         "Class.forName",
-        "Reflection",
-        "java.lang.reflect"
+        "\\.getDeclaredField",
+        "\\.getDeclaredMethod",
+        "\\.setAccessible",
+        "\\.newInstance",
+        "::class",
+        "KClass",
+        "ClassLoader",
+        "getClassLoader"
     )
 }

@@ -76,4 +76,3 @@ docs/licensing/dependency-audit.md
 gha-creds-*.json
 /.github/commands
 /.github/workflows
-aws/
