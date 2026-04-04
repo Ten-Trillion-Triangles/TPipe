@@ -1015,7 +1015,7 @@ open class BedrockPipe : Pipe()
      * This method contains all the shared logic for both generateText() and generateContent().
      * 
      * @param client The BedrockRuntimeClient instance
-     * @param requestedModelId The model identifier
+     * @param requestedModelId The original model identifier used for model-family format selection
      * @param fullPrompt The complete prompt to send to the model
      * @return MultimodalContent containing both text and reasoning
      */
@@ -1030,8 +1030,8 @@ open class BedrockPipe : Pipe()
         // Use unified result object
         var result = if(useConverseApi)
         {
-            // Converse API path
-            generateWithConverseApi(client, requestedModelId, fullPrompt)
+            // Converse API path — pass requestedModelId for format selection, targetModelId for the API call
+            generateWithConverseApi(client, requestedModelId, targetModelId, fullPrompt)
         }
         else
         {
@@ -1086,7 +1086,7 @@ open class BedrockPipe : Pipe()
         // Attempt streaming if enabled
         if(streamingEnabled)
         {
-            val streamingResult = executeInvokeStream(client, requestedModelId, requestJson)
+            val streamingResult = executeInvokeStream(client, targetModelId, requestJson)
             if(streamingResult != null)
             {
                 return streamingResult
@@ -2132,7 +2132,8 @@ put("system", if(enableCaching && cacheControl != null) {
 
         // Build the ConverseRequest with extracted configuration
         return ConverseRequest {
-            this.modelId = modelId
+            val targetModelId = modelId.ifEmpty { model }
+            this.modelId = targetModelId
             this.messages = messages
             if(systemBlocks.isNotEmpty())
             {
@@ -2219,7 +2220,7 @@ put("system", if(enableCaching && cacheControl != null) {
         }.toString()
     }
 
-    fun buildGlmConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest {
+    fun buildGlmConverseRequest(contentBlocks: List<ContentBlock>, modelId: String = ""): ConverseRequest {
         val messages = mutableListOf<Message>()
         messages.add(Message {
             role = ConversationRole.User
@@ -2241,7 +2242,8 @@ put("system", if(enableCaching && cacheControl != null) {
         val requestedModelId = getRequestedModelId()
 
         return ConverseRequest {
-            this.modelId = model
+            val targetModelId = modelId.ifEmpty { model }
+            this.modelId = targetModelId
             this.messages = messages
             if(systemBlocks.isNotEmpty()) this.system = systemBlocks
 
@@ -2264,8 +2266,8 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
-    private fun buildGlmConverseRequest(prompt: String): ConverseRequest {
-        return buildGlmConverseRequest(listOf(ContentBlock.Text(prompt)))
+    private fun buildGlmConverseRequest(prompt: String, modelId: String = ""): ConverseRequest {
+        return buildGlmConverseRequest(listOf(ContentBlock.Text(prompt)), modelId)
     }
 
     private fun anyToJsonElement(value: Any?): JsonElement? {
@@ -2564,7 +2566,8 @@ put("system", if(enableCaching && cacheControl != null) {
         } else emptyList()
 
         return ConverseRequest {
-            this.modelId = modelId
+            val targetModelId = modelId.ifEmpty { model }
+            this.modelId = targetModelId
             this.messages = messages
             if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             inferenceConfig = InferenceConfiguration {
@@ -2987,7 +2990,7 @@ put("system", if(enableCaching && cacheControl != null) {
      * @param prompt The formatted prompt text
      * @return ConverseRequest for Claude models
      */
-    fun buildClaudeConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
+    fun buildClaudeConverseRequest(contentBlocks: List<ContentBlock>, modelId: String = ""): ConverseRequest
     {
         val messages = mutableListOf<Message>()
         
@@ -3001,7 +3004,8 @@ put("system", if(enableCaching && cacheControl != null) {
         } else emptyList()
         
         return ConverseRequest {
-            this.modelId = model
+            val targetModelId = modelId.ifEmpty { model }
+            this.modelId = targetModelId
             this.messages = messages
             if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             
@@ -3037,8 +3041,8 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
-    private fun buildClaudeConverseRequest(prompt: String): ConverseRequest {
-        return buildClaudeConverseRequest(listOf(ContentBlock.Text(prompt)))
+    private fun buildClaudeConverseRequest(prompt: String, modelId: String = ""): ConverseRequest {
+        return buildClaudeConverseRequest(listOf(ContentBlock.Text(prompt)), modelId)
     }
 
     /**
@@ -3048,7 +3052,7 @@ put("system", if(enableCaching && cacheControl != null) {
      * @param prompt The formatted prompt text
      * @return ConverseRequest for Nova models
      */
-    fun buildNovaConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
+    fun buildNovaConverseRequest(contentBlocks: List<ContentBlock>, modelId: String = ""): ConverseRequest
     {
         val messages = mutableListOf<Message>()
         
@@ -3090,11 +3094,11 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
-    private fun buildNovaConverseRequest(prompt: String): ConverseRequest {
-        return buildNovaConverseRequest(listOf(ContentBlock.Text(prompt)))
+    private fun buildNovaConverseRequest(prompt: String, modelId: String = ""): ConverseRequest {
+        return buildNovaConverseRequest(listOf(ContentBlock.Text(prompt)), modelId)
     }
 
-    fun buildMiniMaxConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
+    fun buildMiniMaxConverseRequest(contentBlocks: List<ContentBlock>, modelId: String = ""): ConverseRequest
     {
         val messages = mutableListOf<Message>()
         
@@ -3143,8 +3147,8 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
-    private fun buildMiniMaxConverseRequest(prompt: String): ConverseRequest {
-        return buildMiniMaxConverseRequest(listOf(ContentBlock.Text(prompt)))
+    private fun buildMiniMaxConverseRequest(prompt: String, modelId: String = ""): ConverseRequest {
+        return buildMiniMaxConverseRequest(listOf(ContentBlock.Text(prompt)), modelId)
     }
 
     private data class NovaReasoningConfig(val json: JsonObject, val map: Map<String, Any>)
@@ -3366,7 +3370,7 @@ put("system", if(enableCaching && cacheControl != null) {
     /**
      * Builds Converse request for Moonshot Kimi models with tool, system, and PCP setup.
      */
-    fun buildKimiConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest {
+    fun buildKimiConverseRequest(contentBlocks: List<ContentBlock>, modelId: String = ""): ConverseRequest {
         val messages = mutableListOf<Message>()
         messages.add(Message {
             role = ConversationRole.User
@@ -3413,8 +3417,8 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
-    private fun buildKimiConverseRequest(prompt: String): ConverseRequest {
-        return buildKimiConverseRequest(listOf(ContentBlock.Text(prompt)))
+    private fun buildKimiConverseRequest(prompt: String, modelId: String = ""): ConverseRequest {
+        return buildKimiConverseRequest(listOf(ContentBlock.Text(prompt)), modelId)
     }
 
     private fun buildKimiAdditionalModelRequestFieldsJson(
@@ -3588,7 +3592,7 @@ put("system", if(enableCaching && cacheControl != null) {
      * @param prompt The formatted prompt text
      * @return ConverseRequest for Titan models
      */
-    fun buildTitanConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
+    fun buildTitanConverseRequest(contentBlocks: List<ContentBlock>, modelId: String = ""): ConverseRequest
     {
         val messages = mutableListOf<Message>()
         
@@ -3602,7 +3606,8 @@ put("system", if(enableCaching && cacheControl != null) {
         } else emptyList()
         
         return ConverseRequest {
-            this.modelId = model
+            val targetModelId = modelId.ifEmpty { model }
+            this.modelId = targetModelId
             this.messages = messages
             if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             
@@ -3626,8 +3631,8 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
-    private fun buildTitanConverseRequest(prompt: String): ConverseRequest {
-        return buildTitanConverseRequest(listOf(ContentBlock.Text(prompt)))
+    private fun buildTitanConverseRequest(prompt: String, modelId: String = ""): ConverseRequest {
+        return buildTitanConverseRequest(listOf(ContentBlock.Text(prompt)), modelId)
     }
 
     /**
@@ -3636,7 +3641,7 @@ put("system", if(enableCaching && cacheControl != null) {
      * @param prompt The formatted prompt text
      * @return ConverseRequest for AI21 models
      */
-    fun buildAI21ConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
+    fun buildAI21ConverseRequest(contentBlocks: List<ContentBlock>, modelId: String = ""): ConverseRequest
     {
         val messages = mutableListOf<Message>()
         
@@ -3646,7 +3651,8 @@ put("system", if(enableCaching && cacheControl != null) {
         })
         
         return ConverseRequest {
-            this.modelId = model
+            val targetModelId = modelId.ifEmpty { model }
+            this.modelId = targetModelId
             this.messages = messages
             
             inferenceConfig = InferenceConfiguration {
@@ -3685,8 +3691,8 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
-    private fun buildAI21ConverseRequest(prompt: String): ConverseRequest {
-        return buildAI21ConverseRequest(listOf(ContentBlock.Text(prompt)))
+    private fun buildAI21ConverseRequest(prompt: String, modelId: String = ""): ConverseRequest {
+        return buildAI21ConverseRequest(listOf(ContentBlock.Text(prompt)), modelId)
     }
 
     /**
@@ -3695,7 +3701,7 @@ put("system", if(enableCaching && cacheControl != null) {
      * @param prompt The formatted prompt text
      * @return ConverseRequest for Cohere models
      */
-    fun buildCohereConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
+    fun buildCohereConverseRequest(contentBlocks: List<ContentBlock>, modelId: String = ""): ConverseRequest
     {
         val messages = mutableListOf<Message>()
         
@@ -3705,7 +3711,8 @@ put("system", if(enableCaching && cacheControl != null) {
         })
         
         return ConverseRequest {
-            this.modelId = model
+            val targetModelId = modelId.ifEmpty { model }
+            this.modelId = targetModelId
             this.messages = messages
             
             inferenceConfig = InferenceConfiguration {
@@ -3730,8 +3737,8 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
-    private fun buildCohereConverseRequest(prompt: String): ConverseRequest {
-        return buildCohereConverseRequest(listOf(ContentBlock.Text(prompt)))
+    private fun buildCohereConverseRequest(prompt: String, modelId: String = ""): ConverseRequest {
+        return buildCohereConverseRequest(listOf(ContentBlock.Text(prompt)), modelId)
     }
 
     /**
@@ -3740,7 +3747,7 @@ put("system", if(enableCaching && cacheControl != null) {
      * @param prompt The formatted prompt text
      * @return ConverseRequest for Llama models
      */
-    fun buildLlamaConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
+    fun buildLlamaConverseRequest(contentBlocks: List<ContentBlock>, modelId: String = ""): ConverseRequest
     {
         val messages = mutableListOf<Message>()
         
@@ -3754,7 +3761,8 @@ put("system", if(enableCaching && cacheControl != null) {
         } else emptyList()
         
         return ConverseRequest {
-            this.modelId = model
+            val targetModelId = modelId.ifEmpty { model }
+            this.modelId = targetModelId
             this.messages = messages
             if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             
@@ -3778,8 +3786,8 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
-    private fun buildLlamaConverseRequest(prompt: String): ConverseRequest {
-        return buildLlamaConverseRequest(listOf(ContentBlock.Text(prompt)))
+    private fun buildLlamaConverseRequest(prompt: String, modelId: String = ""): ConverseRequest {
+        return buildLlamaConverseRequest(listOf(ContentBlock.Text(prompt)), modelId)
     }
 
     /**
@@ -3788,7 +3796,7 @@ put("system", if(enableCaching && cacheControl != null) {
      * @param prompt The formatted prompt text
      * @return ConverseRequest for Mistral models
      */
-    fun buildMistralConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
+    fun buildMistralConverseRequest(contentBlocks: List<ContentBlock>, modelId: String = ""): ConverseRequest
     {
         val messages = mutableListOf<Message>()
         
@@ -3802,7 +3810,8 @@ put("system", if(enableCaching && cacheControl != null) {
         } else emptyList()
         
         return ConverseRequest {
-            this.modelId = model
+            val targetModelId = modelId.ifEmpty { model }
+            this.modelId = targetModelId
             this.messages = messages
             if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             
@@ -3827,8 +3836,8 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
-    private fun buildMistralConverseRequest(prompt: String): ConverseRequest {
-        return buildMistralConverseRequest(listOf(ContentBlock.Text(prompt)))
+    private fun buildMistralConverseRequest(prompt: String, modelId: String = ""): ConverseRequest {
+        return buildMistralConverseRequest(listOf(ContentBlock.Text(prompt)), modelId)
     }
 
     /**
@@ -3838,7 +3847,7 @@ put("system", if(enableCaching && cacheControl != null) {
      * @param prompt The formatted prompt text
      * @return ConverseRequest using generic format
      */
-    fun buildGenericConverseRequest(contentBlocks: List<ContentBlock>): ConverseRequest
+    fun buildGenericConverseRequest(contentBlocks: List<ContentBlock>, modelId: String = ""): ConverseRequest
     {
         val messages = mutableListOf<Message>()
         
@@ -3852,7 +3861,8 @@ put("system", if(enableCaching && cacheControl != null) {
         } else emptyList()
         
         return ConverseRequest {
-            this.modelId = model
+            val targetModelId = modelId.ifEmpty { model }
+            this.modelId = targetModelId
             this.messages = messages
             if(systemBlocks.isNotEmpty()) this.system = systemBlocks
             
@@ -3868,8 +3878,8 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
-    private fun buildGenericConverseRequest(prompt: String): ConverseRequest {
-        return buildGenericConverseRequest(listOf(ContentBlock.Text(prompt)))
+    private fun buildGenericConverseRequest(prompt: String, modelId: String = ""): ConverseRequest {
+        return buildGenericConverseRequest(listOf(ContentBlock.Text(prompt)), modelId)
     }
 
     /**
@@ -3952,24 +3962,25 @@ put("system", if(enableCaching && cacheControl != null) {
      * @param prompt The formatted prompt text
      * @return Generated text response
      */
-    private suspend fun generateWithConverseApi(client: BedrockRuntimeClient, modelId: String, prompt: String): MultimodalContent
+    private suspend fun generateWithConverseApi(client: BedrockRuntimeClient, modelId: String, resolvedModelId: String, prompt: String): MultimodalContent
     {
         return try {
             val converseRequest = when
             {
-                modelId.contains("qwen") -> buildQwenConverseRequest(prompt, modelId)
-                isGlmModel(modelId) -> buildGlmConverseRequest(prompt)
-                modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(prompt)
-                modelId.contains("amazon.nova") -> buildNovaConverseRequest(prompt)
-                modelId.contains("minimax") -> buildMiniMaxConverseRequest(prompt)
-                isKimiModel(modelId) -> buildKimiConverseRequest(prompt)
-                modelId.contains("amazon.titan") -> buildTitanConverseRequest(prompt)
-                modelId.contains("ai21.j2") -> buildAI21ConverseRequest(prompt)
-                modelId.contains("cohere.command") -> buildCohereConverseRequest(prompt)
-                modelId.contains("meta.llama") -> buildLlamaConverseRequest(prompt)
-                modelId.contains("mistral") -> buildMistralConverseRequest(prompt)
-                modelId.contains("deepseek") -> buildDeepSeekConverseRequestObject(modelId, prompt)
-                else -> buildGenericConverseRequest(prompt) // Fallback
+                modelId.contains("qwen") -> buildQwenConverseRequest(prompt, resolvedModelId)
+                isGlmModel(modelId) -> buildGlmConverseRequest(prompt, resolvedModelId)
+                modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(prompt, resolvedModelId)
+                modelId.contains("amazon.nova") -> buildNovaConverseRequest(prompt, resolvedModelId)
+                modelId.contains("minimax") -> buildMiniMaxConverseRequest(prompt, resolvedModelId)
+                isKimiModel(modelId) -> buildKimiConverseRequest(prompt, resolvedModelId)
+                modelId.contains("amazon.titan") -> buildTitanConverseRequest(prompt, resolvedModelId)
+                modelId.contains("ai21.j2") -> buildAI21ConverseRequest(prompt, resolvedModelId)
+                modelId.contains("cohere.command") -> buildCohereConverseRequest(prompt, resolvedModelId)
+                modelId.contains("meta.llama") -> buildLlamaConverseRequest(prompt, resolvedModelId)
+                modelId.contains("mistral") -> buildMistralConverseRequest(prompt, resolvedModelId)
+                modelId.contains("deepseek") -> buildDeepSeekConverseRequestObject(resolvedModelId, prompt)
+                modelId.contains("openai.gpt-oss") -> buildGptOssConverseRequest(resolvedModelId, prompt)
+                else -> buildGenericConverseRequest(prompt, resolvedModelId) // Fallback
             }
             
             // Check for streaming first
@@ -4094,20 +4105,20 @@ put("system", if(enableCaching && cacheControl != null) {
      * @param prompt User prompt text
      * @return ConverseRequest for the specified model or null if unsupported
      */
-    private fun buildConverseRequestForStreaming(modelId: String, prompt: String): ConverseRequest? {
+    private fun buildConverseRequestForStreaming(modelId: String, resolvedModelId: String, prompt: String): ConverseRequest? {
         return when {
-            modelId.contains("openai.gpt-oss") -> buildGptOssConverseRequest(modelId, prompt)
-            modelId.contains("deepseek" ) -> buildDeepSeekConverseRequestObject(modelId, prompt)
-            modelId.contains("qwen") -> buildQwenConverseRequest(prompt, modelId)
-            isGlmModel(modelId) -> buildGlmConverseRequest(prompt)
-            modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(prompt)
-            modelId.contains("amazon.nova") -> buildNovaConverseRequest(prompt)
-            modelId.contains("amazon.titan") -> buildTitanConverseRequest(prompt)
-            modelId.contains("ai21.j2") -> buildAI21ConverseRequest(prompt)
-            modelId.contains("cohere.command") -> buildCohereConverseRequest(prompt)
-            modelId.contains("meta.llama") -> buildLlamaConverseRequest(prompt)
-            modelId.contains("mistral") -> buildMistralConverseRequest(prompt)
-            else -> buildGenericConverseRequest(prompt)
+            modelId.contains("openai.gpt-oss") -> buildGptOssConverseRequest(resolvedModelId, prompt)
+            modelId.contains("deepseek" ) -> buildDeepSeekConverseRequestObject(resolvedModelId, prompt)
+            modelId.contains("qwen") -> buildQwenConverseRequest(prompt, resolvedModelId)
+            isGlmModel(modelId) -> buildGlmConverseRequest(prompt, resolvedModelId)
+            modelId.contains("anthropic.claude") -> buildClaudeConverseRequest(prompt, resolvedModelId)
+            modelId.contains("amazon.nova") -> buildNovaConverseRequest(prompt, resolvedModelId)
+            modelId.contains("amazon.titan") -> buildTitanConverseRequest(prompt, resolvedModelId)
+            modelId.contains("ai21.j2") -> buildAI21ConverseRequest(prompt, resolvedModelId)
+            modelId.contains("cohere.command") -> buildCohereConverseRequest(prompt, resolvedModelId)
+            modelId.contains("meta.llama") -> buildLlamaConverseRequest(prompt, resolvedModelId)
+            modelId.contains("mistral") -> buildMistralConverseRequest(prompt, resolvedModelId)
+            else -> buildGenericConverseRequest(prompt, resolvedModelId)
         }
     }
 
@@ -4202,7 +4213,7 @@ put("system", if(enableCaching && cacheControl != null) {
 
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
               metadata = mapOf("apiType" to "DeepSeek ConverseAPI", "modelId" to modelId, "streaming" to false))
-        val converseResult = generateWithConverseApi(client, modelId, prompt)
+        val converseResult = generateWithConverseApi(client, modelId, modelId, prompt)
 
         if(converseResult.text.isEmpty() || converseResult.text.contains("SdkUnknown"))
         {
@@ -4244,7 +4255,7 @@ put("system", if(enableCaching && cacheControl != null) {
     ): String {
         if(streamingEnabled)
         {
-            val streamingRequest = buildConverseRequestForStreaming(modelId, prompt)
+            val streamingRequest = buildConverseRequestForStreaming(modelId, modelId, prompt)
             if(streamingRequest != null)
             {
                 val streamingResult = executeConverseStream(client, modelId, streamingRequest, "ConverseStream")
@@ -4257,7 +4268,7 @@ put("system", if(enableCaching && cacheControl != null) {
 
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
               metadata = mapOf("apiType" to "ConverseAPI", "modelId" to modelId, "streaming" to false))
-        val result = generateWithConverseApi(client, modelId, prompt)
+        val result = generateWithConverseApi(client, modelId, modelId, prompt)
         trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
               metadata = mapOf("responseLength" to result.text.length, "modelId" to modelId, "streaming" to false))
         return result.text
@@ -4426,7 +4437,8 @@ put("system", if(enableCaching && cacheControl != null) {
 
         // Create the streaming invoke request
         val request = InvokeModelWithResponseStreamRequest {
-            this.modelId = modelId
+            val targetModelId = modelId.ifEmpty { model }
+            this.modelId = targetModelId
             body = requestJson.toByteArray()
             contentType = "application/json"
             accept = "application/json"
