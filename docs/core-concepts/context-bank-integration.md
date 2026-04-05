@@ -12,6 +12,7 @@
 - [Best Practices](#best-practices)
 
 ContextBank is TPipe's global context management system that enables context sharing across pipes, pipelines, and even separate applications. It acts as a centralized repository where context can be stored, retrieved, and shared between different processing stages.
+When you are working in blocking code or a simple coroutine path, use the `*WithMutex()` helpers. When you are inside coroutine-heavy code and want per-page concurrency, use the `*Suspend()` helpers.
 
 ## What is ContextBank?
 
@@ -42,34 +43,32 @@ contextWindow.contextElements.add("Important information to share")
 // Thread-safe storage (recommended for pipes)
 ContextBank.emplaceWithMutex("sessionData", contextWindow)
 
-// Direct storage (use only in single-threaded scenarios)
-ContextBank.emplace("sessionData", contextWindow)
 ```
 
 ### Retrieving Context
 ```kotlin
-// Get context by key (returns copy by default for safety)
-val retrievedContext = ContextBank.getContextFromBank("sessionData")
+// Get context by key from coroutine-heavy code (returns a copy by default)
+suspend fun retrieveContext(): ContextWindow {
+    return ContextBank.getContextFromBankSuspend("sessionData")
+}
 
-// Get direct reference (faster but less safe)
-val directReference = ContextBank.getContextFromBank("sessionData", copy = false)
-
-// Get the currently active banked context
-val activeContext = ContextBank.getBankedContextWindow()
-val safeCopy = ContextBank.copyBankedContextWindow()
+// Get the currently active banked context in suspend-safe code
+suspend fun getActiveContext(): ContextWindow {
+    return ContextBank.getBankedContextWindowSuspend()
+}
 ```
 
 ### Managing Active Context
 ```kotlin
 // Swap active context to a different stored context
-ContextBank.swapBank("sessionData")
-
-// Thread-safe swapping (recommended for concurrent use)
-ContextBank.swapBankWithMutex("sessionData")
+suspend fun swapActiveContext() {
+    ContextBank.swapBankWithMutex("sessionData")
+}
 
 // Update the active context
-ContextBank.updateBankedContext(newContextWindow)
-ContextBank.updateBankedContextWithMutex(newContextWindow)
+suspend fun updateActiveContext(newContextWindow: ContextWindow) {
+    ContextBank.updateBankedContextWithMutex(newContextWindow)
+}
 ```
 
 ## Common Usage Patterns
@@ -91,7 +90,7 @@ suspend fun storeChapterContent(content: MultimodalContent): MultimodalContent {
 ```kotlin
 // Retrieve stored context for validation or processing
 suspend fun validateWithStoredContext(content: MultimodalContent): Boolean {
-    val prevChapter = ContextBank.getContextFromBank("prevChapter")
+    val prevChapter = ContextBank.getContextFromBankSuspend("prevChapter")
     
     // Use stored context for validation logic
     if (prevChapter.contextElements.isNotEmpty()) {
@@ -107,8 +106,8 @@ suspend fun validateWithStoredContext(content: MultimodalContent): Boolean {
 ```kotlin
 // Merge contexts and update global state
 suspend fun mergeAndUpdateContext(content: MultimodalContent): MultimodalContent {
-    val prevChapter = ContextBank.getContextFromBank("prevChapter")
-    val mainBank = ContextBank.getContextFromBank("main")
+    val prevChapter = ContextBank.getContextFromBankSuspend("prevChapter")
+    val mainBank = ContextBank.getContextFromBankSuspend("main")
     
     // Merge previous chapter into main context
     mainBank.merge(prevChapter)
@@ -122,7 +121,7 @@ suspend fun mergeAndUpdateContext(content: MultimodalContent): MultimodalContent
 ```kotlin
 // Update stored context with corrected content
 suspend fun repairStoredContext(content: MultimodalContent): MultimodalContent {
-    val prevChapter = ContextBank.getContextFromBank("prevChapter")
+    val prevChapter = ContextBank.getContextFromBankSuspend("prevChapter")
     
     try {
         // Update existing content
@@ -162,7 +161,9 @@ val pipe = BedrockPipe()
 val pipe = BedrockPipe()
     .setValidatorFunction { content ->
         // Retrieve global context for validation
-        val storedContext = ContextBank.getContextFromBank("previousResults")
+        val storedContext = runBlocking {
+            ContextBank.getContextFromBankSuspend("previousResults")
+        }
         
         if (storedContext.contextElements.isNotEmpty()) {
             val previousResult = storedContext.contextElements[0]
@@ -195,7 +196,9 @@ val generationPipeline = Pipeline()
     .add(BedrockPipe()
         .setPreValidationFunction { contextWindow, content ->
             // Retrieve analysis results from global context
-            val analysisData = ContextBank.getContextFromBank("analysisData")
+            val analysisData = runBlocking {
+                ContextBank.getContextFromBankSuspend("analysisData")
+            }
             
             // Merge analysis context into current context
             contextWindow.merge(analysisData)
@@ -218,7 +221,7 @@ suspend fun initialProcessing(content: MultimodalContent): MultimodalContent {
 
 // Stage 2: Enhanced processing using Stage 1 results
 suspend fun enhancedProcessing(content: MultimodalContent): MultimodalContent {
-    val stage1Results = ContextBank.getContextFromBank("stage1Results")
+    val stage1Results = ContextBank.getContextFromBankSuspend("stage1Results")
     val enhancedWindow = ContextWindow()
     
     // Combine current content with previous stage results
@@ -236,20 +239,22 @@ suspend fun enhancedProcessing(content: MultimodalContent): MultimodalContent {
 fun startSession(sessionId: String) {
     val sessionContext = ContextWindow()
     sessionContext.contextElements.add("Session started: $sessionId")
-    ContextBank.emplace("session$sessionId", sessionContext)
-    ContextBank.swapBank("session$sessionId")
+    runBlocking {
+        ContextBank.emplaceWithMutex("session$sessionId", sessionContext)
+        ContextBank.swapBankWithMutex("session$sessionId")
+    }
 }
 
 // Add to current session
 suspend fun addToSession(content: String, sessionId: String) {
-    val sessionContext = ContextBank.getContextFromBank("session$sessionId")
+    val sessionContext = ContextBank.getContextFromBankSuspend("session$sessionId")
     sessionContext.contextElements.add(content)
     ContextBank.emplaceWithMutex("session$sessionId", sessionContext)
 }
 
 // Switch between sessions
-fun switchSession(sessionId: String) {
-    ContextBank.swapBank("session$sessionId")
+suspend fun switchSession(sessionId: String) {
+    ContextBank.swapBankWithMutex("session$sessionId")
 }
 ```
 
@@ -268,7 +273,7 @@ suspend fun processWithRecovery(content: MultimodalContent): MultimodalContent {
         
     } catch (e: Exception) {
         // Recover from backup if processing fails
-        val backup = ContextBank.getContextFromBank("backup")
+        val backup = ContextBank.getContextFromBankSuspend("backup")
         return MultimodalContent(text = backup.contextElements.firstOrNull() ?: "Recovery failed")
     }
 }
@@ -282,8 +287,10 @@ suspend fun processWithRecovery(content: MultimodalContent): MultimodalContent {
 ContextBank.emplaceWithMutex("key", contextWindow)
 ContextBank.swapBankWithMutex("key")
 
-// Avoid: Direct operations in concurrent environments
-ContextBank.emplace("key", contextWindow)  // Only safe in single-threaded code
+// Prefer suspend-safe operations in coroutine-heavy code
+suspend fun readKey(): ContextWindow {
+    return ContextBank.getContextFromBankSuspend("key")
+}
 ```
 
 ### 2. Use Descriptive Keys
@@ -299,7 +306,9 @@ ContextBank.emplaceWithMutex("temp", contextWindow)
 
 ### 3. Handle Missing Context Gracefully
 ```kotlin
-val context = ContextBank.getContextFromBank("optionalData")
+val context = runBlocking {
+    ContextBank.getContextFromBankSuspend("optionalData")
+}
 if (context.isEmpty()) {
     // Handle case where context doesn't exist
     initializeDefaultContext()
@@ -313,7 +322,9 @@ if (context.isEmpty()) {
 ```kotlin
 // Clear context when session ends
 fun endSession() {
-    ContextBank.clearBankedContext()
+    runBlocking {
+        ContextBank.updateBankedContextWithMutex(ContextWindow())
+    }
     // Or remove specific keys if needed
 }
 ```
