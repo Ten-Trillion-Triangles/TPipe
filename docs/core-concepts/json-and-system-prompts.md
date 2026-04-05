@@ -140,26 +140,31 @@ pipe.setJsonInput("""{"name": "string", "age": 0}""")
 
 ### Controlling JSON Injection Behavior
 
-#### Strip Non-JSON Text
+#### Safe Composition Helpers
 ```kotlin
-pipe.requireJsonPromptInjection(stripExternalText = true)
+pipe.setMiddlePrompt("""
+    Process the input data according to your core instructions.
+    Apply domain-specific knowledge and reasoning.
+    Ensure your analysis is thorough and accurate.
+""")
+
+pipe.setFooterPrompt("""
+    Important: Always validate your JSON output before responding.
+    If you cannot provide a complete response, indicate this in the appropriate fields.
+""")
 ```
 
-This is the explicit manual mode. It is not needed for normal schema configuration, only when you want TPipe to strip non-JSON text from the response after generation.
+These helpers stay inside TPipe's normal prompt-building flow. They add text at a fixed point in the system prompt, but they do not replace schema generation or the JSON injection contract.
 
-**stripExternalText = false** (default): Accepts responses like:
-```
-Here's my analysis:
-{"summary": "Document discusses...", "confidence": 0.85}
-I hope this helps!
-```
-
-**stripExternalText = true**: Automatically extracts only the JSON:
-```
-{"summary": "Document discusses...", "confidence": 0.85}
+#### Normal Schema Helpers
+```kotlin
+pipe.setJsonInput(AnalysisRequest("", "summary"))
+    .setJsonOutput(AnalysisResponse("", emptyList(), 0.0))
 ```
 
-#### Custom JSON Instructions
+Use the typed or `KClass` overloads when you want TPipe to keep generating the schema and handling the prompt-injection flow for you.
+
+#### Advanced Override Helpers
 ```kotlin
 pipe.setJsonInputInstructions("""
     The user provides structured data in JSON format.
@@ -167,20 +172,20 @@ pipe.setJsonInputInstructions("""
     Parse the data carefully and use all provided information.
 """)
 
-pipe.setMiddlePrompt("""
-    Process the input data according to your core instructions.
-    Apply domain-specific knowledge and reasoning.
-    Ensure your analysis is thorough and accurate.
-""")
-
 pipe.setJsonOutputInstructions("""
     Respond ONLY with valid JSON matching the specified schema.
     Do not include explanations, comments, or additional text.
     Ensure all required fields have appropriate values.
 """)
+
+pipe.requireJsonPromptInjection(stripExternalText = true)
 ```
 
-These helpers either replace generated JSON guidance or insert text between generated blocks. See **Helper Categories** above for the safe-versus-advanced split.
+These helpers replace or bypass generated behavior. Use them only when you specifically want to take over the default JSON guidance or response handling.
+
+- `setJsonInput(String)` and `setJsonOutput(String)` replace the generated schema text with caller-supplied JSON text.
+- `setMergedPcpJsonInstructions(...)` replaces the default merged PCP + JSON instruction block.
+- If you need to provide the schema text itself, use the string overloads instead of the typed/KClass overloads.
 
 ### What Gets Injected Into System Prompt
 
@@ -243,16 +248,6 @@ pipe.setJsonInput(inputSchema)           // 1. Configure JSON input
     .setSystemPrompt("Base instructions") // 6. Set system prompt (includes all JSON)
     .setFooterPrompt("Final notes")      // 7. Add footer
 ```
-
-### Footer Prompts
-```kotlin
-pipe.setFooterPrompt("""
-    Important: Always validate your JSON output before responding.
-    If you cannot provide a complete response, indicate this in the appropriate fields.
-""")
-```
-
-**Purpose**: Instructions that must appear at the very end of the system prompt, after all other injections.
 
 ### Dynamic System Prompt Updates
 ```kotlin
