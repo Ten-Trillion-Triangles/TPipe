@@ -14,6 +14,14 @@ TPipe provides sophisticated JSON handling through automatic schema generation a
 ### The Problem
 Most AI models don't natively support structured JSON input/output. You need to force models to understand JSON schemas and produce valid JSON responses through prompt engineering.
 
+### Helper Categories
+
+There are two very different kinds of helpers on this page:
+
+- **Safe composition helpers**: `setMiddlePrompt()` and `setFooterPrompt()` only place extra text at a specific point in the system prompt. They do not replace schema generation or prompt injection behavior.
+- **Normal schema helpers**: `setJsonInput(T/KClass)` and `setJsonOutput(T/KClass)` are the standard way to describe structured input and output. They keep TPipe's generated schema path intact.
+- **Advanced override helpers**: `setJsonInput(String)`, `setJsonOutput(String)`, `setJsonInputInstructions(...)`, `setJsonOutputInstructions(...)`, `setMergedPcpJsonInstructions(...)`, and `requireJsonPromptInjection(stripExternalText = true)` hand more responsibility back to the caller. Use them only when you specifically want to replace or bypass TPipe's generated guidance.
+
 ### How JSON Injection Works
 
 #### Step 1: Define Input/Output Schemas
@@ -43,6 +51,8 @@ pipe.setJsonInput(AnalysisRequest("", "summary"))
 - Creates example JSON that gets injected into the system prompt
 - Using the JSON injector helpers automatically disables native JSON mode under the hood
 - Call `requireJsonPromptInjection(stripExternalText = true)` only when you want the explicit strip mode
+
+**Recommended use**: Prefer the typed/KClass overloads unless you intentionally need to hand-write the JSON shape yourself.
 
 ### Automatic Schema Generation
 
@@ -135,6 +145,8 @@ pipe.setJsonInput("""{"name": "string", "age": 0}""")
 pipe.requireJsonPromptInjection(stripExternalText = true)
 ```
 
+This is the explicit manual mode. It is not needed for normal schema configuration, only when you want TPipe to strip non-JSON text from the response after generation.
+
 **stripExternalText = false** (default): Accepts responses like:
 ```
 Here's my analysis:
@@ -168,16 +180,19 @@ pipe.setJsonOutputInstructions("""
 """)
 ```
 
-**Middle Prompt**: Instructions that appear between JSON input schema and JSON output schema in the system prompt. Use this for:
-- Processing instructions that apply after understanding the input format
-- Domain-specific guidance that should come before output formatting rules
-- Reasoning or analysis instructions that bridge input and output
+`setJsonInputInstructions()` and `setJsonOutputInstructions()` are advanced overrides. They replace TPipe's default JSON input/output guidance, so you are taking responsibility for the wording that normally gets generated for you.
 
-**Use cases**:
-- Model-specific instruction tuning
-- Strict JSON compliance requirements
-- Custom validation rules
-- Processing workflow guidance
+Use them when you need:
+- model-specific wording that the defaults don't express well
+- a stricter contract than the generated text provides
+- custom validation or formatting rules
+
+`setMiddlePrompt()` is different. It is a safe insertion point, not an override. It simply places extra text between the input and output schema blocks.
+
+**Use cases for `setMiddlePrompt()`**:
+- processing instructions that apply after understanding the input format
+- domain-specific guidance that should come before output formatting rules
+- reasoning or analysis instructions that bridge input and output
 
 ### What Gets Injected Into System Prompt
 
@@ -208,6 +223,8 @@ Always validate your JSON output before responding.
 ```
 
 This happens automatically when you call `setSystemPrompt()` or `applySystemPrompt()`.
+
+`setFooterPrompt()` is part of that safe composition flow. It appends extra text after all the generated JSON and protocol blocks have already been assembled.
 
 ## System Prompt Configuration
 
@@ -263,6 +280,17 @@ pipe.setJsonInput(newInputSchema)
 ```
 
 **applySystemPrompt()**: Reconstructs the complete system prompt with current JSON schemas and other components.
+
+### Advanced Overrides
+
+The following helpers are powerful because they replace the normal generated path instead of just adding to it:
+
+- `setJsonInput(String)` and `setJsonOutput(String)` let you provide the schema text yourself.
+- `setJsonInputInstructions(...)` and `setJsonOutputInstructions(...)` replace the default input/output guidance text.
+- `setMergedPcpJsonInstructions(...)` replaces the merged PCP + JSON instruction block.
+- `requireJsonPromptInjection(stripExternalText = true)` turns on explicit prompt injection and response stripping.
+
+These are fine when you know exactly why you need them. They are not the default path for ordinary schema-driven prompting.
 
 ## Complete JSON Workflow Example
 
