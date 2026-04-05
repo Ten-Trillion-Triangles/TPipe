@@ -6,7 +6,7 @@ TPipe provides the managed substrate for AI agents, moving beyond simple library
 
 ## Different by Design: Substrate vs. Harness
 
-TPipe is a **Substrate**, not just a harness or a library. It provides the "municipal plumbing" that agents inhabit, managing memory, enforcing protocols, and governing resources.
+TPipe is a **Substrate**, not just a harness or a library. It provides the underlying structure and foundations that agents inhabit, managing memory, enforcing protocols, and governing resources.
 
 ### Traditional Harness
 ```mermaid
@@ -91,9 +91,9 @@ Explore how TPipe is used in the field for high-stakes automation:
 - [Manifold Setup Checklist](docs/containers/manifold.md#startup-checklist) - Required manager, worker, memory, and `init()` steps before startup
 - [Connector - Pipeline Branching](docs/containers/connector.md) - Conditional pipeline routing
 - [Splitter - Parallel Processing](docs/containers/splitter.md) - Concurrent pipeline execution
-- [Junction - Discussion and Workflow Harness](docs/containers/junction.md) - Multi-agent discussion, voting, and workflow handoff
+- [Junction - Discussion and Workflow Harness](docs/containers/junction.md) - Collaborative discussion, voting, and workflow handoff
 - [MultiConnector - Advanced Routing](docs/containers/multiconnector.md) - Complex routing patterns
-- [DistributionGrid - Load Balancing](docs/containers/distributiongrid.md) - Distributed processing
+- [DistributionGrid - Distributed Node Grid](docs/containers/distributiongrid.md) - Distributed node routing, discovery, and remote handoff
 - [Cross-Cutting Topics](docs/containers/cross-cutting-topics.md) - Shared container concepts
 
 ### 🔧 Advanced Concepts
