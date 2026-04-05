@@ -841,4 +841,4 @@ Reasoning pipes built with TPipe-Defaults ReasoningBuilder provide proven, struc
 
 Now that you understand chain-of-thought reasoning, learn about dynamic pipeline control:
 
-**→ [Pipeline Flow Control](pipeline-flow-control.md)** - Dynamic routing and conditional execution
+**→ [Streaming Callbacks](streaming-callbacks.md)** - Real-time token streaming with multiple callbacks

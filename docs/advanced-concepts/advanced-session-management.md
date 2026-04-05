@@ -146,7 +146,4 @@ To persist or restore session history, use `saveBuffer` and `loadBuffer`. Both r
 
 ## Next Steps
 
-Continue with:
-- [Basic PCP Usage](basic-pcp-usage.md) for standard stdio and HTTP patterns.
-- [Intermediate PCP Features](intermediate-pcp-features.md) to combine sessions with Python execution or native functions.
-- [Conversation History Management](conversation-history-management.md) to see how session output can be injected back into prompts.
+**→ [Conversation History Management](conversation-history-management.md)** - Managing conversation storage utilities used alongside PCP

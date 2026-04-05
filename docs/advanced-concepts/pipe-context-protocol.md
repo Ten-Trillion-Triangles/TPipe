@@ -247,8 +247,4 @@ Each executor applies dedicated safeguards on top of the base context:
 
 ## Next Steps
 
-- [Basic PCP Usage](basic-pcp-usage.md) for focused shell and HTTP examples.
-- [Intermediate PCP Features](intermediate-pcp-features.md) for Python execution, native function
-  binding, and advanced security configuration.
-- [Advanced Session Management](advanced-session-management.md) to learn how interactive stdio
-  sessions and buffers work.
+**→ [Basic PCP Usage](basic-pcp-usage.md)** - Getting started with PCP

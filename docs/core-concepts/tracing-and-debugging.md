@@ -877,4 +877,4 @@ For full TraceServer setup including server configuration, dashboard authenticat
 
 Now that you understand monitoring and troubleshooting, explore AWS Bedrock integration:
 
-**→ [Getting Started with TPipe-Bedrock](../bedrock/getting-started.md)** - Setup, configuration, and first steps
+**→ [Container Overview](../containers/container-overview.md)** - Introduction to TPipe containers

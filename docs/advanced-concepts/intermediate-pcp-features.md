@@ -318,6 +318,4 @@ instance across requests.
 
 ## Next Steps
 
-- [Advanced Session Management](advanced-session-management.md) dives into interactive stdio sessions and buffers.
-- [Conversation History Management](conversation-history-management.md) covers conversation storage utilities used alongside PCP.
-- [Tracing and Debugging](../core-concepts/tracing-and-debugging.md) explains how to trace tool calls through PCP using the built-in tracing system.
+**→ [PCP Kotlin and JavaScript Support](pcp-kotlin-javascript.md)** - Kotlin/JS scripting in PCP

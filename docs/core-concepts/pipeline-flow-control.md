@@ -349,4 +349,4 @@ Advanced flow control enables sophisticated pipeline behaviors that adapt dynami
 
 Now that you understand dynamic pipeline control, learn about monitoring and troubleshooting:
 
-**→ [Tracing and Debugging](tracing-and-debugging.md)** - Monitoring and troubleshooting
+**→ [Error Handling and Propagation](error-handling.md)** - Programmatic error capture and debugging

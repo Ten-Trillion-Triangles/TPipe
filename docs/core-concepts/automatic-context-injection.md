@@ -384,4 +384,4 @@ Automatic context injection eliminates manual prompt construction while ensuring
 
 Now that you understand seamless context integration, learn about global context management:
 
-**→ [ContextBank - Global Context Integration](context-bank-integration.md)** - Global context repository
+**→ [Semantic Compression - Prompt Token Reduction](semantic-compression.md)** - Legend-backed prompt compression for natural language

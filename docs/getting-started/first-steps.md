@@ -163,4 +163,4 @@ Use `bedrockEnv.bindInferenceProfile(modelId, arnProfile)` before creating the p
 
 Ready to dive deeper into TPipe? Continue with the core concepts:
 
-**→ [Pipe Class - Core Concepts](../core-concepts/pipe-class.md)** - Understanding the fundamental Pipe class
+**→ [Why TPipe? Architectural Deep Dive](../core-concepts/why-tpipe.md)** - The paradigm shift from libraries to substrates

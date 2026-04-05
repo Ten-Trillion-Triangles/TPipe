@@ -236,7 +236,4 @@ context window.
 
 ## Next Steps
 
-- Use conversation histories alongside PCP tools by pairing this guide with
-  [Basic PCP Usage](basic-pcp-usage.md) and [Intermediate PCP Features](intermediate-pcp-features.md).
-- Explore [Context and Tokens](../core-concepts/context-and-tokens.md) for deeper token-management strategies.
-- Enable tracing via [Tracing and Debugging](../core-concepts/tracing-and-debugging.md) to audit how conversation history is fed into provider prompts.
+**→ [Remote Memory](remote-memory.md)** - Distributed memory hosting and access
