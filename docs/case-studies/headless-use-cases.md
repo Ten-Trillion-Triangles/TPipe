@@ -2,7 +2,7 @@
 
 TPipe is designed for headless-first operations—systems that run autonomously, reliably, and without constant human supervision. These case studies illustrate how TPipe's architectural advantages translate into real-world system reliability.
 
-## TStep: The Agentic Substrate Debugger
+## TStep: The Agentic Step-Through Debugger For Coding Agents
 
 **The Challenge:** AI coding agents often struggle with debugging code. Without a way to interact with a live runtime, these agents are blind to the actual state of the program they are trying to repair. 
 
@@ -80,7 +80,7 @@ graph LR
 
 **The Outcome:** A coherent, 300-page document where the beginning and end are perfectly aligned. TPipe's managed memory reservoir allowed the agent to "remember" details across a horizon far larger than any single model's context window.
 
-## Autogenesis: The Persistent Game Master
+## Autogenesis: A Persistent Game Master
 
 **The Challenge:** Creating a living, autonomous simulation where multiple agents interact and evolve asynchronously. The simulation must maintain state integrity across concurrent updates and scale across multiple nodes.
 
