@@ -16,7 +16,7 @@ This created ambiguity, and the AI's behavior was undefined.
 
 **Merged mode** automatically activates when BOTH conditions are met:
 1. PCP tools are configured (stdio, tpipe functions, http, or python)
-2. JSON output schema is configured with `requireJsonPromptInjection()`
+2. JSON output schema is configured with `setJsonOutput(...)` or another JSON injector helper
 
 In merged mode, the AI receives unified instructions to return:
 - **JSON output** (REQUIRED) - matching your schema
@@ -40,7 +40,6 @@ val pipe = BedrockPipe()
     })
     
     // Configure JSON output
-    .requireJsonPromptInjection()
     .setJsonOutput("""{"answer": "string", "confidence": 0.0}""")
     
     // Set system prompt (merged mode activates automatically)
@@ -134,7 +133,7 @@ TPipe automatically detects which mode to use:
 | ❌ | ✅ | JSON-Only | JSON output only |
 | ❌ | ❌ | None | No special injection |
 
-> ℹ️ **Note:** `supportsNativeJson = true` disables JSON injection, preventing merged mode.
+> ℹ️ **Note:** JSON injector helpers automatically disable native JSON support under the hood. `requireJsonPromptInjection(stripExternalText = true)` is still available when you want explicit strip mode.
 
 ## Migration Guide
 
@@ -177,7 +176,7 @@ If you have existing pipes with both PCP and JSON output:
 
 3. **If you want old behavior (not recommended):**
    - Remove one of the configurations (either PCP or JSON output)
-   - Or set `supportsNativeJson = true` to disable JSON injection
+   - Or avoid JSON injector helpers if you want to keep native JSON mode enabled
 
 ## Advanced Usage
 
@@ -204,7 +203,6 @@ val pcpContext = PcpContext().apply {
 }
 
 pipe.setPcPContext(pcpContext)
-    .requireJsonPromptInjection()
     .setJsonOutput("""{"status": "string", "data": []}""")
     .setSystemPrompt("Process request")
 ```
@@ -268,7 +266,7 @@ pipe.setSystemPrompt("prompt")
 **Problem:** `extractJson()` returns null
 
 **Solutions:**
-- Ensure `requireJsonPromptInjection()` was called
+- Ensure a JSON injector helper was called
 - Check that `supportsNativeJson` is false
 - Verify your JSON schema is valid
 - Check AI model supports instruction following

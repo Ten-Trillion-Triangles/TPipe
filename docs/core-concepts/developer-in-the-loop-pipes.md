@@ -90,7 +90,6 @@ val contentValidator = BedrockPipe()
         
         Return JSON: {"valid": true/false, "issues": ["list of issues"], "score": 0-100}
     """)
-    .requireJsonPromptInjection()
     .setJsonOutput(ValidationResult("", false, emptyList(), 0))
 
 val publishingPipe = BedrockPipe()

@@ -16,14 +16,7 @@ Most AI models don't natively support structured JSON input/output. You need to 
 
 ### How JSON Injection Works
 
-#### Step 1: Enable JSON Prompt Injection
-```kotlin
-pipe.requireJsonPromptInjection()
-```
-
-**What this does**: Tells TPipe to use prompt injection instead of native API JSON support. TPipe will automatically add JSON instructions to your system prompt.
-
-#### Step 2: Define Input/Output Schemas
+#### Step 1: Define Input/Output Schemas
 ```kotlin
 @Serializable
 data class AnalysisRequest(
@@ -48,6 +41,8 @@ pipe.setJsonInput(AnalysisRequest("", "summary"))
 - TPipe automatically generates complete JSON schemas from your Kotlin classes
 - Includes all properties, default values, and type information
 - Creates example JSON that gets injected into the system prompt
+- Using the JSON injector helpers automatically disables native JSON mode under the hood
+- Call `requireJsonPromptInjection(stripExternalText = true)` only when you want the explicit strip mode
 
 ### Automatic Schema Generation
 
@@ -225,7 +220,7 @@ pipe.setSystemPrompt("""
 """)
 ```
 
-**Important**: Set JSON input/output BEFORE calling `setSystemPrompt()` so JSON instructions get properly injected.
+**Important**: Set JSON input/output BEFORE calling `setSystemPrompt()` so JSON instructions get properly injected. The JSON setter helpers now turn on prompt injection automatically, so you only need `requireJsonPromptInjection()` when you want the explicit strip mode.
 
 ### System Prompt Composition Order
 TPipe builds system prompts in this order:
@@ -303,7 +298,6 @@ data class Entity(
 val analysisPipe = BedrockPipe()
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
     .setRegion("us-west-2")
-    .requireJsonPromptInjection(stripExternalText = true)
     .setJsonInput(DocumentRequest(""))
     .setJsonInputInstructions("""
         Parse the document content and analysis parameters carefully.
@@ -399,21 +393,17 @@ data class IncompleteSchema(
 ### 2. JSON Injection Setup Order
 ```kotlin
 // Correct order
-pipe.requireJsonPromptInjection()        // 1. Enable injection
-    .setJsonInput(inputSchema)           // 2. Set input schema
-    .setJsonOutput(outputSchema)         // 3. Set output schema  
-    .setSystemPrompt("Instructions")     // 4. Set system prompt (includes JSON)
+pipe.setJsonInput(inputSchema)           // 1. Set input schema
+    .setJsonOutput(outputSchema)         // 2. Set output schema  
+    .setSystemPrompt("Instructions")     // 3. Set system prompt (includes JSON)
 
 // Wrong order - JSON instructions won't be included
 pipe.setSystemPrompt("Instructions")     // System prompt set too early
-    .requireJsonPromptInjection()        // JSON injection enabled after
+    .setJsonOutput(outputSchema)         // JSON injection enabled after
 ```
 
 ### 3. Model-Specific Considerations
 ```kotlin
-// Models that follow instructions well
-pipe.requireJsonPromptInjection(stripExternalText = false)
-
 // Models that add explanations despite instructions
 pipe.requireJsonPromptInjection(stripExternalText = true)
     .setJsonOutputInstructions("Output ONLY valid JSON. No explanations.")

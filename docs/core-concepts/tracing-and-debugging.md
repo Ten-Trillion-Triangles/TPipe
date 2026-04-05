@@ -384,7 +384,6 @@ val result = runBlocking { pipe.execute("What do you know about me?") }
 val pipe = BedrockPipe()
     .setSystemPrompt("Generate a JSON response.")
     .setJsonOutput(UserProfile("", "", 0))
-    .requireJsonPromptInjection()
     .setValidatorFunction { content ->
         val isValid = try {
             Json.decodeFromString<UserProfile>(content.text)

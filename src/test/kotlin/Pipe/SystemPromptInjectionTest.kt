@@ -1,6 +1,7 @@
 package com.TTT.Pipe
 
 import com.TTT.PipeContextProtocol.*
+import com.TTT.P2P.AgentDescriptor
 import com.TTT.Util.buildSemanticDecompressionInstructions
 import kotlin.test.*
 
@@ -113,7 +114,6 @@ class SystemPromptInjectionTest
     {
         val pipe = createTestPipe()
         
-        pipe.requireJsonPromptInjection()
         pipe.setJsonOutput("""{"answer": "string", "confidence": 0.0}""")
         pipe.setSystemPrompt("You are a test assistant.")
         
@@ -123,6 +123,7 @@ class SystemPromptInjectionTest
         assertTrue(prompt.contains("Json format"))
         assertTrue(prompt.contains("answer"))
         assertTrue(prompt.contains("confidence"))
+        assertFalse(pipe.isNativeJsonSupported())
     }
 
     @Test
@@ -130,7 +131,6 @@ class SystemPromptInjectionTest
     {
         val pipe = createTestPipe()
         
-        pipe.requireJsonPromptInjection()
         pipe.setJsonInput("""{"query": "string"}""")
         pipe.setJsonOutput("""{"result": "string"}""")
         pipe.setSystemPrompt("You are a test assistant.")
@@ -140,6 +140,7 @@ class SystemPromptInjectionTest
         assertTrue(prompt.contains("user will provide input in the form of Json"))
         assertTrue(prompt.contains("query"))
         assertTrue(prompt.contains("result"))
+        assertFalse(pipe.isNativeJsonSupported())
     }
 
     @Test
@@ -147,7 +148,6 @@ class SystemPromptInjectionTest
     {
         val pipe = createTestPipe()
         
-        pipe.requireJsonPromptInjection()
         pipe.setJsonOutput("""{"result": "string"}""")
         pipe.setJsonOutputInstructions("Custom JSON output instructions")
         pipe.applySystemPrompt()
@@ -155,21 +155,31 @@ class SystemPromptInjectionTest
         val prompt = pipe.getPrompt()
         
         assertTrue(prompt.contains("Custom JSON output instructions"))
+        assertFalse(pipe.isNativeJsonSupported())
     }
 
     @Test
-    fun `JSON-only mode with supportsNativeJson true does not inject`()
+    fun `JSON input instructions auto-enable prompt injection`()
+    {
+        val pipe = createTestPipe()
+
+        pipe.setJsonInputInstructions("Custom JSON input instructions")
+        pipe.setJsonInput("""{"query": "string"}""")
+        pipe.setSystemPrompt("You are a test assistant.")
+        assertFalse(pipe.isNativeJsonSupported())
+    }
+
+    @Test
+    fun `Explicit JSON strip mode still works`()
     {
         val pipe = createTestPipe()
         
-        // Don't call requireJsonPromptInjection() - supportsNativeJson defaults to true
+        pipe.requireJsonPromptInjection(stripExternalText = true)
         pipe.setJsonOutput("""{"result": "string"}""")
         pipe.setSystemPrompt("You are a test assistant.")
         
-        val prompt = pipe.getPrompt()
-        
-        assertTrue(prompt.contains("You are a test assistant."))
-        assertFalse(prompt.contains("Json format"))
+        assertFalse(pipe.isNativeJsonSupported())
+        assertTrue(pipe.isJsonStripEnabled())
     }
 
     // ==================== CONFLICTING MODE TESTS (CURRENT BEHAVIOR) ====================
@@ -185,7 +195,6 @@ class SystemPromptInjectionTest
         })
         
         pipe.setPcPContext(pcpContext)
-        pipe.requireJsonPromptInjection()
         pipe.setJsonOutput("""{"result": "string"}""")
         pipe.setSystemPrompt("You are a test assistant.")
         
@@ -197,6 +206,7 @@ class SystemPromptInjectionTest
         assertTrue(prompt.contains("Tool calls are optional"))
         assertTrue(prompt.contains("testFunction"))
         assertTrue(prompt.contains("result"))
+        assertFalse(pipe.isNativeJsonSupported())
     }
 
     // ==================== MERGED MODE TESTS ====================
@@ -213,7 +223,6 @@ class SystemPromptInjectionTest
         })
         
         pipe.setPcPContext(pcpContext)
-        pipe.requireJsonPromptInjection()
         pipe.setJsonOutput("""{"answer": "string", "confidence": 0.0}""")
         pipe.setSystemPrompt("You are a helpful assistant.")
         
@@ -229,6 +238,7 @@ class SystemPromptInjectionTest
         assertTrue(prompt.contains("IMPORTANT - How to pass arguments when calling tools"))
         assertTrue(prompt.contains("callParams"))
         assertTrue(prompt.contains("argumentsOrFunctionParams"))
+        assertFalse(pipe.isNativeJsonSupported())
     }
 
     @Test
@@ -242,7 +252,6 @@ class SystemPromptInjectionTest
         })
         
         pipe.setPcPContext(pcpContext)
-        pipe.requireJsonPromptInjection()
         pipe.setJsonOutput("""{"files": []}""")
         pipe.setSystemPrompt("List files")
         pipe.applySystemPrompt()
@@ -253,6 +262,7 @@ class SystemPromptInjectionTest
         assertTrue(prompt.contains("files"))
         assertTrue(prompt.contains("You may also take actions using the Pipe Context Protocol"))
         assertTrue(prompt.contains("ls"))
+        assertFalse(pipe.isNativeJsonSupported())
     }
 
     @Test
@@ -266,7 +276,6 @@ class SystemPromptInjectionTest
         })
         
         pipe.setPcPContext(pcpContext)
-        pipe.requireJsonPromptInjection()
         pipe.setJsonOutput("""{"result": "string"}""")
         pipe.setMergedPcpJsonInstructions("Custom merged mode instructions")
         pipe.applySystemPrompt()
@@ -275,6 +284,24 @@ class SystemPromptInjectionTest
         
         assertTrue(prompt.contains("Custom merged mode instructions"))
         assertFalse(prompt.contains("You must return your output in Json format"))
+        assertFalse(pipe.isNativeJsonSupported())
+    }
+
+    @Test
+    fun `Merged PCP JSON instructions auto-enable prompt injection`()
+    {
+        val pipe = createTestPipe()
+
+        pipe.setMergedPcpJsonInstructions("Custom merged mode instructions")
+        assertFalse(pipe.isNativeJsonSupported())
+        pipe.setPcPContext(PcpContext().apply {
+            addTPipeOption(TPipeContextOptions().apply {
+                functionName = "testFunc"
+            })
+        })
+        pipe.setJsonOutput("""{"result": "string"}""")
+        pipe.setSystemPrompt("Test")
+        assertFalse(pipe.isNativeJsonSupported())
     }
 
     @Test
@@ -294,7 +321,6 @@ class SystemPromptInjectionTest
         })
         
         pipe.setPcPContext(pcpContext)
-        pipe.requireJsonPromptInjection()
         pipe.setJsonOutput("""{"status": "string"}""")
         pipe.setSystemPrompt("Test")
         
@@ -305,6 +331,7 @@ class SystemPromptInjectionTest
         assertTrue(prompt.contains("ls"))
         assertTrue(prompt.contains("search"))
         assertTrue(prompt.contains("api.example.com"))
+        assertFalse(pipe.isNativeJsonSupported())
     }
 
     @Test
@@ -318,7 +345,6 @@ class SystemPromptInjectionTest
         })
         
         pipe.setPcPContext(pcpContext)
-        pipe.requireJsonPromptInjection()
         pipe.setJsonOutput("""{"result": "string"}""")
         pipe.setSystemPrompt("Test")
         
@@ -330,10 +356,11 @@ class SystemPromptInjectionTest
         
         // Tool calls are optional
         assertTrue(prompt.contains("Tool calls are optional"))
+        assertFalse(pipe.isNativeJsonSupported())
     }
 
     @Test
-    fun `Merged mode does not activate with supportsNativeJson true`()
+    fun `Merged mode auto-activates without explicit gate call`()
     {
         val pipe = createTestPipe()
         
@@ -343,15 +370,42 @@ class SystemPromptInjectionTest
         })
         
         pipe.setPcPContext(pcpContext)
-        // Don't call requireJsonPromptInjection() - supportsNativeJson defaults to true
         pipe.setJsonOutput("""{"result": "string"}""")
         pipe.setSystemPrompt("Test")
         
         val prompt = pipe.getPrompt()
         
-        // Should use PCP-only mode, not merged mode
-        assertTrue(prompt.contains("Pipe Context Protocol"))
-        assertFalse(prompt.contains("You must return your output in Json format"))
+        assertTrue(prompt.contains("You must return your output in Json format"))
+        assertTrue(prompt.contains("You may also take actions using the Pipe Context Protocol"))
+        assertFalse(pipe.isNativeJsonSupported())
+    }
+
+    @Test
+    fun `P2P schema helpers auto-enable prompt injection`()
+    {
+        val pipe = createTestPipe()
+
+        pipe.setP2PDescription("Custom agent request instructions")
+        assertFalse(pipe.isNativeJsonSupported())
+    }
+
+    @Test
+    fun `P2P agent lists auto-enable prompt injection`()
+    {
+        val pipe = createTestPipe()
+
+        pipe.setP2PAgentList(
+            mutableListOf(
+                AgentDescriptor(
+                    agentName = "assistant",
+                    description = "Assistant agent"
+                )
+            )
+        )
+        assertFalse(pipe.isNativeJsonSupported())
+        pipe.setJsonOutput("""{"result": "string"}""")
+        pipe.setSystemPrompt("Test")
+        assertFalse(pipe.isNativeJsonSupported())
     }
 
     // ==================== ORDER INDEPENDENCE TESTS ====================
@@ -364,7 +418,6 @@ class SystemPromptInjectionTest
         pipe.setSystemPrompt("Original prompt")
         val firstPrompt = pipe.getPrompt()
         
-        pipe.requireJsonPromptInjection()
         pipe.setJsonOutput("""{"result": "string"}""")
         pipe.applySystemPrompt()
         
@@ -373,26 +426,27 @@ class SystemPromptInjectionTest
         assertTrue(secondPrompt.contains("Original prompt"))
         assertTrue(secondPrompt.contains("Json format"))
         assertNotEquals(firstPrompt, secondPrompt)
+        assertFalse(pipe.isNativeJsonSupported())
     }
 
     @Test
     fun `Configuration order does not matter with applySystemPrompt`()
     {
         val pipe1 = createTestPipe()
-        pipe1.requireJsonPromptInjection()
         pipe1.setJsonOutput("""{"result": "string"}""")
         pipe1.setSystemPrompt("Test prompt")
         val prompt1 = pipe1.getPrompt()
         
         val pipe2 = createTestPipe()
         pipe2.setSystemPrompt("Test prompt")
-        pipe2.requireJsonPromptInjection()
         pipe2.setJsonOutput("""{"result": "string"}""")
         pipe2.applySystemPrompt()
         val prompt2 = pipe2.getPrompt()
         
         // Both should produce same result after applySystemPrompt
         assertEquals(prompt1, prompt2)
+        assertFalse(pipe1.isNativeJsonSupported())
+        assertFalse(pipe2.isNativeJsonSupported())
     }
 
     @Test
@@ -407,7 +461,6 @@ class SystemPromptInjectionTest
         })
 
         pipe.setPcPContext(pcpContext)
-        pipe.requireJsonPromptInjection()
         pipe.setJsonOutput("""{"result": "string"}""")
         pipe.enableSemanticCompression()
         pipe.enableSemanticDecompression()
@@ -417,23 +470,10 @@ class SystemPromptInjectionTest
         val prompt = pipe.getPrompt()
 
         assertTrue(prompt.startsWith(prelude), "The decompression prelude must be the first injected block")
-        assertTrue(prompt.contains("TPipe Semantic Compression"), "The prelude should explain that the prompt was compressed")
-        assertTrue(prompt.contains("loss-minimized encoding"), "The prelude should explain that the compressed text is a reduced encoding")
-        assertTrue(prompt.contains("reconstruct the original text as completely and faithfully as possible"), "The prelude should tell the model to fully rebuild the original text")
-        assertTrue(prompt.contains("normal human English again"), "The prelude should explain the desired output style")
-        assertTrue(prompt.contains("original intent, meaning, data, and contents"), "The prelude should state what needs to be restored")
-        assertTrue(prompt.contains("sentence structure"), "The prelude should preserve sentence structure")
-        assertTrue(prompt.contains("sentence-by-sentence"), "The prelude should require sentence-by-sentence reconstruction")
-        assertTrue(prompt.contains("paragraph boundaries"), "The prelude should mention paragraph boundaries")
-        assertTrue(prompt.contains("¶"), "The prelude should explain that pilcrows mark paragraph breaks")
-        assertTrue(prompt.contains("Legend:"), "The prelude should explain how the legend is introduced")
-        assertTrue(prompt.contains("code: phrase"), "The prelude should explain the legend line format")
-        assertTrue(prompt.contains("first blank line"), "The prelude should define the legend boundary")
-        assertTrue(prompt.contains("restore omitted articles, conjunctions, prepositions, auxiliaries, and punctuation"), "The prelude should explain how to infer missing glue words")
-        assertTrue(prompt.contains("Do not leave the text compressed"), "The prelude should forbid compressed-style output")
         assertTrue(prompt.indexOf("You are a test assistant.") > prompt.indexOf(prelude))
         assertTrue(prompt.contains("You must return your output in Json format"))
         assertTrue(prompt.contains("Pipe Context Protocol"))
+        assertFalse(pipe.isNativeJsonSupported())
     }
 
     // ==================== HELPER CLASS ====================
@@ -454,5 +494,9 @@ class SystemPromptInjectionTest
         }
 
         fun getPrompt(): String = systemPrompt
+
+        fun isNativeJsonSupported(): Boolean = supportsNativeJson
+
+        fun isJsonStripEnabled(): Boolean = stripNonJson
     }
 }

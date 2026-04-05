@@ -2165,6 +2165,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     inline fun <reified T> setJsonInput(json: T,senddefaults: Boolean = true): Pipe {
 
+        ensureJsonPromptInjectionEnabled()
         this.jsonInput = examplePromptFor(T::class)
         return this
     }
@@ -2176,6 +2177,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     fun setJsonInput(kclass: KClass<*>): Pipe
     {
+        ensureJsonPromptInjectionEnabled()
         this.jsonInput = examplePromptFor(kclass)
         return this
     }
@@ -2187,6 +2189,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * @return This Pipe object for method chaining
      */
     fun setJsonInput(json: String): Pipe {
+        ensureJsonPromptInjectionEnabled()
         this.jsonInput = json
         return this
     }
@@ -2201,6 +2204,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     fun setJsonInputInstructions(instructions: String) : Pipe
     {
+        ensureJsonPromptInjectionEnabled()
         jsonInputInstructions = instructions
         return this
     }
@@ -2215,6 +2219,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     inline fun <reified T> setJsonOutput(json: T): Pipe
     {
+        ensureJsonPromptInjectionEnabled()
         this.jsonOutput = examplePromptFor(T::class)
         return this
     }
@@ -2226,6 +2231,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     fun setJsonOutput(kclass: KClass<*>): Pipe
     {
+        ensureJsonPromptInjectionEnabled()
         this.jsonOutput = examplePromptFor(kclass)
         return this
     }
@@ -2239,6 +2245,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     fun setJsonOutput(json: String): Pipe
     {
+        ensureJsonPromptInjectionEnabled()
         this.jsonOutput = json
         return this
     }
@@ -2250,6 +2257,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     fun setJsonOutputInstructions(instructions: String) : Pipe
     {
+        ensureJsonPromptInjectionEnabled()
         this.jsonOutputInstructions = instructions
         return this
     }
@@ -2287,6 +2295,18 @@ abstract class Pipe : P2PInterface, ProviderInterface
         this.supportsNativeJson = false
         stripNonJson = stripExternalText
         return this
+    }
+
+    /**
+     * Enables prompt-injected JSON mode without changing non-JSON stripping behavior.
+     *
+     * Structured JSON and P2P injector helpers call this automatically so callers do not need to remember the
+     * explicit gate toggle for the common schema-driven path.
+     */
+    @PublishedApi
+    internal fun ensureJsonPromptInjectionEnabled()
+    {
+        supportsNativeJson = false
     }
 
 
@@ -4008,6 +4028,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     fun setMergedPcpJsonInstructions(instructions: String): Pipe
     {
+        ensureJsonPromptInjectionEnabled()
         mergedPcpJsonInstructions = instructions
         return this
     }
@@ -4062,6 +4083,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         if(agentList.isEmpty()) throw IllegalArgumentException("Agent list cannot be empty")
 
+        ensureJsonPromptInjectionEnabled()
         p2pAgentDescriptors = agentList
         return this
     }
@@ -4080,6 +4102,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     fun setP2PDescription(description: String) : Pipe
     {
+        ensureJsonPromptInjectionEnabled()
         p2pAgentRequestsDescription = description
         return this
     }

@@ -288,7 +288,7 @@ Sets multimodal input content (text and binary data).
 #### `setJsonInput(json: String): Pipe`
 Sets JSON input schema as string.
 
-**Behavior:** Triggers automatic prompt injection if `supportsNativeJson` is false. Schema is injected into system prompt when `applySystemPrompt()` is called.
+**Behavior:** Automatically disables native JSON mode and injects the schema into the system prompt when `applySystemPrompt()` is called.
 
 #### `setJsonInput<T>(json: T, senddefaults: Boolean = true): Pipe`
 Sets JSON input schema from Kotlin object.
@@ -303,12 +303,12 @@ Sets JSON input schema from KClass directly.
 #### `setJsonInputInstructions(instructions: String): Pipe`
 Sets custom instructions for JSON input handling that override the default input format explanation.
 
-**Behavior:** Replaces the default JSON input instructions that are injected into the system prompt when `applySystemPrompt()` is called. Use this to provide model-specific or domain-specific guidance on how to interpret the JSON input schema. If empty, uses TPipe's default input instructions.
+**Behavior:** Replaces the default JSON input instructions that are injected into the system prompt when `applySystemPrompt()` is called. This helper also disables native JSON mode so the input schema is injected as prompt text. Use this to provide model-specific or domain-specific guidance on how to interpret the JSON input schema. If empty, uses TPipe's default input instructions.
 
 #### `setJsonOutput(json: String): Pipe`
 Sets JSON output schema as string.
 
-**Behavior:** Triggers automatic prompt injection if `supportsNativeJson` is false. Schema is injected into system prompt when `applySystemPrompt()` is called.
+**Behavior:** Automatically disables native JSON mode and injects the schema into the system prompt when `applySystemPrompt()` is called.
 
 #### `setJsonOutput<T>(json: T): Pipe`
 Sets JSON output schema from Kotlin object.
@@ -321,12 +321,12 @@ Sets JSON output schema from KClass directly.
 #### `setJsonOutputInstructions(instructions: String): Pipe`
 Sets custom instructions for JSON output handling that override the default output format explanation.
 
-**Behavior:** Replaces the default JSON output instructions that are injected into the system prompt when `applySystemPrompt()` is called. Use this to provide specific formatting requirements, validation rules, or output constraints beyond the basic schema. If empty, uses TPipe's default output instructions.
+**Behavior:** Replaces the default JSON output instructions that are injected into the system prompt when `applySystemPrompt()` is called. This helper also disables native JSON mode so the output schema is injected as prompt text. Use this to provide specific formatting requirements, validation rules, or output constraints beyond the basic schema. If empty, uses TPipe's default output instructions.
 
 #### `requireJsonPromptInjection(stripExternalText: Boolean = false): Pipe`
 Forces JSON prompt injection for models without native JSON support.
 
-**Behavior:** Sets `supportsNativeJson = false` and optionally `stripNonJson = true`. When enabled, JSON schemas are injected as text instructions rather than using native API features.
+**Behavior:** Explicitly sets `supportsNativeJson = false` and optionally `stripNonJson = true`. JSON injector helpers call this behavior automatically for the common schema-driven path, but this method is still the way to opt into response stripping.
 
 ---
 

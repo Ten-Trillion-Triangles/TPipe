@@ -321,7 +321,6 @@ val pipe = BedrockPipe()
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
     .setSystemPrompt("Analyze technical documents and provide structured analysis.")
     .setJsonOutput(TechnicalAnalysis("", emptyList(), emptyList(), ""))
-    .requireJsonPromptInjection()
 
 val result = runBlocking { pipe.execute("Analyze this technical specification...") }
 val analysis = Json.decodeFromString<TechnicalAnalysis>(result.text)
