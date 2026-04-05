@@ -96,3 +96,6 @@ pipe.setGpuSettings(numGpu = 35) // Offload 35 layers to GPU
 | **Streaming** | Stream Handler | Ktor Async Client |
 | **Multimodal** | Base64 Images | Base64 Images |
 | **Context Management** | S3 / Managed | Local Memory |
+## Next Steps
+
+- [Pipe Class API](../api/pipe.md) - Continue into the core API reference.

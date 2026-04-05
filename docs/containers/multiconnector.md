@@ -195,3 +195,6 @@ class DocumentProcessingSystem {
 ---
 
 **Previous:** [← Connector](connector.md) | **Next:** [Splitter →](splitter.md)
+## Next Steps
+
+- [DistributionGrid - Distributed Node Grid](distributiongrid.md) - Continue into distributed routing and discovery.

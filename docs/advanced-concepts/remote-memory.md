@@ -490,3 +490,6 @@ suspend fun main()
 - [ContextLock API](../api/context-lock.md) - Lock management and security
 - [Memory Introspection](memory-introspection.md) - Agent memory access control
 - [P2P Overview](p2p/p2p-overview.md) - Agent-to-agent communication
+## Next Steps
+
+- [Memory Introspection](memory-introspection.md) - Continue with memory inspection and editing tools.

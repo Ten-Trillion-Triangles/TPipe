@@ -303,3 +303,6 @@ Special handling for Manifold orchestration traces and Junction discussion trace
 
 ### Performance Optimization
 Tracing system designed for minimal performance impact with configurable detail levels and efficient event storage. Can be completely disabled for production use.
+## Next Steps
+
+- [P2P Interface API](p2p-interface.md) - Continue into agent communication interfaces.

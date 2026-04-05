@@ -387,3 +387,6 @@ DistributionGrid is stateful — it maintains session caches, discovery state, p
 ---
 
 **Previous:** [← Manifold](manifold.md) | **Next:** [Junction →](junction.md)
+## Next Steps
+
+- [Cross-Cutting Topics](cross-cutting-topics.md) - Continue to shared container concepts.

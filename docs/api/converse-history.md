@@ -134,3 +134,6 @@ The history list maintains insertion order, preserving the chronological flow of
 
 ### Direct Access
 The public history property allows direct manipulation for advanced use cases like filtering, searching, or custom processing of conversation data while maintaining the underlying structure.
+## Next Steps
+
+- [TodoList API](todolist.md) - Continue into task management.

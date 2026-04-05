@@ -81,3 +81,6 @@ In a library-based approach, once an agent starts, it's a black box. TPipe provi
 | **Deployment** | Script-based | Headless-first Service |
 
 By moving from a library to a substrate, TPipe allows developers to focus on the *behavior* of the agent rather than the *plumbing* required to keep it running. TPipe is the foundation upon which reliable, autonomous, and enterprise-grade AI systems are built.
+## Next Steps
+
+- [Pipe Class - Core Concepts](pipe-class.md) - Move into the core pipe model.

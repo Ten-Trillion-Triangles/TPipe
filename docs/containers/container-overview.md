@@ -124,3 +124,6 @@ class Connector : P2PInterface {
 ---
 
 **Next:** [Connector →](connector.md)
+## Next Steps
+
+- [Manifold - Multi-Agent Orchestration](manifold.md) - Continue into the container that coordinates multiple agents.

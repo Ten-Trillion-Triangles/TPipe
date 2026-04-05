@@ -462,3 +462,6 @@ fun createMultiLanguageContext(): PcpContext
 - [Basic PCP Usage](basic-pcp-usage.md) - Getting started with PCP
 - [Intermediate PCP Features](intermediate-pcp-features.md) - Advanced PCP capabilities
 - [PCP API Reference](../api/pipe-context-protocol.md) - Complete API documentation
+## Next Steps
+
+- [Advanced Session Management](advanced-session-management.md) - Continue into interactive stdio sessions and buffers.

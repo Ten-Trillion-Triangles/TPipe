@@ -183,3 +183,6 @@ The returned content contains a structured decision payload, not just free-form 
 Junction is stateful — it maintains discussion state, workflow state, and pause flags during execution. When exposed via P2P, register with `P2PConcurrencyMode.ISOLATED` so each inbound request gets a fresh clone. See [P2P Registry and Routing](../advanced-concepts/p2p/p2p-registry-and-routing.md#concurrency-modes) for details.
 
 **Next:** [Container Overview →](container-overview.md)
+## Next Steps
+
+- [MultiConnector - Advanced Routing](multiconnector.md) - Continue to advanced routing patterns.

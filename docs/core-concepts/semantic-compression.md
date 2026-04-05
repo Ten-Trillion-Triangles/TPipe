@@ -107,3 +107,6 @@ else
 - Do not apply it to JSON, XML, code fences, or other machine-readable content.
 - Keep quoted examples in quotes if they must survive compression exactly.
 - Treat the legend as part of the final prompt so the LLM can expand short codes back into the original names.
+## Next Steps
+
+- [ContextBank - Global Context Integration](context-bank-integration.md) - See how compressed context is stored and reused.

@@ -348,3 +348,6 @@ return coroutineScope {
 ---
 
 **Previous:** [← Junction](junction.md)
+## Next Steps
+
+- [Pipe Context Protocol Overview](../advanced-concepts/pipe-context-protocol.md) - Continue into the protocol layer used by containers.

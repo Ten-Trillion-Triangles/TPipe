@@ -287,3 +287,6 @@ data class AnalysisReport(
 ---
 
 **Previous:** [← MultiConnector](multiconnector.md) | **Next:** [Manifold →](manifold.md)
+## Next Steps
+
+- [Junction - Discussion and Workflow Harness](junction.md) - Continue into collaborative workflow handling.

@@ -191,3 +191,6 @@ class DocumentProcessor {
 ---
 
 **Previous:** [← Container Overview](container-overview.md) | **Next:** [MultiConnector →](multiconnector.md)
+## Next Steps
+
+- [Splitter - Parallel Processing](splitter.md) - Continue with parallel execution.

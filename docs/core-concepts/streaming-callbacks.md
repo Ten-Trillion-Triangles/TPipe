@@ -265,3 +265,6 @@ See [Pipe API Documentation](../api/pipe.md) for complete method signatures and 
 - [Pipe Class - Core Concepts](pipe-class.md)
 - [Tracing and Debugging](tracing-and-debugging.md)
 - [Bedrock Getting Started](../bedrock/getting-started.md)
+## Next Steps
+
+- [Pipeline Flow Control](pipeline-flow-control.md) - Continue with routing and control flow.

@@ -638,3 +638,6 @@ suspend fun validateAgentWrite(agentId: String, pageKey: String)
 - [ContextBank API](../api/context-bank.md) - Complete ContextBank reference
 - [ContextLock API](../api/context-lock.md) - Lock management and security
 - [Pipe Context Protocol](pipe-context-protocol.md) - Tool execution framework
+## Next Steps
+
+- [TraceServer - Remote Trace Dashboard](trace-server.md) - Continue into remote trace viewing.

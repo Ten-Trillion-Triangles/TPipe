@@ -168,3 +168,6 @@ val entry = LoreBook().apply {
 }
 contextWindow.addLoreBookEntryWithObject(entry)
 ```
+## Next Steps
+
+- [Debug Package API](debug-package.md) - Continue into tracing and monitoring helpers.

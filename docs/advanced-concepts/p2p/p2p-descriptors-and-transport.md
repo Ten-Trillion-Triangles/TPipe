@@ -166,3 +166,6 @@ class DataProcessor : Pipeline(), P2PInterface {
     }
 }
 ```
+## Next Steps
+
+- [P2P Registry and Routing](p2p-registry-and-routing.md) - Continue into registry behavior and routing.

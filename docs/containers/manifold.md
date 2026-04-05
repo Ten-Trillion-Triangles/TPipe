@@ -603,3 +603,6 @@ Manifold is stateful — it maintains working content, loop counters, and agent 
 ---
 
 **Previous:** [← Splitter](splitter.md) | **Next:** [DistributionGrid →](distributiongrid.md)
+## Next Steps
+
+- [Connector - Pipeline Branching](connector.md) - Move to branching between pipelines.

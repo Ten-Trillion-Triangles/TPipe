@@ -306,3 +306,6 @@ Multiple integration approaches for different use cases:
 - Safe conversion with result objects
 - Extension methods for fluent API usage
 - Export capabilities for reverse compatibility
+## Next Steps
+
+- [TPipe-Defaults API](tpipe-defaults-package.md) - Continue into the defaults package.

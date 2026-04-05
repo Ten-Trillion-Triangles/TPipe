@@ -547,3 +547,6 @@ Context options support both simple and advanced use cases, from basic command e
 
 ### Validation Pipeline
 Multi-layer validation ensures requests are complete, transport-appropriate, and security-compliant before execution.
+## Next Steps
+
+- [TPipeConfig API](tpipe-config.md) - Continue into configuration and directories.

@@ -69,3 +69,6 @@ Failed validation returns `P2PRejection` with:
 - `reason`: Human-readable error message
 
 Check these fields when debugging agent calls or building retry logic.
+## Next Steps
+
+- [AWS Bedrock Getting Started](../../bedrock/getting-started.md) - Continue into Bedrock setup and provider integration.

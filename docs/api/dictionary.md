@@ -142,3 +142,6 @@ Lazy loading of dictionary and early return conditions minimize computational ov
 
 ### Fallback Mechanisms
 Graceful handling of edge cases including empty inputs, missing dictionary resources, and no-match scenarios. Always provides reasonable token estimates even with incomplete data.
+## Next Steps
+
+- [Lorebook API](lorebook.md) - Continue into knowledge-base management.

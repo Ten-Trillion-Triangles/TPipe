@@ -1196,3 +1196,6 @@ Executes pipe with multimodal content, returns multimodal result.
 **Behavior:** Main execution method. Follows complete execution pipeline: pre-init → context loading → pre-validation → pre-invoke check → reasoning → AI generation → validation → transformation → branch handling. Execution can be short-circuited at multiple points based on configuration and validation results.
 
 **Error Handling:** On failure, returns empty `MultimodalContent` with `pipeError` field populated. Check `pipe.hasError()` or `result.hasError()` to detect failures.
+## Next Steps
+
+- [Pipeline Class API](pipeline.md) - Continue into pipeline orchestration.

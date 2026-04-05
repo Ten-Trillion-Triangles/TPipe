@@ -474,3 +474,6 @@ Hosted registries now also expose minimal governance/lifecycle support:
 - registry info with listing counts and store kind
 - registry status with per-kind counts and last expiry sweep timestamp
 - structured facet reads for kind/category/tag/transport/auth/trust-domain/moderation filters
+## Next Steps
+
+- [PipeContextProtocol API](pipe-context-protocol.md) - Continue into PCP runtime types.

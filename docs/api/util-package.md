@@ -343,3 +343,6 @@ Async operations use coroutines for non-blocking execution, and caching mechanis
 
 ### AI-Friendly Design
 JSON schema generation and repair mechanisms are specifically designed to work well with LLM-generated content and provide LLM-friendly output formats.
+## Next Steps
+
+- [TPipe-MCP Package API](tpipe-mcp-package.md) - Continue into the MCP bridge package.

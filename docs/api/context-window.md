@@ -268,3 +268,6 @@ Checks if context window contains any data.
 Clears all context data.
 
 **Behavior:** Empties all three main collections: contextElements, loreBookKeys, and converseHistory.
+## Next Steps
+
+- [ContextBank API](context-bank.md) - Continue into global context management.

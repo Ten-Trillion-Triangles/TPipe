@@ -459,3 +459,6 @@ Executes P2P requests with advanced features.
 - **Response Generation:** Returns structured P2P response with execution results
 
 The P2P execution supports dynamic pipeline modification, allowing external agents to customize behavior within security constraints. This enables flexible agent-to-agent communication while maintaining pipeline integrity.
+## Next Steps
+
+- [MultimodalContent API](multimodal-content.md) - Continue into content handling.

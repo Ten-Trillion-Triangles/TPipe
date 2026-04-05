@@ -486,3 +486,6 @@ fun validateInferenceConfiguration() {
 ```
 
 Inference binding is essential for accessing the latest AWS Bedrock models that require cross-region inference profiles. Use the provided tools and configuration methods to ensure your TPipe-Bedrock applications can access all required models seamlessly.
+## Next Steps
+
+- [AWS Bedrock Guardrails](guardrails.md) - Continue to content safety and moderation.

@@ -172,3 +172,6 @@ outputs.
 With these building blocks you can progressively open more capabilities while keeping the model
 inside a controlled sandbox. For deeper features—Python execution, native functions, and security
 policies—see [Intermediate PCP Features](intermediate-pcp-features.md).
+## Next Steps
+
+- [Intermediate PCP Features](intermediate-pcp-features.md) - Continue with Python, native functions, and deeper security.

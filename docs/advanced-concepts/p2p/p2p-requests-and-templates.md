@@ -181,3 +181,6 @@ val descriptor = P2PDescriptor(
     requestTemplate = myTemplate
 )
 ```
+## Next Steps
+
+- [P2P Requirements and Validation](p2p-requirements-and-validation.md) - Continue with validation and safety rules.

@@ -236,3 +236,6 @@ Creates a deep copy of this content object.
 Retrieves snapshot from metadata if present.
 
 **Behavior:** Helper function that extracts snapshot stored in `metadata["snapshot"]` by the pipe execution system when `useSnapshot = true`.
+## Next Steps
+
+- [ContextWindow API](context-window.md) - Continue into memory and context operations.

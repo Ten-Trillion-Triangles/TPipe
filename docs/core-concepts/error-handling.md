@@ -228,3 +228,6 @@ Error handling is fully backward compatible:
 - [Pipeline Class API](../api/pipeline.md#error-handling)
 - [MultimodalContent API](../api/multimodal-content.md)
 - [Tracing and Debugging](tracing-and-debugging.md)
+## Next Steps
+
+- [Tracing and Debugging](tracing-and-debugging.md) - Continue into trace capture and debugging.

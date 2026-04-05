@@ -132,3 +132,6 @@ TPipeWriter: [https://github.com/Ten-Trillion-Triangles/TPipeWriter/tree/release
 TStep: (Coming soon)
 
 Autogenesis: (Coming soon)
+## Next Steps
+
+- [Installation and Setup](../getting-started/installation-and-setup.md) - Continue with installation and setup.

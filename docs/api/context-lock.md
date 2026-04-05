@@ -327,3 +327,6 @@ ContextLock.addLock("admin_panel", "", false, true) {
     currentUser.hasRole("ADMIN")
 }
 ```
+## Next Steps
+
+- [MiniBank API](minibank.md) - Continue into multi-page context handling.

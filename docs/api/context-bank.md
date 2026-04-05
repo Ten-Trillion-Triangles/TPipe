@@ -830,3 +830,6 @@ val loaded = ContextBank.getContextFromBank("large-data")
 val stats = ContextBank.getCacheStatistics()
 println("Cache hit rate: ${stats.cacheHitRate}")
 ```
+## Next Steps
+
+- [ContextLock API](context-lock.md) - Continue into context access control.

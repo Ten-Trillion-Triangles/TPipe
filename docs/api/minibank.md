@@ -97,3 +97,6 @@ MiniBank works seamlessly with TPipe's global context system:
 
 ### Memory Efficiency
 As a data class, MiniBank supports efficient copying and serialization. The map-based storage provides O(1) access to individual context pages while maintaining reasonable memory usage for typical context scenarios.
+## Next Steps
+
+- [ConverseHistory API](converse-history.md) - Continue into conversation management.

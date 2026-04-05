@@ -278,3 +278,6 @@ Factory mode implies ISOLATED — every request calls the factory, executes agai
 ### Child Agent Cleanup
 
 When an ISOLATED container's execution registers child agents (e.g., Manifold registers its worker pipelines), those child registrations are automatically cleaned up after the request completes.
+## Next Steps
+
+- [P2P Requests and Templates](p2p-requests-and-templates.md) - Continue with request construction and templates.

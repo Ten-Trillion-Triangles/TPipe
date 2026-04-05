@@ -83,3 +83,6 @@ are not used for P2P.
 - **Future remote hosting**: Want stable contracts before implementing remote calls
 
 For simple function calls, use PCP instead. For full pipeline-as-tool scenarios, use P2P.
+## Next Steps
+
+- [P2P Descriptors and Transport](p2p-descriptors-and-transport.md) - Continue with transport setup and descriptor details.

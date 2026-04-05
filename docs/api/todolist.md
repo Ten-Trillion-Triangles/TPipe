@@ -769,3 +769,6 @@ pipe.execute("Work on the most important task")
 ``
 )
 ```
+## Next Steps
+
+- [Dictionary API](dictionary.md) - Continue into token counting and truncation helpers.

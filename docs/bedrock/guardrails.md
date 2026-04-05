@@ -601,3 +601,6 @@ runBlocking {
 ---
 
 AWS Bedrock Guardrails provide robust content safety controls for TPipe applications. By combining automatic filtering with standalone evaluation, you can build secure, policy-compliant AI systems that protect users and maintain content quality standards.
+## Next Steps
+
+- [Ollama Getting Started](../ollama/getting-started.md) - Continue with the local provider guide.

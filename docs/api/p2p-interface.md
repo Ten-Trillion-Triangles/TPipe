@@ -143,3 +143,6 @@ The pipeline access method enables P2P system to understand component structure 
 
 ### Default Implementations
 All methods have sensible defaults enabling implementing classes to selectively override only required functionality, reducing implementation burden while maintaining interface compliance.
+## Next Steps
+
+- [P2P Package API](p2p-package.md) - Continue into the distributed agent package.

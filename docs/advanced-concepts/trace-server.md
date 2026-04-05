@@ -390,3 +390,6 @@ fun main() = runBlocking {
 - [Tracing and Debugging](../core-concepts/tracing-and-debugging.md) — Core tracing concepts and RemoteTraceConfig setup
 - [Debug Package API](../api/debug-package.md) — PipeTracer, TraceConfig, and TraceEvent reference
 - [TPipeConfig API](../api/tpipe-config.md) — AuthRegistry and `addRemoteAuth()` for unified authentication
+## Next Steps
+
+- [P2P Overview](p2p/p2p-overview.md) - Continue into agent-to-agent communication.
