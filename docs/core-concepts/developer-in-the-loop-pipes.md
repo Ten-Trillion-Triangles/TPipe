@@ -77,6 +77,8 @@ val mainPipe = BedrockPipe()
 
 ### Advanced Validator Pipe
 ```kotlin
+import com.TTT.Util.extractJson
+
 val contentValidator = BedrockPipe()
     .setSystemPrompt("""
         Validate content for publication readiness:
@@ -98,7 +100,8 @@ val publishingPipe = BedrockPipe()
     .setValidatorFunction { content ->
         // Parse AI validation result from validator pipe
         // Content here is the ORIGINAL generated content
-        val validation = Json.decodeFromString<ValidationResult>(content.text)
+        val validation = extractJson<ValidationResult>(content.text)
+            ?: return@setValidatorFunction false
         validation.valid && validation.score >= 80
     }
 ```

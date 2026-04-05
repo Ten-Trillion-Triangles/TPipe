@@ -511,6 +511,8 @@ val result = runBlocking { documentPipeline.execute(documentContent) }
 
 ### 2. Quality Assurance Pipeline
 ```kotlin
+import com.TTT.Util.extractJson
+
 val qaPipeline = Pipeline()
     .setPipelineName("quality-assurance")
 
@@ -528,7 +530,8 @@ val checkerPipe = BedrockPipe()
     .setSystemPrompt("Evaluate content quality and identify issues.")
     .setPipeName("quality-checker")
     .setValidatorFunction { content ->
-        val quality = Json.decodeFromString<QualityResult>(content.text)
+        val quality = extractJson<QualityResult>(content.text)
+            ?: return@setValidatorFunction false
         if (!quality.passed) {
             content.setJumpToPipe("content-fixer")
             false

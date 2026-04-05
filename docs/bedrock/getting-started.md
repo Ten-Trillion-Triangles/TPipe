@@ -309,6 +309,8 @@ val reservedPipe = BedrockPipe()
 
 ### JSON Schema Support
 ```kotlin
+import com.TTT.Util.extractJson
+
 data class TechnicalAnalysis(
     val summary: String,
     val keyPoints: List<String>,
@@ -323,7 +325,7 @@ val pipe = BedrockPipe()
     .setJsonOutput(TechnicalAnalysis("", emptyList(), emptyList(), ""))
 
 val result = runBlocking { pipe.execute("Analyze this technical specification...") }
-val analysis = Json.decodeFromString<TechnicalAnalysis>(result.text)
+val analysis = extractJson<TechnicalAnalysis>(result.text)
 ```
 
 ### Context Management

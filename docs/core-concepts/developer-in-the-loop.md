@@ -190,11 +190,13 @@ pipe.setOnFailure { originalContent, processedContent ->
 
 
 ```kotlin
+import com.TTT.Util.extractJson
+import com.TTT.Util.serialize
+
 pipe.setTransformationFunction { content ->
     // Parse JSON response from AI and extract structured data
     val aiResponse = content.text
-    val jsonMatch = extractJsonFromText(aiResponse)
-    val parsedData = Json.decodeFromString<AnalysisResult>(jsonMatch)
+    val parsedData = extractJson<AnalysisResult>(aiResponse) ?: return@setTransformationFunction content
     
     // Create transformed content with structured data
     val transformedContent = MultimodalContent()
@@ -202,7 +204,7 @@ pipe.setTransformationFunction { content ->
     transformedContent.metadata["confidence"] = parsedData.confidence.toString()
     
     // Store full result in context for next pipeline stage
-    transformedContent.context.addContextElement("analysis_result", Json.encodeToString(parsedData))
+    transformedContent.context.addContextElement("analysis_result", serialize(parsedData))
     
     transformedContent
 }

@@ -381,17 +381,13 @@ val result = runBlocking { pipe.execute("What do you know about me?") }
 
 ### Debugging Validation Failures
 ```kotlin
+import com.TTT.Util.extractJson
+
 val pipe = BedrockPipe()
     .setSystemPrompt("Generate a JSON response.")
     .setJsonOutput(UserProfile("", "", 0))
     .setValidatorFunction { content ->
-        val isValid = try {
-            Json.decodeFromString<UserProfile>(content.text)
-            true
-        } catch (e: Exception) {
-            false
-        }
-        isValid
+        extractJson<UserProfile>(content.text) != null
     }
     .enableTracing()  // See validation process
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")

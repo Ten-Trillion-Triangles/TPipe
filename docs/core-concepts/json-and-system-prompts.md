@@ -324,15 +324,18 @@ val analysisPipe = BedrockPipe()
 
 ### 3. Use the Pipe
 ```kotlin
+import com.TTT.Util.extractJson
+import com.TTT.Util.serialize
+
 val request = DocumentRequest(
     content = "Apple Inc. announced record profits...",
     analysisType = "comprehensive",
     extractEntities = true
 )
 
-val jsonInput = Json.encodeToString(request)
+val jsonInput = serialize(request)
 val response = runBlocking { analysisPipe.generateText(jsonInput) }
-val result = Json.decodeFromString<DocumentAnalysis>(response)
+val result = extractJson<DocumentAnalysis>(response)
 ```
 
 ## Error Handling and Validation
@@ -352,12 +355,17 @@ enum class Status { PENDING, PROCESSING, COMPLETE }
 ```
 
 ### Runtime JSON Handling
+For runtime JSON handling, prefer TPipe's official helpers: `serialize(...)` for encoding and `extractJson(...)` for decoding.
+
 ```kotlin
-fun safeJsonProcessing(pipe: BedrockPipe, input: Any): MyResponse? {
+import com.TTT.Util.extractJson
+import com.TTT.Util.serialize
+
+inline fun <reified T> safeJsonProcessing(pipe: BedrockPipe, input: T): MyResponse? {
     return try {
-        val jsonInput = Json.encodeToString(input)
+        val jsonInput = serialize(input)
         val response = runBlocking { pipe.generateText(jsonInput) }
-        Json.decodeFromString<MyResponse>(response)
+        extractJson<MyResponse>(response)
     } catch (e: SerializationException) {
         // Handle malformed JSON from AI
         null
@@ -409,13 +417,15 @@ pipe.requireJsonPromptInjection(stripExternalText = true)
 
 ### 4. Testing JSON Schemas
 ```kotlin
+import com.TTT.Util.serialize
+
 // Test schema generation
 val testInput = MyInputClass()
 val testOutput = MyOutputClass()
 
 // Verify schemas are complete
-val inputJson = Json.encodeToString(testInput)
-val outputJson = Json.encodeToString(testOutput)
+val inputJson = serialize(testInput)
+val outputJson = serialize(testOutput)
 
 println("Input schema: $inputJson")
 println("Output schema: $outputJson")
