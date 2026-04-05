@@ -1,8 +1,10 @@
 # Context Window Size, Token Budgets, and Truncation
 
 ## Table of Contents
+- [How the Pieces Fit](#how-the-pieces-fit)
 - [Context Window Size - Managing Total Token Capacity](#context-window-size---managing-total-token-capacity)
 - [Token Budgets - Predictable Resource Allocation](#token-budgets---predictable-resource-allocation)
+- [Fill Modes and Multi-Page Budgeting](#fill-modes-and-multi-page-budgeting)
 - [Truncation - Intelligent Content Reduction](#truncation---intelligent-content-reduction)
 - [Advanced Truncation Control](#advanced-truncation-control)
 - [Semantic Compression - Legend-Backed Prompt Reduction](#semantic-compression---legend-backed-prompt-reduction)
@@ -13,29 +15,17 @@
 
 TPipe provides sophisticated token management to solve the fundamental problem of AI model context limits. These features prevent runtime failures, optimize token usage, and ensure predictable behavior when dealing with large inputs.
 
-## Simple vs Advanced Truncation
+## How the Pieces Fit
 
-**Simple truncation** (`autoTruncateContext()` only):
-```kotlin
-pipe.autoTruncateContext()  // Basic truncation, no multi-page budgeting
-pipe.autoTruncateContext(fillMode = true)  // Basic truncation with select-and-fill mode
-```
-- Uses provider-specific truncation methods
-- Cannot distribute budgets across multiple pages
-- No multi-page budgeting strategies available
+TPipe handles token pressure in layers:
 
-**Advanced truncation** (`TokenBudgetSettings`):
-```kotlin
-pipe.setTokenBudget(TokenBudgetSettings())  // Automatically enables advanced truncation
-    
-// With fill mode for prioritized lorebook selection
-pipe.setTokenBudget(TokenBudgetSettings())
-    .enableLoreBookFillMode()  // Optional: enable fill mode separately
-```
-- Enables multi-page budgeting strategies (DYNAMIC_FILL, DYNAMIC_SIZE_FILL, EQUAL_SPLIT, etc.)
-- Precise token budget control across system/user/output/reasoning
-- TokenBudgetSettings automatically handles all truncation internally
-- Use `enableLoreBookFillMode()` separately if you need fill mode with token budgeting
+- **Context window size** sets the total space the model can use.
+- **Token budgets** divide that space between user input, output, reasoning, and context.
+- **Fill modes** decide how lorebook and page-keyed context are selected before truncation happens.
+
+If you only need the pipe to stay under the model limit, `autoTruncateContext()` is enough.
+If you need predictable allocation or page-by-page control, use `TokenBudgetSettings`.
+If you want lorebook entries to be selected first, turn on fill mode as well.
 
 ## Context Window Size - Managing Total Token Capacity
 
@@ -52,6 +42,8 @@ pipe.setContextWindowSize(32000)  // Set total token budget
 
 **How it works**: TPipe calculates available input space as `contextWindowSize - maxTokens - systemPromptTokens`, then automatically manages content to fit this constraint.
 
+Use `setContextWindowSize()` when you already know the model limit you want to work within. Use `setMaxTokens()` when you want to reserve output room so the model does not spend the whole window on input.
+
 ## Token Budgets - Predictable Resource Allocation
 
 ### The Problem
@@ -64,28 +56,37 @@ Without explicit budgeting, you can't predict:
 ### The Solution - TokenBudgetSettings
 ```kotlin
 val budget = TokenBudgetSettings(
-    userPromptSize = 12000,           // Explicit limit for user input
-    maxTokens = 20000,                // Output token allocation
-    reasoningBudget = 8000,           // Reasoning token allocation
-    subtractReasoningFromInput = false, // True to subtract from input window instead of output
-    contextWindowSize = 32000,        // Total token budget
-    allowUserPromptTruncation = true, // Truncation policy
-    multiPageBudgetStrategy = MultiPageBudgetStrategy.DYNAMIC_FILL, // Multi-page allocation strategy
-    pageWeights = mapOf("critical" to 2.0, "normal" to 1.0), // Optional page weights
-    preserveTextMatches = true // Keep prompt-matching context/history when truncating
+    userPromptSize = 12000,
+    maxTokens = 20000,
+    reasoningBudget = 8000,
+    subtractReasoningFromInput = false,
+    contextWindowSize = 32000,
+    allowUserPromptTruncation = true,
+    preserveJsonInUserPrompt = true,
+    compressUserPrompt = false,
+    truncateContextWindowAsString = false,
+    preserveTextMatches = true,
+    multiPageBudgetStrategy = MultiPageBudgetStrategy.DYNAMIC_SIZE_FILL,
+    pageWeights = mapOf("critical" to 2.0, "normal" to 1.0),
+    reserveEmptyPageBudget = true
 )
 ```
 
-> ⚠️ **Important:** Multi-page budgeting strategies (DYNAMIC_FILL, DYNAMIC_SIZE_FILL, EQUAL_SPLIT, etc.) **only work with TokenBudgetSettings**. Simple `autoTruncateContext()` without TokenBudgetSettings uses basic truncation and cannot distribute budgets across multiple pages.
+**What this does**:
+- `userPromptSize` reserves a fixed amount of room for user input. Set it to `null` when you want TPipe to allocate only what the current prompt actually needs.
+- `maxTokens` reserves output space for the model's answer.
+- `reasoningBudget` reserves thinking space for reasoning models. By default it is taken from `maxTokens`; set `subtractReasoningFromInput = true` if you want that room carved out of the input side instead.
+- `contextWindowSize` sets the total budget for the whole request.
+- `allowUserPromptTruncation` decides whether oversized user input is trimmed or rejected.
+- `preserveJsonInUserPrompt` tries to keep JSON structure intact when user text has to be shortened.
+- `compressUserPrompt` turns on semantic compression before truncation for natural-language prompts.
+- `truncateContextWindowAsString` switches truncation to a single string pass instead of entry-by-entry truncation.
+- `preserveTextMatches` keeps matching context elements and conversation history near the front of the line when space is tight.
+- `multiPageBudgetStrategy` decides how MiniBank page budgets are shared.
+- `pageWeights` only matter when the strategy uses weights.
+- `reserveEmptyPageBudget` decides whether empty pages still get a share of the budget.
 
-**What this does**: 
-- **userPromptSize**: Enforces maximum user input size, throwing errors or truncating when exceeded
-- **reasoningBudget**: Reserves tokens for model reasoning, automatically subtracted from maxTokens
-- **subtractReasoningFromInput**: By default `reasoningBudget` is subtracted from `maxTokens` (output budget). Set to `true` to instead subtract from the available context window size, reserving space for reasoning injected into system/user prompts or context.
-- **allowUserPromptTruncation**: Controls whether oversized inputs are truncated or cause failures
-- **multiPageBudgetStrategy**: Controls how token budget is distributed across multiple context pages
-- **pageWeights**: Optional weights for WEIGHTED_SPLIT strategy (higher = more tokens)
-- **preserveTextMatches**: When true, context elements and conversation history entries containing words from the latest prompt are preserved before the usual truncation ordering runs.
+**Good rule of thumb:** if you are trying to tune one request, start with `contextWindowSize`, `maxTokens`, and `userPromptSize`. If you are trying to tune a whole pipeline, add `reasoningBudget`, `preserveTextMatches`, and a multi-page strategy.
 
 **Token allocation calculation**:
 ```
@@ -95,6 +96,48 @@ Total: 32,000 tokens
 - Reasoning budget: 8,000 tokens (subtracted from output)
 - Effective output: 12,000 tokens (20,000 - 8,000)
 = Available for user input: 10,000 tokens
+```
+
+## Fill Modes and Multi-Page Budgeting
+
+Fill mode is about selection, not just trimming.
+
+When `fillMode = true` or `enableLoreBookFillMode()` is active, TPipe first gives lorebook selection the full budget and fills it with the most relevant entries. Only after that does it split the remaining room between context elements and conversation history.
+
+When `fillAndSplitMode = true`, TPipe reserves half of the top-level budget for lorebook selection and half for everything else. If lorebook uses less than its half, the leftover room is handed back to the rest of the context instead of going unused.
+
+Use fill mode when lorebook entries are the most important part of the prompt.
+Use fill-and-split mode when lorebook should be prioritized, but you still want the rest of the context to keep a guaranteed share.
+
+```kotlin
+pipe.autoTruncateContext(fillAndSplitMode = true)
+```
+
+For page-keyed context, `TokenBudgetSettings.multiPageBudgetStrategy` controls how the budget is spread across pages:
+
+- `DYNAMIC_SIZE_FILL` gives smaller pages a chance to survive first and redistributes unused room as it goes.
+- `DYNAMIC_FILL` starts with a priority-style pass and then reclaims unused budget.
+- `EQUAL_SPLIT` divides the budget evenly across pages.
+- `WEIGHTED_SPLIT` uses `pageWeights` to favor more important pages.
+- `PRIORITY_FILL` walks pages in order and fills them one by one.
+
+`DYNAMIC_SIZE_FILL` is the default for `TokenBudgetSettings`, while `enableDynamicFill()` switches the pipe to the older dynamic-fill behavior explicitly.
+
+```kotlin
+pipe.autoTruncateContext(fillMode = true)
+
+pipe.setTokenBudget(TokenBudgetSettings(
+    contextWindowSize = 32000,
+    maxTokens = 4000,
+    multiPageBudgetStrategy = MultiPageBudgetStrategy.DYNAMIC_SIZE_FILL
+))
+
+pipe.setTokenBudget(TokenBudgetSettings(
+    contextWindowSize = 32000,
+    maxTokens = 4000,
+    multiPageBudgetStrategy = MultiPageBudgetStrategy.WEIGHTED_SPLIT,
+    pageWeights = mapOf("critical" to 2.0, "normal" to 1.0)
+))
 ```
 
 ## Dynamic vs Explicit User Prompt Allocation
@@ -280,6 +323,8 @@ pipe.setContextWindowSettings(ContextWindowSettings.TruncateBottom) // Remove ne
 - **Behavior**: Preserves initial context, removes recent additions
 - **Why**: Initial context often contains critical instructions or document structure
 
+For tokenizer tuning and lower-level truncation settings, see [Token Counting, Truncation, and Tokenizer Tuning](token-counting-and-truncation.md). That guide covers the parameters that control how tokens are estimated, split, and counted.
+
 ### Automatic Truncation
 ```kotlin
 pipe.truncateModuleContext()
@@ -307,6 +352,8 @@ val budget = TokenBudgetSettings(
 - `true`: Automatically truncate user input to fit budget
 
 **preserveJsonInUserPrompt**: Attempts to preserve JSON structure integrity during truncation.
+
+**truncateContextWindowAsString**: Truncates the combined context as one string instead of trimming individual context pieces. Use this when you want a more aggressive, less structured cut.
 
 ### Max Token Overflow - Intentional Output Constraint
 ```kotlin
@@ -534,7 +581,7 @@ val settings = pipe.getTruncationSettings()
 
 ### Size-Based Priority Allocation - DYNAMIC_SIZE_FILL Strategy
 ```kotlin
-// Protect smaller contexts, truncate larger ones first
+// Same strategy described above, shown here with a page-keyed pipe
 val sizePriorityPipe = BedrockPipe()
     .setPageKey("gameplayData, userPreferences, storyContent")
     .setTokenBudget(TokenBudgetSettings(
@@ -548,18 +595,7 @@ val sizePriorityPipe = BedrockPipe()
 pipe.enableDynamicSizeFill()
 ```
 
-**How it works:**
-- **Phase 1**: Calculate context sizes and sort by size (smallest first)
-- **Phase 2**: Allocate full budget to smaller contexts before larger ones
-- **Phase 3**: Redistribute unused budget from small contexts to larger ones
-- **Result**: Critical small contexts (gameplay data, user preferences) are preserved intact, while expendable large contexts (story content) are truncated as needed
-
-**Use cases:**
-- Gaming applications where gameplay state must be preserved over story content
-- Applications with critical small configuration data and large reference material
-- Systems where smaller contexts contain essential instructions or state
-
-**Purpose**: Intelligent context prioritization based on size, ensuring critical small data survives memory pressure while allowing large expendable content to be truncated.
+This is the same size-aware dynamic fill strategy described above. It is useful when smaller pages carry state you do not want to lose and larger pages can be trimmed first.
 
 ### Intentional Output Constraints
 ```kotlin
