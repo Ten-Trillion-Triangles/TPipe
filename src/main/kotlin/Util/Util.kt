@@ -480,6 +480,19 @@ inline fun <reified T> templateBasedReconstruction(text: String): T?
 }
 
 
+// Pre-compiled patterns for extracting key-value pairs from malformed JSON
+private val jsonExtractionPatterns = listOf(
+    // "key": "value" or 'key': 'value'
+    Regex("\"([^\"]+)\"\\s*:\\s*\"([^\"]*(?:\\\\.[^\"]*)*)\""),
+    Regex("'([^']+)'\\s*:\\s*'([^']*(?:\\\\.[^']*)*)'"),
+    // "key": value (unquoted values)
+    Regex("\"([^\"]+)\"\\s*:\\s*([^,}\\]\\n]+?)(?=[,}\\]\\n]|$)"),
+    // key: "value" (unquoted keys)
+    Regex("([a-zA-Z_][\\w\\s-]*)\\s*:\\s*\"([^\"]*(?:\\\\.[^\"]*)*)\""),
+    // key: value (both unquoted)
+    Regex("([a-zA-Z_][\\w\\s-]*)\\s*:\\s*([^,}\\]\\n]+?)(?=[,}\\]\\n]|$)")
+)
+
 /**
  * Extracts key-value pairs from malformed JSON using regex patterns as fallback.
  * Returns a Map that can be manually processed when standard JSON parsing fails.
@@ -488,20 +501,7 @@ fun extractJsonData(malformedJson: String): Map<String, String>
 {
     val result = mutableMapOf<String, String>()
     
-    // More comprehensive pattern for key-value pairs
-    val patterns = listOf(
-        // "key": "value" or 'key': 'value'
-        Regex("\"([^\"]+)\"\\s*:\\s*\"([^\"]*(?:\\\\.[^\"]*)*)\""),
-        Regex("'([^']+)'\\s*:\\s*'([^']*(?:\\\\.[^']*)*)'"),
-        // "key": value (unquoted values)
-        Regex("\"([^\"]+)\"\\s*:\\s*([^,}\\]\\n]+?)(?=[,}\\]\\n]|$)"),
-        // key: "value" (unquoted keys)
-        Regex("([a-zA-Z_][\\w\\s-]*)\\s*:\\s*\"([^\"]*(?:\\\\.[^\"]*)*)\""),
-        // key: value (both unquoted)
-        Regex("([a-zA-Z_][\\w\\s-]*)\\s*:\\s*([^,}\\]\\n]+?)(?=[,}\\]\\n]|$)")
-    )
-    
-    for(pattern in patterns)
+    for(pattern in jsonExtractionPatterns)
     {
         pattern.findAll(malformedJson).forEach { match ->
             val key = match.groupValues[1].trim()
