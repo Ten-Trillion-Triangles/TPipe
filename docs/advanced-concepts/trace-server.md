@@ -254,7 +254,7 @@ The server sends periodic WebSocket pings (every 15 seconds) to keep connections
 
 ## Connecting Agents with RemoteTraceDispatcher
 
-The easiest way to send traces to a TraceServer is through `RemoteTraceConfig` and `RemoteTraceDispatcher`. These live in TPipe-Core's Debug package and handle serialization, HTTP transport, and authentication automatically.
+The easiest way to send traces to a TraceServer is through `RemoteTraceConfig` and `RemoteTraceDispatcher`. These live in TPipe's `Debug` package in the root project and handle serialization, HTTP transport, and authentication automatically.
 
 ### Automatic Dispatch
 

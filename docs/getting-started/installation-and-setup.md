@@ -5,7 +5,7 @@
 ### Required Versions
 
 - **Java**: JDK 24 or higher (TPipe targets JVM 24 bytecode)
-- **Kotlin**: Version 2.2.0 (as specified in build configuration)
+- **Kotlin**: Version 2.2.20 (as specified in build configuration)
 - **Gradle**: Version 8.14.3 or higher
 - **Build System**: **Kotlin Gradle DSL only** - TPipe does not support Maven, Groovy Gradle, or any other build systems
 
@@ -52,8 +52,8 @@ TPipe **only supports Kotlin Gradle DSL**. Add TPipe dependencies to your `build
 
 ```kotlin
 plugins {
-    kotlin("jvm") version "2.2.0"
-    kotlin("plugin.serialization") version "2.2.0"
+    kotlin("jvm") version "2.2.20"
+    kotlin("plugin.serialization") version "2.2.20"
 }
 
 java {
@@ -98,7 +98,7 @@ For better dependency management, you can use a version catalog like TPipe does:
 **gradle/libs.versions.toml:**
 ```toml
 [versions]
-kotlin-version = "2.2.0"
+kotlin-version = "2.2.20"
 ktor-version = "3.1.3"
 tpipe-version = "0.0.1"
 
@@ -224,11 +224,11 @@ java -version
 ### Kotlin Version Mismatch
 
 **Issue**: Kotlin compilation errors
-**Solution**: Use exactly Kotlin 2.2.0 as specified in TPipe
+**Solution**: Use exactly Kotlin 2.2.20 as specified in TPipe
 
 ```kotlin
 plugins {
-    kotlin("jvm") version "2.2.0"  // Must match TPipe's version
+    kotlin("jvm") version "2.2.20"  // Must match TPipe's version
 }
 ```
 

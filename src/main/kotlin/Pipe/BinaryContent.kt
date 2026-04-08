@@ -151,6 +151,15 @@ data class MultimodalContent @OptIn(ExperimentalSerializationApi::class) constru
    var passPipeline: Boolean = false
 
     /**
+     * Allows the reasoning pipe system to be skipped. When toggled to true reasoning content won't be extracted,
+     * and instead the system will treat it like the reasoning pipe never ran. This is particularly useful for skipping
+     * dynamic reasoning cases like semantic compression, where a token budget may not have needed to deploy
+     * compression, and so running the reasoning pipe would be a waste of tokens, and just confuse the parent pipe.
+     */
+    @kotlinx.serialization.Transient
+   var skipReasoningPipe: Boolean = false
+
+    /**
      * Map of generic metadata that can be used by various functions interacting with this content object to store,
      * data, messages, signals, hooks, or any other information that is required to be passed into validation,
      * transformation, and branch failure functions or pipes to facilitate advanced logic, conditional branching,
@@ -245,6 +254,26 @@ data class MultimodalContent @OptIn(ExperimentalSerializationApi::class) constru
     fun skipToNextPipe()
     {
         jumpToPipe = "skip-to-next-pipe"
+    }
+
+    /**
+     * Mark this content object to send a skip signal to TPipe's  reasoning system. When this is active, if this was coming
+     * from a reasoning pipe it will treat the system like the reasoning never happened, and never extract the data
+     * back into the system prompt or user prompt. This is useful for conditional reasoning cases like semantic compression
+     * inside of token budgeting, where if the user prompt does not end up compressed, we can just skip over that case
+     * completely and save the tokens on the spot.
+     */
+    fun skipReasoning()
+    {
+        skipReasoningPipe = true
+    }
+
+    /**
+     * Trigger a pass pipeline flag to exit early in a state of succeess.
+     */
+    fun terminateAndPassPipeline()
+    {
+        passPipeline = true
     }
 
     /**

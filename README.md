@@ -178,7 +178,7 @@ println(result.text)
 
 ```kotlin
 dependencies {
-    implementation("com.TTT:TPipe-Core:0.0.1")
+    implementation("com.TTT:TPipe:0.0.1")
     implementation("com.TTT:TPipe-Bedrock:0.0.1")  // For AWS Bedrock
     implementation("com.TTT:TPipe-Ollama:0.0.1")   // For Ollama
 }

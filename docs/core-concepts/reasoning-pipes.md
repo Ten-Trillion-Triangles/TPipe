@@ -13,6 +13,7 @@
 - [Cross-Provider Reasoning](#cross-provider-reasoning)
 - [Reasoning Depth and Duration Settings](#reasoning-depth-and-duration-settings)
 - [Nested Reasoning Pipes](#nested-reasoning-pipes)
+- [Skipping Reasoning Pipes](#skipping-reasoning-pipes)
 - [Practical Examples](#practical-examples)
 - [Best Practices](#best-practices)
 
@@ -538,6 +539,65 @@ ReasoningDuration.Med
 // Extended reasoning for thorough analysis
 ReasoningDuration.Long
 ```
+
+## Skipping Reasoning Pipes
+
+TPipe allows you to conditionally skip reasoning injection at runtime using the `skipReasoning()` method on `MultimodalContent`. When the skip flag is active, the reasoning pipe's output is discarded and never injected into the parent pipe's prompt — the system behaves as if no reasoning pipe was attached.
+
+### When to Skip Reasoning
+
+Skipping reasoning is useful when:
+- **Semantic compression didn't fire** — a reasoning pipe configured for decompression has nothing to decompress if the token budget didn't need to compress the prompt
+- **Conditional reasoning** — a developer-in-the-loop function determines at runtime that reasoning is unnecessary for a particular input
+- **Cost control** — avoiding injection overhead for simple inputs that don't benefit from chain-of-thought analysis
+
+### Basic Usage
+
+```kotlin
+// In a validation function, transformation function, or branch function
+pipe.setTransformationFunction { content ->
+    if (inputIsSimpleEnough(content.text)) {
+        content.skipReasoning()  // Reasoning output will be discarded
+    }
+    content
+}
+```
+
+### Direct Property Access
+
+The `skipReasoning()` convenience method sets the `skipReasoningPipe` flag on `MultimodalContent`:
+
+```kotlin
+// Equivalent to content.skipReasoning()
+content.skipReasoningPipe = true
+```
+
+### Semantic Compression Example
+
+The most common use case is pairing with semantic compression. When a pipe uses `SemanticDecompression` reasoning to reconstruct compressed prompts, but the token budget didn't need to compress, the decompression reasoning step should be skipped:
+
+```kotlin
+val mainPipe = BedrockPipe()
+    .setSystemPrompt("Process the user request.")
+    .setReasoningPipe(decompressionReasoningPipe)
+    .enableSemanticCompression()
+    .setTransformationFunction { content ->
+        // If compression never fired, skip the decompression reasoning
+        if (content.metadata["semanticCompressionApplied"] != true) {
+            content.skipReasoning()
+        }
+        content
+    }
+```
+
+### How It Works
+
+1. The reasoning pipe executes normally and generates its output
+2. Before injection, TPipe checks the `skipReasoningPipe` flag
+3. If `true`, `injectTPipeReasoning` returns immediately — no reasoning content is added to the system prompt, user prompt, or context
+4. The parent pipe's main LLM call proceeds without any reasoning context
+
+> ⚠️ **Note:** The reasoning pipe still executes when `skipReasoningPipe` is set. The flag prevents injection of the reasoning output, not execution. To skip execution entirely, use `setPreInvokeFunction` to bypass the whole pipe before it runs.
 
 ## Practical Examples
 

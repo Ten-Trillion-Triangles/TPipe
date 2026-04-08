@@ -74,6 +74,12 @@ If true, current pipe will be called again with the same content until set to fa
 ```
 Allows pipeline to exit early without error. Useful when additional steps are unnecessary.
 
+**`skipReasoningPipe`**
+```kotlin
+@Transient var skipReasoningPipe: Boolean = false
+```
+When true, the reasoning pipe's output is discarded before injection. The parent pipe's main LLM call proceeds as if no reasoning pipe was attached. Useful for conditional reasoning where runtime state determines whether reasoning output should be used.
+
 ### Context Management
 
 **`context`**
@@ -173,6 +179,23 @@ Marks content to terminate the pipeline.
 Marks current pipe to repeat execution.
 
 **Behavior:** Sets `repeatPipe = true`, causing the current pipe to be called again with the same content until this flag is cleared.
+
+#### `skipReasoning()`
+Marks content to skip reasoning pipe injection.
+
+**Behavior:** Sets `skipReasoningPipe = true`. When active, `injectTPipeReasoning` returns immediately and no reasoning content is added to the parent pipe's prompt. The reasoning pipe still executes — only injection is suppressed.
+
+**Example:**
+```kotlin
+pipe.setTransformationFunction { content ->
+    if (content.metadata["semanticCompressionApplied"] != true) {
+        content.skipReasoning()
+    }
+    content
+}
+```
+
+**See Also:** [Skipping Reasoning Pipes](../core-concepts/reasoning-pipes.md#skipping-reasoning-pipes)
 
 ---
 

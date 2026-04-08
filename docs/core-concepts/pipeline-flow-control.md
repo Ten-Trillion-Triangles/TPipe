@@ -8,6 +8,7 @@
 - [Pipe Jumping](#pipe-jumping)
 - [Pipe Repeating](#pipe-repeating)
 - [Pipeline Termination](#pipeline-termination)
+- [Reasoning Skip](#reasoning-skip)
 - [Complex Flow Control Patterns](#complex-flow-control-patterns)
 - [Flow Control Best Practices](#flow-control-best-practices)
 - [Monitoring Flow Control](#monitoring-flow-control)
@@ -28,6 +29,7 @@ TPipe provides flow control mechanisms:
 - **Pipe Jumping**: Skip to specific pipes or jump forward/backward
 - **Pipe Repeating**: Execute the same pipe multiple times
 - **Pipeline Termination**: Exit the pipeline early (success or failure)
+- **Reasoning Skip**: Discard reasoning pipe output so the parent pipe runs without it
 
 All flow control is managed through the `MultimodalContent` object that flows between pipes.
 
@@ -202,6 +204,35 @@ if (content.shouldTerminate()) {
     // This checks both terminate() and empty content conditions
 }
 ```
+
+## Reasoning Skip
+
+### Skipping Reasoning Injection
+```kotlin
+// Inside a transformation or validation function
+content.skipReasoning()  // Reasoning output will not be injected
+```
+
+**How it works**: When `skipReasoningPipe` is set to `true` on the content object, the reasoning pipe's output is discarded before injection. The parent pipe's main LLM call proceeds as if no reasoning pipe was attached.
+
+### Conditional Reasoning Example
+```kotlin
+val analysisPipe = BedrockPipe()
+    .setPipeName("conditional-analyzer")
+    .setReasoningPipe(reasoningPipe)
+    .enableSemanticCompression()
+    .setTransformationFunction { content ->
+        // Skip decompression reasoning when compression didn't fire
+        if (content.metadata["semanticCompressionApplied"] != true) {
+            content.skipReasoning()
+        }
+        content
+    }
+```
+
+**Use cases**: Conditional reasoning based on runtime state, skipping decompression reasoning when semantic compression wasn't needed, cost control for simple inputs.
+
+> 💡 **Tip:** `skipReasoning()` prevents injection, not execution. To skip the entire pipe including reasoning, use `setPreInvokeFunction` instead. For full details see [Skipping Reasoning Pipes](reasoning-pipes.md#skipping-reasoning-pipes).
 
 ## Complex Flow Control Patterns
 

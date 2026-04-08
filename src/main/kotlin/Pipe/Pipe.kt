@@ -5528,8 +5528,6 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 copySystemPrompt(processedContent)
             }
 
-
-
             //Count input tokens for basic tracking so pipeline counters are always populated.
             countTokens(true, processedContent)
 
@@ -6103,10 +6101,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
         val reasoningBudget = tokenBudgetSettings?.reasoningBudget ?: 0 //Declare our budget. 0 is unlimited.
         var budgetPerRound = 0 //Divided by reasoningBudget / number of reasoning rounds.
         var rounds = reasoningPipe?.pipeMetadata?.get("reasoningRounds") as? Int
+
         if(rounds == null)
         {
             rounds = pipeMetadata["reasoningRounds"] as? Int
         }
+
         if(rounds == null) rounds = 1 //Define to address behavior of Any to Any maps in kotlin. We can't be less than 1.
 
         //Define budget if applicable. Otherwise, set to 0 and treat as unlimited.
@@ -6144,7 +6144,6 @@ abstract class Pipe : P2PInterface, ProviderInterface
         val decorateReasoningRounds = rounds > 1
         var usingConverse = !usingDirectiveRounds && (converseSchemaRef?.isEmpty() != true ||  rounds > 1)
         val originalUserPrompt = extractOriginalReasoningPrompt(converseSchemaRef, content)
-
 
         if(usingConverse)
         {
@@ -6372,10 +6371,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
             {
                 val roundMode = roundDirective!!.mode
                 val normalizedRoundText = extractReasoningStream(reasoningMethod, result)
+
                 val roundStreamBlock = if(decorateReasoningRounds)
                 {
                     formatReasoningRoundBlock(round, focusTarget, normalizedRoundText, roundMode.name)
                 }
+
                 else
                 {
                     normalizedRoundText
@@ -6385,6 +6386,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 {
                     reasoningStream.append("\n\n")
                 }
+
                 reasoningStream.append(roundStreamBlock)
                 contentCopy.modelReasoning = reasoningStream.toString()
                 contentCopy.text = roundInputContent.text
@@ -6401,16 +6403,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     )
                 )
             }
+
             else if(usingConverse)
             {
                 val updatedHistory = deserialize<ConverseHistory>(contentCopy.text)
                     ?: throw Exception("Converse history cannot be empty when multi-round reasoning is using converse mode.")
 
                 val normalizedRoundText = extractReasoningStream(reasoningMethod, result)
+
                 val roundStreamBlock = if(decorateReasoningRounds)
                 {
                     formatReasoningRoundBlock(round, focusTarget, normalizedRoundText)
                 }
+
                 else
                 {
                     normalizedRoundText
@@ -6422,6 +6427,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         MultimodalContent(text = roundStreamBlock)
                     )
                 )
+
                 val updatedHistoryJson = serializeConverseHistory(updatedHistory)
                 contentCopy.text = updatedHistoryJson
 
@@ -6429,6 +6435,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 {
                     reasoningStream.append("\n\n")
                 }
+
                 reasoningStream.append(roundStreamBlock)
                 contentCopy.modelReasoning = reasoningStream.toString()
 
@@ -6444,6 +6451,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     )
                 )
             }
+
             else
             {
                 result.text = extractReasoningContent(reasoningPipe?.pipeMetadata["reasoningMethod"] as? String ?: "", result)
@@ -6630,6 +6638,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
         //Circular reference issue here. We need to get this to string form or something.
         val reasoningMethod = reasoningPipe?.pipeMetadata["injectionMethod"] as? String ?: ""
+
+        /**
+         * If the user has flagged in a DITL function to skip reasoning for whatever reason, we'll halt here
+         * to prevent the injection process from ever occurring and excluding the reasoning content. This allows
+         * us to make conditional reasoning an optional pattern now.
+         */
+        if(content.skipReasoningPipe) return
 
         when(reasoningMethod)
         {

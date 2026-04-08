@@ -48,7 +48,7 @@ TPipe-Bedrock enables you to:
 #### Gradle (Kotlin DSL)
 ```kotlin
 dependencies {
-    implementation("com.TTT:TPipe-Core:1.0.0")
+    implementation("com.TTT:TPipe:1.0.0")
     implementation("com.TTT:TPipe-Bedrock:1.0.0")
 }
 ```
