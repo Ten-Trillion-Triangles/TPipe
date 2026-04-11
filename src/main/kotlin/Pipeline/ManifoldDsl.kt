@@ -2,6 +2,7 @@ package com.TTT.Pipeline
 
 import com.TTT.Debug.TraceConfig
 import com.TTT.Enums.ContextWindowSettings
+import com.TTT.Enums.SummaryMode
 import com.TTT.P2P.AgentRequest
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PConcurrencyMode
@@ -52,6 +53,7 @@ class ManifoldDsl
     private var historyConfiguration: HistoryConfiguration? = null
     private var validationConfiguration: ValidationConfiguration? = null
     private var tracingConfiguration: TraceConfig? = null
+    private var summaryPipelineConfiguration: SummaryPipelineConfiguration? = null
     private var concurrencyModeConfiguration: P2PConcurrencyMode = P2PConcurrencyMode.SHARED
 
     /**
@@ -149,6 +151,20 @@ class ManifoldDsl
     }
 
     /**
+     * Configure the optional summarization pipeline that runs after each worker response.
+     *
+     * @param block Builder block that declares the summary pipeline.
+     */
+    fun summaryPipeline(block: SummaryPipelineDsl.() -> Unit)
+    {
+        require(summaryPipelineConfiguration == null) { "Summary pipeline has already been configured for this manifold DSL." }
+
+        val builder = SummaryPipelineDsl()
+        builder.block()
+        summaryPipelineConfiguration = builder.build()
+    }
+
+    /**
      * Build and initialize the configured [Manifold].
      *
      * @return Fully initialized manifold ready for use.
@@ -225,6 +241,7 @@ class ManifoldDsl
         }
 
         applyValidationConfiguration(manifold)
+        applySummaryPipelineConfiguration(manifold)
 
         return manifold
     }
@@ -495,6 +512,16 @@ class ManifoldDsl
         {
             manifold.setTransformationFunction(configuration.transformer!!)
         }
+    }
+
+    /**
+     * Apply the summary pipeline configuration to the manifold.
+     */
+    private fun applySummaryPipelineConfiguration(manifold: Manifold)
+    {
+        val configuration = summaryPipelineConfiguration ?: return
+        manifold.setSummaryPipeline(configuration.pipeline, configuration.descriptor, configuration.requirements)
+        manifold.setSummaryMode(configuration.summaryMode)
     }
 }
 
@@ -906,6 +933,80 @@ class TracingDsl
 }
 
 /**
+ * Builder for optional manifold summary pipeline configuration.
+ */
+@ManifoldDslMarker
+class SummaryPipelineDsl
+{
+    private var pipeline: Pipeline? = null
+    private var descriptor: P2PDescriptor? = null
+    private var requirements: P2PRequirements? = null
+    private var summaryMode: SummaryMode = SummaryMode.APPEND
+
+    /**
+     * Supply a pre-built summary pipeline.
+     *
+     * @param pipeline Summary pipeline to use.
+     * @param descriptor Optional explicit P2P descriptor override.
+     * @param requirements Optional explicit P2P requirements override.
+     */
+    fun pipeline(
+        pipeline: Pipeline,
+        descriptor: P2PDescriptor? = null,
+        requirements: P2PRequirements? = null
+    )
+    {
+        require(this.pipeline == null) { "Summary pipeline has already been configured." }
+        this.pipeline = pipeline
+        this.descriptor = descriptor
+        this.requirements = requirements
+    }
+
+    /**
+     * Build the summary pipeline inline inside the DSL.
+     *
+     * @param descriptor Optional explicit P2P descriptor override.
+     * @param requirements Optional explicit P2P requirements override.
+     * @param block Builder block used to configure the created [Pipeline].
+     */
+    fun pipeline(
+        descriptor: P2PDescriptor? = null,
+        requirements: P2PRequirements? = null,
+        block: Pipeline.() -> Unit
+    )
+    {
+        val builtPipeline = Pipeline()
+        builtPipeline.block()
+        pipeline(builtPipeline, descriptor, requirements)
+    }
+
+    /**
+     * Set the summarization mode for this summary pipeline.
+     *
+     * @param mode APPEND or REGENERATE.
+     */
+    fun summaryMode(mode: SummaryMode)
+    {
+        summaryMode = mode
+    }
+
+    /**
+     * Build the immutable summary pipeline configuration captured by this DSL block.
+     *
+     * @return Summary pipeline configuration ready for manifold assembly.
+     */
+    internal fun build(): SummaryPipelineConfiguration
+    {
+        return SummaryPipelineConfiguration(
+            pipeline = pipeline ?: throw IllegalArgumentException("Summary pipeline is required."),
+            descriptor = descriptor,
+            requirements = requirements,
+            summaryMode = summaryMode
+        )
+    }
+}
+
+/**
  * Immutable manager configuration captured by [ManagerDsl].
  *
  * @property pipeline Manager pipeline to register on the manifold.
@@ -1087,6 +1188,21 @@ internal data class ValidationConfiguration(
     val validator: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null,
     val failureHandler: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null,
     val transformer: (suspend (content: MultimodalContent) -> MultimodalContent)? = null
+)
+
+/**
+ * Immutable summary pipeline configuration captured by [SummaryPipelineDsl].
+ *
+ * @property pipeline Summary pipeline to register on the manifold.
+ * @property descriptor Optional explicit P2P descriptor override.
+ * @property requirements Optional explicit P2P requirements override.
+ * @property summaryMode Summarization mode controlling append vs. regenerate behavior.
+ */
+internal data class SummaryPipelineConfiguration(
+    val pipeline: Pipeline,
+    val descriptor: P2PDescriptor?,
+    val requirements: P2PRequirements?,
+    val summaryMode: SummaryMode = SummaryMode.APPEND
 )
 
 /**

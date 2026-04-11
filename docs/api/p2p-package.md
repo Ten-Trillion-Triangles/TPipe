@@ -451,6 +451,16 @@ enum class SupportedContentTypes { text, image, video, audio, application, other
 enum class InputSchema { plainText, json, xml, html, csv, tsv, yaml, markdown, bytes, other, none }
 ```
 
+### SummaryMode
+Controls how the Manifold's summary pipeline output is accumulated across loop iterations.
+
+```kotlin
+enum class SummaryMode {
+    APPEND,     // Pipeline outputs latest-event-only; Manifold appends to running summary
+    REGENERATE  // Pipeline receives priorSummary + latestEvent; Manifold replaces running summary
+}
+```
+
 ## Key Behaviors
 
 ### Agent Registration Model

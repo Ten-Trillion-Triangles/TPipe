@@ -78,3 +78,6 @@ gha-creds-*.json
 /.github/workflows
 
 aws/
+/md/native-compilation
+/.claude
+/__pycache__

@@ -6,6 +6,8 @@
 ## Table of Contents
 - [Core Concepts](#core-concepts)
 - [DSL Builder](#dsl-builder)
+- [Summary Pipeline](#summary-pipeline)
+- [initialUserPrompt](#initialuserprompt)
 - [Startup Checklist](#startup-checklist)
 - [Fastest Working Setup](#fastest-working-setup)
 - [Manual Setup](#manual-setup)
@@ -113,6 +115,7 @@ The `manifold { }` builder supports these top-level blocks:
 | `history { }` | Optional | Configures manager shared-history truncation |
 | `validation { }` | Optional | Hooks for worker output validation and transformation |
 | `tracing { }` | Optional | Enables tracing for the manifold and child pipelines |
+| `summaryPipeline { }` | Optional | Adds an optional summarization pipeline that runs after each worker response |
 
 Each block can only appear once (except `worker`, which can appear multiple times).
 
@@ -181,7 +184,55 @@ val builtManifold = manifold {
 
 When tracing is enabled through the DSL, all child pipelines share the manifold's trace ID so their events appear in a single correlated trace report.
 
-### Early Validation Rules
+### summaryPipeline { }
+
+The `summaryPipeline` block adds an optional summarization pipeline that runs **after each worker response** and **before the next manager loop iteration**. This enables progressive summarization of the task as it unfolds, which the manager pipeline can then reason over.
+
+The summary pipeline receives input based on the active `SummaryMode`:
+
+- **`SummaryMode.APPEND`**: Receives only the latest event's raw content text. The manifold appends the output to a running summary string.
+- **`SummaryMode.REGENERATE`**: Receives `Prior Summary:\n{runningSummary}\n\nLatest Event:\n{latestEventContent}`. The manifold replaces the running summary with the pipeline's output each iteration — classic condensation style.
+
+```kotlin
+val builtManifold = manifold {
+    defaults {
+        bedrock(BedrockConfiguration(region = "us-east-1", model = "anthropic.claude-3-haiku-20240307-v1:0"))
+    }
+
+    worker("research-worker") {
+        description("Researches topics.")
+        pipeline(researchPipeline)
+    }
+
+    summaryPipeline {
+        // Optional: set append mode (default) or regenerate mode
+        summaryMode(SummaryMode.REGENERATE)
+
+        // The summary pipeline must have overflow protection configured
+        pipeline {
+            pipelineName = "summary-pipeline"
+            add(summaryPipe.withOverflowProtection())
+        }
+    }
+}
+```
+
+The summary pipeline is invoked inside the main execution loop, after the worker response is received and merged into `workingContentObject`, but before the termination condition is re-evaluated for the next iteration. The accumulated summary is accessible via the `initialUserPrompt` property after execution.
+
+> **Note:** The summary pipeline must have context overflow protection configured on all its pipes, just like worker pipelines. This prevents a misbehaving summarizer from crashing the manifold.
+
+## initialUserPrompt
+
+The `initialUserPrompt` property stores the raw user prompt string passed to `execute()` at the moment it is called. It is public and readable after execution completes:
+
+```kotlin
+val result = manifold.execute(MultimodalContent("build me a REST API"))
+println(manifold.initialUserPrompt) // "build me a REST API"
+```
+
+This lets developer-written manager pipelines reference the original task prompt — for example, by injecting it into a system prompt or using it as a seed for the manager's reasoning.
+
+## Early Validation Rules
 
 The DSL validates your configuration at build time and throws `IllegalArgumentException` with a descriptive message when something is wrong. This catches mistakes before any LLM calls are made.
 

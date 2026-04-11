@@ -5,6 +5,7 @@ import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ConverseRole
 import com.TTT.Context.Dictionary
 import com.TTT.Enums.ProviderName
+import com.TTT.Enums.SummaryMode
 import com.TTT.P2P.AgentDescriptor
 import com.TTT.P2P.AgentRequest
 import com.TTT.P2P.InputSchema
@@ -228,6 +229,31 @@ class Manifold : P2PInterface
     private val agentInteractionMap = mutableMapOf<String, Int>()
 
     /**
+     * Saved copy of the initial user prompt passed to execute().
+     * Available to developer-written manager pipelines for reference.
+     */
+    @RuntimeState
+    var initialUserPrompt: String = ""
+        private set
+
+    /**
+     * Optional summarization pipeline that runs after each worker response,
+     * before the next manager loop iteration.
+     */
+    private var summaryPipeline: Pipeline? = null
+
+    /**
+     * Controls whether the summary pipeline appends to or regenerates the running summary.
+     */
+    private var summaryMode: SummaryMode = SummaryMode.APPEND
+
+    /**
+     * Accumulated running summary maintained across loop iterations.
+     */
+    @RuntimeState
+    private var runningSummary: String = ""
+
+    /**
      * Used to pause or resume a manifold. When a manifold pauses the loop will freeze and wait until it can resume.
      * This allows us to stop the progression of the manifold after a worker pipe runs to allow for accepting user input,
      * Then resume after getting that user input or system input. Unlike regular pipelines which the orchestration is
@@ -431,7 +457,38 @@ class Manifold : P2PInterface
         return this
     }
 
-    
+    /**
+     * Sets the optional summarization pipeline that runs after each worker response.
+     * The summary pipeline must have context overflow protection configured.
+     *
+     * @param pipeline The pipeline to use for summarization.
+     * @param descriptor Optional P2P descriptor.
+     * @param requirements Optional P2P requirements.
+     */
+    fun setSummaryPipeline(pipeline: Pipeline, descriptor: P2PDescriptor? = null, requirements: P2PRequirements? = null): Manifold
+    {
+        if (!pipeline.hasContextOverflowProtectionConfigured()) {
+            val unsafePipes = pipeline.getPipesWithoutContextOverflowProtection()
+                .joinToString { it.pipeName.ifEmpty { "<unnamed>" } }
+            throw IllegalArgumentException(
+                "Summary pipeline requires overflow protection on pipes: $unsafePipes"
+            )
+        }
+        summaryPipeline = pipeline
+        return this
+    }
+
+    /**
+     * Sets the summarization mode that controls how the running summary is updated.
+     *
+     * @param mode APPEND appends summary pipeline output to the running summary.
+     *             REGENERATE replaces the running summary with the pipeline's output each iteration.
+     */
+    fun setSummaryMode(mode: SummaryMode): Manifold
+    {
+        summaryMode = mode
+        return this
+    }
 
     /**
      * Adds new registered names to look for when sending agent lists to pipes that can make agent calls.
@@ -983,6 +1040,36 @@ class Manifold : P2PInterface
         workingContentObject.text = serializeConverseHistory(holdingWindow.converseHistory)
     }
 
+    /**
+     * Build the input MultimodalContent for the summary pipeline based on the current summary mode.
+     *
+     * APPEND mode: Input is the latest ConverseHistory entry content text only.
+     * REGENERATE mode: Input is "Prior Summary:\n{runningSummary}\n\nLatest Event:\n{latestEventContent}"
+     */
+    private fun buildSummaryPipelineInput(): MultimodalContent
+    {
+        val converseHistory = extractJson<ConverseHistory>(workingContentObject.text)
+        val latestEntry = converseHistory?.history?.lastOrNull()
+        val latestText = latestEntry?.content?.text ?: ""
+
+        val inputText = when (summaryMode)
+        {
+            SummaryMode.APPEND -> latestText
+            SummaryMode.REGENERATE -> buildString {
+                if (runningSummary.isNotEmpty())
+                {
+                    append("Prior Summary:\n")
+                    append(runningSummary)
+                    append("\n\n")
+                }
+                append("Latest Event:\n")
+                append(latestText)
+            }
+        }
+
+        return MultimodalContent(inputText)
+    }
+
 //=================================================Execution============================================================
 
     /**
@@ -1000,6 +1087,9 @@ class Manifold : P2PInterface
          * likely catastrophic failure. So we need to throw here.
          */
         hasP2P(managerPipeline)
+
+        // Save the initial user prompt for developer use in manager pipelines
+        initialUserPrompt = content.text
 
         // === TRACING: Initialize execution tracing ===
         if(tracingEnabled)
@@ -1520,7 +1610,27 @@ class Manifold : P2PInterface
                 }
                 workingContentObject.terminatePipeline = true; break
             }
-            
+
+            // === NEW: Summary Pipeline invocation ===
+            if (summaryPipeline != null)
+            {
+                val summaryInput = buildSummaryPipelineInput()
+                val summaryResult = summaryPipeline!!.execute(summaryInput)
+                val summaryText = summaryResult.text.ifEmpty {
+                    summaryResult.metadata["summary"]?.toString() ?: ""
+                }
+
+                if (summaryText.isNotEmpty())
+                {
+                    when (summaryMode)
+                    {
+                        SummaryMode.APPEND -> runningSummary += summaryText
+                        SummaryMode.REGENERATE -> runningSummary = summaryText
+                    }
+                }
+            }
+            // ==========================================
+
             // === TRACING: Termination condition check ===
             if(tracingEnabled)
             {
