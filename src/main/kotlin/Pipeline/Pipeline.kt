@@ -1096,6 +1096,10 @@ class Pipeline : P2PInterface
     /**
      * Internal function to append to this pipeline's converse history. This is used to wrap content
      * with the converse history structure.
+     *
+     * Note: When [wrapTextResponseOnly] is true, only the text field is preserved in the converse history
+     * entry. All other fields including metadata, binaryContent, tools, and context are stripped.
+     * Do not rely on converse history for metadata fidelity when using text-only wrapping.
      */
     private fun appendContentToConverseHistory(content: MultimodalContent, role: ConverseRole)
     {

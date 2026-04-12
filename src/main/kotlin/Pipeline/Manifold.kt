@@ -1067,7 +1067,9 @@ class Manifold : P2PInterface
             }
         }
 
-        return MultimodalContent(inputText)
+        return MultimodalContent(inputText).apply {
+            metadata = workingContentObject.metadata.toMutableMap()  // preserve source metadata
+        }
     }
 
 //=================================================Execution============================================================
@@ -1124,13 +1126,25 @@ class Manifold : P2PInterface
 
             val converseHistoryAsJson = serializeConverseHistory(newConverseHistory)
             content.text = converseHistoryAsJson
-            workingContentObject = MultimodalContent(content.text, content.binaryContent.toMutableList(), content.terminatePipeline)
+            workingContentObject = MultimodalContent(
+                text = content.text,
+                binaryContent = content.binaryContent.toMutableList(),
+                terminatePipeline = content.terminatePipeline
+            ).apply {
+                metadata = content.metadata.toMutableMap()
+            }
         }
 
         //If we're skipping, we can push directly to the text portion of the object which forms our user prompt space.
         else
         {
-            workingContentObject = MultimodalContent(content.text, content.binaryContent.toMutableList(), content.terminatePipeline)
+            workingContentObject = MultimodalContent(
+                text = content.text,
+                binaryContent = content.binaryContent.toMutableList(),
+                terminatePipeline = content.terminatePipeline
+            ).apply {
+                metadata = content.metadata.toMutableMap()
+            }
         }
 
         // === TRACING: Reset loop counter ===

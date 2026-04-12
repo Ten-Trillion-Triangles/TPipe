@@ -6021,12 +6021,15 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
                             failureResult = transformResult.await()
                             failureResult.currentPipe = inputContent.currentPipe //Prevent nullptr leakage.
+                            failureResult.metadata = generatedContent.metadata.toMutableMap() // preserve metadata through transformation pipe
                         }
 
 
                         if(transformationFunction != null)
                         {
+                            val failureMetadataBackup = failureResult.metadata.toMutableMap()
                             failureResult = transformationFunction?.invoke(failureResult) ?: failureResult
+                            failureResult.metadata = failureMetadataBackup // preserve metadata through transformation function
                         }
 
                         //todo: Finish this trace output.

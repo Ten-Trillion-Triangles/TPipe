@@ -54,15 +54,20 @@ class Splitter: P2PInterface
         val result = executePipelines()
         result.awaitAll()
 
-        val content = MultimodalContent()
+        val outputContent = MultimodalContent().apply {
+            // Preserve input metadata
+            metadata = content.metadata.toMutableMap()
+            // Preserve input binary content
+            binaryContent = content.binaryContent.toMutableList()
+        }
         val collection = results
 
         for(result in collection.contents)
         {
-            content.metadata[result.key] = result.value
+            outputContent.metadata[result.key] = result.value
         }
 
-        return content
+        return outputContent
     }
 
 //-------------------------------------------Properties--------------------------------------------------------------------
