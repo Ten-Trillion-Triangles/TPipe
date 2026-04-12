@@ -33,8 +33,8 @@ Add OpenRouter as a TPipe provider module, enabling single-API-key access to 300
 | Milestone | Description | Status |
 |-----------|-------------|--------|
 | M1.1 | Module skeleton and build configuration | Not Started |
-| M1.2 | Request/response models (env/) | Not Started |
-| M1.3 | OpenRouterPipe core — non-streaming | Not Started |
+| M1.2 | Request/response models (env/) | **Complete** |
+| M1.3 | OpenRouterPipe core — non-streaming | **Complete** |
 | M1.4 | Unit tests for non-streaming core | Not Started |
 
 **Tier 1 Goal**: A working pipe that can make a chat completion call and return text. No streaming, no defaults integration.
@@ -328,7 +328,7 @@ all → M4.6
 
 | Tier | Milestones | Complete | In Progress | Not Started |
 |------|-----------|----------|-------------|-------------|
-| Tier 1 | M1.1–M1.4 | 0 | 0 | 4 |
+| Tier 1 | M1.1–M1.4 | 2 | 0 | 2 |
 | Tier 2 | M2.1–M2.4 | 0 | 0 | 4 |
 | Tier 3 | M3.1–M3.4 | 0 | 0 | 4 |
 | Tier 4 | M4.1–M4.6 | 0 | 0 | 6 |

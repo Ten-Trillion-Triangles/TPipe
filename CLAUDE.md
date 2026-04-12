@@ -88,6 +88,47 @@ TPipe-Tuner/                # Tuning utilities
 TPipe-TraceServer/          # Remote trace dashboard
 ```
 
+## Code Style
+
+Follow the [TTT Kotlin Style Guide](./.codex/skills/formatter/references/TTT_STYLE_GUIDE.md) for all Kotlin code. Key rules:
+
+### Bracing
+- **With parentheses** (`if/else`, `for`, `when`, functions, classes): `{` on the next line (newline brace style)
+- **Without parentheses** (`init`, `companion object`, getters): `{` on the same line (inline/lambda)
+- **DSL builders and scope functions** (`apply`, `map`, widget trees): `{` on the same line
+
+### Documentation
+- **KDoc required** on all public functions/methods, classes, and complex private functions
+- Link to related types using square brackets: `@see [ClassName]`
+- Inline comments only when business logic or concurrency is non-trivial
+
+### Naming
+- **Descriptive names** — no `x`, `tmp`, `result`; use `pipelineContext`, `requestPayload`
+- **No snake_case** in Kotlin code or string literals (unless a third-party API requires it)
+- **camelCase** for all Kotlin identifiers; **UPPER_SNAKE_CASE** for constants
+
+### Type Declarations
+- Type adjacent to parameter: `val count: Int`
+- Inheritance: exactly one space around `:` — `class Child : Parent`
+
+### Parentheses and Spacing
+- No space between keyword and `(`: `if(value)`, `for(element in list)`
+- Space after `:` in type declarations only
+
+### TPipe-Specific Conventions
+
+**Section separators**: Properties grouped with `//====...====` headers (e.g., `//=========================================Properties===================================================================`)
+
+**Builder pattern**: `set{Property}()` methods return `this` for chaining
+
+**Serialization safety**: `@Transient` annotation on any field that must not be serialized (API keys, HTTP clients, passwords)
+
+**JSON handling**: Use `com.TTT.Util.serialize()` and `deserialize()` — these handle AI malformed JSON repair automatically
+
+**Error mapping**: HTTP 401→`P2PError.auth`, 422→`P2PError.prompt`, 429/500→`P2PError.transport`
+
+**Pipe module naming**: `{ProviderName}Pipe` class, `env/` for DTOs, `ProviderName.OpenRouter` enum entry
+
 ## Important Patterns
 
 ### RuntimeState

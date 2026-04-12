@@ -98,8 +98,8 @@ The implementation steering document (`md/openrouter-implementation-steering.md`
 | Milestone | Description | Status |
 |-----------|-------------|--------|
 | M1.1 | Module skeleton and build configuration | Not Started |
-| M1.2 | Request/response models (env/) | Not Started |
-| M1.3 | OpenRouterPipe core — non-streaming | Not Started |
+| M1.2 | Request/response models (env/) | **Complete** |
+| M1.3 | OpenRouterPipe core — non-streaming | **Complete** |
 | M1.4 | Unit tests for non-streaming core | Not Started |
 
 **Tier 1 Goal**: A working pipe that can make a chat completion call and return text. No streaming, no defaults integration.
