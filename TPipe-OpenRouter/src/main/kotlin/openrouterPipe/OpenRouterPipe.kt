@@ -10,6 +10,7 @@ import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import env.ChatMessage
 import env.OpenRouterChatRequest
+import env.OpenRouterEnv
 import env.OpenRouterChatResponse
 import env.OpenRouterErrorResponse
 import env.StreamingChunk
@@ -172,7 +173,12 @@ class OpenRouterPipe : Pipe()
 
         if(apiKey.isBlank())
         {
-            throw IllegalStateException("OpenRouter API key is required. Call setApiKey() before init().")
+            val resolvedKey = OpenRouterEnv.resolveApiKey()
+            if(resolvedKey.isBlank())
+            {
+                throw IllegalStateException("OpenRouter API key is required. Call setApiKey(), openrouterEnv.setApiKey(), or set OPENROUTER_API_KEY environment variable before init().")
+            }
+            apiKey = resolvedKey
         }
 
         provider = ProviderName.OpenRouter

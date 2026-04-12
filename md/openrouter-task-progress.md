@@ -68,7 +68,7 @@ Add OpenRouter as a TPipe provider module, enabling single-API-key access to 300
 | M4.1 | OpenRouterPipe examples | **Complete** |
 | M4.2 | TPipe-Defaults integration examples | **Complete** |
 | M4.3 | SSE Parser utility (risk validation) | **Complete** |
-| M4.4 | Security review and API key handling validation | Not Started |
+| M4.4 | Security review and API key handling validation | **Complete** |
 | M4.5 | Model-specific truncation strategy validation | Not Started |
 | M4.6 | Full test suite validation | Not Started |
 
@@ -331,10 +331,10 @@ all → M4.6
 | Tier 1 | M1.1–M1.4 | 4 | 0 | 0 |
 | Tier 2 | M2.1–M2.4 | 4 | 0 | 0 |
 | Tier 3 | M3.1–M3.4 | 4 | 0 | 0 |
-| Tier 4 | M4.1–M4.6 | 3 | 0 | 3 |
-| **Total** | **16 milestones** | **14** | **0** | **2** |
+| Tier 4 | M4.1–M4.6 | 4 | 0 | 2 |
+| **Total** | **16 milestones** | **15** | **0** | **1** |
 
-**Overall**: M1.1–M1.4, M2.1–M2.4, M3.1–M3.4, M4.1–M4.3 complete. M4.4–M4.6 remaining.
+**Overall**: M1.1–M1.4, M2.1–M2.4, M3.1–M3.4, M4.1–M4.4 complete. M4.5–M4.6 remaining.
 
 ---
 
