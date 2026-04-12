@@ -65,7 +65,7 @@ Add OpenRouter as a TPipe provider module, enabling single-API-key access to 300
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
-| M4.1 | OpenRouterPipe examples | Not Started |
+| M4.1 | OpenRouterPipe examples | **Complete** |
 | M4.2 | TPipe-Defaults integration examples | Not Started |
 | M4.3 | SSE Parser utility (risk validation) | Not Started |
 | M4.4 | Security review and API key handling validation | Not Started |
@@ -331,20 +331,20 @@ all → M4.6
 | Tier 1 | M1.1–M1.4 | 4 | 0 | 0 |
 | Tier 2 | M2.1–M2.4 | 4 | 0 | 0 |
 | Tier 3 | M3.1–M3.4 | 4 | 0 | 0 |
-| **Total** | **16 milestones** | **11** | **0** | **5** |
+| Tier 4 | M4.1–M4.6 | 1 | 0 | 5 |
+| **Total** | **16 milestones** | **12** | **0** | **4** |
 
-**Overall**: M1.1–M1.4, M2.1–M2.4, M3.1–M3.4 complete. M4.1–M4.6 remaining.
+**Overall**: M1.1–M1.4, M2.1–M2.4, M3.1–M3.4, M4.1 complete. M4.2–M4.6 remaining.
 
 ---
 
 ## 7. Next Steps
 
-### Immediate Next Step: M4.1 — OpenRouterPipe Examples
+### Immediate Next Step: M4.2 — TPipe-Defaults Integration Examples
 
-1. Create `TPipe-OpenRouter/src/main/kotlin/openrouterPipe/examples/BasicExample.kt`
-2. Create `TPipe-OpenRouter/src/main/kotlin/openrouterPipe/examples/StreamingExample.kt`
-3. Create `TPipe-OpenRouter/src/main/kotlin/openrouterPipe/examples/DefaultsExample.kt`
-4. Follow pattern from existing provider examples if available
+1. Document `ManifoldDefaults.withOpenRouter()` usage
+2. Add integration test examples
+3. Follow pattern from existing provider defaults examples
 
 ### Blockers
 
