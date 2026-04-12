@@ -97,7 +97,7 @@ The implementation steering document (`md/openrouter-implementation-steering.md`
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
-| M1.1 | Module skeleton and build configuration | Not Started |
+| M1.1 | Module skeleton and build configuration | **Complete** |
 | M1.2 | Request/response models (env/) | **Complete** |
 | M1.3 | OpenRouterPipe core — non-streaming | **Complete** |
 | M1.4 | Unit tests for non-streaming core | **Complete** |
@@ -109,7 +109,7 @@ The implementation steering document (`md/openrouter-implementation-steering.md`
 | Milestone | Description | Status |
 |-----------|-------------|--------|
 | M2.1 | Streaming support | **Complete** |
-| M2.2 | Error handling and HTTP status code mapping | Not Started |
+| M2.2 | Error handling and HTTP status code mapping | **Complete** |
 | M2.3 | P2P interface compliance | Not Started |
 | M2.4 | Integration tests (real API) | Not Started |
 

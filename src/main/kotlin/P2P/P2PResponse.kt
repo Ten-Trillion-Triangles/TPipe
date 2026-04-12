@@ -37,3 +37,16 @@ data class P2PResponse(
     var output: MultimodalContent? = null,
     var rejection: P2PRejection? = null
 )
+
+/**
+ * Exception wrapper for P2P errors with typed error classification.
+ *
+ * @property errorType The classified error type from P2PError enum
+ * @property message Human-readable error message
+ * @property cause The underlying exception that caused this error
+ */
+class P2PException(
+    val errorType: P2PError,
+    message: String,
+    cause: Throwable
+) : Exception(message, cause)

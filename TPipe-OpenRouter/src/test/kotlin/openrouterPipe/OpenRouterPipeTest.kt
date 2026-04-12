@@ -648,4 +648,155 @@ class OpenRouterPipeTest
         assertEquals("Hi", chunk.choices[0].delta.content)
         assertEquals("stop", chunk.choices[0].finishReason)
     }
+
+//=========================================Error Response Handling Tests===========================================
+
+    @Test
+    fun testErrorResponseTypeAuthError()
+    {
+        val json = """
+            {
+                "error": {
+                    "message": "Invalid API key",
+                    "code": "invalid_api_key",
+                    "type": "auth_error"
+                }
+            }
+        """.trimIndent()
+
+        val errorResponse = deserialize<OpenRouterErrorResponse>(json)
+
+        assertNotNull(errorResponse)
+        assertEquals("auth_error", errorResponse.error.type)
+    }
+
+    @Test
+    fun testErrorResponseTypeRateLimit()
+    {
+        val json = """
+            {
+                "error": {
+                    "message": "Rate limit exceeded",
+                    "code": "rate_limit_exceeded",
+                    "type": "rate_limit_error"
+                }
+            }
+        """.trimIndent()
+
+        val errorResponse = deserialize<OpenRouterErrorResponse>(json)
+
+        assertNotNull(errorResponse)
+        assertEquals("rate_limit_error", errorResponse.error.type)
+    }
+
+    @Test
+    fun testErrorResponseTypeInvalidRequest()
+    {
+        val json = """
+            {
+                "error": {
+                    "message": "Invalid request parameters",
+                    "code": "invalid_request",
+                    "type": "invalid_request_error"
+                }
+            }
+        """.trimIndent()
+
+        val errorResponse = deserialize<OpenRouterErrorResponse>(json)
+
+        assertNotNull(errorResponse)
+        assertEquals("invalid_request_error", errorResponse.error.type)
+    }
+
+    @Test
+    fun testErrorResponseTypeServerError()
+    {
+        val json = """
+            {
+                "error": {
+                    "message": "Internal server error",
+                    "code": "server_error",
+                    "type": "api_error"
+                }
+            }
+        """.trimIndent()
+
+        val errorResponse = deserialize<OpenRouterErrorResponse>(json)
+
+        assertNotNull(errorResponse)
+        assertEquals("api_error", errorResponse.error.type)
+    }
+
+    @Test
+    fun testErrorResponseWithCodeBodyExtra()
+    {
+        val json = """
+            {
+                "error": {
+                    "message": "Request failed",
+                    "code": "request_failed",
+                    "type": "rate_limit_error",
+                    "code_body": "rate_limit_exceeded"
+                }
+            }
+        """.trimIndent()
+
+        val errorResponse = deserialize<OpenRouterErrorResponse>(json)
+
+        assertNotNull(errorResponse)
+        assertEquals("rate_limit_exceeded", errorResponse.error.codeBody)
+    }
+
+    @Test
+    fun testErrorResponseMessageOnly()
+    {
+        val json = """
+            {
+                "error": {
+                    "message": "Something went wrong"
+                }
+            }
+        """.trimIndent()
+
+        val errorResponse = deserialize<OpenRouterErrorResponse>(json)
+
+        assertNotNull(errorResponse)
+        assertEquals("Something went wrong", errorResponse.error.message)
+    }
+
+    @Test
+    fun testErrorResponseTypeNull()
+    {
+        val json = """
+            {
+                "error": {
+                    "message": "Unknown error",
+                    "type": null
+                }
+            }
+        """.trimIndent()
+
+        val errorResponse = deserialize<OpenRouterErrorResponse>(json)
+
+        assertNotNull(errorResponse)
+        assertTrue(errorResponse.error.type == null)
+    }
+
+    @Test
+    fun testErrorResponseCodeNull()
+    {
+        val json = """
+            {
+                "error": {
+                    "message": "Error without code",
+                    "code": null
+                }
+            }
+        """.trimIndent()
+
+        val errorResponse = deserialize<OpenRouterErrorResponse>(json)
+
+        assertNotNull(errorResponse)
+        assertTrue(errorResponse.error.code == null)
+    }
 }

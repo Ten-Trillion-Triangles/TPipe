@@ -2,6 +2,8 @@ package openrouterPipe
 
 import com.TTT.Debug.*
 import com.TTT.Enums.ProviderName
+import com.TTT.P2P.P2PError
+import com.TTT.P2P.P2PException
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.deserialize
@@ -9,6 +11,7 @@ import com.TTT.Util.serialize
 import env.ChatMessage
 import env.OpenRouterChatRequest
 import env.OpenRouterChatResponse
+import env.OpenRouterErrorResponse
 import env.StreamingChunk
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -291,8 +294,37 @@ class OpenRouterPipe : Pipe()
                     }.bodyAsText()
                 }
 
+                // Check for error responses BEFORE deserializing as success
+                val responseStatus = try
+                {
+                    // Extract HTTP status from error response
+                    deserialize<OpenRouterErrorResponse>(responseText)
+                    if(responseText.contains("\"error\"")) "error" else "ok"
+                }
+                catch(e: Exception)
+                {
+                    "ok"
+                }
+
+                if(responseStatus == "error")
+                {
+                    val errorResponse = deserialize<OpenRouterErrorResponse>(responseText)
+                    if(errorResponse != null)
+                    {
+                        val p2pError = when(errorResponse.error.type)
+                        {
+                            "auth_error" -> P2PError.auth
+                            "rate_limit_error" -> P2PError.transport
+                            "invalid_request_error", "invalid_api_key" -> P2PError.prompt
+                            "api_error", "server_error" -> P2PError.transport
+                            else -> P2PError.transport
+                        }
+                        throw P2PException(p2pError, "OpenRouter error: ${errorResponse.error.message}", Exception(errorResponse.error.message))
+                    }
+                }
+
                 val response: OpenRouterChatResponse = deserialize(responseText)
-                    ?: throw Exception("Failed to deserialize OpenRouter chat response: $responseText")
+                    ?: throw P2PException(P2PError.json, "Failed to deserialize OpenRouter chat response: $responseText", Exception("Deserialization failed"))
 
                 val resultText = response.choices.firstOrNull()?.message?.content ?: ""
 
@@ -316,7 +348,13 @@ class OpenRouterPipe : Pipe()
                       "streaming" to streamingEnabled
                   ))
 
-            throw e
+            when(e)
+            {
+                is HttpRequestTimeoutException -> throw P2PException(P2PError.transport, "Request timeout", e)
+                is java.net.SocketTimeoutException -> throw P2PException(P2PError.transport, "Socket timeout", e)
+                is java.net.ConnectException -> throw P2PException(P2PError.transport, "Connection failed", e)
+                else -> throw e
+            }
         }
     }
 
