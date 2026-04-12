@@ -207,6 +207,30 @@ data class BedrockGridConfiguration(
 }
 
 /**
+ * Configuration for OpenRouter provider with API key, model, and endpoint settings.
+ *
+ * @param model OpenRouter model identifier to use (required)
+ * @param apiKey OpenRouter API key for authentication (required)
+ * @param pipeCount Number of pipes to create in the manager pipeline
+ * @param baseUrl Base URL for OpenRouter API (defaults to official endpoint)
+ * @param httpReferer HTTP Referer header for site traffic tracking
+ * @param openRouterTitle OpenRouter Title header to identify the application
+ * @param manifoldMemory Manifold manager-memory defaults applied by `TPipe-Defaults`
+ */
+data class OpenRouterConfiguration(
+    var model: String,
+    var apiKey: String,
+    var pipeCount: Int = 2,
+    var baseUrl: String = "https://openrouter.ai/api/v1",
+    var httpReferer: String = "",
+    var openRouterTitle: String = "",
+    var manifoldMemory: ManifoldMemoryConfiguration = ManifoldMemoryConfiguration()
+) : ProviderConfiguration()
+{
+    override fun validate(): Boolean = model.isNotBlank() && apiKey.isNotBlank() && pipeCount > 0
+}
+
+/**
  * Grid-specific Ollama defaults configuration.
  *
  * @param model Model name to use.

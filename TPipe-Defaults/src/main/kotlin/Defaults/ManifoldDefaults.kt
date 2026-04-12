@@ -2,6 +2,7 @@ package Defaults
 
 import Defaults.providers.BedrockDefaults
 import Defaults.providers.OllamaDefaults
+import Defaults.providers.OpenRouterDefaults
 import com.TTT.Pipeline.Manifold
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Enums.ProviderName
@@ -16,6 +17,7 @@ import com.TTT.Pipe.TruncationSettings
 import com.TTT.Pipe.deepCopy
 import com.TTT.Pipeline.TaskProgress
 import ollamaPipe.OllamaPipe
+import openrouterPipe.OpenRouterPipe
 
 /**
  * Central factory for creating pre-configured Manifold instances with provider-specific defaults.
@@ -52,16 +54,37 @@ object ManifoldDefaults
      * @throws IllegalArgumentException if configuration is invalid
      * @throws RuntimeException if Ollama provider is not available
      */
-    fun withOllama(configuration: OllamaConfiguration): Manifold 
+    fun withOllama(configuration: OllamaConfiguration): Manifold
     {
         require(configuration.validate()) { "Invalid Ollama configuration: $configuration" }
-        
-        return try 
+
+        return try
         {
             OllamaDefaults.createManifold(configuration)
         } catch(e: Exception)
         {
             throw RuntimeException("Failed to create Ollama Manifold: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Creates a Manifold instance configured for OpenRouter with optimized defaults.
+     *
+     * @param configuration OpenRouter-specific configuration including model, API key, and endpoint settings
+     * @return Fully configured Manifold instance ready for multi-agent orchestration
+     * @throws IllegalArgumentException if configuration is invalid
+     * @throws RuntimeException if OpenRouter provider is not available
+     */
+    fun withOpenRouter(configuration: OpenRouterConfiguration): Manifold
+    {
+        require(configuration.validate()) { "Invalid OpenRouter configuration: $configuration" }
+
+        return try
+        {
+            OpenRouterDefaults.createManifold(configuration)
+        } catch(e: Exception)
+        {
+            throw RuntimeException("Failed to create OpenRouter Manifold: ${e.message}", e)
         }
     }
     
@@ -70,13 +93,14 @@ object ManifoldDefaults
      *
      * @return List of provider names that have implementations available
      */
-    fun getAvailableProviders(): List<String> 
+    fun getAvailableProviders(): List<String>
     {
         val providers = mutableListOf<String>()
-        
+
         if(isProviderAvailable("bedrock")) providers.add("bedrock")
         if(isProviderAvailable("ollama")) providers.add("ollama")
-        
+        if(isProviderAvailable("openrouter")) providers.add("openrouter")
+
         return providers
     }
     
@@ -86,9 +110,9 @@ object ManifoldDefaults
      * @param providerName Name of the provider to check
      * @return true if provider is available, false otherwise
      */
-    fun isProviderAvailable(providerName: String): Boolean 
+    fun isProviderAvailable(providerName: String): Boolean
     {
-        return try 
+        return try
         {
             when(providerName.lowercase())
             {
@@ -98,6 +122,10 @@ object ManifoldDefaults
                 }
                 "ollama" -> {
                     Class.forName("ollamaPipe.OllamaPipe")
+                    true
+                }
+                "openrouter" -> {
+                    Class.forName("openrouterPipe.OpenRouterPipe")
                     true
                 }
                 else -> false
@@ -135,6 +163,21 @@ object ManifoldDefaults
     {
         val managerPipeline = OllamaDefaults.createManagerPipeline(ollamaConfig)
         assignManagerPipelineDefaults(managerPipeline, ollamaConfig.manifoldMemory)
+        return managerPipeline
+    }
+
+    /**
+     * Builder that constructs a solid default manager pipeline already configured to act as a manager for worker pipes.
+     * Provides a solid set of instructions to cover most general cases that would need a manifold without asking the
+     * user to build their own pipeline from scratch.
+     *
+     * @param openRouterConfig OpenRouter configuration for OpenRouter provider
+     * @return Configured Pipeline ready to be used as a manager pipeline
+     */
+    fun buildDefaultManagerPipeline(openRouterConfig: OpenRouterConfiguration): Pipeline
+    {
+        val managerPipeline = OpenRouterDefaults.createManagerPipeline(openRouterConfig)
+        assignManagerPipelineDefaults(managerPipeline, openRouterConfig.manifoldMemory)
         return managerPipeline
     }
 

@@ -55,9 +55,9 @@ Add OpenRouter as a TPipe provider module, enabling single-API-key access to 300
 | Milestone | Description | Status |
 |-----------|-------------|--------|
 | M3.1 | ProviderName enum update | **Complete** |
-| M3.2 | OpenRouterConfiguration (TPipe-Defaults) | Not Started |
-| M3.3 | OpenRouterDefaults factory | Not Started |
-| M3.4 | ManifoldDefaults integration | Not Started |
+| M3.2 | OpenRouterConfiguration (TPipe-Defaults) | **Complete** |
+| M3.3 | OpenRouterDefaults factory | **Complete** |
+| M3.4 | ManifoldDefaults integration | **Complete** |
 
 **Tier 3 Goal**: Integrate with TPipe-Defaults so users can create OpenRouter-backed Manifolds via factory.
 
@@ -330,23 +330,21 @@ all → M4.6
 |------|-----------|----------|-------------|-------------|
 | Tier 1 | M1.1–M1.4 | 4 | 0 | 0 |
 | Tier 2 | M2.1–M2.4 | 4 | 0 | 0 |
-| Tier 3 | M3.1–M3.4 | 1 | 0 | 3 |
-| **Total** | **16 milestones** | **9** | **0** | **7** |
+| Tier 3 | M3.1–M3.4 | 4 | 0 | 0 |
+| **Total** | **16 milestones** | **11** | **0** | **5** |
 
-**Overall**: M1.1–M1.4, M2.1–M2.4, and M3.1 complete. M3.2–M4.6 remaining.
+**Overall**: M1.1–M1.4, M2.1–M2.4, M3.1–M3.4 complete. M4.1–M4.6 remaining.
 
 ---
 
 ## 7. Next Steps
 
-### Immediate Next Step: M3.2 — OpenRouterConfiguration (TPipe-Defaults)
+### Immediate Next Step: M4.1 — OpenRouterPipe Examples
 
-1. Create `TPipe-Defaults/src/main/kotlin/Defaults/providers/OpenRouterConfiguration.kt`
-2. Add fields: `model`, `apiKey`, `pipeCount`, `baseUrl`, `httpReferer`, `openRouterTitle`, `manifoldMemory`
-3. Implement `validate()` to check required fields
-2. Add `include("TPipe-OpenRouter")` to `settings.gradle.kts`
-3. Create placeholder directory structure
-4. Verify `./gradlew :TPipe-OpenRouter:build` succeeds
+1. Create `TPipe-OpenRouter/src/main/kotlin/openrouterPipe/examples/BasicExample.kt`
+2. Create `TPipe-OpenRouter/src/main/kotlin/openrouterPipe/examples/StreamingExample.kt`
+3. Create `TPipe-OpenRouter/src/main/kotlin/openrouterPipe/examples/DefaultsExample.kt`
+4. Follow pattern from existing provider examples if available
 
 ### Blockers
 
