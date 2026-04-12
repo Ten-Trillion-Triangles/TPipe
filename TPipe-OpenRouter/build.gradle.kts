@@ -29,8 +29,8 @@ dependencies {
     testImplementation(kotlin("test"))
     implementation(project(":"))
 
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
 
     implementation("io.ktor:ktor-client-core:3.1.3")

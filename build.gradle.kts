@@ -47,7 +47,7 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.ktor.server.netty)
     implementation("org.jetbrains.kotlinx:kotlinx-io-core:0.8.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     
     // Client
     implementation("io.ktor:ktor-client-core:${libs.versions.ktor.version.get()}")

@@ -23,7 +23,7 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json:${libs.versions.ktor.version.get()}")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("io.ktor:ktor-server-test-host:${libs.versions.ktor.version.get()}")
