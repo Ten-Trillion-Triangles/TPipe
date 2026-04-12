@@ -35,7 +35,7 @@ Add OpenRouter as a TPipe provider module, enabling single-API-key access to 300
 | M1.1 | Module skeleton and build configuration | Not Started |
 | M1.2 | Request/response models (env/) | **Complete** |
 | M1.3 | OpenRouterPipe core — non-streaming | **Complete** |
-| M1.4 | Unit tests for non-streaming core | Not Started |
+| M1.4 | Unit tests for non-streaming core | **Complete** |
 
 **Tier 1 Goal**: A working pipe that can make a chat completion call and return text. No streaming, no defaults integration.
 
@@ -43,7 +43,7 @@ Add OpenRouter as a TPipe provider module, enabling single-API-key access to 300
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
-| M2.1 | Streaming support | Not Started |
+| M2.1 | Streaming support | **Complete** |
 | M2.2 | Error handling and HTTP status code mapping | Not Started |
 | M2.3 | P2P interface compliance | Not Started |
 | M2.4 | Integration tests (real API) | Not Started |
@@ -328,19 +328,19 @@ all → M4.6
 
 | Tier | Milestones | Complete | In Progress | Not Started |
 |------|-----------|----------|-------------|-------------|
-| Tier 1 | M1.1–M1.4 | 2 | 0 | 2 |
-| Tier 2 | M2.1–M2.4 | 0 | 0 | 4 |
+| Tier 1 | M1.1–M1.4 | 3 | 0 | 1 |
+| Tier 2 | M2.1–M2.4 | 1 | 0 | 3 |
 | Tier 3 | M3.1–M3.4 | 0 | 0 | 4 |
 | Tier 4 | M4.1–M4.6 | 0 | 0 | 6 |
 | **Total** | **16 milestones** | **0** | **0** | **16** |
 
-**Overall**: Research complete. Implementation not started.
+**Overall**: M1.1–M1.4 and M2.1 complete. M2.2–M4.6 remaining.
 
 ---
 
 ## 7. Next Steps
 
-### Immediate Next Step: M1.1 — Module Skeleton and Build Configuration
+### Immediate Next Step: M2.2 — Error Handling and HTTP Status Code Mapping
 
 1. Create `TPipe-OpenRouter/build.gradle.kts` with Ktor dependencies
 2. Add `include("TPipe-OpenRouter")` to `settings.gradle.kts`

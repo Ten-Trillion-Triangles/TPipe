@@ -9,6 +9,7 @@ import com.TTT.Util.serialize
 import env.ChatMessage
 import env.OpenRouterChatRequest
 import env.OpenRouterChatResponse
+import env.StreamingChunk
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -16,6 +17,7 @@ import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import io.ktor.utils.io.*
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 
@@ -70,6 +72,12 @@ class OpenRouterPipe : Pipe()
     @kotlinx.serialization.Transient
     private var httpClient: HttpClient? = null
 
+    /**
+     * Whether streaming mode is enabled.
+     */
+    @kotlinx.serialization.Serializable
+    private var streamingEnabled: Boolean = false
+
 //=========================================Builder Methods=============================================================
 
     /**
@@ -113,6 +121,30 @@ class OpenRouterPipe : Pipe()
     fun setOpenRouterTitle(title: String): OpenRouterPipe
     {
         openRouterTitle = title
+        return this
+    }
+
+    /**
+     * Enables or disables streaming mode.
+     * @param enabled True to enable streaming
+     * @return This pipe instance for fluent chaining
+     */
+    fun setStreamingEnabled(enabled: Boolean): OpenRouterPipe
+    {
+        streamingEnabled = enabled
+        return this
+    }
+
+    /**
+     * Registers a callback for streaming response chunks.
+     * Automatically enables streaming mode.
+     * @param callback Suspendable callback receiving text chunks
+     * @return This pipe instance for fluent chaining
+     */
+    fun setStreamingCallback(callback: suspend (String) -> Unit): OpenRouterPipe
+    {
+        this.streamingEnabled = true
+        obtainStreamingCallbackManager().addCallback(callback)
         return this
     }
 
@@ -188,7 +220,8 @@ class OpenRouterPipe : Pipe()
                   "provider" to "OpenRouter",
                   "model" to model,
                   "baseUrl" to baseUrl,
-                  "promptLength" to promptInjector.length
+                  "promptLength" to promptInjector.length,
+                  "streaming" to streamingEnabled
               ))
 
         return try
@@ -206,43 +239,72 @@ class OpenRouterPipe : Pipe()
                 model = model,
                 messages = messages,
                 temperature = if(temperature > 0.0) temperature else null,
-                maxTokens = if(maxTokens > 0) maxTokens else null
+                maxTokens = if(maxTokens > 0) maxTokens else null,
+                stream = streamingEnabled
             )
 
             val jsonRequest = serialize(request)
-            val responseText = withContext(Dispatchers.IO)
+
+            if(streamingEnabled)
             {
-                client.post("$baseUrl/chat/completions")
+                val response = withContext(Dispatchers.IO)
                 {
-                    contentType(ContentType.Application.Json)
-                    header("Authorization", "Bearer $apiKey")
-
-                    if(httpReferer.isNotEmpty())
+                    client.post("$baseUrl/chat/completions")
                     {
-                        header("HTTP-Referer", httpReferer)
-                    }
-                    if(openRouterTitle.isNotEmpty())
-                    {
-                        header("X-OpenRouter-Title", openRouterTitle)
-                    }
+                        contentType(ContentType.Application.Json)
+                        header("Authorization", "Bearer $apiKey")
 
-                    setBody(jsonRequest)
-                }.bodyAsText()
+                        if(httpReferer.isNotEmpty())
+                        {
+                            header("HTTP-Referer", httpReferer)
+                        }
+                        if(openRouterTitle.isNotEmpty())
+                        {
+                            header("X-OpenRouter-Title", openRouterTitle)
+                        }
+
+                        setBody(jsonRequest)
+                    }
+                }
+
+                return executeStreaming(response)
             }
+            else
+            {
+                val responseText = withContext(Dispatchers.IO)
+                {
+                    client.post("$baseUrl/chat/completions")
+                    {
+                        contentType(ContentType.Application.Json)
+                        header("Authorization", "Bearer $apiKey")
 
-            val response: OpenRouterChatResponse = deserialize(responseText)
-                ?: throw Exception("Failed to deserialize OpenRouter chat response: $responseText")
+                        if(httpReferer.isNotEmpty())
+                        {
+                            header("HTTP-Referer", httpReferer)
+                        }
+                        if(openRouterTitle.isNotEmpty())
+                        {
+                            header("X-OpenRouter-Title", openRouterTitle)
+                        }
 
-            val resultText = response.choices.firstOrNull()?.message?.content ?: ""
+                        setBody(jsonRequest)
+                    }.bodyAsText()
+                }
 
-            trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
-                  metadata = mapOf(
-                      "responseLength" to resultText.length,
-                      "model" to response.model,
-                      "success" to true
-                  ))
+                val response: OpenRouterChatResponse = deserialize(responseText)
+                    ?: throw Exception("Failed to deserialize OpenRouter chat response: $responseText")
 
-            resultText
+                val resultText = response.choices.firstOrNull()?.message?.content ?: ""
+
+                trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+                      metadata = mapOf(
+                          "responseLength" to resultText.length,
+                          "model" to response.model,
+                          "success" to true
+                      ))
+
+                return resultText
+            }
         }
         catch(e: Exception)
         {
@@ -250,11 +312,67 @@ class OpenRouterPipe : Pipe()
                   error = e,
                   metadata = mapOf(
                       "errorType" to (e::class.simpleName ?: "Unknown"),
-                      "errorMessage" to (e.message ?: "Unknown error")
+                      "errorMessage" to (e.message ?: "Unknown error"),
+                      "streaming" to streamingEnabled
                   ))
 
             throw e
         }
+    }
+
+    /**
+     * Executes a streaming request and accumulates the response.
+     * @param httpResponse The HTTP response from the streaming endpoint
+     * @return Accumulated response text
+     */
+    private suspend fun executeStreaming(httpResponse: HttpResponse): String
+    {
+        val channel = httpResponse.bodyAsChannel()
+        val textBuilder = StringBuilder()
+
+        trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
+              metadata = mapOf(
+                  "step" to "streamingStart",
+                  "streaming" to true
+              ))
+
+        while(!channel.isClosedForRead)
+        {
+            val line = channel.readUTF8Line() ?: break
+
+            if(line.isEmpty()) continue
+
+            if(line.startsWith(":")) continue
+
+            if(line == "data: [DONE]")
+            {
+                break
+            }
+
+            if(line.startsWith("data: "))
+            {
+                val json = line.substringAfter("data: ")
+                val chunk = deserialize<StreamingChunk>(json) ?: continue
+                val contentDelta = chunk.choices.firstOrNull()?.delta?.content ?: ""
+
+                if(contentDelta.isNotEmpty())
+                {
+                    textBuilder.append(contentDelta)
+                    emitStreamingChunk(contentDelta)
+                }
+            }
+        }
+
+        val resultText = textBuilder.toString()
+
+        trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+              metadata = mapOf(
+                  "responseLength" to resultText.length,
+                  "streaming" to true,
+                  "success" to true
+              ))
+
+        return resultText
     }
 
 //=========================================Context Management==========================================================
