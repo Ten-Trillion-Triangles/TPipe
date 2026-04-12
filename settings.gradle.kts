@@ -1,6 +1,7 @@
 rootProject.name = "TPipe"
 
 include("TPipe-Ollama")
+include("TPipe-OpenRouter")
 include("TPipe-Bedrock")
 include("TPipe-MCP")
 include("TPipe-Defaults")
