@@ -10,5 +10,6 @@ enum class ProviderName
     Nai, //Novel AI. Supports rest api only.
     Gemini, //Google Gemini. Supports rest api only.
     Gpt, //Open AI models.  Supports sdk, and rest api.
-    Ollama //Ollama server. Supports all ollama api calls for local ollama servers.
+    Ollama, //Ollama server. Supports all ollama api calls for local ollama servers.
+    OpenRouter //OpenRouter. Supports v1/chat/completions with OpenAI-compatible API.
 }

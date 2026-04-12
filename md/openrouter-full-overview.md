@@ -110,7 +110,7 @@ The implementation steering document (`md/openrouter-implementation-steering.md`
 |-----------|-------------|--------|
 | M2.1 | Streaming support | **Complete** |
 | M2.2 | Error handling and HTTP status code mapping | **Complete** |
-| M2.3 | P2P interface compliance | Not Started |
+| M2.3 | P2P interface compliance | **Complete** |
 | M2.4 | Integration tests (real API) | Not Started |
 
 **Tier 2 Goal**: Match the feature set of OllamaPipe and BedrockPipe — streaming, error handling, P2P integration.
@@ -119,7 +119,7 @@ The implementation steering document (`md/openrouter-implementation-steering.md`
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
-| M3.1 | ProviderName enum update | Not Started |
+| M3.1 | ProviderName enum update | **Complete** |
 | M3.2 | OpenRouterConfiguration (TPipe-Defaults) | Not Started |
 | M3.3 | OpenRouterDefaults factory | Not Started |
 | M3.4 | ManifoldDefaults integration | Not Started |

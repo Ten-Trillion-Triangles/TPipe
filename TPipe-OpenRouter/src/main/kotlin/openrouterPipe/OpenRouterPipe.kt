@@ -175,7 +175,7 @@ class OpenRouterPipe : Pipe()
             throw IllegalStateException("OpenRouter API key is required. Call setApiKey() before init().")
         }
 
-        provider = ProviderName.entries.find { it.name == "OpenRouter" } ?: ProviderName.Ollama
+        provider = ProviderName.OpenRouter
 
         httpClient = HttpClient(CIO)
         {

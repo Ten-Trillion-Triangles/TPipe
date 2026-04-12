@@ -45,7 +45,7 @@ Add OpenRouter as a TPipe provider module, enabling single-API-key access to 300
 |-----------|-------------|--------|
 | M2.1 | Streaming support | **Complete** |
 | M2.2 | Error handling and HTTP status code mapping | **Complete** |
-| M2.3 | P2P interface compliance | Not Started |
+| M2.3 | P2P interface compliance | **Complete** |
 | M2.4 | Integration tests (real API) | Not Started |
 
 **Tier 2 Goal**: Match the feature set of OllamaPipe and BedrockPipe — streaming, error handling, P2P integration.
@@ -54,7 +54,7 @@ Add OpenRouter as a TPipe provider module, enabling single-API-key access to 300
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
-| M3.1 | ProviderName enum update | Not Started |
+| M3.1 | ProviderName enum update | **Complete** |
 | M3.2 | OpenRouterConfiguration (TPipe-Defaults) | Not Started |
 | M3.3 | OpenRouterDefaults factory | Not Started |
 | M3.4 | ManifoldDefaults integration | Not Started |
@@ -328,19 +328,18 @@ all → M4.6
 
 | Tier | Milestones | Complete | In Progress | Not Started |
 |------|-----------|----------|-------------|-------------|
-| Tier 1 | M1.1–M1.4 | 3 | 0 | 1 |
-| Tier 2 | M2.1–M2.4 | 2 | 0 | 2 |
-| Tier 3 | M3.1–M3.4 | 0 | 0 | 4 |
-| Tier 4 | M4.1–M4.6 | 0 | 0 | 6 |
+| Tier 1 | M1.1–M1.4 | 4 | 0 | 0 |
+| Tier 2 | M2.1–M2.4 | 3 | 0 | 1 |
+| Tier 3 | M3.1–M3.4 | 1 | 0 | 3 |
 | **Total** | **16 milestones** | **0** | **0** | **16** |
 
-**Overall**: M1.1–M1.4, M2.1, and M2.2 complete. M2.3–M4.6 remaining.
+**Overall**: M1.1–M1.4, M2.1–M2.3, and M3.1 complete. M2.4, M3.2–M4.6 remaining.
 
 ---
 
 ## 7. Next Steps
 
-### Immediate Next Step: M2.3 — P2P Interface Compliance
+### Immediate Next Step: M2.4 — Integration Tests (real API)
 
 1. Create `TPipe-OpenRouter/build.gradle.kts` with Ktor dependencies
 2. Add `include("TPipe-OpenRouter")` to `settings.gradle.kts`
