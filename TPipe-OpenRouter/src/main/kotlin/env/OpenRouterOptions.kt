@@ -53,9 +53,15 @@ data class OpenRouterChatRequest(
     @SerialName("frequency_penalty")
     val frequencyPenalty: Double? = null,
     val seed: Int? = null,
+    @SerialName("logit_bias")
+    val logitBias: Map<Int, Double>? = null,
     val logprobs: Boolean? = null,
     @SerialName("top_logprobs")
     val topLogprobs: Int? = null,
+    @SerialName("min_p")
+    val minP: Double? = null,
+    @SerialName("top_a")
+    val topA: Double? = null,
     val tools: List<ToolDefinition>? = null,
     @SerialName("tool_choice")
     val toolChoice: String? = null,

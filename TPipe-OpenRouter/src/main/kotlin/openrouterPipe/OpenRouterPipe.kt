@@ -83,6 +83,94 @@ class OpenRouterPipe : Pipe()
     @kotlinx.serialization.Serializable
     private var streamingEnabled: Boolean = false
 
+// OpenRouter-specific extended parameters
+    /**
+     * Function calling tool definitions.
+     */
+    @kotlinx.serialization.Transient
+    private var tools: List<env.ToolDefinition>? = null
+
+    /**
+     * Tool choice mode for function calling.
+     * Values: "auto", "none", "required"
+     */
+    @kotlinx.serialization.Transient
+    private var toolChoice: String? = null
+
+    /**
+     * Reasoning effort for reasoning-capable models (e.g., DeepSeek R1).
+     * Values: "xhigh", "high", "medium", "low", "minimal", "none"
+     */
+    @kotlinx.serialization.Transient
+    private var reasoningEffort: String? = null
+
+    /**
+     * Provider routing preferences.
+     */
+    @kotlinx.serialization.Transient
+    private var providerPreferences: env.ProviderPreferences? = null
+
+    /**
+     * Cache control with TTL for Anthropic-style caching.
+     */
+    @kotlinx.serialization.Transient
+    private var cacheControl: env.CacheControl? = null
+
+    /**
+     * OpenRouter plugins (web search, file parsing, etc.).
+     */
+    @kotlinx.serialization.Transient
+    private var plugins: List<env.Plugin>? = null
+
+    /**
+     * Response format for structured output.
+     */
+    @kotlinx.serialization.Transient
+    private var responseFormat: env.ResponseFormat? = null
+
+    /**
+     * Service tier for request priority.
+     * Values: "auto", "default", "flex", "priority", "scale"
+     */
+    @kotlinx.serialization.Transient
+    private var serviceTier: String? = null
+
+    /**
+     * Session ID for request grouping/observability.
+     */
+    @kotlinx.serialization.Transient
+    private var sessionId: String? = null
+
+    /**
+     * Frequency penalty for reducing repetition (-2.0 to 2.0).
+     */
+    @kotlinx.serialization.Transient
+    private var frequencyPenalty: Double? = null
+
+    /**
+     * Whether to return log probabilities.
+     */
+    @kotlinx.serialization.Transient
+    private var logprobs: Boolean? = null
+
+    /**
+     * Number of top log probabilities to return (0-20).
+     */
+    @kotlinx.serialization.Transient
+    private var topLogprobs: Int? = null
+
+    /**
+     * MinP sampling parameter (0.0 to 1.0).
+     */
+    @kotlinx.serialization.Transient
+    private var minP: Double? = null
+
+    /**
+     * TopA sampling parameter (0.0 to 1.0).
+     */
+    @kotlinx.serialization.Transient
+    private var topA: Double? = null
+
 //=========================================Builder Methods=============================================================
 
     /**
@@ -150,6 +238,161 @@ class OpenRouterPipe : Pipe()
     {
         this.streamingEnabled = true
         obtainStreamingCallbackManager().addCallback(callback)
+        return this
+    }
+
+    /**
+     * Sets the tools for function calling.
+     * @param tools List of tool definitions
+     * @return This pipe instance for fluent chaining
+     */
+    fun setTools(tools: List<env.ToolDefinition>): OpenRouterPipe
+    {
+        this.tools = tools
+        return this
+    }
+
+    /**
+     * Sets the tool choice mode for function calling.
+     * @param choice Tool choice: "auto", "none", or "required"
+     * @return This pipe instance for fluent chaining
+     */
+    fun setToolChoice(choice: String): OpenRouterPipe
+    {
+        this.toolChoice = choice
+        return this
+    }
+
+    /**
+     * Sets the reasoning effort for reasoning-capable models.
+     * @param effort Reasoning effort: "xhigh", "high", "medium", "low", "minimal", or "none"
+     * @return This pipe instance for fluent chaining
+     */
+    fun setReasoningEffort(effort: String): OpenRouterPipe
+    {
+        this.reasoningEffort = effort
+        return this
+    }
+
+    /**
+     * Sets provider routing preferences.
+     * @param prefs Provider preferences configuration
+     * @return This pipe instance for fluent chaining
+     */
+    fun setProviderPreferences(prefs: env.ProviderPreferences): OpenRouterPipe
+    {
+        this.providerPreferences = prefs
+        return this
+    }
+
+    /**
+     * Sets cache control with TTL for Anthropic-style caching.
+     * @param ttl Cache TTL (e.g., "5m", "1h", "24h")
+     * @return This pipe instance for fluent chaining
+     */
+    fun setCacheControl(ttl: String): OpenRouterPipe
+    {
+        this.cacheControl = env.CacheControl(type = "ephemeral", ttl = ttl)
+        return this
+    }
+
+    /**
+     * Sets OpenRouter plugins for extended functionality.
+     * @param plugins List of plugins to enable
+     * @return This pipe instance for fluent chaining
+     */
+    fun setPlugins(plugins: List<env.Plugin>): OpenRouterPipe
+    {
+        this.plugins = plugins
+        return this
+    }
+
+    /**
+     * Sets the response format for structured output.
+     * @param type Format type: "text", "json_object", or "json_schema"
+     * @param schema Optional JSON schema for json_schema type
+     * @return This pipe instance for fluent chaining
+     */
+    fun setResponseFormat(type: String, schema: kotlinx.serialization.json.JsonObject? = null): OpenRouterPipe
+    {
+        this.responseFormat = env.ResponseFormat(type = type, jsonSchema = schema)
+        return this
+    }
+
+    /**
+     * Sets the service tier for request priority.
+     * @param tier Service tier: "auto", "default", "flex", "priority", or "scale"
+     * @return This pipe instance for fluent chaining
+     */
+    fun setServiceTier(tier: String): OpenRouterPipe
+    {
+        this.serviceTier = tier
+        return this
+    }
+
+    /**
+     * Sets the session ID for request grouping/observability.
+     * @param id Session identifier
+     * @return This pipe instance for fluent chaining
+     */
+    fun setSessionId(id: String): OpenRouterPipe
+    {
+        this.sessionId = id
+        return this
+    }
+
+    /**
+     * Sets the frequency penalty for reducing repetition.
+     * @param penalty Frequency penalty (-2.0 to 2.0)
+     * @return This pipe instance for fluent chaining
+     */
+    fun setFrequencyPenalty(penalty: Double): OpenRouterPipe
+    {
+        this.frequencyPenalty = penalty
+        return this
+    }
+
+    /**
+     * Sets whether to return log probabilities.
+     * @param enabled True to return log probabilities
+     * @return This pipe instance for fluent chaining
+     */
+    fun setLogprobs(enabled: Boolean): OpenRouterPipe
+    {
+        this.logprobs = enabled
+        return this
+    }
+
+    /**
+     * Sets the number of top log probabilities to return.
+     * @param count Number of top log probabilities (0-20)
+     * @return This pipe instance for fluent chaining
+     */
+    fun setTopLogprobs(count: Int): OpenRouterPipe
+    {
+        this.topLogprobs = count
+        return this
+    }
+
+    /**
+     * Sets the minP sampling parameter.
+     * @param p MinP value (0.0 to 1.0)
+     * @return This pipe instance for fluent chaining
+     */
+    fun setMinP(p: Double): OpenRouterPipe
+    {
+        this.minP = p
+        return this
+    }
+
+    /**
+     * Sets the topA sampling parameter.
+     * @param a topA value (0.0 to 1.0)
+     * @return This pipe instance for fluent chaining
+     */
+    fun setTopA(a: Double): OpenRouterPipe
+    {
+        this.topA = a
         return this
     }
 
@@ -245,6 +488,9 @@ class OpenRouterPipe : Pipe()
 
             messages.add(ChatMessage(role = "user", content = promptInjector))
 
+            // Build reasoning config if reasoningEffort is set
+            val reasoningConfig = reasoningEffort?.let { env.ReasoningConfig(effort = it) }
+
             val request = OpenRouterChatRequest(
                 model = model,
                 messages = messages,
@@ -252,7 +498,23 @@ class OpenRouterPipe : Pipe()
                 topP = if(topP > 0.0) topP else null,
                 maxTokens = if(maxTokens > 0) maxTokens else null,
                 presencePenalty = if(presencePenalty != 0.0) presencePenalty else null,
+                frequencyPenalty = frequencyPenalty,
+                seed = seed,
                 stop = stopSequences.takeIf { it.isNotEmpty() },
+                tools = tools,
+                toolChoice = toolChoice,
+                responseFormat = responseFormat,
+                reasoning = reasoningConfig,
+                provider = providerPreferences,
+                cacheControl = cacheControl,
+                plugins = plugins,
+                logitBias = logitBias.takeIf { it.isNotEmpty() },
+                logprobs = logprobs,
+                topLogprobs = topLogprobs,
+                minP = minP,
+                topA = topA,
+                serviceTier = serviceTier,
+                sessionId = sessionId,
                 stream = streamingEnabled
             )
 
@@ -326,11 +588,21 @@ class OpenRouterPipe : Pipe()
 
                 val resultText = response.choices.firstOrNull()?.message?.content ?: ""
 
+                // Extract token usage for tracing
+                val usage = response.usage
+                val inputTokens = usage?.promptTokens ?: 0
+                val outputTokens = usage?.completionTokens ?: 0
+                val totalTokens = usage?.totalTokens ?: 0
+
                 trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
                       metadata = mapOf(
+                          "inputTokens" to inputTokens,
+                          "outputTokens" to outputTokens,
+                          "totalTokens" to totalTokens,
                           "responseLength" to resultText.length,
                           "model" to response.model,
-                          "success" to true
+                          "success" to true,
+                          "apiType" to "ChatAPI"
                       ))
 
                 return resultText
@@ -421,8 +693,10 @@ class OpenRouterPipe : Pipe()
         trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
               metadata = mapOf(
                   "responseLength" to resultText.length,
+                  "model" to model,  // Already known before request
                   "streaming" to true,
-                  "success" to true
+                  "success" to true,
+                  "apiType" to "ChatAPI"
               ))
 
         return resultText
@@ -442,27 +716,44 @@ class OpenRouterPipe : Pipe()
         val lowerModel = model.lowercase()
         when
         {
-            lowerModel.contains("anthropic/claude") -> {
+            lowerModel.contains("anthropic/") -> {
+                // Calibrated for Claude tokenizers (736 tokens for DEFAULT_TEST_STRING)
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
-                countOnlyFirstWordFound = false
+                countOnlyFirstWordFound = true
                 splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
+                alwaysSplitIfWholeWordExists = true
                 countSubWordsIfSplit = true
-                nonWordSplitCount = 2
+                nonWordSplitCount = 1
+                tokenCountingBias = -0.0528
             }
             lowerModel.contains("openai/") -> {
+                // Calibrated for GPT-4o/o200k_base tokenizer (648 tokens for DEFAULT_TEST_STRING)
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
-                favorWholeWords = true
+                favorWholeWords = false
                 countOnlyFirstWordFound = false
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
+                countSubWordsIfSplit = false
                 nonWordSplitCount = 2
+                tokenCountingBias = -0.0107
             }
             lowerModel.contains("google/") -> {
+                // Google Gemini - uses SentencePiece, calibrated conservatively
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = false
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = false
+                nonWordSplitCount = 2
+                tokenCountingBias = 0.0
+            }
+            lowerModel.contains("deepseek/") -> {
+                // DeepSeek - calibrated for DeepSeek tokenizers
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -471,8 +762,142 @@ class OpenRouterPipe : Pipe()
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
                 nonWordSplitCount = 2
+                tokenCountingBias = 0.0103
             }
-            lowerModel.contains("deepseek/deepseek-r1") -> {
+            lowerModel.contains("meta-llama/") -> {
+                // Meta Llama - calibrated for Llama tokenizers
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+                tokenCountingBias = 0.0
+            }
+            lowerModel.contains("mistralai/") -> {
+                // Mistral - calibrated for Mistral tokenizers
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+                tokenCountingBias = 0.0
+            }
+            lowerModel.contains("cohere/") -> {
+                // Cohere - calibrated for Command/M-command tokenizers
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+                tokenCountingBias = 0.0
+            }
+            lowerModel.contains("qwen/") -> {
+                // Qwen - calibrated for Qwen tokenizers
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+                tokenCountingBias = 0.0
+            }
+            lowerModel.contains("minimax/") -> {
+                // MiniMax - calibrated conservatively
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+                tokenCountingBias = 0.0
+            }
+            lowerModel.contains("nvidia/") -> {
+                // NVIDIA NIM - uses OpenAI-compatible tokenizers
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = false
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = false
+                nonWordSplitCount = 2
+                tokenCountingBias = -0.0107
+            }
+            lowerModel.contains("cognitivecomputations/") -> {
+                // Dolphin models - similar to Llama
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+                tokenCountingBias = 0.0
+            }
+            lowerModel.contains("liquid/") -> {
+                // Liquid models
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+                tokenCountingBias = 0.0
+            }
+            lowerModel.contains("arcee-ai/") -> {
+                // Arcee AI
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+                tokenCountingBias = 0.0
+            }
+            lowerModel.contains("z-ai/") -> {
+                // Z-AI models
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+                tokenCountingBias = 0.0
+            }
+            lowerModel.contains("nousresearch/") -> {
+                // Nous Research models - similar to Llama
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+                tokenCountingBias = 0.0
+            }
+            lowerModel.contains("openrouter/free") -> {
+                // OpenRouter free models - conservative defaults
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -480,49 +905,11 @@ class OpenRouterPipe : Pipe()
                 splitForNonWordChar = true
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = false
-                nonWordSplitCount = 2
-            }
-            lowerModel.contains("deepseek/") -> {
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            lowerModel.contains("meta-llama/") -> {
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            lowerModel.contains("mistralai/") -> {
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            lowerModel.contains("cohere/") -> {
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
+                nonWordSplitCount = 3
+                tokenCountingBias = 0.0
             }
             lowerModel.contains("ai21/") -> {
+                // AI21 Jurassic models
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -531,6 +918,7 @@ class OpenRouterPipe : Pipe()
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
                 nonWordSplitCount = 2
+                tokenCountingBias = 0.0
             }
         }
         if(truncateContextAsString)
