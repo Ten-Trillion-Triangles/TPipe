@@ -1,6 +1,7 @@
 package openrouterPipe
 
 import com.TTT.Debug.*
+import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Enums.ProviderName
 import com.TTT.P2P.P2PError
 import com.TTT.P2P.P2PException
@@ -248,11 +249,14 @@ class OpenRouterPipe : Pipe()
                 model = model,
                 messages = messages,
                 temperature = if(temperature > 0.0) temperature else null,
+                topP = if(topP > 0.0) topP else null,
                 maxTokens = if(maxTokens > 0) maxTokens else null,
+                presencePenalty = if(presencePenalty != 0.0) presencePenalty else null,
+                stop = stopSequences.takeIf { it.isNotEmpty() },
                 stream = streamingEnabled
             )
 
-            val jsonRequest = serialize(request)
+            val jsonRequest = serialize(request, encodedefault = false)
 
             if(streamingEnabled)
             {
@@ -301,32 +305,20 @@ class OpenRouterPipe : Pipe()
                 }
 
                 // Check for error responses BEFORE deserializing as success
-                val responseStatus = try
+                val errorResponse = try { deserialize<OpenRouterErrorResponse>(responseText) } catch(e: Exception) { null }
+                if(errorResponse != null && (errorResponse.error.type != null || errorResponse.error.code != null))
                 {
-                    // Extract HTTP status from error response
-                    deserialize<OpenRouterErrorResponse>(responseText)
-                    if(responseText.contains("\"error\"")) "error" else "ok"
-                }
-                catch(e: Exception)
-                {
-                    "ok"
-                }
+                    val errorType = errorResponse.error.type
+                    val errorCode = errorResponse.error.code
 
-                if(responseStatus == "error")
-                {
-                    val errorResponse = deserialize<OpenRouterErrorResponse>(responseText)
-                    if(errorResponse != null)
-                    {
-                        val p2pError = when(errorResponse.error.type)
-                        {
-                            "auth_error" -> P2PError.auth
-                            "rate_limit_error" -> P2PError.transport
-                            "invalid_request_error", "invalid_api_key" -> P2PError.prompt
-                            "api_error", "server_error" -> P2PError.transport
-                            else -> P2PError.transport
-                        }
-                        throw P2PException(p2pError, "OpenRouter error: ${errorResponse.error.message}", Exception(errorResponse.error.message))
+                    val p2pError = when {
+                        errorType == "auth_error" || errorCode == "401" -> P2PError.auth
+                        errorType == "rate_limit_error" || errorCode == "429" -> P2PError.transport
+                        errorType == "invalid_request_error" || errorType == "invalid_api_key" || errorCode == "400" -> P2PError.prompt
+                        errorType == "api_error" || errorType == "server_error" || errorCode?.startsWith("5") == true -> P2PError.transport
+                        else -> P2PError.transport
                     }
+                    throw P2PException(p2pError, "OpenRouter error: ${errorResponse.error.message}", Exception(errorResponse.error.message))
                 }
 
                 val response: OpenRouterChatResponse = deserialize(responseText)
@@ -384,18 +376,35 @@ class OpenRouterPipe : Pipe()
         {
             val line = channel.readUTF8Line() ?: break
 
-            if(line.isEmpty()) continue
+            val trimmedLine = line.trim()
+            if(trimmedLine.isEmpty()) continue
 
-            if(line.startsWith(":")) continue
+            if(trimmedLine.startsWith(":")) continue
 
-            if(line == "data: [DONE]")
+            if(trimmedLine == "data: [DONE]")
             {
                 break
             }
 
-            if(line.startsWith("data: "))
+            if(trimmedLine.startsWith("data: "))
             {
-                val json = line.substringAfter("data: ")
+                val json = trimmedLine.substringAfter("data: ")
+
+                // Check for SSE error events before attempting StreamingChunk deserialization
+                val sseError = try { deserialize<OpenRouterErrorResponse>(json) } catch(e: Exception) { null }
+                if(sseError != null && sseError.error.type != null)
+                {
+                    val p2pError = when(sseError.error.type)
+                    {
+                        "auth_error" -> P2PError.auth
+                        "rate_limit_error" -> P2PError.transport
+                        "invalid_request_error", "invalid_api_key" -> P2PError.prompt
+                        "api_error", "server_error" -> P2PError.transport
+                        else -> P2PError.transport
+                    }
+                    throw P2PException(p2pError, "OpenRouter streaming error: ${sseError.error.message}", Exception(sseError.error.message))
+                }
+
                 val chunk = deserialize<StreamingChunk>(json) ?: continue
                 val contentDelta = chunk.choices.firstOrNull()?.delta?.content ?: ""
 
@@ -423,11 +432,115 @@ class OpenRouterPipe : Pipe()
 
     /**
      * Truncates module context using conservative token estimation.
-     * OpenRouter supports diverse models, so we use a conservative 1 token per 4 chars estimate.
+     * OpenRouter supports diverse models from multiple providers. This implementation
+     * uses optimized settings for known model families: anthropic/, openai/, google/,
+     * deepseek/, and meta-llama/. Other models use conservative defaults.
      * @return This pipe instance
      */
     override fun truncateModuleContext(): Pipe
     {
+        val lowerModel = model.lowercase()
+        when
+        {
+            lowerModel.contains("anthropic/claude") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            lowerModel.contains("openai/") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            lowerModel.contains("google/") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            lowerModel.contains("deepseek/deepseek-r1") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = false
+                nonWordSplitCount = 2
+            }
+            lowerModel.contains("deepseek/") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            lowerModel.contains("meta-llama/") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            lowerModel.contains("mistralai/") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            lowerModel.contains("cohere/") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            lowerModel.contains("ai21/") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+        }
+        if(truncateContextAsString)
+        {
+            contextWindow.combineAndTruncateAsString(userPrompt, contextWindowSize, multiplyWindowSizeBy, contextWindowTruncation, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound, splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount)
+        }
+        else
+        {
+            contextWindow.selectAndTruncateContext(userPrompt, contextWindowSize, multiplyWindowSizeBy, contextWindowTruncation, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound, splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount)
+        }
         return this
     }
 

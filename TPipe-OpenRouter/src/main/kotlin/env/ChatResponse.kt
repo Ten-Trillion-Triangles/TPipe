@@ -205,5 +205,8 @@ data class OpenRouterError(
     val code: String? = null,
     val type: String? = null,
     @SerialName("code_body")
-    val codeBody: String? = null
+    val codeBody: String? = null,
+    val url: String? = null,
+    val param: String? = null,
+    val provider: String? = null
 )
