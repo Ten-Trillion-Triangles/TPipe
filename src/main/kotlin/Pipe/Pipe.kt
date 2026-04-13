@@ -4471,7 +4471,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     private fun shouldIncludeContext(detailLevel: TraceDetailLevel): Boolean {
         return when(detailLevel) {
             TraceDetailLevel.MINIMAL -> false
-            TraceDetailLevel.NORMAL -> false
+            TraceDetailLevel.NORMAL -> traceConfig.includeContext
             TraceDetailLevel.VERBOSE -> traceConfig.includeContext
             TraceDetailLevel.DEBUG -> traceConfig.includeContext
         }

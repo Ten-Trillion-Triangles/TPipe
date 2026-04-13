@@ -20,6 +20,7 @@ import com.TTT.Pipe.PipeTimeoutStrategy
 import com.TTT.Util.copyPipeline
 import com.TTT.Util.deepCopy
 import com.TTT.Util.RuntimeState
+import com.TTT.Util.writeStringToFile
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
@@ -639,6 +640,7 @@ class Pipeline : P2PInterface
         this.tracingEnabled = true
         this.traceConfig = config
         PipeTracer.enable() // Enable global tracer
+        PipeTracer.setMaxHistory(config.maxHistory) // Apply configured history limit
         return this
     }
 
@@ -649,7 +651,23 @@ class Pipeline : P2PInterface
      */
     fun getTraceReport(format: TraceFormat = traceConfig.outputFormat): String
     {
-        return PipeTracer.exportTrace(pipelineId, format)
+        val report = PipeTracer.exportTrace(pipelineId, format)
+
+        // Auto-export to file if configured
+        if(traceConfig.autoExport)
+        {
+            val extension = when(format) {
+                TraceFormat.HTML -> "html"
+                TraceFormat.JSON -> "json"
+                TraceFormat.MARKDOWN -> "md"
+                TraceFormat.CONSOLE -> "txt"
+            }
+            val filename = "trace-${pipelineId.take(8)}-$extension.${extension}"
+            val exportPath = traceConfig.exportPath.trimEnd('/') + "/" + filename
+            writeStringToFile(exportPath, report)
+        }
+
+        return report
     }
 
     /**
@@ -928,7 +946,10 @@ class Pipeline : P2PInterface
     )
     {
         if(!tracingEnabled) return
-        
+        if(!EventPriorityMapper.shouldTrace(eventType, traceConfig.detailLevel)) return
+
+        val effectiveMetadata = if(traceConfig.includeMetadata) metadata else emptyMap()
+
         val event = TraceEvent(
             timestamp = System.currentTimeMillis(),
             pipeId = pipelineId,
@@ -937,10 +958,10 @@ class Pipeline : P2PInterface
             phase = phase,
             content = content,
             contextSnapshot = null,
-            metadata = metadata,
+            metadata = effectiveMetadata,
             error = error
         )
-        
+
         PipeTracer.addEvent(pipelineId, event)
     }
 

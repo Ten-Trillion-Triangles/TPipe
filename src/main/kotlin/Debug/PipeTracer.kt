@@ -9,7 +9,13 @@ object PipeTracer {
     private val traces = ConcurrentHashMap<String, MutableList<TraceEvent>>()
     private var isEnabled = false
     private var maxTraceHistory = 1000
-    
+
+    /**
+     * Sets the maximum history limit for trace events.
+     * @param max The maximum number of events to retain per trace
+     */
+    fun setMaxHistory(max: Int) { maxTraceHistory = max }
+
     /**
      * Globally enables tracing for all pipelines.
      */
