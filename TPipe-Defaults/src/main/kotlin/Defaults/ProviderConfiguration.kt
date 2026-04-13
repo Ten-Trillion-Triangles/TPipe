@@ -19,6 +19,10 @@ import com.TTT.Pipeline.DistributionGridRegistryAdvertisement
 import com.TTT.Pipeline.DistributionGridRegistryMetadata
 import com.TTT.Pipeline.DistributionGridRoutingPolicy
 import com.TTT.Pipeline.DistributionGridTrustVerifier
+import env.CacheControl
+import env.Plugin
+import env.ProviderPreferences
+import env.ResponseFormat
 import env.bedrockEnv
 
 /**
@@ -224,7 +228,19 @@ data class OpenRouterConfiguration(
     var baseUrl: String = "https://openrouter.ai/api/v1",
     var httpReferer: String = "",
     var openRouterTitle: String = "",
-    var manifoldMemory: ManifoldMemoryConfiguration = ManifoldMemoryConfiguration()
+    var manifoldMemory: ManifoldMemoryConfiguration = ManifoldMemoryConfiguration(),
+    // Extended parameters
+    var reasoningEffort: String? = null,
+    var cacheControl: String? = null,
+    var serviceTier: String? = null,
+    var sessionId: String? = null,
+    var logprobs: Boolean? = null,
+    var topLogprobs: Int? = null,
+    var minP: Double? = null,
+    var topA: Double? = null,
+    var providerPreferences: ProviderPreferences? = null,
+    var plugins: List<Plugin>? = null,
+    var responseFormat: ResponseFormat? = null
 ) : ProviderConfiguration()
 {
     override fun validate(): Boolean = model.isNotBlank() && apiKey.isNotBlank() && pipeCount > 0

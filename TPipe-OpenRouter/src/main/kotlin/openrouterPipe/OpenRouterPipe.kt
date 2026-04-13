@@ -10,6 +10,7 @@ import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import env.ChatMessage
+import env.SseParser
 import env.OpenRouterChatRequest
 import env.OpenRouterEnv
 import env.OpenRouterChatResponse
@@ -648,43 +649,40 @@ class OpenRouterPipe : Pipe()
         {
             val line = channel.readUTF8Line() ?: break
 
-            val trimmedLine = line.trim()
-            if(trimmedLine.isEmpty()) continue
+            // Use SseParser for line type detection
+            val sseLine = SseParser.parseLine(line)
 
-            if(trimmedLine.startsWith(":")) continue
-
-            if(trimmedLine == "data: [DONE]")
+            when(sseLine)
             {
-                break
-            }
-
-            if(trimmedLine.startsWith("data: "))
-            {
-                val json = trimmedLine.substringAfter("data: ")
-
-                // Check for SSE error events before attempting StreamingChunk deserialization
-                val sseError = try { deserialize<OpenRouterErrorResponse>(json) } catch(e: Exception) { null }
-                if(sseError != null && sseError.error.type != null)
+                is SseParser.SseLine.Done -> break
+                is SseParser.SseLine.Empty, is SseParser.SseLine.Comment -> continue
+                is SseParser.SseLine.Data ->
                 {
-                    val p2pError = when(sseError.error.type)
+                    // Check for SSE error events before attempting StreamingChunk deserialization
+                    val sseError = try { deserialize<OpenRouterErrorResponse>(sseLine.content) } catch(e: Exception) { null }
+                    if(sseError != null && sseError.error.type != null)
                     {
-                        "auth_error" -> P2PError.auth
-                        "rate_limit_error" -> P2PError.transport
-                        "invalid_request_error", "invalid_api_key" -> P2PError.prompt
-                        "api_error", "server_error" -> P2PError.transport
-                        else -> P2PError.transport
+                        val p2pError = when(sseError.error.type)
+                        {
+                            "auth_error" -> P2PError.auth
+                            "rate_limit_error" -> P2PError.transport
+                            "invalid_request_error", "invalid_api_key" -> P2PError.prompt
+                            "api_error", "server_error" -> P2PError.transport
+                            else -> P2PError.transport
+                        }
+                        throw P2PException(p2pError, "OpenRouter streaming error: ${sseError.error.message}", Exception(sseError.error.message))
                     }
-                    throw P2PException(p2pError, "OpenRouter streaming error: ${sseError.error.message}", Exception(sseError.error.message))
-                }
 
-                val chunk = deserialize<StreamingChunk>(json) ?: continue
-                val contentDelta = chunk.choices.firstOrNull()?.delta?.content ?: ""
+                    val chunk = SseParser.parseChunk(sseLine.content) ?: continue
+                    val contentDelta = SseParser.extractContent(chunk)
 
-                if(contentDelta.isNotEmpty())
-                {
-                    textBuilder.append(contentDelta)
-                    emitStreamingChunk(contentDelta)
+                    if(contentDelta.isNotEmpty())
+                    {
+                        textBuilder.append(contentDelta)
+                        emitStreamingChunk(contentDelta)
+                    }
                 }
+                is SseParser.SseLine.Invalid -> continue
             }
         }
 

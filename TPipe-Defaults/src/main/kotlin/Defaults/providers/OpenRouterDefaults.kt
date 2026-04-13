@@ -81,6 +81,18 @@ internal object OpenRouterDefaults
             {
                 setOpenRouterTitle(config.openRouterTitle)
             }
+            // Extended parameters
+            config.reasoningEffort?.let { setReasoningEffort(it) }
+            config.cacheControl?.let { setCacheControl(it) }
+            config.serviceTier?.let { setServiceTier(it) }
+            config.sessionId?.let { setSessionId(it) }
+            config.logprobs?.let { setLogprobs(it) }
+            config.topLogprobs?.let { setTopLogprobs(it) }
+            config.minP?.let { setMinP(it) }
+            config.topA?.let { setTopA(it) }
+            config.providerPreferences?.let { setProviderPreferences(it) }
+            config.plugins?.let { setPlugins(it) }
+            config.responseFormat?.let { setResponseFormat(it.type, it.jsonSchema) }
         }
     }
 }

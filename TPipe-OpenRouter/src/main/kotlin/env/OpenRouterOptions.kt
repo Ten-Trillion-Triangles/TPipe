@@ -195,34 +195,3 @@ data class TraceConfig(
     val version: String? = null,
     val metadata: JsonObject? = null
 )
-
-/**
- * Routing mode for provider selection.
- * Determines how OpenRouter selects the underlying provider for model requests.
- */
-enum class RoutingMode {
-    /**
-     * OpenRouter automatically selects the best available provider.
-     */
-    Auto,
-
-    /**
-     * Prefer the provider with lowest latency.
-     */
-    PreferFastest,
-
-    /**
-     * Prefer the provider with lowest cost.
-     */
-    PreferCheapest,
-
-    /**
-     * Prefer the provider with best output quality.
-     */
-    PreferQuality,
-
-    /**
-     * Use a specific provider preference (requires provider preference to be set).
-     */
-    SpecificProvider
-}

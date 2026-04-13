@@ -3,12 +3,18 @@ package openrouterPipe
 import com.TTT.Pipe.Pipe
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
+import env.CacheControl
 import env.ChatMessage
 import env.OpenRouterChatRequest
 import env.OpenRouterChatResponse
 import env.OpenRouterErrorResponse
+import env.Plugin
+import env.ProviderPreferences
+import env.ResponseFormat
 import env.StreamingChunk
 import env.UsageInfo
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -798,5 +804,254 @@ class OpenRouterPipeTest
 
         assertNotNull(errorResponse)
         assertTrue(errorResponse.error.code == null)
+    }
+
+//=========================================Extended Parameter Builder Tests==========================================
+
+    @Test
+    fun testSetReasoningEffortReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val returned = pipe.setReasoningEffort("high")
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetProviderPreferencesReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val prefs = ProviderPreferences(order = listOf("OpenAI", "Anthropic"))
+        val returned = pipe.setProviderPreferences(prefs)
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetCacheControlReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val returned = pipe.setCacheControl("5m")
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetPluginsReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val plugins = listOf(Plugin(id = "web-search"))
+        val returned = pipe.setPlugins(plugins)
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetResponseFormatReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val returned = pipe.setResponseFormat("json_object")
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetResponseFormatWithSchemaReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val schema = JsonObject(mapOf("type" to JsonPrimitive("object")))
+        val returned = pipe.setResponseFormat("json_schema", schema)
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetServiceTierReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val returned = pipe.setServiceTier("priority")
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetSessionIdReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val returned = pipe.setSessionId("session-123")
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetFrequencyPenaltyReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val returned = pipe.setFrequencyPenalty(0.5)
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetLogprobsReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val returned = pipe.setLogprobs(true)
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetTopLogprobsReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val returned = pipe.setTopLogprobs(5)
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetMinPReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val returned = pipe.setMinP(0.9)
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetTopAReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val returned = pipe.setTopA(0.9)
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetToolsReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val tools = listOf(
+            env.ToolDefinition(
+                type = "function",
+                function = env.FunctionSchema(
+                    name = "get_weather",
+                    description = "Get weather for a location",
+                    parameters = JsonObject(mapOf("type" to JsonPrimitive("object")))
+                )
+            )
+        )
+        val returned = pipe.setTools(tools)
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testSetToolChoiceReturnsPipe()
+    {
+        val pipe = OpenRouterPipe()
+        val returned = pipe.setToolChoice("required")
+
+        assertNotNull(returned)
+        assertTrue(returned is OpenRouterPipe)
+    }
+
+    @Test
+    fun testExtendedParametersChaining()
+    {
+        val pipe = OpenRouterPipe()
+            .setApiKey("test-key")
+        pipe.setModel("anthropic/claude-3-5-sonnet")
+        pipe.setReasoningEffort("high")
+        pipe.setCacheControl("10m")
+        pipe.setServiceTier("priority")
+        pipe.setSessionId("test-session")
+        pipe.setFrequencyPenalty(0.3)
+        pipe.setLogprobs(true)
+        pipe.setTopLogprobs(3)
+        pipe.setMinP(0.8)
+        pipe.setTopA(0.7)
+
+        assertNotNull(pipe)
+        assertTrue(pipe is OpenRouterPipe)
+    }
+
+//=========================================Extended Parameter Serialization Tests==========================================
+
+    @Test
+    fun testReasoningConfigSerialization()
+    {
+        val config = env.ReasoningConfig(effort = "high")
+        val json = serialize(config)
+
+        assertTrue(json.contains("high"))
+    }
+
+    @Test
+    fun testCacheControlSerialization()
+    {
+        val cache = CacheControl(type = "ephemeral", ttl = "5m")
+        val json = serialize(cache)
+
+        assertTrue(json.contains("ephemeral"))
+        assertTrue(json.contains("5m"))
+    }
+
+    @Test
+    fun testProviderPreferencesSerialization()
+    {
+        val prefs = ProviderPreferences(
+            order = listOf("OpenAI", "Anthropic"),
+            allowFallbacks = true
+        )
+        val json = serialize(prefs)
+
+        assertTrue(json.contains("OpenAI"))
+        assertTrue(json.contains("Anthropic"))
+        assertTrue(json.contains("allow_fallbacks"))
+    }
+
+    @Test
+    fun testPluginSerialization()
+    {
+        val plugin = Plugin(id = "web-search")
+        val json = serialize(plugin)
+
+        assertTrue(json.contains("web-search"))
+    }
+
+    @Test
+    fun testResponseFormatJsonObject()
+    {
+        val format = ResponseFormat(type = "json_object")
+        val json = serialize(format)
+
+        assertTrue(json.contains("json_object"))
+    }
+
+    @Test
+    fun testResponseFormatJsonSchema()
+    {
+        val schema = JsonObject(mapOf("type" to JsonPrimitive("object")))
+        val format = ResponseFormat(type = "json_schema", jsonSchema = schema)
+        val json = serialize(format)
+
+        assertTrue(json.contains("json_schema"))
+        assertTrue(json.contains("object"))
     }
 }
