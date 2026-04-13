@@ -93,6 +93,12 @@ internal object OpenRouterDefaults
             config.providerPreferences?.let { setProviderPreferences(it) }
             config.plugins?.let { setPlugins(it) }
             config.responseFormat?.let { setResponseFormat(it.type, it.jsonSchema) }
+            config.topK?.let { setOpenRouterTopK(it) }
+            config.repetitionPenalty?.let { setOpenRouterRepetitionPenalty(it) }
+            config.parallelToolCalls?.let { setParallelToolCalls(it) }
+            config.structuredOutputs?.let { setStructuredOutputs(it) }
+            config.verbosity?.let { setVerbosity(it) }
+            config.user?.let { setOpenRouterUser(it) }
         }
     }
 }

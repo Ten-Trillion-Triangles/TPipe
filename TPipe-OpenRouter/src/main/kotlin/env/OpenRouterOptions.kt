@@ -14,18 +14,25 @@ import kotlinx.serialization.json.JsonObject
  * @property messages List of conversation messages
  * @property temperature Sampling temperature (0-2 range)
  * @property topP Nucleus sampling parameter (0-1 range)
+ * @property topK Top-k sampling (not available for OpenAI models)
  * @property maxTokens Maximum tokens to generate (alternative to maxCompletionTokens)
  * @property maxCompletionTokens Maximum completion tokens (alternative to maxTokens)
  * @property stream Enable streaming (SSE response)
  * @property stop List of stop sequences (up to 4)
  * @property presencePenalty Presence penalty (-2.0 to 2.0)
  * @property frequencyPenalty Frequency penalty (-2.0 to 2.0)
+ * @property repetitionPenalty Repetition penalty (0.0 to 2.0, OpenRouter-specific)
  * @property seed Random seed for deterministic sampling
+ * @property logitBias Logit bias for specific tokens
  * @property logprobs Whether to return log probabilities
  * @property topLogprobs Number of top log probabilities to return
+ * @property minP MinP sampling parameter (0.0 to 1.0)
+ * @property topA TopA sampling parameter (0.0 to 1.0)
  * @property tools Function calling tool definitions
  * @property toolChoice Tool selection mode
+ * @property parallelToolCalls Enable parallel function calling
  * @property responseFormat Response format constraint (text, json_object, json_schema)
+ * @property structuredOutputs Enable structured outputs via json_schema
  * @property modalities Output modalities (text, image, audio)
  * @property plugins OpenRouter plugins (web search, file parsing, etc.)
  * @property provider Routing preferences for provider selection
@@ -33,6 +40,8 @@ import kotlinx.serialization.json.JsonObject
  * @property cacheControl Anthropic-style caching with ttl
  * @property serviceTier Service tier (auto, default, flex, priority, scale)
  * @property sessionId Request grouping for observability
+ * @property user End-user identifier for abuse detection
+ * @property verbosity Response detail level (low, medium, high, max)
  * @property trace Observability metadata
  */
 @Serializable
@@ -42,6 +51,8 @@ data class OpenRouterChatRequest(
     val temperature: Double? = null,
     @SerialName("top_p")
     val topP: Double? = null,
+    @SerialName("top_k")
+    val topK: Int? = null,
     @SerialName("max_tokens")
     val maxTokens: Int? = null,
     @SerialName("max_completion_tokens")
@@ -52,6 +63,8 @@ data class OpenRouterChatRequest(
     val presencePenalty: Double? = null,
     @SerialName("frequency_penalty")
     val frequencyPenalty: Double? = null,
+    @SerialName("repetition_penalty")
+    val repetitionPenalty: Double? = null,
     val seed: Int? = null,
     @SerialName("logit_bias")
     val logitBias: Map<Int, Double>? = null,
@@ -65,8 +78,12 @@ data class OpenRouterChatRequest(
     val tools: List<ToolDefinition>? = null,
     @SerialName("tool_choice")
     val toolChoice: String? = null,
+    @SerialName("parallel_tool_calls")
+    val parallelToolCalls: Boolean? = null,
     @SerialName("response_format")
     val responseFormat: ResponseFormat? = null,
+    @SerialName("structured_outputs")
+    val structuredOutputs: Boolean? = null,
     val modalities: List<String>? = null,
     val plugins: List<Plugin>? = null,
     val provider: ProviderPreferences? = null,
@@ -77,6 +94,8 @@ data class OpenRouterChatRequest(
     val serviceTier: String? = null,
     @SerialName("session_id")
     val sessionId: String? = null,
+    val user: String? = null,
+    val verbosity: String? = null,
     val trace: TraceConfig? = null
 )
 
@@ -166,10 +185,17 @@ data class ProviderPreferences(
  * Reasoning model configuration (e.g., for DeepSeek R1).
  *
  * @property effort Reasoning effort: "xhigh", "high", "medium", "low", "minimal", "none"
+ * @property maxTokens Maximum tokens to use for reasoning
+ * @property exclude Whether to exclude reasoning tokens from response
+ * @property enabled Whether reasoning is enabled
  */
 @Serializable
 data class ReasoningConfig(
-    val effort: String? = null
+    val effort: String? = null,
+    @SerialName("max_tokens")
+    val maxTokens: Int? = null,
+    val exclude: Boolean? = null,
+    val enabled: Boolean? = null
 )
 
 /**

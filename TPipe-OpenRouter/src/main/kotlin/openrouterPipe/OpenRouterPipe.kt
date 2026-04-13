@@ -99,13 +99,6 @@ class OpenRouterPipe : Pipe()
     private var toolChoice: String? = null
 
     /**
-     * Reasoning effort for reasoning-capable models (e.g., DeepSeek R1).
-     * Values: "xhigh", "high", "medium", "low", "minimal", "none"
-     */
-    @kotlinx.serialization.Transient
-    private var reasoningEffort: String? = null
-
-    /**
      * Provider routing preferences.
      */
     @kotlinx.serialization.Transient
@@ -171,6 +164,53 @@ class OpenRouterPipe : Pipe()
      */
     @kotlinx.serialization.Transient
     private var topA: Double? = null
+
+    /**
+     * TopK sampling parameter (1-255).
+     * Not available for OpenAI models.
+     */
+    @kotlinx.serialization.Transient
+    private var openRouterTopK: Int? = null
+
+    /**
+     * Repetition penalty for reducing repetition (0.0 to 2.0).
+     * OpenRouter-specific parameter distinct from frequencyPenalty.
+     */
+    @kotlinx.serialization.Transient
+    private var openRouterRepetitionPenalty: Double? = null
+
+    /**
+     * Whether to enable parallel function calling.
+     * Default is true.
+     */
+    @kotlinx.serialization.Transient
+    private var parallelToolCalls: Boolean? = null
+
+    /**
+     * Whether to enable structured outputs via json_schema.
+     */
+    @kotlinx.serialization.Transient
+    private var structuredOutputs: Boolean? = null
+
+    /**
+     * Response verbosity level.
+     * Values: "low", "medium", "high", "max"
+     */
+    @kotlinx.serialization.Transient
+    private var verbosity: String? = null
+
+    /**
+     * End-user identifier for abuse detection.
+     */
+    @kotlinx.serialization.Transient
+    private var openRouterUser: String? = null
+
+    /**
+     * Reasoning configuration for reasoning-capable models.
+     * Contains effort, maxTokens, exclude, and enabled.
+     */
+    @kotlinx.serialization.Transient
+    private var reasoningConfig: env.ReasoningConfig? = null
 
 //=========================================Builder Methods=============================================================
 
@@ -269,9 +309,26 @@ class OpenRouterPipe : Pipe()
      * @param effort Reasoning effort: "xhigh", "high", "medium", "low", "minimal", or "none"
      * @return This pipe instance for fluent chaining
      */
+    /**
+     * Sets the reasoning configuration for reasoning-capable models.
+     * @param config Reasoning configuration with effort, maxTokens, exclude, enabled
+     * @return This pipe instance for fluent chaining
+     */
+    fun setReasoningConfig(config: env.ReasoningConfig): OpenRouterPipe
+    {
+        this.reasoningConfig = config
+        return this
+    }
+
+    /**
+     * Sets reasoning effort for reasoning-capable models.
+     * Convenience method that creates ReasoningConfig with only effort.
+     * @param effort Reasoning effort: "xhigh", "high", "medium", "low", "minimal", "none"
+     * @return This pipe instance for fluent chaining
+     */
     fun setReasoningEffort(effort: String): OpenRouterPipe
     {
-        this.reasoningEffort = effort
+        this.reasoningConfig = env.ReasoningConfig(effort = effort)
         return this
     }
 
@@ -397,6 +454,74 @@ class OpenRouterPipe : Pipe()
         return this
     }
 
+    /**
+     * Sets the topK sampling parameter.
+     * Not available for OpenAI models.
+     * @param k TopK value (1-255)
+     * @return This pipe instance for fluent chaining
+     */
+    fun setOpenRouterTopK(k: Int): OpenRouterPipe
+    {
+        this.openRouterTopK = k
+        return this
+    }
+
+    /**
+     * Sets the repetition penalty for reducing repetition.
+     * OpenRouter-specific parameter distinct from frequencyPenalty.
+     * @param penalty Repetition penalty (0.0 to 2.0)
+     * @return This pipe instance for fluent chaining
+     */
+    fun setOpenRouterRepetitionPenalty(penalty: Double): OpenRouterPipe
+    {
+        this.openRouterRepetitionPenalty = penalty
+        return this
+    }
+
+    /**
+     * Sets whether to enable parallel function calling.
+     * @param enabled True to enable parallel calls (default true)
+     * @return This pipe instance for fluent chaining
+     */
+    fun setParallelToolCalls(enabled: Boolean): OpenRouterPipe
+    {
+        this.parallelToolCalls = enabled
+        return this
+    }
+
+    /**
+     * Sets whether to enable structured outputs via json_schema.
+     * @param enabled True to enable structured outputs
+     * @return This pipe instance for fluent chaining
+     */
+    fun setStructuredOutputs(enabled: Boolean): OpenRouterPipe
+    {
+        this.structuredOutputs = enabled
+        return this
+    }
+
+    /**
+     * Sets the response verbosity level.
+     * @param level Verbosity: "low", "medium", "high", "max"
+     * @return This pipe instance for fluent chaining
+     */
+    fun setVerbosity(level: String): OpenRouterPipe
+    {
+        this.verbosity = level
+        return this
+    }
+
+    /**
+     * Sets the end-user identifier for abuse detection.
+     * @param userId User identifier
+     * @return This pipe instance for fluent chaining
+     */
+    fun setOpenRouterUser(userId: String): OpenRouterPipe
+    {
+        this.openRouterUser = userId
+        return this
+    }
+
 //=========================================Pipe Lifecycle Methods======================================================
 
     /**
@@ -489,22 +614,23 @@ class OpenRouterPipe : Pipe()
 
             messages.add(ChatMessage(role = "user", content = promptInjector))
 
-            // Build reasoning config if reasoningEffort is set
-            val reasoningConfig = reasoningEffort?.let { env.ReasoningConfig(effort = it) }
-
             val request = OpenRouterChatRequest(
                 model = model,
                 messages = messages,
                 temperature = if(temperature > 0.0) temperature else null,
                 topP = if(topP > 0.0) topP else null,
+                topK = openRouterTopK,
                 maxTokens = if(maxTokens > 0) maxTokens else null,
                 presencePenalty = if(presencePenalty != 0.0) presencePenalty else null,
                 frequencyPenalty = frequencyPenalty,
+                repetitionPenalty = openRouterRepetitionPenalty,
                 seed = seed,
                 stop = stopSequences.takeIf { it.isNotEmpty() },
                 tools = tools,
                 toolChoice = toolChoice,
+                parallelToolCalls = parallelToolCalls,
                 responseFormat = responseFormat,
+                structuredOutputs = structuredOutputs,
                 reasoning = reasoningConfig,
                 provider = providerPreferences,
                 cacheControl = cacheControl,
@@ -515,6 +641,8 @@ class OpenRouterPipe : Pipe()
                 minP = minP,
                 topA = topA,
                 serviceTier = serviceTier,
+                user = openRouterUser,
+                verbosity = verbosity,
                 sessionId = sessionId,
                 stream = streamingEnabled
             )

@@ -238,6 +238,12 @@ data class OpenRouterConfiguration(
     var topLogprobs: Int? = null,
     var minP: Double? = null,
     var topA: Double? = null,
+    var topK: Int? = null,
+    var repetitionPenalty: Double? = null,
+    var parallelToolCalls: Boolean? = null,
+    var structuredOutputs: Boolean? = null,
+    var verbosity: String? = null,
+    var user: String? = null,
     var providerPreferences: ProviderPreferences? = null,
     var plugins: List<Plugin>? = null,
     var responseFormat: ResponseFormat? = null
