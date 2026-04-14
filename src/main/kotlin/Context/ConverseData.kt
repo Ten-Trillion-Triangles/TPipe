@@ -78,8 +78,16 @@ data class ConverseHistory(
          * and higher level classes that are interacting with this class, we'll adress this behavior by correctly appending
          * as one would expect when you go to add. This allows us to avoid refactors, and any extra steps or confusion
          * when this edge case occurs.
+         *
+         * FIX: Only attempt nested ConverseHistory extraction if the text appears to be ConverseHistory JSON
+         * (starts with "{\"history\""). This prevents AgentRequest JSON or other JSON from being incorrectly parsed.
          */
-        val contentJson: ConverseHistory? = extractJson<ConverseHistory>(content.text)
+        val contentJson: ConverseHistory? = if (content.text.trimStart().startsWith("{\"history\""))
+        {
+            extractJson<ConverseHistory>(content.text)
+        }
+        else null
+
         if(contentJson != null)
         {
             history.addAll(contentJson.history)

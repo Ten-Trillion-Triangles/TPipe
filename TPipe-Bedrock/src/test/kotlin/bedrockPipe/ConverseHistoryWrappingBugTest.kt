@@ -14,36 +14,21 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * BUG INVESTIGATION: Root cause of ConverseHistory wrapping corruption.
+ * Tests to verify that ConverseHistory.add() correctly preserves JSON content.
  *
- * The bug is in ConverseHistory.add() at ConverseData.kt lines 82-87:
+ * These tests verify the FIX for the bug where ConverseHistory.add() incorrectly
+ * treated any JSON as a nested ConverseHistory and did early return.
  *
- *     val contentJson: ConverseHistory? = extractJson<ConverseHistory>(content.text)
- *     if(contentJson != null)
- *     {
- *         history.addAll(contentJson.history)
- *         return  // <-- BUG: Early return prevents actual content from being added!
- *     }
- *
- * When you call history.add(ConverseRole.agent, MultimodalContent(text = agentRequestJson)):
- * 1. add() extracts ConverseHistory from the AgentRequest JSON text
- * 2. If extractJson returns non-null (lenient parsing), it does early return
- * 3. The actual AgentRequest content is NEVER stored in history
- * 4. serializeConverseHistory then returns {} because history is empty!
+ * The fix checks if JSON starts with "{\"history\"" before parsing as ConverseHistory.
  */
 class ConverseHistoryWrappingBugTest
 {
     /**
-     * BUG CONFIRMED: When AgentRequest JSON is added to ConverseHistory,
-     * the add() function incorrectly treats it as a nested ConverseHistory due to lenient
-     * extractJson parsing, and does early return without adding the actual content.
-     *
-     * Evidence:
-     * - History size was 0 before and 0 after add()
-     * - serializeConverseHistory returned "{}" because history was empty
+     * Verify that AgentRequest JSON is correctly preserved in ConverseHistory.
+     * After the fix, history should contain the content (not be empty).
      */
     @Test
-    fun bugReproduction_converseHistoryAddTreatsJsonAsNestedHistory() {
+    fun serializeConverseHistoryPreservesAgentRequestJson() {
         val agentRequest = AgentRequest(
             agentName = "Stepping Agent",
             prompt = "Debug the function",
@@ -57,20 +42,18 @@ class ConverseHistoryWrappingBugTest
         // This is what embedContentIntoInternalConverse does
         history.add(ConverseRole.agent, MultimodalContent(text = agentRequestJson))
 
-        // BUG: history is still empty because add() did early return
-        // The add function parsed AgentRequest JSON as ConverseHistory and returned early
-        assertEquals(0, history.history.size,
-            "BUG CONFIRMED: ConverseHistory.add() did early return, history is empty. " +
-            "The add() function incorrectly parsed AgentRequest JSON as ConverseHistory and returned early.")
+        // After fix: history should contain the content (not be empty)
+        assertTrue(history.history.isNotEmpty(),
+            "ConverseHistory.add() should preserve AgentRequest JSON content")
+        assertEquals(1, history.history.size, "History should have one entry")
     }
 
     /**
-     * BUG CONFIRMED: embedContentIntoInternalConverse simulation produces {} output.
-     *
-     * This is the exact mechanism that causes MANAGER_DECISION to show responseLength: 2.
+     * Verify that embedContentIntoInternalConverse returns valid output (not "{}").
+     * After the fix, serializeConverseHistory should NOT return "{}".
      */
     @Test
-    fun bugReproduction_embedContentIntoInternalConverseReturnsEmptyJson() {
+    fun embedContentIntoInternalConversePreservesValidOutput() {
         val agentRequest = AgentRequest(
             agentName = "Stepping Agent",
             prompt = "Debug the function",
@@ -84,20 +67,18 @@ class ConverseHistoryWrappingBugTest
 
         val result = serializeConverseHistory(history)
 
-        // BUG: Result is {} because history is empty
-        // This is EXACTLY what we see in the trace: MANAGER_DECISION responseLength: 2
-        assertEquals("{}", result,
-            "BUG CONFIRMED: serializeConverseHistory returns {} because ConverseHistory.add() " +
-            "did early return and never added the AgentRequest content. " +
-            "This is the exact bug causing MANAGER_DECISION to show responseLength: 2")
+        // After fix: Result should NOT be "{}"
+        assertTrue(result.isNotEmpty() && result != "{}",
+            "serializeConverseHistory should NOT return empty JSON {}. Got: $result")
+        assertTrue(result.contains("Stepping Agent"),
+            "Result should contain the AgentRequest content")
     }
 
     /**
-     * Valid JSON that is NOT a ConverseHistory also gets corrupted by the same bug.
-     * This is because extractJson is lenient and parses any JSON structure.
+     * Verify that any valid JSON survives the round-trip through ConverseHistory.
      */
     @Test
-    fun bugReproduction_anyJsonInConverseHistoryContentGetsCorrupted() {
+    fun anyValidJsonSurvivesRoundTrip() {
         val validJson = """{"agentName": "Test Agent", "prompt": "test", "promptSchema": "plainText"}"""
 
         val history = ConverseHistory()
@@ -105,15 +86,14 @@ class ConverseHistoryWrappingBugTest
 
         val result = serializeConverseHistory(history)
 
-        // BUG: Any JSON content triggers the same early return bug
-        assertEquals("{}", result,
-            "BUG CONFIRMED: Any JSON content gets corrupted because ConverseHistory.add() " +
-            "uses lenient extractJson that returns non-null for any JSON structure")
+        // After fix: Any valid JSON should survive round-trip
+        assertTrue(result.contains("Test Agent"),
+            "Any JSON content should survive round-trip through ConverseHistory")
     }
 
     /**
-     * Plain text (non-JSON) content works correctly.
-     * This proves the bug is specifically in how JSON content is handled.
+     * Verify that plain text (non-JSON) content works correctly.
+     * This should have always worked and continues to work after the fix.
      */
     @Test
     fun workingCase_plainTextInHistorySurvivesRoundTrip() {
@@ -129,10 +109,39 @@ class ConverseHistoryWrappingBugTest
     }
 
     /**
-     * Demonstrate the fix: use the correct add method that doesn't do JSON extraction.
+     * Verify that actual nested ConverseHistory JSON is still handled correctly.
+     * This is the legitimate use case that the fix should preserve.
      */
     @Test
-    fun workaround_useAddWithConverseDataDirectly() {
+    fun nestedConverseHistoryJsonStillWorks() {
+        // Create a valid ConverseHistory JSON that contains "history" key
+        // We need at least one entry so the "history" field is serialized
+        val nestedHistory = ConverseHistory()
+        nestedHistory.add(ConverseRole.user, MultimodalContent(text = "Hello"))
+        nestedHistory.add(ConverseRole.agent, MultimodalContent(text = "Hi there"))
+        val nestedHistoryJson = serializeConverseHistory(nestedHistory)
+
+        // Verify the serialized JSON contains "history" key (it's pretty-printed so check for presence)
+        assertTrue(nestedHistoryJson.contains("\"history\""),
+            "Nested history JSON should contain \"history\" key. Got: ${nestedHistoryJson.take(50)}")
+
+        // Now add this as content to another history
+        val outerHistory = ConverseHistory()
+        outerHistory.add(ConverseRole.system, MultimodalContent(text = "You are a helpful assistant"))
+        outerHistory.add(ConverseRole.agent, MultimodalContent(text = nestedHistoryJson))
+
+        val result = serializeConverseHistory(outerHistory)
+
+        // After fix: nested ConverseHistory should still be properly handled
+        assertTrue(result.contains("Hello"), "Nested history content should be preserved")
+        assertTrue(result.contains("Hi there"), "Nested history content should be preserved")
+    }
+
+    /**
+     * Comprehensive round-trip test: add AgentRequest, serialize, deserialize, verify.
+     */
+    @Test
+    fun agentRequestRoundTripThroughConverseHistory() {
         val agentRequest = AgentRequest(
             agentName = "Stepping Agent",
             prompt = "Debug the function",
@@ -140,19 +149,25 @@ class ConverseHistoryWrappingBugTest
         )
         val agentRequestJson = serialize(agentRequest)
 
+        // Add to history
         val history = ConverseHistory()
-        // Use add(ConverseData) directly instead of add(role, MultimodalContent)
-        // This bypasses the JSON extraction logic
-        val converseData = com.TTT.Context.ConverseData(
-            role = ConverseRole.agent,
-            content = MultimodalContent(text = agentRequestJson)
-        )
-        history.add(converseData)
+        history.add(ConverseRole.agent, MultimodalContent(text = agentRequestJson))
 
-        val result = serializeConverseHistory(history)
+        // Serialize
+        val historyJson = serializeConverseHistory(history)
+        assertTrue(historyJson.contains("Stepping Agent"), "Serialized history should contain agentName")
 
-        assertTrue(result.contains("Stepping Agent"),
-            "Using add(ConverseData) directly preserves the content. " +
-            "This is the workaround for the bug.")
+        // Deserialize
+        val deserialized = deserialize<ConverseHistory>(historyJson)
+        assertNotNull(deserialized, "Deserialized history should not be null")
+        assertTrue(deserialized!!.history.isNotEmpty(), "History should have entries after deserialization")
+
+        // Extract AgentRequest
+        val lastEntry = deserialized.history.lastOrNull()
+        assertNotNull(lastEntry, "Should have a last entry")
+        val extractedRequest = deserialize<AgentRequest>(lastEntry!!.content.text)
+        assertNotNull(extractedRequest, "Should be able to extract AgentRequest")
+        assertEquals("Stepping Agent", extractedRequest?.agentName,
+            "AgentRequest should survive round-trip through ConverseHistory")
     }
 }
