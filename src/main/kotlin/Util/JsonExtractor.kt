@@ -41,14 +41,14 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
     val objectBoundaries = findJsonBoundaries(input, '{', '}')
     val arrayBoundaries = findJsonBoundaries(input, '[', ']')
     
-    // Combine and sort by range size (larger ranges first to prefer complete objects over nested arrays)
-    // Sort by range size (smaller first) - this prefers more specific/smaller JSON objects
-    // over larger wrapper objects (like ConverseHistory) when searching for a target type.
-    // This prevents larger JSON objects from incorrectly matching due to lenient deserialization
-    // with encodeDefaults=true, which would populate missing fields with defaults.
-    val allBoundaries = (objectBoundaries + arrayBoundaries).sortedBy { it.last - it.first }
-    
-    // Process all boundaries, preferring larger ranges
+    // Combine and sort by range size (larger ranges first to prefer complete objects over partial fragments)
+    // Sort by range size (larger first) - complete JSON objects are preferred over partial ones.
+    // With encodeDefaults=false in deserializeFirstMatch, partial objects deserialize with empty/null
+    // field values rather than being filled with defaults, which can cause wrong matches to win.
+    // By processing larger (more complete) objects first, we ensure the most complete match is found.
+    val allBoundaries = (objectBoundaries + arrayBoundaries).sortedByDescending { it.last - it.first }
+
+    // Process all boundaries, preferring larger ranges (more complete objects)
     allBoundaries.forEach { range ->
         if(!overlapsWithProcessed(range, processedRanges))
         {

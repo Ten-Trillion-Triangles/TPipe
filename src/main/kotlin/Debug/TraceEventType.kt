@@ -56,8 +56,9 @@ enum class TraceEventType {
     AGENT_DISPATCH,
     AGENT_RESPONSE,
     AGENT_REQUEST_VALIDATION,
+    AGENT_REQUEST_EXTRACTION,
     AGENT_RESPONSE_PROCESSING,
-    
+
     // P2P Communication Events
     P2P_REQUEST_START,
     P2P_REQUEST_SUCCESS,
@@ -65,12 +66,12 @@ enum class TraceEventType {
     P2P_TRANSPORT_SEND,
     P2P_TRANSPORT_RECEIVE,
     PCP_CONTEXT_TRANSFER,
-    
+
     // Loop and Control Events
     MANIFOLD_LOOP_ITERATION,
     MANIFOLD_TERMINATION_CHECK,
     CONVERSE_HISTORY_UPDATE,
-    
+
     // Error and Recovery Events
     AGENT_REQUEST_INVALID,
     P2P_COMMUNICATION_FAILURE,

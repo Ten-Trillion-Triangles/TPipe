@@ -1311,6 +1311,19 @@ class Manifold : P2PInterface
                 agentRequest = extractJson<AgentRequest>(responseText)
             }
 
+            // === TRACING: Agent request extraction (diagnostic - shows if LLM produced JSON vs extraction failure) ===
+            if(tracingEnabled)
+            {
+                trace(TraceEventType.AGENT_REQUEST_EXTRACTION, TracePhase.ORCHESTRATION,
+                      metadata = mapOf(
+                          "extractedAgentName" to (agentRequest?.agentName ?: "NULL"),
+                          "responseLength" to responseText.length,
+                          "responsePreview" to responseText.take(300),
+                          "extractionSource" to if(agentBatchCount > 0) "list-first" else "direct",
+                          "iteration" to loopIterationCount
+                      ))
+            }
+
             /**
              * Manager pipelines tend to try to issue pcp requests. However, the manifold manager pipeline is only
              * allowed to issue p2p requests. So to save tokens we should get rid of any random pcp requests it
