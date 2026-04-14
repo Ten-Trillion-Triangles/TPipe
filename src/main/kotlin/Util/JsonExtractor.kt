@@ -42,7 +42,11 @@ fun extractAllJsonObjects(input: String): List<JsonElement>
     val arrayBoundaries = findJsonBoundaries(input, '[', ']')
     
     // Combine and sort by range size (larger ranges first to prefer complete objects over nested arrays)
-    val allBoundaries = (objectBoundaries + arrayBoundaries).sortedByDescending { it.last - it.first }
+    // Sort by range size (smaller first) - this prefers more specific/smaller JSON objects
+    // over larger wrapper objects (like ConverseHistory) when searching for a target type.
+    // This prevents larger JSON objects from incorrectly matching due to lenient deserialization
+    // with encodeDefaults=true, which would populate missing fields with defaults.
+    val allBoundaries = (objectBoundaries + arrayBoundaries).sortedBy { it.last - it.first }
     
     // Process all boundaries, preferring larger ranges
     allBoundaries.forEach { range ->
@@ -261,7 +265,7 @@ inline fun <reified T> deserializeFirstMatch(jsonElements: List<JsonElement>): T
         prettyPrint = true
         ignoreUnknownKeys = true
         isLenient = true
-        encodeDefaults = true
+        encodeDefaults = false
         explicitNulls = false
         coerceInputValues = true
         allowSpecialFloatingPointValues = true
@@ -272,7 +276,7 @@ inline fun <reified T> deserializeFirstMatch(jsonElements: List<JsonElement>): T
         allowComments = true
         decodeEnumsCaseInsensitive = true
     }
-    
+
     for(element in jsonElements)
     {
         try {
