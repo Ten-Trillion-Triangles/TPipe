@@ -225,6 +225,65 @@ class Manifold : P2PInterface
     private var currentTaskProgress = TaskProgress()
     @RuntimeState
     private var loopIterationCount = 0
+
+    //==========================================Kill Switch Accumulator=================================================
+
+    /** Accumulates input tokens from all child executions (manager + workers) */
+    @Transient
+    private var killSwitchInputAccumulator = 0
+
+    /** Accumulates output tokens from all child executions (manager + workers) */
+    @Transient
+    private var killSwitchOutputAccumulator = 0
+
+    /** Tracks execution start time for kill switch elapsed time calculation */
+    @Transient
+    private var killSwitchExecutionStartTime = 0L
+
+    /**
+     * Override setKillSwitch to propagate the kill switch to all child pipelines (manager and workers).
+     * This ensures the kill switch is active at every level of the agent hierarchy.
+     */
+    private var _killSwitch: com.TTT.P2P.KillSwitch? = null
+    override var killSwitch: com.TTT.P2P.KillSwitch?
+        get() = _killSwitch
+        set(value) {
+            _killSwitch = value
+            managerPipeline.killSwitch = value
+            workerPipelines.forEach { it.killSwitch = value }
+        }
+
+    /**
+     * Checks if the kill switch limits have been exceeded and triggers termination if so.
+     * This method accumulates token counts and evaluates them against configured limits.
+     *
+     * @param inputTokens The current accumulated input token count
+     * @param outputTokens The current accumulated output token count
+     * @param elapsedMs Time elapsed since execution started
+     * @throws KillSwitchException if any limit is exceeded
+     */
+    protected fun checkKillSwitch(inputTokens: Int, outputTokens: Int, elapsedMs: Long)
+    {
+        val ks = killSwitch ?: return
+        val reason = when
+        {
+            ks.inputTokenLimit != null && inputTokens > ks.inputTokenLimit -> "input_exceeded"
+            ks.outputTokenLimit != null && outputTokens > ks.outputTokenLimit -> "output_exceeded"
+            else -> null
+        }
+        if(reason != null)
+        {
+            ks.onTripped(com.TTT.P2P.KillSwitchContext(
+                p2pInterface = this,
+                inputTokensSpent = inputTokens,
+                outputTokensSpent = outputTokens,
+                elapsedMs = elapsedMs,
+                reason = reason,
+                accumulatedInputTokens = inputTokens,
+                accumulatedOutputTokens = outputTokens
+            ))
+        }
+    }
     @RuntimeState
     private val agentInteractionMap = mutableMapOf<String, Int>()
 
@@ -1090,6 +1149,14 @@ class Manifold : P2PInterface
          */
         hasP2P(managerPipeline)
 
+        // Initialize kill switch tracking for this execution
+        if(killSwitch != null)
+        {
+            killSwitchExecutionStartTime = System.currentTimeMillis()
+            killSwitchInputAccumulator = 0
+            killSwitchOutputAccumulator = 0
+        }
+
         // Save the initial user prompt for developer use in manager pipelines
         initialUserPrompt = content.text
 
@@ -1190,7 +1257,22 @@ class Manifold : P2PInterface
             }
 
             //Get the result of the manager pipeline's execution and assessment of task status.
+            // Kill switch check before manager execution
+            if(killSwitch != null)
+            {
+                val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+            }
             val managerResult = managerPipeline.execute(workingContentObject)
+
+            // Accumulate manager tokens and check kill switch after execution
+            if(killSwitch != null)
+            {
+                killSwitchInputAccumulator += managerPipeline.inputTokensSpent
+                killSwitchOutputAccumulator += managerPipeline.outputTokensSpent
+                val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+            }
 
             // === TRACING: Manager decision ===
             if(tracingEnabled)
@@ -1434,10 +1516,33 @@ class Manifold : P2PInterface
                     agentRequest.content = ""
                 }
 
+                // Kill switch check before worker dispatch
+                if(killSwitch != null)
+                {
+                    val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                    checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+                }
+
                 val response = P2PRegistry.sendP2pRequest(
                     agentRequest,
                     returnAddressOverride = managerPipeline.getP2pTransport()
                 )
+
+                // Accumulate worker tokens after execution
+                if(killSwitch != null)
+                {
+                    val workerPipeline = workerPipelinesByAgentName[agentRequest.agentName] ?: workerPipelines.find { pipeline ->
+                        pipeline.getP2pDescription()?.agentName == agentRequest.agentName ||
+                            pipeline.getP2pTransport()?.transportAddress == agentRequest.agentName
+                    }
+                    if(workerPipeline != null)
+                    {
+                        killSwitchInputAccumulator += workerPipeline.inputTokensSpent
+                        killSwitchOutputAccumulator += workerPipeline.outputTokensSpent
+                    }
+                    val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                    checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+                }
 
                 //In the event a rejection occurs we'll need to exit the manifold.
                 val rejection = response.rejection
@@ -1565,6 +1670,11 @@ class Manifold : P2PInterface
                               ))
                     }
                 }
+                catch(e: com.TTT.P2P.KillSwitchException)
+                {
+                    // KillSwitchException must never be caught — it must propagate to terminate the agent
+                    throw e
+                }
                 catch(e: Exception)
                 {
                     // === TRACING: Converse history update failure ===
@@ -1605,6 +1715,11 @@ class Manifold : P2PInterface
                               ))
                     }
                 }
+                catch(e: com.TTT.P2P.KillSwitchException)
+                {
+                    // KillSwitchException must never be caught — it must propagate to terminate the agent
+                    throw e
+                }
                 catch(e: Exception)
                 {
                     // === TRACING: Content merge failure ===
@@ -1621,6 +1736,11 @@ class Manifold : P2PInterface
                     break
                 }
 
+            }
+            catch(e: com.TTT.P2P.KillSwitchException)
+            {
+                // KillSwitchException must never be caught — it must propagate to terminate the agent
+                throw e
             }
             catch(e: Exception)
             {

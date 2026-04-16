@@ -7,6 +7,7 @@ import com.TTT.Debug.TraceEventType
 import com.TTT.Debug.TraceFormat
 import com.TTT.P2P.AgentRequest
 import com.TTT.P2P.ContextProtocol
+import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequirements
@@ -1888,6 +1889,7 @@ private class RecordingP2PInterface(
     private var descriptor: P2PDescriptor? = null
     private var requirements: P2PRequirements? = null
     private var transport: P2PTransport? = null
+    override var killSwitch: KillSwitch? = null
 
     override fun setP2pDescription(description: P2PDescriptor)
     {
@@ -2001,6 +2003,7 @@ private class NestedWorkflowParticipant(
     private var descriptor: P2PDescriptor? = null
     private var requirements: P2PRequirements? = null
     private var transport: P2PTransport? = null
+    override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
     override fun setP2pDescription(description: P2PDescriptor)
     {

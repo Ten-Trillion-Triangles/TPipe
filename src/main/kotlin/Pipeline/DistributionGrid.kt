@@ -125,6 +125,16 @@ class DistributionGrid : P2PInterface
     private var p2pRequirements: P2PRequirements? = null
     @RuntimeState
     private var containerObject: Any? = null
+    @kotlinx.serialization.Transient
+    private var _killSwitch: com.TTT.P2P.KillSwitch? = null
+    override var killSwitch: com.TTT.P2P.KillSwitch?
+        get() = _killSwitch
+        set(value) {
+            _killSwitch = value
+            // Propagate kill switch to router and worker bindings
+            routerBinding?.component?.killSwitch = value
+            workerBinding?.component?.killSwitch = value
+        }
 
     private var routerBinding: DistributionGridBinding? = null
     private var workerBinding: DistributionGridBinding? = null
@@ -189,6 +199,52 @@ class DistributionGrid : P2PInterface
     private val defaultMaxNestedDepth = 8
     @RuntimeState
     private var synthesizedPeerOrdinal = 0
+
+//==========================================Kill Switch Accumulator=================================================
+
+    /** Accumulates input tokens from all component executions */
+    @Transient
+    private var killSwitchInputAccumulator = 0
+
+    /** Accumulates output tokens from all component executions */
+    @Transient
+    private var killSwitchOutputAccumulator = 0
+
+    /** Tracks execution start time for kill switch elapsed time calculation */
+    @Transient
+    private var killSwitchExecutionStartTime = 0L
+
+    /**
+     * Checks if the kill switch limits have been exceeded and triggers termination if so.
+     * This method accumulates token counts and evaluates them against configured limits.
+     *
+     * @param inputTokens The current accumulated input token count
+     * @param outputTokens The current accumulated output token count
+     * @param elapsedMs Time elapsed since execution started
+     * @throws KillSwitchException if any limit is exceeded
+     */
+    protected fun checkKillSwitch(inputTokens: Int, outputTokens: Int, elapsedMs: Long)
+    {
+        val ks = killSwitch ?: return
+        val reason = when
+        {
+            ks.inputTokenLimit != null && inputTokens > ks.inputTokenLimit -> "input_exceeded"
+            ks.outputTokenLimit != null && outputTokens > ks.outputTokenLimit -> "output_exceeded"
+            else -> null
+        }
+        if(reason != null)
+        {
+            ks.onTripped(com.TTT.P2P.KillSwitchContext(
+                p2pInterface = this,
+                inputTokensSpent = inputTokens,
+                outputTokensSpent = outputTokens,
+                elapsedMs = elapsedMs,
+                reason = reason,
+                accumulatedInputTokens = inputTokens,
+                accumulatedOutputTokens = outputTokens
+            ))
+        }
+    }
 
     /**
      * Canonical registry scope used for explicit-peer cache identity.
@@ -4020,6 +4076,14 @@ class DistributionGrid : P2PInterface
         negotiatedSessionRecord: DistributionGridSessionRecord? = null
     ): MultimodalContent
     {
+        // Initialize kill switch tracking for this execution
+        if(killSwitch != null)
+        {
+            killSwitchExecutionStartTime = System.currentTimeMillis()
+            killSwitchInputAccumulator = 0
+            killSwitchOutputAccumulator = 0
+        }
+
         val executionStartedAt = System.currentTimeMillis()
         trace(
             TraceEventType.DISTRIBUTION_GRID_START,
@@ -4039,7 +4103,27 @@ class DistributionGrid : P2PInterface
             {
                 applyNegotiatedPolicyToEnvelope(preparedEnvelope, negotiatedSessionRecord)
             }
+
+            // Kill switch check before router execution
+            if(killSwitch != null)
+            {
+                val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+            }
+
             val routerResult = routerBinding!!.component.executeLocal(preparedEnvelope.content)
+
+            // Accumulate router tokens after execution
+            if(killSwitch != null)
+            {
+                routerBinding!!.component.getPipelinesFromInterface().forEach { pipeline ->
+                    killSwitchInputAccumulator += pipeline.inputTokensSpent
+                    killSwitchOutputAccumulator += pipeline.outputTokensSpent
+                }
+                val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+            }
+
             preparedEnvelope.content = routerResult
 
             if(routerResult.hasError() || routerResult.terminatePipeline)
@@ -4083,6 +4167,11 @@ class DistributionGrid : P2PInterface
             )
         }
 
+        catch(error: com.TTT.P2P.KillSwitchException)
+        {
+            // KillSwitchException must never be caught — it must propagate to terminate the agent
+            throw error
+        }
         catch(error: Throwable)
         {
             val failure = buildFailure(

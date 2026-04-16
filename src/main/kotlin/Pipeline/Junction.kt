@@ -86,6 +86,17 @@ class Junction : P2PInterface
     private var p2pRequirements: P2PRequirements? = null
     @RuntimeState
     private var containerObject: Any? = null
+    @kotlinx.serialization.Transient
+    private var _killSwitch: com.TTT.P2P.KillSwitch? = null
+    override var killSwitch: com.TTT.P2P.KillSwitch?
+        get() = _killSwitch
+        set(value) {
+            _killSwitch = value
+            // Propagate kill switch to all participant bindings
+            allBindings().forEach { binding ->
+                binding.component.killSwitch = value
+            }
+        }
 
     private var moderatorBinding: JunctionBinding? = null
     private val participantBindings = mutableListOf<JunctionBinding>()
@@ -112,6 +123,52 @@ class Junction : P2PInterface
     private var moderatorInterventionEnabled = true
     private var defaultMaxNestedDepth = 8
     private var junctionMemoryPolicy = JunctionMemoryPolicy()
+
+//==========================================Kill Switch Accumulator=================================================
+
+    /** Accumulates input tokens from all participant executions */
+    @Transient
+    private var killSwitchInputAccumulator = 0
+
+    /** Accumulates output tokens from all participant executions */
+    @Transient
+    private var killSwitchOutputAccumulator = 0
+
+    /** Tracks execution start time for kill switch elapsed time calculation */
+    @Transient
+    private var killSwitchExecutionStartTime = 0L
+
+    /**
+     * Checks if the kill switch limits have been exceeded and triggers termination if so.
+     * This method accumulates token counts and evaluates them against configured limits.
+     *
+     * @param inputTokens The current accumulated input token count
+     * @param outputTokens The current accumulated output token count
+     * @param elapsedMs Time elapsed since execution started
+     * @throws KillSwitchException if any limit is exceeded
+     */
+    protected fun checkKillSwitch(inputTokens: Int, outputTokens: Int, elapsedMs: Long)
+    {
+        val ks = killSwitch ?: return
+        val reason = when
+        {
+            ks.inputTokenLimit != null && inputTokens > ks.inputTokenLimit -> "input_exceeded"
+            ks.outputTokenLimit != null && outputTokens > ks.outputTokenLimit -> "output_exceeded"
+            else -> null
+        }
+        if(reason != null)
+        {
+            ks.onTripped(com.TTT.P2P.KillSwitchContext(
+                p2pInterface = this,
+                inputTokensSpent = inputTokens,
+                outputTokensSpent = outputTokens,
+                elapsedMs = elapsedMs,
+                reason = reason,
+                accumulatedInputTokens = inputTokens,
+                accumulatedOutputTokens = outputTokens
+            ))
+        }
+    }
 
 //----------------------------------------------P2P Interface------------------------------------------------------------
 
@@ -966,6 +1023,14 @@ class Junction : P2PInterface
         // state, round counters, workflow cycles, or queued resume signals.
         resetRuntimeState()
         init()
+
+        // Initialize kill switch tracking for this execution
+        if(killSwitch != null)
+        {
+            killSwitchExecutionStartTime = System.currentTimeMillis()
+            killSwitchInputAccumulator = 0
+            killSwitchOutputAccumulator = 0
+        }
 
         // Discussion-only execution and workflow execution share the same harness entrypoint, but the workflow
         // recipe layer needs its own orchestration loop because it may repeat, hand off, or short-circuit.
@@ -2492,7 +2557,27 @@ class Junction : P2PInterface
         {
             // The participant sees a fully rendered prompt that includes the current discussion and workflow
             // state, then Junction tries to deserialize the response back into a phase result.
+
+            // Kill switch check before workflow binding dispatch
+            if(killSwitch != null)
+            {
+                val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+            }
+
             val response = binding.component.executeP2PRequest(request)
+
+            // Accumulate binding tokens after execution
+            if(killSwitch != null)
+            {
+                binding.component.getPipelinesFromInterface().forEach { pipeline ->
+                    killSwitchInputAccumulator += pipeline.inputTokensSpent
+                    killSwitchOutputAccumulator += pipeline.outputTokensSpent
+                }
+                val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+            }
+
             val output = response?.output?.text.orEmpty()
             trace(
                 TraceEventType.JUNCTION_PARTICIPANT_RESPONSE,
@@ -2558,6 +2643,11 @@ class Junction : P2PInterface
             }
 
             normalizedResult
+        }
+        catch(e: com.TTT.P2P.KillSwitchException)
+        {
+            // KillSwitchException must never be caught — it must propagate to terminate the agent
+            throw e
         }
         catch(e: Exception)
         {
@@ -3444,7 +3534,26 @@ class Junction : P2PInterface
 
         return try
         {
+            // Kill switch check before participant dispatch
+            if(killSwitch != null)
+            {
+                val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+            }
+
             val response = binding.component.executeP2PRequest(request)
+
+            // Accumulate participant tokens after execution
+            if(killSwitch != null)
+            {
+                binding.component.getPipelinesFromInterface().forEach { pipeline ->
+                    killSwitchInputAccumulator += pipeline.inputTokensSpent
+                    killSwitchOutputAccumulator += pipeline.outputTokensSpent
+                }
+                val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+            }
+
             val output = response?.output?.text.orEmpty()
 
             trace(
@@ -3459,6 +3568,11 @@ class Junction : P2PInterface
             )
 
             parseParticipantOpinion(binding.roleName, roundNumber, output)
+        }
+        catch(e: com.TTT.P2P.KillSwitchException)
+        {
+            // KillSwitchException must never be caught — it must propagate to terminate the agent
+            throw e
         }
         catch(e: Exception)
         {
@@ -3645,7 +3759,26 @@ class Junction : P2PInterface
 
         return try
         {
+            // Kill switch check before moderator dispatch
+            if(killSwitch != null)
+            {
+                val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+            }
+
             val response = binding.component.executeP2PRequest(request)
+
+            // Accumulate moderator tokens after execution
+            if(killSwitch != null)
+            {
+                binding.component.getPipelinesFromInterface().forEach { pipeline ->
+                    killSwitchInputAccumulator += pipeline.inputTokensSpent
+                    killSwitchOutputAccumulator += pipeline.outputTokensSpent
+                }
+                val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+            }
+
             val output = response?.output?.text.orEmpty()
             val parsed = deserialize<ModeratorDirective>(output)
             trace(
@@ -3663,6 +3796,11 @@ class Junction : P2PInterface
                 }
             )
             parsed ?: buildDefaultDirective(voteResults)
+        }
+        catch(e: com.TTT.P2P.KillSwitchException)
+        {
+            // KillSwitchException must never be caught — it must propagate to terminate the agent
+            throw e
         }
         catch(e: Exception)
         {

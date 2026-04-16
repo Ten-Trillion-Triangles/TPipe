@@ -3,6 +3,7 @@ package com.TTT.Pipeline
 import com.TTT.Debug.TraceFormat
 import com.TTT.Debug.TraceEventType
 import com.TTT.P2P.ContextProtocol
+import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.DefaultP2PHostedRegistryPolicy
 import com.TTT.P2P.InMemoryP2PHostedRegistryStore
 import com.TTT.P2P.P2PDescriptor
@@ -384,6 +385,7 @@ private class GridExecutionInterface(
 ) : P2PInterface
 {
     private var containerObject: Any? = null
+    override var killSwitch: KillSwitch? = null
 
     override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
     {

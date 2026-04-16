@@ -4,6 +4,7 @@ import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceEventType
 import com.TTT.Debug.TracePhase
 import com.TTT.P2P.ContextProtocol
+import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PError
 import com.TTT.P2P.P2PInterface
@@ -1763,6 +1764,7 @@ class DistributionGridRemoteHandoffTest
 
             val fakePeer = object : P2PInterface
             {
+                override var killSwitch: KillSwitch? = null
                 override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse
                 {
                     val rpcMessage = deserialize<DistributionGridRpcMessage>(
@@ -2688,6 +2690,7 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var handshakeCount: Int = 0
             private set
@@ -2868,6 +2871,7 @@ class DistributionGridRemoteHandoffTest
         private val delegateGrid: DistributionGrid
     ) : P2PInterface
     {
+        override var killSwitch: com.TTT.P2P.KillSwitch? = null
         var handshakeCount: Int = 0
             private set
 
@@ -3402,6 +3406,7 @@ class DistributionGridRemoteHandoffTest
         private var requirements: P2PRequirements? = null
         private var transport: P2PTransport? = null
         private var containerRef: Any? = null
+        override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var localExecutionCount: Int = 0
             private set
@@ -3470,6 +3475,7 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var handshakeCount: Int = 0
             private set
@@ -3640,6 +3646,7 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var handshakeCount: Int = 0
             private set
@@ -3786,6 +3793,7 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var handshakeCount: Int = 0
             private set
@@ -3976,6 +3984,7 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         override fun setP2pDescription(description: P2PDescriptor)
         {
@@ -4082,6 +4091,7 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         override fun setP2pDescription(description: P2PDescriptor)
         {
@@ -4217,6 +4227,7 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         override fun setP2pDescription(description: P2PDescriptor)
         {
@@ -4376,6 +4387,7 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var handshakeCount: Int = 0
             private set
@@ -4522,6 +4534,7 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var handshakeCount = 0
             private set

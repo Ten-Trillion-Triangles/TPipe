@@ -98,6 +98,14 @@ class Pipeline : P2PInterface
     var lastError: PipeError? = null
 
     /**
+     * Emergency kill switch for halting execution when token limits are exceeded.
+     * When tripped, throws [KillSwitchException] — an uncaught exception that bypasses
+     * all retry policies and generic exception handlers.
+     */
+    @kotlinx.serialization.Transient
+    override var killSwitch: com.TTT.P2P.KillSwitch? = null
+
+    /**
      * Weather the pipeline should update the global context window system of TPipe which allows multiple pipes,
      * pipelines, and other concurrent tasks to share llm context with each other.
      */
@@ -269,6 +277,42 @@ class Pipeline : P2PInterface
     override fun setContainerObject(container: Any)
     {
         pipelineContainer = container
+    }
+
+    /**
+     * Checks the kill switch if one is set. If token consumption exceeds the configured limits,
+     * the kill switch's onTripped callback is invoked — this typically throws [KillSwitchException]
+     * which propagates as an uncaught exception, bypassing all retry policies.
+     *
+     * @param inputTokens Current input token count
+     * @param outputTokens Current output token count
+     * @param elapsedMs Time elapsed since execution started
+     */
+    fun checkKillSwitch(inputTokens: Int, outputTokens: Int, elapsedMs: Long)
+    {
+        killSwitch?.let { ks ->
+            val inputLimit = ks.inputTokenLimit
+            val outputLimit = ks.outputTokenLimit
+
+            val inputExceeded = inputLimit != null && inputTokens > inputLimit
+            val outputExceeded = outputLimit != null && outputTokens > outputLimit
+
+            if (inputExceeded || outputExceeded)
+            {
+                val reason = when {
+                    inputExceeded && outputExceeded -> "input_and_output_exceeded"
+                    inputExceeded -> "input_exceeded"
+                    else -> "output_exceeded"
+                }
+                ks.onTripped(com.TTT.P2P.KillSwitchContext(
+                    p2pInterface = this,
+                    inputTokensSpent = inputTokens,
+                    outputTokensSpent = outputTokens,
+                    elapsedMs = elapsedMs,
+                    reason = reason
+                ))
+            }
+        }
     }
 
     /**
@@ -1170,6 +1214,8 @@ class Pipeline : P2PInterface
      * Internal multimodal execution logic shared by both execute methods
      */
     private suspend fun executeMultimodal(initialContent: MultimodalContent): MultimodalContent = coroutineScope {
+        val executionStartTime = System.currentTimeMillis()
+
         if(tracingEnabled)
         {
             PipeTracer.startTrace(pipelineId)
@@ -1261,6 +1307,10 @@ class Pipeline : P2PInterface
                 }
             }
 
+            catch(e: com.TTT.P2P.KillSwitchException) {
+                // KillSwitchException must never be caught — it must propagate to terminate the agent
+                throw e
+            }
             catch(e: Exception)
             {
                 trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, generatedContent, error = e)
@@ -1284,15 +1334,22 @@ class Pipeline : P2PInterface
             
             //Track token usage from pipes that have comprehensive tracking enabled.
             val pipeIndex = currentPipeIndex
-            if(pipe.isComprehensiveTokenTrackingEnabled())
+            val hasTokenTracking = pipe.isComprehensiveTokenTrackingEnabled()
+            if(hasTokenTracking)
             {
                 //Add this pipe's token usage to the pipeline's aggregated tracking.
                 pipelineTokenUsage.addChildUsage("pipe-$pipeIndex-${pipe.pipeName}", pipe.getTokenUsage())
-                
+
                 //Update pipeline-level token counts for backward compatibility.
                 inputTokensSpent = pipelineTokenUsage.totalInputTokens
                 outputTokensSpent = pipelineTokenUsage.totalOutputTokens
             }
+
+            // Check kill switch after pipe execution — always check if kill switch is set
+            val elapsedMs = System.currentTimeMillis() - executionStartTime
+            val inputTokens = if(hasTokenTracking) pipelineTokenUsage.totalInputTokens else inputTokensSpent
+            val outputTokens = if(hasTokenTracking) pipelineTokenUsage.totalOutputTokens else outputTokensSpent
+            checkKillSwitch(inputTokens, outputTokens, elapsedMs)
 
             // PAUSE POINT 2: After pipe execution (if declared)
             if(pauseAfterPipes)

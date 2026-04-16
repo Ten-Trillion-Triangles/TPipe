@@ -30,6 +30,17 @@ class Connector : P2PInterface
     private var p2pDescriptor: P2PDescriptor? = null
     private var p2pTransport: P2PTransport? = null
     private var p2PRequirements: P2PRequirements? = null
+    @kotlinx.serialization.Transient
+    private var _killSwitch: com.TTT.P2P.KillSwitch? = null
+    override var killSwitch: com.TTT.P2P.KillSwitch?
+        get() = _killSwitch
+        set(value) {
+            _killSwitch = value
+            // Propagate kill switch to all branches
+            branches.values.forEach { pipeline ->
+                pipeline.killSwitch = value
+            }
+        }
 
     override fun setP2pDescription(description: P2PDescriptor)
     {
@@ -94,6 +105,52 @@ class Connector : P2PInterface
 
     @RuntimeState
     private var lastConnection: Any? = null
+
+//==========================================Kill Switch Accumulator=================================================
+
+    /** Accumulates input tokens from branch execution */
+    @Transient
+    private var killSwitchInputAccumulator = 0
+
+    /** Accumulates output tokens from branch execution */
+    @Transient
+    private var killSwitchOutputAccumulator = 0
+
+    /** Tracks execution start time for kill switch elapsed time calculation */
+    @Transient
+    private var killSwitchExecutionStartTime = 0L
+
+    /**
+     * Checks if the kill switch limits have been exceeded and triggers termination if so.
+     * This method accumulates token counts and evaluates them against configured limits.
+     *
+     * @param inputTokens The current accumulated input token count
+     * @param outputTokens The current accumulated output token count
+     * @param elapsedMs Time elapsed since execution started
+     * @throws KillSwitchException if any limit is exceeded
+     */
+    protected fun checkKillSwitch(inputTokens: Int, outputTokens: Int, elapsedMs: Long)
+    {
+        val ks = killSwitch ?: return
+        val reason = when
+        {
+            ks.inputTokenLimit != null && inputTokens > ks.inputTokenLimit -> "input_exceeded"
+            ks.outputTokenLimit != null && outputTokens > ks.outputTokenLimit -> "output_exceeded"
+            else -> null
+        }
+        if(reason != null)
+        {
+            ks.onTripped(com.TTT.P2P.KillSwitchContext(
+                p2pInterface = this,
+                inputTokensSpent = inputTokens,
+                outputTokensSpent = outputTokens,
+                elapsedMs = elapsedMs,
+                reason = reason,
+                accumulatedInputTokens = inputTokens,
+                accumulatedOutputTokens = outputTokens
+            ))
+        }
+    }
 
     /**
      * Adds a new connection to the connector to branch into a given pipeline. Returns this object back to
@@ -166,19 +223,49 @@ class Connector : P2PInterface
      */
     suspend fun execute(path: Any, content: MultimodalContent) : MultimodalContent
     {
+        // Initialize kill switch tracking for this execution
+        if(killSwitch != null)
+        {
+            killSwitchExecutionStartTime = System.currentTimeMillis()
+            killSwitchInputAccumulator = 0
+            killSwitchOutputAccumulator = 0
+        }
+
         try{
             val connection = branches[path] //Find the pipeline if it's valid.
             lastConnection = path
 
             if(connection != null)
             {
-                return connection.execute(content) //Execute it and return our as it passes through.
+                // Kill switch check before branch execution
+                if(killSwitch != null)
+                {
+                    val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                    checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+                }
+
+                val result = connection.execute(content) //Execute it and return our as it passes through.
+
+                // Accumulate branch tokens after execution
+                if(killSwitch != null)
+                {
+                    killSwitchInputAccumulator += connection.inputTokensSpent
+                    killSwitchOutputAccumulator += connection.outputTokensSpent
+                    val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                    checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+                }
+
+                return result
             }
 
             content.terminatePipeline = true
             return content
         }
-
+        catch(e: com.TTT.P2P.KillSwitchException)
+        {
+            // KillSwitchException must never be caught — it must propagate to terminate the agent
+            throw e
+        }
         catch(e: Exception)
         {
             content.terminatePipeline = true

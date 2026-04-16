@@ -582,7 +582,9 @@ object P2PRegistry
         Agents[transport] = P2PAgentListing(
             descriptor = descriptor,
             requirements = requirements,
-            container = object : P2PInterface {},
+            container = object : P2PInterface {
+                override var killSwitch: com.TTT.P2P.KillSwitch? = null
+            },
             concurrencyMode = P2PConcurrencyMode.ISOLATED,
             factory = factory
         )

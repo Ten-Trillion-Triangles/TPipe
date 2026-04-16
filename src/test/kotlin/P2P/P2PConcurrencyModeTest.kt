@@ -27,6 +27,7 @@ class P2PConcurrencyModeTest
     private class CountingInterface : P2PInterface
     {
         var requestCount = 0
+        override var killSwitch: KillSwitch? = null
 
         override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse
         {
@@ -180,6 +181,7 @@ class P2PConcurrencyModeTest
                 factory = {
                     object : P2PInterface
                     {
+                        override var killSwitch: KillSwitch? = null
                         override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse
                         {
                             val childAgent = CountingInterface()
@@ -308,6 +310,7 @@ class P2PConcurrencyModeTest
                 factory = {
                     object : P2PInterface
                     {
+                        override var killSwitch: KillSwitch? = null
                         override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse
                         {
                             val index = request.prompt.text.substringAfterLast("-").toIntOrNull() ?: 0
@@ -500,6 +503,7 @@ class P2PConcurrencyModeTest
                 factory = {
                     object : P2PInterface
                     {
+                        override var killSwitch: KillSwitch? = null
                         override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse
                         {
                             //Overwrite the bystander's registration during isolated execution.

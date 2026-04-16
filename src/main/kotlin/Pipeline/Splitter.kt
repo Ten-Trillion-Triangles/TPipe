@@ -78,6 +78,17 @@ class Splitter: P2PInterface
      */
     @RuntimeState
     val results = MultimodalCollection()
+    @kotlinx.serialization.Transient
+    private var _killSwitch: com.TTT.P2P.KillSwitch? = null
+    override var killSwitch: com.TTT.P2P.KillSwitch?
+        get() = _killSwitch
+        set(value) {
+            _killSwitch = value
+            // Propagate kill switch to all pipelines
+            activatorKeys.values.flatMap { it.pipelines }.forEach { pipeline ->
+                pipeline.killSwitch = value
+            }
+        }
 
     /**
      * Tracing system properties for debugging and monitoring Splitter execution.
@@ -86,6 +97,52 @@ class Splitter: P2PInterface
     private var traceConfig = TraceConfig()
     @RuntimeState
     private val splitterId = UUID.randomUUID().toString()
+
+//==========================================Kill Switch Accumulator=================================================
+
+    /** Accumulates input tokens from all pipeline executions */
+    @Transient
+    private var killSwitchInputAccumulator = 0
+
+    /** Accumulates output tokens from all pipeline executions */
+    @Transient
+    private var killSwitchOutputAccumulator = 0
+
+    /** Tracks execution start time for kill switch elapsed time calculation */
+    @Transient
+    private var killSwitchExecutionStartTime = 0L
+
+    /**
+     * Checks if the kill switch limits have been exceeded and triggers termination if so.
+     * This method accumulates token counts and evaluates them against configured limits.
+     *
+     * @param inputTokens The current accumulated input token count
+     * @param outputTokens The current accumulated output token count
+     * @param elapsedMs Time elapsed since execution started
+     * @throws KillSwitchException if any limit is exceeded
+     */
+    protected fun checkKillSwitch(inputTokens: Int, outputTokens: Int, elapsedMs: Long)
+    {
+        val ks = killSwitch ?: return
+        val reason = when
+        {
+            ks.inputTokenLimit != null && inputTokens > ks.inputTokenLimit -> "input_exceeded"
+            ks.outputTokenLimit != null && outputTokens > ks.outputTokenLimit -> "output_exceeded"
+            else -> null
+        }
+        if(reason != null)
+        {
+            ks.onTripped(com.TTT.P2P.KillSwitchContext(
+                p2pInterface = this,
+                inputTokensSpent = inputTokens,
+                outputTokensSpent = outputTokens,
+                elapsedMs = elapsedMs,
+                reason = reason,
+                accumulatedInputTokens = inputTokens,
+                accumulatedOutputTokens = outputTokens
+            ))
+        }
+    }
 
     /**
      * Optional delegate function that will be called anytime a pipeline exits in this splitter.
@@ -531,6 +588,14 @@ class Splitter: P2PInterface
     {
         results.flush() //Clear out before we start so that we aren't holding stale data here.
 
+        // Initialize kill switch tracking for this execution
+        if(killSwitch != null)
+        {
+            killSwitchExecutionStartTime = System.currentTimeMillis()
+            killSwitchInputAccumulator = 0
+            killSwitchOutputAccumulator = 0
+        }
+
         if(tracingEnabled)
         {
             trace(TraceEventType.SPLITTER_PARALLEL_START, TracePhase.EXECUTION,
@@ -579,9 +644,18 @@ class Splitter: P2PInterface
                              */
                             val originalContentAsJson = serialize(activatorValue.content)
                             val copiedContent = deserialize<MultimodalContent>(originalContentAsJson) ?: MultimodalContent()
-                            
+
                             //Execute pipeline with the content associated with this key.
                             val result = pipeline.execute(copiedContent)
+
+                            // Accumulate pipeline tokens after execution
+                            if(killSwitch != null)
+                            {
+                                killSwitchInputAccumulator += pipeline.inputTokensSpent
+                                killSwitchOutputAccumulator += pipeline.outputTokensSpent
+                                val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                                checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+                            }
                             
                             if(tracingEnabled)
                             {
@@ -620,6 +694,11 @@ class Splitter: P2PInterface
                                 }
                                 callback(this@Splitter, pipeline, result)
                             }
+                        }
+                        catch(e: com.TTT.P2P.KillSwitchException)
+                        {
+                            // KillSwitchException must never be caught — it must propagate to terminate the agent
+                            throw e
                         }
                         catch(e: Exception)
                         {

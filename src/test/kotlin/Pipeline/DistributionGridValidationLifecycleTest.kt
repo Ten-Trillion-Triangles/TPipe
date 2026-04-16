@@ -2,6 +2,7 @@ package com.TTT.Pipeline
 
 import com.TTT.Debug.PipeTracer
 import com.TTT.P2P.ContextProtocol
+import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequest
@@ -362,6 +363,7 @@ class DistributionGridValidationLifecycleTest
         private var requirements: P2PRequirements? = null
         private var transport: P2PTransport? = null
         private var containerRef: Any? = null
+        override var killSwitch: KillSwitch? = null
 
         override fun setP2pDescription(description: P2PDescriptor)
         {
@@ -424,6 +426,7 @@ class DistributionGridValidationLifecycleTest
     ) : P2PInterface
     {
         private var containerRef: Any? = null
+        override var killSwitch: KillSwitch? = null
         private val descriptor = P2PDescriptor(
             agentName = name,
             agentDescription = "Linked container for $name",

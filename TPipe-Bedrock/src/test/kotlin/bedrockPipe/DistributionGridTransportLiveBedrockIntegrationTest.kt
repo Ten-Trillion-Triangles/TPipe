@@ -8,6 +8,7 @@ import com.TTT.Debug.TraceEventType
 import com.TTT.Debug.TraceFormat
 import com.TTT.Enums.ProviderName
 import com.TTT.P2P.ContextProtocol
+import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRegistry
@@ -264,6 +265,7 @@ object DistributionGridTransportLiveBedrockFixtures
         private var requirements: P2PRequirements? = null
         private var transport: P2PTransport? = null
         private var containerRef: Any? = null
+        override var killSwitch: KillSwitch? = null
 
         private val _requestCount = AtomicInteger(0)
         val requestCount: Int get() = _requestCount.get()
@@ -329,6 +331,7 @@ object DistributionGridTransportLiveBedrockFixtures
         private var requirements: P2PRequirements? = null
         private var transport: P2PTransport? = null
         private var containerRef: Any? = null
+        override var killSwitch: KillSwitch? = null
 
         override fun setP2pDescription(description: P2PDescriptor) { descriptor = description }
         override fun getP2pDescription(): P2PDescriptor? = descriptor

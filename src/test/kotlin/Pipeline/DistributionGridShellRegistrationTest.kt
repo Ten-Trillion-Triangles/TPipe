@@ -2,6 +2,7 @@ package com.TTT.Pipeline
 
 import com.TTT.Debug.TraceConfig
 import com.TTT.P2P.ContextProtocol
+import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequest
@@ -315,6 +316,7 @@ class DistributionGridShellRegistrationTest
         private var requirements: P2PRequirements? = null
         private var transport: P2PTransport? = null
         private var containerRef: Any? = null
+        override var killSwitch: KillSwitch? = null
 
         override fun setP2pDescription(description: P2PDescriptor)
         {

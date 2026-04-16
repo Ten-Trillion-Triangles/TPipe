@@ -13,6 +13,7 @@ class TestP2PInterface(
     private val requirements: P2PRequirements? = null,
     private val container: Any? = null
 ) : P2PInterface {
+    override var killSwitch: KillSwitch? = null
     override fun getP2pTransport(): P2PTransport? = transport
     override fun getP2pDescription(): P2PDescriptor? = descriptor
     override fun getP2pRequirements(): P2PRequirements? = requirements
@@ -30,6 +31,7 @@ class CapturingP2PInterface(
     private val container: Any? = null
 ) : P2PInterface {
     var lastRequest: P2PRequest? = null
+    override var killSwitch: KillSwitch? = null
 
     override fun getP2pTransport(): P2PTransport? = transport
     override fun getP2pDescription(): P2PDescriptor? = descriptor

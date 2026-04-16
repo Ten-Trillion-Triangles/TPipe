@@ -48,6 +48,17 @@ class MultiConnector : P2PInterface
      */
     @RuntimeState
     private var containerObject: Any? = null
+    @kotlinx.serialization.Transient
+    private var _killSwitch: com.TTT.P2P.KillSwitch? = null
+    override var killSwitch: com.TTT.P2P.KillSwitch?
+        get() = _killSwitch
+        set(value) {
+            _killSwitch = value
+            // Propagate kill switch to all connectors
+            connectors.forEach { connector ->
+                connector.killSwitch = value
+            }
+        }
 
     override fun setP2pDescription(description: P2PDescriptor)
     {
@@ -111,10 +122,56 @@ class MultiConnector : P2PInterface
     
     /** Current execution mode determining how connectors are used */
     private var executionMode = ExecutionMode.SEQUENTIAL
-    
+
+//==========================================Kill Switch Accumulator=================================================
+
+    /** Accumulates input tokens from all connector executions */
+    @Transient
+    private var killSwitchInputAccumulator = 0
+
+    /** Accumulates output tokens from all connector executions */
+    @Transient
+    private var killSwitchOutputAccumulator = 0
+
+    /** Tracks execution start time for kill switch elapsed time calculation */
+    @Transient
+    private var killSwitchExecutionStartTime = 0L
+
+    /**
+     * Checks if the kill switch limits have been exceeded and triggers termination if so.
+     * This method accumulates token counts and evaluates them against configured limits.
+     *
+     * @param inputTokens The current accumulated input token count
+     * @param outputTokens The current accumulated output token count
+     * @param elapsedMs Time elapsed since execution started
+     * @throws KillSwitchException if any limit is exceeded
+     */
+    protected fun checkKillSwitch(inputTokens: Int, outputTokens: Int, elapsedMs: Long)
+    {
+        val ks = killSwitch ?: return
+        val reason = when
+        {
+            ks.inputTokenLimit != null && inputTokens > ks.inputTokenLimit -> "input_exceeded"
+            ks.outputTokenLimit != null && outputTokens > ks.outputTokenLimit -> "output_exceeded"
+            else -> null
+        }
+        if(reason != null)
+        {
+            ks.onTripped(com.TTT.P2P.KillSwitchContext(
+                p2pInterface = this,
+                inputTokensSpent = inputTokens,
+                outputTokensSpent = outputTokens,
+                elapsedMs = elapsedMs,
+                reason = reason,
+                accumulatedInputTokens = inputTokens,
+                accumulatedOutputTokens = outputTokens
+            ))
+        }
+    }
+
     /**
      * Execution modes for MultiConnector operations.
-     * 
+     *
      * SEQUENTIAL: Execute connectors one after another in order
      * PARALLEL: Distribute content across connectors using load balancing
      * FALLBACK: Try connectors in order until one succeeds
@@ -154,6 +211,14 @@ class MultiConnector : P2PInterface
      */
     suspend fun execute(paths: List<Any>, content: MultimodalContent): List<MultimodalContent>
     {
+        // Initialize kill switch tracking for this execution
+        if(killSwitch != null)
+        {
+            killSwitchExecutionStartTime = System.currentTimeMillis()
+            killSwitchInputAccumulator = 0
+            killSwitchOutputAccumulator = 0
+        }
+
         return when(executionMode)
         {
             ExecutionMode.SEQUENTIAL -> listOf(executeSequential(paths, content))
@@ -172,12 +237,38 @@ class MultiConnector : P2PInterface
      */
     suspend fun executeParallel(contentList: List<MultimodalContent>, paths: List<Any>): List<MultimodalContent>
     {
-        return coroutineScope {
+        // Initialize kill switch tracking for this execution
+        if(killSwitch != null)
+        {
+            killSwitchExecutionStartTime = System.currentTimeMillis()
+            killSwitchInputAccumulator = 0
+            killSwitchOutputAccumulator = 0
+        }
+
+        val results = coroutineScope {
             // Map each content to a connector using round-robin distribution
             contentList.mapIndexed { i, content ->
-                async { connectors[i % connectors.size].execute(paths[i % paths.size], content) }
+                async {
+                    val result = connectors[i % connectors.size].execute(paths[i % paths.size], content)
+
+                    // Check kill switch after each branch completes for early detection
+                    // Note: In parallel execution, we check each branch's tokens individually
+                    // This provides earlier detection than waiting for all branches to complete
+                    if(killSwitch != null)
+                    {
+                        val connector = connectors[i % connectors.size]
+                        connector.getPipelinesFromInterface().forEach { pipeline ->
+                            val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                            checkKillSwitch(pipeline.inputTokensSpent, pipeline.outputTokensSpent, elapsedMs)
+                        }
+                    }
+
+                    result
+                }
             }.map { it.await() } // Wait for all async operations to complete
         }
+
+        return results
     }
     
     /**
@@ -189,6 +280,14 @@ class MultiConnector : P2PInterface
      */
     suspend fun execute(paths: List<Any>, contentList: List<MultimodalContent>): List<MultimodalContent>
     {
+        // Initialize kill switch tracking for this execution
+        if(killSwitch != null)
+        {
+            killSwitchExecutionStartTime = System.currentTimeMillis()
+            killSwitchInputAccumulator = 0
+            killSwitchOutputAccumulator = 0
+        }
+
         return when(executionMode)
         {
             ExecutionMode.SEQUENTIAL -> contentList.map { executeSequential(paths, it) }
@@ -207,14 +306,32 @@ class MultiConnector : P2PInterface
     private suspend fun executeSequential(paths: List<Any>, content: MultimodalContent): MultimodalContent
     {
         var result = content
-        
+
         // Process through each connector in sequence
         for(i in connectors.indices)
         {
             // Only continue if we have a path and pipeline hasn't been terminated
             if(i < paths.size && !result.terminatePipeline)
             {
+                // Kill switch check before connector execution
+                if(killSwitch != null)
+                {
+                    val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                    checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+                }
+
                 result = connectors[i].execute(paths[i], result)
+
+                // Accumulate tokens after connector execution
+                if(killSwitch != null)
+                {
+                    connectors[i].getPipelinesFromInterface().forEach { pipeline ->
+                        killSwitchInputAccumulator += pipeline.inputTokensSpent
+                        killSwitchOutputAccumulator += pipeline.outputTokensSpent
+                    }
+                    val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                    checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+                }
             }
         }
         return result
@@ -234,7 +351,26 @@ class MultiConnector : P2PInterface
         {
             if(i < paths.size)
             {
+                // Kill switch check before connector execution
+                if(killSwitch != null)
+                {
+                    val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                    checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+                }
+
                 val result = connectors[i].execute(paths[i], content)
+
+                // Accumulate tokens after connector execution
+                if(killSwitch != null)
+                {
+                    connectors[i].getPipelinesFromInterface().forEach { pipeline ->
+                        killSwitchInputAccumulator += pipeline.inputTokensSpent
+                        killSwitchOutputAccumulator += pipeline.outputTokensSpent
+                    }
+                    val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
+                    checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
+                }
+
                 // Return first successful result (pipeline not terminated)
                 if(!result.terminatePipeline) return result
             }

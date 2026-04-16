@@ -4,6 +4,7 @@ import com.TTT.Debug.TraceEventType
 import com.TTT.Config.AuthRegistry
 import com.TTT.P2P.ContextProtocol
 import com.TTT.Pipe.BinaryContent
+import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRegistry
@@ -1346,6 +1347,7 @@ class DistributionGridHardeningTest
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
         private var containerRef: Any? = null
+        override var killSwitch: KillSwitch? = null
 
         override fun setP2pDescription(description: P2PDescriptor)
         {
@@ -1471,6 +1473,7 @@ class DistributionGridHardeningTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        override var killSwitch: com.TTT.P2P.KillSwitch? = null
         private var activeSession: DistributionGridSessionRecord? = null
 
         var taskHandoffCount = 0

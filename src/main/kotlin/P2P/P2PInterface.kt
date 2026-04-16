@@ -65,4 +65,11 @@ interface P2PInterface
      */
      suspend fun executeLocal(content: MultimodalContent) : MultimodalContent {return content}
 
+    /**
+     * Emergency kill switch for halting agent execution when token limits are exceeded.
+     * When tripped, throws [KillSwitchException] — an uncaught exception that bypasses
+     * all retry policies and generic exception handlers. Set to null to disable.
+     */
+    var killSwitch: KillSwitch?
+
 }
