@@ -2,6 +2,7 @@
 
 ## Table of Contents
 - [Tracing Support](#tracing-support)
+- [KillSwitch Safety Mechanism](#killswitch-safety-mechanism)
 - [P2P Integration Patterns](#p2p-integration-patterns)
 - [Container State Management](#container-state-management)
 - [Error Handling Patterns](#error-handling-patterns)
@@ -71,6 +72,37 @@ connector.enableTracing(TraceConfig(
 splitter.enableTracing(TraceConfig(enabled = true))
 
 // Manifold has built-in tracing when tracingEnabled = true
+```
+
+## KillSwitch Safety Mechanism
+
+KillSwitch provides token limit enforcement across all containers. See the **[KillSwitch Documentation](../core-concepts/killswitch.md)** for complete details.
+
+### KillSwitch Status
+
+| Container | KillSwitch Support | Propagation |
+|-----------|-------------------|------------|
+| Connector | ✅ Yes | To branches |
+| MultiConnector | ✅ Yes | To connectors |
+| Splitter | ✅ Yes | To pipelines |
+| Manifold | ✅ Yes | To manager + workers |
+| DistributionGrid | ✅ Yes | To router + workers |
+| Junction | ✅ Yes | To moderator + participants |
+
+### Quick Example
+
+```kotlin
+// Set on any container
+manifold.killSwitch = KillSwitch(
+    inputTokenLimit = 100_000,
+    outputTokenLimit = 50_000
+)
+
+// Or via DSL
+manifold {
+    killSwitch(inputTokenLimit = 100_000, outputTokenLimit = 50_000)
+    // ...
+}
 ```
 
 ## P2P Integration Patterns

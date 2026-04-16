@@ -92,14 +92,16 @@ fun enableTracing(config: TraceConfig = TraceConfig()) {
 
 ## Implementation Status
 
-| Container | Status | P2P Support | Tracing |
-|-----------|--------|-------------|---------|
-| Connector | ✅ Complete | ✅ Yes | ✅ Yes |
-| MultiConnector | ✅ Complete | ✅ Yes | ❌ No |
-| Splitter | ✅ Complete | ✅ Yes | ✅ Yes |
-| Manifold | ✅ Complete | ✅ Yes | ✅ Yes |
-| DistributionGrid | ✅ Phase 8 shipped | ✅ Yes | ✅ Yes |
-| Junction | ✅ Complete | ✅ Yes | ✅ Yes |
+| Container | Status | P2P Support | Tracing | KillSwitch |
+|-----------|--------|-------------|---------|------------|
+| Connector | ✅ Complete | ✅ Yes | ✅ Yes | ✅ Yes |
+| MultiConnector | ✅ Complete | ✅ Yes | ❌ No | ✅ Yes |
+| Splitter | ✅ Complete | ✅ Yes | ✅ Yes | ✅ Yes |
+| Manifold | ✅ Complete | ✅ Yes | ✅ Yes | ✅ Yes |
+| DistributionGrid | ✅ Phase 8 shipped | ✅ Yes | ✅ Yes | ✅ Yes |
+| Junction | ✅ Complete | ✅ Yes | ✅ Yes | ✅ Yes |
+
+See **[KillSwitch](../core-concepts/killswitch.md)** for token limit enforcement documentation.
 
 ## Example: Basic Container Pattern
 
