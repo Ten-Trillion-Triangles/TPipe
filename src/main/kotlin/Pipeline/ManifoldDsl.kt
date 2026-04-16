@@ -4,6 +4,8 @@ import com.TTT.Debug.TraceConfig
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Enums.SummaryMode
 import com.TTT.P2P.AgentRequest
+import com.TTT.P2P.KillSwitch
+import com.TTT.P2P.KillSwitchContext
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PConcurrencyMode
 import com.TTT.P2P.P2PRequirements
@@ -55,6 +57,7 @@ class ManifoldDsl
     private var tracingConfiguration: TraceConfig? = null
     private var summaryPipelineConfiguration: SummaryPipelineConfiguration? = null
     private var concurrencyModeConfiguration: P2PConcurrencyMode = P2PConcurrencyMode.SHARED
+    private var killSwitchConfiguration: KillSwitch? = null
 
     /**
      * Set the P2P concurrency mode for this manifold when registered with the P2P registry.
@@ -72,6 +75,24 @@ class ManifoldDsl
      * @return The concurrency mode set on this DSL.
      */
     fun getConcurrencyMode(): P2PConcurrencyMode = concurrencyModeConfiguration
+
+    /**
+     * Configure an emergency kill switch to halt execution if token limits are exceeded.
+     *
+     * The kill switch monitors input and output token usage across all manager and worker pipelines.
+     * When tripped, it immediately terminates the manifold regardless of any retry policies.
+     *
+     * @param inputTokenLimit Maximum input tokens allowed (prompt + context). null = no limit.
+     * @param outputTokenLimit Maximum output tokens allowed (response + reasoning). null = no limit.
+     */
+    fun killSwitch(inputTokenLimit: Int? = null, outputTokenLimit: Int? = null, onTripped: ((KillSwitchContext) -> Nothing)? = null)
+    {
+        killSwitchConfiguration = if(onTripped != null) {
+            KillSwitch(inputTokenLimit = inputTokenLimit, outputTokenLimit = outputTokenLimit, onTripped = onTripped)
+        } else {
+            KillSwitch(inputTokenLimit = inputTokenLimit, outputTokenLimit = outputTokenLimit)
+        }
+    }
 
     /**
      * Configure the manager pipeline used to orchestrate work across manifold workers.
@@ -242,6 +263,11 @@ class ManifoldDsl
 
         applyValidationConfiguration(manifold)
         applySummaryPipelineConfiguration(manifold)
+
+        if(killSwitchConfiguration != null)
+        {
+            manifold.killSwitch = killSwitchConfiguration
+        }
 
         return manifold
     }

@@ -2,6 +2,8 @@ package com.TTT.Pipeline
 
 import com.TTT.Debug.TraceConfig
 import com.TTT.P2P.ContextProtocol
+import com.TTT.P2P.KillSwitch
+import com.TTT.P2P.KillSwitchContext
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequest
@@ -103,6 +105,7 @@ class DistributionGridDsl
     private var tracingConfiguration: DistributionGridTracingConfiguration? = null
     private var hooksConfiguration: DistributionGridHooksConfiguration? = null
     private var operationsConfiguration: DistributionGridOperationsConfiguration? = null
+    private var killSwitchConfiguration: KillSwitch? = null
 
     /**
      * Configure the outward P2P identity for the grid node itself.
@@ -322,6 +325,24 @@ class DistributionGridDsl
     }
 
     /**
+     * Configure an emergency kill switch to halt execution if token limits are exceeded.
+     *
+     * The kill switch monitors input and output token usage across router and all workers.
+     * When tripped, it immediately terminates the grid regardless of any retry policies.
+     *
+     * @param inputTokenLimit Maximum input tokens allowed (prompt + context). null = no limit.
+     * @param outputTokenLimit Maximum output tokens allowed (response + reasoning). null = no limit.
+     */
+    fun killSwitch(inputTokenLimit: Int? = null, outputTokenLimit: Int? = null, onTripped: ((KillSwitchContext) -> Nothing)? = null)
+    {
+        killSwitchConfiguration = if(onTripped != null) {
+            KillSwitch(inputTokenLimit = inputTokenLimit, outputTokenLimit = outputTokenLimit, onTripped = onTripped)
+        } else {
+            KillSwitch(inputTokenLimit = inputTokenLimit, outputTokenLimit = outputTokenLimit)
+        }
+    }
+
+    /**
      * Build and initialize the configured grid synchronously.
      *
      * @return Fully initialized grid ready for use.
@@ -331,6 +352,10 @@ class DistributionGridDsl
         val grid = configureGrid()
         runBlocking {
             grid.init()
+        }
+        if(killSwitchConfiguration != null)
+        {
+            grid.killSwitch = killSwitchConfiguration
         }
         return grid
     }
@@ -344,6 +369,10 @@ class DistributionGridDsl
     {
         val grid = configureGrid()
         grid.init()
+        if(killSwitchConfiguration != null)
+        {
+            grid.killSwitch = killSwitchConfiguration
+        }
         return grid
     }
 
