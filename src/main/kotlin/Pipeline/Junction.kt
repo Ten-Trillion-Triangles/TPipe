@@ -150,23 +150,66 @@ class Junction : P2PInterface
     protected fun checkKillSwitch(inputTokens: Int, outputTokens: Int, elapsedMs: Long)
     {
         val ks = killSwitch ?: return
-        val reason = when
-        {
-            ks.inputTokenLimit != null && inputTokens > ks.inputTokenLimit -> "input_exceeded"
-            ks.outputTokenLimit != null && outputTokens > ks.outputTokenLimit -> "output_exceeded"
-            else -> null
+
+        val inputLimit = ks.inputTokenLimit
+        val outputLimit = ks.outputTokenLimit
+        val inputExceeded = inputLimit != null && inputTokens > inputLimit
+        val outputExceeded = outputLimit != null && outputTokens > outputLimit
+
+        // Emit KILLSWITCH_CHECK event on every token check when tracing is enabled
+        if(tracingEnabled) {
+            trace(
+                eventType = TraceEventType.KILLSWITCH_CHECK,
+                phase = TracePhase.MONITORING,
+                metadata = mapOf(
+                    "inputTokens" to inputTokens,
+                    "outputTokens" to outputTokens,
+                    "elapsedMs" to elapsedMs,
+                    "inputLimit" to (inputLimit ?: "none"),
+                    "outputLimit" to (outputLimit ?: "none"),
+                    "inputExceeded" to inputExceeded,
+                    "outputExceeded" to outputExceeded
+                )
+            )
         }
-        if(reason != null)
+
+        if(inputExceeded || outputExceeded)
         {
-            ks.onTripped(com.TTT.P2P.KillSwitchContext(
-                p2pInterface = this,
-                inputTokensSpent = inputTokens,
-                outputTokensSpent = outputTokens,
-                elapsedMs = elapsedMs,
-                reason = reason,
-                accumulatedInputTokens = inputTokens,
-                accumulatedOutputTokens = outputTokens
-            ))
+            val reason = when
+            {
+                inputExceeded -> "input_exceeded"
+                outputExceeded -> "output_exceeded"
+                else -> null
+            }
+
+            if(reason != null)
+            {
+                // Emit KILLSWITCH_TRIPPED event when limits are exceeded
+                if(tracingEnabled) {
+                    trace(
+                        eventType = TraceEventType.KILLSWITCH_TRIPPED,
+                        phase = TracePhase.ERROR,
+                        metadata = mapOf(
+                            "reason" to reason,
+                            "inputTokens" to inputTokens,
+                            "outputTokens" to outputTokens,
+                            "elapsedMs" to elapsedMs,
+                            "inputLimit" to (inputLimit ?: "none"),
+                            "outputLimit" to (outputLimit ?: "none")
+                        )
+                    )
+                }
+
+                ks.onTripped(com.TTT.P2P.KillSwitchContext(
+                    p2pInterface = this,
+                    inputTokensSpent = inputTokens,
+                    outputTokensSpent = outputTokens,
+                    elapsedMs = elapsedMs,
+                    reason = reason,
+                    accumulatedInputTokens = inputTokens,
+                    accumulatedOutputTokens = outputTokens
+                ))
+            }
         }
     }
 

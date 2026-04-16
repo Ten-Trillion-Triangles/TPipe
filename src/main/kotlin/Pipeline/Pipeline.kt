@@ -297,6 +297,23 @@ class Pipeline : P2PInterface
             val inputExceeded = inputLimit != null && inputTokens > inputLimit
             val outputExceeded = outputLimit != null && outputTokens > outputLimit
 
+            // Emit KILLSWITCH_CHECK event on every token check when tracing is enabled
+            if(tracingEnabled) {
+                trace(
+                    eventType = TraceEventType.KILLSWITCH_CHECK,
+                    phase = TracePhase.MONITORING,
+                    metadata = mapOf(
+                        "inputTokens" to inputTokens,
+                        "outputTokens" to outputTokens,
+                        "elapsedMs" to elapsedMs,
+                        "inputLimit" to (inputLimit ?: "none"),
+                        "outputLimit" to (outputLimit ?: "none"),
+                        "inputExceeded" to inputExceeded,
+                        "outputExceeded" to outputExceeded
+                    )
+                )
+            }
+
             if (inputExceeded || outputExceeded)
             {
                 val reason = when {
@@ -304,6 +321,24 @@ class Pipeline : P2PInterface
                     inputExceeded -> "input_exceeded"
                     else -> "output_exceeded"
                 }
+
+                // Emit KILLSWITCH_TRIPPED event when limits are exceeded
+                if(tracingEnabled) {
+                    trace(
+                        eventType = TraceEventType.KILLSWITCH_TRIPPED,
+                        phase = TracePhase.ERROR,
+                        metadata = mapOf(
+                            "reason" to reason,
+                            "inputTokens" to inputTokens,
+                            "outputTokens" to outputTokens,
+                            "elapsedMs" to elapsedMs,
+                            "inputLimit" to (inputLimit ?: "none"),
+                            "outputLimit" to (outputLimit ?: "none")
+                        ),
+                        error = null // KillSwitchException is thrown by onTripped callback
+                    )
+                }
+
                 ks.onTripped(com.TTT.P2P.KillSwitchContext(
                     p2pInterface = this,
                     inputTokensSpent = inputTokens,

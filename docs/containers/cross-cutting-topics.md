@@ -55,11 +55,20 @@ JUNCTION_HANDOFF
 | Container | Tracing Support | Method |
 |-----------|----------------|---------|
 | Connector | ✅ Yes | `enableTracing(config)` |
-| MultiConnector | ❌ No | No tracing methods |
+| MultiConnector | ✅ Yes | `enableTracing(config)` |
 | Splitter | ✅ Yes | `enableTracing(config)` |
 | Manifold | ✅ Yes | Built-in tracing |
 | DistributionGrid | ✅ Yes | Phase 8 runtime supports trace configuration, execution/discovery/hardening events, `clearTrace()`, `getTraceReport(...)`, and `getFailureAnalysis()` |
 | Junction | ✅ Yes | `enableTracing(config)` |
+
+### Tracing Events for KillSwitch
+
+When a KillSwitch is configured and tracing is enabled, the following events are emitted:
+
+- **`KILLSWITCH_CHECK`** - Emitted on every token check with current counts and limits
+- **`KILLSWITCH_TRIPPED`** - Emitted when token limits are exceeded
+
+These events appear across all container types and pipeline traces so developers can identify when and where token limits cut off execution. |
 
 ### Enabling Tracing
 ```kotlin

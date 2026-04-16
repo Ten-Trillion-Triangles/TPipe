@@ -1,7 +1,11 @@
 package com.TTT.Pipeline
 
+import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceConfig
+import com.TTT.Debug.TraceEvent
+import com.TTT.Debug.TraceEventType
 import com.TTT.Debug.TraceFormat
+import com.TTT.Debug.TracePhase
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequest
@@ -106,6 +110,12 @@ class Connector : P2PInterface
     @RuntimeState
     private var lastConnection: Any? = null
 
+    /** Whether tracing is enabled for this connector */
+    private var tracingEnabled = false
+
+    /** Trace configuration when tracing is enabled */
+    private var traceConfig = TraceConfig()
+
 //==========================================Kill Switch Accumulator=================================================
 
     /** Accumulates input tokens from branch execution */
@@ -132,14 +142,55 @@ class Connector : P2PInterface
     protected fun checkKillSwitch(inputTokens: Int, outputTokens: Int, elapsedMs: Long)
     {
         val ks = killSwitch ?: return
+
+        val inputLimit = ks.inputTokenLimit
+        val outputLimit = ks.outputTokenLimit
+        val inputExceeded = inputLimit != null && inputTokens > inputLimit
+        val outputExceeded = outputLimit != null && outputTokens > outputLimit
+
+        // Emit KILLSWITCH_CHECK event on every token check when tracing is enabled
+        if(tracingEnabled) {
+            trace(
+                eventType = TraceEventType.KILLSWITCH_CHECK,
+                phase = TracePhase.MONITORING,
+                metadata = mapOf(
+                    "inputTokens" to inputTokens,
+                    "outputTokens" to outputTokens,
+                    "elapsedMs" to elapsedMs,
+                    "inputLimit" to (inputLimit ?: "none"),
+                    "outputLimit" to (outputLimit ?: "none"),
+                    "inputExceeded" to inputExceeded,
+                    "outputExceeded" to outputExceeded
+                )
+            )
+        }
+
+        // Determine which limit was exceeded (input takes priority when both exceed)
         val reason = when
         {
-            ks.inputTokenLimit != null && inputTokens > ks.inputTokenLimit -> "input_exceeded"
-            ks.outputTokenLimit != null && outputTokens > ks.outputTokenLimit -> "output_exceeded"
+            inputExceeded -> "input_exceeded"
+            outputExceeded -> "output_exceeded"
             else -> null
         }
+
         if(reason != null)
         {
+            // Emit KILLSWITCH_TRIPPED event when limits are exceeded
+            if(tracingEnabled) {
+                trace(
+                    eventType = TraceEventType.KILLSWITCH_TRIPPED,
+                    phase = TracePhase.ERROR,
+                    metadata = mapOf(
+                        "reason" to reason,
+                        "inputTokens" to inputTokens,
+                        "outputTokens" to outputTokens,
+                        "elapsedMs" to elapsedMs,
+                        "inputLimit" to (inputLimit ?: "none"),
+                        "outputLimit" to (outputLimit ?: "none")
+                    )
+                )
+            }
+
             ks.onTripped(com.TTT.P2P.KillSwitchContext(
                 p2pInterface = this,
                 inputTokensSpent = inputTokens,
@@ -172,14 +223,44 @@ class Connector : P2PInterface
 
     fun enableTracing(config: TraceConfig = TraceConfig()) : Connector
     {
+        tracingEnabled = true
+        traceConfig = config
         // Enable tracing for this connector
         com.TTT.Debug.PipeTracer.startTrace(pipelineId)
-        
+
         // Enable tracing for all branches
         branches.forEach {
             it.value.enableTracing(config)
         }
         return this
+    }
+
+    /**
+     * Internal trace helper that emits events to the PipeTracer when tracing is enabled.
+     */
+    private fun trace(
+        eventType: TraceEventType,
+        phase: TracePhase,
+        content: MultimodalContent? = null,
+        metadata: Map<String, Any> = emptyMap(),
+        error: Throwable? = null
+    )
+    {
+        if(!tracingEnabled) return
+
+        val event = TraceEvent(
+            timestamp = System.currentTimeMillis(),
+            pipeId = pipelineId,
+            pipeName = "Connector",
+            eventType = eventType,
+            phase = phase,
+            content = content,
+            contextSnapshot = null,
+            metadata = if(traceConfig.includeMetadata) metadata else emptyMap(),
+            error = error
+        )
+
+        PipeTracer.addEvent(pipelineId, event)
     }
 
     /**

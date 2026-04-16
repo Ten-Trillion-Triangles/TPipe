@@ -76,6 +76,14 @@ enum class TraceEventType {
     AGENT_REQUEST_INVALID,
     P2P_COMMUNICATION_FAILURE,
     MANIFOLD_RECOVERY_ATTEMPT,
+
+    // KillSwitch Safety Events
+    //
+    // Emitted when a KillSwitch token limit is checked or triggered.
+    // These events appear across all container types and pipeline traces
+    // so developers can identify when and where token limits cut off execution.
+    KILLSWITCH_CHECK,
+    KILLSWITCH_TRIPPED,
     
     // Splitter Orchestration Events
     SPLITTER_START,

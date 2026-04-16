@@ -9,7 +9,9 @@ enum class TracePhase {
     VALIDATION,
     TRANSFORMATION,
     CLEANUP,
-    
+    MONITORING,
+    ERROR,
+
     // Manifold-specific phases
     ORCHESTRATION,
     AGENT_COMMUNICATION,

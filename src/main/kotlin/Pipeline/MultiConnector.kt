@@ -1,5 +1,10 @@
 package com.TTT.Pipeline
 
+import com.TTT.Debug.PipeTracer
+import com.TTT.Debug.TraceConfig
+import com.TTT.Debug.TraceEventType
+import com.TTT.Debug.TracePhase
+import com.TTT.Debug.TraceEvent
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequest
@@ -137,6 +142,15 @@ class MultiConnector : P2PInterface
     @Transient
     private var killSwitchExecutionStartTime = 0L
 
+    /** Whether tracing is enabled for this MultiConnector */
+    private var tracingEnabled = false
+
+    /** Trace configuration when tracing is enabled */
+    private var traceConfig = TraceConfig()
+
+    /** Unique identifier for this MultiConnector used in traces */
+    private val multiConnectorId = java.util.UUID.randomUUID().toString()
+
     /**
      * Checks if the kill switch limits have been exceeded and triggers termination if so.
      * This method accumulates token counts and evaluates them against configured limits.
@@ -149,24 +163,111 @@ class MultiConnector : P2PInterface
     protected fun checkKillSwitch(inputTokens: Int, outputTokens: Int, elapsedMs: Long)
     {
         val ks = killSwitch ?: return
-        val reason = when
-        {
-            ks.inputTokenLimit != null && inputTokens > ks.inputTokenLimit -> "input_exceeded"
-            ks.outputTokenLimit != null && outputTokens > ks.outputTokenLimit -> "output_exceeded"
-            else -> null
+
+        val inputLimit = ks.inputTokenLimit
+        val outputLimit = ks.outputTokenLimit
+        val inputExceeded = inputLimit != null && inputTokens > inputLimit
+        val outputExceeded = outputLimit != null && outputTokens > outputLimit
+
+        // Emit KILLSWITCH_CHECK event on every token check when tracing is enabled
+        if(tracingEnabled) {
+            trace(
+                eventType = TraceEventType.KILLSWITCH_CHECK,
+                phase = TracePhase.MONITORING,
+                metadata = mapOf(
+                    "inputTokens" to inputTokens,
+                    "outputTokens" to outputTokens,
+                    "elapsedMs" to elapsedMs,
+                    "inputLimit" to (inputLimit ?: "none"),
+                    "outputLimit" to (outputLimit ?: "none"),
+                    "inputExceeded" to inputExceeded,
+                    "outputExceeded" to outputExceeded
+                )
+            )
         }
-        if(reason != null)
+
+        if(inputExceeded || outputExceeded)
         {
-            ks.onTripped(com.TTT.P2P.KillSwitchContext(
-                p2pInterface = this,
-                inputTokensSpent = inputTokens,
-                outputTokensSpent = outputTokens,
-                elapsedMs = elapsedMs,
-                reason = reason,
-                accumulatedInputTokens = inputTokens,
-                accumulatedOutputTokens = outputTokens
-            ))
+            val reason = when
+            {
+                inputExceeded -> "input_exceeded"
+                outputExceeded -> "output_exceeded"
+                else -> null
+            }
+
+            if(reason != null)
+            {
+                // Emit KILLSWITCH_TRIPPED event when limits are exceeded
+                if(tracingEnabled) {
+                    trace(
+                        eventType = TraceEventType.KILLSWITCH_TRIPPED,
+                        phase = TracePhase.ERROR,
+                        metadata = mapOf(
+                            "reason" to reason,
+                            "inputTokens" to inputTokens,
+                            "outputTokens" to outputTokens,
+                            "elapsedMs" to elapsedMs,
+                            "inputLimit" to (inputLimit ?: "none"),
+                            "outputLimit" to (outputLimit ?: "none")
+                        )
+                    )
+                }
+
+                ks.onTripped(com.TTT.P2P.KillSwitchContext(
+                    p2pInterface = this,
+                    inputTokensSpent = inputTokens,
+                    outputTokensSpent = outputTokens,
+                    elapsedMs = elapsedMs,
+                    reason = reason,
+                    accumulatedInputTokens = inputTokens,
+                    accumulatedOutputTokens = outputTokens
+                ))
+            }
         }
+    }
+
+    /**
+     * Enable tracing for this MultiConnector.
+     *
+     * @param config The tracing configuration to use
+     * @return This MultiConnector for method chaining
+     */
+    fun enableTracing(config: TraceConfig = TraceConfig()): MultiConnector
+    {
+        tracingEnabled = true
+        traceConfig = config
+        PipeTracer.startTrace(multiConnectorId)
+        // Enable tracing on all child connectors
+        connectors.forEach { it.enableTracing(config) }
+        return this
+    }
+
+    /**
+     * Internal trace helper that emits events to the PipeTracer when tracing is enabled.
+     */
+    private fun trace(
+        eventType: TraceEventType,
+        phase: TracePhase,
+        content: MultimodalContent? = null,
+        metadata: Map<String, Any> = emptyMap(),
+        error: Throwable? = null
+    )
+    {
+        if(!tracingEnabled) return
+
+        val event = TraceEvent(
+            timestamp = System.currentTimeMillis(),
+            pipeId = multiConnectorId,
+            pipeName = "MultiConnector",
+            eventType = eventType,
+            phase = phase,
+            content = content,
+            contextSnapshot = null,
+            metadata = if(traceConfig.includeMetadata) metadata else emptyMap(),
+            error = error
+        )
+
+        PipeTracer.addEvent(multiConnectorId, event)
     }
 
     /**
