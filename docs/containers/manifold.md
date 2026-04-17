@@ -112,6 +112,7 @@ The `manifold { }` builder supports these top-level blocks:
 | `manager { }` | Yes (or `defaults { }`) | Configures the manager pipeline |
 | `worker("name") { }` | Yes (at least one) | Registers a worker agent |
 | `defaults { }` | Alternative to `manager { }` | Uses TPipe-Defaults to build the manager |
+| `maxIterations(limit)` | Optional | Sets the maximum loop iterations (default: 100, null = unlimited) |
 | `history { }` | Optional | Configures manager shared-history truncation |
 | `validation { }` | Optional | Hooks for worker output validation and transformation |
 | `tracing { }` | Optional | Enables tracing for the manifold and child pipelines |
@@ -571,6 +572,65 @@ manifold
     }
 ```
 
+## Loop Limit Safety
+
+Manifold includes a secondary safety system that halts the loop if iteration count exceeds a configured limit. This prevents runaway token consumption and infinite loops if the manager or workers malfunction.
+
+### API
+
+```kotlin
+// Set limit programmatically
+manifold.setMaxLoopIterations(100)  // null = unlimited
+
+// Check current configuration
+manifold.getMaxLoopIterations()  // Returns Int? (null = unlimited)
+manifold.hasLoopLimit()         // Returns true if a limit is configured
+
+// Via DSL
+val builtManifold = manifold {
+    maxIterations(50)  // Limit to 50 iterations
+    manager { ... }
+    worker("test-worker") { ... }
+}
+```
+
+### Behavior
+
+When the loop iteration counter reaches the configured limit, the manifold:
+
+1. Emits a `MANIFOLD_LOOP_LIMIT_EXCEEDED` trace event at `TracePhase.ERROR` with metadata
+2. Throws `ManifoldLoopLimitExceededException`
+
+```kotlin
+val manifold = Manifold()
+    .setManagerPipeline(managerPipeline)
+    .addWorkerPipeline(workerPipeline)
+    .setMaxLoopIterations(10)
+    .autoTruncateContext()
+
+try {
+    val result = manifold.execute(task)
+} catch (e: ManifoldLoopLimitExceededException) {
+    println("Loop hit limit: ${e.iterationsReached}/${e.maxIterations}")
+}
+```
+
+### Default Behavior
+
+- **Default limit: 100 iterations** — the manifold will loop at most 100 times before throwing
+- Set `setMaxLoopIterations(null)` for unlimited execution (relies solely on `KillSwitch` or manager behavior for termination)
+
+### Relationship to KillSwitch
+
+The loop limit and `KillSwitch` are independent safety systems:
+
+| System | What it limits | Trigger |
+|--------|----------------|---------|
+| `KillSwitch` | Token consumption (input/output) | Exceeded token limits |
+| Loop limit | Iteration count | Exceeded loop count |
+
+Both can be configured simultaneously. The loop limit fires first if iterations are exhausted before token limits are hit.
+
 ## Tracing Support
 
 Manifold emits orchestration-aware tracing events and propagates tracing to child pipelines:
@@ -588,7 +648,8 @@ manifold.enableTracing(
 Common event families include:
 
 - `MANIFOLD_START`, `MANIFOLD_END`, `MANIFOLD_SUCCESS`, `MANIFOLD_FAILURE`
-- `MANIFOLD_LOOP_ITERATION`, `MANAGER_TASK_ANALYSIS`, `MANAGER_DECISION`
+- `MANIFOLD_LOOP_ITERATION`, `MANIFOLD_TERMINATION_CHECK`, `MANIFOLD_LOOP_LIMIT_EXCEEDED`
+- `MANAGER_TASK_ANALYSIS`, `MANAGER_DECISION`
 - `AGENT_DISPATCH`, `AGENT_RESPONSE`, `P2P_REQUEST_FAILURE`
 - `CONVERSE_HISTORY_UPDATE`
 - `VALIDATION_START`, `VALIDATION_FAILURE`, `TRANSFORMATION_START`

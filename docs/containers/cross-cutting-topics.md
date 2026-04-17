@@ -68,7 +68,15 @@ When a KillSwitch is configured and tracing is enabled, the following events are
 - **`KILLSWITCH_CHECK`** - Emitted on every token check with current counts and limits
 - **`KILLSWITCH_TRIPPED`** - Emitted when token limits are exceeded
 
-These events appear across all container types and pipeline traces so developers can identify when and where token limits cut off execution. |
+These events appear across all container types and pipeline traces so developers can identify when and where token limits cut off execution.
+
+### Tracing Events for Manifold Loop Limit
+
+When a loop limit is configured on a Manifold and tracing is enabled, the following event is emitted:
+
+- **`MANIFOLD_LOOP_LIMIT_EXCEEDED`** - Emitted when the iteration count reaches the configured limit
+
+The `MANIFOLD_LOOP_ITERATION` event also includes `loopLimit` in its metadata when a limit is set.
 
 ### Enabling Tracing
 ```kotlin
@@ -89,14 +97,14 @@ KillSwitch provides token limit enforcement across all containers. See the **[Ki
 
 ### KillSwitch Status
 
-| Container | KillSwitch Support | Propagation |
-|-----------|-------------------|------------|
-| Connector | ✅ Yes | To branches |
-| MultiConnector | ✅ Yes | To connectors |
-| Splitter | ✅ Yes | To pipelines |
-| Manifold | ✅ Yes | To manager + workers |
-| DistributionGrid | ✅ Yes | To router + workers |
-| Junction | ✅ Yes | To moderator + participants |
+| Container | KillSwitch Support | Loop Limit Support | Propagation |
+|-----------|-------------------|---------------------|-------------|
+| Connector | ✅ Yes | ❌ No | To branches |
+| MultiConnector | ✅ Yes | ❌ No | To connectors |
+| Splitter | ✅ Yes | ❌ No | To pipelines |
+| Manifold | ✅ Yes | ✅ Yes (default 100) | To manager + workers |
+| DistributionGrid | ✅ Yes | ❌ No | To router + workers |
+| Junction | ✅ Yes | ❌ No | To moderator + participants |
 
 ### Quick Example
 
@@ -364,14 +372,14 @@ return coroutineScope {
 
 ## Implementation Status Summary
 
-| Container | Status | Key Methods | P2P | Tracing |
-|-----------|--------|-------------|-----|---------|
-| **Connector** | ✅ Complete | `add()`, `execute()`, `setDefaultPath()` | ✅ | ✅ |
-| **MultiConnector** | ✅ Complete | `add()`, `setMode()`, `execute()` | ✅ | ❌ |
-| **Splitter** | ✅ Complete | `addContent()`, `addPipeline()`, `executePipelines()` | ✅ | ✅ |
-| **Manifold** | ✅ Complete | `execute()`, manager pipeline required | ✅ | ✅ |
-| **DistributionGrid** | ✅ Phase 8 shipped | `setRouter()`, `setWorker()`, peer registration, discovery/membership APIs, execution entrypoints, hardening helpers, trace export, and `distributionGrid { ... }` | ✅ | ✅ |
-| **Junction** | ✅ Complete | `execute()`, `conductDiscussion()` | ✅ | ✅ |
+| Container | Status | Key Methods | P2P | Tracing | Loop Limit |
+|-----------|--------|-------------|-----|---------|------------|
+| **Connector** | ✅ Complete | `add()`, `execute()`, `setDefaultPath()` | ✅ | ✅ | ❌ |
+| **MultiConnector** | ✅ Complete | `add()`, `setMode()`, `execute()` | ✅ | ❌ | ❌ |
+| **Splitter** | ✅ Complete | `addContent()`, `addPipeline()`, `executePipelines()` | ✅ | ✅ | ❌ |
+| **Manifold** | ✅ Complete | `execute()`, manager pipeline required, `setMaxLoopIterations()` | ✅ | ✅ | ✅ (default 100) |
+| **DistributionGrid** | ✅ Phase 8 shipped | `setRouter()`, `setWorker()`, peer registration, discovery/membership APIs, execution entrypoints, hardening helpers, trace export, and `distributionGrid { ... }` | ✅ | ✅ | ❌ |
+| **Junction** | ✅ Complete | `execute()`, `conductDiscussion()` | ✅ | ✅ | ❌ |
 
 ## Best Practices Based on Actual APIs
 
