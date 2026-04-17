@@ -1455,7 +1455,7 @@ class ManifoldDslTest
      */
     @Test
     fun testManifoldDslBuildSuspend() = runBlocking {
-        val builtManifold = ManifoldDsl().apply {
+        val builtManifold = manifold {
             manager {
                 pipeline(buildSafeManagerPipeline("manager"))
                 agentDispatchPipe("manager-pipe")
@@ -1466,7 +1466,7 @@ class ManifoldDslTest
             worker("worker") {
                 pipeline(buildSafeWorkerPipeline("worker"))
             }
-        }.buildSuspend()
+        }
 
         assertEquals("manager", builtManifold.getManagerPipeline().pipelineName)
         assertEquals(1, builtManifold.getWorkerPipelines().size)

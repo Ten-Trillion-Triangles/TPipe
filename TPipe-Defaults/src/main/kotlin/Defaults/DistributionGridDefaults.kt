@@ -6,10 +6,12 @@ import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PRequirements
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipeline.DistributionGrid
+import com.TTT.Pipeline.DistributionGridBuilder
 import com.TTT.Pipeline.DistributionGridDirective
 import com.TTT.Pipeline.DistributionGridDirectiveKind
-import com.TTT.Pipeline.DistributionGridDsl
 import com.TTT.Pipeline.DistributionGridDurableStore
+import com.TTT.Pipeline.GridStage
+import com.TTT.Pipeline.distributionGrid
 import com.TTT.Pipeline.DistributionGridMemoryPolicy
 import com.TTT.Pipeline.DistributionGridPeerDiscoveryMode
 import com.TTT.Pipeline.DistributionGridRegistryAdvertisement
@@ -43,9 +45,9 @@ object DistributionGridDefaults
     {
         require(configuration.validate()) { "Invalid Bedrock grid configuration: $configuration" }
 
-        val dsl = DistributionGridDsl()
-        applyBedrockDefaults(dsl, configuration)
-        return dsl.build()
+        return distributionGrid {
+            defaults { bedrock(configuration) }
+        }
     }
 
     /**
@@ -58,16 +60,16 @@ object DistributionGridDefaults
     {
         require(configuration.validate()) { "Invalid Ollama grid configuration: $configuration" }
 
-        val dsl = DistributionGridDsl()
-        applyOllamaDefaults(dsl, configuration)
-        return dsl.build()
+        return distributionGrid {
+            defaults { ollama(configuration) }
+        }
     }
 
     /**
      * Build the provider-backed default router pipeline for a Bedrock-configured grid.
      *
      * @param configuration Grid-specific Bedrock defaults configuration.
-     * @return Router pipeline ready to bind into `DistributionGridDsl.router(...)`.
+     * @return Router pipeline ready to bind into `distributionGrid { router(...) }`.
      */
     fun buildDefaultRouterPipeline(configuration: BedrockGridConfiguration): Pipeline
     {
@@ -81,7 +83,7 @@ object DistributionGridDefaults
      * Build the provider-backed default router pipeline for an Ollama-configured grid.
      *
      * @param configuration Grid-specific Ollama defaults configuration.
-     * @return Router pipeline ready to bind into `DistributionGridDsl.router(...)`.
+     * @return Router pipeline ready to bind into `distributionGrid { router(...) }`.
      */
     fun buildDefaultRouterPipeline(configuration: OllamaGridConfiguration): Pipeline
     {
@@ -95,7 +97,7 @@ object DistributionGridDefaults
      * Build the provider-backed default worker pipeline for a Bedrock-configured grid.
      *
      * @param configuration Grid-specific Bedrock defaults configuration.
-     * @return Worker pipeline ready to bind into `DistributionGridDsl.worker(...)`.
+     * @return Worker pipeline ready to bind into `distributionGrid { worker(...) }`.
      */
     fun buildDefaultWorkerPipeline(configuration: BedrockGridConfiguration): Pipeline
     {
@@ -109,7 +111,7 @@ object DistributionGridDefaults
      * Build the provider-backed default worker pipeline for an Ollama-configured grid.
      *
      * @param configuration Grid-specific Ollama defaults configuration.
-     * @return Worker pipeline ready to bind into `DistributionGridDsl.worker(...)`.
+     * @return Worker pipeline ready to bind into `distributionGrid { worker(...) }`.
      */
     fun buildDefaultWorkerPipeline(configuration: OllamaGridConfiguration): Pipeline
     {
@@ -119,7 +121,7 @@ object DistributionGridDefaults
         }
     }
 
-    internal fun applyBedrockDefaults(dsl: DistributionGridDsl, configuration: BedrockGridConfiguration)
+    internal fun applyBedrockDefaults(dsl: DistributionGridBuilder<GridStage.Initial>, configuration: BedrockGridConfiguration)
     {
         require(configuration.validate()) { "Invalid Bedrock grid configuration: $configuration" }
 
@@ -136,7 +138,7 @@ object DistributionGridDefaults
         applyGridDefaults(dsl, configuration.gridDefaults)
     }
 
-    internal fun applyOllamaDefaults(dsl: DistributionGridDsl, configuration: OllamaGridConfiguration)
+    internal fun applyOllamaDefaults(dsl: DistributionGridBuilder<GridStage.Initial>, configuration: OllamaGridConfiguration)
     {
         require(configuration.validate()) { "Invalid Ollama grid configuration: $configuration" }
 
@@ -153,7 +155,7 @@ object DistributionGridDefaults
         applyGridDefaults(dsl, configuration.gridDefaults)
     }
 
-    private fun applyGridDefaults(dsl: DistributionGridDsl, configuration: DistributionGridDefaultsConfiguration)
+    private fun applyGridDefaults(dsl: DistributionGridBuilder<*>, configuration: DistributionGridDefaultsConfiguration)
     {
         applyP2pDefaults(
             dsl = dsl,
@@ -180,7 +182,7 @@ object DistributionGridDefaults
     }
 
     private fun applyP2pDefaults(
-        dsl: DistributionGridDsl,
+        dsl: DistributionGridBuilder<*>,
         descriptor: P2PDescriptor?,
         requirements: P2PRequirements?
     )
@@ -197,7 +199,7 @@ object DistributionGridDefaults
     }
 
     private fun applyRoutingDefaults(
-        dsl: DistributionGridDsl,
+        dsl: DistributionGridBuilder<*>,
         policy: DistributionGridRoutingPolicy?
     )
     {
@@ -212,7 +214,7 @@ object DistributionGridDefaults
     }
 
     private fun applyMemoryDefaults(
-        dsl: DistributionGridDsl,
+        dsl: DistributionGridBuilder<*>,
         policy: DistributionGridMemoryPolicy?
     )
     {
@@ -227,7 +229,7 @@ object DistributionGridDefaults
     }
 
     private fun applyTraceDefaults(
-        dsl: DistributionGridDsl,
+        dsl: DistributionGridBuilder<*>,
         traceConfig: TraceConfig?
     )
     {
@@ -242,7 +244,7 @@ object DistributionGridDefaults
     }
 
     private fun applyDiscoveryDefaults(
-        dsl: DistributionGridDsl,
+        dsl: DistributionGridBuilder<*>,
         discoveryMode: DistributionGridPeerDiscoveryMode?,
         registryMetadata: DistributionGridRegistryMetadata?,
         trustVerifier: DistributionGridTrustVerifier?,
@@ -268,7 +270,7 @@ object DistributionGridDefaults
     }
 
     private fun applyDurabilityDefaults(
-        dsl: DistributionGridDsl,
+        dsl: DistributionGridBuilder<*>,
         durableStore: DistributionGridDurableStore?
     )
     {
@@ -283,7 +285,7 @@ object DistributionGridDefaults
     }
 
     private fun applyOperationsDefaults(
-        dsl: DistributionGridDsl,
+        dsl: DistributionGridBuilder<*>,
         maxHops: Int?,
         rpcTimeoutMillis: Long?,
         maxSessionDurationSeconds: Int?

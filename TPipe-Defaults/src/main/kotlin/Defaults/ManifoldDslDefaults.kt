@@ -1,27 +1,30 @@
 package Defaults
 
 import com.TTT.Pipeline.HistoryDsl
-import com.TTT.Pipeline.ManifoldDsl
+import com.TTT.Pipeline.ManifoldBuilder
+import com.TTT.Pipeline.ManifoldStage
 import com.TTT.Pipeline.ManagerDsl
 
 /**
  * Defaults-module DSL bridge for configuring a manifold manager from provider-specific defaults inside the root
  * `manifold { ... }` builder.
  *
+ * @param builder The ManifoldBuilder to attach defaults configuration to.
  * @param block Builder block that selects a provider-backed defaults configuration.
  */
-fun ManifoldDsl.defaults(block: DefaultsManifoldDsl.() -> Unit)
+inline fun ManifoldBuilder<ManifoldStage.Initial>.defaults(crossinline block: DefaultsManifoldDsl.() -> Unit)
 {
-    val builder = DefaultsManifoldDsl(this)
-    builder.block()
+    val dsl = DefaultsManifoldDsl(this)
+    dsl.block()
 }
 
 /**
  * Provider-specific defaults bridge for the manifold DSL.
+ * Used inside a `manifold { }` builder block via the `defaults { }` method.
  *
- * @param manifoldDsl Root manifold DSL being configured.
+ * @param builder The ManifoldBuilder to configure.
  */
-class DefaultsManifoldDsl(private val manifoldDsl: ManifoldDsl)
+class DefaultsManifoldDsl(private val builder: ManifoldBuilder<ManifoldStage.Initial>)
 {
     /**
      * Configure the manifold manager from a Bedrock defaults configuration.
@@ -36,10 +39,10 @@ class DefaultsManifoldDsl(private val manifoldDsl: ManifoldDsl)
          * Mirror both the provider-backed manager pipeline and the provider's manifold-memory configuration so the DSL
          * behaves the same way as ManifoldDefaults.withBedrock(...).
          */
-        manifoldDsl.manager {
+        builder.manager {
             defaultsPipeline(ManifoldDefaults.buildDefaultManagerPipeline(configuration))
         }
-        manifoldDsl.history {
+        builder.history {
             applyDefaults(configuration.manifoldMemory)
         }
     }
@@ -57,10 +60,10 @@ class DefaultsManifoldDsl(private val manifoldDsl: ManifoldDsl)
          * Mirror both the provider-backed manager pipeline and the provider's manifold-memory configuration so the DSL
          * behaves the same way as ManifoldDefaults.withOllama(...).
          */
-        manifoldDsl.manager {
+        builder.manager {
             defaultsPipeline(ManifoldDefaults.buildDefaultManagerPipeline(configuration))
         }
-        manifoldDsl.history {
+        builder.history {
             applyDefaults(configuration.manifoldMemory)
         }
     }

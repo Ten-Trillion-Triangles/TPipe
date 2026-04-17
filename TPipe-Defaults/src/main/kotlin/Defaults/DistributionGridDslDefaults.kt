@@ -1,6 +1,7 @@
 package Defaults
 
-import com.TTT.Pipeline.DistributionGridDsl
+import com.TTT.Pipeline.DistributionGridBuilder
+import com.TTT.Pipeline.GridStage
 
 /**
  * Defaults-module DSL bridge for configuring a `DistributionGrid` from provider-specific defaults inside the root
@@ -8,7 +9,7 @@ import com.TTT.Pipeline.DistributionGridDsl
  *
  * @param block Builder block that selects one provider-backed defaults configuration.
  */
-fun DistributionGridDsl.defaults(block: DefaultsDistributionGridDsl.() -> Unit)
+fun DistributionGridBuilder<GridStage.Initial>.defaults(block: DefaultsDistributionGridDsl.() -> Unit)
 {
     val builder = DefaultsDistributionGridDsl(this)
     builder.block()
@@ -19,7 +20,7 @@ fun DistributionGridDsl.defaults(block: DefaultsDistributionGridDsl.() -> Unit)
  *
  * @param gridDsl Root `DistributionGrid` DSL being configured.
  */
-class DefaultsDistributionGridDsl(private val gridDsl: DistributionGridDsl)
+class DefaultsDistributionGridDsl(private val gridDsl: DistributionGridBuilder<GridStage.Initial>)
 {
     private var providerConfigured = false
 

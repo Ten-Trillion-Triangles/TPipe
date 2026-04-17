@@ -22,169 +22,173 @@ import kotlinx.coroutines.runBlocking
 annotation class DistributionGridDslMarker
 
 /**
- * Kotlin-first builder for creating an initialized [DistributionGrid].
+ * Sealed class representing the state machine stages for type-safe DistributionGrid DSL building.
  *
- * @param block Builder block that configures the node shell, policies, peers, discovery, and hooks.
- * @return Fully initialized grid ready for execution.
+ * - [Initial]   : Nothing configured yet
+ * - [HasRouter] : router { } has been called
+ * - [Ready]     : router { } and worker { } have been called — all required configuration is complete
  */
-fun distributionGrid(block: DistributionGridDsl.() -> Unit): DistributionGrid
+sealed class GridStage
 {
-    val builder = DistributionGridDsl()
-    builder.block()
-    return builder.build()
+    object Initial   : GridStage()
+    object HasRouter : GridStage()
+    object Ready     : GridStage()
 }
 
-internal data class DistributionGridGridIdentityConfiguration(
-    var descriptor: P2PDescriptor? = null,
-    var transport: P2PTransport? = null,
-    var requirements: P2PRequirements? = null,
-    var containerObject: Any? = null
-)
-
-internal data class DistributionGridRoleBindingConfiguration(
-    val component: P2PInterface,
-    val descriptor: P2PDescriptor? = null,
-    val requirements: P2PRequirements? = null
-)
-
-internal data class DistributionGridPeerBindingConfiguration(
-    val requestedKey: String?,
-    val binding: DistributionGridRoleBindingConfiguration
-)
-
-internal data class DistributionGridDiscoveryConfiguration(
-    var mode: DistributionGridPeerDiscoveryMode = DistributionGridPeerDiscoveryMode.HYBRID,
-    var registryMetadata: DistributionGridRegistryMetadata? = null,
-    var trustVerifier: DistributionGridTrustVerifier? = null,
-    var bootstrapRegistries: MutableList<DistributionGridRegistryAdvertisement> = mutableListOf(),
-    var bootstrapCatalogSources: MutableList<DistributionGridBootstrapCatalogSource> = mutableListOf()
-)
-
-internal data class DistributionGridTracingConfiguration(
-    var enabled: Boolean = true,
-    var config: TraceConfig = TraceConfig(enabled = true)
-)
-
-internal data class DistributionGridHooksConfiguration(
-    var beforeRouteHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
-    var beforeLocalWorkerHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
-    var afterLocalWorkerHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
-    var beforePeerDispatchHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
-    var afterPeerResponseHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
-    var outboundMemoryHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
-    var failureHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
-    var outcomeTransformationHook: (suspend (com.TTT.Pipe.MultimodalContent, DistributionGridEnvelope) -> com.TTT.Pipe.MultimodalContent)? = null
-)
-
-internal data class DistributionGridOperationsConfiguration(
-    var maxHops: Int? = null,
-    var rpcTimeoutMillis: Long? = null,
-    var maxSessionDurationSeconds: Int? = null
-)
-
 /**
- * Root DistributionGrid DSL.
+ * Root DistributionGrid DSL builder. Generic over the current configuration stage to enforce compile-time safety.
  *
- * This builder mirrors the raw shell API while grouping configuration by concern so one node can be assembled,
- * validated, and initialized in one place.
+ * @param S Current stage in the builder state machine.
  */
 @DistributionGridDslMarker
-class DistributionGridDsl
-{
-    private val gridIdentity = DistributionGridGridIdentityConfiguration()
-    private var p2pBlockSeen = false
-    private var securityBlockSeen = false
-    private var routerConfiguration: DistributionGridRoleBindingConfiguration? = null
-    private var workerConfiguration: DistributionGridRoleBindingConfiguration? = null
-    private val localPeerConfigurations = mutableListOf<DistributionGridPeerBindingConfiguration>()
-    private val externalPeerDescriptors = mutableListOf<P2PDescriptor>()
-    private var discoveryConfiguration: DistributionGridDiscoveryConfiguration? = null
-    private var routingConfiguration: DistributionGridRoutingPolicy? = null
-    private var memoryConfiguration: DistributionGridMemoryPolicy? = null
-    private var durabilityConfiguration: DistributionGridDurableStore? = null
-    private var tracingConfiguration: DistributionGridTracingConfiguration? = null
-    private var hooksConfiguration: DistributionGridHooksConfiguration? = null
-    private var operationsConfiguration: DistributionGridOperationsConfiguration? = null
+class DistributionGridBuilder<S : GridStage> @PublishedApi internal constructor(
+    private val gridIdentity: DistributionGridGridIdentityConfiguration = DistributionGridGridIdentityConfiguration(),
+    private var p2pBlockSeen: Boolean = false,
+    private var securityBlockSeen: Boolean = false,
+    private var routerConfiguration: DistributionGridRoleBindingConfiguration? = null,
+    private var workerConfiguration: DistributionGridRoleBindingConfiguration? = null,
+    private val localPeerConfigurations: MutableList<DistributionGridPeerBindingConfiguration> = mutableListOf(),
+    private val externalPeerDescriptors: MutableList<P2PDescriptor> = mutableListOf(),
+    private var discoveryConfiguration: DistributionGridDiscoveryConfiguration? = null,
+    private var routingConfiguration: DistributionGridRoutingPolicy? = null,
+    private var memoryConfiguration: DistributionGridMemoryPolicy? = null,
+    private var durabilityConfiguration: DistributionGridDurableStore? = null,
+    private var tracingConfiguration: DistributionGridTracingConfiguration? = null,
+    private var hooksConfiguration: DistributionGridHooksConfiguration? = null,
+    private var operationsConfiguration: DistributionGridOperationsConfiguration? = null,
     private var killSwitchConfiguration: KillSwitch? = null
+)
+{
+    /**
+     * Factory for creating new builder instances with different type parameters while preserving all configuration.
+     * Mutable list references are shared so that mutations made before the transition remain visible.
+     */
+    private fun <T : GridStage> createNew(): DistributionGridBuilder<T> = DistributionGridBuilder(
+        gridIdentity = gridIdentity,
+        p2pBlockSeen = p2pBlockSeen,
+        securityBlockSeen = securityBlockSeen,
+        routerConfiguration = routerConfiguration,
+        workerConfiguration = workerConfiguration,
+        localPeerConfigurations = localPeerConfigurations,
+        externalPeerDescriptors = externalPeerDescriptors,
+        discoveryConfiguration = discoveryConfiguration,
+        routingConfiguration = routingConfiguration,
+        memoryConfiguration = memoryConfiguration,
+        durabilityConfiguration = durabilityConfiguration,
+        tracingConfiguration = tracingConfiguration,
+        hooksConfiguration = hooksConfiguration,
+        operationsConfiguration = operationsConfiguration,
+        killSwitchConfiguration = killSwitchConfiguration
+    )
+
+    //=========================================Router===================================================================
+
+    /**
+     * Bind the local router component directly.
+     *
+     * This is the first required step. After calling this method the builder advances to [GridStage.HasRouter] so
+     * that [worker] becomes available.
+     *
+     * @param component Router component to bind.
+     * @param descriptor Optional explicit descriptor override.
+     * @param requirements Optional explicit requirements override.
+     * @return A new builder in the [GridStage.HasRouter] stage.
+     */
+    fun router(
+        component: P2PInterface,
+        descriptor: P2PDescriptor? = null,
+        requirements: P2PRequirements? = null
+    ): DistributionGridBuilder<GridStage.HasRouter>
+    {
+        require(routerConfiguration == null) { "DistributionGrid DSL already has a router binding." }
+        routerConfiguration = DistributionGridRoleBindingConfiguration(component, descriptor, requirements)
+        return createNew()
+    }
+
+    /**
+     * Configure the local router binding.
+     *
+     * This is the first required step. After calling this method the builder advances to [GridStage.HasRouter] so
+     * that [worker] becomes available.
+     *
+     * @param block Builder block that supplies the router component and optional descriptor or requirements.
+     * @return A new builder in the [GridStage.HasRouter] stage.
+     */
+    fun router(block: DistributionGridBindingDsl.() -> Unit): DistributionGridBuilder<GridStage.HasRouter>
+    {
+        require(routerConfiguration == null) { "DistributionGrid DSL already has a router binding." }
+        routerConfiguration = DistributionGridBindingDsl("router").apply(block).build()
+        return createNew()
+    }
+
+    //=========================================Worker===================================================================
+
+    /**
+     * Bind the local worker component directly.
+     *
+     * This is the second required step. After calling this method the builder advances to [GridStage.Ready] so
+     * that [build] becomes available.
+     *
+     * @param component Worker component to bind.
+     * @param descriptor Optional explicit descriptor override.
+     * @param requirements Optional explicit requirements override.
+     * @return A new builder in the [GridStage.Ready] stage.
+     */
+    fun worker(
+        component: P2PInterface,
+        descriptor: P2PDescriptor? = null,
+        requirements: P2PRequirements? = null
+    ): DistributionGridBuilder<GridStage.Ready>
+    {
+        require(workerConfiguration == null) { "DistributionGrid DSL already has a worker binding." }
+        workerConfiguration = DistributionGridRoleBindingConfiguration(component, descriptor, requirements)
+        return createNew()
+    }
+
+    /**
+     * Configure the local worker binding.
+     *
+     * This is the second required step. After calling this method the builder advances to [GridStage.Ready] so
+     * that [build] becomes available.
+     *
+     * @param block Builder block that supplies the worker component and optional descriptor or requirements.
+     * @return A new builder in the [GridStage.Ready] stage.
+     */
+    fun worker(block: DistributionGridBindingDsl.() -> Unit): DistributionGridBuilder<GridStage.Ready>
+    {
+        require(workerConfiguration == null) { "DistributionGrid DSL already has a worker binding." }
+        workerConfiguration = DistributionGridBindingDsl("worker").apply(block).build()
+        return createNew()
+    }
+
+    //=========================================Optional config==========================================================
 
     /**
      * Configure the outward P2P identity for the grid node itself.
      *
      * @param block Builder block that configures descriptor, transport, requirements, and optional container object.
+     * @return This builder for chaining.
      */
-    fun p2p(block: GridIdentityDsl.() -> Unit)
+    fun p2p(block: GridIdentityDsl.() -> Unit): DistributionGridBuilder<S>
     {
         require(!p2pBlockSeen) { "DistributionGrid DSL already has a p2p { ... } block." }
         p2pBlockSeen = true
         GridIdentityDsl(gridIdentity).apply(block)
+        return this
     }
 
     /**
      * Configure auth- and privacy-relevant outward descriptor or requirement hints for the grid node itself.
      *
      * @param block Builder block that adjusts the grid's outward auth and privacy posture.
+     * @return This builder for chaining.
      */
-    fun security(block: DistributionGridSecurityDsl.() -> Unit)
+    fun security(block: DistributionGridSecurityDsl.() -> Unit): DistributionGridBuilder<S>
     {
         require(!securityBlockSeen) { "DistributionGrid DSL already has a security { ... } block." }
         securityBlockSeen = true
         DistributionGridSecurityDsl(gridIdentity).apply(block)
-    }
-
-    /**
-     * Bind the local router component directly.
-     *
-     * @param component Router component to bind.
-     * @param descriptor Optional explicit descriptor override.
-     * @param requirements Optional explicit requirements override.
-     */
-    fun router(
-        component: P2PInterface,
-        descriptor: P2PDescriptor? = null,
-        requirements: P2PRequirements? = null
-    )
-    {
-        require(routerConfiguration == null) { "DistributionGrid DSL already has a router binding." }
-        routerConfiguration = DistributionGridRoleBindingConfiguration(component, descriptor, requirements)
-    }
-
-    /**
-     * Configure the local router binding.
-     *
-     * @param block Builder block that supplies the router component and optional descriptor or requirements.
-     */
-    fun router(block: DistributionGridBindingDsl.() -> Unit)
-    {
-        require(routerConfiguration == null) { "DistributionGrid DSL already has a router binding." }
-        routerConfiguration = DistributionGridBindingDsl("router").apply(block).build()
-    }
-
-    /**
-     * Bind the local worker component directly.
-     *
-     * @param component Worker component to bind.
-     * @param descriptor Optional explicit descriptor override.
-     * @param requirements Optional explicit requirements override.
-     */
-    fun worker(
-        component: P2PInterface,
-        descriptor: P2PDescriptor? = null,
-        requirements: P2PRequirements? = null
-    )
-    {
-        require(workerConfiguration == null) { "DistributionGrid DSL already has a worker binding." }
-        workerConfiguration = DistributionGridRoleBindingConfiguration(component, descriptor, requirements)
-    }
-
-    /**
-     * Configure the local worker binding.
-     *
-     * @param block Builder block that supplies the worker component and optional descriptor or requirements.
-     */
-    fun worker(block: DistributionGridBindingDsl.() -> Unit)
-    {
-        require(workerConfiguration == null) { "DistributionGrid DSL already has a worker binding." }
-        workerConfiguration = DistributionGridBindingDsl("worker").apply(block).build()
+        return this
     }
 
     /**
@@ -193,12 +197,13 @@ class DistributionGridDsl
      * @param component Local peer component to attach.
      * @param descriptor Optional explicit descriptor override.
      * @param requirements Optional explicit requirements override.
+     * @return This builder for chaining.
      */
     fun peer(
         component: P2PInterface,
         descriptor: P2PDescriptor? = null,
         requirements: P2PRequirements? = null
-    )
+    ): DistributionGridBuilder<S>
     {
         localPeerConfigurations.add(
             DistributionGridPeerBindingConfiguration(
@@ -206,6 +211,7 @@ class DistributionGridDsl
                 binding = DistributionGridRoleBindingConfiguration(component, descriptor, requirements)
             )
         )
+        return this
     }
 
     /**
@@ -216,8 +222,9 @@ class DistributionGridDsl
      *
      * @param key Requested canonical peer key or shorthand transport address.
      * @param block Builder block that supplies the peer component and optional descriptor or requirements.
+     * @return This builder for chaining.
      */
-    fun peer(key: String, block: DistributionGridBindingDsl.() -> Unit)
+    fun peer(key: String, block: DistributionGridBindingDsl.() -> Unit): DistributionGridBuilder<S>
     {
         localPeerConfigurations.add(
             DistributionGridPeerBindingConfiguration(
@@ -225,103 +232,122 @@ class DistributionGridDsl
                 binding = DistributionGridBindingDsl("peer '$key'").apply(block).build()
             )
         )
+        return this
     }
 
     /**
      * Register an external peer descriptor directly.
      *
      * @param descriptor External peer descriptor to store.
+     * @return This builder for chaining.
      */
-    fun peerDescriptor(descriptor: P2PDescriptor)
+    fun peerDescriptor(descriptor: P2PDescriptor): DistributionGridBuilder<S>
     {
         externalPeerDescriptors.add(descriptor.deepCopy())
+        return this
     }
 
     /**
      * Configure one external peer descriptor.
      *
      * @param block Builder block that materializes the external descriptor.
+     * @return This builder for chaining.
      */
-    fun peerDescriptor(block: ExternalPeerDescriptorDsl.() -> Unit)
+    fun peerDescriptor(block: ExternalPeerDescriptorDsl.() -> Unit): DistributionGridBuilder<S>
     {
         externalPeerDescriptors.add(ExternalPeerDescriptorDsl().apply(block).build())
+        return this
     }
 
     /**
      * Configure discovery and registry behavior.
      *
      * @param block Builder block for discovery mode, bootstrap registries, registry metadata, and trust verification.
+     * @return This builder for chaining.
      */
-    fun discovery(block: DistributionGridDiscoveryDsl.() -> Unit)
+    fun discovery(block: DistributionGridDiscoveryDsl.() -> Unit): DistributionGridBuilder<S>
     {
         require(discoveryConfiguration == null) { "DistributionGrid DSL already has a discovery { ... } block." }
         discoveryConfiguration = DistributionGridDiscoveryDsl().apply(block).build()
+        return this
     }
 
     /**
      * Configure the routing policy stored on the grid shell.
      *
      * @param block Builder block that mutates the routing policy.
+     * @return This builder for chaining.
      */
-    fun routing(block: DistributionGridRoutingDsl.() -> Unit)
+    fun routing(block: DistributionGridRoutingDsl.() -> Unit): DistributionGridBuilder<S>
     {
         require(routingConfiguration == null) { "DistributionGrid DSL already has a routing { ... } block." }
         routingConfiguration = DistributionGridRoutingDsl().apply(block).build()
+        return this
     }
 
     /**
      * Configure the stored memory policy.
      *
      * @param block Builder block that mutates the memory policy.
+     * @return This builder for chaining.
      */
-    fun memory(block: DistributionGridMemoryDsl.() -> Unit)
+    fun memory(block: DistributionGridMemoryDsl.() -> Unit): DistributionGridBuilder<S>
     {
         require(memoryConfiguration == null) { "DistributionGrid DSL already has a memory { ... } block." }
         memoryConfiguration = DistributionGridMemoryDsl().apply(block).build()
+        return this
     }
 
     /**
      * Configure the durable-store binding.
      *
      * @param block Builder block that supplies the store.
+     * @return This builder for chaining.
      */
-    fun durability(block: DistributionGridDurabilityDsl.() -> Unit)
+    fun durability(block: DistributionGridDurabilityDsl.() -> Unit): DistributionGridBuilder<S>
     {
         require(durabilityConfiguration == null) { "DistributionGrid DSL already has a durability { ... } block." }
         durabilityConfiguration = DistributionGridDurabilityDsl().apply(block).build()
+        return this
     }
 
     /**
      * Configure tracing for the grid shell.
      *
      * @param block Builder block that enables, disables, or overrides the trace config.
+     * @return This builder for chaining.
      */
-    fun tracing(block: DistributionGridTracingDsl.() -> Unit)
+    fun tracing(block: DistributionGridTracingDsl.() -> Unit): DistributionGridBuilder<S>
     {
         require(tracingConfiguration == null) { "DistributionGrid DSL already has a tracing { ... } block." }
         tracingConfiguration = DistributionGridTracingDsl().apply(block).build()
+        return this
     }
 
     /**
      * Configure orchestration hooks on the grid shell.
      *
      * @param block Builder block that attaches the desired hooks.
+     * @return This builder for chaining.
      */
-    fun hooks(block: DistributionGridHooksDsl.() -> Unit)
+    fun hooks(block: DistributionGridHooksDsl.() -> Unit): DistributionGridBuilder<S>
     {
         require(hooksConfiguration == null) { "DistributionGrid DSL already has a hooks { ... } block." }
         hooksConfiguration = DistributionGridHooksDsl().apply(block).build()
+        return this
     }
 
     /**
      * Configure low-level operational knobs that already exist on the raw shell.
      *
      * @param block Builder block that stores max hops, RPC timeout, or session-duration caps.
+     * @return This builder for chaining.
      */
-    fun operations(block: DistributionGridOperationsDsl.() -> Unit)
+    fun operations(block: DistributionGridOperationsDsl.() -> Unit): DistributionGridBuilder<S>
     {
         require(operationsConfiguration == null) { "DistributionGrid DSL already has an operations { ... } block." }
         operationsConfiguration = DistributionGridOperationsDsl().apply(block).build()
+        return this
     }
 
     /**
@@ -332,51 +358,38 @@ class DistributionGridDsl
      *
      * @param inputTokenLimit Maximum input tokens allowed (prompt + context). null = no limit.
      * @param outputTokenLimit Maximum output tokens allowed (response + reasoning). null = no limit.
+     * @param onTripped Optional callback invoked when the kill switch trips.
+     * @return This builder for chaining.
      */
-    fun killSwitch(inputTokenLimit: Int? = null, outputTokenLimit: Int? = null, onTripped: ((KillSwitchContext) -> Nothing)? = null)
+    fun killSwitch(
+        inputTokenLimit: Int? = null,
+        outputTokenLimit: Int? = null,
+        onTripped: ((KillSwitchContext) -> Nothing)? = null
+    ): DistributionGridBuilder<S>
     {
-        killSwitchConfiguration = if(onTripped != null) {
+        killSwitchConfiguration = if(onTripped != null)
+        {
             KillSwitch(inputTokenLimit = inputTokenLimit, outputTokenLimit = outputTokenLimit, onTripped = onTripped)
-        } else {
+        }
+        else
+        {
             KillSwitch(inputTokenLimit = inputTokenLimit, outputTokenLimit = outputTokenLimit)
         }
+        return this
     }
+
+    //=========================================Build===================================================================
 
     /**
-     * Build and initialize the configured grid synchronously.
+     * Validate all DSL declarations and materialize a configured [DistributionGrid].
      *
-     * @return Fully initialized grid ready for use.
-     */
-    fun build(): DistributionGrid
-    {
-        val grid = configureGrid()
-        runBlocking {
-            grid.init()
-        }
-        if(killSwitchConfiguration != null)
-        {
-            grid.killSwitch = killSwitchConfiguration
-        }
-        return grid
-    }
-
-    /**
-     * Build and initialize the configured grid asynchronously.
+     * This is the single source of truth for DSL-to-DistributionGrid wiring so [buildInternal] and [buildSuspend]
+     * stay in sync.
      *
-     * @return Fully initialized grid ready for use.
+     * @return Configured but not yet initialized grid.
      */
-    suspend fun buildSuspend(): DistributionGrid
-    {
-        val grid = configureGrid()
-        grid.init()
-        if(killSwitchConfiguration != null)
-        {
-            grid.killSwitch = killSwitchConfiguration
-        }
-        return grid
-    }
-
-    private fun configureGrid(): DistributionGrid
+    @PublishedApi
+    internal fun configureGridInternal(): DistributionGrid
     {
         val router = routerConfiguration
             ?: throw IllegalArgumentException("DistributionGrid DSL requires a router before build().")
@@ -441,6 +454,29 @@ class DistributionGridDsl
             operations.maxSessionDurationSeconds?.let { grid.setMaxSessionDuration(it) }
         }
 
+        if(killSwitchConfiguration != null)
+        {
+            grid.killSwitch = killSwitchConfiguration
+        }
+
+        return grid
+    }
+
+    /**
+     * Build and initialize the configured [DistributionGrid] synchronously.
+     *
+     * Used internally by the [distributionGrid] entry point. To enforce compile-time safety from external callers
+     * use the [build] extension on [DistributionGridBuilder] in the [GridStage.Ready] state.
+     *
+     * @return Fully initialized grid ready for use.
+     */
+    @PublishedApi
+    internal fun buildInternal(): DistributionGrid
+    {
+        val grid = configureGridInternal()
+        runBlocking {
+            grid.init()
+        }
         return grid
     }
 
@@ -517,8 +553,118 @@ class DistributionGridDsl
             supportedContentTypes = mutableListOf(SupportedContentTypes.text)
         )
     }
-
 }
+
+//=========================================Entry points================================================================
+
+/**
+ * Entry point for the type-safe DistributionGrid DSL.
+ *
+ * The block runs against a [DistributionGridBuilder] in the [GridStage.Initial] stage. Compile-time safety is
+ * provided via the [build] extension which is restricted to [GridStage.Ready] for manual chaining use. The entry
+ * point itself validates required configuration at runtime before initializing the grid.
+ *
+ * @param block Builder block that configures the node shell, policies, peers, discovery, and hooks.
+ * @return Fully initialized grid ready for execution.
+ */
+fun distributionGrid(block: DistributionGridBuilder<GridStage.Initial>.() -> Unit): DistributionGrid
+{
+    val builder = DistributionGridBuilder<GridStage.Initial>()
+    builder.block()
+    return builder.buildInternal()
+}
+
+/**
+ * Factory function to create the initial [DistributionGridBuilder] in the [GridStage.Initial] stage.
+ *
+ * Use this when you want to assemble and chain the builder manually rather than with the [distributionGrid] block DSL.
+ *
+ * @return A new builder in the [GridStage.Initial] stage.
+ */
+fun distributionGridBuilder(): DistributionGridBuilder<GridStage.Initial>
+{
+    return DistributionGridBuilder()
+}
+
+/**
+ * Build and initialize the configured [DistributionGrid] synchronously.
+ *
+ * Only available on [DistributionGridBuilder] in the [GridStage.Ready] state — a compile error otherwise.
+ *
+ * @receiver A [DistributionGridBuilder] with both router and worker configured.
+ * @return Fully initialized grid ready for use.
+ */
+fun DistributionGridBuilder<GridStage.Ready>.build(): DistributionGrid
+{
+    return this.buildInternal()
+}
+
+/**
+ * Build and initialize the configured [DistributionGrid] in a suspend context.
+ *
+ * Only available on [DistributionGridBuilder] in the [GridStage.Ready] state — a compile error otherwise.
+ *
+ * @receiver A [DistributionGridBuilder] with both router and worker configured.
+ * @return Fully initialized grid ready for use.
+ */
+suspend fun DistributionGridBuilder<GridStage.Ready>.buildSuspend(): DistributionGrid
+{
+    val grid = this.configureGridInternal()
+    grid.init()
+    return grid
+}
+
+//=========================================Internal data classes=======================================================
+
+internal data class DistributionGridGridIdentityConfiguration(
+    var descriptor: P2PDescriptor? = null,
+    var transport: P2PTransport? = null,
+    var requirements: P2PRequirements? = null,
+    var containerObject: Any? = null
+)
+
+internal data class DistributionGridRoleBindingConfiguration(
+    val component: P2PInterface,
+    val descriptor: P2PDescriptor? = null,
+    val requirements: P2PRequirements? = null
+)
+
+internal data class DistributionGridPeerBindingConfiguration(
+    val requestedKey: String?,
+    val binding: DistributionGridRoleBindingConfiguration
+)
+
+internal data class DistributionGridDiscoveryConfiguration(
+    var mode: DistributionGridPeerDiscoveryMode = DistributionGridPeerDiscoveryMode.HYBRID,
+    var registryMetadata: DistributionGridRegistryMetadata? = null,
+    var trustVerifier: DistributionGridTrustVerifier? = null,
+    var bootstrapRegistries: MutableList<DistributionGridRegistryAdvertisement> = mutableListOf(),
+    var bootstrapCatalogSources: MutableList<DistributionGridBootstrapCatalogSource> = mutableListOf()
+)
+
+internal data class DistributionGridTracingConfiguration(
+    var enabled: Boolean = true,
+    var config: TraceConfig = TraceConfig(enabled = true)
+)
+
+internal data class DistributionGridHooksConfiguration(
+    var beforeRouteHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
+    var beforeLocalWorkerHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
+    var afterLocalWorkerHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
+    var beforePeerDispatchHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
+    var afterPeerResponseHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
+    var outboundMemoryHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
+    var failureHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
+    var outcomeTransformationHook: (suspend (com.TTT.Pipe.MultimodalContent, DistributionGridEnvelope) -> com.TTT.Pipe.MultimodalContent)? = null
+)
+
+internal data class DistributionGridOperationsConfiguration(
+    var maxHops: Int? = null,
+    var rpcTimeoutMillis: Long? = null,
+    var maxSessionDurationSeconds: Int? = null
+)
+
+//=========================================Nested DSL builders=========================================================
 
 /**
  * Builder for the grid node's outward P2P identity.

@@ -288,7 +288,7 @@ class DistributionGridDslTest
         assertEquals(1, grid.getLocalPeerKeys().size)
     }
 
-    private fun buildSimpleGridDsl(): DistributionGridDsl
+    private fun buildSimpleGridDsl(): DistributionGridBuilder<GridStage.Ready>
     {
         val router = ExecutionInterface("router") { content ->
             content.addText("router")
@@ -299,24 +299,23 @@ class DistributionGridDslTest
             content
         }
 
-        return DistributionGridDsl().apply {
-            p2p {
+        return distributionGridBuilder()
+            .p2p {
                 agentName("simple-grid")
                 transportAddress("simple-grid")
                 transportMethod(Transport.Tpipe)
             }
-            router(router)
-            worker(worker)
-            routing {
+            .router(router)
+            .worker(worker)
+            .routing {
                 maxHopCount(7)
             }
-            memory {
+            .memory {
                 outboundTokenBudget(1024)
             }
-            tracing {
+            .tracing {
                 enabled()
             }
-        }
     }
 
     private fun buildGridDescriptor(

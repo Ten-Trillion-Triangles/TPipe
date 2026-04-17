@@ -1792,12 +1792,12 @@ class JunctionTest
             val moderator = RecordingP2PInterface("moderator")
             val participant = RecordingP2PInterface("worker")
 
-            val junction = JunctionDsl().apply {
+            val junction = junction {
                 moderator(moderator)
                 participant("worker", participant)
                 rounds(1)
                 threshold(0.5)
-            }.buildSuspend()
+            }
 
             assertNotNull(junction)
             val result = junction.execute(MultimodalContent(text = "Test suspend build."))

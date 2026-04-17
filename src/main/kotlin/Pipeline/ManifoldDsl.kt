@@ -28,46 +28,73 @@ private const val DEFAULT_MANIFOLD_AGENT_PIPE_NAME = "Agent caller pipe"
 annotation class ManifoldDslMarker
 
 /**
- * Kotlin-first builder for creating a [Manifold] with early validation and automatic startup.
+ * Sealed class representing the state machine stages for type-safe Manifold DSL building.
  *
- * This DSL is intended to reduce the amount of manual boilerplate normally required to assemble a manifold while
- * still preserving access to custom manager and worker pipelines when needed.
- *
- * @param block Builder block that declares the manager, workers, history settings, and optional hooks.
- * @return Fully initialized manifold ready for execution.
+ * - [Initial]   : Nothing configured yet
+ * - [HasManager]: manager { } has been called
+ * - [HasWorkers]: At least one worker { } has been called
+ * - [Ready]     : All required and optional configuration is complete (build() available)
  */
-fun manifold(block: ManifoldDsl.() -> Unit): Manifold
+sealed class ManifoldStage
 {
-    val builder = ManifoldDsl()
-    builder.block()
-    return builder.build()
+    object Initial   : ManifoldStage()
+    object HasManager : ManifoldStage()
+    object HasWorkers : ManifoldStage()
+    object Ready      : ManifoldStage()
 }
 
 /**
- * Root manifold DSL. This coordinates manager setup, worker registration, manager shared-history configuration,
- * and optional runtime hooks before materializing an initialized [Manifold].
+ * Root manifold DSL builder. Generic over the current configuration stage to enforce compile-time safety.
+ *
+ * @param S Current stage in the builder state machine.
  */
-@ManifoldDslMarker
-class ManifoldDsl
+class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
+    var managerConfig: ManagerConfiguration? = null,
+    val workerConfigs: MutableList<WorkerConfiguration> = mutableListOf(),
+    var historyConfiguration: HistoryConfiguration? = null,
+    var validationConfiguration: ValidationConfiguration? = null,
+    var tracingConfiguration: TraceConfig? = null,
+    var summaryPipelineConfiguration: SummaryPipelineConfiguration? = null,
+    var concurrencyModeConfiguration: P2PConcurrencyMode = P2PConcurrencyMode.SHARED,
+    var killSwitchConfiguration: KillSwitch? = null,
+    var maxIterationsConfiguration: Int? = null
+)
 {
-    private var managerConfiguration: ManagerConfiguration? = null
-    private val workerConfigurations = mutableListOf<WorkerConfiguration>()
-    private var historyConfiguration: HistoryConfiguration? = null
-    private var validationConfiguration: ValidationConfiguration? = null
-    private var tracingConfiguration: TraceConfig? = null
-    private var summaryPipelineConfiguration: SummaryPipelineConfiguration? = null
-    private var concurrencyModeConfiguration: P2PConcurrencyMode = P2PConcurrencyMode.SHARED
-    private var killSwitchConfiguration: KillSwitch? = null
-    private var maxIterationsConfiguration: Int? = null
+    /**
+     * Factory for creating new builder instances with different type parameters while preserving all configuration.
+     */
+    private fun <T : ManifoldStage> createNew(
+        managerConfig: ManagerConfiguration? = this.managerConfig,
+        workerConfigs: MutableList<WorkerConfiguration> = this.workerConfigs,
+        historyConfiguration: HistoryConfiguration? = this.historyConfiguration,
+        validationConfiguration: ValidationConfiguration? = this.validationConfiguration,
+        tracingConfiguration: TraceConfig? = this.tracingConfiguration,
+        summaryPipelineConfiguration: SummaryPipelineConfiguration? = this.summaryPipelineConfiguration,
+        concurrencyModeConfiguration: P2PConcurrencyMode = this.concurrencyModeConfiguration,
+        killSwitchConfiguration: KillSwitch? = this.killSwitchConfiguration,
+        maxIterationsConfiguration: Int? = this.maxIterationsConfiguration
+    ): ManifoldBuilder<T> = ManifoldBuilder<T>(
+        managerConfig = managerConfig,
+        workerConfigs = workerConfigs,
+        historyConfiguration = historyConfiguration,
+        validationConfiguration = validationConfiguration,
+        tracingConfiguration = tracingConfiguration,
+        summaryPipelineConfiguration = summaryPipelineConfiguration,
+        concurrencyModeConfiguration = concurrencyModeConfiguration,
+        killSwitchConfiguration = killSwitchConfiguration,
+        maxIterationsConfiguration = maxIterationsConfiguration
+    )
 
     /**
      * Set the P2P concurrency mode for this manifold when registered with the P2P registry.
      *
      * @param mode SHARED routes all requests to one instance. ISOLATED clones per request.
+     * @return This builder for chaining.
      */
-    fun concurrencyMode(mode: P2PConcurrencyMode)
+    fun concurrencyMode(mode: P2PConcurrencyMode): ManifoldBuilder<S>
     {
         concurrencyModeConfiguration = mode
+        return this
     }
 
     /**
@@ -85,14 +112,17 @@ class ManifoldDsl
      *
      * @param inputTokenLimit Maximum input tokens allowed (prompt + context). null = no limit.
      * @param outputTokenLimit Maximum output tokens allowed (response + reasoning). null = no limit.
+     * @param onTripped Optional callback invoked when the kill switch trips.
+     * @return This builder for chaining.
      */
-    fun killSwitch(inputTokenLimit: Int? = null, outputTokenLimit: Int? = null, onTripped: ((KillSwitchContext) -> Nothing)? = null)
+    fun killSwitch(inputTokenLimit: Int? = null, outputTokenLimit: Int? = null, onTripped: ((KillSwitchContext) -> Nothing)? = null): ManifoldBuilder<S>
     {
         killSwitchConfiguration = if(onTripped != null) {
             KillSwitch(inputTokenLimit = inputTokenLimit, outputTokenLimit = outputTokenLimit, onTripped = onTripped)
         } else {
             KillSwitch(inputTokenLimit = inputTokenLimit, outputTokenLimit = outputTokenLimit)
         }
+        return this
     }
 
     /**
@@ -101,10 +131,12 @@ class ManifoldDsl
      * This acts as a secondary safety system to prevent infinite loops and runaway token consumption.
      *
      * @param limit Maximum iterations allowed
+     * @return This builder for chaining.
      */
-    fun maxIterations(limit: Int)
+    fun maxIterations(limit: Int): ManifoldBuilder<S>
     {
         maxIterationsConfiguration = limit
+        return this
     }
 
     /**
@@ -114,39 +146,55 @@ class ManifoldDsl
      */
     fun manager(block: ManagerDsl.() -> Unit)
     {
-        /**
-         * The manager must only be declared once so the DSL always has a single authoritative orchestrator.
-         */
-        require(managerConfiguration == null) { "Manager has already been configured for this manifold DSL." }
+        require(managerConfig == null) { "Manager has already been configured for this manifold DSL." }
 
         val builder = ManagerDsl()
         builder.block()
-        managerConfiguration = builder.build()
+        val config = builder.build()
+        managerConfig = config
     }
 
     /**
      * Configure manager shared-history control for this manifold.
      *
      * @param block Builder block that defines token budgeting, truncation behavior, or custom truncation logic.
+     * @return This builder for chaining.
      */
-    fun history(block: HistoryDsl.() -> Unit)
+    fun history(block: HistoryDsl.() -> Unit): ManifoldBuilder<S>
     {
         val builder = HistoryDsl()
         builder.block()
         historyConfiguration = historyConfiguration?.mergeWith(builder.build()) ?: builder.build()
+        return this
     }
 
     /**
      * Declare a worker agent that can be called by the manifold manager.
      *
+     * After the first worker is added, the builder reaches Ready state since all required
+     * configuration is complete. Additional workers can still be added while in Ready state.
+     *
      * @param agentName Public routing name for the worker.
      * @param block Builder block that describes the worker pipeline and optional metadata.
+     * @return A new builder with Ready stage (all required configuration complete).
      */
-    fun worker(agentName: String, block: WorkerDsl.() -> Unit)
+    fun worker(agentName: String, block: WorkerDsl.() -> Unit): ManifoldBuilder<ManifoldStage.Ready>
     {
         val builder = WorkerDsl(agentName)
         builder.block()
-        workerConfigurations.add(builder.build())
+        workerConfigs.add(builder.build())
+
+        return createNew<ManifoldStage.Ready>(
+            managerConfig = managerConfig,
+            workerConfigs = workerConfigs,
+            historyConfiguration = historyConfiguration,
+            validationConfiguration = validationConfiguration,
+            tracingConfiguration = tracingConfiguration,
+            summaryPipelineConfiguration = summaryPipelineConfiguration,
+            concurrencyModeConfiguration = concurrencyModeConfiguration,
+            killSwitchConfiguration = killSwitchConfiguration,
+            maxIterationsConfiguration = maxIterationsConfiguration
+        )
     }
 
     /**
@@ -154,74 +202,62 @@ class ManifoldDsl
      * and worker turns.
      *
      * @param block Builder block that binds the hook functions.
+     * @return This builder for chaining.
      */
-    fun validation(block: ValidationDsl.() -> Unit)
+    fun validation(block: ValidationDsl.() -> Unit): ManifoldBuilder<S>
     {
-        /**
-         * Only one validation block is allowed so hook precedence stays obvious and deterministic.
-         */
         require(validationConfiguration == null) { "Validation has already been configured for this manifold DSL." }
 
         val builder = ValidationDsl()
         builder.block()
         validationConfiguration = builder.build()
+        return this
     }
 
     /**
      * Configure tracing for the manifold and its child pipelines.
      *
      * @param block Builder block that enables tracing and optionally overrides the trace config.
+     * @return This builder for chaining.
      */
-    fun tracing(block: TracingDsl.() -> Unit)
+    fun tracing(block: TracingDsl.() -> Unit): ManifoldBuilder<S>
     {
-        /**
-         * Tracing is a single manifold-wide concern, so multiple tracing blocks are rejected.
-         */
         require(tracingConfiguration == null) { "Tracing has already been configured for this manifold DSL." }
 
         val builder = TracingDsl()
         builder.block()
         tracingConfiguration = builder.build()
+        return this
     }
 
     /**
      * Configure the optional summarization pipeline that runs after each worker response.
      *
      * @param block Builder block that declares the summary pipeline.
+     * @return This builder for chaining.
      */
-    fun summaryPipeline(block: SummaryPipelineDsl.() -> Unit)
+    fun summaryPipeline(block: SummaryPipelineDsl.() -> Unit): ManifoldBuilder<S>
     {
         require(summaryPipelineConfiguration == null) { "Summary pipeline has already been configured for this manifold DSL." }
 
         val builder = SummaryPipelineDsl()
         builder.block()
         summaryPipelineConfiguration = builder.build()
+        return this
     }
 
     /**
      * Build and initialize the configured [Manifold].
+     * ONLY available on ManifoldBuilder<Ready> - compile error otherwise.
      *
      * @return Fully initialized manifold ready for use.
      * @warning This method uses [runBlocking] to initialize the manifold. Use [buildSuspend] in coroutine contexts.
      */
-    fun build(): Manifold
+    @PublishedApi
+    internal fun buildInternal(): Manifold
     {
-        val manifold = configureManifold()
-        runBlocking {
-            manifold.init()
-        }
-        return manifold
-    }
-
-    /**
-     * Build and initialize the configured [Manifold] asynchronously.
-     *
-     * @return Fully initialized manifold ready for use.
-     */
-    suspend fun buildSuspend(): Manifold
-    {
-        val manifold = configureManifold()
-        manifold.init()
+        val manifold = configureManifoldInternal()
+        runBlocking { manifold.init() }
         return manifold
     }
 
@@ -232,9 +268,10 @@ class ManifoldDsl
      *
      * @return Configured but not yet initialized manifold.
      */
-    private fun configureManifold(): Manifold
+    @PublishedApi
+    internal fun configureManifoldInternal(): Manifold
     {
-        val managerSpec = managerConfiguration ?: throw IllegalArgumentException(
+        val managerSpec = managerConfig ?: throw IllegalArgumentException(
             "A manifold manager must be configured with manager { ... } before build()."
         )
 
@@ -242,10 +279,6 @@ class ManifoldDsl
         validateManager(managerSpec)
         val resolvedHistory = resolveHistoryConfiguration(managerSpec)
 
-        /**
-         * Once the DSL has been validated we materialize the real manifold and route all configuration through the
-         * existing public Manifold API so the DSL stays aligned with normal runtime behavior.
-         */
         val manifold = Manifold()
 
         if(tracingConfiguration != null)
@@ -262,7 +295,7 @@ class ManifoldDsl
         )
         manifold.setP2pAgentNames(managerSpec.resolveAgentPipeNames())
 
-        for(worker in workerConfigurations)
+        for(worker in workerConfigs)
         {
             manifold.addWorkerPipeline(
                 pipeline = worker.pipeline,
@@ -295,16 +328,12 @@ class ManifoldDsl
      */
     private fun validateWorkers()
     {
-        if(workerConfigurations.isEmpty())
+        if(workerConfigs.isEmpty())
         {
             throw IllegalArgumentException("At least one worker { ... } block is required to build a manifold.")
         }
 
-        /**
-         * Worker names become routing identifiers inside the manifold, so duplicates would produce ambiguous dispatch
-         * behavior and need to be rejected before any P2P registration happens.
-         */
-        val duplicateNames = workerConfigurations
+        val duplicateNames = workerConfigs
             .groupBy { worker -> worker.agentName }
             .filter { groupedWorkers -> groupedWorkers.value.size > 1 }
             .keys
@@ -314,11 +343,7 @@ class ManifoldDsl
             throw IllegalArgumentException("Worker agent names must be unique. Duplicate names: ${duplicateNames.joinToString()}")
         }
 
-        /**
-         * When custom descriptors are supplied the manager routes by descriptor agentName rather than the DSL worker
-         * label, so we must validate collisions on the effective routing identity before registration happens.
-         */
-        val duplicateRoutingIdentities = workerConfigurations
+        val duplicateRoutingIdentities = workerConfigs
             .groupBy { worker -> worker.getEffectiveRoutingIdentity() }
             .filter { groupedWorkers -> groupedWorkers.value.size > 1 }
             .keys
@@ -330,11 +355,7 @@ class ManifoldDsl
             )
         }
 
-        /**
-         * The registry keys agents by transport, so duplicated custom transports would silently collide during worker
-         * registration even when DSL worker names differ.
-         */
-        val duplicateTransportIdentities = workerConfigurations
+        val duplicateTransportIdentities = workerConfigs
             .mapNotNull { worker -> worker.getEffectiveTransportIdentity() }
             .groupBy { transport -> transport }
             .filter { groupedWorkers -> groupedWorkers.value.size > 1 }
@@ -350,7 +371,7 @@ class ManifoldDsl
             )
         }
 
-        for(worker in workerConfigurations)
+        for(worker in workerConfigs)
         {
             if(worker.usesUnsupportedLocalWorkerTransport())
             {
@@ -400,9 +421,6 @@ class ManifoldDsl
             throw IllegalArgumentException("The manifold manager pipeline must contain at least one pipe.")
         }
 
-        /**
-         * The manager must be able to emit AgentRequest JSON or the manifold cannot delegate work to any worker.
-         */
         val agentRequestSchema = examplePromptFor(AgentRequest::class)
         val agentRequestPipes = managerSpec.pipeline.getPipes().filter { pipe ->
             pipe.jsonOutput == agentRequestSchema
@@ -413,10 +431,6 @@ class ManifoldDsl
             throw IllegalArgumentException("The manager pipeline must contain a pipe that emits AgentRequest JSON.")
         }
 
-        /**
-         * If the caller did not explicitly identify the dispatch pipe, infer it when there is exactly one clear match.
-         * Multiple agent-calling pipes require the user to be explicit so the builder does not guess incorrectly.
-         */
         if(managerSpec.explicitAgentPipeNames.isEmpty())
         {
             if(agentRequestPipes.size > 1)
@@ -462,10 +476,6 @@ class ManifoldDsl
      */
     private fun resolveHistoryConfiguration(managerSpec: ManagerConfiguration): HistoryConfiguration
     {
-        /**
-         * When the primary manager pipe already has overflow protection configured, the DSL can safely activate the
-         * manifold's shared-history control automatically instead of making the caller repeat that intent.
-         */
         val primaryManagerPipe = managerSpec.pipeline.getPipes().first()
         val inferredHistoryConfiguration = if(primaryManagerPipe.hasContextOverflowProtectionConfigured())
         {
@@ -500,9 +510,6 @@ class ManifoldDsl
      */
     private fun applyHistoryConfiguration(manifold: Manifold, configuration: HistoryConfiguration)
     {
-        /**
-         * Truncation method and context-window size are compatibility controls for the built-in manager-history path.
-         */
         if(configuration.truncationMethod != null)
         {
             manifold.setTruncationMethod(configuration.truncationMethod!!)
@@ -513,10 +520,6 @@ class ManifoldDsl
             manifold.setContextWindowSize(configuration.contextWindowSize!!)
         }
 
-        /**
-         * An explicit token budget implies manager history control and should be applied before any legacy auto-truncate
-         * toggles so the manifold uses the richer budget definition.
-         */
         if(configuration.managerTokenBudget != null)
         {
             manifold.setManagerTokenBudget(configuration.managerTokenBudget!!)
@@ -570,6 +573,30 @@ class ManifoldDsl
 }
 
 /**
+ * Entry point for the type-safe Manifold DSL.
+ *
+ * @param block Builder block that configures the manifold (manager, workers, optional settings).
+ * @return Fully configured and initialized Manifold.
+ */
+fun manifold(block: ManifoldBuilder<ManifoldStage.Initial>.() -> Unit): Manifold
+{
+    val builder = ManifoldBuilder<ManifoldStage.Initial>()
+    builder.block()
+    return builder.buildInternal()
+}
+
+/**
+ * Factory function to create the initial ManifoldBuilder in the Initial stage.
+ * This is the only way to start building a Manifold via the DSL.
+ *
+ * @return A new builder in the Initial stage.
+ */
+fun manifoldBuilder(): ManifoldBuilder<ManifoldStage.Initial>
+{
+    return ManifoldBuilder<ManifoldStage.Initial>()
+}
+
+/**
  * Builder for the manifold manager section.
  */
 @ManifoldDslMarker
@@ -593,9 +620,6 @@ class ManagerDsl
         requirements: P2PRequirements? = null
     )
     {
-        /**
-         * A manager can only have one pipeline definition inside the DSL.
-         */
         require(this.pipeline == null) { "Manager pipeline has already been configured." }
         this.pipeline = pipeline
         this.descriptor = descriptor
@@ -830,9 +854,6 @@ class WorkerDsl(private val agentName: String)
         requirements: P2PRequirements? = null
     )
     {
-        /**
-         * Workers can only bind a single pipeline definition so the DSL does not end up with ambiguous agent wiring.
-         */
         require(this.pipeline == null) { "Worker '$agentName' already has a pipeline configured." }
         this.pipeline = pipeline
         this.descriptor = descriptor
@@ -1058,7 +1079,7 @@ class SummaryPipelineDsl
  * @property requirements Optional explicit P2P requirements override.
  * @property explicitAgentPipeNames Explicit dispatch-pipe names supplied by the caller.
  */
-internal data class ManagerConfiguration(
+data class ManagerConfiguration(
     val pipeline: Pipeline,
     val descriptor: P2PDescriptor?,
     val requirements: P2PRequirements?,
@@ -1077,10 +1098,6 @@ internal data class ManagerConfiguration(
             return explicitAgentPipeNames
         }
 
-        /**
-         * When the DSL user does not explicitly name the dispatch pipe, infer it from the single AgentRequest-producing
-         * pipe and fall back to the defaults-module convention when that pipe already uses the standard name.
-         */
         val agentRequestSchema = examplePromptFor(AgentRequest::class)
         val inferredPipe = pipeline.getPipes().first { pipe ->
             pipe.jsonOutput == agentRequestSchema
@@ -1100,7 +1117,7 @@ internal data class ManagerConfiguration(
  * @property description Human-readable worker description.
  * @property skills Optional advertised worker skills.
  */
-internal data class WorkerConfiguration(
+data class WorkerConfiguration(
     val agentName: String,
     val pipeline: Pipeline,
     val descriptor: P2PDescriptor?,
@@ -1164,7 +1181,7 @@ internal data class WorkerConfiguration(
  * @property managerTokenBudget Optional explicit manager token budget.
  * @property truncationFunction Optional custom truncation function.
  */
-internal data class HistoryConfiguration(
+data class HistoryConfiguration(
     val enableAutoTruncate: Boolean = false,
     val contextWindowSize: Int? = null,
     val truncationMethod: ContextWindowSettings? = null,
@@ -1228,7 +1245,7 @@ internal data class HistoryConfiguration(
  * @property failureHandler Optional worker-output recovery hook.
  * @property transformer Optional manifold content transformer.
  */
-internal data class ValidationConfiguration(
+data class ValidationConfiguration(
     val validator: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null,
     val failureHandler: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null,
     val transformer: (suspend (content: MultimodalContent) -> MultimodalContent)? = null
@@ -1242,7 +1259,7 @@ internal data class ValidationConfiguration(
  * @property requirements Optional explicit P2P requirements override.
  * @property summaryMode Summarization mode controlling append vs. regenerate behavior.
  */
-internal data class SummaryPipelineConfiguration(
+data class SummaryPipelineConfiguration(
     val pipeline: Pipeline,
     val descriptor: P2PDescriptor?,
     val requirements: P2PRequirements?,
@@ -1271,4 +1288,30 @@ private fun validatePairedP2PSettings(
     throw IllegalArgumentException(
         "$targetDescription must provide both descriptor and requirements together, or omit both to use generated defaults."
     )
+}
+
+/**
+ * Build and initialize the configured [Manifold].
+ *
+ * @receiver A [ManifoldBuilder] in the Ready state — all required configuration is complete.
+ * @return Fully initialized manifold ready for use.
+ * @throws IllegalArgumentException if required configuration is missing (should never happen due to type safety).
+ */
+fun ManifoldBuilder<ManifoldStage.Ready>.build(): Manifold
+{
+    return this.buildInternal()
+}
+
+/**
+ * Build and initialize the configured [Manifold] in a suspend context.
+ *
+ * @receiver A [ManifoldBuilder] in the Ready state — all required configuration is complete.
+ * @return Fully initialized manifold ready for use.
+ * @throws IllegalArgumentException if required configuration is missing (should never happen due to type safety).
+ */
+suspend fun ManifoldBuilder<ManifoldStage.Ready>.buildSuspend(): Manifold
+{
+    val manifold = this.configureManifoldInternal()
+    manifold.init()
+    return manifold
 }
