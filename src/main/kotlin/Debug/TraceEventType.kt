@@ -70,6 +70,7 @@ enum class TraceEventType {
     // Loop and Control Events
     MANIFOLD_LOOP_ITERATION,
     MANIFOLD_TERMINATION_CHECK,
+    MANIFOLD_LOOP_LIMIT_EXCEEDED,
     CONVERSE_HISTORY_UPDATE,
 
     // Error and Recovery Events

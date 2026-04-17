@@ -58,6 +58,7 @@ class ManifoldDsl
     private var summaryPipelineConfiguration: SummaryPipelineConfiguration? = null
     private var concurrencyModeConfiguration: P2PConcurrencyMode = P2PConcurrencyMode.SHARED
     private var killSwitchConfiguration: KillSwitch? = null
+    private var maxIterationsConfiguration: Int? = null
 
     /**
      * Set the P2P concurrency mode for this manifold when registered with the P2P registry.
@@ -92,6 +93,18 @@ class ManifoldDsl
         } else {
             KillSwitch(inputTokenLimit = inputTokenLimit, outputTokenLimit = outputTokenLimit)
         }
+    }
+
+    /**
+     * Set the maximum loop iterations for the manifold.
+     *
+     * This acts as a secondary safety system to prevent infinite loops and runaway token consumption.
+     *
+     * @param limit Maximum iterations allowed
+     */
+    fun maxIterations(limit: Int)
+    {
+        maxIterationsConfiguration = limit
     }
 
     /**
@@ -267,6 +280,11 @@ class ManifoldDsl
         if(killSwitchConfiguration != null)
         {
             manifold.killSwitch = killSwitchConfiguration
+        }
+
+        if(maxIterationsConfiguration != null)
+        {
+            manifold.setMaxLoopIterations(maxIterationsConfiguration)
         }
 
         return manifold

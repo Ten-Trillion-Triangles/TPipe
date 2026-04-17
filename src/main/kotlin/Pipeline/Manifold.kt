@@ -240,6 +240,31 @@ class Manifold : P2PInterface
     @Transient
     private var killSwitchExecutionStartTime = 0L
 
+    /** Maximum loop iterations before throwing ManifoldLoopLimitExceededException. null = no limit. */
+    private var maxLoopIterations: Int? = 100  // Default of 100
+
+    /**
+     * Set the maximum number of loop iterations.
+     * @param limit Maximum iterations allowed, null for unlimited
+     * @return This Manifold for chaining
+     */
+    fun setMaxLoopIterations(limit: Int?): Manifold {
+        maxLoopIterations = limit
+        return this
+    }
+
+    /**
+     * Get the configured maximum loop iterations.
+     * @return Max iterations or null if unlimited
+     */
+    fun getMaxLoopIterations(): Int? = maxLoopIterations
+
+    /**
+     * Check if a loop limit is configured.
+     * @return True if limit is set
+     */
+    fun hasLoopLimit(): Boolean = maxLoopIterations != null
+
     /**
      * Override setKillSwitch to propagate the kill switch to all child pipelines (manager and workers).
      * This ensures the kill switch is active at every level of the agent hierarchy.
@@ -1268,6 +1293,24 @@ class Manifold : P2PInterface
          */
         while(!workingContentObject.terminatePipeline && !workingContentObject.passPipeline)
         {
+            // Loop limit check BEFORE incrementing iteration counter
+            if(maxLoopIterations != null && loopIterationCount >= maxLoopIterations!!)
+            {
+                if(tracingEnabled)
+                {
+                    trace(TraceEventType.MANIFOLD_LOOP_LIMIT_EXCEEDED, TracePhase.ERROR,
+                          metadata = mapOf(
+                              "iterationsReached" to loopIterationCount,
+                              "maxIterations" to maxLoopIterations!!
+                          ))
+                }
+                throw ManifoldLoopLimitExceededException(
+                    iterationsReached = loopIterationCount,
+                    maxIterations = maxLoopIterations!!,
+                    context = null
+                )
+            }
+
             // === TRACING: Loop iteration tracking ===
             loopIterationCount++
             if(tracingEnabled)
@@ -1275,6 +1318,7 @@ class Manifold : P2PInterface
                 trace(TraceEventType.MANIFOLD_LOOP_ITERATION, TracePhase.ORCHESTRATION,
                       metadata = mapOf(
                           "iteration" to loopIterationCount,
+                          "loopLimit" to (maxLoopIterations ?: "none"),
                           "terminateFlag" to workingContentObject.terminatePipeline,
                           "passFlag" to workingContentObject.passPipeline
                       ))
