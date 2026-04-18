@@ -64,6 +64,102 @@ val result = junction.execute(
 
 `conductDiscussion(...)` is also available as a semantic alias for `execute(...)`.
 
+## DSL Builder
+
+The type-safe Kotlin DSL enforces moderator and participant ordering at compile time through a state machine with four stages:
+
+- `JunctionStage.Initial` — Nothing configured yet
+- `JunctionStage.HasModerator` — `moderator { }` has been called
+- `JunctionStage.HasParticipants` — At least one `participant { }` has been called
+- `JunctionStage.Ready` — All required and optional configuration is complete
+
+### Entry Point
+
+```kotlin
+import com.TTT.Pipeline.junction
+
+val junction = junction {
+    // moderator is required first
+    moderator("moderator", moderatorPipeline)
+
+    // participants follow
+    participant("security", securityPipeline)
+    participant("performance", performancePipeline)
+    participant("ux", uxPipeline)
+
+    // optional: configure workflow recipe
+    workflowRecipe(JunctionWorkflowRecipe.VOTE_PLAN_OUTPUT_EXIT)
+
+    // optional: builder methods for chaining
+    concurrencyMode(P2PConcurrencyMode.ISOLATED)
+    killSwitch(inputTokenLimit = 50000, outputTokenLimit = 5000)
+    strategy(DiscussionStrategy.ROUND_ROBIN)
+    rounds(4)
+    threshold(0.75)
+    intervention(true)
+    tracing()
+}
+```
+
+### DSL Methods
+
+All builder methods return `JunctionBuilder<S>` for chaining:
+
+| Method | Stage After Call | Description |
+|--------|------------------|-------------|
+| `moderator(roleName, component, ...)` | `HasModerator` | Sets the discussion moderator |
+| `participant(roleName, component, ...)` | `HasParticipants` | Adds a participant; can be called multiple times |
+| `moderator(component, ...)` | `HasModerator` | Sets moderator with auto-generated role name |
+| `participant(component, ...)` | `HasParticipants` | Adds participant with auto-generated role name |
+| `concurrencyMode(mode)` | any | Sets P2P concurrency mode (SHARED or ISOLATED) |
+| `killSwitch(input, output, onTripped)` | any | Halts execution if token limits are exceeded |
+| `workflowRecipe(recipe)` | any | Selects a built-in workflow recipe |
+| `discussionOnly()` | any | Switches to discussion-only execution |
+| `voteActVerifyRepeat()` | any | Shortcut for `VOTE_ACT_VERIFY_REPEAT` recipe |
+| `actVoteVerifyRepeat()` | any | Shortcut for `ACT_VOTE_VERIFY_REPEAT` recipe |
+| `votePlanActVerifyRepeat()` | any | Shortcut for `VOTE_PLAN_ACT_VERIFY_REPEAT` recipe |
+| `planVoteActVerifyRepeat()` | any | Shortcut for `PLAN_VOTE_ACT_VERIFY_REPEAT` recipe |
+| `votePlanOutputExit()` | any | Shortcut for `VOTE_PLAN_OUTPUT_EXIT` recipe |
+| `planVoteAdjustOutputExit()` | any | Shortcut for `PLAN_VOTE_ADJUST_OUTPUT_EXIT` recipe |
+| `planner(roleName, component, ...)` | any | Configures a planner role for workflows |
+| `actor(roleName, component, ...)` | any | Configures an actor role for workflows |
+| `verifier(roleName, component, ...)` | any | Configures a verifier role for workflows |
+| `adjuster(roleName, component, ...)` | any | Configures an adjuster role for workflows |
+| `outputHandler(roleName, component, ...)` | any | Configures an output handler role |
+| `strategy(strategy)` | any | Sets the discussion strategy |
+| `rounds(n)` | any | Sets maximum discussion rounds |
+| `threshold(t)` | any | Sets consensus voting threshold (0.0–1.0) |
+| `intervention(enabled)` | any | Enables or disables moderator intervention |
+| `maxNestedDepth(depth)` | any | Sets maximum nested P2P dispatch depth |
+| `tracing(config)` | any | Enables tracing |
+| `descriptor(descriptor)` | any | Sets the P2P descriptor for this junction |
+| `requirements(requirements)` | any | Sets the P2P requirements |
+| `memoryPolicy { }` | any | Configures outbound memory policy |
+
+### Manual Builder
+
+For manual assembly and chaining, use `junctionBuilder()`:
+
+```kotlin
+import com.TTT.Pipeline.junctionBuilder
+import com.TTT.Pipeline.build
+
+val builder = junctionBuilder<JunctionStage.Initial>()
+    .moderator("moderator", moderatorPipeline)
+    .participant("security", securityPipeline)
+    .participant("performance", performancePipeline)
+    .concurrencyMode(P2PConcurrencyMode.ISOLATED)
+    .rounds(3)
+
+val junction = builder.build()  // only available on JunctionBuilder<Ready>
+```
+
+### Build Modes
+
+- `junction { ... }` uses `build()` internally and returns an initialized junction
+- `JunctionBuilder.build()` initializes synchronously with `runBlocking`
+- `JunctionBuilder.buildSuspend()` initializes asynchronously in a coroutine context
+
 ## Discussion Models
 
 The harness uses a small set of serializable models in `src/main/kotlin/Pipeline/JunctionModels.kt`:

@@ -117,8 +117,12 @@ The `manifold { }` builder supports these top-level blocks:
 | `validation { }` | Optional | Hooks for worker output validation and transformation |
 | `tracing { }` | Optional | Enables tracing for the manifold and child pipelines |
 | `summaryPipeline { }` | Optional | Adds an optional summarization pipeline that runs after each worker response |
+| `concurrencyMode(mode)` | Optional | Sets P2P concurrency mode (SHARED or ISOLATED) |
+| `killSwitch(input, output, onTripped)` | Optional | Halts execution if token limits are exceeded |
 
 Each block can only appear once (except `worker`, which can appear multiple times).
+
+All builder methods return `ManifoldBuilder<S>` for chaining. For example, `concurrencyMode()`, `killSwitch()`, `maxIterations()`, and `history()` can be called in sequence:
 
 ### validation { }
 

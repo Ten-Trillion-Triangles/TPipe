@@ -185,10 +185,30 @@ val grid = distributionGrid {
     tracing {
         enabled()
     }
+
+    concurrencyMode(P2PConcurrencyMode.ISOLATED)
+    killSwitch(inputTokenLimit = 100000, outputTokenLimit = 10000)
 }
 ```
 
 The DSL returns an initialized grid by default. Use `DistributionGridDsl.buildSuspend()` when you need coroutine-safe startup.
+
+### Manual Builder
+
+For manual assembly and chaining, use `distributionGridBuilder()`:
+
+```kotlin
+import com.TTT.Pipeline.distributionGridBuilder
+import com.TTT.Pipeline.build
+
+val builder = distributionGridBuilder()
+    .router(routerPipeline)
+    .worker(workerPipeline)
+    .concurrencyMode(P2PConcurrencyMode.ISOLATED)
+    .killSwitch(inputTokenLimit = 50000, outputTokenLimit = 5000)
+
+val grid = builder.build()  // only available on DistributionGridBuilder<GridStage.Ready>
+```
 
 ### Hosted Bootstrap Catalogs
 
@@ -269,10 +289,10 @@ caller explicitly starts those loops.
 
 ### DSL blocks
 
-The `distributionGrid { }` builder supports these top-level blocks:
+The `distributionGrid { }` builder supports these top-level blocks and methods:
 
-| Block | Required | Description |
-|-------|----------|-------------|
+| Block / Method | Required | Description |
+|----------------|----------|-------------|
 | `p2p { }` | No | Configures the outward grid-node descriptor, transport, requirements, and container object |
 | `security { }` | No | Configures outward auth/privacy-related descriptor and requirement hints |
 | `router { }` or `router(...)` | Yes | Binds the local router role |
@@ -286,6 +306,10 @@ The `distributionGrid { }` builder supports these top-level blocks:
 | `tracing { }` | No | Enables or disables tracing |
 | `hooks { }` | No | Configures orchestration hooks |
 | `operations { }` | No | Configures max hops, RPC timeout, and session-duration caps |
+| `concurrencyMode(mode)` | No | Sets P2P concurrency mode (SHARED or ISOLATED) |
+| `killSwitch(input, output, onTripped)` | No | Halts execution if token limits are exceeded |
+
+All builder methods return `DistributionGridBuilder<S>` for chaining.
 
 ### Defaults Extension
 

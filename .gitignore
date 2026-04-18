@@ -81,3 +81,4 @@ aws/
 /md/native-compilation
 /.claude
 /__pycache__
+/md
