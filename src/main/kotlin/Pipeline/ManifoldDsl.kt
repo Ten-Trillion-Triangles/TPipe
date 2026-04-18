@@ -60,6 +60,36 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     var maxIterationsConfiguration: Int? = null
 )
 {
+    companion object
+    {
+        /**
+         * Thread-local stack to track builder instances during DSL execution.
+         * When worker() is called, it pushes the new Ready builder onto the stack.
+         * The stack allows validation() and other config methods to find the correct builder.
+         */
+        private val builderStack = ThreadLocal.withInitial { mutableListOf<ManifoldBuilder<*>>() }
+
+        /**
+         * Push a builder onto the stack.
+         */
+        internal fun pushBuilder(builder: ManifoldBuilder<*>) { builderStack.get().add(builder) }
+
+        /**
+         * Pop a builder from the stack.
+         */
+        internal fun popBuilder(): ManifoldBuilder<*>? = if(builderStack.get().isNotEmpty()) builderStack.get().removeAt(builderStack.get().size - 1) else null
+
+        /**
+         * Peek at the top of the stack without removing it.
+         */
+        private fun peekBuilder(): ManifoldBuilder<*>? = if(builderStack.get().isNotEmpty()) builderStack.get().last() else null
+
+        /**
+         * Clear all builders from the stack.
+         */
+        internal fun clearBuilders() { builderStack.get().clear() }
+    }
+
     /**
      * Factory for creating new builder instances with different type parameters while preserving all configuration.
      */
@@ -73,17 +103,22 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         concurrencyModeConfiguration: P2PConcurrencyMode = this.concurrencyModeConfiguration,
         killSwitchConfiguration: KillSwitch? = this.killSwitchConfiguration,
         maxIterationsConfiguration: Int? = this.maxIterationsConfiguration
-    ): ManifoldBuilder<T> = ManifoldBuilder<T>(
-        managerConfig = managerConfig,
-        workerConfigs = workerConfigs,
-        historyConfiguration = historyConfiguration,
-        validationConfiguration = validationConfiguration,
-        tracingConfiguration = tracingConfiguration,
-        summaryPipelineConfiguration = summaryPipelineConfiguration,
-        concurrencyModeConfiguration = concurrencyModeConfiguration,
-        killSwitchConfiguration = killSwitchConfiguration,
-        maxIterationsConfiguration = maxIterationsConfiguration
-    )
+    ): ManifoldBuilder<T>
+    {
+        val newBuilder = ManifoldBuilder<T>(
+            managerConfig = managerConfig,
+            workerConfigs = workerConfigs,
+            historyConfiguration = historyConfiguration,
+            validationConfiguration = validationConfiguration,
+            tracingConfiguration = tracingConfiguration,
+            summaryPipelineConfiguration = summaryPipelineConfiguration,
+            concurrencyModeConfiguration = concurrencyModeConfiguration,
+            killSwitchConfiguration = killSwitchConfiguration,
+            maxIterationsConfiguration = maxIterationsConfiguration
+        )
+        pushBuilder(newBuilder)
+        return newBuilder
+    }
 
     /**
      * Set the P2P concurrency mode for this manifold when registered with the P2P registry.
@@ -206,11 +241,21 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
      */
     fun validation(block: ValidationDsl.() -> Unit): ManifoldBuilder<S>
     {
-        require(validationConfiguration == null) { "Validation has already been configured for this manifold DSL." }
+        // If worker() was called, the Ready builder is on the stack - set config there
+        // Otherwise set on this builder
+        val stackBuilder = peekBuilder()
+        val targetBuilder = if(stackBuilder != null && stackBuilder !== this) {
+            @Suppress("UNCHECKED_CAST")
+            stackBuilder as ManifoldBuilder<S>
+        } else {
+            this
+        }
+
+        require(targetBuilder.validationConfiguration == null) { "Validation has already been configured for this manifold DSL." }
 
         val builder = ValidationDsl()
         builder.block()
-        validationConfiguration = builder.build()
+        targetBuilder.validationConfiguration = builder.build()
         return this
     }
 
@@ -582,7 +627,10 @@ fun manifold(block: ManifoldBuilder<ManifoldStage.Initial>.() -> Unit): Manifold
 {
     val builder = ManifoldBuilder<ManifoldStage.Initial>()
     builder.block()
-    return builder.buildInternal()
+    // Pop the final builder from the stack (pushed by worker() calls)
+    // and call buildInternal() on it to ensure all config is properly transferred
+    val finalBuilder = ManifoldBuilder.popBuilder() ?: builder
+    return finalBuilder.buildInternal()
 }
 
 /**
