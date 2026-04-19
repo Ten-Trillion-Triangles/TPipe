@@ -53,6 +53,7 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     val workerConfigs: MutableList<WorkerConfiguration> = mutableListOf(),
     var historyConfiguration: HistoryConfiguration? = null,
     var validationConfiguration: ValidationConfiguration? = null,
+    var initFunctionConfiguration: InitFunctionConfiguration? = null,
     var tracingConfiguration: TraceConfig? = null,
     var summaryPipelineConfiguration: SummaryPipelineConfiguration? = null,
     var concurrencyModeConfiguration: P2PConcurrencyMode = P2PConcurrencyMode.SHARED,
@@ -260,6 +261,31 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     }
 
     /**
+     * Configure an optional pre-execution init function that runs before the manifold loop starts.
+     * This allows developers to perform safety checks and abort startup if conditions aren't met.
+     *
+     * @param block Builder block that binds the init function.
+     * @return This builder for chaining.
+     */
+    fun initFunction(block: InitDsl.() -> Unit): ManifoldBuilder<S>
+    {
+        val stackBuilder = peekBuilder()
+        val targetBuilder = if(stackBuilder != null && stackBuilder !== this) {
+            @Suppress("UNCHECKED_CAST")
+            stackBuilder as ManifoldBuilder<S>
+        } else {
+            this
+        }
+
+        require(targetBuilder.initFunctionConfiguration == null) { "Init function has already been configured for this manifold DSL." }
+
+        val builder = InitDsl()
+        builder.block()
+        targetBuilder.initFunctionConfiguration = builder.build()
+        return this
+    }
+
+    /**
      * Configure tracing for the manifold and its child pipelines.
      *
      * @param block Builder block that enables tracing and optionally overrides the trace config.
@@ -353,6 +379,7 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         }
 
         applyValidationConfiguration(manifold)
+        applyInitFunctionConfiguration(manifold)
         applySummaryPipelineConfiguration(manifold)
 
         if(killSwitchConfiguration != null)
@@ -592,17 +619,32 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
 
         if(configuration.validator != null)
         {
-            manifold.setValidatorFunction(configuration.validator!!)
+            manifold.setValidatorFunction { content, agent, _ -> configuration.validator!!(content, agent) }
         }
 
         if(configuration.failureHandler != null)
         {
-            manifold.setFailureFunction(configuration.failureHandler!!)
+            manifold.setFailureFunction { content, agent, _ -> configuration.failureHandler!!(content, agent) }
         }
 
         if(configuration.transformer != null)
         {
             manifold.setTransformationFunction(configuration.transformer!!)
+        }
+    }
+
+    /**
+     * Apply the optional init function captured by the initFunction DSL.
+     *
+     * @param manifold Target manifold being built.
+     */
+    private fun applyInitFunctionConfiguration(manifold: Manifold)
+    {
+        val configuration = initFunctionConfiguration ?: return
+
+        if(configuration.initFunction != null)
+        {
+            manifold.setManifoldInitFunction(configuration.initFunction!!)
         }
     }
 
@@ -1009,6 +1051,38 @@ class ValidationDsl
 }
 
 /**
+ * Builder for optional manifold pre-execution init function.
+ */
+@ManifoldDslMarker
+class InitDsl
+{
+    private var initFunction: (suspend (content: MultimodalContent, manifold: Manifold?) -> Boolean)? = null
+
+    /**
+     * Set the pre-execution init function.
+     *
+     * @param function Init function invoked before the manifold loop starts.
+     *                  Return true to proceed, false to abort execution.
+     */
+    fun initFunction(function: suspend (content: MultimodalContent, manifold: Manifold?) -> Boolean)
+    {
+        initFunction = function
+    }
+
+    /**
+     * Build the immutable init function configuration captured by this DSL block.
+     *
+     * @return Init function configuration ready for manifold assembly.
+     */
+    internal fun build(): InitFunctionConfiguration
+    {
+        return InitFunctionConfiguration(
+            initFunction = initFunction
+        )
+    }
+}
+
+/**
  * Builder for optional manifold tracing configuration.
  */
 @ManifoldDslMarker
@@ -1297,6 +1371,15 @@ data class ValidationConfiguration(
     val validator: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null,
     val failureHandler: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null,
     val transformer: (suspend (content: MultimodalContent) -> MultimodalContent)? = null
+)
+
+/**
+ * Immutable init function configuration captured by [InitDsl].
+ *
+ * @property initFunction Optional pre-execution init function invoked before the manifold loop starts.
+ */
+data class InitFunctionConfiguration(
+    val initFunction: (suspend (content: MultimodalContent, manifold: Manifold?) -> Boolean)? = null
 )
 
 /**

@@ -111,14 +111,37 @@ object FunctionRegistry
     /**
      * Get available type converters for parameter conversion.
      * Used by FunctionInvoker to convert PCP parameters to native types.
-     * 
+     *
      * @return List of available type converters
      */
-    fun getTypeConverters(): List<TypeConverter> 
+    fun getTypeConverters(): List<TypeConverter>
     {
         return typeConverters.toList()
     }
-    
+
+    /**
+     * Data class representing a function with its full metadata.
+     * Used by MCP server to enumerate available tools.
+     */
+    data class FunctionDescriptor(
+        val name: String,
+        val signature: FunctionSignature,
+        val isValid: Boolean
+    )
+
+    /**
+     * List all registered functions with their full signatures.
+     * Used by MCP server tools/list to enumerate all available functions.
+     *
+     * @return List of FunctionDescriptor for each registered function
+     */
+    fun listFunctions(): List<FunctionDescriptor>
+    {
+        return functions.map { (name, fn) ->
+            FunctionDescriptor(name, fn.signature, fn.validate())
+        }
+    }
+
     /**
      * Clear all registered functions.
      * Useful for testing and cleanup scenarios.

@@ -36,6 +36,21 @@ object PcpRegistry
     }
 
     /**
+     * Execute a list of PCP requests against a specific context.
+     * FIX S3: Allows per-session context isolation by accepting context as parameter.
+     *
+     * @param requests List of [PcPRequest] objects to execute
+     * @param context The [PcpContext] to execute against
+     * @return [PcpExecutionResult] containing the results of each request
+     */
+    suspend fun executeRequests(requests: List<PcPRequest>, context: PcpContext): PcpExecutionResult
+    {
+        return mutex.withLock {
+            dispatcher.executeRequests(requests, context)
+        }
+    }
+
+    /**
      * Execute a single PCP request against the global context.
      *
      * @param request A single [PcPRequest] object to execute

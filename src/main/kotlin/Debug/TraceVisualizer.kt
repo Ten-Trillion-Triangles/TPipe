@@ -60,6 +60,7 @@ class TraceVisualizer
                 TraceEventType.MANIFOLD_END -> "🏁"
                 TraceEventType.MANIFOLD_SUCCESS -> "✅"
                 TraceEventType.MANIFOLD_FAILURE -> "❌"
+                TraceEventType.MANIFOLD_INIT_CHECK -> "🔍"
                 TraceEventType.MANIFOLD_LOOP_ITERATION -> "🔄"
                 
                 // Junction orchestration events

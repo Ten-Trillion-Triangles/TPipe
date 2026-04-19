@@ -28,7 +28,10 @@ repositories {
 dependencies {
     implementation(project(":"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    
+    implementation("io.modelcontextprotocol:kotlin-sdk:0.11.1")
+    implementation("io.ktor:ktor-server-cio:3.3.3")
+    implementation("io.ktor:ktor-server-auth:3.3.3")
+
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.2.20")
 }
 

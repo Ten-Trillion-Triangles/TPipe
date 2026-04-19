@@ -183,7 +183,23 @@ class Manifold : P2PInterface
     private var managerContextWindowOverride: Int? = null
 
     /**
-     * Optional human in the loop funciton that allows for custom handling of context and context overflow.
+     * Optional developer in the loop function that allows the coder to perform various startup checks just prior
+     * to starting the manifold. This is useful for various safety related tasks where the developer may need
+     * some prior state to be valid, network connection, or other frail system to be checked against to prevent
+     * the manifold from malfunctioning.
+     *
+     * @param content Multimodal content object that is about to be operated upon by the manifold. Standard TPipe
+     * input for DITL functions.
+     *
+     * @param manifold: Reference to the manifold that is about to run. This allows the coder to inspect the inner
+     * state of the manifold and stop the execution if some custom configuration is in an incorrect state.
+     *
+     * @return Returns true if we're allowed to proceed, or false if we need to stop the manifold here.
+     */
+    private var manifoldInitFunctionRef: (suspend (content: MultimodalContent, manifold: Manifold?) -> Boolean)? = null
+
+    /**
+     * Optional human in the loop function that allows for custom handling of context and context overflow.
      * Allows the coder to decide how to handle keeping context contained in the context window as expected.
      *
      * @param content The content object that is being worked on by the llm agent.
@@ -198,13 +214,13 @@ class Manifold : P2PInterface
      * @param content The content object that is being worked on by the llm agent.
      * @param agent The agent that just completed the task.
      */
-    private var workerValidatorFunction: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null
+    private var workerValidatorFunction: (suspend (content: MultimodalContent, agent: Pipeline, manifold: Manifold) -> Boolean)? = null
 
     /**
      * Human in the loop function to handle a failure before the manifold is shut down. Allows the coder to
      * attempt to rectify whatever the issue is.
      */
-    private var failureFunction: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null
+    private var failureFunction: (suspend (content: MultimodalContent, agent: Pipeline, manifold: Manifold) -> Boolean)? = null
 
     /**
      * Human in the loop function to allow for content transformation upon a successful llm call. Also, can be used
@@ -542,6 +558,16 @@ class Manifold : P2PInterface
     }
 
     /**
+     * Sets the optional DITL manifold init function. This function allows the coder to stop a manifold if we're in
+     * an invalid state prior to running it. When it returns false, we'll stop execution before damage can occur.
+     */
+    fun setManifoldInitFunction(func: suspend (content: MultimodalContent, manifold: Manifold?) -> Boolean) : Manifold
+    {
+        manifoldInitFunctionRef = func
+        return this
+    }
+
+    /**
      * Allows the coder to define a function that will be called when the manifold is truncating the context
      * of the workers and the agent. This allows the coder to decide how to handle the truncation.
      */
@@ -558,7 +584,7 @@ class Manifold : P2PInterface
      * that the manifold has not produced any breaking, or otherwise invalid output. If not supplied validtion
      * attempts will be skipped.
      */
-    fun setValidatorFunction(func: suspend (content: MultimodalContent, agent: Pipeline) -> Boolean) : Manifold
+    fun setValidatorFunction(func: suspend (content: MultimodalContent, agent: Pipeline, manifold: Manifold) -> Boolean) : Manifold
     {
         workerValidatorFunction = func
         return this
@@ -568,7 +594,7 @@ class Manifold : P2PInterface
      * Defines a branch failure function to attempt to recover the state of the manifold in the event of a validation
      * failure. This can only be called if the validation function is also valid.
      */
-    fun setFailureFunction(func: suspend (content: MultimodalContent, agent: Pipeline) -> Boolean) : Manifold
+    fun setFailureFunction(func: suspend (content: MultimodalContent, agent: Pipeline, manifold: Manifold) -> Boolean) : Manifold
     {
         failureFunction = func
         return this
@@ -1282,6 +1308,35 @@ class Manifold : P2PInterface
             }
         }
 
+        // === DITL: Run manifold init function if configured ===
+        if(manifoldInitFunctionRef != null)
+        {
+            if(tracingEnabled)
+            {
+                trace(TraceEventType.MANIFOLD_INIT_CHECK, TracePhase.ORCHESTRATION,
+                      workingContentObject,
+                      metadata = mapOf("result" to "running"))
+            }
+
+            if(manifoldInitFunctionRef?.invoke(workingContentObject, this) == false)
+            {
+                if(tracingEnabled)
+                {
+                    trace(TraceEventType.MANIFOLD_INIT_CHECK, TracePhase.ORCHESTRATION,
+                          workingContentObject,
+                          metadata = mapOf("result" to "abort", "reason" to "initFunction returned false"))
+                }
+                return workingContentObject
+            }
+
+            if(tracingEnabled)
+            {
+                trace(TraceEventType.MANIFOLD_INIT_CHECK, TracePhase.ORCHESTRATION,
+                      workingContentObject,
+                      metadata = mapOf("result" to "proceed"))
+            }
+        }
+
         // === TRACING: Reset loop counter ===
         loopIterationCount = 0
 
@@ -1403,7 +1458,7 @@ class Manifold : P2PInterface
                     metadata = mapOf("validatorFunction" to workerValidatorFunction.toString()))
 
                 //Handle branch failure state if our validation function did not pass.
-                if(workerValidatorFunction?.invoke(managerResult, managerPipeline) == false)
+                if(workerValidatorFunction?.invoke(managerResult, managerPipeline, this) == false)
                 {
                     //Execute branch failure if provided. This gives one last change to not end the manifold.
                     if(failureFunction != null)
@@ -1412,7 +1467,7 @@ class Manifold : P2PInterface
                             metadata = mapOf("failureFunction" to failureFunction.toString()))
 
                         //Bail on the manifold if we can't pass this. Otherwise, we can resume the task.
-                        if(failureFunction?.invoke(managerResult, managerPipeline) == false)
+                        if(failureFunction?.invoke(managerResult, managerPipeline, this) == false)
                         {
                             /**
                              * Optional: Allow provision of error message by using the multimodal object's metadata
@@ -1693,7 +1748,7 @@ class Manifold : P2PInterface
                     }
 
                     //Handle branch failure state if our validation function did not pass.
-                    if(workerPipeline != null && workerValidatorFunction?.invoke(response.output!!, workerPipeline) == false)
+                    if(workerPipeline != null && workerValidatorFunction?.invoke(response.output!!, workerPipeline, this) == false)
                     {
                         //Execute branch failure if provided. This gives one last chance to not end the manifold.
                         if(failureFunction != null)
@@ -1702,7 +1757,7 @@ class Manifold : P2PInterface
                                 metadata = mapOf("failureFunction" to failureFunction.toString()))
 
                             //Bail on the manifold if we can't pass this. Otherwise, we can resume the task.
-                            if(failureFunction?.invoke(response.output!!, workerPipeline) == false)
+                            if(failureFunction?.invoke(response.output!!, workerPipeline, this) == false)
                             {
                                 val errorMessage = response.output?.metadata?.get("error") ?: "Unable to recover using branch failure function."
 

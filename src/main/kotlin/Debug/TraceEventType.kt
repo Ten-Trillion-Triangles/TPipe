@@ -41,7 +41,8 @@ enum class TraceEventType {
     MANIFOLD_END,
     MANIFOLD_SUCCESS,
     MANIFOLD_FAILURE,
-    
+    MANIFOLD_INIT_CHECK,
+
     // Manager Decision Events
     MANAGER_DECISION,
     MANAGER_TASK_ANALYSIS,
