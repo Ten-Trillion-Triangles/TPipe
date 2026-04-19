@@ -419,20 +419,6 @@ class TraceVisualizer
                 {
                     ""
                 }
-                
-                // Helper to create an expandable section
-                fun createExpandableSection(label: String, content: String, icon: String, color: String): String {
-                    if(content.isBlank() || content == "N/A" || content == "null") return ""
-                    return """
-                        <details style="margin-top: 8px;">
-                            <summary style="cursor: pointer; color: ${color}; font-weight: bold;">
-                                ${icon} ${label}
-                                (${content.length} chars)
-                            </summary>
-                            <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 8px; white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${escapeHtml(content)}</pre>
-                        </details>
-                    """.trimIndent()
-                }
 
                 val sections = mutableListOf<String>()
                 if(metadataHtml.isNotEmpty())
@@ -1654,6 +1640,22 @@ class TraceVisualizer
         return name.lowercase().replace("[^a-z0-9]+".toRegex(), "-").trim('-')
     }
 
+    /**
+     * Creates an expandable section with collapsible content.
+     */
+    private fun createExpandableSection(label: String, content: String, icon: String, color: String): String {
+        if(content.isBlank() || content == "N/A" || content == "null") return ""
+        return """
+            <details style="margin-top: 8px;">
+                <summary style="cursor: pointer; color: ${color}; font-weight: bold;">
+                    ${icon} ${label}
+                    (${content.length} chars)
+                </summary>
+                <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 8px; white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${escapeHtml(content)}</pre>
+            </details>
+        """.trimIndent()
+    }
+
     private fun formatMetadata(metadata: Map<String, Any>): String {
         if(metadata.isEmpty()) return "<p class=\"empty-state\">No metadata recorded for this event.</p>"
         val items = metadata.entries.joinToString("") { entry ->
@@ -1674,23 +1676,103 @@ class TraceVisualizer
     }
 
     private fun formatContentSummary(event: TraceEvent, summaryLabel: String): String {
-        val parts = mutableListOf<String>()
-        event.content?.text?.takeIf { it.isNotBlank() }?.let { text ->
-            val traceDetailLevel = event.metadata["traceDetailLevel"]?.toString().orEmpty()
-            val preview = if(traceDetailLevel.equals("DEBUG", ignoreCase = true)) {
-                text
-            } else if(text.length > 220) {
-                "${text.take(220)}…"
-            } else {
-                text
+        val sections = mutableListOf<String>()
+
+        // Identify content keys in metadata
+        val reasoningKeys = listOf("modelReasoning", "reasoningPipeContent", "reasoningContent")
+        val reasoningKey = event.metadata.keys.find { it in reasoningKeys }
+        val inputKey = event.metadata.keys.find { it == "inputText" }
+        val outputKey = event.metadata.keys.find { it == "outputText" }
+        val requestObjectKey = event.metadata.keys.find { it == "requestObject" }
+        val generatedContentKey = event.metadata.keys.find { it == "generatedContent" }
+        val fullPromptKey = event.metadata.keys.find { it == "fullPrompt" }
+        val contentTextKey = event.metadata.keys.find { it == "contentText" }
+        val pageKeyKey = event.metadata.keys.find { it == "pageKey" }
+        val contextWindowKey = event.metadata.keys.find { it == "contextWindow" }
+        val miniBankKey = event.metadata.keys.find { it == "miniBank" }
+
+        // Add inputText
+        val inputText = inputKey?.let { event.metadata[it]?.toString() } ?:
+            if(event.eventType == TraceEventType.PIPE_START || event.eventType == TraceEventType.CONTEXT_PULL ||
+               event.eventType.name.startsWith("MANIFOLD_") || event.eventType.name.startsWith("MANAGER_") ||
+               event.eventType.name.startsWith("DISTRIBUTION_GRID_") ||
+               event.eventType == TraceEventType.AGENT_DISPATCH ||
+               event.eventType == TraceEventType.JUNCTION_PARTICIPANT_DISPATCH)
+                event.content?.text
+            else null
+        if(!inputText.isNullOrBlank() && inputText != "N/A" && inputText != "null") {
+            sections.add(createExpandableSection("Input Content", inputText, "📥", "#28a745"))
+        }
+
+        // Add outputText
+        val outputText = outputKey?.let { event.metadata[it]?.toString() } ?:
+            if(event.eventType == TraceEventType.PIPE_SUCCESS || event.eventType == TraceEventType.API_CALL_SUCCESS ||
+               event.eventType == TraceEventType.AGENT_RESPONSE || event.eventType.name.startsWith("MANIFOLD_") ||
+               event.eventType.name.startsWith("DISTRIBUTION_GRID_") ||
+               event.eventType == TraceEventType.JUNCTION_PARTICIPANT_RESPONSE)
+                event.content?.text
+            else null
+        if(!outputText.isNullOrBlank() && outputText != "N/A" && outputText != "null") {
+            sections.add(createExpandableSection("Output Content", outputText, "📤", "#17a2b8"))
+        }
+
+        // Add requestObject
+        val requestObject = requestObjectKey?.let { event.metadata[it]?.toString() }
+        if(!requestObject.isNullOrBlank() && requestObject != "N/A" && requestObject != "null") {
+            sections.add(createExpandableSection("Request Object", requestObject, "📦", "#6c757d"))
+        }
+
+        // Add generatedContent
+        val generatedContent = generatedContentKey?.let { event.metadata[it]?.toString() }
+        if(!generatedContent.isNullOrBlank() && generatedContent != "N/A" && generatedContent != "null") {
+            sections.add(createExpandableSection("Generated Content", generatedContent, "✨", "#fd7e14"))
+        }
+
+        // Add fullPrompt
+        val fullPrompt = fullPromptKey?.let { event.metadata[it]?.toString() }
+        if(!fullPrompt.isNullOrBlank() && fullPrompt != "N/A" && fullPrompt != "null") {
+            sections.add(createExpandableSection("Full Prompt", fullPrompt, "📝", "#000000"))
+        }
+
+        // Add contentText
+        val contentText = contentTextKey?.let { event.metadata[it]?.toString() }
+        if(!contentText.isNullOrBlank() && contentText != "N/A" && contentText != "null") {
+            sections.add(createExpandableSection("Content Text", contentText, "📄", "#000000"))
+        }
+
+        // Add pageKey
+        val pageKey = pageKeyKey?.let { event.metadata[it]?.toString() }
+        if(!pageKey.isNullOrBlank() && pageKey != "N/A" && pageKey != "null") {
+            sections.add(createExpandableSection("Page Key", pageKey, "🔑", "#ffc107"))
+        }
+
+        // Add contextWindow
+        val contextWindow = contextWindowKey?.let { event.metadata[it]?.toString() }
+        if(!contextWindow.isNullOrBlank() && contextWindow != "N/A" && contextWindow != "null") {
+            sections.add(createExpandableSection("Context Window", contextWindow, "🪟", "#6f42c1"))
+        }
+
+        // Add miniBank
+        val miniBank = miniBankKey?.let { event.metadata[it]?.toString() }
+        if(!miniBank.isNullOrBlank() && miniBank != "N/A" && miniBank != "null") {
+            sections.add(createExpandableSection("Mini Bank", miniBank, "🏦", "#e83e8c"))
+        }
+
+        // Add reasoningContent
+        if(reasoningKey != null) {
+            val reasoningContent = event.metadata[reasoningKey].toString()
+            if(reasoningContent.isNotBlank() && reasoningContent != "N/A" && reasoningContent != "null") {
+                sections.add(createExpandableSection("reasoningContent", reasoningContent, "🧠", "#007bff"))
             }
-            parts.add("<div class=\"content-preview\"><pre>${escapeHtml(preview)}</pre></div>")
         }
+
+        // Add context snapshot if present
         event.contextSnapshot?.let { snapshot ->
-            parts.add("<span class=\"context-chip\">Context: ${escapeHtml(snapshot.toString())}</span>")
+            sections.add("<span class=\"context-chip\">Context: ${escapeHtml(snapshot.toString())}</span>")
         }
-        if(parts.isEmpty()) return "<p class=\"empty-state\">No content captured for this event.</p>"
-        val inner = parts.joinToString("")
+
+        if(sections.isEmpty()) return "<p class=\"empty-state\">No content captured for this event.</p>"
+        val inner = sections.joinToString("")
         return "<details class=\"event-details\"><summary>${escapeHtml(summaryLabel)}</summary>$inner</details>"
     }
 
