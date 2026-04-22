@@ -83,41 +83,72 @@ class McpBridgeHttpHostTest {
 
     private fun startServer(port: Int, authKey: String? = null, mcpJson: String? = null): Boolean {
         val jsonToUse = mcpJson ?: testMcpJson
-        setEnvVar("TPIPE_MCP_JSON", jsonToUse)
+        
+        System.setProperty("TPIPE_MCP_JSON", jsonToUse)
 
         val targetPort = if (port == 0) {
             val socket = ServerSocket(0)
+            socket.reuseAddress = true
             val p = socket.localPort
             socket.close()
+            Thread.sleep(500)
             p
         } else {
             port
         }
 
         val latch = CountDownLatch(1)
+        val errorHolder = java.util.concurrent.atomic.AtomicReference<Exception>(null)
 
         serverExecutor = Executors.newSingleThreadExecutor()
 
         serverFuture = serverExecutor!!.submit {
-            latch.countDown()
-            McpBridgeHttpHost.run(targetPort, authKey, "127.0.0.1")
-        }
-
-        latch.await()
-
-        var attempts = 0
-        while (attempts < 50) {
             try {
-                val probe = Socket()
-                probe.connect(InetSocketAddress("127.0.0.1", targetPort), 50)
-                probe.close()
-                serverPort = targetPort
-                break
+                latch.countDown()
+                McpBridgeHttpHost.run(targetPort, authKey, "127.0.0.1")
             } catch (e: Exception) {
-                attempts++
-                Thread.sleep(100)
+                errorHolder.set(e)
             }
         }
+
+        try {
+            latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            return false
+        }
+
+        Thread.sleep(1000)
+
+        var attempts = 0
+        while (attempts < 200) {
+            try {
+                errorHolder.get()?.let { throw it }
+                
+                val probe = Socket()
+                probe.soTimeout = 1000
+                probe.connect(InetSocketAddress("127.0.0.1", targetPort), 500)
+                probe.close()
+                serverPort = targetPort
+                Thread.sleep(500)
+                return true
+            } catch (e: Exception) {
+                if (attempts % 20 == 0) {
+                    println("Server probe attempt $attempts failed: ${e.message}")
+                }
+                attempts++
+                try {
+                    Thread.sleep(100)
+                } catch (sleepErr: InterruptedException) {
+                    return false
+                }
+            }
+        }
+        
+        errorHolder.get()?.let { 
+            println("Server failed with: ${it.message}")
+            throw it 
+        }
+        
         return serverPort > 0
     }
 
@@ -129,6 +160,9 @@ class McpBridgeHttpHostTest {
     }
 
     private fun sendJsonRpcRequest(method: String, params: Map<String, Any>? = null, token: String? = null): Pair<Int, String> {
+        if (serverPort <= 0) {
+            return -1 to "Server not started (serverPort=$serverPort)"
+        }
         val url = URL("http://127.0.0.1:$serverPort/mcp/bridge")
         val conn = url.openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
@@ -138,23 +172,35 @@ class McpBridgeHttpHostTest {
             conn.setRequestProperty("Authorization", "Bearer $token")
         }
         conn.doOutput = true
-        conn.connectTimeout = 5000
-        conn.readTimeout = 5000
+        conn.connectTimeout = 10000
+        conn.readTimeout = 10000
 
         val requestBody = buildString {
             append("""{"jsonrpc":"2.0","id":1,"method":"$method"""")
             if (params != null) {
                 append(",\"params\":")
-                append(params.entries.joinToString(",", "{", "}") { "\"${it.key}\":${formatValue(it.value)}\"" })
+                append(params.entries.joinToString(",", "{", "}") { "\"${it.key}\":${formatValue(it.value)}" })
             }
             append("}")
         }
 
-        conn.outputStream.use { it.write(requestBody.toByteArray()) }
+        try {
+            conn.outputStream.use { it.write(requestBody.toByteArray()) }
+        } catch (e: Exception) {
+            return -1 to "Write failed: ${e.message}"
+        }
 
-        val status = conn.responseCode
-        val body = conn.inputStream.use { i -> BufferedReader(InputStreamReader(i)).readText() }
-        return status to body
+        try {
+            val status = conn.responseCode
+            val body = try {
+                conn.inputStream.use { i -> BufferedReader(InputStreamReader(i)).readText() }
+            } catch (e: Exception) {
+                "No body: ${e.message}"
+            }
+            return status to body
+        } catch (e: Exception) {
+            return -1 to "Read failed: ${e.message}"
+        }
     }
 
     private fun formatValue(value: Any): String = when (value) {
@@ -177,7 +223,7 @@ class McpBridgeHttpHostTest {
     {
         val originalEnv = System.getenv("TPIPE_MCP_JSON")
         try {
-            setEnvVar("TPIPE_MCP_JSON", testMcpJson)
+            System.setProperty("TPIPE_MCP_JSON", testMcpJson)
             startServer(0)
 
             val (status, _) = sendJsonRpcRequest("initialize", mapOf(
@@ -190,9 +236,9 @@ class McpBridgeHttpHostTest {
         }
         finally
         {
-            clearEnvVar("TPIPE_MCP_JSON")
+            System.clearProperty("TPIPE_MCP_JSON")
             if (originalEnv == null) {
-                clearEnvVar("TPIPE_MCP_JSON")
+                System.clearProperty("TPIPE_MCP_JSON")
             }
             stopServer()
         }
@@ -201,7 +247,7 @@ class McpBridgeHttpHostTest {
     @Test
     fun testMissingTpipeMcpJsonThrowsIllegalStateException()
     {
-        clearEnvVar("TPIPE_MCP_JSON")
+        System.clearProperty("TPIPE_MCP_JSON")
         System.clearProperty("TPIPE_MCP_JSON")
 
         var exceptionThrown = false
@@ -239,7 +285,7 @@ class McpBridgeHttpHostTest {
     @Test
     fun testAuthInstallsBearerAuthOnServer()
     {
-        setEnvVar("TPIPE_MCP_JSON", testMcpJson)
+        System.setProperty("TPIPE_MCP_JSON", testMcpJson)
         try
         {
             startServer(0, validAuthKey)
@@ -252,7 +298,7 @@ class McpBridgeHttpHostTest {
         }
         finally
         {
-            clearEnvVar("TPIPE_MCP_JSON")
+            System.clearProperty("TPIPE_MCP_JSON")
             stopServer()
         }
     }
@@ -260,7 +306,7 @@ class McpBridgeHttpHostTest {
     @Test
     fun testAuthRejectsWrongTokenReturns401()
     {
-        setEnvVar("TPIPE_MCP_JSON", testMcpJson)
+        System.setProperty("TPIPE_MCP_JSON", testMcpJson)
         try
         {
             startServer(0, validAuthKey)
@@ -275,7 +321,7 @@ class McpBridgeHttpHostTest {
         }
         finally
         {
-            clearEnvVar("TPIPE_MCP_JSON")
+            System.clearProperty("TPIPE_MCP_JSON")
             stopServer()
         }
     }
@@ -283,7 +329,7 @@ class McpBridgeHttpHostTest {
     @Test
     fun testAuthAcceptsCorrectTokenReturns200()
     {
-        setEnvVar("TPIPE_MCP_JSON", testMcpJson)
+        System.setProperty("TPIPE_MCP_JSON", testMcpJson)
         try
         {
             startServer(0, validAuthKey)
@@ -298,7 +344,7 @@ class McpBridgeHttpHostTest {
         }
         finally
         {
-            clearEnvVar("TPIPE_MCP_JSON")
+            System.clearProperty("TPIPE_MCP_JSON")
             stopServer()
         }
     }
@@ -306,7 +352,7 @@ class McpBridgeHttpHostTest {
     @Test
     fun testMcpJsonToolsListViaHttpEndpoint()
     {
-        setEnvVar("TPIPE_MCP_JSON", testMcpJson)
+        System.setProperty("TPIPE_MCP_JSON", testMcpJson)
         try
         {
             startServer(0)
@@ -321,7 +367,7 @@ class McpBridgeHttpHostTest {
         }
         finally
         {
-            clearEnvVar("TPIPE_MCP_JSON")
+            System.clearProperty("TPIPE_MCP_JSON")
             stopServer()
         }
     }
@@ -329,7 +375,7 @@ class McpBridgeHttpHostTest {
     @Test
     fun testMcpJsonResourcesListViaHttpEndpoint()
     {
-        setEnvVar("TPIPE_MCP_JSON", testMcpJson)
+        System.setProperty("TPIPE_MCP_JSON", testMcpJson)
         try
         {
             startServer(0)
@@ -344,7 +390,7 @@ class McpBridgeHttpHostTest {
         }
         finally
         {
-            clearEnvVar("TPIPE_MCP_JSON")
+            System.clearProperty("TPIPE_MCP_JSON")
             stopServer()
         }
     }
@@ -357,17 +403,32 @@ class McpBridgeHttpHostTest {
     }
 
     private fun setEnvVar(name: String, value: String) {
-        // Environment variable setting - no-op stub, actual implementation via clearEnvVar
+        try {
+            val processEnvironmentClass = Class.forName("java.lang.ProcessEnvironment")
+            val theEnvironmentField = processEnvironmentClass.getDeclaredField("theEnvironment")
+            theEnvironmentField.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            val env = theEnvironmentField.get(null) as MutableMap<String, String>
+            env[name] = value
+            println("setEnvVar: Set via ProcessEnvironment: $name")
+            println("setEnvVar: Verification in main thread: ${System.getenv(name)?.take(50)}")
+        } catch (e: Exception) {
+            System.setProperty(name, value)
+            println("setEnvVar: Set via System.setProperty: $name (${e.message})")
+        }
     }
 
     private fun clearEnvVar(name: String) {
         try {
-            val field = System::class.java.getDeclaredField("env")
-            field.isAccessible = true
+            val processEnvironmentClass = Class.forName("java.lang.ProcessEnvironment")
+            val theEnvironmentField = processEnvironmentClass.getDeclaredField("theEnvironment")
+            theEnvironmentField.isAccessible = true
             @Suppress("UNCHECKED_CAST")
-            val env = field.get(null) as MutableMap<String, String>
+            val env = theEnvironmentField.get(null) as MutableMap<String, String>
             env.remove(name)
+            println("clearEnvVar: Removed via ProcessEnvironment: $name")
         } catch (e: Exception) {
+            println("clearEnvVar: Failed to remove via ProcessEnvironment: ${e.message}")
         }
         System.clearProperty(name)
     }

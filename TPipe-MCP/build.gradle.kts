@@ -51,7 +51,14 @@ sourceSets {
     }
 }
 
-// Handle duplicate resources
+tasks.test {
+    jvmArgs(
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        "--add-opens=java.base/java.util=ALL-UNNAMED",
+        "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+        "--add-opens=java.base/java.io=ALL-UNNAMED"
+    )
+}
 tasks.processResources {
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
 }

@@ -19,7 +19,8 @@ object McpBridgeHttpHost {
 
     private fun getMcpJson(): String {
         return System.getenv(ENV_MCP_JSON)
-            ?: throw IllegalStateException("Missing $ENV_MCP_JSON environment variable")
+            ?: System.getProperty(ENV_MCP_JSON)
+            ?: throw IllegalStateException("Missing $ENV_MCP_JSON environment variable or system property")
     }
 
     private fun createHost(): McpBridgeServerHost {

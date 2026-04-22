@@ -6,9 +6,12 @@ import com.TTT.MCP.Models.JsonRpcResponse
 import com.TTT.MCP.Models.McpJsonRpcError
 import com.TTT.MCP.Server.McpPromptProvider
 import com.TTT.MCP.Server.McpResourceProvider
+import com.TTT.MCP.Server.McpRootsProvider
+import com.TTT.MCP.Server.McpSamplingHandler
 import com.TTT.MCP.Server.McpToolRegistry
 import com.TTT.PipeContextProtocol.PcpContext
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
+import io.modelcontextprotocol.kotlin.sdk.types.ListRootsResult
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -24,6 +27,8 @@ class McpProtocolHandler(
     private val toolRegistry: McpToolRegistry,
     private val resourceProvider: McpResourceProvider,
     private val promptProvider: McpPromptProvider,
+    private val rootsProvider: McpRootsProvider? = null,
+    private val samplingHandler: McpSamplingHandler? = null,
     private val serverInfo: Implementation = Implementation(name = "tpipe", version = "1.0.0"),
     private val capabilities: ServerCapabilities = ServerCapabilities(
         tools = ServerCapabilities.Tools(listChanged = true),
@@ -39,6 +44,8 @@ class McpProtocolHandler(
         const val METHOD_RESOURCES_READ = "resources/read"
         const val METHOD_PROMPTS_LIST = "prompts/list"
         const val METHOD_PROMPTS_GET = "prompts/get"
+        const val METHOD_ROOTS_LIST = "roots/list"
+        const val METHOD_SAMPLING_CREATE = "sampling/create"
         const val METHOD_SHUTDOWN = "shutdown"
         const val METHOD_NOTIFICATIONS_INITIALIZED = "notifications/initialized"
 
@@ -175,7 +182,9 @@ class McpProtocolHandler(
                 METHOD_RESOURCES_LIST,
                 METHOD_RESOURCES_READ,
                 METHOD_PROMPTS_LIST,
-                METHOD_PROMPTS_GET -> {
+                METHOD_PROMPTS_GET,
+                METHOD_ROOTS_LIST,
+                METHOD_SAMPLING_CREATE -> {
                     if (serverState != ServerState.READY) {
                         return notInitializedResponse(request)
                     }
@@ -186,6 +195,8 @@ class McpProtocolHandler(
                         METHOD_RESOURCES_READ -> handleResourcesRead(request)
                         METHOD_PROMPTS_LIST -> handlePromptsList(request)
                         METHOD_PROMPTS_GET -> handlePromptsGet(request)
+                        METHOD_ROOTS_LIST -> handleRootsList(request)
+                        METHOD_SAMPLING_CREATE -> handleSamplingCreate(request)
                         else -> JsonRpcResponse.error(
                             id = request.id,
                             error = McpJsonRpcError(
@@ -480,5 +491,50 @@ class McpProtocolHandler(
             put("messages", serializeToJson(result.messages))
         }
         return JsonRpcResponse.success(id = request.id ?: JsonPrimitive(0), result = resultJson)
+    }
+
+    /**
+     * Handles the roots/list method.
+     * @param request The JSON-RPC request
+     * @return Roots list response
+     */
+    private fun handleRootsList(request: JsonRpcRequest): JsonRpcResponse {
+        val rootsResult = rootsProvider?.listRoots() ?: ListRootsResult(roots = emptyList())
+        val result = buildJsonObject {
+            put("roots", serializeToJson(rootsResult.roots))
+        }
+        return JsonRpcResponse.success(id = request.id ?: JsonPrimitive(0), result = result)
+    }
+
+    /**
+     * Handles the sampling/create method.
+     * @param request The JSON-RPC request
+     * @return Sampling create response
+     */
+    private fun handleSamplingCreate(request: JsonRpcRequest): JsonRpcResponse {
+        val samplingResult = samplingHandler?.handleSamplingCreate(request)
+        return when {
+            samplingResult == null -> JsonRpcResponse.error(
+                id = request.id,
+                error = McpJsonRpcError(
+                    code = JsonRpcError.methodNotFound("Sampling not configured").code,
+                    message = "Sampling handler not configured"
+                )
+            )
+            samplingResult.isFailure -> JsonRpcResponse.error(
+                id = request.id,
+                error = McpJsonRpcError(
+                    code = JsonRpcError.internalError("Sampling failed: ${samplingResult.exceptionOrNull()?.message}").code,
+                    message = "Sampling failed"
+                )
+            )
+            else -> {
+                val samplingData = samplingResult.getOrNull()
+                val resultJson = buildJsonObject {
+                    put("content", serializeToJson(samplingData))
+                }
+                JsonRpcResponse.success(id = request.id ?: JsonPrimitive(0), result = resultJson)
+            }
+        }
     }
 }
