@@ -121,8 +121,10 @@ class McpHttpHostTest
         var serverThread: Thread? = null
 
         val latch = CountDownLatch(1)
-        serverThread = thread(start = false) {
-            try {
+        serverThread = thread(start = false)
+        {
+            try
+            {
                 latch.countDown()
                 McpHttpHost.run(port = 0, bindAddress = "127.0.0.1")
             } catch (e: IllegalStateException) {

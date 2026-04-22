@@ -104,8 +104,17 @@ class McpProtocolHandler(
         return validMethodPattern.matches(method)
     }
 
+    /**
+     * Returns the current server state.
+     * @return Current server state
+     */
     fun getServerState(): ServerState = serverState
 
+    /**
+     * Routes the incoming JSON-RPC request to the appropriate handler.
+     * @param request The JSON-RPC request to route
+     * @return Routing result
+     */
     fun route(request: JsonRpcRequest): JsonRpcResponse {
         return try {
             validateRequest(request)?.let { return it }
@@ -166,6 +175,11 @@ class McpProtocolHandler(
         }
     }
 
+    /**
+     * Returns an error response indicating the server is not initialized.
+     * @param request The JSON-RPC request
+     * @return Error response for uninitialized server
+     */
     private fun notInitializedResponse(request: JsonRpcRequest): JsonRpcResponse {
         return JsonRpcResponse.error(
             id = request.id,
@@ -176,6 +190,11 @@ class McpProtocolHandler(
         )
     }
 
+    /**
+     * Handles the initialize method.
+     * @param request The JSON-RPC request
+     * @return Initialize response
+     */
     private fun handleInitialize(request: JsonRpcRequest): JsonRpcResponse {
         val serverInfoObj = buildJsonObject {
             put("name", serverInfo.name)
@@ -207,6 +226,11 @@ class McpProtocolHandler(
         return JsonRpcResponse.success(id = request.id ?: JsonPrimitive(0), result = result)
     }
 
+    /**
+     * Handles the shutdown method.
+     * @param request The JSON-RPC request
+     * @return Shutdown response
+     */
     private fun handleShutdown(request: JsonRpcRequest): JsonRpcResponse {
         serverState = ServerState.SHUTTING_DOWN
         return JsonRpcResponse.success(
@@ -215,6 +239,11 @@ class McpProtocolHandler(
         )
     }
 
+    /**
+     * Handles the notifications/initialized method.
+     * @param request The JSON-RPC request
+     * @return Success response
+     */
     private fun handleNotificationsInitialized(request: JsonRpcRequest): JsonRpcResponse {
         return JsonRpcResponse.success(
             id = request.id ?: JsonPrimitive(0),
@@ -222,6 +251,11 @@ class McpProtocolHandler(
         )
     }
 
+    /**
+     * Handles the tools/list method.
+     * @param request The JSON-RPC request
+     * @return Tools list response
+     */
     private fun handleToolsList(request: JsonRpcRequest): JsonRpcResponse {
         val tools = toolRegistry.listTools()
         val result = buildJsonObject {
@@ -230,6 +264,11 @@ class McpProtocolHandler(
         return JsonRpcResponse.success(id = request.id ?: JsonPrimitive(0), result = result)
     }
 
+    /**
+     * Handles the tools/call method.
+     * @param request The JSON-RPC request
+     * @return Tool call response
+     */
     private fun handleToolsCall(request: JsonRpcRequest): JsonRpcResponse {
         val params = request.params
             ?: return JsonRpcResponse.error(
@@ -292,12 +331,22 @@ class McpProtocolHandler(
         return JsonRpcResponse.success(id = request.id ?: JsonPrimitive(0), result = resultJson)
     }
 
+    /**
+     * Validates an argument key format.
+     * @param key The argument key to validate
+     * @return True if valid argument key format
+     */
     private fun isValidArgumentKey(key: String): Boolean {
         if (key.isBlank()) return false
         val validKeyPattern = Regex("^[a-zA-Z_][a-zA-Z0-9_]*$")
         return validKeyPattern.matches(key)
     }
 
+    /**
+     * Handles the resources/list method.
+     * @param request The JSON-RPC request
+     * @return Resources list response
+     */
     private fun handleResourcesList(request: JsonRpcRequest): JsonRpcResponse {
         val resources = resourceProvider.listResources()
         val result = buildJsonObject {
@@ -306,6 +355,11 @@ class McpProtocolHandler(
         return JsonRpcResponse.success(id = request.id ?: JsonPrimitive(0), result = result)
     }
 
+    /**
+     * Handles the resources/read method.
+     * @param request The JSON-RPC request
+     * @return Resource read response
+     */
     private fun handleResourcesRead(request: JsonRpcRequest): JsonRpcResponse {
         val params = request.params
             ?: return JsonRpcResponse.error(
@@ -332,6 +386,11 @@ class McpProtocolHandler(
         return JsonRpcResponse.success(id = request.id ?: JsonPrimitive(0), result = resultJson)
     }
 
+    /**
+     * Handles the prompts/list method.
+     * @param request The JSON-RPC request
+     * @return Prompts list response
+     */
     private fun handlePromptsList(request: JsonRpcRequest): JsonRpcResponse {
         val prompts = promptProvider.listPrompts()
         val result = buildJsonObject {
@@ -340,6 +399,11 @@ class McpProtocolHandler(
         return JsonRpcResponse.success(id = request.id ?: JsonPrimitive(0), result = result)
     }
 
+    /**
+     * Handles the prompts/get method.
+     * @param request The JSON-RPC request
+     * @return Prompt get response
+     */
     private fun handlePromptsGet(request: JsonRpcRequest): JsonRpcResponse {
         val params = request.params
             ?: return JsonRpcResponse.error(

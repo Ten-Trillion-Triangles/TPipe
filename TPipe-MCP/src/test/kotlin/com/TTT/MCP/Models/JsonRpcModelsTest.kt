@@ -13,12 +13,14 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 
-class JsonRpcModelsTest {
+class JsonRpcModelsTest
+{
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
     @Test
-    fun testJsonRpcRequestParsing() {
+    fun testJsonRpcRequestParsing()
+    {
         val jsonStr = """
             {
                 "jsonrpc": "2.0",
@@ -36,7 +38,8 @@ class JsonRpcModelsTest {
     }
 
     @Test
-    fun testJsonRpcRequestNotification() {
+    fun testJsonRpcRequestNotification()
+    {
         val jsonStr = """
             {
                 "jsonrpc": "2.0",
@@ -52,7 +55,8 @@ class JsonRpcModelsTest {
     }
 
     @Test
-    fun testJsonRpcResponseSuccess() {
+    fun testJsonRpcResponseSuccess()
+    {
         val response = JsonRpcResponse.success(
             id = JsonPrimitive(1),
             result = JsonObject(mapOf("result" to JsonPrimitive("success")))
@@ -65,7 +69,8 @@ class JsonRpcModelsTest {
     }
 
     @Test
-    fun testJsonRpcResponseError() {
+    fun testJsonRpcResponseError()
+    {
         val response = JsonRpcResponse.error(
             id = JsonPrimitive(1),
             error = McpJsonRpcError(
@@ -80,7 +85,8 @@ class JsonRpcModelsTest {
     }
 
     @Test
-    fun testJsonRpcErrorFactoryMethods() {
+    fun testJsonRpcErrorFactoryMethods()
+    {
         assertEquals(-32700, JsonRpcError.parseError("Parse error").code)
         assertEquals(-32600, JsonRpcError.invalidRequest("Invalid request").code)
         assertEquals(-32601, JsonRpcError.methodNotFound("Method not found").code)
@@ -89,14 +95,16 @@ class JsonRpcModelsTest {
     }
 
     @Test
-    fun testJsonRpcServerError() {
+    fun testJsonRpcServerError()
+    {
         val error = JsonRpcError.serverError(-32000, "Server error")
         assertEquals(-32000, error.code)
         assertEquals("Server error", error.message)
     }
 
     @Test
-    fun testJsonRpcServerErrorRange() {
+    fun testJsonRpcServerErrorRange()
+    {
         val errorMin = JsonRpcError.serverError(-32099, "Min server error")
         val errorMax = JsonRpcError.serverError(-32000, "Max server error")
 
@@ -105,7 +113,8 @@ class JsonRpcModelsTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun testJsonRpcServerErrorOutOfRange() {
+    fun testJsonRpcServerErrorOutOfRange()
+    {
         JsonRpcError.serverError(-32100, "Invalid")
     }
 
@@ -126,7 +135,8 @@ class JsonRpcModelsTest {
     }
 
     @Test
-    fun testJsonRpcBatchNotificationOnly() {
+    fun testJsonRpcBatchNotificationOnly()
+    {
         val jsonStr = """
             [
                 {"jsonrpc": "2.0", "method": "notify1"},
@@ -140,7 +150,8 @@ class JsonRpcModelsTest {
     }
 
     @Test
-    fun testJsonRpcBatchResponse() {
+    fun testJsonRpcBatchResponse()
+    {
         val responses = listOf(
             JsonRpcResponse.success(id = JsonPrimitive(1)),
             JsonRpcResponse.error(
@@ -157,7 +168,8 @@ class JsonRpcModelsTest {
     }
 
     @Test
-    fun testJsonRpcRequestWithStringId() {
+    fun testJsonRpcRequestWithStringId()
+    {
         val jsonStr = """
             {"jsonrpc": "2.0", "id": "abc123", "method": "test"}
         """.trimIndent()
@@ -168,7 +180,8 @@ class JsonRpcModelsTest {
     }
 
     @Test
-    fun testJsonRpcRequestWithNullId() {
+    fun testJsonRpcRequestWithNullId()
+    {
         val jsonStr = """
             {"jsonrpc": "2.0", "id": null, "method": "test"}
         """.trimIndent()
@@ -179,7 +192,8 @@ class JsonRpcModelsTest {
     }
 
     @Test
-    fun testJsonRpcErrorWithData() {
+    fun testJsonRpcErrorWithData()
+    {
         val errorData = JsonObject(mapOf("details" to JsonPrimitive("extra info")))
         val error = JsonRpcError.invalidParams("Invalid params", errorData)
 
@@ -189,7 +203,8 @@ class JsonRpcModelsTest {
     }
 
     @Test
-    fun testJsonRpcResponseWithJsonRpcError() {
+    fun testJsonRpcResponseWithJsonRpcError()
+    {
         val response = JsonRpcResponse.error(
             id = JsonPrimitive(1),
             jsonRpcError = JsonRpcError.methodNotFound("Method not found")
@@ -199,8 +214,9 @@ class JsonRpcModelsTest {
         assertEquals(-32601, response.error?.code)
     }
 
-@Test
-    fun testJsonRpcBatchResponseSerialization() {
+    @Test
+    fun testJsonRpcBatchResponseSerialization()
+    {
         val responses = listOf(
             JsonRpcResponse.success(id = JsonPrimitive(1)),
             JsonRpcResponse.success(id = JsonPrimitive(2))

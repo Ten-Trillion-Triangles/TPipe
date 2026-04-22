@@ -33,18 +33,23 @@ object McpBridgeHttpHost {
      * @param authKey Optional authentication key. When non-null and non-blank, requires Bearer token auth
      * @param bindAddress The address to bind to (default 127.0.0.1 for local-only access)
      */
-    fun run(port: Int, authKey: String? = null, bindAddress: String = "127.0.0.1") {
+    fun run(port: Int, authKey: String? = null, bindAddress: String = "127.0.0.1")
+    {
         runBlocking {
             val host = createHost()
 
             embeddedServer(CIO, host = bindAddress, port = port) {
-                if (!authKey.isNullOrBlank()) {
+                if (!authKey.isNullOrBlank())
+                {
                     install(Authentication) {
                         bearer("mcp-auth") {
                             authenticate { tokenCredential: io.ktor.server.auth.BearerTokenCredential ->
-                                if (tokenCredential.token == authKey) {
+                                if (tokenCredential.token == authKey)
+                                {
                                     UserIdPrincipal("mcp-client")
-                                } else {
+                                }
+                                else
+                                {
                                     null
                                 }
                             }
@@ -55,7 +60,9 @@ object McpBridgeHttpHost {
                             mcpStreamableHttp("/mcp/bridge") { host.getServer() }
                         }
                     }
-                } else {
+                }
+                else
+                {
                     mcpStreamableHttp("/mcp/bridge") { host.getServer() }
                 }
             }.start(wait = true)

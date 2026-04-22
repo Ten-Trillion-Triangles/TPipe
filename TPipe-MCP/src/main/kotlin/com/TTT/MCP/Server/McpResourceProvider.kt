@@ -151,27 +151,34 @@ class McpResourceProvider(private val pcpContext: PcpContext) {
      * @param context The PCP context containing access control settings
      * @return true if the path is allowed, false otherwise
      */
-    private fun isPathAllowed(path: String, context: PcpContext): Boolean {
+    private fun isPathAllowed(path: String, context: PcpContext): Boolean
+    {
         // If no restrictions are defined, allow all paths
-        if (context.allowedDirectoryPaths.isEmpty() && context.forbiddenDirectoryPaths.isEmpty()) {
+        if (context.allowedDirectoryPaths.isEmpty() && context.forbiddenDirectoryPaths.isEmpty())
+        {
             return true
         }
 
-        val normalized = try {
+        val normalized = try
+        {
             File(path).canonicalPath
-        } catch (e: Exception) {
+        }
+        catch (e: Exception)
+        {
             return false
         }
 
         // Check forbidden paths first (deny takes precedence)
         if (context.forbiddenDirectoryPaths.any { forbidden ->
             normalized.startsWith(File(forbidden).canonicalPath)
-        }) {
+        })
+        {
             return false
         }
 
         // If allowed paths are specified, check against them
-        if (context.allowedDirectoryPaths.isNotEmpty()) {
+        if (context.allowedDirectoryPaths.isNotEmpty())
+        {
             return context.allowedDirectoryPaths.any { allowed ->
                 normalized.startsWith(File(allowed).canonicalPath)
             }

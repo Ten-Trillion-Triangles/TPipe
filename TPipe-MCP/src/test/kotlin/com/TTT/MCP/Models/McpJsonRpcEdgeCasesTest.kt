@@ -8,12 +8,14 @@ import kotlin.test.assertFailsWith
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 
-class McpJsonRpcEdgeCasesTest {
+class McpJsonRpcEdgeCasesTest
+{
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
     @Test
-    fun testJsonRpcRequestMissingJsonrpcFieldThrows() {
+    fun testJsonRpcRequestMissingJsonrpcFieldThrows()
+    {
         val jsonStr = """
             {"id": 1, "method": "test.method"}
         """.trimIndent()
@@ -25,7 +27,8 @@ class McpJsonRpcEdgeCasesTest {
     }
 
     @Test
-    fun testJsonRpcRequestMissingMethodFieldThrows() {
+    fun testJsonRpcRequestMissingMethodFieldThrows()
+    {
         val jsonStr = """
             {"jsonrpc": "2.0", "id": 1}
         """.trimIndent()
@@ -37,7 +40,8 @@ class McpJsonRpcEdgeCasesTest {
     }
 
     @Test
-    fun testJsonRpcRequestStringIdZeroIsNotNotification() {
+    fun testJsonRpcRequestStringIdZeroIsNotNotification()
+    {
         val jsonStr = """
             {"jsonrpc": "2.0", "id": "0", "method": "test"}
         """.trimIndent()
@@ -48,7 +52,8 @@ class McpJsonRpcEdgeCasesTest {
     }
 
     @Test
-    fun testJsonRpcRequestStringIdNullIsNotification() {
+    fun testJsonRpcRequestStringIdNullIsNotification()
+    {
         val jsonStr = """
             {"jsonrpc": "2.0", "id": null, "method": "test"}
         """.trimIndent()
@@ -59,7 +64,8 @@ class McpJsonRpcEdgeCasesTest {
     }
 
     @Test
-    fun testJsonRpcBatchSingleNotificationIsNotificationBatch() {
+    fun testJsonRpcBatchSingleNotificationIsNotificationBatch()
+    {
         val jsonStr = """
             [{"jsonrpc": "2.0", "method": "notify"}]
         """.trimIndent()
@@ -71,14 +77,16 @@ class McpJsonRpcEdgeCasesTest {
     }
 
     @Test
-    fun testJsonRpcServerErrorMinus32100Throws() {
+    fun testJsonRpcServerErrorMinus32100Throws()
+    {
         assertFailsWith<IllegalArgumentException> {
             JsonRpcError.serverError(-32100, "Invalid server error code")
         }
     }
 
     @Test
-    fun testJsonRpcBatchResponseSerializationFormat() {
+    fun testJsonRpcBatchResponseSerializationFormat()
+    {
         val responses = listOf(
             JsonRpcResponse.success(id = JsonPrimitive(1)),
             JsonRpcResponse.success(id = JsonPrimitive(2))

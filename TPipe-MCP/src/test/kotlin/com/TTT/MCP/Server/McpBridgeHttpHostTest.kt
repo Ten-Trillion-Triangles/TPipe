@@ -173,7 +173,8 @@ class McpBridgeHttpHostTest {
     }
 
     @Test
-    fun testRunWithPortZeroAndValidEnvVarSetsUpServer() {
+    fun testRunWithPortZeroAndValidEnvVarSetsUpServer()
+    {
         val originalEnv = System.getenv("TPIPE_MCP_JSON")
         try {
             setEnvVar("TPIPE_MCP_JSON", testMcpJson)
@@ -186,7 +187,9 @@ class McpBridgeHttpHostTest {
             ))
 
             assertEquals("Server should respond with 200 for valid MCP request", 200, status)
-        } finally {
+        }
+        finally
+        {
             clearEnvVar("TPIPE_MCP_JSON")
             if (originalEnv == null) {
                 clearEnvVar("TPIPE_MCP_JSON")
@@ -196,30 +199,36 @@ class McpBridgeHttpHostTest {
     }
 
     @Test
-    fun testMissingTpipeMcpJsonThrowsIllegalStateException() {
+    fun testMissingTpipeMcpJsonThrowsIllegalStateException()
+    {
         clearEnvVar("TPIPE_MCP_JSON")
         System.clearProperty("TPIPE_MCP_JSON")
 
         var exceptionThrown = false
         var serverThread: Thread? = null
 
-        try {
+        try
+        {
             val latch = CountDownLatch(1)
             serverThread = thread(start = false) {
-                try {
+                try
+                {
                     McpBridgeHttpHost.run(0)
                 } catch (e: IllegalStateException) {
                     if (e.message?.contains("TPIPE_MCP_JSON") == true) {
                         exceptionThrown = true
                     }
                 } catch (e: Exception) {
-                } finally {
+                } finally
+                {
                     latch.countDown()
                 }
             }
             serverThread.start()
             latch.await()
-        } finally {
+        }
+        finally
+        {
             serverThread?.interrupt()
             serverThread?.join(2000)
         }
@@ -228,9 +237,11 @@ class McpBridgeHttpHostTest {
     }
 
     @Test
-    fun testAuthInstallsBearerAuthOnServer() {
+    fun testAuthInstallsBearerAuthOnServer()
+    {
         setEnvVar("TPIPE_MCP_JSON", testMcpJson)
-        try {
+        try
+        {
             startServer(0, validAuthKey)
 
             val (initStatus, _) = initializeServer()
@@ -238,16 +249,20 @@ class McpBridgeHttpHostTest {
 
             val (toolsStatus, _) = sendJsonRpcRequest("tools/list", token = validAuthKey)
             assertEquals("Should accept valid token for tools/list", 200, toolsStatus)
-        } finally {
+        }
+        finally
+        {
             clearEnvVar("TPIPE_MCP_JSON")
             stopServer()
         }
     }
 
     @Test
-    fun testAuthRejectsWrongTokenReturns401() {
+    fun testAuthRejectsWrongTokenReturns401()
+    {
         setEnvVar("TPIPE_MCP_JSON", testMcpJson)
-        try {
+        try
+        {
             startServer(0, validAuthKey)
 
             val (status, _) = sendJsonRpcRequest("initialize", mapOf(
@@ -257,16 +272,20 @@ class McpBridgeHttpHostTest {
             ), token = "wrong-token")
 
             assertEquals("Should return 401 for wrong token", 401, status)
-        } finally {
+        }
+        finally
+        {
             clearEnvVar("TPIPE_MCP_JSON")
             stopServer()
         }
     }
 
     @Test
-    fun testAuthAcceptsCorrectTokenReturns200() {
+    fun testAuthAcceptsCorrectTokenReturns200()
+    {
         setEnvVar("TPIPE_MCP_JSON", testMcpJson)
-        try {
+        try
+        {
             startServer(0, validAuthKey)
 
             val (status, _) = sendJsonRpcRequest("initialize", mapOf(
@@ -276,16 +295,20 @@ class McpBridgeHttpHostTest {
             ), token = validAuthKey)
 
             assertEquals("Should return 200 for correct token", 200, status)
-        } finally {
+        }
+        finally
+        {
             clearEnvVar("TPIPE_MCP_JSON")
             stopServer()
         }
     }
 
     @Test
-    fun testMcpJsonToolsListViaHttpEndpoint() {
+    fun testMcpJsonToolsListViaHttpEndpoint()
+    {
         setEnvVar("TPIPE_MCP_JSON", testMcpJson)
-        try {
+        try
+        {
             startServer(0)
 
             val (initStatus, _) = initializeServer()
@@ -295,16 +318,20 @@ class McpBridgeHttpHostTest {
 
             assertEquals("tools/list should return 200", 200, status)
             assertTrue("Response should contain tools or result", body.contains("tools") || body.contains("result"))
-        } finally {
+        }
+        finally
+        {
             clearEnvVar("TPIPE_MCP_JSON")
             stopServer()
         }
     }
 
     @Test
-    fun testMcpJsonResourcesListViaHttpEndpoint() {
+    fun testMcpJsonResourcesListViaHttpEndpoint()
+    {
         setEnvVar("TPIPE_MCP_JSON", testMcpJson)
-        try {
+        try
+        {
             startServer(0)
 
             val (initStatus, _) = initializeServer()
@@ -314,14 +341,17 @@ class McpBridgeHttpHostTest {
 
             assertEquals("resources/list should return 200", 200, status)
             assertTrue("Response should contain resources or result", body.contains("resources") || body.contains("result"))
-        } finally {
+        }
+        finally
+        {
             clearEnvVar("TPIPE_MCP_JSON")
             stopServer()
         }
     }
 
     @After
-    fun tearDown() {
+    fun tearDown()
+    {
         stopServer()
         FunctionRegistry.clear()
     }

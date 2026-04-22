@@ -11,14 +11,16 @@ import kotlin.test.fail
 
 class McpResourceProviderTest {
 
-    private fun createPcpContextWithStdioOptions(vararg options: StdioContextOptions): PcpContext {
+    private fun createPcpContextWithStdioOptions(vararg options: StdioContextOptions): PcpContext
+    {
         val context = PcpContext()
         options.forEach { context.addStdioOption(it) }
         return context
     }
 
     @Test
-    fun testListResourcesWithEmptyContext() {
+    fun testListResourcesWithEmptyContext()
+    {
         val context = PcpContext()
         val provider = McpResourceProvider(context)
         val result = provider.listResources()
@@ -27,7 +29,8 @@ class McpResourceProviderTest {
     }
 
     @Test
-    fun testListResourcesWithCatCommand() {
+    fun testListResourcesWithCatCommand()
+    {
         val context = createPcpContextWithStdioOptions(
             StdioContextOptions().apply {
                 command = "cat"
@@ -46,7 +49,8 @@ class McpResourceProviderTest {
     }
 
     @Test
-    fun testListResourcesWithCurlCommand() {
+    fun testListResourcesWithCurlCommand()
+    {
         val context = createPcpContextWithStdioOptions(
             StdioContextOptions().apply {
                 command = "curl"
@@ -64,7 +68,8 @@ class McpResourceProviderTest {
     }
 
     @Test
-    fun testListResourcesWithMultipleCommands() {
+    fun testListResourcesWithMultipleCommands()
+    {
         val context = createPcpContextWithStdioOptions(
             StdioContextOptions().apply {
                 command = "cat"
@@ -84,7 +89,8 @@ class McpResourceProviderTest {
     }
 
     @Test
-    fun testListResourcesWithHeadCommand() {
+    fun testListResourcesWithHeadCommand()
+    {
         val context = createPcpContextWithStdioOptions(
             StdioContextOptions().apply {
                 command = "head"
@@ -100,7 +106,8 @@ class McpResourceProviderTest {
     }
 
     @Test
-    fun testListResourcesWithTailCommand() {
+    fun testListResourcesWithTailCommand()
+    {
         val context = createPcpContextWithStdioOptions(
             StdioContextOptions().apply {
                 command = "tail"
@@ -116,7 +123,8 @@ class McpResourceProviderTest {
     }
 
     @Test
-    fun testListResourcesWithUnknownCommand() {
+    fun testListResourcesWithUnknownCommand()
+    {
         val context = createPcpContextWithStdioOptions(
             StdioContextOptions().apply {
                 command = "custom_command"
@@ -132,7 +140,8 @@ class McpResourceProviderTest {
     }
 
     @Test
-    fun testReadResourceWithFileScheme() {
+    fun testReadResourceWithFileScheme()
+    {
         val context = createPcpContextWithStdioOptions(
             StdioContextOptions().apply {
                 command = "cat"
@@ -141,13 +150,13 @@ class McpResourceProviderTest {
         )
         val provider = McpResourceProvider(context)
 
-        try {
+        try
+        {
             val result = provider.readResource("file:///etc/hostname")
             assertTrue(result.contents.isNotEmpty())
             assertEquals("file:///etc/hostname", result.contents[0].uri)
             assertEquals("text/plain", result.contents[0].mimeType)
         } catch (e: Exception) {
-            // Expected in test environment where /etc/hostname might not exist
             assertTrue(e.message?.contains("not in security whitelist") == true ||
                        e.message?.contains("denied") == true ||
                        e is IllegalArgumentException)
@@ -155,7 +164,8 @@ class McpResourceProviderTest {
     }
 
     @Test
-    fun testReadResourceWithHttpScheme() {
+    fun testReadResourceWithHttpScheme()
+    {
         val context = createPcpContextWithStdioOptions(
             StdioContextOptions().apply {
                 command = "curl"
@@ -164,13 +174,13 @@ class McpResourceProviderTest {
         )
         val provider = McpResourceProvider(context)
 
-        try {
+        try
+        {
             val result = provider.readResource("https://httpbin.org/get")
             assertTrue(result.contents.isNotEmpty())
             assertEquals("https://httpbin.org/get", result.contents[0].uri)
             assertEquals("application/json", result.contents[0].mimeType)
         } catch (e: Exception) {
-            // Expected if curl fails or network is unavailable
             assertTrue(e.message?.contains("not in security whitelist") == true ||
                        e.message?.contains("denied") == true ||
                        e is IllegalArgumentException)
@@ -178,11 +188,13 @@ class McpResourceProviderTest {
     }
 
     @Test
-    fun testReadResourceWithUnknownSchemeThrowsException() {
+    fun testReadResourceWithUnknownSchemeThrowsException()
+    {
         val context = PcpContext()
         val provider = McpResourceProvider(context)
 
-        try {
+        try
+        {
             provider.readResource("ftp://example.com/file")
             fail("Expected IllegalArgumentException for unknown URI scheme")
         } catch (e: IllegalArgumentException) {
@@ -192,11 +204,13 @@ class McpResourceProviderTest {
     }
 
     @Test
-    fun testReadResourceWithUnsupportedSchemeThrowsException() {
+    fun testReadResourceWithUnsupportedSchemeThrowsException()
+    {
         val context = PcpContext()
         val provider = McpResourceProvider(context)
 
-        try {
+        try
+        {
             provider.readResource("s3://bucket/key")
             fail("Expected IllegalArgumentException for unsupported URI scheme")
         } catch (e: IllegalArgumentException) {
@@ -205,7 +219,8 @@ class McpResourceProviderTest {
     }
 
     @Test
-    fun testListResourcesPreservesCommandName() {
+    fun testListResourcesPreservesCommandName()
+    {
         val context = createPcpContextWithStdioOptions(
             StdioContextOptions().apply {
                 command = "cat"
@@ -220,7 +235,8 @@ class McpResourceProviderTest {
     }
 
     @Test
-    fun testListResourcesHandlesEmptyDescription() {
+    fun testListResourcesHandlesEmptyDescription()
+    {
         val context = createPcpContextWithStdioOptions(
             StdioContextOptions().apply {
                 command = "cat"
@@ -235,7 +251,8 @@ class McpResourceProviderTest {
     }
 
     @Test
-    fun testListResourcesHandlesMissingArgs() {
+    fun testListResourcesHandlesMissingArgs()
+    {
         val context = createPcpContextWithStdioOptions(
             StdioContextOptions().apply {
                 command = "cat"

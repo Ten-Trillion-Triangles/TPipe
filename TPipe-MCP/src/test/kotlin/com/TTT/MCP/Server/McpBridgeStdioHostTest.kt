@@ -37,7 +37,8 @@ class McpBridgeStdioHostTest {
         return method.invoke(null) as McpBridgeServerHost
     }
 
-    private fun setEnvVar(name: String, value: String?) {
+    private fun setEnvVar(name: String, value: String?)
+    {
         if (value == null) {
             System.getenv().remove(name)
             val field = System::class.java.getDeclaredField("env")
@@ -51,26 +52,33 @@ class McpBridgeStdioHostTest {
     }
 
     @Test
-    fun testCreateHost_withValidMcpJson_returnsMcpBridgeServerHost() {
-        try {
+    fun testCreateHost_withValidMcpJson_returnsMcpBridgeServerHost()
+    {
+        try
+        {
             setEnvVar(ENV_MCP_JSON, VALID_MCP_JSON)
 
             val host = invokeCreateHost()
 
             assertIs<McpBridgeServerHost>(host)
-        } finally {
+        }
+        finally
+        {
             setEnvVar(ENV_MCP_JSON, null)
             System.clearProperty(ENV_MCP_JSON)
         }
     }
 
     @Test
-    fun testCreateHost_withoutMcpJson_throwsIllegalStateException() {
-        try {
+    fun testCreateHost_withoutMcpJson_throwsIllegalStateException()
+    {
+        try
+        {
             setEnvVar(ENV_MCP_JSON, null)
             System.clearProperty(ENV_MCP_JSON)
 
-            val exception = try {
+            val exception = try
+            {
                 invokeCreateHost()
                 null
             } catch (e: Throwable) {
@@ -79,19 +87,24 @@ class McpBridgeStdioHostTest {
 
             assertTrue(exception is IllegalStateException,
                 "Expected IllegalStateException but got ${exception?.javaClass?.name}")
-        } finally {
+        }
+        finally
+        {
             setEnvVar(ENV_MCP_JSON, null)
             System.clearProperty(ENV_MCP_JSON)
         }
     }
 
     @Test
-    fun testCreateHost_withoutMcpJson_exceptionMessageContainsTpipeMcpJson() {
-        try {
+    fun testCreateHost_withoutMcpJson_exceptionMessageContainsTpipeMcpJson()
+    {
+        try
+        {
             setEnvVar(ENV_MCP_JSON, null)
             System.clearProperty(ENV_MCP_JSON)
 
-            val exception = try {
+            val exception = try
+            {
                 invokeCreateHost()
                 null
             } catch (e: Throwable) {
@@ -102,21 +115,27 @@ class McpBridgeStdioHostTest {
             val message = (exception as IllegalStateException).message ?: ""
             assertTrue(message.contains("TPIPE_MCP_JSON"),
                 "Exception message should contain 'TPIPE_MCP_JSON' but was: $message")
-        } finally {
+        }
+        finally
+        {
             setEnvVar(ENV_MCP_JSON, null)
             System.clearProperty(ENV_MCP_JSON)
         }
     }
 
     @Test
-    fun testCreateHost_delegatesToMcpBridgeServerHost() {
-        try {
+    fun testCreateHost_delegatesToMcpBridgeServerHost()
+    {
+        try
+        {
             setEnvVar(ENV_MCP_JSON, VALID_MCP_JSON)
 
             val host = invokeCreateHost()
 
             assertIs<McpBridgeServerHost>(host)
-        } finally {
+        }
+        finally
+        {
             setEnvVar(ENV_MCP_JSON, null)
             System.clearProperty(ENV_MCP_JSON)
         }

@@ -7,19 +7,19 @@ import kotlinx.serialization.json.*
 /**
  * Converts MCP requests to PCP context format for TPipe integration.
  */
-class McpToPcpConverter 
+class McpToPcpConverter
 {
     /**
      * Converts an MCP request to PCP context format.
-     * 
+     *
      * @param mcpRequest The MCP request containing tools, resources, templates, and prompts
      * @return PcpContext with converted tools, resources, and prompts
      */
-    fun convert(mcpRequest: McpRequest): PcpContext 
+    fun convert(mcpRequest: McpRequest): PcpContext
     {
         // Create new PCP context to populate
         val pcpContext = PcpContext()
-        
+
         // Convert MCP tools to TPipe options and add to context
         convertTools(mcpRequest.tools).forEach { pcpContext.addTPipeOption(it) }
         // Convert MCP resources to stdio options and add to context
@@ -28,17 +28,17 @@ class McpToPcpConverter
         convertResourceTemplates(mcpRequest.resourceTemplates).forEach { pcpContext.addStdioOption(it) }
         // Convert MCP prompts to TPipe options (as they are templates)
         convertPrompts(mcpRequest.prompts).forEach { pcpContext.addTPipeOption(it) }
-        
+
         return pcpContext
     }
 
     /**
      * Converts MCP tools to TPipe context options.
-     * 
+     *
      * @param tools List of MCP tools to convert
      * @return List of TPipeContextOptions
      */
-    private fun convertTools(tools: List<McpTool>): List<TPipeContextOptions> 
+    private fun convertTools(tools: List<McpTool>): List<TPipeContextOptions>
     {
         // Map each MCP tool to a TPipe context option
         return tools.map { tool ->
@@ -47,8 +47,14 @@ class McpToPcpConverter
                 description = buildString {
                     append(tool.description ?: "")
                     tool.annotations?.let { ann ->
-                        if(ann.priority != null) append("\nPriority: ${ann.priority}")
-                        if(ann.audience != null) append("\nAudience: ${ann.audience.joinToString()}")
+                        if(ann.priority != null)
+                        {
+                            append("\nPriority: ${ann.priority}")
+                        }
+                        if(ann.audience != null)
+                        {
+                            append("\nAudience: ${ann.audience.joinToString()}")
+                        }
                     }
                 }
                 // Extract parameter definitions from JSON schema
@@ -59,7 +65,7 @@ class McpToPcpConverter
 
     /**
      * Converts MCP resources to stdio context options.
-     * 
+     *
      * @param resources List of MCP resources to convert
      * @return List of StdioContextOptions
      */
@@ -80,6 +86,9 @@ class McpToPcpConverter
 
     /**
      * Converts MCP resource templates to stdio context options.
+     *
+     * @param templates List of MCP resource templates to convert
+     * @return List of StdioContextOptions
      */
     private fun convertResourceTemplates(templates: List<McpResourceTemplate>): List<StdioContextOptions>
     {
@@ -99,6 +108,9 @@ class McpToPcpConverter
 
     /**
      * Converts MCP prompts to TPipe context options.
+     *
+     * @param prompts List of MCP prompts to convert
+     * @return List of TPipeContextOptions
      */
     private fun convertPrompts(prompts: List<McpPrompt>): List<TPipeContextOptions>
     {
@@ -108,8 +120,14 @@ class McpToPcpConverter
                 description = buildString {
                     append(prompt.description ?: "")
                     prompt.annotations?.let { ann ->
-                        if(ann.priority != null) append("\nPriority: ${ann.priority}")
-                        if(ann.audience != null) append("\nAudience: ${ann.audience.joinToString()}")
+                        if(ann.priority != null)
+                        {
+                            append("\nPriority: ${ann.priority}")
+                        }
+                        if(ann.audience != null)
+                        {
+                            append("\nAudience: ${ann.audience.joinToString()}")
+                        }
                     }
                 }
                 params = prompt.arguments?.associate { arg ->
@@ -125,19 +143,19 @@ class McpToPcpConverter
 
     /**
      * Extracts parameter definitions from JSON schema.
-     * 
+     *
      * @param schema The JSON schema object
      * @return Map of parameter names to type information
      */
     private fun extractParams(schema: JsonObject): MutableMap<String, ContextOptionParameter>
     {
         val params = mutableMapOf<String, ContextOptionParameter>()
-        
+
         // Extract required fields list
-        val requiredFields = schema["required"]?.jsonArray?.mapNotNull { 
-            it.jsonPrimitive?.content 
+        val requiredFields = schema["required"]?.jsonArray?.mapNotNull {
+            it.jsonPrimitive?.content
         }?.toSet() ?: emptySet()
-        
+
         // Extract properties from JSON schema
         schema["properties"]?.jsonObject?.let { properties ->
             properties.forEach { (paramName: String, paramDef: JsonElement) ->
@@ -145,30 +163,31 @@ class McpToPcpConverter
                 // Map JSON schema type to PCP parameter type
                 val type = mapJsonSchemaToParamType(paramObj)
                 val description = paramObj["description"]?.jsonPrimitive?.content ?: ""
-                
+
                 // Extract enum values if present
                 val enumValues = paramObj["enum"]?.jsonArray?.mapNotNull {
                     it.jsonPrimitive?.content
                 } ?: emptyList()
-                
+
                 val isRequired = requiredFields.contains(paramName)
                 params[paramName] = ContextOptionParameter(type, description, enumValues, isRequired)
             }
         }
-        
+
         return params
     }
 
     /**
      * Maps JSON schema types to PCP parameter types.
-     * 
+     *
      * @param schema The JSON schema object containing type information
      * @return Corresponding ParamType enum value
      */
-    private fun mapJsonSchemaToParamType(schema: JsonObject): ParamType 
+    private fun mapJsonSchemaToParamType(schema: JsonObject): ParamType
     {
         // Map JSON schema types to corresponding PCP parameter types
-        return when(schema["type"]?.jsonPrimitive?.content) {
+        return when(schema["type"]?.jsonPrimitive?.content)
+        {
             "string" -> ParamType.String
             "integer" -> ParamType.Int
             "number" -> ParamType.Float
@@ -181,14 +200,15 @@ class McpToPcpConverter
 
     /**
      * Maps resource URIs to appropriate shell commands.
-     * 
+     *
      * @param uri The resource URI to map
      * @return Appropriate shell command for the resource type
      */
-    private fun mapResourceToCommand(uri: String): String 
+    private fun mapResourceToCommand(uri: String): String
     {
         // Map resource URI schemes to appropriate shell commands
-        return when {
+        return when
+        {
             uri.startsWith("file://") -> "cat"
             uri.startsWith("http://") || uri.startsWith("https://") -> "curl"
             else -> "echo"

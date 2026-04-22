@@ -8,16 +8,16 @@ import kotlinx.serialization.json.*
 /**
  * Parser for MCP JSON format that extracts tools, resources, and prompts.
  */
-class McpJsonParser 
+class McpJsonParser
 {
     /**
      * Parses MCP JSON string into structured McpRequest object.
-     * 
+     *
      * @param mcpJson The MCP JSON string to parse
      * @return McpRequest containing parsed tools, resources, and prompts
      * @throws Exception if JSON is malformed or invalid
      */
-    fun parseJson(mcpJson: String): McpRequest 
+    fun parseJson(mcpJson: String): McpRequest
     {
         // Parse JSON string into JsonObject for structured access
         val json = Json.parseToJsonElement(mcpJson).jsonObject
@@ -32,11 +32,11 @@ class McpJsonParser
 
     /**
      * Validates that the JSON object contains at least one MCP component.
-     * 
+     *
      * @param json The JSON object to validate
      * @return True if the JSON contains tools or resources
      */
-    fun validateMcpStructure(json: JsonObject): Boolean 
+    fun validateMcpStructure(json: JsonObject): Boolean
     {
         // Check if JSON contains valid MCP components
         return json.containsKey("tools") || json.containsKey("resources") || json.containsKey("prompts") || json.containsKey("resourceTemplates")
@@ -44,12 +44,12 @@ class McpJsonParser
 
     /**
      * Extracts MCP tools from the JSON object.
-     * 
+     *
      * @param json The JSON object containing tools array
      * @return List of McpTool objects, empty if no tools found
      * @throws IllegalArgumentException if tool has invalid inputSchema
      */
-    fun extractTools(json: JsonObject): List<McpTool> 
+    fun extractTools(json: JsonObject): List<McpTool>
     {
         // Extract tools array and convert each element to McpTool
         return json["tools"]?.jsonArray?.mapNotNull { element ->
@@ -57,20 +57,20 @@ class McpJsonParser
             // Extract required name field, skip if missing
             val name = toolObj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val description = toolObj["description"]?.jsonPrimitive?.content
-            
+
             // Validate inputSchema exists and has type "object"
-            val inputSchema = toolObj["inputSchema"]?.jsonObject 
+            val inputSchema = toolObj["inputSchema"]?.jsonObject
                 ?: throw IllegalArgumentException("Tool '$name' missing required inputSchema")
-            
+
             val schemaType = inputSchema["type"]?.jsonPrimitive?.content
             if(schemaType != "object")
             {
                 throw IllegalArgumentException("Tool '$name' inputSchema must have type 'object', got '$schemaType'")
             }
-            
+
             // Extract optional outputSchema
             val outputSchema = toolObj["outputSchema"]?.jsonObject
-            
+
             // Extract optional icons and annotations
             val icons = toolObj["icons"]?.jsonArray?.map {
                 Json.decodeFromJsonElement<com.TTT.MCP.Models.McpIcon>(it)
@@ -85,20 +85,20 @@ class McpJsonParser
 
     /**
      * Extracts MCP resources from the JSON object.
-     * 
+     *
      * @param json The JSON object containing resources array
      * @return List of McpResource objects, empty if no resources found
      * @throws IllegalArgumentException if resource missing required fields
      */
-    fun extractResources(json: JsonObject): List<McpResource> 
+    fun extractResources(json: JsonObject): List<McpResource>
     {
         // Extract resources array and convert each element to McpResource
         return json["resources"]?.jsonArray?.mapNotNull { element ->
             val resourceObj = element.jsonObject
             // Extract required fields, throw if missing
-            val uri = resourceObj["uri"]?.jsonPrimitive?.content 
+            val uri = resourceObj["uri"]?.jsonPrimitive?.content
                 ?: throw IllegalArgumentException("Resource missing required 'uri' field")
-            val name = resourceObj["name"]?.jsonPrimitive?.content 
+            val name = resourceObj["name"]?.jsonPrimitive?.content
                 ?: throw IllegalArgumentException("Resource missing required 'name' field")
             val description = resourceObj["description"]?.jsonPrimitive?.content
             val mimeType = resourceObj["mimeType"]?.jsonPrimitive?.content
@@ -111,6 +111,10 @@ class McpJsonParser
 
     /**
      * Extracts MCP resource templates from the JSON object.
+     *
+     * @param json The JSON object containing resourceTemplates array
+     * @return List of McpResourceTemplate objects, empty if none found
+     * @throws IllegalArgumentException if template missing required fields
      */
     fun extractResourceTemplates(json: JsonObject): List<com.TTT.MCP.Models.McpResourceTemplate>
     {
@@ -131,6 +135,10 @@ class McpJsonParser
 
     /**
      * Extracts prompt templates from the JSON object.
+     *
+     * @param json The JSON object containing prompts array
+     * @return List of McpPrompt objects, empty if none found
+     * @throws IllegalArgumentException if prompt missing required fields
      */
     fun extractPrompts(json: JsonObject): List<com.TTT.MCP.Models.McpPrompt>
     {

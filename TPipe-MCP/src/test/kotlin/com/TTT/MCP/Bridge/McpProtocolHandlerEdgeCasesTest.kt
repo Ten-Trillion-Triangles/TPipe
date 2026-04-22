@@ -22,11 +22,13 @@ import kotlin.test.assertTrue
  * Edge case tests for McpProtocolHandler.
  * Tests MISSING edge cases NOT covered by McpProtocolHandlerSecurityTest.
  */
-class McpProtocolHandlerEdgeCasesTest {
+class McpProtocolHandlerEdgeCasesTest
+{
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    private fun createHandler(): McpProtocolHandler {
+    private fun createHandler(): McpProtocolHandler
+    {
         FunctionRegistry.clear()
         val pcpContext = PcpContext()
         val toolRegistry = McpToolRegistry(pcpContext)
@@ -45,7 +47,8 @@ class McpProtocolHandlerEdgeCasesTest {
         method: String,
         id: JsonPrimitive? = JsonPrimitive(1),
         params: kotlinx.serialization.json.JsonObject? = null
-    ): JsonRpcRequest {
+    ): JsonRpcRequest
+    {
         return JsonRpcRequest(
             jsonrpc = "2.0",
             id = id,
@@ -55,7 +58,8 @@ class McpProtocolHandlerEdgeCasesTest {
     }
 
     @Test
-    fun testHandleShutdownTransitionsToShuttingDown() {
+    fun testHandleShutdownTransitionsToShuttingDown()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
 
@@ -69,7 +73,8 @@ class McpProtocolHandlerEdgeCasesTest {
     }
 
     @Test
-    fun testPostShutdownSubsequentRequestsReturnError() {
+    fun testPostShutdownSubsequentRequestsReturnError()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
         handler.route(buildRequest("shutdown", JsonPrimitive(2)))
@@ -86,7 +91,8 @@ class McpProtocolHandlerEdgeCasesTest {
     }
 
     @Test
-    fun testHandleNotificationsInitializedReturnsSuccess() {
+    fun testHandleNotificationsInitializedReturnsSuccess()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
 
@@ -98,7 +104,8 @@ class McpProtocolHandlerEdgeCasesTest {
     }
 
     @Test
-    fun testHandlePromptsGetWithValidNameAndArguments() {
+    fun testHandlePromptsGetWithValidNameAndArguments()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
 
@@ -115,7 +122,8 @@ class McpProtocolHandlerEdgeCasesTest {
     }
 
     @Test
-    fun testHandlePromptsGetMissingNameReturnsInvalidParams() {
+    fun testHandlePromptsGetMissingNameReturnsInvalidParams()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
 
@@ -133,7 +141,8 @@ class McpProtocolHandlerEdgeCasesTest {
     }
 
     @Test
-    fun testHandlePromptsGetMissingParamsReturnsInvalidParams() {
+    fun testHandlePromptsGetMissingParamsReturnsInvalidParams()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
 
@@ -146,7 +155,8 @@ class McpProtocolHandlerEdgeCasesTest {
     }
 
     @Test
-    fun testHandleToolsCallWithMissingNameReturnsInvalidParams() {
+    fun testHandleToolsCallWithMissingNameReturnsInvalidParams()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
 
@@ -162,7 +172,8 @@ class McpProtocolHandlerEdgeCasesTest {
     }
 
     @Test
-    fun testHandleToolsCallWithBlankEmptyArgumentsHandledGracefully() {
+    fun testHandleToolsCallWithBlankEmptyArgumentsHandledGracefully()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
 
@@ -176,12 +187,14 @@ class McpProtocolHandlerEdgeCasesTest {
     }
 
     @Test
-    fun testUnexpectedExceptionReturnsInternalError() {
+    fun testUnexpectedExceptionReturnsInternalError()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
 
         val invalidJson = """{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": "not an object"}"""
-        try {
+        try
+        {
             val request = JsonRpcRequest.fromJson(invalidJson)
             val response = handler.route(request)
             assertTrue(response.isError, "Should return error for unexpected exception")
@@ -193,7 +206,8 @@ class McpProtocolHandlerEdgeCasesTest {
     }
 
     @Test
-    fun testStateTransitionReadyToShuttingDownAfterShutdownThenRejected() {
+    fun testStateTransitionReadyToShuttingDownAfterShutdownThenRejected()
+    {
         val handler = createHandler()
 
         assertEquals(McpProtocolHandler.ServerState.INITIALIZING, handler.getServerState())

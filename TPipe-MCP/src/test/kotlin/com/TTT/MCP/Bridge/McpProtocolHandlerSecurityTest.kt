@@ -18,11 +18,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-class McpProtocolHandlerSecurityTest {
+class McpProtocolHandlerSecurityTest
+{
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    private fun createHandler(): McpProtocolHandler {
+    private fun createHandler(): McpProtocolHandler
+    {
         FunctionRegistry.clear()
         val pcpContext = PcpContext()
         val toolRegistry = McpToolRegistry(pcpContext)
@@ -41,7 +43,8 @@ class McpProtocolHandlerSecurityTest {
         method: String,
         id: JsonPrimitive? = JsonPrimitive(1),
         params: kotlinx.serialization.json.JsonObject? = null
-    ): JsonRpcRequest {
+    ): JsonRpcRequest
+    {
         return JsonRpcRequest(
             jsonrpc = "2.0",
             id = id,
@@ -51,7 +54,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testInvalidJsonRpcVersionReturnsInvalidRequest() {
+    fun testInvalidJsonRpcVersionReturnsInvalidRequest()
+    {
         val handler = createHandler()
         val request = JsonRpcRequest(
             jsonrpc = "1.0",
@@ -65,7 +69,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testEmptyMethodNameReturnsInvalidRequest() {
+    fun testEmptyMethodNameReturnsInvalidRequest()
+    {
         val handler = createHandler()
         val request = buildRequest("")
         val response = handler.route(request)
@@ -75,7 +80,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testMethodNameWithInvalidCharactersReturnsInvalidRequest() {
+    fun testMethodNameWithInvalidCharactersReturnsInvalidRequest()
+    {
         val handler = createHandler()
         val request = buildRequest("tools/list\u0000\u001F")
         val response = handler.route(request)
@@ -85,7 +91,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testMethodNameWithNewlineInjectionReturnsInvalidRequest() {
+    fun testMethodNameWithNewlineInjectionReturnsInvalidRequest()
+    {
         val handler = createHandler()
         val request = buildRequest("tools/list\u000Awhoami")
         val response = handler.route(request)
@@ -95,7 +102,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testMethodNameWithSemicolonInjectionReturnsInvalidRequest() {
+    fun testMethodNameWithSemicolonInjectionReturnsInvalidRequest()
+    {
         val handler = createHandler()
         val request = buildRequest("tools;echo;list")
         val response = handler.route(request)
@@ -105,7 +113,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testMethodNameWithPipeInjectionReturnsInvalidRequest() {
+    fun testMethodNameWithPipeInjectionReturnsInvalidRequest()
+    {
         val handler = createHandler()
         val request = buildRequest("tools|cat /etc/passwd")
         val response = handler.route(request)
@@ -115,7 +124,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testMethodNameWithBackticksInjectionReturnsInvalidRequest() {
+    fun testMethodNameWithBackticksInjectionReturnsInvalidRequest()
+    {
         val handler = createHandler()
         val request = buildRequest("tools`whoami`")
         val response = handler.route(request)
@@ -125,7 +135,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testValidMethodNameWithNamespace() {
+    fun testValidMethodNameWithNamespace()
+    {
         val handler = createHandler()
         val request = buildRequest("tools/list")
         val response = handler.route(request)
@@ -135,10 +146,12 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testParamsMustBeObjectOrNull() {
+    fun testParamsMustBeObjectOrNull()
+    {
         val handler = createHandler()
         val invalidJson = """{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": "not an object"}"""
-        try {
+        try
+        {
             val request = JsonRpcRequest.fromJson(invalidJson)
             val response = handler.route(request)
             assertTrue(response.isError, "Response should be an error for invalid params type")
@@ -150,7 +163,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testPathTraversalSanitized() {
+    fun testPathTraversalSanitized()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
         val maliciousUri = "file://../../../etc/passwd"
@@ -163,7 +177,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testToolNameWithInvalidCharactersReturnsInvalidParams() {
+    fun testToolNameWithInvalidCharactersReturnsInvalidParams()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
         val params = buildJsonObject {
@@ -178,7 +193,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testToolArgumentsWithInvalidKeyFormatReturnsInvalidParams() {
+    fun testToolArgumentsWithInvalidKeyFormatReturnsInvalidParams()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
         val params = buildJsonObject {
@@ -196,7 +212,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testToolArgumentsNotAnObjectReturnsInvalidParams() {
+    fun testToolArgumentsNotAnObjectReturnsInvalidParams()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
         val params = buildJsonObject {
@@ -211,7 +228,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testValidToolCallWithProperArgumentsSucceeds() {
+    fun testValidToolCallWithProperArgumentsSucceeds()
+    {
         val handler = createHandler()
         handler.route(buildRequest("initialize"))
         val params = buildJsonObject {
@@ -226,7 +244,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testMethodNameStartingWithNumberReturnsInvalidRequest() {
+    fun testMethodNameStartingWithNumberReturnsInvalidRequest()
+    {
         val handler = createHandler()
         val request = buildRequest("123method")
         val response = handler.route(request)
@@ -236,7 +255,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testMethodNameWithSpacesReturnsInvalidRequest() {
+    fun testMethodNameWithSpacesReturnsInvalidRequest()
+    {
         val handler = createHandler()
         val request = buildRequest("tools list")
         val response = handler.route(request)
@@ -246,7 +266,8 @@ class McpProtocolHandlerSecurityTest {
     }
 
     @Test
-    fun testMethodNameWithNullBytesReturnsInvalidRequest() {
+    fun testMethodNameWithNullBytesReturnsInvalidRequest()
+    {
         val handler = createHandler()
         val request = buildRequest("tools\u0000list")
         val response = handler.route(request)
