@@ -13,6 +13,10 @@ Usage: java -jar TPipe-MCP-*-all.jar [command]
 Commands:
   --mcp-bridge-stdio-once   Run MCP bridge for single request
   --mcp-bridge-stdio-loop   Run MCP bridge with request loop
+  --mcp-bridge-http         Run MCP bridge with HTTP server
+                            --port <number>  Port (default 8080)
+                            --auth-key <key>  Optional Bearer auth key
+                            --bind-address <addr>  Bind address (default 127.0.0.1)
   --help                    Show this help message
     """.trimIndent()
 

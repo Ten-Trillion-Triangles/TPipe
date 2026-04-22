@@ -13,6 +13,7 @@ import io.modelcontextprotocol.kotlin.sdk.server.StdioServerTransport
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
 import kotlinx.io.asSink
 import kotlinx.io.asSource
 import kotlinx.io.buffered
@@ -119,7 +120,13 @@ class McpBridgeServerHost(
         server.createSession(transport)
         runBlocking {
             server.onClose { }
-            Thread.currentThread().join()
+            try {
+                while (true) {
+                    delay(1000)
+                }
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                // Expected when shutdown() is called
+            }
         }
     }
 

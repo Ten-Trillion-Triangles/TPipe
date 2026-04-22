@@ -17,6 +17,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.encodeToString
+import java.util.concurrent.ConcurrentHashMap
 
 class McpProtocolHandler(
     private val pcpContext: PcpContext,
@@ -45,12 +46,17 @@ class McpProtocolHandler(
 
         private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-        // TODO: Consider implementing rate limiting for incoming JSON-RPC requests
-        // Rate limiting should track request frequency per connection/IP and apply
-        // throttling or rejection when thresholds are exceeded. This protects against
-        // DoS attacks and resource exhaustion scenarios.
-        // Implementation options: token bucket, sliding window, or fixed window algorithms.
+        const val RATE_LIMIT_ERROR_CODE = -32050
     }
+
+    data class RateLimitConfig(
+        val enabled: Boolean = true,
+        val burstSize: Int = 10
+    )
+
+    private var rateLimitConfig = RateLimitConfig()
+
+    private val rateLimitTracker = ConcurrentHashMap<String, ArrayDeque<Long>>()
 
     enum class ServerState {
         INITIALIZING,
@@ -59,6 +65,46 @@ class McpProtocolHandler(
     }
 
     private var serverState: ServerState = ServerState.INITIALIZING
+
+    private fun checkRateLimit(connectionId: String): JsonRpcResponse? {
+        val config = rateLimitConfig
+        if (!config.enabled) return null
+
+        val now = System.currentTimeMillis()
+        val windowMs = 1000L
+
+        val timestamps = rateLimitTracker.computeIfAbsent(connectionId) { ArrayDeque() }
+
+        while (timestamps.isNotEmpty()) {
+            val oldest = timestamps.first()
+            if (now - oldest > windowMs) {
+                timestamps.removeFirst()
+            } else {
+                break
+            }
+        }
+
+        if (timestamps.size >= config.burstSize) {
+            return JsonRpcResponse.error(
+                id = null,
+                error = McpJsonRpcError(
+                    code = RATE_LIMIT_ERROR_CODE,
+                    message = "Rate limit exceeded. Max ${config.burstSize} requests per second."
+                )
+            )
+        }
+
+        timestamps.addLast(now)
+
+        if (rateLimitTracker.size > 10000) {
+            val toRemove = rateLimitTracker.entries.filter { (_, deque) ->
+                deque.isEmpty() || now - deque.first() > windowMs * 2
+            }.map { it.key }
+            toRemove.forEach { rateLimitTracker.remove(it) }
+        }
+
+        return null
+    }
 
     private inline fun <reified T> serializeToJson(obj: T): JsonElement {
         return Json.parseToJsonElement(json.encodeToString(obj))
@@ -118,6 +164,7 @@ class McpProtocolHandler(
     fun route(request: JsonRpcRequest): JsonRpcResponse {
         return try {
             validateRequest(request)?.let { return it }
+            checkRateLimit(connectionId = request.id?.toString() ?: "default")?.let { return it }
 
             when (request.method) {
                 METHOD_INITIALIZE -> handleInitialize(request)
