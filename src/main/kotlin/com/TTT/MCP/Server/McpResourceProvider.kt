@@ -5,6 +5,7 @@ import com.TTT.PipeContextProtocol.PcpRegistry
 import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.PipeContextProtocol.StdioContextOptions
 import io.modelcontextprotocol.kotlin.sdk.types.BlobResourceContents
+import java.io.File
 import io.modelcontextprotocol.kotlin.sdk.types.ListResourcesResult
 import io.modelcontextprotocol.kotlin.sdk.types.ReadResourceResult
 import io.modelcontextprotocol.kotlin.sdk.types.Resource
@@ -51,7 +52,7 @@ class McpResourceProvider(private val pcpContext: PcpContext) {
         )
 
         val result = runBlocking {
-            PcpRegistry.executeRequests(listOf(pcpRequest))
+            PcpRegistry.executeRequests(listOf(pcpRequest), pcpContext)
         }
 
         val content = result.results.firstOrNull()?.output ?: ""
@@ -64,6 +65,18 @@ class McpResourceProvider(private val pcpContext: PcpContext) {
                 )
             )
         )
+    }
+
+    private val ALLOWED_FILE_PATHS = System.getenv("TPIPE_MCP_ALLOWED_FILE_PATHS")
+        ?.split(File.pathSeparator)
+        ?.toSet()
+        ?: setOf(System.getProperty("user.dir"), "/tmp")
+
+    private fun isPathAllowed(path: String): Boolean {
+        val normalized = File(path).canonicalPath
+        return ALLOWED_FILE_PATHS.any { allowed ->
+            normalized.startsWith(File(allowed).canonicalPath)
+        }
     }
 
     private fun mapCommandToUri(command: String, args: List<String>): String {
@@ -84,7 +97,10 @@ class McpResourceProvider(private val pcpContext: PcpContext) {
 
     private fun extractArgs(uri: String, command: String): List<String> {
         return when (command) {
-            "cat" -> listOf(uri.removePrefix("file://"))
+            "cat" -> {
+                val path = uri.removePrefix("file://")
+                if(isPathAllowed(path)) listOf(path) else listOf("/dev/null")
+            }
             "curl" -> listOf(uri)
             else -> listOf(uri)
         }

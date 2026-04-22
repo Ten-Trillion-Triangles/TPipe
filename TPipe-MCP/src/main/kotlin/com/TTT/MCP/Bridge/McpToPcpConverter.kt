@@ -63,16 +63,17 @@ class McpToPcpConverter
      * @param resources List of MCP resources to convert
      * @return List of StdioContextOptions
      */
-    private fun convertResources(resources: List<McpResource>): List<StdioContextOptions> 
+    private fun convertResources(resources: List<McpResource>): List<StdioContextOptions>
     {
-        // Map each MCP resource to a stdio context option
         return resources.map { resource ->
             StdioContextOptions().apply {
-                // Map URI to appropriate shell command
                 command = mapResourceToCommand(resource.uri)
                 args = mutableListOf(resource.uri)
                 permissions = mutableListOf(Permissions.Read)
-                description = resource.description ?: ""
+                description = buildString {
+                    append("ResourceName: ${resource.name}")
+                    resource.description?.let { append(" Description: $it") }
+                }
             }
         }
     }
@@ -87,7 +88,11 @@ class McpToPcpConverter
                 command = "mcp_resource_template"
                 args = mutableListOf(template.uriTemplate)
                 permissions = mutableListOf(Permissions.Read)
-                description = "Template: ${template.name}. ${template.description ?: ""}"
+                description = buildString {
+                    append("Template: ${template.name}")
+                    template.mimeType?.let { append(" MIME: $it") }
+                    append(". ${template.description ?: ""}")
+                }
             }
         }
     }
@@ -100,7 +105,13 @@ class McpToPcpConverter
         return prompts.map { prompt ->
             TPipeContextOptions().apply {
                 functionName = "prompt_${prompt.name}"
-                description = prompt.description ?: ""
+                description = buildString {
+                    append(prompt.description ?: "")
+                    prompt.annotations?.let { ann ->
+                        if(ann.priority != null) append("\nPriority: ${ann.priority}")
+                        if(ann.audience != null) append("\nAudience: ${ann.audience.joinToString()}")
+                    }
+                }
                 params = prompt.arguments?.associate { arg ->
                     arg.name to ContextOptionParameter(
                         type = ParamType.String,

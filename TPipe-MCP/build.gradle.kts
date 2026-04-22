@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
+    application
 }
 
 java {
@@ -16,6 +17,10 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_24)
     }
+}
+
+application {
+    mainClass = "com.TTT.MCP.Bridge.McpBridgeMain"
 }
 
 group = "com.TTT"
@@ -49,4 +54,18 @@ sourceSets {
 // Handle duplicate resources
 tasks.processResources {
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
+
+// Create standalone uber-jar using standard Gradle Zip API
+tasks.named<Jar>("jar") {
+    archiveClassifier.set("all")
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    manifest {
+        attributes["Main-Class"] = "com.TTT.MCP.Bridge.McpBridgeMain"
+    }
+    from({
+        configurations.runtimeClasspath.get().files
+            .filter { it.exists() && !it.name.startsWith("TPipe-MCP-") }
+            .map { if (it.isDirectory) it else zipTree(it) }
+    })
 }

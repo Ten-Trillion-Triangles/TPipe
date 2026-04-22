@@ -70,15 +70,25 @@ class PcpToMcpConverter
      * @param stdioOptions List of stdio context options
      * @return List of MCP resources
      */
-    private fun convertStdioOptions(stdioOptions: List<StdioContextOptions>): List<McpResource> 
+private fun convertStdioOptions(stdioOptions: List<StdioContextOptions>): List<McpResource>
     {
-        // Convert each stdio option to an MCP resource
         return stdioOptions.map { option ->
+            val desc = option.description
+            val name = if(desc.contains("ResourceName:")) {
+                desc.substringAfter("ResourceName: ").substringBefore(" Description:").substringBefore(" MIME:")
+            } else {
+                val firstArg = option.args.firstOrNull() ?: ""
+                if(firstArg.startsWith("file://") || firstArg.startsWith("http://") || firstArg.startsWith("https://")) {
+                    firstArg.substringAfter("file://").substringAfter("http://").substringAfter("https://")
+                } else {
+                    option.command
+                }
+            }
+            val description = if(desc.contains("Description:")) desc.substringAfter("Description: ").substringBefore(" MIME:") else null
             McpResource(
-                // Map command and args back to appropriate URI
                 uri = mapCommandToUri(option.command, option.args),
-                name = option.command,
-                description = option.description.takeIf { it.isNotBlank() },
+                name = name,
+                description = description,
                 mimeType = inferMimeType(option.command)
             )
         }
@@ -90,10 +100,17 @@ class PcpToMcpConverter
     private fun convertResourceTemplates(stdioOptions: List<StdioContextOptions>): List<McpResourceTemplate>
     {
         return stdioOptions.map { option ->
+            val desc = option.description
+            val hasMime = desc.contains("MIME:")
+            val namePart = desc.substringAfter("Template: ")
+            val name = if(hasMime) namePart.substringBefore(" MIME:") else namePart.substringBefore(". ")
+            val mimeType = if(hasMime) desc.substringAfter("MIME: ").substringBefore(". ") else null
+            val descPart = if(hasMime) desc.substringAfter(". ", desc.substringAfter("MIME: ")) else desc.substringAfter(". ")
             McpResourceTemplate(
                 uriTemplate = option.args.firstOrNull() ?: "",
-                name = option.description.substringAfter("Template: ").substringBefore(". "),
-                description = option.description.substringAfter(". ")
+                name = name,
+                description = descPart.takeIf { it.isNotBlank() && it != name && it != mimeType },
+                mimeType = mimeType
             )
         }
     }
@@ -104,12 +121,20 @@ class PcpToMcpConverter
     private fun convertPrompts(tpipeOptions: List<TPipeContextOptions>): List<McpPrompt>
     {
         return tpipeOptions.map { option ->
+            val desc = option.description
+            val description = if(desc.isBlank() || desc.startsWith("\n")) null else desc.substringBefore("\nPriority:").substringBefore("\nAudience:").trim()
+            val priority = desc.substringAfter("\nPriority: ", "").substringBefore("\n").toDoubleOrNull()
+            val audience = desc.substringAfter("\nAudience: ", "").substringBefore("\n").split(", ").filter { it.isNotBlank() }
+            val annotations = if(priority != null || audience.isNotEmpty()) {
+                McpAnnotations(audience.takeIf { it.isNotEmpty() }, priority)
+            } else null
             McpPrompt(
                 name = option.functionName.removePrefix("prompt_"),
-                description = option.description,
+                description = description,
                 arguments = option.params.map { (name, info) ->
                     McpPromptArgument(name, info.description, info.isRequired)
-                }
+                },
+                annotations = annotations
             )
         }
     }
@@ -197,13 +222,13 @@ class PcpToMcpConverter
      * @param args Command arguments
      * @return Appropriate URI for the command
      */
-    private fun mapCommandToUri(command: String, args: List<String>): String 
+private fun mapCommandToUri(command: String, args: List<String>): String
     {
-        // Map shell commands back to appropriate URI schemes
+        val arg = args.firstOrNull() ?: ""
         return when(command) {
-            "cat", "head", "tail" -> "file://${args.firstOrNull() ?: ""}"
-            "curl" -> args.firstOrNull() ?: "http://localhost"
-            else -> "stdio://$command"
+            "cat", "head", "tail" -> if(arg.startsWith("file://")) arg else "file://$arg"
+            "curl" -> if(arg.startsWith("http://") || arg.startsWith("https://")) arg else arg
+            else -> if(arg.startsWith("stdio://")) arg else "stdio://$command"
         }
     }
 

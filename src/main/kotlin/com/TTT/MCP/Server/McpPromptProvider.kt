@@ -64,7 +64,7 @@ class McpPromptProvider(private val pcpContext: PcpContext) {
         val argText = arguments.entries.joinToString(", ") { "${it.key}=${it.value}" }
         val promptText = buildString {
             append(description)
-            if (argText.isNotEmpty()) {
+            if(argText.isNotEmpty()){
                 append("\nArguments: $argText")
             }
         }

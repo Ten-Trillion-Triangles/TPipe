@@ -82,7 +82,7 @@ class McpToolRegistry(private val pcpContext: PcpContext) {
             val paramSchema = buildParamSchema(param)
             (properties as MutableMap<String, JsonElement>)[param.name] = paramSchema
 
-            if (!param.isOptional) {
+            if(!param.isOptional){
                 requiredParams.add(param.name)
             }
         }
@@ -115,10 +115,10 @@ class McpToolRegistry(private val pcpContext: PcpContext) {
     private fun buildParamSchema(param: ParameterInfo): JsonObject {
         return buildJsonObject {
             put("type", paramTypeToJsonSchemaType(param.type))
-            if (param.description.isNotEmpty()) {
+            if(param.description.isNotEmpty()){
                 put("description", param.description)
             }
-            if (param.enumValues.isNotEmpty()) {
+            if(param.enumValues.isNotEmpty()){
                 put("enum", JsonArray(param.enumValues.map { JsonPrimitive(it) }))
             }
         }

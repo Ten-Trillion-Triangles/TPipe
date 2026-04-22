@@ -82,3 +82,4 @@ aws/
 /.claude
 /__pycache__
 /md
+/.sisyphus

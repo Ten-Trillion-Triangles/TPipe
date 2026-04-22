@@ -12,21 +12,26 @@ import kotlinx.coroutines.runBlocking
 object McpStdioHost {
 
     /**
+     * Create an MCP server host with PCP context populated from FunctionRegistry.
+     */
+    private fun createHost(): McpServerHost {
+        val pcpContext = PcpContext()
+        FunctionRegistry.listFunctions().forEach { descriptor ->
+            pcpContext.addTPipeOption(TPipeContextOptions().apply {
+                functionName = descriptor.name
+            })
+        }
+        val config = McpCapabilityConfig()
+        return McpServerHost(pcpContext, config.buildServerCapabilities())
+    }
+
+    /**
      * Run the MCP server once, processing a single request from stdin.
      * Blocking call - runs to completion before returning.
      */
     fun runOnce() {
         runBlocking {
-            val pcpContext = PcpContext()
-            // FIX S1: Populate tpipeOptions from FunctionRegistry
-            FunctionRegistry.listFunctions().forEach { descriptor ->
-                pcpContext.addTPipeOption(TPipeContextOptions().apply {
-                    functionName = descriptor.name
-                })
-            }
-            val config = McpCapabilityConfig()
-            val host = McpServerHost(pcpContext, config.buildServerCapabilities())
-            host.runOnce()
+            createHost().runOnce()
         }
     }
 
@@ -36,16 +41,7 @@ object McpStdioHost {
      */
     fun runLoop() {
         runBlocking {
-            val pcpContext = PcpContext()
-            // FIX S1: Populate tpipeOptions from FunctionRegistry
-            FunctionRegistry.listFunctions().forEach { descriptor ->
-                pcpContext.addTPipeOption(TPipeContextOptions().apply {
-                    functionName = descriptor.name
-                })
-            }
-            val config = McpCapabilityConfig()
-            val host = McpServerHost(pcpContext, config.buildServerCapabilities())
-            host.runLoop()
+            createHost().runLoop()
         }
     }
 }

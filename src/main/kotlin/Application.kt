@@ -58,6 +58,19 @@ fun main(args: Array<String>)
         val bindAddress = extractMcpHttpBindAddress(args)
         McpHttpHost.run(port, authKey, bindAddress)
     }
+    else if(args.contains("--mcp-bridge-stdio-once"))
+    {
+        // Bridge modes require TPIPE_MCP_JSON env var and are provided by TPipe-MCP standalone jar
+        throw IllegalStateException("MCP bridge stdio modes require TPIPE_MCP_JSON environment variable. Use TPipe-MCP standalone jar instead.")
+    }
+    else if(args.contains("--mcp-bridge-stdio-loop"))
+    {
+        throw IllegalStateException("MCP bridge stdio modes require TPIPE_MCP_JSON environment variable. Use TPipe-MCP standalone jar instead.")
+    }
+    else if(args.contains("--mcp-bridge-http"))
+    {
+        throw IllegalStateException("MCP bridge HTTP mode requires TPIPE_MCP_JSON environment variable. Use TPipe-MCP standalone jar instead.")
+    }
 }
 
 /**
@@ -99,4 +112,28 @@ private fun extractMcpHttpBindAddress(args: Array<String>): String {
         return bindArg.substringAfter("=").ifEmpty { "127.0.0.1" }
     }
     return System.getenv("TPIPE_MCP_HTTP_BIND") ?: "127.0.0.1"
+}
+
+private fun extractMcpBridgeHttpPort(args: Array<String>): Int {
+    val portArg = args.find { it.startsWith("--mcp-bridge-http-port=") }
+    if(portArg != null) {
+        return portArg.substringAfter("=").toIntOrNull() ?: 9090
+    }
+    return System.getenv("TPIPE_MCP_BRIDGE_HTTP_PORT")?.toIntOrNull() ?: 9090
+}
+
+private fun extractMcpBridgeHttpAuthKey(args: Array<String>): String? {
+    val authKeyArg = args.find { it.startsWith("--mcp-bridge-http-auth-key=") }
+    if(authKeyArg != null) {
+        return authKeyArg.substringAfter("=").ifEmpty { null }
+    }
+    return System.getenv("TPIPE_MCP_BRIDGE_HTTP_AUTH_KEY")
+}
+
+private fun extractMcpBridgeHttpBindAddress(args: Array<String>): String {
+    val bindArg = args.find { it.startsWith("--mcp-bridge-http-bind=") }
+    if(bindArg != null) {
+        return bindArg.substringAfter("=").ifEmpty { "127.0.0.1" }
+    }
+    return System.getenv("TPIPE_MCP_BRIDGE_HTTP_BIND") ?: "127.0.0.1"
 }

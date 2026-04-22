@@ -47,7 +47,7 @@ class McpSessionManager(
             P2PConcurrencyMode.ISOLATED -> sessionContexts.getOrPut(sessionId) {
                 createIsolatedContext()
             }
-            else -> pcpContext // Default fallback for unknown modes
+            else -> throw IllegalArgumentException("Unknown P2PConcurrencyMode: $concurrencyMode")
         }
     }
 
@@ -87,7 +87,7 @@ class McpSessionManager(
                 val currentSessionIds = server.sessions.keys.toSet()
                 val newSessionIds = currentSessionIds - previousSessionIds
                 newSessionIds.forEach { sessionId ->
-                    val session = server.sessions[sessionId]!!
+                    val session = server.sessions[sessionId] ?: return@forEach
                     // Register per-session onClose callback for precise sessionId tracking
                     liveSessions[sessionId] = session
                     session.onClose {
@@ -99,7 +99,7 @@ class McpSessionManager(
                     }
                     val clientInfo = session.clientVersion?.name
                     onConnect(sessionId, clientInfo)
-                    if (concurrencyMode == P2PConcurrencyMode.ISOLATED) {
+                    if(concurrencyMode == P2PConcurrencyMode.ISOLATED){
                         sessionContexts.getOrPut(sessionId) { createIsolatedContext() }
                     }
                 }

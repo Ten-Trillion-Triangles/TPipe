@@ -47,7 +47,7 @@ object McpHttpHost {
 
             embeddedServer(CIO, host = bindAddress, port = port) {
                 // FIX S2 + C1: Install auth and enforce at route level
-                if (!authKey.isNullOrBlank()) {
+                if(!authKey.isNullOrBlank()){
                     install(Authentication) {
                         bearer("mcp-auth") {
                             authenticate { tokenCredential: io.ktor.server.auth.BearerTokenCredential ->
@@ -87,7 +87,7 @@ object McpHttpHost {
 
             embeddedServer(CIO, host = bindAddress, port = port) {
                 // FIX S2 + C1: Install auth and enforce at route level
-                if (!authKey.isNullOrBlank()) {
+                if(!authKey.isNullOrBlank()){
                     install(Authentication) {
                         bearer("mcp-auth") {
                             authenticate { tokenCredential: io.ktor.server.auth.BearerTokenCredential ->
