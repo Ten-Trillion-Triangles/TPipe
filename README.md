@@ -150,7 +150,7 @@ Explore how TPipe is used in the field for high-stakes automation:
 - [Util Package API](docs/api/util-package.md) - Utility functions and helpers
 
 #### Extension APIs
-- [TPipe-MCP Package API](docs/api/tpipe-mcp-package.md) - Model Context Protocol bridge
+- [TPipe-MCP Package API](docs/api/tpipe-mcp-package.md) - Model Context Protocol bridge and server hosting
 - [TPipe-Defaults API](docs/api/tpipe-defaults-package.md) - Pre-configured components and reasoning
 
 ## Quick Start

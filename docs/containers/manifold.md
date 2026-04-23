@@ -114,6 +114,7 @@ The `manifold { }` builder supports these top-level blocks:
 | `defaults { }` | Alternative to `manager { }` | Uses TPipe-Defaults to build the manager |
 | `maxIterations(limit)` | Optional | Sets the maximum loop iterations (default: 100, null = unlimited) |
 | `history { }` | Optional | Configures manager shared-history truncation |
+| `initFunction { }` | Optional | Pre-execution startup checks before the manifold loop starts |
 | `validation { }` | Optional | Hooks for worker output validation and transformation |
 | `tracing { }` | Optional | Enables tracing for the manifold and child pipelines |
 | `summaryPipeline { }` | Optional | Adds an optional summarization pipeline that runs after each worker response |
@@ -158,6 +159,34 @@ val builtManifold = manifold {
     }
 }
 ```
+
+### initFunction { }
+
+The `initFunction` block attaches an optional pre-execution startup hook that runs before the manifold loop begins. This allows developers to perform safety checks and abort startup if conditions aren't met:
+
+```kotlin
+val builtManifold = manifold {
+    defaults {
+        bedrock(BedrockConfiguration(region = "us-east-1", model = "anthropic.claude-3-haiku-20240307-v1:0"))
+    }
+
+    worker("research-worker") {
+        description("Researches topics.")
+        pipeline(researchPipeline)
+    }
+
+    initFunction {
+        // Runs before the manifold loop starts. Return true to proceed, false to abort.
+        initFunction { content, manifold ->
+            // Check if prerequisites are met
+            println("Starting manifold with initial content: ${content.text.take(100)}")
+            true // Return false to abort execution
+        }
+    }
+}
+```
+
+This is equivalent to calling `manifold.setManifoldInitFunction(...)` on the API.
 
 ### tracing { }
 

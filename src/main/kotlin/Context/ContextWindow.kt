@@ -10,7 +10,7 @@ import java.util.ArrayDeque
 
 @kotlinx.serialization.Serializable
 data class ContextWindow(
-    @kotlinx.serialization.Transient val cinit : Boolean = false)
+    @kotlinx.serialization.Transient val isInitialized: Boolean = false)
 {
 
     /**
@@ -33,7 +33,7 @@ data class ContextWindow(
      * structured conversation storage when desired.
      */
     @kotlinx.serialization.Serializable
-    var converseHistory = ConverseHistory() //todo: Add lorebook selection support to this asap!
+    var converseHistory = ConverseHistory()
 
     /**
      * Version of the context window to manage remote synchronization.
@@ -786,15 +786,13 @@ data class ContextWindow(
         if(loreBookKeys.containsKey(key)) return loreBookKeys[key]
 
         //Try to find every alias key.
-        for(i in loreBookKeys)
+        for((_, loreBookEntry) in loreBookKeys)
         {
-           val lorebook = i.value
+            if(loreBookEntry.aliasKeys.contains(key.uppercase())) return loreBookEntry
 
-            if(lorebook.aliasKeys.contains(key.uppercase())) return lorebook
+            if(loreBookEntry.aliasKeys.contains(key.lowercase())) return loreBookEntry
 
-            if(lorebook.aliasKeys.contains(key.lowercase())) return lorebook
-
-            if(lorebook.aliasKeys.contains(key)) return lorebook
+            if(loreBookEntry.aliasKeys.contains(key)) return loreBookEntry
         }
 
         return null
@@ -909,7 +907,8 @@ data class ContextWindow(
         tokenCountingBias: Double = 0.0,
         inputText: String = "",
         preserveTextMatches: Boolean = false
-    ) {
+    )
+    {
         if(maxTokens <= 0) return
 
         if(preserveTextMatches && inputText.isNotBlank())
@@ -1124,7 +1123,8 @@ data class ContextWindow(
         fillMode: Boolean = false,
         fillAndSplitMode: Boolean = false,
         preserveTextMatches: Boolean = false
-    ) {
+    )
+    {
 
         if(totalTokenBudget == 0) return
 
@@ -2148,6 +2148,9 @@ data class ContextWindow(
         return contextElements.isEmpty() && loreBookKeys.isEmpty() && converseHistory.history.isEmpty()
     }
 
+    /**
+     * Clears all context data including context elements, lorebook keys, and conversation history.
+     */
     fun clear()
     {
         contextElements.clear()
@@ -2173,16 +2176,16 @@ data class ContextWindow(
         loreBookKeys.clear()
 
         //Replace any banned chars an llm likes to add, then ensure alias keys are case-insensitive and add back.
-        for(it in loreBookCopy)
+        for(loreBookEntry in loreBookCopy)
         {
-            var loreBookKey = it.key
+            var loreBookKey = loreBookEntry.key
 
             for(bannedChar in bannedCharsAsList)
             {
                 loreBookKey = loreBookKey.replace(bannedChar, replaceBannedCharWith)
             }
 
-            var loreBookValue = it.value
+            var loreBookValue = loreBookEntry.value
             loreBookValue.key = loreBookKey
 
             //Re-add now that we've cleaned up any of the nonsense like banned chars, missing case fixing alias keys etc.

@@ -1402,7 +1402,7 @@ class ManifoldDslTest
             }
         }
 
-        builtManifold.setValidatorFunction { content, agent ->
+        builtManifold.setValidatorFunction { content, agent, _ ->
             validatorCallCount++
             validatorReceivedContent = content
             validatorReceivedAgent = agent
@@ -1463,12 +1463,12 @@ class ManifoldDslTest
             }
         }
 
-        builtManifold.setValidatorFunction { _, _ ->
+        builtManifold.setValidatorFunction { _, _, _ ->
             validatorCallCount++
             false // Return FALSE to indicate failure - should trigger failure handler
         }
 
-        builtManifold.setFailureFunction { _, _ ->
+        builtManifold.setFailureFunction { _, _, _ ->
             failureCallCount++
             false // Return false to terminate manifold after failure
         }

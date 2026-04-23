@@ -52,6 +52,7 @@ object EventPriorityMapper
             TraceEventType.MANIFOLD_START,
             TraceEventType.MANIFOLD_END,
             TraceEventType.MANIFOLD_SUCCESS,
+            TraceEventType.MANIFOLD_INIT_CHECK,
             TraceEventType.JUNCTION_START,
             TraceEventType.JUNCTION_END,
             TraceEventType.JUNCTION_SUCCESS,
