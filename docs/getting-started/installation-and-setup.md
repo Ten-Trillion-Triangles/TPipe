@@ -163,9 +163,105 @@ kotlin {
 
 TPipe is designed for future GraalVM Native compilation to enable deployment as native libraries (.so files) for:
 - Edge devices
-- IoT systems  
+- IoT systems
 - Mobile platforms
 - Systems where JARs cannot be used
+
+## Running TPipe as an MCP Server
+
+TPipe can act as an MCP server, exposing registered PCP functions as MCP tools to connected MCP clients (such as Claude Desktop, Cursor, and other MCP-enabled applications).
+
+### Command-Line Modes
+
+| Mode | Description |
+|------|-------------|
+| `--mcp-stdio-once` | Run MCP server once, processing a single stdio request |
+| `--mcp-stdio-loop` | Run MCP server in loop, continuously processing stdio requests |
+| `--mcp-http` | Run MCP server with HTTP transport on port 8090 |
+
+### STDIO Mode
+
+```bash
+# Run once (process single request then exit)
+java -jar TPipe-*.jar --mcp-stdio-once
+
+# Run in loop (keep processing requests until EOF)
+java -jar TPipe-*.jar --mcp-stdio-loop
+```
+
+### HTTP Mode
+
+```bash
+# Default (127.0.0.1:8090)
+java -jar TPipe-*.jar --mcp-http
+
+# Custom port
+java -jar TPipe-*.jar --mcp-http --mcp-http-port=3000
+
+# With authentication
+java -jar TPipe-*.jar --mcp-http --mcp-http-auth-key=your-secret-key
+
+# Custom bind address
+java -jar TPipe-*.jar --mcp-http --mcp-http-bind=0.0.0.0
+```
+
+**Environment Variables (alternative to flags):**
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TPIPE_MCP_HTTP_PORT` | HTTP port | 8090 |
+| `TPIPE_MCP_HTTP_AUTH_KEY` | Bearer token auth | none |
+| `TPIPE_MCP_HTTP_BIND` | Bind address | 127.0.0.1 |
+
+### MCP Bridge Server Modes
+
+The MCP bridge server accepts raw MCP JSON configuration via the `TPIPE_MCP_JSON` environment variable. **Important:** Bridge modes require the **TPipe-MCP standalone JAR**, not the main TPipe JAR. The main TPipe JAR's `--mcp-bridge-*` flags will throw `IllegalStateException`.
+
+**Build the TPipe-MCP standalone JAR:**
+```bash
+cd TPipe-MCP
+./gradlew :shadowJar
+```
+
+```bash
+# Set MCP JSON configuration
+export TPIPE_MCP_JSON='{"tools":[{"name":"my_tool","description":"A tool","inputSchema":{"type":"object"}}]}'
+
+# Bridge stdio modes (TPipe-MCP JAR only)
+java -jar TPipe-MCP-*-all.jar --mcp-bridge-stdio-once
+java -jar TPipe-MCP-*-all.jar --mcp-bridge-stdio-loop
+
+# Bridge HTTP mode (TPipe-MCP JAR only)
+java -jar TPipe-MCP-*-all.jar --mcp-bridge-http --port 8080
+```
+
+**Bridge HTTP Options:**
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--port` | HTTP port | 8080 |
+| `--auth-key` | Bearer token auth | none |
+| `--bind-address` | Bind address | 127.0.0.1 |
+
+**Note:** The main TPipe JAR (`TPipe-*.jar`) does NOT support bridge modes. Attempting to use `--mcp-bridge-*` flags with the main JAR will throw `IllegalStateException` with message "MCP bridge... modes require TPIPE_MCP_JSON environment variable. Use TPipe-MCP standalone jar instead."
+
+### MCP Server Capabilities
+
+When running as an MCP server, TPipe exposes:
+
+| Capability | Description |
+|------------|-------------|
+| **Tools** | All PCP-registered functions via FunctionRegistry |
+| **Resources** | StdioContextOptions exposed as file:// and http:// resources |
+| **Prompts** | Functions prefixed with `prompt_` as MCP prompts |
+
+### Path Security
+
+Resource access is restricted by default:
+- File access limited to `user.dir` and `/tmp`
+- Configure via `TPIPE_MCP_ALLOWED_FILE_PATHS` (colon-separated on Unix, semicolon-separated on Windows)
+
+### Next Steps
+
+- [TPipe-MCP Package API](../api/tpipe-mcp-package.md) - Complete MCP server API reference
 
 ## Minimal Setup Example
 
