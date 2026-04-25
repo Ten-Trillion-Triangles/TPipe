@@ -83,3 +83,4 @@ aws/
 /__pycache__
 /md
 /.sisyphus
+/.playwright-mcp

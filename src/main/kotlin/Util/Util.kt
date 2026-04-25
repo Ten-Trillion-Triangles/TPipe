@@ -5,6 +5,7 @@ import com.TTT.Pipe.Pipe
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Context.ConverseHistory
+import com.TTT.Pipe.DummyPipe
 import kotlinx.coroutines.*
 import kotlinx.io.IOException
 import kotlinx.serialization.json.Json
@@ -1524,4 +1525,40 @@ fun deleteFile(filePath: String): Boolean {
     }
 }
 
+
+/**
+ * Convince function to allow the automation of creating a dummy pipe to hold a container pointer. Useful for adding
+ * to a pipeline as a one off when you want to route to a complex container.
+ *
+ * @param ptr Reference to the container pointer object cast to [P2PInterface]
+ * @param pipeNameRef Optional pipe name for cleaner and more readable trace files.
+ *
+ * @return Returns a dummy pipe which is just an empty pipe object with the container pointer assigned to it.
+ */
+fun createContainerPtr(ptr: P2PInterface, pipeNameRef: String = "") : DummyPipe
+{
+    return DummyPipe().apply {
+        setContainerPtr(ptr)
+        setPipeName(pipeNameRef.ifEmpty { "ContainerPtr" })
+    }
+}
+
+/**
+ * Convince function that creates a dummy pipeline that houses a container ptr inside of it. Useful for handling cases like
+ * [com.TTT.Pipeline.Connector] and [com.TTT.Pipeline.Splitter] which only accept pipelines.
+ *
+ * @param ptr P2PInterface object we're pointing to.
+ * @param dummyPipe Optional, allows the dummy pipe to be created prior if desired.
+ * @param pipelineName Optional, Useful for tracing.
+ */
+fun createContainerPtrAsPipeline(ptr: P2PInterface, dummyPipe: DummyPipe? = null, pipelineName: String = "") : Pipeline
+{
+    return Pipeline().apply {
+        setPipelineName(pipelineName.ifEmpty { "ContainerPtrPipeline" }) //Define if supplied.
+
+        //Automap or create new if not supplied.
+        val internalPipe = dummyPipe ?: createContainerPtr(ptr, "$pipelineName-dummy-pipe")
+        add(internalPipe)
+    }
+}
 

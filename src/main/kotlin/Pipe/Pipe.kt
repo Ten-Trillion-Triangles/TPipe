@@ -492,7 +492,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * Optional name for this pipe. Useful for debugging and tracing pipes and pipelines.
      */
     @SerialName("pipeName")
-    var pipeName = ""
+    var pipeName: String = ""
 
     /**
      * Timeout value for the pipe class. Defaults to 5 mins. When timeouts are enabled, the pipe
@@ -5078,6 +5078,35 @@ abstract class Pipe : P2PInterface, ProviderInterface
     private suspend fun executeMultimodal(inputContent: MultimodalContent): MultimodalContent = coroutineScope{
         val executionStartTime = System.currentTimeMillis()
 
+        /**
+         * Declare local function to address the multiple times we need to call this internal wrapping.
+         * This is intended to be an internal mechanism of pipe execution so we want to leverage Kotlin's ability
+         * to have true local functions.
+         */
+        fun embedContentIntoInternalConverse(content: MultimodalContent) : MultimodalContent
+        {
+            val existingHistory = pipeMetadata["wrappedConverseHistory"] as? ConverseHistory
+            if(existingHistory != null)
+            {
+                existingHistory.add(converseRole, content)
+                pipeMetadata["wrappedConverseHistory"] = existingHistory
+                return MultimodalContent(text = serializeConverseHistory(existingHistory))
+            }
+
+            return content
+        }
+
+        /**
+         * If we're using this pipe a proxy we'll repoint to the proxy container pointer instead, and execute whatever
+         * it is. The result will be returned here and then out to the rest of the pipeline. By doing this, we can
+         * allow the case of storing a higher level container inside a lower level pipeline.
+         */
+        if(containerPtr != null)
+        {
+            val result = containerPtr!!.executeLocal(inputContent)
+            return@coroutineScope if(wrapContentWithConverseHistory) embedContentIntoInternalConverse(result) else result
+        }
+
         if(enablePipeTimeout)
         {
             PipeTimeoutManager.startTracking(this@Pipe, pipeTimeout)
@@ -5137,34 +5166,6 @@ abstract class Pipe : P2PInterface, ProviderInterface
             }
 
             //Both cases were explicitly bypassed by the developer, so we'll proceed despite the empty content object.
-        }
-
-        /**
-         * Declare local function to address the multiple times we need to call this internal wrapping.
-         * This is intended to be an internal mechanism of pipe execution so we want to leverage Kotlin's ability
-         * to have true local functions.
-         */
-        fun embedContentIntoInternalConverse(content: MultimodalContent) : MultimodalContent
-        {
-            val existingHistory = pipeMetadata["wrappedConverseHistory"] as? ConverseHistory
-            if(existingHistory != null)
-            {
-                existingHistory.add(converseRole, content)
-                pipeMetadata["wrappedConverseHistory"] = existingHistory
-                return MultimodalContent(text = serializeConverseHistory(existingHistory))
-            }
-
-            return content
-        }
-
-        /**
-         * If we're using this pipe a proxy we'll repoint to the proxy container pointer instead, and execute whatever
-         * it is. The result will be returned here and then out to the rest of the pipeline. By doing this, we can
-         * allow the case of storing a higher level container inside a lower level pipeline.
-         */
-        if(containerPtr != null)
-        {
-            return@coroutineScope embedContentIntoInternalConverse(inputContent).takeIf { wrapContentWithConverseHistory } ?: inputContent
         }
 
         /**
