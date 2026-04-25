@@ -43,6 +43,11 @@ class McpToolRegistry(private val pcpContext: PcpContext) {
      * response back to CallToolResult.
      */
     fun callTool(name: String, arguments: Map<String, String>): CallToolResult {
+        // FIX: Add function to context whitelist so PcpFunctionHandler validation passes
+        pcpContext.addTPipeOption(TPipeContextOptions().apply {
+            this.functionName = name
+        })
+
         val pcpRequest = PcPRequest(
             tPipeContextOptions = TPipeContextOptions().apply {
                 this.functionName = name
@@ -75,15 +80,16 @@ class McpToolRegistry(private val pcpContext: PcpContext) {
      * Convert FunctionSignature.parameters to ToolSchema format for MCP input schema.
      */
     private fun buildInputSchema(signature: FunctionSignature): ToolSchema {
-        val properties = buildJsonObject { }
         val requiredParams = mutableListOf<String>()
 
-        signature.parameters.forEach { param ->
-            val paramSchema = buildParamSchema(param)
-            (properties as MutableMap<String, JsonElement>)[param.name] = paramSchema
+        val properties = buildJsonObject {
+            signature.parameters.forEach { param ->
+                val paramSchema = buildParamSchema(param)
+                put(param.name, paramSchema)
 
-            if(!param.isOptional){
-                requiredParams.add(param.name)
+                if(!param.isOptional){
+                    requiredParams.add(param.name)
+                }
             }
         }
 
