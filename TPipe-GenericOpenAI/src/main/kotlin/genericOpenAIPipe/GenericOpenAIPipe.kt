@@ -634,7 +634,10 @@ class GenericOpenAIPipe : Pipe()
                           "responseLength" to contentText.length,
                           "model" to response.model,
                           "success" to true,
-                          "apiType" to "ChatAPI"
+                          "apiType" to "ChatAPI",
+                          "finishReason" to (response.choices.firstOrNull()?.finishReason ?: "unknown"),
+                          "responseId" to (response.id ?: "unknown"),
+                          "systemFingerprint" to (response.systemFingerprint ?: "none")
                       ))
 
                 return contentText
