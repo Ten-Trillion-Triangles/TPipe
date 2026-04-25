@@ -25,32 +25,34 @@ class GenericOpenAIPipeTest
     @Test
     fun testChatMessageSerialization()
     {
-        val message = ChatMessage(role = "user", content = "Hello, world!")
+        val message = ChatMessage(role = "user", content = MessageContent.TextContent("Hello, world!"))
         val json = serialize(message)
+        println("DEBUG: serialized json = $json")
+
         val deserialized = deserialize<ChatMessage>(json)
 
         assertNotNull(deserialized)
         assertEquals("user", deserialized.role)
-        assertEquals("Hello, world!", deserialized.content)
+        assertEquals("Hello, world!", (deserialized.content as MessageContent.TextContent).text)
     }
 
     @Test
     fun testChatMessageDeserialization()
     {
-        val json = """{"role": "assistant", "content": "Hello!"}"""
+        val json = """{"role": "assistant", "content": {"type":"text","text":"Hello!"}}"""
         val message = deserialize<ChatMessage>(json)
 
         assertNotNull(message)
         assertEquals("assistant", message.role)
-        assertEquals("Hello!", message.content)
+        assertEquals("Hello!", (message.content as MessageContent.TextContent).text)
     }
 
     @Test
     fun testGenericOpenAIChatRequestSerialization()
     {
         val messages = listOf(
-            ChatMessage(role = "system", content = "You are helpful."),
-            ChatMessage(role = "user", content = "What is 2+2?")
+            ChatMessage(role = "system", content = MessageContent.TextContent("You are helpful.")),
+            ChatMessage(role = "user", content = MessageContent.TextContent("What is 2+2?"))
         )
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
@@ -68,7 +70,7 @@ class GenericOpenAIPipeTest
     @Test
     fun testGenericOpenAIChatRequestWithNullOptionalFields()
     {
-        val messages = listOf(ChatMessage(role = "user", content = "Hi"))
+        val messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("Hi")))
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
             messages = messages
@@ -97,7 +99,7 @@ class GenericOpenAIPipeTest
                         "index": 0,
                         "message": {
                             "role": "assistant",
-                            "content": "The answer is 4."
+                            "content": {"type":"text","text":"The answer is 4."}
                         },
                         "finish_reason": "stop"
                     }
@@ -117,7 +119,7 @@ class GenericOpenAIPipeTest
         assertEquals("chat.completion", response.objectType)
         assertEquals("gpt-4o", response.model)
         assertEquals(1, response.choices.size)
-        assertEquals("The answer is 4.", response.choices[0].message.content)
+        assertEquals("The answer is 4.", (response.choices[0].message.content as MessageContent.TextContent).text)
         assertEquals("stop", response.choices[0].finishReason)
 
         assertNotNull(response.usage)
@@ -555,13 +557,13 @@ class GenericOpenAIPipeTest
 
         if(systemPrompt.isNotEmpty())
         {
-            messages.add(ChatMessage(role = "system", content = systemPrompt))
+            messages.add(ChatMessage(role = "system", content = MessageContent.TextContent(systemPrompt)))
         }
-        messages.add(ChatMessage(role = "user", content = "Hello"))
+        messages.add(ChatMessage(role = "user", content = MessageContent.TextContent("Hello")))
 
         assertEquals(2, messages.size)
         assertEquals("system", messages[0].role)
-        assertEquals("You are a helpful assistant.", messages[0].content)
+        assertEquals("You are a helpful assistant.", (messages[0].content as MessageContent.TextContent).text)
         assertEquals("user", messages[1].role)
     }
 
@@ -573,9 +575,9 @@ class GenericOpenAIPipeTest
 
         if(systemPrompt.isNotEmpty())
         {
-            messages.add(ChatMessage(role = "system", content = systemPrompt))
+            messages.add(ChatMessage(role = "system", content = MessageContent.TextContent(systemPrompt)))
         }
-        messages.add(ChatMessage(role = "user", content = "Hello"))
+        messages.add(ChatMessage(role = "user", content = MessageContent.TextContent("Hello")))
 
         assertEquals(1, messages.size)
         assertEquals("user", messages[0].role)
@@ -589,7 +591,7 @@ class GenericOpenAIPipeTest
         val temperature = 0.7
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
-            messages = listOf(ChatMessage(role = "user", content = "Hi")),
+            messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("Hi"))),
             temperature = if(temperature > 0.0) temperature else null
         )
 
@@ -603,7 +605,7 @@ class GenericOpenAIPipeTest
         val temperature = 0.0
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
-            messages = listOf(ChatMessage(role = "user", content = "Hi")),
+            messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("Hi"))),
             temperature = if(temperature > 0.0) temperature else null
         )
 
@@ -615,7 +617,7 @@ class GenericOpenAIPipeTest
     {
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
-            messages = listOf(ChatMessage(role = "user", content = "Hi"))
+            messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("Hi")))
         )
 
         assertTrue(request.temperature == null)
@@ -627,7 +629,7 @@ class GenericOpenAIPipeTest
         val temperature = 1.5
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
-            messages = listOf(ChatMessage(role = "user", content = "Hi")),
+            messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("Hi"))),
             temperature = if(temperature > 0.0) temperature else null
         )
 
@@ -643,7 +645,7 @@ class GenericOpenAIPipeTest
     {
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
-            messages = listOf(ChatMessage(role = "user", content = "Hi")),
+            messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("Hi"))),
             maxTokens = 1000
         )
 
@@ -656,7 +658,7 @@ class GenericOpenAIPipeTest
     {
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
-            messages = listOf(ChatMessage(role = "user", content = "Hi"))
+            messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("Hi")))
         )
 
         assertTrue(request.maxTokens == null)
@@ -1114,11 +1116,11 @@ class GenericOpenAIPipeTest
 //=========================================Presence and Frequency Penalty Tests=========================================
 
     @Test
-    fun testPresencePenaltySerialization()
+fun testPresencePenaltySerialization()
     {
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
-            messages = listOf(ChatMessage(role = "user", content = "Hi")),
+            messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("Hi"))),
             presencePenalty = 0.5
         )
 
@@ -1131,7 +1133,7 @@ class GenericOpenAIPipeTest
     {
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
-            messages = listOf(ChatMessage(role = "user", content = "Hi")),
+            messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("Hi"))),
             frequencyPenalty = 0.5
         )
 
@@ -1139,14 +1141,12 @@ class GenericOpenAIPipeTest
         assertTrue(json.contains("0.5"))
     }
 
-//=========================================Stop Sequences Tests=========================================
-
     @Test
     fun testStopSequencesSerialization()
     {
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
-            messages = listOf(ChatMessage(role = "user", content = "Hi")),
+            messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("Hi"))),
             stop = listOf("STOP", "END")
         )
 
@@ -1160,20 +1160,18 @@ class GenericOpenAIPipeTest
     {
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
-            messages = listOf(ChatMessage(role = "user", content = "Hi"))
+            messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("Hi")))
         )
 
         assertTrue(request.stop == null)
     }
-
-//=========================================Seed Tests=========================================
 
     @Test
     fun testSeedSerialization()
     {
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
-            messages = listOf(ChatMessage(role = "user", content = "Hi")),
+            messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("Hi"))),
             seed = 42
         )
 
@@ -1181,14 +1179,12 @@ class GenericOpenAIPipeTest
         assertTrue(json.contains("42"))
     }
 
-//=========================================Logprobs Tests=========================================
-
     @Test
     fun testLogprobsSerialization()
     {
         val request = GenericOpenAIChatRequest(
             model = "gpt-4o",
-            messages = listOf(ChatMessage(role = "user", content = "Hi")),
+            messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("Hi"))),
             logprobs = true,
             topLogprobs = 5
         )

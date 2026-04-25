@@ -338,6 +338,171 @@ class GenericOpenAIPipe : Pipe()
 //=========================================Generation Methods=========================================================
 
     /**
+     * Generates content with multimodal support.
+     * Handles binary content (images) by converting to OpenAI content blocks.
+     * @param content Multimodal content with optional binary attachments
+     * @return Generated response
+     */
+    override suspend fun generateContent(content: MultimodalContent): MultimodalContent
+    {
+        if(!content.hasBinaryContent())
+        {
+            return MultimodalContent(text = generateText(content.text))
+        }
+
+        val blocks = mutableListOf<ContentBlock>()
+
+        if(content.text.isNotEmpty())
+        {
+            blocks.add(ContentBlock.TextBlock(content.text))
+        }
+
+        for(binary in content.binaryContent)
+        {
+            when(binary)
+            {
+                is com.TTT.Pipe.BinaryContent.Base64String ->
+                {
+                    val mimeType = binary.mimeType
+                    blocks.add(ContentBlock.ImageUrlBlock(
+                        url = "data:$mimeType;base64,${binary.data}",
+                        detail = "auto"
+                    ))
+                }
+                is com.TTT.Pipe.BinaryContent.Bytes ->
+                {
+                    val base64 = java.util.Base64.getEncoder().encodeToString(binary.data)
+                    val mimeType = binary.mimeType
+                    blocks.add(ContentBlock.ImageUrlBlock(
+                        url = "data:$mimeType;base64,$base64",
+                        detail = "auto"
+                    ))
+                }
+                is com.TTT.Pipe.BinaryContent.CloudReference ->
+                {
+                    blocks.add(ContentBlock.ImageUrlBlock(
+                        url = binary.uri,
+                        detail = "auto"
+                    ))
+                }
+                is com.TTT.Pipe.BinaryContent.TextDocument ->
+                {
+                    blocks.add(ContentBlock.TextBlock(binary.content))
+                }
+            }
+        }
+
+        val messages = mutableListOf<ChatMessage>()
+
+        if(systemPrompt.isNotEmpty())
+        {
+            messages.add(ChatMessage(role = "system", content = MessageContent.TextContent(systemPrompt)))
+        }
+
+        messages.add(ChatMessage(role = "user", content = MessageContent.MultimodalContent(blocks)))
+
+        val request = GenericOpenAIChatRequest(
+            model = model,
+            messages = messages,
+            temperature = if(temperature > 0.0) temperature else null,
+            topP = if(topP > 0.0) topP else null,
+            topK = topK,
+            maxTokens = if(maxTokens > 0) maxTokens else null,
+            presencePenalty = if(presencePenalty != 0.0) presencePenalty else null,
+            frequencyPenalty = frequencyPenalty,
+            repetitionPenalty = repetitionPenalty,
+            seed = seed,
+            stop = stopSequences.takeIf { it.isNotEmpty() },
+            tools = tools,
+            toolChoice = toolChoice,
+            parallelToolCalls = parallelToolCalls,
+            responseFormat = responseFormat,
+            structuredOutputs = structuredOutputs,
+            modalities = modalities,
+            reasoning = reasoningConfig,
+            cacheControl = cacheControl,
+            logitBias = logitBias.takeIf { it.isNotEmpty() },
+            logprobs = logprobs,
+            topLogprobs = topLogprobs,
+            minP = minP,
+            topA = topA,
+            user = user,
+            n = n,
+            stream = streamingEnabled
+        )
+
+        val responseText = sendRequest(request)
+        return MultimodalContent(text = responseText)
+    }
+
+    /**
+     * Sends request and returns response text.
+     */
+    private suspend fun sendRequest(request: GenericOpenAIChatRequest): String
+    {
+        val client = httpClient ?: throw IllegalStateException("GenericOpenAIPipe not initialized. Call init() first.")
+
+        val jsonRequest = serialize(request, encodedefault = false)
+
+        if(streamingEnabled)
+        {
+            val response = withContext(Dispatchers.IO)
+            {
+                client.post("$baseUrl/chat/completions")
+                {
+                    contentType(ContentType.Application.Json)
+                    header("Authorization", "Bearer $apiKey")
+                    setBody(jsonRequest)
+                }
+            }
+            return executeStreaming(response)
+        }
+        else
+        {
+            val responseText = withContext(Dispatchers.IO)
+            {
+                client.post("$baseUrl/chat/completions")
+                {
+                    contentType(ContentType.Application.Json)
+                    header("Authorization", "Bearer $apiKey")
+                    setBody(jsonRequest)
+                }.bodyAsText()
+            }
+
+            val errorResponse = try { deserialize<GenericOpenAIErrorResponse>(responseText) } catch(e: Exception) { null }
+            if(errorResponse != null && errorResponse.error.message.isNotEmpty())
+            {
+                val errorMessage = errorResponse.error.message
+                val errorType = errorResponse.error.type
+                val errorCode = errorResponse.error.code
+
+                val p2pError = when
+                {
+                    errorType == "authentication_error" || errorCode == "401" -> P2PError.auth
+                    errorType == "rate_limit_error" || errorCode == "429" -> P2PError.transport
+                    errorType == "invalid_request_error" || errorType == "invalid_api_key" || errorCode == "400" -> P2PError.prompt
+                    errorType == "api_error" || errorType == "server_error" || errorCode?.startsWith("5") == true -> P2PError.transport
+                    else -> P2PError.transport
+                }
+                throw P2PException(p2pError, "GenericOpenAI error: $errorMessage", Exception(errorMessage))
+            }
+
+            val response: GenericOpenAIChatResponse = deserialize(responseText)
+                ?: throw P2PException(P2PError.json, "Failed to deserialize GenericOpenAI chat response: $responseText", Exception("Deserialization failed"))
+
+            val contentText = when(val msg = response.choices.firstOrNull()?.message?.content)
+            {
+                is MessageContent.TextContent -> msg.text
+                is MessageContent.MultimodalContent -> msg.blocks.filterIsInstance<ContentBlock.TextBlock>().joinToString("") { it.text }
+                null -> ""
+            }
+            return contentText
+        }
+    }
+
+//=========================================Context Management==========================================================
+
+    /**
      * Generates text using the configured OpenAI-compatible model.
      * @param promptInjector Text to inject into the prompt
      * @return Generated response text
@@ -361,10 +526,10 @@ class GenericOpenAIPipe : Pipe()
 
             if(systemPrompt.isNotEmpty())
             {
-                messages.add(ChatMessage(role = "system", content = systemPrompt))
+                messages.add(ChatMessage(role = "system", content = MessageContent.TextContent(systemPrompt)))
             }
 
-            messages.add(ChatMessage(role = "user", content = promptInjector))
+            messages.add(ChatMessage(role = "user", content = MessageContent.TextContent(promptInjector)))
 
             val request = GenericOpenAIChatRequest(
                 model = model,
@@ -447,9 +612,13 @@ class GenericOpenAIPipe : Pipe()
                 val response: GenericOpenAIChatResponse = deserialize(responseText)
                     ?: throw P2PException(P2PError.json, "Failed to deserialize GenericOpenAI chat response: $responseText", Exception("Deserialization failed"))
 
-                val resultText = response.choices.firstOrNull()?.message?.content ?: ""
+                val contentText = when(val msg = response.choices.firstOrNull()?.message?.content)
+                {
+                    is MessageContent.TextContent -> msg.text
+                    is MessageContent.MultimodalContent -> msg.blocks.filterIsInstance<ContentBlock.TextBlock>().joinToString("") { it.text }
+                    null -> ""
+                }
 
-                // Extract token usage for tracing
                 val usage = response.usage
                 val inputTokens = usage?.promptTokens ?: 0
                 val outputTokens = usage?.completionTokens ?: 0
@@ -460,13 +629,13 @@ class GenericOpenAIPipe : Pipe()
                           "inputTokens" to inputTokens,
                           "outputTokens" to outputTokens,
                           "totalTokens" to totalTokens,
-                          "responseLength" to resultText.length,
+                          "responseLength" to contentText.length,
                           "model" to response.model,
                           "success" to true,
                           "apiType" to "ChatAPI"
                       ))
 
-                return resultText
+                return contentText
             }
         }
         catch(e: Exception)
