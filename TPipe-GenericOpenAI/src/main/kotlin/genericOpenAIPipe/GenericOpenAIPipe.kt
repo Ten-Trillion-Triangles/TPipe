@@ -167,7 +167,9 @@ class GenericOpenAIPipe : Pipe()
      */
     fun setBaseUrl(url: String): GenericOpenAIPipe
     {
-        baseUrl = url
+        require(url.isNotBlank()) { "baseUrl cannot be blank" }
+        require(url.startsWith("https://")) { "baseUrl must use HTTPS for security" }
+        baseUrl = url.trimEnd('/')
         return this
     }
 
@@ -606,7 +608,7 @@ class GenericOpenAIPipe : Pipe()
                         errorType == "api_error" || errorType == "server_error" || errorCode?.startsWith("5") == true -> P2PError.transport
                         else -> P2PError.transport
                     }
-                    throw P2PException(p2pError, "GenericOpenAI error: $errorMessage", Exception(errorMessage))
+                    throw P2PException(p2pError, "GenericOpenAI API error: ${errorResponse.error.type}", Exception(errorMessage))
                 }
 
                 val response: GenericOpenAIChatResponse = deserialize(responseText)
