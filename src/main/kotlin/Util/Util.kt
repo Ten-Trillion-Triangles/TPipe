@@ -685,6 +685,54 @@ fun <T : Any> cloneInstance(template: T): T
 }
 
 /**
+ * Checks if all properties of an object are equal to their default values.
+ * Uses a fresh instance via no-arg constructor as the reference for default values.
+ * Properties annotated with [RuntimeState] or `@Transient` are skipped.
+ *
+ * @return true if all non-skipped properties match their default values, false otherwise
+ */
+@Suppress("UNCHECKED_CAST")
+fun <T : Any> T.isDefault(): Boolean
+{
+    val kClass = this::class
+
+    // Try to create a fresh instance to compare against
+    val freshInstance = try
+    {
+        val constructor = kClass.java.getDeclaredConstructor()
+        constructor.isAccessible = true
+        constructor.newInstance()
+    }
+    catch(_: Exception)
+    {
+        return false // Cannot determine defaults without a no-arg constructor
+    }
+
+    return kClass.memberProperties.all { prop ->
+        val isRuntimeState = prop.annotations.any { it.annotationClass == RuntimeState::class }
+        val isTransient = prop.annotations.any {
+            it.annotationClass.qualifiedName?.contains("Transient") == true
+        }
+        if(isRuntimeState || isTransient)
+        {
+            return@all true
+        }
+
+        try
+        {
+            prop.isAccessible = true
+            val currentValue = (prop as KProperty1<Any, Any?>).get(this)
+            val defaultValue = prop.get(freshInstance)
+            currentValue == defaultValue
+        }
+        catch(_: Exception)
+        {
+            false // Cannot compare inaccessible properties
+        }
+    }
+}
+
+/**
  * Classify and copy a single property value according to the P2P concurrency isolation property classification.
  */
 @Suppress("UNCHECKED_CAST")
