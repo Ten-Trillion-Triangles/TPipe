@@ -10,6 +10,9 @@ import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import genericOpenAIPipe.env.*
+import genericOpenAIPipe.api.ApiMode
+import genericOpenAIPipe.api.RequestSerializer
+import genericOpenAIPipe.api.ResponseParser
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -147,6 +150,62 @@ class GenericOpenAIPipe : Pipe()
     @kotlinx.serialization.Transient
     private var reasoningEnabled: Boolean? = null
 
+    /**
+     * API mode for selecting OpenAI vs Anthropic API format.
+     * Default is [ApiMode.OpenAI] for backward compatibility.
+     * Cannot be changed after first API call.
+     */
+    @kotlinx.serialization.Serializable
+    private var apiMode: ApiMode = ApiMode.OpenAI
+
+    /**
+     * Tracks whether the first API request has been made.
+     * Used to enforce immutability of apiMode after initialization.
+     */
+    @kotlinx.serialization.Transient
+    private var apiModeLocked: Boolean = false
+
+    private val responseParser: ResponseParser = ResponseParser.Factory.create()
+
+    private val requestSerializer: RequestSerializer = RequestSerializer.Factory.create()
+
+    /**
+     * Returns the appropriate auth headers based on the current [apiMode].
+     *
+     * OpenAI mode uses Bearer token authentication.
+     * Anthropic mode uses x-api-key header with anthropic-version header.
+     *
+     * @return Map of header name to header value
+     */
+    private fun getAuthHeaders(): Map<String, String>
+    {
+        return when(apiMode)
+        {
+            is ApiMode.OpenAI -> mapOf("Authorization" to "Bearer $apiKey")
+            is ApiMode.Anthropic -> mapOf(
+                "x-api-key" to apiKey,
+                "anthropic-version" to "2023-06-01"
+            )
+        }
+    }
+
+    /**
+     * Returns the appropriate endpoint path based on the current [apiMode].
+     *
+     * OpenAI mode uses /chat/completions.
+     * Anthropic mode uses /messages.
+     *
+     * @return The endpoint path (without baseUrl prefix)
+     */
+    private fun getEndpoint(): String
+    {
+        return when(apiMode)
+        {
+            is ApiMode.OpenAI -> "/chat/completions"
+            is ApiMode.Anthropic -> "/messages"
+        }
+    }
+
 //=========================================Builder Methods=============================================================
 
     /**
@@ -273,6 +332,20 @@ class GenericOpenAIPipe : Pipe()
     {
         this.streamingEnabled = true
         obtainStreamingCallbackManager().addCallback(callback)
+        return this
+    }
+
+    /**
+     * Sets the API mode for the request format.
+     * @param mode [ApiMode.OpenAI] for OpenAI-compatible format (default),
+     *             [ApiMode.Anthropic] for Anthropic messages format
+     * @return This pipe instance for fluent chaining
+     * @throws IllegalStateException if called after the first API request
+     */
+    fun setApiMode(mode: ApiMode): GenericOpenAIPipe
+    {
+        check(!apiModeLocked) { "apiMode cannot be changed after the first API request" }
+        apiMode = mode
         return this
     }
 
@@ -444,16 +517,18 @@ class GenericOpenAIPipe : Pipe()
     {
         val client = httpClient ?: throw IllegalStateException("GenericOpenAIPipe not initialized. Call init() first.")
 
+        apiModeLocked = true
+
         val jsonRequest = serialize(request, encodedefault = false)
 
         if(streamingEnabled)
         {
             val response = withContext(Dispatchers.IO)
             {
-                client.post("$baseUrl/chat/completions")
+                client.post("$baseUrl${getEndpoint()}")
                 {
                     contentType(ContentType.Application.Json)
-                    header("Authorization", "Bearer $apiKey")
+                    getAuthHeaders().forEach { (name, value) -> header(name, value) }
                     setBody(jsonRequest)
                 }
             }
@@ -463,34 +538,26 @@ class GenericOpenAIPipe : Pipe()
         {
             val responseText = withContext(Dispatchers.IO)
             {
-                client.post("$baseUrl/chat/completions")
+                client.post("$baseUrl${getEndpoint()}")
                 {
                     contentType(ContentType.Application.Json)
-                    header("Authorization", "Bearer $apiKey")
+                    getAuthHeaders().forEach { (name, value) -> header(name, value) }
                     setBody(jsonRequest)
                 }.bodyAsText()
             }
 
-            val errorResponse = try { deserialize<GenericOpenAIErrorResponse>(responseText) } catch(e: Exception) { null }
-            if(errorResponse != null && errorResponse.error.message.isNotEmpty())
+            val response: GenericOpenAIChatResponse = try
             {
-                val errorMessage = errorResponse.error.message
-                val errorType = errorResponse.error.type
-                val errorCode = errorResponse.error.code
-
-                val p2pError = when
-                {
-                    errorType == "authentication_error" || errorCode == "401" -> P2PError.auth
-                    errorType == "rate_limit_error" || errorCode == "429" -> P2PError.transport
-                    errorType == "invalid_request_error" || errorType == "invalid_api_key" || errorCode == "400" -> P2PError.prompt
-                    errorType == "api_error" || errorType == "server_error" || errorCode?.startsWith("5") == true -> P2PError.transport
-                    else -> P2PError.transport
-                }
-                throw P2PException(p2pError, "GenericOpenAI error: $errorMessage", Exception(errorMessage))
+                responseParser.parse(responseText, apiMode)
             }
-
-            val response: GenericOpenAIChatResponse = deserialize(responseText)
-                ?: throw P2PException(P2PError.json, "Failed to deserialize GenericOpenAI chat response: $responseText", Exception("Deserialization failed"))
+            catch(e: P2PException)
+            {
+                throw e
+            }
+            catch(e: Exception)
+            {
+                throw P2PException(P2PError.json, "Failed to parse GenericOpenAI response: ${e.message}", e)
+            }
 
             val contentText = when(val msg = response.choices.firstOrNull()?.message?.content)
             {
@@ -563,16 +630,16 @@ class GenericOpenAIPipe : Pipe()
                 stream = streamingEnabled
             )
 
-            val jsonRequest = serialize(request, encodedefault = false)
+val jsonRequest = requestSerializer.serialize(request, apiMode)
 
             if(streamingEnabled)
             {
                 val response = withContext(Dispatchers.IO)
                 {
-                    client.post("$baseUrl/chat/completions")
+                    client.post("$baseUrl${getEndpoint()}")
                     {
                         contentType(ContentType.Application.Json)
-                        header("Authorization", "Bearer $apiKey")
+                        getAuthHeaders().forEach { (name, value) -> header(name, value) }
 
                         setBody(jsonRequest)
                     }
@@ -584,35 +651,27 @@ class GenericOpenAIPipe : Pipe()
             {
                 val responseText = withContext(Dispatchers.IO)
                 {
-                    client.post("$baseUrl/chat/completions")
+                    client.post("$baseUrl${getEndpoint()}")
                     {
                         contentType(ContentType.Application.Json)
-                        header("Authorization", "Bearer $apiKey")
+                        getAuthHeaders().forEach { (name, value) -> header(name, value) }
 
                         setBody(jsonRequest)
                     }.bodyAsText()
                 }
 
-                // Check for error responses BEFORE deserializing as success
-                val errorResponse = try { deserialize<GenericOpenAIErrorResponse>(responseText) } catch(e: Exception) { null }
-                if(errorResponse != null && errorResponse.error.message.isNotEmpty())
+                val response: GenericOpenAIChatResponse = try
                 {
-                    val errorMessage = errorResponse.error.message
-                    val errorType = errorResponse.error.type
-                    val errorCode = errorResponse.error.code
-
-                    val p2pError = when {
-                        errorType == "authentication_error" || errorCode == "401" -> P2PError.auth
-                        errorType == "rate_limit_error" || errorCode == "429" -> P2PError.transport
-                        errorType == "invalid_request_error" || errorType == "invalid_api_key" || errorCode == "400" -> P2PError.prompt
-                        errorType == "api_error" || errorType == "server_error" || errorCode?.startsWith("5") == true -> P2PError.transport
-                        else -> P2PError.transport
-                    }
-                    throw P2PException(p2pError, "GenericOpenAI API error: ${errorResponse.error.type}", Exception(errorMessage))
+                    responseParser.parse(responseText, apiMode)
                 }
-
-                val response: GenericOpenAIChatResponse = deserialize(responseText)
-                    ?: throw P2PException(P2PError.json, "Failed to deserialize GenericOpenAI chat response: $responseText", Exception("Deserialization failed"))
+                catch(e: P2PException)
+                {
+                    throw e
+                }
+                catch(e: Exception)
+                {
+                    throw P2PException(P2PError.json, "Failed to parse GenericOpenAI response: ${e.message}", e)
+                }
 
                 val contentText = when(val msg = response.choices.firstOrNull()?.message?.content)
                 {
