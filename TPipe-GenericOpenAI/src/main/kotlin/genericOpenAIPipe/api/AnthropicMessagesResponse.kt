@@ -31,7 +31,7 @@ data class AnthropicMessagesResponse(
     val stopReason: String? = null,
     val usage: UsageInfo,
     // Not from API response - added for session tracking
-    @Transient
+    @kotlinx.serialization.Transient
     val sessionId: String? = null
 )
 
