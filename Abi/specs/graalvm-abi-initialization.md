@@ -331,5 +331,6 @@ TPipe_shutdown();  // optional
 
 ## 11. Next Steps
 
-- [ ] Finalize this spec based on user feedback
-- [ ] Move to `graalvm-abi-core-types.md` — type system and data types
+- [x] Finalize this spec based on user feedback
+- [x] graalvm-abi-core-types.md — type system and data types
+- [ ] graalvm-abi-pipe-api.md — Pipe execution API

@@ -343,8 +343,8 @@ extern "C" {
 ## 10. Next Steps
 
 - [x] ✅ graalvm-abi-overview.md (this document)
-- [ ] graalvm-abi-initialization.md — detailed init/shutdown contract
-- [ ] graalvm-abi-core-types.md — type system and data types
+- [x] ✅ graalvm-abi-initialization.md — detailed init/shutdown contract
+- [x] ✅ graalvm-abi-core-types.md — type system and data types
 - [ ] graalvm-abi-pipe-api.md — Pipe execution API
 - [ ] graalvm-abi-pipeline-api.md — Pipeline orchestration API
 - [ ] graalvm-abi-context-api.md — Context management API
