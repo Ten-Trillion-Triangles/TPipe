@@ -118,7 +118,7 @@ The router also has access to the full `DistributionGridEnvelope` through the ho
 
 #### What the Router Must Output
 
-The router **must** write to `content.metadata["distributionGridDirective"]` a parsed `DistributionGridDirective` object. The grid reads this after your pipeline returns.
+The router **must** set a `DistributionGridDirective` via the helper method `setDistributionGridDirective()`. The grid reads this after your pipeline returns.
 
 **Minimal working router that always runs locally:**
 
@@ -135,6 +135,11 @@ val routerPipeline = Pipeline().apply {
 
             Do not change the kind — always route to local worker for now.
         """.trimIndent())
+        setJsonTransformer { json ->
+            val directive = deserialize<DistributionGridDirective>(json)
+            content.setDistributionGridDirective(directive)
+            content
+        }
     })
 }
 ```
@@ -157,20 +162,29 @@ val routerPipeline = Pipeline().apply {
             If the task is simple and self-contained, run locally.
             If the task requires specialized capabilities from another peer, dispatch there.
         """.trimIndent())
+        setJsonTransformer { json ->
+            val directive = deserialize<DistributionGridDirective>(json)
+            content.setDistributionGridDirective(directive)
+            content
+        }
     })
 }
 ```
 
 #### Directive Resolution
 
-The grid reads the directive from metadata using a key constant:
+The grid reads the directive from the content's metadata. The `setDistributionGridDirective()` helper abstracts the magic string `"distributionGridDirective"` so you don't need to remember it.
+
+To read a directive back (e.g., in a hook):
 
 ```kotlin
-private const val DIRECTIVE_METADATA_KEY = "distributionGridDirective"
-```
-
-```kotlin
-val contentDirective = content.metadata[DIRECTIVE_METADATA_KEY] as? DistributionGridDirective
+hooks {
+    beforePeerDispatch { envelope ->
+        val directive = envelope.content.getDistributionGridDirective()
+        // ...
+        envelope
+    }
+}
 ```
 
 **If the router doesn't write a directive**, the grid falls back to `DistributionGridDirective(kind = RUN_LOCAL_WORKER)`.

@@ -2,7 +2,9 @@ package com.TTT.Pipe
 
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
+import com.TTT.P2P.P2PTransport
 import com.TTT.PipeContextProtocol.PcPRequest
+import com.TTT.Pipeline.DistributionGridDirective
 import com.TTT.Util.deepCopy
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
@@ -390,6 +392,29 @@ data class MultimodalContent @OptIn(ExperimentalSerializationApi::class) constru
     fun setTodoTaskNumber(taskNumber: Int)
     {
         metadata["todoTaskNumber"] = taskNumber
+    }
+
+    /**
+     * Set a DistributionGridDirective into this content's metadata. This is the canonical way to communicate
+     * routing decisions from a router pipeline back to the DistributionGrid harness.
+     *
+     * @param directive The DistributionGridDirective to set
+     * @see com.TTT.Pipeline.DistributionGridDirective
+     */
+    fun setDistributionGridDirective(directive: DistributionGridDirective)
+    {
+        metadata["distributionGridDirective"] = directive
+    }
+
+    /**
+     * Get the DistributionGridDirective from this content's metadata, if present.
+     *
+     * @return The directive if set, null otherwise
+     * @see com.TTT.Pipeline.DistributionGridDirective
+     */
+    fun getDistributionGridDirective(): DistributionGridDirective?
+    {
+        return metadata["distributionGridDirective"] as? DistributionGridDirective
     }
 
 }
