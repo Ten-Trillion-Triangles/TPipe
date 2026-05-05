@@ -231,6 +231,83 @@ TPipe_PipeHandle TPipe_Pipe_setUser(TPipe_PipeHandle handle, const char* userId)
 // per-user rate limiting or content filtering.
 ```
 
+### 5.4 Logit Bias and Word Control
+
+```c
+TPipe_PipeHandle TPipe_Pipe_setLogitBias(TPipe_PipeHandle handle, TPipe_MapHandle biasMap);
+// biasMap: Map<Int, Double> mapping token IDs (Int key) to bias values (Double).
+//          Bias values typically range from -100.0 to 100.0.
+//          Positive values increase likelihood; negative values decrease likelihood.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_banWords(TPipe_PipeHandle handle, TPipe_ListHandle wordList);
+// wordList: List<const char*> — words/phrases to ban from generation.
+//           TPipe converts words to approximate token IDs internally.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_encourageWords(TPipe_PipeHandle handle,
+                                           TPipe_ListHandle wordList,
+                                           double bias);
+// wordList: List<const char*> — words/phrases to encourage.
+// bias: positive bias value (typically 1.0 to 100.0).
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_clearLogitBias(TPipe_PipeHandle handle);
+// Clears all logit bias settings.
+// Returns the handle for chaining.
+```
+
+### 5.5 Repetition Control
+
+```c
+TPipe_PipeHandle TPipe_Pipe_setRepetitionControl(TPipe_PipeHandle handle, double penalty);
+// penalty: combined frequency + presence penalty (0.0 to 2.0).
+//          Sets both repetitionPenalty and presencePenalty to the same value.
+// Returns the handle for chaining.
+```
+
+### 5.6 Deterministic Generation
+
+```c
+TPipe_PipeHandle TPipe_Pipe_enableDeterministicGeneration(TPipe_PipeHandle handle, int* seed);
+// seed: nullable Int. If NULL is passed, uses current timestamp as seed.
+//       If provided, must be a valid integer seed value.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_disableDeterministicGeneration(TPipe_PipeHandle handle);
+// Clears the seed, disabling deterministic generation.
+// Returns the handle for chaining.
+```
+
+### 5.7 Reasoning Configuration
+
+```c
+TPipe_PipeHandle TPipe_Pipe_setReasoning(TPipe_PipeHandle handle);
+// Enable built-in reasoning/thinking mode for models that support it natively.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_setReasoningWithTokens(TPipe_PipeHandle handle, int tokens);
+// tokens: maximum reasoning token budget. If 0, uses provider default.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_setReasoningWithCustom(TPipe_PipeHandle handle,
+                                                    const char* customSettings);
+// customSettings: vendor-specific reasoning configuration string.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_disableReasoning(TPipe_PipeHandle handle);
+// Disable reasoning mode.
+// Returns the handle for chaining.
+```
+
+### 5.8 Token Counting Bias
+
+```c
+TPipe_PipeHandle TPipe_Pipe_setTokenCountingBias(TPipe_PipeHandle handle, double bias);
+// bias: token counting adjustment value (can be negative).
+// Returns the handle for chaining.
+```
+
 ---
 
 ## 6. Execution
@@ -341,6 +418,26 @@ TPipe_PipeHandle TPipe_Pipe_setStreamingCallback(TPipe_PipeHandle handle,
 TPipe_StreamingCallback TPipe_Pipe_getStreamingCallback(TPipe_PipeHandle handle,
                                                           void** out_user_data);
 // out_user_data: set to the registered user_data. NULL allowed if caller doesn't need it.
+
+### 6.5 Timeout and Retry Configuration
+
+```c
+TPipe_PipeHandle TPipe_Pipe_enablePipeTimeout(TPipe_PipeHandle handle,
+                                              long durationMs,
+                                              int enable,
+                                              int applyRecursively,
+                                              int autoRetry,
+                                              int retryLimit);
+// durationMs: timeout duration in milliseconds (default 300000 = 5 minutes).
+// enable: 1 to enable timeout system, 0 to disable.
+// applyRecursively: 1 to propagate timeout settings to all child pipes.
+// autoRetry: 1 to enable automatic retry with snapshot restoration on timeout.
+// retryLimit: maximum number of retry attempts.
+// Returns the handle for chaining.
+//
+// Note: Advanced custom retry logic (PipeTimeoutStrategy.CustomLogic) requires the
+// PCP/function invoker API. The callback-based variant uses TPipe's internal retry
+// function binding system not directly exposed via this ABI.
 ```
 
 ---
@@ -409,11 +506,191 @@ TPipe_PipeHandle TPipe_Pipe_setReadFromPipelineContext(TPipe_PipeHandle handle, 
 
 TPipe_PipeHandle TPipe_Pipe_setUpdatePipelineContextOnExit(TPipe_PipeHandle handle, int update);
 // update: 1 = write execution results back to pipeline context
+
+### 7.5 Context Injection
+
+```c
+TPipe_PipeHandle TPipe_Pipe_autoInjectContext(TPipe_PipeHandle handle, const char* instruction);
+// instruction: instructions on how the LLM should interpret the injected context.
+//              Injected into the system prompt when auto-inject is enabled.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_appendContextInstructions(TPipe_PipeHandle handle,
+                                                      const char* instruction);
+// Appends additional context instructions to an already-configured injection.
+// Returns the handle for chaining.
 ```
 
----
+### 7.6 Auto Truncation
 
-## 8. Validation and Transformation Callbacks
+```c
+TPipe_PipeHandle TPipe_Pipe_autoTruncateContext(TPipe_PipeHandle handle,
+                                                  int fillMode,
+                                                  int fillAndSplitMode);
+// fillMode: 1 to enable select-and-fill lorebook selection during truncation.
+// fillAndSplitMode: 1 to enable fill mode and reserve split budget for non-lorebook context.
+// Returns the handle for chaining.
+```
+
+### 7.7 Lorebook Configuration
+
+```c
+TPipe_PipeHandle TPipe_Pipe_enableImmutableLoreBook(TPipe_PipeHandle handle);
+// Makes lorebook keys immutable — values cannot be updated by validation/transformation.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_enableAppendLoreBookScheme(TPipe_PipeHandle handle);
+// Switches lorebook emplacement to append mode. New context can be added to existing keys,
+// but old context cannot be removed. May result in contradictory information.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_enableLoreBookFillMode(TPipe_PipeHandle handle);
+// Enables select-and-fill lorebook selection during context truncation.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_enableLoreBookFillAndSplitMode(TPipe_PipeHandle handle);
+// Enables select-and-fill lorebook selection and reserves split budget for non-lorebook context.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_emplaceConverseHistory(TPipe_PipeHandle handle);
+// Enables full converse history rewriting upon merging context.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_emplaceConverseHistoryOnlyIfNull(TPipe_PipeHandle handle);
+// Enables converse history emplacement only if the target window/bank has null history.
+// Returns the handle for chaining.
+
+TPipe_Result TPipe_Pipe_getLorebookScheme(TPipe_PipeHandle handle,
+                                           int* outAppendMode,
+                                           int* outEmplaceMode);
+// outAppendMode: set to 1 if append mode enabled, 0 otherwise.
+// outEmplaceMode: set to 1 if emplace mode enabled, 0 otherwise.
+// Returns TPIPE_OK on success.
+
+TPipe_PipeHandle TPipe_Pipe_setPageKey(TPipe_PipeHandle handle, const char* key);
+// key: page key for context bank operations. Multiple keys can be separated by ", ".
+// Returns the handle for chaining.
+```
+
+### 7.8 Truncation Settings
+
+```c
+TPipe_PipeHandle TPipe_Pipe_setMultiplyWindowSizeBy(TPipe_PipeHandle handle, int multiplier);
+// multiplier: window size multiplier for dictionary truncation.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_setCountSubWordsInFirstWord(TPipe_PipeHandle handle, int count);
+// count: 1 to count sub-words in first word, 0 otherwise.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_setFavorWholeWords(TPipe_PipeHandle handle, int favor);
+// favor: 1 to favor whole words during truncation, 0 otherwise.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_setSplitForNonWordChar(TPipe_PipeHandle handle, int split);
+// split: 1 to split on non-word characters, 0 otherwise.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_setAlwaysSplitIfWholeWordExists(TPipe_PipeHandle handle, int always);
+// always: 1 to always split when whole words exist, 0 otherwise.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_setCountSubWordsIfSplit(TPipe_PipeHandle handle, int count);
+// count: 1 to count sub-words when splitting, 0 otherwise.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_setNonWordSplitCount(TPipe_PipeHandle handle, int count);
+// count: number of non-word splits to allow.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_truncateContextAsString(TPipe_PipeHandle handle);
+// Enables truncating context as a single string rather than individual entries.
+// Returns the handle for chaining.
+
+TPipe_Result TPipe_Pipe_getTruncationSettings(TPipe_PipeHandle handle,
+                                               TPipe_TruncationSettingsHandle* out_settings);
+// out_settings: filled with current truncation settings. Caller must release.
+// Returns TPIPE_OK on success.
+```
+
+### 7.9 Token Budget Getters
+
+```c
+TPipe_Result TPipe_Pipe_copyTokenBudgetSettings(TPipe_PipeHandle handle,
+                                                TPipe_TokenBudgetSettingsHandle* out_settings);
+// out_settings: filled with a detached copy of the token budget settings. Caller must release.
+// Returns TPIPE_OK on success.
+
+TPipe_Result TPipe_Pipe_isAutoTruncateContextEnabled(TPipe_PipeHandle handle, int* out_result);
+// out_result: set to 1 if auto-truncate is enabled, 0 otherwise.
+// Returns TPIPE_OK on success.
+
+TPipe_Result TPipe_Pipe_hasContextOverflowProtectionConfigured(TPipe_PipeHandle handle,
+                                                                int* out_result);
+// out_result: set to 1 if token budgeting or auto-truncation is configured, 0 otherwise.
+// Returns TPIPE_OK on success.
+
+TPipe_Result TPipe_Pipe_getConfiguredContextWindowSize(TPipe_PipeHandle handle, int* out_size);
+// out_size: set to the configured context window size in tokens.
+// Returns TPIPE_OK on success.
+
+TPipe_Result TPipe_Pipe_getConfiguredMaxTokens(TPipe_PipeHandle handle, int* out_tokens);
+// out_tokens: set to the configured maximum output token count.
+// Returns TPIPE_OK on success.
+
+TPipe_Result TPipe_Pipe_getSystemPromptText(TPipe_PipeHandle handle,
+                                             const char** out_text);
+// out_text: set to the current system prompt text. TPipe owns the string.
+// Returns TPIPE_OK on success.
+```
+
+### 7.10 Comprehensive Token Tracking
+
+```c
+TPipe_PipeHandle TPipe_Pipe_enableComprehensiveTokenTracking(TPipe_PipeHandle handle);
+// Enables detailed token usage tracking for this pipe and all child pipes.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_disableComprehensiveTokenTracking(TPipe_PipeHandle handle);
+// Disables comprehensive token tracking and clears stored usage data.
+// Returns the handle for chaining.
+```
+
+### 7.11 Context Mode Getters
+
+```c
+TPipe_Result TPipe_Pipe_selectGlobalContextMode(TPipe_PipeHandle handle,
+                                                  const char** out_mode);
+// out_mode: set to the JSON example for the configured context mode
+//           (ContextWindow if no page keys, MiniBank if page keys configured).
+// Returns TPIPE_OK on success.
+
+TPipe_Result TPipe_Pipe_getReasoningContent(TPipe_PipeHandle handle,
+                                             const char** out_content);
+// out_content: set to reasoning content extracted from the last response, or empty string.
+// Returns TPIPE_OK on success.
+```
+
+### 7.12 Token Counting
+
+```c
+TPipe_Result TPipe_Pipe_countTokens(TPipe_PipeHandle handle,
+                                     int isInput,
+                                     TPipe_ContentHandle content,
+                                     int* out_count);
+// isInput: 1 to count as input tokens, 0 to count as output tokens.
+// content: the MultimodalContent to count tokens for.
+// out_count: set to the token count.
+// Returns TPIPE_OK on success.
+
+TPipe_Result TPipe_Pipe_countBinaryTokens(TPipe_PipeHandle handle,
+                                          TPipe_ContentHandle content,
+                                          TPipe_TruncationSettingsHandle settings,
+                                          int* out_count);
+// content: the MultimodalContent containing binary data to process.
+// settings: truncation settings to use for token counting.
+// out_count: set to the total token count for all binary content.
+// Returns TPIPE_OK on success.
 
 All callbacks are function pointers registered on the pipe. The native library implementation must provide the actual function implementations — TPipe invokes them at runtime during execution.
 
@@ -483,8 +760,41 @@ TPipe_PipeHandle TPipe_Pipe_setPreInvoke(TPipe_PipeHandle handle,
                                           void* user_data);
 
 TPipe_PipeHandle TPipe_Pipe_setPostGenerate(TPipe_PipeHandle handle,
-                                             TPipe_PostGenerateCallback callback,
-                                             void* user_data);
+                                              TPipe_PostGenerateCallback callback,
+                                              void* user_data);
+
+// String validator: called with raw JSON string for validation.
+// Return 1 (accept) to continue normally, 0 (reject) to trigger validation failure.
+typedef int (*TPipe_StringValidatorCallback)(const char* json, void* user_data);
+
+// String transformation: called to transform a JSON string before parsing.
+// Must return a transformed string. TPipe owns the returned string.
+typedef const char* (*TPipe_StringTransformationCallback)(const char* json, void* user_data);
+
+// Pre-validation MiniBank callback: called after MiniBank and content are both
+// fully pulled and settled, just before the LLM call.
+// Receives the MiniBank and content; returns the MiniBank to use.
+typedef TPipe_MiniBankHandle (*TPipe_PreValidationMiniBankCallback)(TPipe_MiniBankHandle miniBank,
+                                                                    TPipe_ContentHandle content,
+                                                                    void* user_data);
+
+TPipe_PipeHandle TPipe_Pipe_setStringValidator(TPipe_PipeHandle handle,
+                                                TPipe_StringValidatorCallback callback,
+                                                void* user_data);
+// Registers a string-based validator for backward compatibility.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_setStringTransformation(TPipe_PipeHandle handle,
+                                                     TPipe_StringTransformationCallback callback,
+                                                     void* user_data);
+// Registers a string-based transformation for backward compatibility.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_setPreValidationMiniBank(TPipe_PipeHandle handle,
+                                                     TPipe_PreValidationMiniBankCallback callback,
+                                                     void* user_data);
+// Registers a MiniBank-based pre-validation callback.
+// Returns the handle for chaining.
 ```
 
 **Note:** Language wrappers (Python, Rust, etc.) must use FFI/cgo/cxxbind to connect their language-level callback functions to these C function pointer types.
@@ -499,6 +809,9 @@ TPipe_PipeHandle TPipe_Pipe_setPostGenerate(TPipe_PipeHandle handle,
 // Set a branch pipe. Executed when validation fails (validator returns 0).
 // The branch pipe receives the rejected content and returns corrected content.
 // The original pipe then continues with the branch pipe's output.
+//
+// Note: Calling setBranchPipe establishes a bidirectional parent-child relationship.
+// Internally, this function also calls branchPipe.setParentPipe(this) to set the reverse link.
 TPipe_PipeHandle TPipe_Pipe_setBranchPipe(TPipe_PipeHandle handle,
                                             TPipe_PipeHandle branchPipe);
 ```
@@ -534,13 +847,9 @@ TPipe_PipeHandle TPipe_Pipe_setTransformationPipe(TPipe_PipeHandle handle,
 TPipe_PipeHandle TPipe_Pipe_setReasoningPipe(TPipe_PipeHandle handle,
                                                TPipe_PipeHandle reasoningPipe);
 
-// Enable built-in reasoning mode (for models that support it natively, e.g., Claude).
-// enabled: 1 = use model's native reasoning. 0 = disable.
-TPipe_PipeHandle TPipe_Pipe_setReasoning(TPipe_PipeHandle handle, int enabled);
-
-// Set the reasoning token budget for native reasoning models.
-TPipe_PipeHandle TPipe_Pipe_setReasoningTokens(TPipe_PipeHandle handle, int tokens);
-// tokens: maximum reasoning tokens. If 0, uses provider default.
+// Note: Reasoning configuration variants (no-arg, tokens, custom string) are
+// defined in §5.7 (Numeric Parameter Configuration) as they are model参数.
+// See TPipe_Pipe_setReasoning(), setReasoningWithTokens(), setReasoningWithCustom().
 ```
 
 ---
@@ -564,8 +873,30 @@ TPipe_PipeHandle TPipe_Pipe_setPcPDescription(TPipe_PipeHandle handle,
 const char* TPipe_Pipe_getPcPDescription(TPipe_PipeHandle handle);
 
 // Set additional instructions merged into the PCP JSON prompt.
+TPipe_PipeHandle TPipe_Pipe_enableMemoryIntrospection(TPipe_PipeHandle handle,
+                                                        TPipe_TraceConfigHandle config);
+// config: memory introspection security configuration. If TPIPE_INVALID_HANDLE,
+//         uses default configuration (all introspection tools enabled with
+//         MemoryIntrospectionConfig defaults).
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_setContainerPtr(TPipe_PipeHandle handle,
+                                             TPipe_P2PInterfaceHandle container);
+// container: opaque P2P interface handle for the container.
+//            When set, the pipe redirects execution to the container instead.
+// Returns the handle for chaining.
+
 TPipe_PipeHandle TPipe_Pipe_setMergedPcpJsonInstructions(TPipe_PipeHandle handle,
-                                                            const char* instructions);
+                                                             const char* instructions);
+
+TPipe_Result TPipe_Pipe_processPcpResponse(TPipe_PipeHandle handle,
+                                             const char* llmResponse,
+                                             TPipe_PcpExecutionResultHandle* out_result);
+// llmResponse: raw LLM response containing potential PCP requests.
+// out_result: filled with execution results and any errors. Caller must release.
+// Note: this is an async suspend function — caller must call TPipe_Async_* functions
+// to wait for completion if the PCP execution is asynchronous.
+// Returns TPIPE_OK on success.
 ```
 
 ### 10.2 P2P Agent List
@@ -654,11 +985,51 @@ TPipe_PipeHandle TPipe_Pipe_setSupportsNativeJson(TPipe_PipeHandle handle, int s
 ### 12.2 Tracing
 
 ```c
-TPipe_PipeHandle TPipe_Pipe_setTracingEnabled(TPipe_PipeHandle handle, int enabled);
-// enabled: 1 = emit trace events for this pipe. 0 = disable tracing.
+TPipe_PipeHandle TPipe_Pipe_enableTracing(TPipe_PipeHandle handle,
+                                            TPipe_TraceConfigHandle config);
+// config: tracing configuration. If TPIPE_INVALID_HANDLE, uses defaults (enabled=true).
+//          Enables comprehensive token tracking automatically when tracing is enabled.
+// Returns the handle for chaining.
+
+TPipe_PipeHandle TPipe_Pipe_disableTracing(TPipe_PipeHandle handle);
+// Disables tracing for this pipe.
+// Returns the handle for chaining.
 ```
 
-### 12.3 Pipe Identity
+### 12.3 Pipe Introspection
+
+```c
+TPipe_Result TPipe_Pipe_getParentPipe(TPipe_PipeHandle handle,
+                                      TPipe_PipeHandle* out_parent);
+// out_parent: set to the parent pipe handle, or TPIPE_INVALID_HANDLE if no parent.
+//             Returns borrowed handle; do NOT release.
+// Returns TPIPE_OK on success.
+
+TPipe_Result TPipe_Pipe_isReasoningPipe(TPipe_PipeHandle handle, int* out_result);
+// out_result: set to 1 if this pipe is a reasoning pipe of its parent, 0 otherwise.
+// Returns TPIPE_OK on success.
+
+TPipe_Result TPipe_Pipe_getContextWindow(TPipe_PipeHandle handle,
+                                         TPipe_ContextHandle* out_context);
+// out_context: set to the pipe's context window. Borrowed reference; do NOT release.
+// Returns TPIPE_OK on success.
+
+TPipe_Result TPipe_Pipe_getMiniBank(TPipe_PipeHandle handle,
+                                      TPipe_MiniBankHandle* out_bank);
+// out_bank: set to the pipe's MiniBank. Borrowed reference; do NOT release.
+// Returns TPIPE_OK on success.
+
+TPipe_Result TPipe_Pipe_hasError(TPipe_PipeHandle handle, int* out_result);
+// out_result: set to 1 if pipe has an error stored, 0 otherwise.
+// Returns TPIPE_OK on success.
+
+TPipe_Result TPipe_Pipe_isComprehensiveTokenTrackingEnabled(TPipe_PipeHandle handle,
+                                                            int* out_result);
+// out_result: set to 1 if comprehensive token tracking is enabled, 0 otherwise.
+// Returns TPIPE_OK on success.
+```
+
+### 12.4 Pipe Identity
 
 ```c
 TPipe_PipeHandle TPipe_Pipe_setPipeName(TPipe_PipeHandle handle, const char* name);
@@ -672,7 +1043,7 @@ TPipe_PipeHandle TPipe_Pipe_setPipeId(TPipe_PipeHandle handle, const char* id);
 const char* TPipe_Pipe_getPipeId(TPipe_PipeHandle handle);
 ```
 
-### 12.4 Retry Configuration (via Timeout Strategy)
+### 12.5 Retry Configuration (via Timeout Strategy)
 
 ```c
 // The pipe timeout strategy and retry settings are configured via set functions
@@ -723,6 +1094,19 @@ TPipe_PipeHandle TPipe_Pipe_setWrapContentWithConverseHistory(TPipe_PipeHandle h
 | `TPipe_Pipe_setN` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setStopSequences` | `TPipe_PipeHandle`, `TPipe_ListHandle` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setUser` | `TPipe_PipeHandle`, `const char*` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setLogitBias` | `TPipe_PipeHandle`, `TPipe_MapHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_banWords` | `TPipe_PipeHandle`, `TPipe_ListHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_encourageWords` | `TPipe_PipeHandle`, `TPipe_ListHandle`, `double` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_clearLogitBias` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setRepetitionControl` | `TPipe_PipeHandle`, `double` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_enableDeterministicGeneration` | `TPipe_PipeHandle`, `int*` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_disableDeterministicGeneration` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setReasoning` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setReasoningWithTokens` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setReasoningWithCustom` | `TPipe_PipeHandle`, `const char*` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_disableReasoning` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setTokenCountingBias` | `TPipe_PipeHandle`, `double` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_enablePipeTimeout` | `TPipe_PipeHandle`, `long`, `int`, `int`, `int`, `int` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_execute` | `TPipe_PipeHandle`, `const char*` | `const char*` | Owned by TPipe; NULL on error |
 | `TPipe_Pipe_executeContent` | `TPipe_PipeHandle`, `TPipe_ContentHandle`, `TPipe_ContentHandle*` | `TPipe_Result` | Caller releases out_result |
 | `TPipe_Pipe_executeContentAsync` | `TPipe_PipeHandle`, `TPipe_ContentHandle`, `TPipe_AsyncCallback`, `void*` | `TPipe_AsyncHandle` | Caller must release |
@@ -750,6 +1134,37 @@ TPipe_PipeHandle TPipe_Pipe_setWrapContentWithConverseHistory(TPipe_PipeHandle h
 | `TPipe_Pipe_setReadFromGlobalContext` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setReadFromPipelineContext` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setUpdatePipelineContextOnExit` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_autoInjectContext` | `TPipe_PipeHandle`, `const char*` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_appendContextInstructions` | `TPipe_PipeHandle`, `const char*` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_autoTruncateContext` | `TPipe_PipeHandle`, `int`, `int` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_enableImmutableLoreBook` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_enableAppendLoreBookScheme` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_enableLoreBookFillMode` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_enableLoreBookFillAndSplitMode` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_emplaceConverseHistory` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_emplaceConverseHistoryOnlyIfNull` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_getLorebookScheme` | `TPipe_PipeHandle`, `int*`, `int*` | `TPipe_Result` | |
+| `TPipe_Pipe_setMultiplyWindowSizeBy` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setCountSubWordsInFirstWord` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setFavorWholeWords` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setSplitForNonWordChar` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setAlwaysSplitIfWholeWordExists` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setCountSubWordsIfSplit` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setNonWordSplitCount` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_truncateContextAsString` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_getTruncationSettings` | `TPipe_PipeHandle`, `TPipe_TruncationSettingsHandle*` | `TPipe_Result` | Caller releases |
+| `TPipe_Pipe_copyTokenBudgetSettings` | `TPipe_PipeHandle`, `TPipe_TokenBudgetSettingsHandle*` | `TPipe_Result` | Caller releases |
+| `TPipe_Pipe_isAutoTruncateContextEnabled` | `TPipe_PipeHandle`, `int*` | `TPipe_Result` | |
+| `TPipe_Pipe_hasContextOverflowProtectionConfigured` | `TPipe_PipeHandle`, `int*` | `TPipe_Result` | |
+| `TPipe_Pipe_getConfiguredContextWindowSize` | `TPipe_PipeHandle`, `int*` | `TPipe_Result` | |
+| `TPipe_Pipe_getConfiguredMaxTokens` | `TPipe_PipeHandle`, `int*` | `TPipe_Result` | |
+| `TPipe_Pipe_getSystemPromptText` | `TPipe_PipeHandle`, `const char**` | `TPipe_Result` | |
+| `TPipe_Pipe_enableComprehensiveTokenTracking` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_disableComprehensiveTokenTracking` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_selectGlobalContextMode` | `TPipe_PipeHandle`, `const char**` | `TPipe_Result` | |
+| `TPipe_Pipe_getReasoningContent` | `TPipe_PipeHandle`, `const char**` | `TPipe_Result` | |
+| `TPipe_Pipe_countTokens` | `TPipe_PipeHandle`, `int`, `TPipe_ContentHandle`, `int*` | `TPipe_Result` | |
+| `TPipe_Pipe_countBinaryTokens` | `TPipe_PipeHandle`, `TPipe_ContentHandle`, `TPipe_TruncationSettingsHandle`, `int*` | `TPipe_Result` | |
 | `TPipe_Pipe_setValidator` | `TPipe_PipeHandle`, `TPipe_ValidatorCallback`, `void*` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setExceptionHandler` | `TPipe_PipeHandle`, `TPipe_ExceptionCallback`, `void*` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setTransformation` | `TPipe_PipeHandle`, `TPipe_TransformationCallback`, `void*` | `TPipe_PipeHandle` | Chainable |
@@ -757,17 +1172,21 @@ TPipe_PipeHandle TPipe_Pipe_setWrapContentWithConverseHistory(TPipe_PipeHandle h
 | `TPipe_Pipe_setPreValidation` | `TPipe_PipeHandle`, `TPipe_PreValidationCallback`, `void*` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setPreInvoke` | `TPipe_PipeHandle`, `TPipe_PreInvokeCallback`, `void*` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setPostGenerate` | `TPipe_PipeHandle`, `TPipe_PostGenerateCallback`, `void*` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setStringValidator` | `TPipe_PipeHandle`, `TPipe_StringValidatorCallback`, `void*` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setStringTransformation` | `TPipe_PipeHandle`, `TPipe_StringTransformationCallback`, `void*` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_setPreValidationMiniBank` | `TPipe_PipeHandle`, `TPipe_PreValidationMiniBankCallback`, `void*` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setBranchPipe` | `TPipe_PipeHandle`, `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setValidatorPipe` | `TPipe_PipeHandle`, `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setTransformationPipe` | `TPipe_PipeHandle`, `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setReasoningPipe` | `TPipe_PipeHandle`, `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
-| `TPipe_Pipe_setReasoning` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
-| `TPipe_Pipe_setReasoningTokens` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setPcPContext` | `TPipe_PipeHandle`, `TPipe_PCPHandle` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_getPcPContext` | `TPipe_PipeHandle` | `TPipe_PCPHandle` | Borrowed |
 | `TPipe_Pipe_setPcPDescription` | `TPipe_PipeHandle`, `const char*` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_getPcPDescription` | `TPipe_PipeHandle` | `const char*` | Owned by TPipe |
 | `TPipe_Pipe_setMergedPcpJsonInstructions` | `TPipe_PipeHandle`, `const char*` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_processPcpResponse` | `TPipe_PipeHandle`, `const char*`, `TPipe_PcpExecutionResultHandle*` | `TPipe_Result` | Caller releases |
+| `TPipe_Pipe_setContainerPtr` | `TPipe_PipeHandle`, `TPipe_P2PInterfaceHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_enableMemoryIntrospection` | `TPipe_PipeHandle`, `TPipe_TraceConfigHandle` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setP2PAgentList` | `TPipe_PipeHandle`, `TPipe_ListHandle` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_getP2PAgentList` | `TPipe_PipeHandle` | `TPipe_ListHandle` | Borrowed |
 | `TPipe_Pipe_setP2PDescription` | `TPipe_PipeHandle`, `const char*` | `TPipe_PipeHandle` | Chainable |
@@ -783,7 +1202,14 @@ TPipe_PipeHandle TPipe_Pipe_setWrapContentWithConverseHistory(TPipe_PipeHandle h
 | `TPipe_Pipe_setJsonOutput` | `TPipe_PipeHandle`, `const char*` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setJsonOutputInstructions` | `TPipe_PipeHandle`, `const char*` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_setSupportsNativeJson` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
-| `TPipe_Pipe_setTracingEnabled` | `TPipe_PipeHandle`, `int` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_enableTracing` | `TPipe_PipeHandle`, `TPipe_TraceConfigHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_disableTracing` | `TPipe_PipeHandle` | `TPipe_PipeHandle` | Chainable |
+| `TPipe_Pipe_getParentPipe` | `TPipe_PipeHandle`, `TPipe_PipeHandle*` | `TPipe_Result` | |
+| `TPipe_Pipe_isReasoningPipe` | `TPipe_PipeHandle`, `int*` | `TPipe_Result` | |
+| `TPipe_Pipe_getContextWindow` | `TPipe_PipeHandle`, `TPipe_ContextHandle*` | `TPipe_Result` | |
+| `TPipe_Pipe_getMiniBank` | `TPipe_PipeHandle`, `TPipe_MiniBankHandle*` | `TPipe_Result` | |
+| `TPipe_Pipe_hasError` | `TPipe_PipeHandle`, `int*` | `TPipe_Result` | |
+| `TPipe_Pipe_isComprehensiveTokenTrackingEnabled` | `TPipe_PipeHandle`, `int*` | `TPipe_Result` | |
 | `TPipe_Pipe_setPipeName` | `TPipe_PipeHandle`, `const char*` | `TPipe_PipeHandle` | Chainable |
 | `TPipe_Pipe_getPipeName` | `TPipe_PipeHandle` | `const char*` | Owned by TPipe |
 | `TPipe_Pipe_setPipeId` | `TPipe_PipeHandle`, `const char*` | `TPipe_PipeHandle` | Chainable |
