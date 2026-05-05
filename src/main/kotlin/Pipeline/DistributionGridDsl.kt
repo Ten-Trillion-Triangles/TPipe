@@ -1036,6 +1036,11 @@ class DistributionGridRoutingDsl
         policy.maxHopCount = count
     }
 
+    fun allowRemotePcpForwarding(enabled: Boolean)
+    {
+        policy.allowRemotePcpForwarding = enabled
+    }
+
     internal fun build(): DistributionGridRoutingPolicy = policy.deepCopy()
 }
 

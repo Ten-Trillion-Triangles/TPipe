@@ -1,416 +1,682 @@
 # DistributionGrid
 
-`DistributionGrid` is TPipe's remote grid-harness container.
+> 💡 **Tip:** `DistributionGrid` is TPipe's distributed grid harness. Think of it as a cluster of worker nodes where each node has a router (decides where work goes) and a worker (actually does the work). Tasks hop between nodes over P2P until complete.
 
-One `DistributionGrid` instance represents one node on a larger distributed grid. The long-term design is a router plus worker node that can exchange work with other grid nodes over the normal TPipe P2P layer.
+## Table of Contents
+- [What DistributionGrid Is](#what-distributiongrid-is)
+- [When to Use It](#when-to-use-it)
+- [How It Works: The Big Picture](#how-it-works-the-big-picture)
+- [Internal Data Structures](#internal-data-structures)
+- [The Router Contract](#the-router-contract)
+- [The Worker Contract](#the-worker-contract)
+- [Hook Points Reference](#hook-points-reference)
+- [DSL Builder](#dsl-builder)
+- [Manual Assembly](#manual-assembly)
+- [Peer and Registry Discovery](#peer-and-registry-discovery)
+- [Durable Checkpoints](#durable-checkpoints)
+- [PCP Forwarding Policy](#pcp-forwarding-policy)
+- [P2P Concurrency](#p2p-concurrency)
+- [Common Startup Failures](#common-startup-failures)
+- [Best Practices](#best-practices)
 
-This page describes current shipped behavior only. The evolving full runtime spec lives in the internal steering docs under `md/`.
+## What DistributionGrid Is
 
-## Current Implementation Status
+`DistributionGrid` is a distributed task routing system. Each grid **node** is a single TPipe agent instance (running as a coroutine within the TPipe process) with:
 
-`DistributionGrid` is now implemented through Phase 8 of its rollout:
+- A **router** pipeline — receives the task content, decides what to do next, writes a `DistributionGridDirective` back into content metadata
+- A **worker** pipeline — receives the task content, does the actual work, returns the result
+- Optional **peers** — other nodes this node can send work to
 
-- the contract-model layer exists for runtime, memory, durability, and protocol vocabulary
-- the `DistributionGrid` class now provides the validated node shell used by the local and explicit-peer remote runtime
-- the shell stores grid-level `P2PInterface` identity state
-- the shell supports router and worker binding
-- the shell supports local peer registration and external peer-descriptor registration
-- the shell synthesizes safe local defaults for descriptor, transport, and requirements when those values are omitted
-- the shell supports duplicate-peer rejection plus local peer removal and replacement helpers
-- the shell now validates required bindings, local ownership, duplicate registration state, ancestry cycles, and nested depth through `init()`
-- the shell now exposes child pipelines through `getPipelinesFromInterface()`
-- the shell now supports pause/resume flags, runtime-state clearing, and trace clearing
-- the shell now executes local work through `execute(...)`, `executeLocal(...)`, and `executeP2PRequest(...)`
-- the shell now supports a first local router-to-worker flow
-- the shell now records local hop, outcome, and failure metadata on terminal content
-- the shell now exposes grid-level DITL hook registration for the local execution flow
-- typed `distributionGridMetadata` now exists on `P2PDescriptor`
-- `DISTRIBUTION_GRID_*` trace vocabulary now exists for validation, lifecycle, and local execution events
-- the shell now supports explicit remote peer handoff through configured external peer descriptors
-- the shell now performs explicitly framed serialized grid RPC over the normal P2P boundary for handshake and task-exchange traffic
-- the shell now supports mandatory explicit-peer handshake, authoritative negotiated policy, and in-memory session reuse
-- cached explicit-peer sessions are now reused only when they still satisfy the current task policy, and widened handshake acknowledgements are rejected
-- inbound remote envelopes now record the caller's return address as the sender transport, and peer-authored handshake rejection details are preserved
-- the shell now supports inbound explicit remote task handoff and locally finalizes remote returns or failures
-- the shell now supports bootstrap registry configuration, trusted registry probing, explicit lease registration and renewal, and structured registry queries
-- discovered node advertisements are now verified and cached before they are used for remote handoff
-- registry-capable nodes can now serve mixed-role or dedicated registry RPC behavior for probe, register, renew, and query flows
-- the shell now supports outbound memory shaping, privacy/auth/PCP mediation, durable checkpoints, `resumeTask(taskId)`, retry/alternate-peer runtime behavior, and trace export/failure-analysis helpers
-- the Kotlin DSL now supports full-node assembly through `distributionGrid { ... }`, including router/worker binding, discovery, policies, tracing, hooks, and operational tuning
-- `TPipe-Defaults` now provides an additive `defaults { bedrock(...) }` / `defaults { ollama(...) }` bridge for the grid DSL plus matching raw defaults factories
-- the shell now supports hosted-registry bootstrap catalog sources plus explicit public node/registry listing publication helpers
-- public docs and tests now reflect the shipped runtime rather than the earlier Phase 5/6 rollout point
+The grid handles:
+- **Task routing** — router decides: run locally, send to a peer, or forward to a remote node
+- **Remote handoff** — framing tasks as grid RPC over P2P
+- **Session reuse** — cached P2P sessions for repeated peer communication
+- **Retry logic** — routing policy controls whether to retry same peer or try another
+- **Registry discovery** — optional registry for finding downstream nodes
+- **Durable checkpoints** — save/resume for long-running or interruptible tasks
 
-## What Is Still Missing
+## When to Use It
 
-The following work is intentionally deferred:
+Use `DistributionGrid` when:
 
-- any new runtime semantics beyond the shipped Phase 7 behavior
-- future convenience or provider integrations that would extend the DSL without changing the core runtime
+- You have TPipe pipelines on different machines that need to coordinate
+- You want to distribute LLM work across a cluster of agents
+- You need reliability via retry and checkpoint mechanisms
+- You're building a multi-agent system where one agent's output feeds into another across machines
 
-## Current Shell Surface
+**Don't use it** for simple single-machine fan-out — use `Splitter` instead.
 
-The Phase 8 shell now includes configuration, validation, lifecycle methods, local execution, explicit-peer remote handoff, registry discovery or membership, hardening behavior, and a Kotlin DSL.
+## How It Works: The Big Picture
 
-### Grid-level P2P identity
+### End-to-End Flow
 
-- `setP2pDescription(...)`
-- `getP2pDescription()`
-- `setP2pTransport(...)`
-- `getP2pTransport()`
-- `setP2pRequirements(...)`
-- `getP2pRequirements()`
-- `setContainerObject(...)`
-- `getContainerObject()`
+```
+Caller                          Grid Node A                         Grid Node B
+  │                                   │                                   │
+  │  grid.execute(content)            │                                   │
+  ├────────────────────────────────► │                                   │
+  │                                   │  1. Wrap content in                 │
+  │                                   │     DistributionGridEnvelope      │
+  │                                   │                                   │
+  │                                   │  2. Run router pipeline            │
+  │                                   │     content = router.execute(content)
+  │                                   │                                   │
+  │                                   │  3. Read directive from            │
+  │                                   │     content.metadata["distributionGridDirective"]
+  │                                   │     → RUN_LOCAL_WORKER            │
+  │                                   │     → HAND_OFF_TO_PEER             │
+  │                                   │     → RETURN_TO_SENDER             │
+  │                                   │     → TERMINATE                   │
+  │                                   │                                   │
+  │                                   │  4a. RUN_LOCAL_WORKER:            │
+  │                                   │      Run worker pipeline           │
+  │                                   │      → finalize as result          │
+  │                                   │                                   │
+  │                                   │  4b. HAND_OFF_TO_PEER:            │
+  │                                   │      Serialize envelope as         │
+  │                                   │      P2P request, send to peer    │
+  │                                   ├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─► │
+  │                                   │                     5. Peer node   │
+  │                                   │                     receives P2P  │
+  │                                   │                     request       │
+  │                                   │                     runs router  │
+  │                                   │                     runs worker  │
+  │                                   │                     returns result│
+  │                                   │◄ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┤
+  │                                   │  6. Receive response, finalize     │
+  │                                   │     as terminal content           │
+  │◄─────────────────────────────────┤                                   │
+  │  result                           │                                   │
+```
 
-### Node bindings and peer registration
+### Node Identity
 
-- `setRouter(...)`
-- `setWorker(...)`
-- `addPeer(...)`
-- `addPeerDescriptor(...)`
-- `removePeer(...)`
-- `replacePeer(...)`
+Each node has:
+- A **node ID** — stable identifier for this node (used in `originNodeId`, `currentNodeId`)
+- A **transport** — how to reach this node (address + method)
+- A **P2P descriptor** — outward-facing identity published for discovery
 
-### Stored shell configuration
+## Agent Contract
 
-- `setDiscoveryMode(...)`
-- `setRoutingPolicy(...)`
-- `setMemoryPolicy(...)`
-- `setDurableStore(...)`
-- `setRegistryMetadata(...)`
-- `getRegistryMetadata()`
-- `setTrustVerifier(...)`
-- `getTrustVerifier()`
-- `setMaxHops(...)`
-- `setRpcTimeout(...)`
-- `setMaxSessionDuration(...)`
-- `enableTracing(...)`
-- `disableTracing()`
+Understanding the input/output contract between the grid harness and your router/worker pipelines is critical for writing conforming components.
 
-### Validation and lifecycle
+### The Router Contract
 
-- `init()`
-- `pause()`
-- `resume()`
-- `isPaused()`
-- `canPause()`
-- `clearRuntimeState()`
-- `clearTrace()`
-- `resumeTask(...)`
+The router is a **pipeline** that receives `MultimodalContent` and must write a `DistributionGridDirective` into the content's metadata before returning.
 
-### Local execution and hooks
+#### What the Router Receives
 
-- `execute(...)`
-- `executeLocal(...)`
-- `executeP2PRequest(...)`
-- `setBeforeRouteHook(...)`
-- `setBeforeLocalWorkerHook(...)`
-- `setAfterLocalWorkerHook(...)`
-- `setBeforePeerDispatchHook(...)`
-- `setAfterPeerResponseHook(...)`
-- `setOutboundMemoryHook(...)`
-- `setFailureHook(...)`
-- `setOutcomeTransformationHook(...)`
+The router receives `envelope.content` — which is `MultimodalContent`. At origin, this is the caller's input. At downstream nodes, it contains the accumulated task state.
 
-### Readback helpers
+The router also has access to the full `DistributionGridEnvelope` through the hook context, which includes:
 
-- `getRouterBindingKey()`
-- `getWorkerBindingKey()`
-- `getLocalPeerKeys()`
-- `getExternalPeerKeys()`
-- `addBootstrapRegistry(...)`
-- `removeBootstrapRegistry(...)`
-- `getBootstrapRegistryIds()`
-- `addBootstrapCatalogSource(...)`
-- `removeBootstrapCatalogSource(...)`
-- `getBootstrapCatalogSourceIds()`
-- `getDiscoveredRegistryIds()`
-- `getDiscoveredNodeIds()`
-- `getActiveRegistryLeaseIds()`
-- `probeTrustedRegistries()`
-- `pullTrustedBootstrapCatalogs(...)`
-- `getBootstrapCatalogSourceStatuses()`
-- `registerWithRegistry(...)`
-- `renewRegistryLease(...)`
-- `tickRegistryMemberships(...)`
-- `queryRegistries(...)`
-- `publishPublicNodeListing(...)`
-- `renewPublicNodeListing(...)`
-- `removePublicNodeListing(...)`
-- `publishPublicRegistryListing(...)`
-- `renewPublicRegistryListing(...)`
-- `removePublicRegistryListing(...)`
-- `getPublicListingAutoRenewStatuses()`
-- `clearDiscoveredRegistryState()`
-- `getDiscoveryMode()`
-- `getRoutingPolicy()`
-- `getMemoryPolicy()`
-- `getDurableStore()`
-- `getMaxHops()`
-- `getRpcTimeout()`
-- `getMaxSessionDuration()`
-- `isTracingEnabled()`
-- `getTraceReport(...)`
-- `getFailureAnalysis()`
+- `envelope.taskId` — Stable task identifier
+- `envelope.originNodeId` — Node that created the task
+- `envelope.hopHistory` — Audit trail of all prior hops
+- `envelope.currentObjective` — Current task text (may differ from original at downstream nodes)
+- `envelope.attributes` — Extensible metadata map
+
+#### What the Router Must Output
+
+The router **must** write to `content.metadata["distributionGridDirective"]` a parsed `DistributionGridDirective` object. The grid reads this after your pipeline returns.
+
+**Minimal working router that always runs locally:**
+
+```kotlin
+val routerPipeline = Pipeline().apply {
+    pipelineName = "grid-router"
+    add(BedrockPipe().apply {
+        setPipeName("router")
+        setJsonOutput(DistributionGridDirective())
+        setSystemPrompt("""
+            You are a DistributionGrid router. Your job is to return a routing directive.
+
+            Return this JSON: {"kind": "RUN_LOCAL_WORKER", "notes": "default routing"}
+
+            Do not change the kind — always route to local worker for now.
+        """.trimIndent())
+    })
+}
+```
+
+**Router that can dispatch to peers:**
+
+```kotlin
+val routerPipeline = Pipeline().apply {
+    pipelineName = "grid-router"
+    add(BedrockPipe().apply {
+        setPipeName("router")
+        setJsonOutput(DistributionGridDirective())
+        setSystemPrompt("""
+            You are a DistributionGrid router.
+
+            Analyze the task and choose a directive:
+            - {"kind": "RUN_LOCAL_WORKER", "notes": "..."} → run on local worker
+            - {"kind": "HAND_OFF_TO_PEER", "targetPeerId": "peer-key", "notes": "..."} → send to peer
+
+            If the task is simple and self-contained, run locally.
+            If the task requires specialized capabilities from another peer, dispatch there.
+        """.trimIndent())
+    })
+}
+```
+
+#### Directive Resolution
+
+The grid reads the directive from metadata using a key constant:
+
+```kotlin
+private const val DIRECTIVE_METADATA_KEY = "distributionGridDirective"
+```
+
+```kotlin
+val contentDirective = content.metadata[DIRECTIVE_METADATA_KEY] as? DistributionGridDirective
+```
+
+**If the router doesn't write a directive**, the grid falls back to `DistributionGridDirective(kind = RUN_LOCAL_WORKER)`.
+
+### The Worker Contract
+
+The worker is a **pipeline** that receives `MultimodalContent` and returns the work result as `MultimodalContent`.
+
+#### What the Worker Receives
+
+The worker receives `envelope.content` — the same `MultimodalContent` that the router received and potentially modified. The worker should not need to understand the envelope structure.
+
+#### What the Worker Must Output
+
+The worker should return its result as `MultimodalContent` (with `text` containing the output). The grid wraps this in a `DistributionGridOutcome` and returns it to the caller.
+
+**Minimal working worker:**
+
+```kotlin
+val workerPipeline = Pipeline().apply {
+    pipelineName = "grid-worker"
+    add(BedrockPipe().apply {
+        setPipeName("worker")
+        setSystemPrompt("""
+            You are a DistributionGrid worker. Execute the task and return your result.
+            Return the best answer you can produce.
+        """.trimIndent())
+    })
+}
+```
+
+### DSL Settings That Affect the Contract
+
+| Setting | Effect on Contract |
+|---------|-------------------|
+| `routing { maxHopCount(n) }` | Limits how many times a task can hop. Workers don't need to track this; the grid enforces it. |
+| `routing { allowRetrySamePeer(true/false) }` | Whether a failed peer dispatch retries the same peer. |
+| `routing { allowRemotePcpForwarding(true/false) }` | Whether PCP payloads are forwarded to remote nodes. Affects what workers see. |
+| `memory { outboundTokenBudget(n) }` | Shapes outbound memory. The router receives truncated context if the budget is tight. |
+| `memory { summaryBudget(n) }` | Budget for memory summarization if enabled. |
+| `hooks { beforeRoute { } }` | Intercepts before router runs. Can modify content or add attributes. |
+| `hooks { beforeLocalWorker { } }` | Intercepts after router returns `RUN_LOCAL_WORKER`. |
+| `hooks { afterLocalWorker { } }` | Intercepts after worker completes. Can add execution notes. |
+| `hooks { beforePeerDispatch { } }` | Intercepts before peer handoff. Can set PCP forwarding flag. |
+| `hooks { afterPeerResponse { } }` | Intercepts after peer response. |
+| `killSwitch(input, output, onTripped)` | Halts execution if token limits are exceeded. |
+| `concurrencyMode(ISOLATED)` | Required for P2P exposure. Each request gets a fresh grid state. |
+
+### Envelope Lifecycle Contract
+
+The `DistributionGridEnvelope` flows through the grid:
+
+1. **Created at origin** — `taskId` (UUID), `originNodeId`, `originTransport` set at creation
+2. **Wrapped at each hop** — `senderNodeId`, `senderTransport` updated before dispatch
+3. **Worker receives only content** — Worker sees `MultimodalContent`, not the envelope
+4. **Results wrapped in outcome** — Grid produces `DistributionGridOutcome` with `finalContent`, `hopCount`, `completionNotes`
+
+### Failure Handling Contract
+
+Workers should return well-formed output. Failures are tracked in `DistributionGridFailure`:
+
+```kotlin
+data class DistributionGridFailure(
+    var kind: DistributionGridFailureKind = DistributionGridFailureKind.UNKNOWN,
+    var sourceNodeId: String = "",
+    var targetNodeId: String = "",
+    var reason: String = "",
+    var retryable: Boolean = false
+)
+```
+
+Failure kinds: `HANDSHAKE_REJECTED`, `SESSION_REJECTED`, `TRUST_REJECTED`, `POLICY_REJECTED`, `ROUTING_FAILURE`, `WORKER_FAILURE`, `TRANSPORT_FAILURE`, `VALIDATION_FAILURE`, `DURABILITY_FAILURE`, `UNKNOWN`.
+
+The grid can retry `retryable = true` failures based on `routingPolicy`. Non-retryable failures terminate the task.
+
+### Checkpoint Contract
+
+If `setDurableStore(...)` is configured, the grid checkpoints at:
+
+- `before-peer-dispatch` — Before sending to a peer
+- `after-local-worker` — After local worker completes
+- `after-peer-response` — After receiving peer response
+
+Your durable store implementation must handle `checkpointState(envelope, reason)` and `resumeState(taskId)`. On resume, the grid reconstructs the envelope and continues from the checkpointed point.
+
+## Internal Data Structures
+
+### DistributionGridEnvelope
+
+The envelope is the core data structure that flows through the grid. It's a `@Serializable` data class:
+
+```kotlin
+data class DistributionGridEnvelope(
+    var taskId: String = "",                    // Stable task ID (UUID generated at origin)
+    var originNodeId: String = "",              // Node that originally created this task
+    var originTransport: P2PTransport = P2PTransport(),
+    var senderNodeId: String = "",             // Node that sent this hop
+    var senderTransport: P2PTransport = P2PTransport(),
+    var currentNodeId: String = "",             // Node currently processing this envelope
+    var currentTransport: P2PTransport = P2PTransport(),
+    var content: MultimodalContent = MultimodalContent(),  // The actual task content
+    var taskIntent: String = "",                // Original task text (set at origin)
+    var currentObjective: String = "",           // Current task text (may change at each hop)
+    var routingPolicy: DistributionGridRoutingPolicy = DistributionGridRoutingPolicy(),
+    var tracePolicy: DistributionGridTracePolicy = DistributionGridTracePolicy(),
+    var credentialPolicy: DistributionGridCredentialPolicy = DistributionGridCredentialPolicy(),
+    var executionNotes: MutableList<String> = mutableListOf(),  // Human-readable log
+    var hopHistory: MutableList<DistributionGridHopRecord> = mutableListOf(),  // Audit trail
+    var completed: Boolean = false,             // Terminal flag
+    var latestOutcome: DistributionGridOutcome? = null,  // Final result
+    var latestFailure: DistributionGridFailure? = null,      // Failure record
+    var durableStateKey: String = "",          // Checkpoint key for durability
+    var sessionRef: DistributionGridSessionRef? = null,      // Negotiated session
+    var attributes: MutableMap<String, String> = mutableMapOf()  // Extensible metadata
+)
+```
+
+The envelope is **not** what you send to the router or worker. Instead, the grid extracts `envelope.content` and passes that as `MultimodalContent` to your pipelines. After your pipeline runs, the grid reads back the result from `content.text` and `content.metadata`.
+
+### DistributionGridDirective
+
+The router writes its decision into `content.metadata["distributionGridDirective"]` as a `DistributionGridDirective`:
+
+```kotlin
+data class DistributionGridDirective(
+    var kind: DistributionGridDirectiveKind = DistributionGridDirectiveKind.RUN_LOCAL_WORKER,
+    var targetNodeId: String = "",              // For HAND_OFF_TO_PEER: target node ID
+    var targetPeerId: String = "",              // For HAND_OFF_TO_PEER: peer key to dispatch to
+    var targetTransport: P2PTransport? = null,  // Optional explicit transport target
+    var notes: String = "",                     // Human-readable router notes
+    var alternatePeerIds: MutableList<String> = mutableListOf(),  // Fallback peers
+    var rejectReason: String = ""               // For REJECT/TERMINATE: why
+)
+```
+
+**Directive kinds:**
+
+| Kind | Meaning |
+|------|---------|
+| `RUN_LOCAL_WORKER` | Run the task on the local worker |
+| `HAND_OFF_TO_PEER` | Send to a peer (set `targetPeerId` or `targetNodeId`) |
+| `RETURN_TO_SENDER` | Return to the immediate sender |
+| `RETURN_TO_ORIGIN` | Return all the way to the origin node |
+| `RETURN_TO_TRANSPORT` | Return to a specific transport address |
+| `RETRY_SAME_PEER` | Retry the same peer (after failure) |
+| `TRY_ALTERNATE_PEER` | Try the next peer in `alternatePeerIds` |
+| `REJECT` | Reject the task (policy violation) |
+| `TERMINATE` | Terminate the task (unrecoverable) |
+
+### DistributionGridOutcome
+
+When the grid reaches a terminal state, it produces a `DistributionGridOutcome`:
+
+```kotlin
+data class DistributionGridOutcome(
+    var status: DistributionGridOutcomeStatus = DistributionGridOutcomeStatus.SUCCESS,
+    var returnMode: DistributionGridReturnMode = DistributionGridReturnMode.RETURN_TO_SENDER,
+    var taskId: String = "",
+    var finalContent: MultimodalContent = MultimodalContent(),  // The terminal result
+    var completionNotes: String = "",
+    var hopCount: Int = 0,
+    var finalNodeId: String = "",
+    var terminalFailure: DistributionGridFailure? = null
+)
+```
+
+### DistributionGridFailure
+
+Failures are recorded as:
+
+```kotlin
+data class DistributionGridFailure(
+    var kind: DistributionGridFailureKind = DistributionGridFailureKind.UNKNOWN,
+    var sourceNodeId: String = "",
+    var targetNodeId: String = "",
+    var transportMethod: Transport = Transport.Tpipe,
+    var transportAddress: String = "",
+    var reason: String = "",
+    var policyCause: String = "",
+    var retryable: Boolean = false
+)
+```
+
+Failure kinds: `HANDSHAKE_REJECTED`, `SESSION_REJECTED`, `TRUST_REJECTED`, `POLICY_REJECTED`, `ROUTING_FAILURE`, `WORKER_FAILURE`, `TRANSPORT_FAILURE`, `VALIDATION_FAILURE`, `DURABILITY_FAILURE`, `UNKNOWN`.
+
+## Hook Points Reference
+
+Hooks let you intercept the execution at specific points. All hooks receive a `DistributionGridEnvelope` and return a (possibly modified) envelope.
+
+### beforeRoute
+
+Fires before the router runs.
+
+```kotlin
+hooks {
+    beforeRoute { envelope ->
+        // Modify content, add attributes, or log before routing decision
+        envelope.attributes["custom-flag"] = "value"
+        envelope
+    }
+}
+```
+
+### beforeLocalWorker
+
+Fires before the local worker runs (after router returned `RUN_LOCAL_WORKER`).
+
+```kotlin
+hooks {
+    beforeLocalWorker { envelope ->
+        // Inspect or modify content before worker execution
+        envelope
+    }
+}
+```
+
+### afterLocalWorker
+
+Fires after the local worker completes successfully.
+
+```kotlin
+hooks {
+    afterLocalWorker { envelope ->
+        // Modify result content, add execution notes
+        envelope.executionNotes.add("Worker completed at ${System.currentTimeMillis()}")
+        envelope
+    }
+}
+```
+
+### beforePeerDispatch
+
+Fires before sending to a peer (after router returned `HAND_OFF_TO_PEER`).
+
+```kotlin
+hooks {
+    beforePeerDispatch { envelope ->
+        // Can set PCP forwarding flag here
+        // envelope.attributes["distributionGridAllowRemotePcpForwarding"] = "true"
+        envelope
+    }
+}
+```
+
+### afterPeerResponse
+
+Fires after receiving a response from a peer.
+
+```kotlin
+hooks {
+    afterPeerResponse { envelope ->
+        // Inspect or modify the peer response before finalization
+        envelope
+    }
+}
+```
+
+### outboundMemory
+
+Fires before outbound memory shaping (if memory policy is configured).
+
+```kotlin
+hooks {
+    outboundMemory { envelope ->
+        // Custom memory shaping logic
+        envelope
+    }
+}
+```
+
+### failure
+
+Fires when a failure is recorded.
+
+```kotlin
+hooks {
+    failure { envelope ->
+        // Log or annotate the failure
+        envelope.executionNotes.add("Failure at ${envelope.latestFailure?.reason}")
+        envelope
+    }
+}
+```
+
+### outcomeTransformation
+
+Fires when producing the final terminal content.
+
+```kotlin
+hooks {
+    outcomeTransformation { content, envelope ->
+        // Transform final output
+        content
+    }
+}
+```
 
 ## DSL Builder
 
-If you want the grid assembled, validated, and initialized in one place, prefer the Kotlin DSL:
+The Kotlin DSL is the preferred way to assemble a grid:
 
 ```kotlin
 import com.TTT.Pipeline.distributionGrid
+import com.TTT.P2P.P2PConcurrencyMode
 
 val grid = distributionGrid {
+    // P2P identity for this node
     p2p {
-        agentName("research-grid-node")
-        transportAddress("research-grid-node")
+        agentName("my-grid-node")
+        transportAddress("my-grid-node")
         transportMethod(Transport.Tpipe)
     }
 
+    // Router and worker (required)
     router(routerPipeline)
     worker(workerPipeline)
 
+    // Routing policy
     routing {
         allowRetrySamePeer(true)
         maxRetryCount(1)
         maxHopCount(8)
+        allowRemotePcpForwarding(false)
     }
 
+    // Memory policy
     memory {
         outboundTokenBudget(4096)
         summaryBudget(512)
     }
 
+    // Tracing
     tracing {
         enabled()
     }
 
+    // Orchestration hooks
+    hooks {
+        beforeRoute { envelope -> envelope }
+        afterLocalWorker { envelope -> envelope }
+    }
+
+    // P2P concurrency
     concurrencyMode(P2PConcurrencyMode.ISOLATED)
+
+    // Kill switch
     killSwitch(inputTokenLimit = 100000, outputTokenLimit = 10000)
 }
 ```
 
-The DSL returns an initialized grid by default. Use `DistributionGridDsl.buildSuspend()` when you need coroutine-safe startup.
+The DSL returns an initialized grid ready for `execute()`.
 
-### Manual Builder
+## Manual Assembly
 
-For manual assembly and chaining, use `distributionGridBuilder()`:
+For manual assembly without DSL:
 
 ```kotlin
 import com.TTT.Pipeline.distributionGridBuilder
-import com.TTT.Pipeline.build
 
-val builder = distributionGridBuilder()
+val grid = distributionGridBuilder()
     .router(routerPipeline)
     .worker(workerPipeline)
+    .setRoutingPolicy(DistributionGridRoutingPolicy().apply {
+        maxHopCount = 8
+    })
+    .setMemoryPolicy(DistributionGridMemoryPolicy().apply {
+        outboundTokenBudget = 4096
+    })
+    .enableTracing()
     .concurrencyMode(P2PConcurrencyMode.ISOLATED)
     .killSwitch(inputTokenLimit = 50000, outputTokenLimit = 5000)
-
-val grid = builder.build()  // only available on DistributionGridBuilder<GridStage.Ready>
+    .build()
 ```
 
-### Hosted Bootstrap Catalogs
+### Lifecycle Methods
 
-If you want the grid to discover trusted registries from a remotely hosted public catalog on startup, add a
-bootstrap catalog source inside `discovery { }`:
+| Method | Description |
+|--------|-------------|
+| `init()` | Validate bindings and initialize the grid |
+| `pause()` / `resume()` | Pause or resume execution |
+| `isPaused()` | Check pause state |
+| `clearRuntimeState()` | Clear session, pause flags, discovered state |
+| `clearTrace()` | Clear trace data |
+| `resumeTask(taskId)` | Resume a checkpointed task |
+| `getTraceReport()` | Get formatted trace output |
+| `getFailureAnalysis()` | Get structured failure report |
+
+## Peer and Registry Discovery
+
+### Adding a Local Peer
 
 ```kotlin
-distributionGrid {
-    router(routerPipeline)
-    worker(workerPipeline)
+grid.addPeer(localPeerPipeline)
 
-    discovery {
-        bootstrapCatalogSource(
-            DistributionGridBootstrapCatalogSource(
-                sourceId = "public-grid-registry-catalog",
-                transport = P2PTransport(
-                    transportMethod = Transport.Tpipe,
-                    transportAddress = "public-grid-registry-catalog"
-                ),
-                query = P2PHostedRegistryQuery(
-                    listingKinds = mutableListOf(P2PHostedListingKind.GRID_REGISTRY),
-                    categories = mutableListOf("grid/registry")
-                ),
-                authBody = "catalog-reader-token",
-                autoPullOnInit = true
-            )
-        )
-    }
+// With custom descriptor
+grid.addPeer(localPeerPipeline, myDescriptor, myRequirements)
+```
+
+### Adding an External Peer Descriptor
+
+```kotlin
+grid.addPeerDescriptor(externalPeerDescriptor)
+```
+
+### Registry-based Discovery
+
+```kotlin
+// Add trusted bootstrap registry
+grid.addBootstrapRegistry(registryAdvertisement)
+
+// Register with registry and maintain lease
+grid.registerWithRegistry(registryId, leaseRequest)
+grid.renewRegistryLease(registryId, leaseId)
+grid.tickRegistryMemberships()
+
+// Query registry for nodes
+grid.queryRegistries(registryQuery)
+```
+
+## Durable Checkpoints
+
+For long-running tasks that may be interrupted:
+
+```kotlin
+// Configure durable store
+grid.setDurableStore(myDurableStore)
+
+// Resume interrupted task
+val result = grid.resumeTask(taskId)
+```
+
+The durable store interface:
+
+```kotlin
+interface DistributionGridDurableStore {
+    suspend fun checkpointState(envelope: DistributionGridEnvelope, reason: String)
+    suspend fun resumeState(taskId: String): DistributionGridDurableState?
 }
 ```
 
-Hosted bootstrap catalogs are still discovery aids only. Pulled `GRID_REGISTRY` advertisements still have to pass
-the configured `DistributionGridTrustVerifier`, and later remote routing still uses the normal handshake and
-session rules.
+Checkpoint reasons: `before-peer-dispatch`, `after-local-worker`, `after-peer-response`.
 
-If the hosted registry gates reads, set `authBody` and/or `transportAuthBody` on the bootstrap source. Those values
-are used only for the hosted-registry query; they do not change grid trust verification or remote session auth.
+## PCP Forwarding Policy
 
-`DistributionGrid` now also exposes hosted-registry observability for this path, including:
-
-- bootstrap source pull attempt and success timestamps
-- accepted versus trust-rejected hosted registry counts
-- active public-listing auto-renew loop status with last success/failure details
-
-For non-grid clients that only need plain remote agent discovery/import, use `P2PRegistry` trusted hosted sources
-instead. That lighter path imports only `AGENT` listings and does not replace grid trust verification.
-
-### Public Listing Helpers
-
-`DistributionGrid` can also publish its own outward node or registry state into a hosted public catalog:
+By default, PCP payloads are stripped before remote handoff. Enable via routing policy:
 
 ```kotlin
-val result = grid.publishPublicNodeListing(
-    transport = P2PTransport(Transport.Tpipe, "public-grid-catalog"),
-    options = DistributionGridPublicListingOptions(
-        title = "Public Research Grid Node",
-        summary = "Remote worker entrypoint for research workloads.",
-        categories = mutableListOf("grid/node"),
-        tags = mutableListOf("research", "worker")
-    ),
-    authBody = "publisher-token"
-)
-```
-
-These helpers sanitize public listing data and keep hosted-catalog visibility separate from actual runtime trust,
-handshake, and session enforcement.
-
-The hosted-listing helper surface also supports:
-
-- `updatePublicNodeListing(...)`
-- `updatePublicRegistryListing(...)`
-- `startPublicNodeListingAutoRenew(...)`
-- `startPublicRegistryListingAutoRenew(...)`
-- `stopPublicListingAutoRenew(...)`
-
-The renewal helpers are opt-in. `DistributionGrid` does not auto-publish or auto-renew public listings unless the
-caller explicitly starts those loops.
-
-### DSL blocks
-
-The `distributionGrid { }` builder supports these top-level blocks and methods:
-
-| Block / Method | Required | Description |
-|----------------|----------|-------------|
-| `p2p { }` | No | Configures the outward grid-node descriptor, transport, requirements, and container object |
-| `security { }` | No | Configures outward auth/privacy-related descriptor and requirement hints |
-| `router { }` or `router(...)` | Yes | Binds the local router role |
-| `worker { }` or `worker(...)` | Yes | Binds the local worker role |
-| `peer(...)` | No | Attaches a local peer binding |
-| `peerDescriptor(...)` | No | Registers an external peer descriptor |
-| `discovery { }` | No | Configures discovery mode, bootstrap registries, registry metadata, and trust verifier |
-| `routing { }` | No | Stores routing policy settings |
-| `memory { }` | No | Stores memory-policy settings |
-| `durability { }` | No | Binds a durable store |
-| `tracing { }` | No | Enables or disables tracing |
-| `hooks { }` | No | Configures orchestration hooks |
-| `operations { }` | No | Configures max hops, RPC timeout, and session-duration caps |
-| `concurrencyMode(mode)` | No | Sets P2P concurrency mode (SHARED or ISOLATED) |
-| `killSwitch(input, output, onTripped)` | No | Halts execution if token limits are exceeded |
-
-All builder methods return `DistributionGridBuilder<S>` for chaining.
-
-### Defaults Extension
-
-When `TPipe-Defaults` is on the classpath, the grid DSL also supports a provider-backed defaults bridge:
-
-```kotlin
-import Defaults.BedrockGridConfiguration
-import Defaults.defaults
-import com.TTT.Pipeline.distributionGrid
-
-val grid = distributionGrid {
-    defaults {
-        bedrock(
-            BedrockGridConfiguration(
-                region = "us-east-1",
-                model = "anthropic.claude-3-haiku-20240307-v1:0"
-            )
-        )
-    }
+routing {
+    allowRemotePcpForwarding(true)
 }
 ```
 
-That extension seeds a provider-backed router and worker for the node and may also seed optional node-level policy blocks when the defaults configuration explicitly provides them. The extension lives in `TPipe-Defaults`; core `DistributionGrid` remains provider-agnostic.
-
-For hosted-registry adoption, `TPipe-Defaults` now also provides thin helpers that build:
-
-- `DistributionGridBootstrapCatalogSource`
-- `DistributionGridPublicListingOptions`
-
-Those helpers stay additive and only scaffold the existing hosted-registry discovery/publication types. They do not
-auto-publish listings or start renew loops.
-
-### Build modes
-
-- `distributionGrid { ... }` uses `build()` and returns an initialized grid
-- `DistributionGridDsl.build()` initializes synchronously with `runBlocking`
-- `DistributionGridDsl.buildSuspend()` initializes asynchronously without blocking the caller
-
-## Runtime Contract Files
-
-The current contract layer is split into four source files:
-
-- `src/main/kotlin/Pipeline/DistributionGridModels.kt`
-- `src/main/kotlin/Pipeline/DistributionGridMemoryModels.kt`
-- `src/main/kotlin/Pipeline/DistributionGridDurabilityModels.kt`
-- `src/main/kotlin/Pipeline/DistributionGridProtocolModels.kt`
-
-These files define the vocabulary for the runtime, and the grid now uses them for both local execution and explicit-peer remote handoff.
-
-## Intended Architecture
-
-The approved design target is:
-
-- one `DistributionGrid` object equals one node
-- every node has a router role and a local worker role
-- the router decides where work goes next
-- task exchange happens over normal TPipe P2P transports
-- grid-specific policy, memory, tracing, durability, and handshake behavior are layered on top of that P2P substrate
-
-For the full future-facing spec, use:
-
-- `md/distributiongrid-design.md`
-- `md/distributiongrid-progress.md`
-- `md/distributiongrid-plan.md`
-
-## PCP Forwarding Policy (Phase 7)
-
-Non-stdio transports no longer silently strip PCP payloads before remote handoff. Instead, PCP forwarding is gated by the `distributionGridAllowRemotePcpForwarding` attribute on the envelope or content metadata. Requests that carry real PCP tooling (beyond stdio session options) to a non-stdio peer will receive a `POLICY_REJECTED` failure unless the attribute is explicitly set to `"true"`. Set the attribute on the envelope before dispatch to opt in:
+Or per-dispatch via hook:
 
 ```kotlin
-envelope.attributes["distributionGridAllowRemotePcpForwarding"] = "true"
+hooks {
+    beforePeerDispatch { envelope ->
+        envelope.attributes["distributionGridAllowRemotePcpForwarding"] = "true"
+        envelope
+    }
+}
 ```
-
-## Verification
-
-The current shipped slice has focused coverage through:
-
-- `DistributionGridContractModelsTest`
-- `DistributionGridShellRegistrationTest`
-- `DistributionGridValidationLifecycleTest`
-- `DistributionGridExecutionCoreTest`
-- `DistributionGridRemoteHandoffTest`
-- `DistributionGridRegistryDiscoveryTest`
-- `DistributionGridHardeningTest`
-- `DistributionGridDslTest`
-
-## Contributing
-
-If you are continuing `DistributionGrid` implementation, follow the internal phased rollout rather than adding features ad hoc:
-
-1. Phase 8 is now the shipped ergonomics/docs layer; keep Phase 5 through Phase 7 runtime semantics stable unless a targeted repair is required
-2. future work should treat additional convenience layers as additive extensions rather than runtime redesign
-3. route any new runtime-semantics ideas back through the steering docs before coding
 
 ## P2P Concurrency
 
-DistributionGrid is stateful — it maintains session caches, discovery state, pause flags, and lease state during execution. When exposed via P2P, register with `P2PConcurrencyMode.ISOLATED` so each inbound request gets a fresh clone. See [P2P Registry and Routing](../advanced-concepts/p2p/p2p-registry-and-routing.md#concurrency-modes) for details.
+`DistributionGrid` is stateful — register with `P2PConcurrencyMode.ISOLATED`:
+
+```kotlin
+grid.concurrencyMode(P2PConcurrencyMode.ISOLATED)
+P2PRegistry.register(grid)
+```
+
+See [P2P Registry and Routing](../advanced-concepts/p2p/p2p-registry-and-routing.md#concurrency-modes) for details.
+
+## Common Startup Failures
+
+### `DistributionGrid requires a router before init().`
+
+No router bound. Call `setRouter(routerPipeline)` or use `router { }` in DSL.
+
+### `DistributionGrid requires a worker before init().`
+
+No worker bound. Call `setWorker(workerPipeline)` or use `worker { }` in DSL.
+
+### `Peer 'X' is already registered locally.`
+
+Duplicate peer key. Call `removePeer("X")` first or use `replacePeer("X", newPeer)`.
+
+### `Router did not write a directive.`
+
+Router didn't set `content.metadata["distributionGridDirective"]`. Ensure your router pipeline outputs a `DistributionGridDirective` JSON via `setJsonOutput(DistributionGridDirective())`.
+
+## Best Practices
+
+- **Router must output a directive** — if your router pipeline doesn't write to `content.metadata["distributionGridDirective"]`, the grid defaults to `RUN_LOCAL_WORKER`
+- **Use the DSL** — it handles validation and initialization in one place
+- **Worker overflow protection** — configure token budgeting or truncation on worker pipes
+- **Use `P2PConcurrencyMode.ISOLATED`** when registering via P2P
+- **Configure durable store** for tasks that take more than a few seconds
+- **Set `maxHopCount`** appropriately — too low and tasks won't reach destination, too high wastes resources
+- **Enable tracing during development** to see routing decisions and hop paths
 
 ---
 
 **Previous:** [← Manifold](manifold.md) | **Next:** [Junction →](junction.md)
+
 ## Next Steps
 
 - [Cross-Cutting Topics](cross-cutting-topics.md) - Continue to shared container concepts.

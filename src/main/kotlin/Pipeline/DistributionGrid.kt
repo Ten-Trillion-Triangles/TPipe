@@ -5503,13 +5503,17 @@ class DistributionGrid : P2PInterface
     private fun isRemotePcpForwardAllowed(envelope: DistributionGridEnvelope): Boolean
     {
         val attributeFlag = envelope.attributes[ALLOW_REMOTE_PCP_FORWARDING_ATTRIBUTE]
-        if(attributeFlag.equals("true", ignoreCase = true))
+        when
+        {
+            attributeFlag.equals("true", ignoreCase = true) -> return true
+            attributeFlag.equals("false", ignoreCase = true) -> return false
+        }
+        val metadataFlag = envelope.content.metadata[ALLOW_REMOTE_PCP_FORWARDING_ATTRIBUTE]
+        if(metadataFlag == true || metadataFlag?.toString().equals("true", ignoreCase = true))
         {
             return true
         }
-
-        val metadataFlag = envelope.content.metadata[ALLOW_REMOTE_PCP_FORWARDING_ATTRIBUTE]
-        return metadataFlag == true || metadataFlag?.toString().equals("true", ignoreCase = true)
+        return envelope.routingPolicy.allowRemotePcpForwarding
     }
 
     /**

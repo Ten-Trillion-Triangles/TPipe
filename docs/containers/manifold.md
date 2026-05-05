@@ -62,6 +62,95 @@ Worker pipelines are the specialized agents the manager delegates to. Each worke
 - Be able to accept converse input from the manager
 - Have prompt overflow protection configured on every pipe via token budgeting or legacy auto truncation
 
+## Agent Contract
+
+Understanding the input/output contract between the manifold harness and your agents is critical for writing conforming manager and worker pipelines.
+
+### What the Manifold Provides to the Manager
+
+At each loop iteration, the manager pipeline receives:
+
+- **`ConverseHistory` as JSON in `content.text`** — The accumulated conversation history including all prior manager decisions and worker responses. This is the manager's primary reasoning context.
+- **`TaskProgress` extracted from latest system message** — The manifold extracts `TaskProgress` from the most recent system message in history (if present). The manager uses this to understand current state.
+
+### What the Manager Must Provide Back
+
+The manager pipeline must output JSON via `setJsonOutput(AgentRequest())` that contains:
+
+```json
+{
+  "targetAgentName": "worker-name",
+  "taskInstructions": "what to do",
+  "skillHint": "optional-skill-name"
+}
+```
+
+The `targetAgentName` maps to a worker that was registered via `addWorkerPipeline(...)`. The manifold routes the request to that worker's P2P endpoint.
+
+### What the Manifold Provides to Workers
+
+When a worker is invoked via P2P, it receives:
+
+- **`MultimodalContent` with the full `ConverseHistory`** — The worker's pipe receives `content.text` containing the JSON-serialized `ConverseHistory`. The worker can inspect this to understand context.
+- **`AgentRequest` metadata** — The worker's input may include metadata from the manifold's dispatch (e.g., `skillHint`).
+
+### What Workers Must Provide Back
+
+Workers must return `MultimodalContent` with:
+
+- **`content.text`** — The primary work output (plain text or JSON)
+- **`content.terminatePipeline = true`** — If the task is complete and the manifold should exit
+- **`content.passPipeline = true`** — If the manager should pass through (rare)
+
+Workers should NOT set `terminatePipeline` unless they want the entire manifold to stop. Worker failures should be handled via validation hooks, not by terminating the whole manifold.
+
+### The Shared History Contract
+
+The manifold maintains a single `workingContentObject` (a `MultimodalContent` wrapping `ConverseHistory`). The contract is:
+
+1. **Manager reads history** — Manager's first pipe receives `ConverseHistory` as JSON in `content.text`
+2. **Manager writes decision** — Manager emits `AgentRequest` JSON which the manifold parses
+3. **Worker appends result** — Worker response is appended to the history via `appendAgentResponseToConverseHistory`
+4. **Repeat** — Next iteration, manager sees updated history
+
+**Important:** The manager should NOT manually modify the history structure. Let the manifold handle history updates. If you need to inject context, use the manager's system prompt or the `initialUserPrompt`.
+
+### DSL Settings That Affect the Contract
+
+| Setting | Effect on Contract |
+|---------|-------------------|
+| `maxIterations(n)` | Sets hard limit on loop iterations. Without it, the manifold relies on `TaskProgress.isTaskComplete` or `terminatePipeline`. |
+| `history { }` | Configures manager history truncation. Determines how much history the manager sees each iteration. |
+| `validation { }` | Attaches validator/failure/transformer hooks. These intercept the worker output before it's appended to history. |
+| `summaryPipeline { }` | Adds a summarization step after each worker response. Changes what the manager sees (condensed vs full history). |
+| `killSwitch(input, output, onTripped)` | Sets token limits that halt execution. Protects against runaway workers. |
+| `concurrencyMode(ISOLATED)` | Required for P2P exposure. Each request gets a fresh manifold state. |
+
+### How `TaskProgress` Drives Termination
+
+The manager signals completion via `TaskProgress.isTaskComplete = true`:
+
+```kotlin
+data class TaskProgress(
+    var taskDescription: String = "",
+    var nextTaskInstructions: String = "",
+    var taskProgressStatus: String = "",
+    var isTaskComplete: Boolean = false
+)
+```
+
+When the manifold detects `isTaskComplete == true`, it sets `workingContentObject.passPipeline = true` and exits the loop cleanly.
+
+### Validation Hook Contract
+
+The validation hooks form a three-stage gate:
+
+1. **Validator** — Runs after worker returns, before history append. Return `false` to trigger failure handler.
+2. **Failure handler** — Runs when validator fails. Return `false` to terminate manifold, `true` to continue.
+3. **Transformer** — Runs after validation passes. Return the (possibly modified) content to append to history.
+
+This lets you enforce worker output quality without the manager needing to handle malformed responses.
+
 ## DSL Builder
 
 If you want the manifold assembled, validated, and initialized in one place, prefer the Kotlin DSL:

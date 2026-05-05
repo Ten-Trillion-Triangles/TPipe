@@ -28,6 +28,108 @@ In discussion-only mode, the harness intentionally stops at decision production 
 
 When a workflow recipe is selected, the harness runs plan, vote, act, verify, adjust, and output phases through the same P2P binding model. The discussion path remains the default.
 
+## Agent Contract
+
+Understanding the input/output contract between the junction harness and your participants is critical for writing conforming moderator and participant pipelines.
+
+### What the Junction Provides to Participants
+
+At each discussion round, the junction dispatches to participants via P2P. Each participant receives:
+
+- **`MultimodalContent` with the discussion topic** — The participant's pipe receives `content.text` containing the current topic or question being discussed
+- **Round context in metadata** — The junction may include `junctionRound`, `junctionTopic`, or other contextual metadata
+
+### What Participants Must Provide Back
+
+Participants must return `MultimodalContent` with:
+
+- **`content.text`** — The participant's opinion or vote as structured text (e.g., JSON or plain text that the junction can parse)
+- **`content.terminatePipeline = true`** — Only if the participant wants to halt the entire discussion (rare)
+
+The junction parses participant responses into `ParticipantOpinion` entries using JSON or text pattern matching.
+
+### What the Junction Provides to the Moderator
+
+After collecting participant opinions, the junction may dispatch to the moderator for:
+
+- **Consensus assessment** — If consensus is unclear, the moderator can provide guidance
+- **Round directive** — The moderator can signal `continue`, `stop`, or `refine` for the next round
+
+The moderator receives `content.text` containing the aggregated `VotingResult` and participant opinions.
+
+### What the Moderator Must Provide Back
+
+The moderator pipeline must output JSON via `setJsonOutput(ModeratorDirective())`:
+
+```json
+{
+  "decision": "continue",
+  "reason": "optional explanation",
+  "refinements": []
+}
+```
+
+Valid `decision` values: `continue`, `stop`, `refine`, `override`.
+
+### DSL Settings That Affect the Contract
+
+| Setting | Effect on Contract |
+|---------|-------------------|
+| `rounds(n)` | Maximum discussion rounds. Junction exits when limit is reached even without consensus. |
+| `threshold(t)` | Consensus threshold (0.0-1.0). If votes exceed this, discussion stops early. |
+| `intervention(true/false)` | Enables moderator intervention between rounds. When `true`, moderator can redirect the discussion. |
+| `strategy(strategy)` | Controls participant dispatch order: `SIMULTANEOUS` (parallel), `ROUND_ROBIN` (sequential), `CONVERSATIONAL` (dynamic selection). |
+| `workflowRecipe(recipe)` | Switches from discussion-only to workflow phases. Changes which roles (planner, actor, verifier, etc.) are used. |
+| `maxNestedDepth(depth)` | Guard against deep P2P recursion when nested containers are participants. |
+| `killSwitch(input, output, onTripped)` | Halts execution if token limits are exceeded. |
+| `concurrencyMode(ISOLATED)` | Required for P2P exposure. Each request gets a fresh junction state. |
+| `memoryPolicy { }` | Shapes outbound memory (e.g., token budget for what participants receive). |
+
+### Workflow Recipe Contract
+
+When using workflow recipes, the junction cycles through different role phases:
+
+| Recipe | Roles Used |
+|--------|------------|
+| `VOTE_PLAN_OUTPUT_EXIT` | voter, planner, outputHandler |
+| `PLAN_VOTE_ADJUST_OUTPUT_EXIT` | planner, voter, adjuster, outputHandler |
+| `VOTE_ACT_VERIFY_REPEAT` | voter, actor, verifier (loops until condition met) |
+| `ACT_VOTE_VERIFY_REPEAT` | actor, voter, verifier (loops until condition met) |
+
+Each role receives specific input and must produce specific output:
+
+- **Planner** — Receives task context, outputs a plan as JSON
+- **Actor** — Receives plan/task, executes, outputs result
+- **Verifier** — Receives actor output, validates, outputs pass/fail
+- **Adjuster** — Receives failed verification, modifies plan
+
+### Voting Contract
+
+The junction tallies votes from participants into a `VotingResult`:
+
+```kotlin
+data class VotingResult(
+    var votesFor: Int = 0,
+    var votesAgainst: Int = 0,
+    var votesAbstain: Int = 0,
+    var consensusReached: Boolean = false,
+    var summary: String = ""
+)
+```
+
+Participants should format their opinions so the junction can extract:
+- `votesFor` — Count of positive votes
+- `votesAgainst` — Count of negative votes
+- `consensusReached` — Whether threshold was met
+
+### Discussion State Flow
+
+1. **Topic dispatched** — Junction sends topic to all participants
+2. **Opinions collected** — Junction parses responses into `ParticipantOpinion` entries
+3. **Votes tallied** — Junction produces `VotingResult`
+4. **Moderator may intervene** — If intervention enabled, moderator can redirect
+5. **Repeat or exit** — Continue until consensus or round limit
+
 ## Core API
 
 ### Registration

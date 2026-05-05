@@ -232,6 +232,7 @@ data class DistributionGridHopRecord(
  * @param maxRetryCount Maximum number of same-peer retries.
  * @param allowAlternatePeers Whether the router may fall back to alternate peers.
  * @param maxHopCount Maximum number of hops allowed for the task.
+ * @param allowRemotePcpForwarding Whether PCP tooling may flow through to remote peers on non-stdio transports.
  */
 @Serializable
 data class DistributionGridRoutingPolicy(
@@ -242,7 +243,8 @@ data class DistributionGridRoutingPolicy(
     var allowRetrySamePeer: Boolean = false,
     var maxRetryCount: Int = 0,
     var allowAlternatePeers: Boolean = true,
-    var maxHopCount: Int = 16
+    var maxHopCount: Int = 16,
+    var allowRemotePcpForwarding: Boolean = false
 )
 
 /**
