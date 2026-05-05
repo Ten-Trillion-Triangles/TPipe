@@ -345,7 +345,7 @@ extern "C" {
 - [x] ✅ graalvm-abi-overview.md (this document)
 - [x] ✅ graalvm-abi-initialization.md — detailed init/shutdown contract
 - [x] ✅ graalvm-abi-core-types.md — type system and data types
-- [ ] graalvm-abi-pipe-api.md — Pipe execution API
+- [x] ✅ graalvm-abi-pipe-api.md — Pipe execution API
 - [ ] graalvm-abi-pipeline-api.md — Pipeline orchestration API
 - [ ] graalvm-abi-context-api.md — Context management API
 - [ ] graalvm-abi-pcp-api.md — Tool/protocol execution API
