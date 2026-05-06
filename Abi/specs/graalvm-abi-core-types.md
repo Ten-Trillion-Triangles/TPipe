@@ -82,6 +82,9 @@ typedef uint64_t TPipe_HttpContextHandle;    // HttpContextOptions
 typedef uint64_t TPipe_P2PTransportHandle;   // P2PTransport
 typedef uint64_t TPipe_P2PDescriptorHandle;  // P2PDescriptor
 typedef uint64_t TPipe_P2PRequirementsHandle; // P2PRequirements
+typedef uint64_t TPipe_TraceConfigHandle;     // TraceConfig
+typedef uint64_t TPipe_PcpExecutionResultHandle; // PCP execution result (output-only, not ref-counted)
+typedef uint64_t TPipe_P2PInterfaceHandle;  // P2PInterface (native interface, not constructible)
 ```
 
 ### 2.3 Reference Counting
@@ -906,6 +909,26 @@ TPipe_StdioContextHandle TPipe_StdioContext_setMaxBufferSize(TPipe_StdioContextH
 const char* TPipe_StdioContext_getCommand(TPipe_StdioContextHandle);
 TPipe_StdioExecutionMode TPipe_StdioContext_getExecutionMode(TPipe_StdioContextHandle);
 int64_t TPipe_StdioContext_getTimeout(TPipe_StdioContextHandle);
+```
+
+### 12.3 PcpExecutionResult
+
+`PcpExecutionResult` is the result of PCP tool call execution. It is an **output-only** type — callers cannot construct it via the ABI. It is not reference-counted.
+
+```c
+// Fields (access via getters):
+//   int success              — 1 if execution succeeded, 0 if errors occurred
+//   TPipe_ListHandle results — list of TPipe_Handle (tool call results)
+//   TPipe_ListHandle errors  — list of TPipe_ErrorHandle (execution errors)
+//   int64_t executionTimeMs — time spent executing in milliseconds
+
+TPipe_Result TPipe_PcpExecutionResult_getSuccess(TPipe_PcpExecutionResultHandle handle, int* out_success);
+TPipe_Result TPipe_PcpExecutionResult_getResults(TPipe_PcpExecutionResultHandle handle,
+                                                  TPipe_ListHandle* out_results);
+TPipe_Result TPipe_PcpExecutionResult_getErrors(TPipe_PcpExecutionResultHandle handle,
+                                                 TPipe_ListHandle* out_errors);
+TPipe_Result TPipe_PcpExecutionResult_getExecutionTimeMs(TPipe_PcpExecutionResultHandle handle,
+                                                         int64_t* out_timeMs);
 ```
 
 ---
