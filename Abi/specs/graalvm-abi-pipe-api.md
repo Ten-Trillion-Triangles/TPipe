@@ -4,7 +4,7 @@
 **Created:** 2026-05-05
 **Status:** Working Draft - In Progress
 **Spec:** graalvm-abi-pipe-api.md
-**Requires:** graalvm-abi-core-types.md (handle system, reference counting, MultimodalContent, TokenBudgetSettings, enums)
+**Requires:** graalvm-abi-core-infrastructure.md (handle system, reference counting, TPipe_Result, LibraryState) and graalvm-abi-core-types.md (MultimodalContent, TokenBudgetSettings, enums)
 
 ---
 
@@ -134,11 +134,13 @@ TPipe_PipeHandle TPipe_Pipe_setModel(TPipe_PipeHandle handle, const char* modelN
 
 const char* TPipe_Pipe_getModel(TPipe_PipeHandle handle);
 // Returns the configured model name, or NULL if not set.
-```
+// Pointer is valid until next ABI call on this handle; do not free.
 
----
+const char* TPipe_Pipe_getSystemPrompt(TPipe_PipeHandle handle);
+// Returns system prompt; valid until next ABI call on this handle; do not free.
 
-## 4. Prompt Configuration
+const char* TPipe_Pipe_getUserPrompt(TPipe_PipeHandle handle);
+// Returns user prompt; valid until next ABI call on this handle; do not free.
 
 ### 4.1 Prompt Fields
 
@@ -484,9 +486,11 @@ TPipe_ContextHandle TPipe_Pipe_getContextWindow(TPipe_PipeHandle handle);
 TPipe_PipeHandle TPipe_Pipe_setMiniContextBank(TPipe_PipeHandle handle,
                                                TPipe_MiniBankHandle bank);
 TPipe_MiniBankHandle TPipe_Pipe_getMiniContextBank(TPipe_PipeHandle handle);
+// Returns borrowed handle reference; do not release.
 
 TPipe_PipeHandle TPipe_Pipe_setPageKey(TPipe_PipeHandle handle, const char* key);
 const char* TPipe_Pipe_getPageKey(TPipe_PipeHandle handle);
+// Returns page key; valid until next ABI call on this handle; do not free.
 ```
 
 ### 7.4 Context Behavior Flags
@@ -869,8 +873,9 @@ TPipe_PCPHandle TPipe_Pipe_getPcPContext(TPipe_PipeHandle handle);
 
 // Set the PCP description string. Instructs the LLM on available tools.
 TPipe_PipeHandle TPipe_Pipe_setPcPDescription(TPipe_PipeHandle handle,
-                                                const char* description);
+                                                 const char* description);
 const char* TPipe_Pipe_getPcPDescription(TPipe_PipeHandle handle);
+// Returns PCP description; valid until next ABI call on this handle; do not free.
 
 // Set additional instructions merged into the PCP JSON prompt.
 TPipe_PipeHandle TPipe_Pipe_enableMemoryIntrospection(TPipe_PipeHandle handle,
@@ -912,8 +917,9 @@ TPipe_ListHandle TPipe_Pipe_getP2PAgentList(TPipe_PipeHandle handle);
 
 // Set the P2P description for this pipe.
 TPipe_PipeHandle TPipe_Pipe_setP2PDescription(TPipe_PipeHandle handle,
-                                                const char* description);
+                                                 const char* description);
 const char* TPipe_Pipe_getP2PDescription(TPipe_PipeHandle handle);
+// Returns P2P description; valid until next ABI call on this handle; do not free.
 ```
 
 ---
@@ -925,6 +931,7 @@ const char* TPipe_Pipe_getP2PDescription(TPipe_PipeHandle handle);
 ```c
 // Get the error message from the last execution that failed on this pipe.
 // Returns NULL if no error has occurred (pipe has no error state).
+// Pointer is valid until next ABI call on this handle; do not free.
 const char* TPipe_Pipe_getErrorMessage(TPipe_PipeHandle handle);
 
 // Get the error type (TraceEventType) from the last failed execution.
@@ -1036,11 +1043,13 @@ TPipe_PipeHandle TPipe_Pipe_setPipeName(TPipe_PipeHandle handle, const char* nam
 // name: human-readable name for this pipe. Used in logs and trace output.
 
 const char* TPipe_Pipe_getPipeName(TPipe_PipeHandle handle);
+// Returns pipe name; valid until next ABI call on this handle; do not free.
 
 TPipe_PipeHandle TPipe_Pipe_setPipeId(TPipe_PipeHandle handle, const char* id);
 // id: programmatic identifier. Used for pipeline routing and P2P communication.
 
 const char* TPipe_Pipe_getPipeId(TPipe_PipeHandle handle);
+// Returns pipe ID; valid until next ABI call on this handle; do not free.
 ```
 
 ### 12.5 Retry Configuration (via Timeout Strategy)

@@ -361,6 +361,22 @@ const char* TPipe_Content_getText(TPipe_ContentHandle handle);
 ```c
 TPipe_ContentHandle TPipe_Content_setTerminate(TPipe_ContentHandle handle, int terminate);
 // terminate: 0 = no terminate, 1 = terminate pipeline
+//
+// When terminate is set to 1, the pipeline terminates cooperatively:
+// - Execution stops at the next execution checkpoint (not immediately)
+// - The pipeline returns early with empty text (text = "")
+// - HTTP connections, file handles, and agent dispatch state are cleaned up
+//   via normal finally-block execution and structured concurrency scope unwinding
+// - The terminate signal does NOT force-kill threads; it is a flag checked
+//   at pipeline hop boundaries
+//
+// This is ABORTIVE in the sense that no further pipeline stages execute after
+// the flag is observed, but COOPERATIVE in that cleanup (finally blocks, scope
+// unwinding) executes normally. No resource leaks result from proper scope
+// management.
+//
+// Note: TPipe_Pipeline_wasTerminatedByError() reports whether the pipeline
+// was terminated by an error condition, vs normal completion.
 
 TPipe_ContentHandle TPipe_Content_setRepeat(TPipe_ContentHandle handle, int repeat);
 // repeat: 0 = do not repeat, 1 = repeat pipe call
@@ -877,6 +893,61 @@ const char* TPipe_PCP_getFunctionName(TPipe_PCPHandle handle);
 TPipe_MapHandle TPipe_PCP_getParams(TPipe_PCPHandle handle);
 // Returns the params map. Do NOT release; it is owned by the request.
 ```
+
+### 12.1.1 PcPRequest Schema Validation Guard
+
+**Critical ABI boundary rule:** All `PcPRequest` instances crossing the managed/native boundary MUST be validated before they reach Kotlin deserialization logic.
+
+#### Why validation is required at the boundary
+
+LLM-generated JSON is inherently unreliable. The TPipe codebase explicitly includes `repairJsonString` and `repairAndDeserialize` utilities specifically because LLMs produce malformed PCP payloads. Without a validation guard at the ABI boundary, malformed `PcPRequest` input can cause:
+
+1. **Partial deserialization** — JSON parser consumes only valid prefix, leaving inconsistent state
+2. **Exception propagation** — unhandled parsing exceptions cross the ABI boundary (undefined behavior in native images)
+3. **Type confusion attacks** — a `params` map containing wrong value types causes downstream cast failures
+
+#### Required validation steps
+
+When a caller passes a `PcPRequest` to any TPipe function (including `TPipe_PCP_createRequest`):
+
+```
+1. functionName:
+   - Must be non-NULL, non-empty
+   - Must match pattern: alphanumeric + underscore, max 128 chars
+   - Must not exceed 128 characters
+2. params (TPipe_MapHandle):
+   - Must be a valid, non-NULL map handle
+   - All keys must be non-NULL, non-empty strings
+   - All values must be one of: STRING, INT, BOOL, FLOAT, ENUM, LIST, MAP, OBJECT, or NULL
+   - Nested maps/lists must have valid structure (no cycles)
+3. Schema enforcement:
+   - If functionName is unknown/unregistered: return TPIPE_ERR_UNSUPPORTED
+   - If required params are missing: return TPIPE_ERR_INVALID_ARGUMENT
+   - If param types don't match expected types: return TPIPE_ERR_INVALID_ARGUMENT
+```
+
+#### Error handling
+
+```
+TPipe_PCP_createRequest(functionName, params):
+  - If functionName NULL or empty → TPIPE_ERR_INVALID_ARGUMENT
+  - If params is TPIPE_INVALID_HANDLE → TPIPE_ERR_INVALID_HANDLE
+  - If params map has invalid structure → TPIPE_ERR_INVALID_ARGUMENT
+  - If functionName unknown → TPIPE_ERR_UNSUPPORTED
+  - If required param missing → TPIPE_ERR_INVALID_ARGUMENT
+  - If param type mismatch → TPIPE_ERR_INVALID_ARGUMENT
+  - On success → returns TPipe_PCPHandle (caller receives at refcount=1)
+```
+
+#### Wrapper guidance
+
+Language wrappers (Python ctypes, Node FFI, etc.) MUST perform validation before calling `TPipe_PCP_createRequest`. The native image does not repair malformed input — repair happens at wrapper layer using `repairJsonString` if needed, then validation, then ABI call.
+
+#### Internal repair path (not ABI surface)
+
+TPipe's internal `repairJsonString` and `repairAndDeserialize` utilities handle JSON repair internally. These are **not** part of the public ABI — they are implementation details of the internal Kotlin parsing layer. The ABI surface only exposes the validated creation API.
+
+---
 
 ### 12.2 StdioContextOptions
 
