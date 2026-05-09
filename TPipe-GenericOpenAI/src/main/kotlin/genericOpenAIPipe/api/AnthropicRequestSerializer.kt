@@ -142,6 +142,10 @@ class AnthropicRequestSerializer : RequestSerializer
                     listOf(AnthropicContentBlock.TextBlock(text = ""))
                 }
             }
+            is MessageContent.PlainContent ->
+            {
+                listOf(AnthropicContentBlock.TextBlock(text = content.content))
+            }
         }
     }
 
@@ -163,6 +167,7 @@ class AnthropicRequestSerializer : RequestSerializer
                     .joinToString("\n") { it.text }
                     .takeIf { it.isNotBlank() }
             }
+            is MessageContent.PlainContent -> content.content
         }
     }
 }

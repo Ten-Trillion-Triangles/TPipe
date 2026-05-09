@@ -563,6 +563,7 @@ class GenericOpenAIPipe : Pipe()
             {
                 is MessageContent.TextContent -> msg.text
                 is MessageContent.MultimodalContent -> msg.blocks.filterIsInstance<ContentBlock.TextBlock>().joinToString("") { it.text }
+                is MessageContent.PlainContent -> msg.content
                 null -> ""
             }
             return contentText
@@ -677,6 +678,7 @@ val jsonRequest = requestSerializer.serialize(request, apiMode)
                 {
                     is MessageContent.TextContent -> msg.text
                     is MessageContent.MultimodalContent -> msg.blocks.filterIsInstance<ContentBlock.TextBlock>().joinToString("") { it.text }
+                    is MessageContent.PlainContent -> msg.content
                     null -> ""
                 }
 
