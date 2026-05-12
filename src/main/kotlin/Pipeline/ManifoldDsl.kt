@@ -25,6 +25,7 @@ private const val DEFAULT_MANIFOLD_AGENT_PIPE_NAME = "Agent caller pipe"
  * methods into one another.
  */
 @DslMarker
+@Retention(AnnotationRetention.RUNTIME)
 annotation class ManifoldDslMarker
 
 /**

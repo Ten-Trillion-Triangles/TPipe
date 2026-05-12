@@ -946,10 +946,15 @@ TPipe_Content* TPipe_Splitter_executeLocal(TPipe_splitterHandle handle,
 
 ```c
 typedef struct {
-    TPipe_TraceConfig trace_config;
-    // ... additional fields
+    TPipe_TraceConfig trace_config;  // tracing config (enabled=false by default)
+    // Content and pipelines are added via TPipe_SplitterConfig_addContent()
+    // and TPipe_SplitterConfig_addPipeline() after creation — not embedded in struct
 } TPipe_SplitterConfig;
 ```
+
+**Cross-reference:** `com.TTT.Pipeline.Splitter.kt:96` (`tracingEnabled`), `:97` (`traceConfig`). Content is pre-bound via `addContent(key, content)` and pipelines via `addPipeline(key, pipeline)` — not embedded in the config struct.
+
+**Note:** In the C ABI, `TPipe_Splitter_executePipelines()` does not take content as a parameter — content must be pre-registered via `TPipe_SplitterConfig_addContent()` or `TPipe_Splitter_addContent()`. The Kotlin API accepts paths+content at execution time, but the C API requires pre-registration. This is an intentional ABI simplification.
 
 ### 7.4 Configuration Setters (Config Struct)
 
@@ -1164,11 +1169,14 @@ TPipe_P2PResponse* TPipe_MultiConnector_executeP2PRequest(TPipe_multiConnectorHa
 
 ```c
 typedef struct {
-    TPipe_MultiConnectorExecutionMode mode;
-    TPipe_TraceConfig trace_config;
-    // ... additional fields
+    TPipe_MultiConnectorExecutionMode mode;  // SEQUENTIAL, PARALLEL, or FALLBACK
+    TPipe_TraceConfig trace_config;           // tracing config (enabled=false by default)
+    // Connectors are added via TPipe_MultiConnectorConfig_add() after creation
+    // No embedded connector array — configs are built incrementally via builder pattern
 } TPipe_MultiConnectorConfig;
 ```
+
+**Cross-reference:** `com.TTT.Pipeline.MultiConnector.kt:129` (`executionMode`), `:145` (`tracingEnabled`), `:149` (`traceConfig`). Connectors are added post-creation via `add()` — not embedded in the config struct.
 
 ### 9.4 Configuration Setters (Config Struct)
 

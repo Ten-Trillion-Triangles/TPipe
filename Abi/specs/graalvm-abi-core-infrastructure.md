@@ -50,11 +50,306 @@ const char* TPipe_Pipe_getModel(TPipe_PipeHandle handle);
 char* copy = strdup(model);  // caller owns, must free()
 ```
 
+### 2.2 Result Memory Management
+
+For functions that allocate and return complex result structures (such as PCP tool execution results), TPipe follows a **caller-owned free** model:
+
+```c
+// Free TPipe-allocated result structures.
+// Must be called by the caller for any TPipe_Result payload where TPipe
+// owned and allocated the memory internally.
+//
+// After this call, the TPipe_Result handle is invalid — do not use it again.
+//
+// Usage pattern:
+//   TPipe_Result result = TPipe_PCP_execute(request, &out_size);
+//   if (result != TPIPE_OK) { /* handle error */ }
+//   TPipe_Result_free(result);  // caller frees allocated result data
+
+TPipe_Result TPipe_Result_free(TPipe_Result result);
+```
+
+**When to call `TPipe_Result_free()`:**
+
+| Scenario | Who calls free? | Notes |
+|----------|----------------|-------|
+| PCP tool returns JSON/payload result | **Caller** | TPipe allocated result struct |
+| String returned via `const char*` out-param | Caller owns buffer | No free needed — caller owns the buffer |
+| Handle returned from create/clone | **Caller** | Use `TPipe_Handle_release()` not `TPipe_Result_free()` |
+| TPipe_Result from sync call (success path) | **Caller** | Only when result contains allocated payload |
+
+> **Do not confuse `TPipe_Result_free()` with `TPipe_Handle_release()`** — they operate on different handle types. Use `TPipe_Handle_release()` for all handle types (`TPipe_ContentHandle`, `TPipe_PipeHandle`, `TPipe_ListHandle`, etc.). Use `TPipe_Result_free()` only for the `TPipe_Result` integer code itself when it carries an allocated payload.
+
 ---
 
-## 3. Library State Machine
+## 3. Struct Definitions
 
-### 3.1 TPipe_LibraryState Enum
+### 3.1 TPipe_ContextWindowSettings
+
+Controls how the context window handles truncation. Corresponds to `ContextWindowSettings` enum and `TruncationSettings` data class in the Kotlin codebase.
+
+```c
+// Truncation method — corresponds to com.TTT.Enums.ContextWindowSettings
+typedef enum {
+    TPIPE_CONTEXT_TRUNCATE_TOP,      // Chop from beginning
+    TPIPE_CONTEXT_TRUNCATE_BOTTOM,   // Chop from end
+    TPIPE_CONTEXT_TRUNCATE_MIDDLE    // Chop from both ends evenly
+} TPipe_ContextTruncationMethod;
+
+// Full settings struct — corresponds to Pipe.kt:62 TruncationSettings
+typedef struct {
+    // Token budgeting
+    int32_t  multiplyWindowSizeBy;      // default: 0
+    int32_t  maxTokenOutput;            // max tokens for LLM output (reserved)
+    int32_t  reasoningBudgetTokens;     // max reasoning/thinking tokens
+
+    // Token counting controls
+    int32_t  contextWindowSize;         // total context window size
+    int32_t  userPromptMaxTokens;       // max tokens for user prompt
+    int32_t  nonWordSplitCount;         // default: 4
+    double   tokenCountingBias;         // default: 0.0
+
+    // Word-boundary behavior
+    int32_t  countSubWordsInFirstWord;  // default: true (non-zero)
+    int32_t  favorWholeWords;           // default: true (non-zero)
+    int32_t  countOnlyFirstWordFound;   // default: false (zero)
+    int32_t  splitForNonWordChar;       // default: true (non-zero)
+    int32_t  alwaysSplitIfWholeWordExists; // default: false (zero)
+    int32_t  countSubWordsIfSplit;      // default: false (zero)
+
+    // Fill modes
+    int32_t  fillMode;                  // default: false (zero)
+    int32_t  fillAndSplitMode;          // default: false (zero)
+
+    // Truncation control
+    int32_t  truncationMethod;          // TPipe_ContextTruncationMethod enum
+    int32_t  allowUserPromptTruncation; // default: true (non-zero)
+    int32_t  compressUserPrompt;        // default: false (zero)
+    int32_t  truncateContextWindowAsString; // default: false (zero)
+    int32_t  preserveTextMatches;       // default: false (zero)
+
+    // Multi-page budget strategy
+    int32_t  multiPageBudgetStrategy;  // 0=EQUAL_SPLIT, 1=WEIGHTED_SPLIT, 2=PRIORITY_FILL, 3=DYNAMIC_FILL
+
+    // Page weights (JSON-serialized map, nullable)
+    const char* pageWeightsJson;        // nullable, e.g. "{\"page1\": 0.5, \"page2\": 0.5}"
+} TPipe_ContextWindowSettings;
+```
+
+**Cross-reference:** `com.TTT.Enums.ContextWindowSettings` (3-value enum) + `com.TTT.Pipe.TruncationSettings` (Pipe.kt:62, 13 fields).
+
+**Allocation:** Caller-allocated. Pass pointer to `TPipe_ManifoldConfig_setTruncationMethod()`.
+
+---
+
+### 3.2 TPipe_TokenBudgetSettings
+
+Advanced token budgeting configuration. Corresponds to `TokenBudgetSettings` data class in Pipe.kt:77.
+
+```c
+typedef struct {
+    int32_t  userPromptSize;           // Max tokens for user prompt. Throws error or truncates if exceeded.
+    int32_t  maxTokens;                // Max LLM output tokens (includes reasoning + response).
+    int32_t  reasoningBudget;          // Max reasoning/thinking tokens. Subtracts from maxTokens.
+    int32_t  contextWindowSize;         // Total token budget (input + output). Override for Pipe's ContextWindow.
+    int32_t  allowUserPromptTruncation; // 0 = throw error on overflow, non-zero = truncate
+    int32_t  compressUserPrompt;        // 0 = error on overflow, non-zero = semantic compression
+    int32_t  truncateContextWindowAsString; // 0 = error, non-zero = truncate
+    int32_t  preserveTextMatches;       // non-zero = preserve matched text in converse history
+    int32_t  truncationMethod;          // TPipe_ContextTruncationMethod enum
+    int32_t  multiPageBudgetStrategy;   // 0=EQUAL_SPLIT, 1=WEIGHTED_SPLIT, 2=PRIORITY_FILL, 3=DYNAMIC_FILL
+    const char* pageWeightsJson;        // nullable JSON map of page weights
+} TPipe_TokenBudgetSettings;
+```
+
+**Cross-reference:** `com.TTT.Pipe.TokenBudgetSettings` (Pipe.kt:77, 10 fields).
+
+**Allocation:** Caller-allocated. Pass pointer to `TPipe_ManifoldConfig_setManagerTokenBudget()`.
+
+---
+
+### 3.3 TPipe_JunctionMemoryPolicy
+
+Memory management policy for Junction's democratic voting flow. Controls how intermediate results are retained or discarded between rounds.
+
+```c
+typedef struct {
+    int32_t retainRoundResults;    // non-zero = keep results from each voting round
+    int32_t retainModeratorState;  // non-zero = keep moderator decision history
+    int32_t maxRoundsStored;       // Maximum rounds to retain. 0 = unlimited.
+    int32_t discardOnShutdown;     // non-zero = discard all on TPipe_shutdown (default behavior)
+} TPipe_JunctionMemoryPolicy;
+```
+
+**Cross-reference:** `JunctionDsl.kt` memoryPolicy DSL block. Junction is design-notes / not-implemented, so this struct is defined for completeness but may not yet have a builder path.
+
+**Allocation:** Caller-allocated. Pass pointer to `TPipe_JunctionConfig_setMemoryPolicy()`.
+
+---
+
+### 3.4 TPipe_JunctionConfig
+
+Configuration struct for Junction democratic voting. Corresponds to `Junction.kt` internal config.
+
+```c
+typedef struct {
+    int32_t maxRounds;             // Maximum voting rounds before forced conclusion
+    int32_t minVotes;             // Minimum votes required for decision
+    double  decisionThreshold;     // 0.0-1.0, vote weight threshold for consensus
+    int32_t timeoutMs;            // Timeout for entire Junction execution (milliseconds)
+    // ... additional fields TBD — see pipeline-api.md §6
+} TPipe_JunctionConfig;
+```
+
+**Status:** Partial definition. `pipeline-api.md` shows `// ... additional fields` placeholder. Fields above are the confirmed ones; additional fields require codebase audit of Junction.kt internals.
+
+**Setter methods:**
+```c
+TPipe_JunctionConfig TPipe_JunctionConfig_setMaxRounds(TPipe_JunctionConfig* config, int32_t maxRounds);
+TPipe_JunctionConfig TPipe_JunctionConfig_setMinVotes(TPipe_JunctionConfig* config, int32_t minVotes);
+TPipe_JunctionConfig TPipe_JunctionConfig_setDecisionThreshold(TPipe_JunctionConfig* config, double threshold);
+TPipe_JunctionConfig TPipe_JunctionConfig_setTimeoutMs(TPipe_JunctionConfig* config, int32_t timeoutMs);
+TPipe_JunctionConfig TPipe_JunctionConfig_setMemoryPolicy(TPipe_JunctionConfig* config, const TPipe_JunctionMemoryPolicy* policy);
+```
+
+---
+
+### 3.5 TPipe_P2PResponse / TPipe_P2PRequest
+
+P2P message types for Manifold P2P dispatch. Corresponds to `P2PRequest` and `AgentRequest` data classes.
+
+```c
+typedef struct {
+    const char* requestId;        // Unique identifier for this request
+    const char* sourceAgentId;    // Agent that originated the request
+    const char* targetAgentId;    // Target agent (nullable for broadcast)
+    const char* payloadJson;      // JSON-encoded payload (caller-encoded)
+    int32_t     timeoutMs;        // Request timeout in milliseconds
+    int32_t     priority;         // Higher = more urgent (used for queue ordering)
+} TPipe_P2PRequest;
+
+typedef struct {
+    const char* requestId;        // Matches the originating request
+    int32_t     success;          // non-zero = success, zero = failure
+    const char* resultJson;       // JSON-encoded result (TPipe-encoded, caller frees)
+    const char* errorMessage;     // Error description if success == 0
+} TPipe_P2PResponse;
+```
+
+**Cross-reference:** `com.TTT.P2P.P2PRequest` (P2PRequest.kt:83), `com.TTT.P2P.AgentRequest` (P2PRequest.kt:101).
+
+**Lifecycle:** `TPipe_P2PResponse` is TPipe-allocated on return. Caller must call `TPipe_Result_free()` to release.
+
+---
+
+### 3.6 TPipe_PipeConfig / TPipe_PipeConfigHandle
+
+Base configuration for a Pipe. Corresponds to `PipeSettings.kt` (47-field data class) and `TokenBudgetSettings` in the Kotlin codebase. Used by `TPipe_Pipe_getConfig()` to export the pipe's full configuration snapshot.
+
+**Handle alias:**
+```c
+typedef uint64_t TPipe_PipeConfigHandle;  // type alias — underlying storage is a handle ID
+```
+
+**C struct definition:**
+```c
+typedef struct {
+    // Identity
+    const char* pipeName;           // nullable, set via TPipe_Pipeline_setName
+    const char* pipeId;            // nullable, internal UUID
+    const char* currentPipelineId; // nullable, pipeline this pipe belongs to
+
+    // Provider & Model
+    const char* provider;           // nullable, e.g. "aws_bedrock", "ollama"
+    const char* model;             // nullable, e.g. "gpt-4", "claude-3-7-sonnet"
+    int         supportsNativeJson; // non-zero = provider uses native JSON mode
+
+    // Prompt configuration
+    const char* systemPrompt;      // nullable, system prompt text
+    const char* userPrompt;       // nullable, pre-set user prompt
+    int         promptMode;        // 0=SINGLE, 1=CHAT, 2=INTERNAL_CONTEXT
+
+    // JSON I/O
+    const char* jsonOutput;       // nullable, e.g. "{\"headline\": \"\"}"
+    const char* jsonInput;        // nullable, raw JSON input
+    const char* jsonOutputInstructions; // nullable, instructions for JSON mode
+
+    // Sampling parameters
+    double      temperature;       // default: 0.0
+    double      topP;             // default: 1.0
+    int         topK;             // default: 0 (disabled)
+    double      repetitionPenalty; // default: 1.0
+    const char* stopSequences;    // nullable, JSON array of stop strings
+
+    // Reasoning
+    int         useModelReasoning; // non-zero = reasoning enabled
+    int         modelReasoningSettingsV2; // V2 reasoning verbosity level
+    const char* modelReasoningSettingsV3; // nullable, V3 mode string
+
+    // Token budget (nested — corresponds to TokenBudgetSettings)
+    int         hasTokenBudget;    // non-zero = token budget is configured
+    int         userPromptSize;
+    int         maxTokens;
+    int         reasoningBudget;
+    int         subtractReasoningFromInput;
+    int         contextWindowSize;
+    int         allowUserPromptTruncation;
+    int         preserveJsonInUserPrompt;
+    int         compressUserPrompt;
+    int         truncateContextWindowAsString;
+    int         preserveTextMatches;
+    int         truncationMethod;  // TPipe_ContextTruncationMethod enum
+    int         multiPageBudgetStrategy;
+    const char* pageWeightsJson;   // nullable, JSON map
+
+    // Context window
+    int         contextWindowTruncation; // TPipe_ContextTruncationMethod enum
+    int         truncateContextAsString; // non-zero = truncate as string
+    int         autoTruncateContext;    // non-zero = auto-truncate enabled
+    int         emplaceLorebook;         // non-zero = lorebook auto-injected
+    int         appendLoreBook;          // non-zero = append mode
+    int         loreBookFillMode;        // non-zero = fill mode
+    int         loreBookFillAndSplitMode;// non-zero = fill+split mode
+
+    // Context access
+    int         readFromGlobalContext;    // non-zero = reads global context
+    int         readFromPipelineContext; // non-zero = reads pipeline context
+    int         updatePipelineContextOnExit; // non-zero = updates on exit
+    int         autoInjectContext;       // non-zero = auto-inject context
+    int         multiplyWindowSizeBy;    // multiplier for context window
+
+    // MiniBank
+    const char* pageKey;          // nullable, MiniBank page key
+    const char* pageKeyListJson;   // nullable, JSON array of page keys
+
+    // Token counting controls (TruncationSettings subset)
+    int         countSubWordsInFirstWord;
+    int         favorWholeWords;
+    int         countOnlyFirstWordFound;
+    int         splitForNonWordChar;
+    int         alwaysSplitIfWholeWordExists;
+    int         countSubWordsIfSplit;
+    int         nonWordSplitCount;
+
+    // Tracing
+    int         tracingEnabled;   // non-zero = tracing enabled
+
+    // PCP
+    const char* pcpContextJson;   // nullable, serialized PcpContext
+} TPipe_PipeConfig;
+```
+
+**Cross-reference:** `com.TTT.Structs.PipeSettings` (47 fields, PipeSettings.kt), `com.TTT.Pipe.TokenBudgetSettings` (Pipe.kt:138).
+
+**Allocation:** TPipe-allocated on `TPipe_Pipe_getConfig()` call. Caller receives a handle — use `TPipe_Handle_release()` to free, not `TPipe_Result_free()`.
+
+**Status:** Complete — all 47 fields from PipeSettings.kt are enumerated. Fields not in PipeSettings.kt (provider/model string format, stopSequences JSON) are documented as nullable char* with format notes.
+
+---
+
+## 4. Library State Machine
+
+### 4.1 TPipe_LibraryState Enum
 
 ```c
 typedef enum {
@@ -66,7 +361,7 @@ typedef enum {
 } TPipe_LibraryState;
 ```
 
-### 3.2 State Transition Rules
+### 4.2 State Transition Rules
 
 ```
 TPIPE_STATE_LOADED
@@ -82,7 +377,7 @@ TPIPE_STATE_SHUTDOWN
 TPIPE_STATE_INITIALIZING (loop)
 ```
 
-### 3.3 Thread Safety Rules
+### 4.3 Thread Safety Rules
 
 - `TPipe_init()` is idempotent: multiple concurrent calls serialize via internal mutex
 - `TPipe_shutdown()` is idempotent: same behavior
@@ -91,9 +386,9 @@ TPIPE_STATE_INITIALIZING (loop)
 
 ---
 
-## 4. TPipe_init() and TPipe_shutdown()
+## 5. TPipe_init() and TPipe_shutdown()
 
-### 4.1 TPipe_init()
+### 5.1 TPipe_init()
 
 ```c
 // Initialize library. Idempotent — concurrent calls serialize, second call is no-op.
@@ -108,7 +403,7 @@ TPipe_Result TPipe_init(void);
 - Thread-safe: concurrent calls are serialized via internal mutex
 - On failure, library state is `TPIPE_STATE_SHUTDOWN` — caller should not attempt further calls
 
-### 4.2 TPipe_shutdown()
+### 5.2 TPipe_shutdown()
 
 ```c
 // Gracefully shut down library. Idempotent — second call returns TPIPE_OK.
@@ -123,7 +418,7 @@ TPipe_Result TPipe_shutdown(void);
 - After shutdown, all handles become invalid
 - Can be called repeatedly (idempotent)
 
-### 4.3 TPipe_getState()
+### 5.3 TPipe_getState()
 
 ```c
 // Query current library state. Always thread-safe.
@@ -135,9 +430,9 @@ TPipe_LibraryState TPipe_getState(void);
 
 ---
 
-## 5. Handle Lifecycle System
+## 6. Handle Lifecycle System
 
-### 5.1 Base Handle Type
+### 6.1 Base Handle Type
 
 ```c
 #define TPIPE_INVALID_HANDLE 0
@@ -147,7 +442,7 @@ typedef uint64_t TPipe_Handle;
 
 All handles are `uint64_t` integers. `TPIPE_INVALID_HANDLE` (0) represents null/invalid.
 
-### 5.2 Handle Lifecycle Functions
+### 6.2 Handle Lifecycle Functions
 
 ```c
 // Increment reference count. Called automatically by clone/copy operations.
@@ -175,7 +470,7 @@ int32_t TPipe_Handle_getRefCount(TPipe_Handle handle);
 int TPipe_Handle_isValid(TPipe_Handle handle);
 ```
 
-### 5.3 Lifecycle Rules
+### 6.3 Lifecycle Rules
 
 | Event | Refcount Action |
 |-------|-----------------|
@@ -186,7 +481,7 @@ int TPipe_Handle_isValid(TPipe_Handle handle);
 | Count reaches 0 | Handle invalidated, object queued for GC |
 | `TPipe_shutdown()` called | All outstanding handles released (count → 0) |
 
-### 5.4 Handle Table Implementation
+### 6.4 Handle Table Implementation
 
 Internal structure (not exposed in ABI):
 
@@ -215,7 +510,7 @@ object HandleTable {
 
 ---
 
-## 6. At-Exit Hooks
+## 7. At-Exit Hooks
 
 ```c
 // Internally registered via atexit() or equivalent on each platform.
@@ -230,9 +525,9 @@ object HandleTable {
 
 ---
 
-## 7. FunctionRegistry Lifecycle
+## 8. FunctionRegistry Lifecycle
 
-### 7.1 Registration Contract
+### 8.1 Registration Contract
 
 `FunctionRegistry.registerFunction(name, function)` has the following guarantees:
 
@@ -241,11 +536,11 @@ object HandleTable {
 3. **Init-time registration:** Functions registered during `TPipe_init()` bootstrap are guaranteed available before any pipe executes
 4. **Post-init registration:** Wrappers (Python, Node) may call `registerFunction` after `TPipe_init()` completes — this is valid and supported
 
-### 7.2 Handle Longevity
+### 8.2 Handle Longevity
 
 Functions registered during library init are safe to call even after `TPipe_shutdown()` only if the wrapper retains the Kotlin function reference. Once the Kotlin object is garbage collected, the function handle becomes invalid. Wrapper authors should not assume functions survive `TPipe_shutdown()` unless they explicitly maintain the reference.
 
-### 7.3 Reflection Calls Before TPipe_init() — Forbidden
+### 8.3 Reflection Calls Before TPipe_init() — Forbidden
 
 > **No reflection calls are valid before the library reaches `TPIPE_STATE_READY`.**
 
@@ -262,7 +557,7 @@ Wrapper authors must call `TPipe_init()` and await `TPIPE_OK` before any reflect
 
 ---
 
-## 8. Implementation Checklist
+## 9. Implementation Checklist
 
 | Function | Status | Notes |
 |----------|--------|-------|

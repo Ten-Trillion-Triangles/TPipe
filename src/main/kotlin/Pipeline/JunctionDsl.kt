@@ -14,6 +14,7 @@ import kotlinx.coroutines.runBlocking
  * blocks.
  */
 @DslMarker
+@Retention(AnnotationRetention.RUNTIME)
 annotation class JunctionDslMarker
 
 /**

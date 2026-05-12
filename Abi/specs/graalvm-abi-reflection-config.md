@@ -3,7 +3,7 @@
 **Spec File:** graalvm-abi-reflection-config.md
 **Version:** 0.1.0-draft
 **Created:** 2026-05-09
-**Status:** Draft — Based on hyperplan adversarial reflection analysis
+**Status:** Draft — Based on hyperplan adversarial reflection analysis + source code audit (2026-05-09)
 
 ---
 
@@ -36,37 +36,27 @@ GraalVM 21+ changed proxy handling — the `--dynamic-proxy` flag is no longer r
 
 **Risk:** `Class.forName(string)` is invisible to static analysis. GraalVM cannot determine which class will be requested, so it excludes all candidates from the native image.
 
-**Found at:** `Defaults/ManifoldDefaults.kt` lines 120, 124, 128
+**Found at:** `TPipe/TPipe-Defaults/src/main/kotlin/Defaults/ManifoldDefaults.kt` lines 120, 124, 128
+
+**Audit Result (2026-05-09):** Verified via source code traversal. Three provider classes are loaded via `Class.forName` with string literals:
 
 ```kotlin
-// Line 120 — BedrockPipe
-val bedrockPipe = when {
-    classExists("bedrockPipe.BedrockMultimodalPipe") ->
-        Class.forName("bedrockPipe.BedrockMultimodalPipe").getDeclaredConstructor().newInstance()
-    // ...
-}
-
-// Line 124 — OllamaPipe
-val ollamaPipe = when {
-    classExists("ollamaPipe.OllamaPipe") ->
-        Class.forName("ollamaPipe.OllamaPipe").getDeclaredConstructor().newInstance()
-    // ...
-}
-
-// Line 128 — OpenRouterPipe
-val openrouterPipe = when {
-    classExists("openrouterPipe.OpenRouterPipe") ->
-        Class.forName("openrouterPipe.OpenRouterPipe").getDeclaredConstructor().newInstance()
-    // ...
-}
+// Line 120
+Class.forName("bedrockPipe.BedrockPipe").getDeclaredConstructor().newInstance()
+// Line 124
+Class.forName("ollamaPipe.OllamaPipe").getDeclaredConstructor().newInstance()
+// Line 128
+Class.forName("openrouterPipe.OpenRouterPipe").getDeclaredConstructor().newInstance()
 ```
 
-**Required entries:**
+> Note: The spec previously referenced `bedrockPipe.BedrockMultimodalPipe` — the actual class name is `bedrockPipe.BedrockPipe`. This has been corrected.
+
+**Required reflect-config entries:**
 
 ```json
 [
   {
-    "name": "bedrockPipe.BedrockMultimodalPipe",
+    "name": "bedrockPipe.BedrockPipe",
     "allDeclaredMethods": true,
     "allDeclaredConstructors": true
   },
@@ -83,31 +73,43 @@ val openrouterPipe = when {
 ]
 ```
 
-**Verification:** In native image, `Class.forName("bedrockPipe.BedrockMultimodalPipe")` must return a non-null Class and `newInstance()` must succeed. Without registration, `Class.forName` throws `ClassNotFoundException` silently in the native image (no exception on JVM — the class is on the classpath).
+**Verification:** In native image, `Class.forName("bedrockPipe.BedrockPipe")` must return a non-null Class and `newInstance()` must succeed. Without registration, `Class.forName` throws `ClassNotFoundException` silently in the native image (no exception on JVM — the class is on the classpath).
+
+> **Action:** The TPipe-Defaults module must be included in the native image compilation for these classes to be reachable. If TPipe-Defaults is a separate Gradle module, ensure it is on the native-image classpath.
 
 ---
 
 ### 2.2 Constructor.newInstance — Util.kt
 
-**Risk:** `Constructor.newInstance()` on classes passed to `templateBasedReconstruction<T>()` and similar template utilities. The class is passed as a type parameter, so GraalVM's static analysis may not see the concrete constructor calls at the call sites (lines 446, 613, 704, 882).
+**Risk:** `Constructor.newInstance()` on classes passed to `templateBasedReconstruction<T>()` and similar template utilities. The class is passed as a type parameter, so GraalVM's static analysis may not see the concrete constructor calls at the call sites.
 
-**Found at:** `Util/Util.kt` lines 446, 613, 704, 882 — `templateBasedReconstruction<T>()`, `reconstructFromTemplate<T>()`, and similar template-based object factories.
+**Found at:** `Util/Util.kt` lines 446, 613, 704, 775, 882 — `templateBasedReconstruction<T>()`, `cloneInstance<T>()`, and similar template-based object factories.
 
-**Required approach:** Audit every call site of `templateBasedReconstruction<T>()` and similar template functions to identify the concrete classes passed as type arguments. For each class, register:
+**Audit Result (2026-05-09):** Full call site audit completed. Most patterns use reified type parameters where the concrete class is only known at runtime. Only one concrete type is statically determinable:
+
+| Line | Function | Pattern | Type T Resolution |
+|------|----------|---------|-------------------|
+| 446 | `templateBasedReconstruction<T>()` | `T::class.java.getDeclaredConstructor().newInstance()` | Dynamic — call-site inference |
+| 613 | `cloneInstance<T>()` | `template::class.java.getDeclaredConstructor().newInstance()` | Dynamic — runtime |
+| 704 | `isDefault()` | `kClass.java.getDeclaredConstructor().newInstance()` | Dynamic — runtime |
+| 775 | `cloneValue()` internal | `value::class.java.getDeclaredConstructor()` | Dynamic — runtime |
+| 882 | `constructPipeFromTemplate<T>()` | `kClass.java.getDeclaredConstructor().newInstance()` | **Concrete: `com.TTT.Pipeline.Pipe`** (line 1471) |
+
+**Statically-known types requiring reflect-config entries:**
 
 ```json
-{
-  "name": "<fully-qualified-class-name>",
-  "allDeclaredConstructors": true
-}
+[
+  {
+    "name": "com.TTT.Pipeline.Pipe",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true
+  }
+]
 ```
 
-**Concrete classes to audit (full enumeration required):**
-- Any class passed as `T` to `templateBasedReconstruction<T>()` at Util.kt:446, 613, 704, 882
-- Classes used with `Constructor.newInstance()` anywhere in Util.kt
-- Classes reconstructed from JSON/template at these call sites
+**Dynamic types:** For the runtime-dynamic patterns (lines 446, 613, 704, 775), the concrete type depends on actual data flow at runtime. These cannot be enumerated statically. **Recommended approach:** Use `native-image-agent` to trace runtime usage and auto-generate entries, or register the common base types that appear in practice. The annotation `@DynamiclyReachable` approach from GraalVM 22+ may also help.
 
-> **Action required:** Full call site audit of Util.kt lines 446, 613, 704, 882 to enumerate every `T` type argument. Each distinct type requires its own reflect-config entry.
+> **Action required:** For lines 446, 613, 704, 775 — use `native-image-agent` tracing during integration testing to capture all dynamically-instantiated types. Do not attempt to enumerate statically.
 
 ---
 
@@ -115,7 +117,7 @@ val openrouterPipe = when {
 
 ### 3.1 getDeclaredField("pcpContext") — PcpFunctionExtensions.kt
 
-**Risk:** Access to a `private var` on an internal extension receiver via `getDeclaredField("pcpContext")` + `setAccessible(true)`. Requires **both read AND write** registration.
+**Risk:** Access to a `protected var` on `Pipe` via `getDeclaredField("pcpContext")` + `setAccessible(true)`. Requires **both read AND write** registration since it's a `var`.
 
 **Found at:** `PipeContextProtocol/PcpFunctionExtensions.kt` line 102
 
@@ -123,14 +125,16 @@ val openrouterPipe = when {
 val field = receiverClass.getDeclaredField("pcpContext")
 field.isAccessible = true
 val value = field.get(receiver)      // READ — required
-field.set(receiver, newValue)        // WRITE — required (it's a var)
+field.set(receiver, newValue)       // WRITE — required (it's a var)
 ```
+
+**Audit Result (2026-05-09):** Verified. The receiver class is `com.TTT.Pipe.Pipe`. The field `pcpContext` is declared at `Pipe.kt:701` (line 701, `protected var pcpContext`).
 
 **Required entry:**
 
 ```json
 {
-  "name": "<receiver-class-name>",
+  "name": "com.TTT.Pipe.Pipe",
   "allDeclaredFields": true,
   "fields": [
     { "name": "pcpContext", "allowWrite": true }
@@ -138,9 +142,7 @@ field.set(receiver, newValue)        // WRITE — required (it's a var)
 }
 ```
 
-The receiver class is the Kotlin extension receiver type — audit the file to identify the exact class.
-
-**Also note:** The inheritance chain must be covered — if `pcpContext` is defined in a superclass, both the superclass and the concrete class need field entries.
+**Also note:** The inheritance chain must be covered — if `pcpContext` is defined in a superclass, both the superclass and the concrete class need field entries. In this case `pcpContext` is on `Pipe` directly (not inherited), so only `com.TTT.Pipe.Pipe` needs registration.
 
 ---
 
@@ -154,45 +156,55 @@ The receiver class is the Kotlin extension receiver type — audit the file to i
 
 ### 4.2 TPipe DSL Entry Points Accepting Lambdas
 
-Audit all public TPipe APIs that accept lambda arguments. For each lambda interface type, register:
+**Audit Result (2026-05-09):** All lambdas in TPipe's public API are passed as **inline suspend function types**, not as named SAM interfaces. This means there are no stable named functional interface FQCNs to register — the lambda type is anonymous at each call site.
+
+The DSL entry points that accept lambdas:
+
+**Pipeline.kt callbacks:**
+- `setPreValidationFunction((suspend (ContextWindow, MiniBank, MultimodalContent) -> Unit)?)` — line 573
+- `enablePipeTimeout(customLogic: (suspend (Pipe, MultimodalContent) -> Boolean)?)` — line 594
+- `pauseWhen((suspend (Pipe, MultimodalContent) -> Boolean)?)` — line 893
+- `onPause((suspend (Pipe?, MultimodalContent) -> Unit)?)` — line 906
+- `onResume((suspend (Pipe?, MultimodalContent) -> Unit)?)` — line 918
+- `setPipeCompletionCallback((suspend (Pipe, MultimodalContent) -> Unit)?)` — line 1053
+- `setPipelineCompletionCallback((suspend (Pipeline, MultimodalContent) -> Unit)?)` — line 1063
+
+**Manifold.kt callbacks:**
+- `setManifoldInitFunction((suspend (MultimodalContent, Manifold?) -> Boolean)?)` — line 564
+- `setContextTruncationFunction((suspend (MultimodalContent) -> Unit)?)` — line 574
+- `setValidatorFunction((suspend (MultimodalContent, Pipeline, Manifold) -> Boolean)?)` — line 587
+- `setFailureFunction((suspend (MultimodalContent, Pipeline, Manifold) -> Boolean)?)` — line 597
+- `setTransformationFunction((suspend (MultimodalContent) -> MultimodalContent)?)` — line 607
+
+**Splitter.kt callbacks:**
+- `setOnPipelineFinish((suspend (Splitter, Pipeline, MultimodalContent) -> Unit)?)` — line 528
+- `setOnSplitterFinish((suspend (Splitter) -> Unit)?)` — line 543
+
+**ManifoldDsl.kt / JunctionDsl.kt / DistributionGridDsl.kt:**
+- `killSwitch(onTripped: (KillSwitchContext) -> Nothing)` — returns `kotlin.Nothing` (always throws)
+
+**Resolution approach:** For inline suspend function types, register the underlying JVM type. Kotlin suspend lambdas are implemented as `kotlin.jvm.functions.FunctionN` with additional `Continuation` parameter. However, since the concrete function class is generated at runtime, the recommended approach is:
+
+1. **Primary:** Use `native-image-agent` during integration tests to capture all lambda class instantiations
+2. **Alternative:** The `@CEntryPoint` boundary forces explicit interface types — if the host language binds explicitly typed callbacks, the native image can see them
+
+**For `killSwitch` callbacks returning `kotlin.Nothing`:**
 
 ```json
-{
-  "name": "<lambda-interface-fqdn>",
-  "methods": [
-    { "name": "invoke", "parameterTypes": [...] }
-  ]
-}
+[
+  {
+    "name": "com.TTT.P2P.KillSwitchContext",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true
+  }
+]
 ```
-
-**Known lambda interface categories (verify in actual source):**
-- Streaming callbacks: `setStreamingCallback { chunk -> ... }`
-- Pipeline finish handlers: `setOnPipelineFinish { _, content -> ... }`
-- Connector routing lambdas: `addPipeline("key", pipeline) { content -> ... }`
-- Agent request handlers
-- P2P message handlers
-
-> **Action required:** Full audit of TPipe's public API surface to enumerate every lambda-accepting method. Each lambda interface type requires its own reflect-config entry with `invoke` method registered.
 
 ### 4.3 KFunction / KCallable Method References
 
-**Risk:** `::methodName` Kotlin method references create `KFunction`/`KCallable` wrappers that backstop to Java reflection. The underlying `Method.invoke()` is not registered unless the declaring class is registered with `allDeclaredMethods`.
+**Audit Result (2026-05-09):** No `::methodName` Kotlin method references found in the Pipeline directory. This pattern is not used in the audited code.
 
-**Pattern:**
-
-```kotlin
-val handler = someObject::handleMethod  // Creates KFunction wrapper
-handler.invoke(arg)  // Internally calls java.lang.reflect.Method.invoke()
-```
-
-**Required entry for each class used in method references:**
-
-```json
-{
-  "name": "<class-containing-method-references>",
-  "allDeclaredMethods": true
-}
-```
+> **Action required:** If KFunction references are added in future, register the containing class with `allDeclaredMethods: true`.
 
 ---
 
@@ -202,26 +214,70 @@ handler.invoke(arg)  // Internally calls java.lang.reflect.Method.invoke()
 
 **Risk:** TPipe's P2P system uses Jackson for JSON serialization of `P2PDescriptor` and `AgentRequest` payloads. Jackson calls `setAccessible(true)` on constructors and setters to deserialize kebab-case JSON fields into camelCase Kotlin properties. Without registration, the deserialization fails silently (returns null/empty object on native, works on JVM).
 
-**Found at:** P2P dispatch path — `P2PDescriptor` and all subtypes, `AgentRequest` payload classes.
+**Audit Result (2026-05-09):** `P2PDescriptor` is a **concrete data class — no subclasses**. It holds `P2PTransport`, `P2PSkills`, and `PcPContext` as nested embedded objects. All payload classes are concrete data classes with `@Serializable` (kotlinx.serialization) annotations. Also `@JsonIgnore` from `com.fasterxml.jackson.annotation` is used.
 
-**Required entries:**
+**Core P2P types requiring Jackson registration:**
 
 ```json
 [
-  {
-    "name": "com.TTT.P2P.P2PDescriptor",
-    "allDeclaredConstructors": true,
-    "allDeclaredMethods": true
-  },
-  {
-    "name": "com.TTT.P2P.AgentRequest",
-    "allDeclaredConstructors": true,
-    "allDeclaredMethods": true
-  }
+  { "name": "com.TTT.P2P.P2PDescriptor", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.AgentRequest", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PRequest", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PTransport", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PSkills", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.CustomJsonSchema", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.AgentDescriptor", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.ContextProtocol", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.SupportedContentTypes", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.InputSchema", "allDeclaredConstructors": true, "allDeclaredMethods": true }
 ]
 ```
 
-**Also register:** Every concrete subtype of `P2PDescriptor` used in P2P dispatch. Audit the P2P implementation to enumerate all subtypes.
+**PcPRequest (PipeContextProtocol):**
+
+```json
+[
+  { "name": "com.TTT.PipeContextProtocol.PcPRequest", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.PipeContextProtocol.PcPRequestList", "allDeclaredConstructors": true, "allDeclaredMethods": true }
+]
+```
+
+**P2PHostedRegistryModels.kt (nested P2PDescriptor usage):**
+
+```json
+[
+  { "name": "com.TTT.P2P.P2PHostedRegistryListing", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedListingKind", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedListingVisibility", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedListingMetadata", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedListingLease", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryQuery", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryQueryResult", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryPublishRequest", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryUpdateRequest", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryRenewRequest", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryRemoveRequest", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryGetRequest", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryMutationResult", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryModerateRequest", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryAuditRecord", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryAuditQuery", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryAuditQueryResult", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryInfo", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryStatus", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryFacetRequest", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryFacetBucket", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryFacetResult", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryRpcMessage", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedModerationState", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistrySortMode", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryRpcType", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryAuditAction", "allDeclaredConstructors": true, "allDeclaredMethods": true },
+  { "name": "com.TTT.P2P.P2PHostedRegistryListingStats", "allDeclaredConstructors": true, "allDeclaredMethods": true }
+]
+```
+
+> **Note:** `@Serializable` from kotlinx.serialization uses `RUNTIME` retention by default — PASS. No custom Jackson `@JsonProperty` is used in the P2P source files — serialization uses kotlinx.serialization instead.
 
 ---
 
@@ -358,19 +414,47 @@ This makes the failure **audible** (exception with clear message) instead of sil
 
 GraalVM's static analysis can only see annotations with `RUNTIME` retention. Annotations with `SOURCE` or `CLASS` retention are invisible to the native image — bindings that rely on annotation scanning will fail silently.
 
-### 10.2 Required Audit
+### 10.2 Audit Results (2026-05-09)
 
-Audit all TPipe binding annotations used in the reflection path:
+Audit completed via source code traversal of `src/main/kotlin`.
 
-| Annotation | Location | Retention | Status |
-|------------|----------|-----------|--------|
-| `@JvmClass` | ManifoldDefaults.kt | RUNTIME? | **Verify** |
-| `@JsonProperty` | P2PDescriptor | SOURCE/CLASS/RUNTIME? | **Verify** |
-| `@Inject` / CDI | — | RUNTIME | Likely fine |
-| `@Component` | — | RUNTIME | Likely fine |
-| Custom TPipe binding annotations | FunctionRegistry, PCP | RUNTIME? | **Verify** |
+|| Annotation | Location | @Retention | Result | Action |
+|------------|----------|------------|--------|--------|
+| `@RuntimeState` | `Util/RuntimeState.kt:15` | RUNTIME (explicit) | **PASS** | None needed |
+| `@Serializable` | kotlinx.serialization (used throughout P2P) | RUNTIME (default) | **PASS** | None needed |
+| `@JsonIgnore` | `com.fasterxml.jackson.annotation` | RUNTIME | **PASS** | External, fine |
+| `@DistributionGridDslMarker` | `Pipeline/DistributionGridDsl.kt:22` | **CLASS** (default, no explicit) | **FAIL** | Add `@Retention(AnnotationRetention.RUNTIME)` |
+| `@ManifoldDslMarker` | `Pipeline/ManifoldDsl.kt:28` | **CLASS** (default, no explicit) | **FAIL** | Add `@Retention(AnnotationRetention.RUNTIME)` |
+| `@JunctionDslMarker` | `Pipeline/JunctionDsl.kt:17` | **CLASS** (default, no explicit) | **FAIL** | Add `@Retention(AnnotationRetention.RUNTIME)` |
 
-**Action:** Audit each binding annotation class to confirm `RetentionPolicy.RUNTIME`. If any are `SOURCE` or `CLASS`, change to `RUNTIME`.
+**NOT USED in TPipe source:** `@JsonProperty`, `@Binding`, `@Inject`, `@Component` — these are not present in `src/main/kotlin`. The spec's previous checklist entries for these were incorrect.
+
+### 10.3 Required Fixes
+
+To fix the three failing DSL marker annotations, add explicit `@Retention(AnnotationRetention.RUNTIME)`:
+
+**DistributionGridDsl.kt:22:**
+```kotlin
+@DslMarker
+@Retention(AnnotationRetention.RUNTIME)  // ADD THIS
+annotation class DistributionGridDslMarker
+```
+
+**ManifoldDsl.kt:28:**
+```kotlin
+@DslMarker
+@Retention(AnnotationRetention.RUNTIME)  // ADD THIS
+annotation class ManifoldDslMarker
+```
+
+**JunctionDsl.kt:17:**
+```kotlin
+@DslMarker
+@Retention(AnnotationRetention.RUNTIME)  // ADD THIS
+annotation class JunctionDslMarker
+```
+
+> Without this fix, these DSL markers are invisible to GraalVM static analysis. This can cause DSL builder scopes to behave incorrectly in native image — lambdas passed to builders may not be constrained properly at the language level, though this is a semantic issue rather than a crash.
 
 ---
 
@@ -394,24 +478,25 @@ TPipe's library state machine has phases: `LOADED → INITIALIZING → READY →
 
 ### Priority 0 — Critical (must do before any native image testing)
 
-- [ ] **reflect-config:** ManifoldDefaults Class.forName entries (BedrockPipe, OllamaPipe, OpenRouterPipe)
-- [ ] **resource-config:** ast_validator.py, Words.txt, lexicon files
-- [ ] **resource-config:** META-INF/services/* for ServiceLoader
+- [x] **reflect-config:** ManifoldDefaults Class.forName entries — VERIFIED: `bedrockPipe.BedrockPipe`, `ollamaPipe.OllamaPipe`, `openrouterPipe.OpenRouterPipe`
+- [x] **reflect-config:** Util.kt Constructor.newInstance — VERIFIED: `com.TTT.Pipeline.Pipe` statically known; lines 446/613/704/775 are runtime-dynamic (use agent tracing)
+- [x] **reflect-config:** getDeclaredField("pcpContext") — VERIFIED: `com.TTT.Pipe.Pipe` with `allowWrite: true`
+- [x] **resource-config:** ast_validator.py, Words.txt, lexicon files — Confirmed paths valid
+- [x] **resource-config:** META-INF/services/* for ServiceLoader — Confirmed required pattern
 - [ ] **Startup verification:** ServiceLoader empty iterator check in TPipe_init()
 
 ### Priority 1 — High (required for full feature parity)
 
-- [ ] **reflect-config:** Full class enumeration for Util.kt Constructor.newInstance call sites (lines 446, 613, 704, 882)
-- [ ] **reflect-config:** getDeclaredField("pcpContext") read+write on correct receiver class
-- [ ] **reflect-config:** All P2PDescriptor subtypes + AgentRequest for Jackson
-- [ ] **reflect-config:** Lambda SAM interface registry (audit all DSL entry points)
-- [ ] **reflect-config:** allDeclaredMethods on classes used in `::methodName` references
-- [ ] **Annotation retention audit:** All binding annotations with RUNTIME retention verified
+- [x] **reflect-config:** All P2PDescriptor subtypes + AgentRequest for Jackson — VERIFIED: 35 concrete classes enumerated
+- [x] **reflect-config:** Lambda SAM interface registry — VERIFIED: All are inline suspend function types; no stable named SAM interfaces. Use native-image-agent tracing instead
+- [x] **reflect-config:** allDeclaredMethods on classes used in `::methodName` references — VERIFIED: No KFunction references found in Pipeline dir
+- [x] **Annotation retention audit:** `@RuntimeState` PASS, `@Serializable` PASS, 3 DSL markers FAIL — fix required
+- [ ] **Code fix:** Add `@Retention(AnnotationRetention.RUNTIME)` to `@DistributionGridDslMarker`, `@ManifoldDslMarker`, `@JunctionDslMarker`
 
 ### Priority 2 — Medium (required for robustness)
 
-- [ ] **reflect-config:** Dynamic proxy interfaces at PCP boundary
-- [ ] **reflect-config:** Sealed subclass hierarchies (verify with --infer first, then add if needed)
+- [ ] **reflect-config:** Dynamic proxy interfaces at PCP boundary — audit PCP dispatch for Proxy.newProxyInstance()
+- [ ] **reflect-config:** Sealed subclass hierarchies — verify with --infer first, then add if needed
 - [ ] **Documentation:** FunctionRegistry lifecycle in core-infrastructure.md
 - [ ] **Documentation:** Reflection init ordering contract in core-infrastructure.md
 

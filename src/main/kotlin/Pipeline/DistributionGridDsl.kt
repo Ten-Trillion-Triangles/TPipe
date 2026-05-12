@@ -19,6 +19,7 @@ import kotlinx.coroutines.runBlocking
  * Restricts nested DistributionGrid DSL receivers so role, policy, and hook blocks do not leak into one another.
  */
 @DslMarker
+@Retention(AnnotationRetention.RUNTIME)
 annotation class DistributionGridDslMarker
 
 /**

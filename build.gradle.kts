@@ -11,6 +11,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm) version "2.2.20"
     alias(libs.plugins.ktor)
     alias(libs.plugins.kotlin.plugin.serialization)
+    id("org.graalvm.buildtools.native") version "0.10.0"
 }
 
 java {
@@ -77,4 +78,30 @@ dependencies {
 
 tasks.test {
     jvmArgs("-Xmx512m")
+}
+
+graalvmNative {
+    val mainBinary = binaries.getByName("main")
+
+    // Build args for debuggability and correctness
+    mainBinary.buildArgs.addAll(listOf(
+        "--shared",
+        "-H:+ReportExceptionStackTraces",
+        "--no-fallback"
+    ))
+
+    // Exclude META-INF/native-image from kotlin-compiler-embeddable JARs.
+    // These JARs contain jline native-image configs that reference non-existent
+    // reflection-config.json (note: file is named reflect-config.json, not reflection-config.json).
+    // jline is used by the Kotlin scripting REPL which we don't use.
+    listOf(
+        ".*kotlin-compiler-embeddable.*\\.jar",
+        ".*kotlin-scripting-compiler-embeddable.*\\.jar",
+        ".*kotlin-scripting-compiler-impl-embeddable.*\\.jar",
+        ".*jline.*\\.jar"
+    ).forEach { pattern ->
+        mainBinary.buildArgs.addAll(listOf(
+            "--exclude-config", pattern, "^/META-INF/native-image/.*"
+        ))
+    }
 }
