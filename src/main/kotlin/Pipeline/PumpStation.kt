@@ -2,6 +2,7 @@ package com.TTT.Pipeline
 
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
+import com.TTT.Context.MiniBank
 import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
@@ -189,21 +190,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
 //======================================Properties======================================================================
 
 //---------------------------------------------Core Agents--------------------------------------------------------------
-    /**
-     * Optional agent that fies prior to starting the harness. This agent can be used for any initial setup
-     * or states that need to be handled prior to giving the task to the judge, and dispatch agents.
-     */
-    private var preInitAgent: P2PInterface? = null
 
     /**
-     * If bound, the preInit agent will be spawned by this function, and executed as a fresh copy. This avoids
-     * stale states, and stateful agents if desired.
-     */
-    private var preInitAgentBuilder: (suspend () -> P2PInterface)? = null
-
-    /**
-     * REQUIRED: This agent judges if the given harness task is considered complete or not. Once completed,
-     * the judge agent can shut down the harness and return the result.
+     * OPTIONAL: This agent judges if the given harness task is considered complete or not. Once completed,
+     * the judge agent can shut down the harness and return the result. If not present, a stop signal
+     * via [MultimodalContent.passPipeline], [MultimodalContent.terminatePipeline] or explicit pass signal
+     * from [PumpStationTaskState] must be passed to exit the PumpStation. Otherwise, the loop will run until
+     * the killswitch triggers or max turn count is hit.
      *
      * WARNING: [Splitter] may not be assigned as a judge agent. If assigned, an illegal argument exception will
      * be thrown.
@@ -269,6 +262,21 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     private var additionalHarnessAgentBuilderFuncList: MutableList<(suspend () -> P2PInterface)>? = null
 
+    /**
+     * Optional goal agent. This agent can be used to scan the work done by the harness once the harness is in an
+     * exit state. If the agent fires [MultimodalContent.terminatePipeline] this will be treated as a failure state
+     * and can be used to return back to the judge, and the dispatcher agent to force work to resume.
+     *
+     * This can be seen as effectively the same as a ralph loop in terms of enforcement.
+     */
+    private var goalAgent: P2PInterface? = null
+
+    /**
+     * Optional bindable builder function. Allows for a dynamically generated agent at runtime. If non-null
+     * [goalAgent] will be ignored and this will be invoked to generate the valid agent object at runtime.
+     */
+    private var goalAgentBuilderFunction: (suspend () -> P2PInterface)? = null
+
 //--------------------------------------------------Config--------------------------------------------------------------
 
     /**
@@ -289,6 +297,20 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * This is passed into the path object and acts as hint the coder can abide by to constrain max agent concurrency.
      */
     private var maxConcurrentForegroundAgents = 3
+
+    /**
+     * Defines how many turns to wait per firing of foreground agents. Allows for customizing how speed, time,
+     * and token costs by limiting how frequently foreground agents can run.
+     *
+     * @see foregroundAgents
+     */
+    private var foregroundTurnInterval = 0
+
+    /**
+     * Defines how many turns to wait before firing the background agents. Allows developers to customize the
+     * frequency of background agents and better control token costs and usage.
+     */
+    private var backgroundTurnInterval = 5
 
     /**
      * Defines the default concurrency mode. This affects how background tasks impact the harness loop.
@@ -334,8 +356,20 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * Stored turn history. The entire history is shown to the harness agent after the summary is provided if
      * the summary is present. The judge and dispatch agents will use this to determine task status, and which path
      * to traverse next in the harness loop.
+     *
+     * turnHistory is updated after the completion of the path that was called by the dispatcher agent, and before
+     * any foreground agents are invoked. Optionally, a foreground agent can update turn history again after it runs but
+     * this is an action performed by a transformation function rather than the harness itself.
      */
     val turnHistory = ConverseHistory()
+
+    /**
+     * This is the complete set of events + path call outcomes generated over the entire runtime of this harness.
+     * This is never shown to agents, but can be optionally used in DITL functions, sent to external systems like
+     * command line interfaces, Or used by the goal agent to validate the entire work done. This is updated
+     * at the same time [turnHistory] is.
+     */
+    val rawTurnHistory = ConverseHistory()
 
     /**
      * Internal mechanism to safely save and store outputs that might cause errors, or blowout the context window
@@ -361,6 +395,33 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
 
 
 //---------------------------------------------------DITL---------------------------------------------------------------
+
+    /**
+     * Optional agent that fies prior to starting the harness. This agent can be used for any initial setup
+     * or states that need to be handled prior to giving the task to the judge, and dispatch agents.
+     */
+    private var preInitAgent: P2PInterface? = null
+
+    /**
+     * If bound, the preInit agent will be spawned by this function, and executed as a fresh copy. This avoids
+     * stale states, and stateful agents if desired.
+     */
+    private var preInitAgentBuilder: (suspend () -> P2PInterface)? = null
+
+    /**
+     * Pre-validation DITL call. Follow TPipe standard pre-validation pattern. Allows context to be adjusted
+     * prior to the llm call. This will be called prior to the judge agent.
+     */
+    private var preValidationJudgeFunction: (suspend (content: MultimodalContent, miniBank: MiniBank) -> MiniBank)? = null
+
+    /**
+     * Pre-validation DITL call for the dispatch agent. Invoked prior to running the dispatch agent. Works the same way
+     * as the other pre-validation function in PumpStation.
+     */
+    private var preValidationDispatchFunction: (suspend (content: MultimodalContent, context: MiniBank) -> MiniBank)? = null
+
+    
+
 
 
 
