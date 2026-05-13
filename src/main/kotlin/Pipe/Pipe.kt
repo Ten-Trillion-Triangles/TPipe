@@ -160,6 +160,38 @@ data class TokenBudgetSettings(
      */
     var reserveEmptyPageBudget: Boolean = true
 )
+{
+    /**
+     * Calculates the available context space remaining after all reserved token allocations
+     * have been subtracted from the configured context window.
+     *
+     * Subtraction order:
+     *   1. contextWindowSize (total budget — the starting point)
+     *   2. maxTokens (space reserved for LLM output)
+     *   3. reasoningBudget — only when [subtractReasoningFromInput] is true.
+     *      When false, reasoningBudget is carved out of maxTokens and does not
+     *      reduce available context further.
+     *   4. userPromptSize (explicit cap on user-prompt reservation)
+     *
+     * @return The number of tokens available for lorebook and context elements.
+     *         Returns 0 if reserved areas equal or exceed the window.
+     */
+    fun calculateAvailableContext(): Int
+    {
+        val totalWindow = contextWindowSize ?: return 0
+
+        var available = totalWindow - (maxTokens ?: 0)
+
+        if(subtractReasoningFromInput)
+        {
+            available -= (reasoningBudget ?: 0)
+        }
+
+        available -= (userPromptSize ?: 0)
+
+        return available.coerceAtLeast(0)
+    }
+}
 
 /**
  * Comprehensive token usage data for a pipe and any nested pipes it owns.
