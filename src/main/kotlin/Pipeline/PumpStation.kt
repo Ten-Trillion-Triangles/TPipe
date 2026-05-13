@@ -84,6 +84,23 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
 {
 
 //============================================== Properties ============================================================
+
+//---------------------------------------------------Core---------------------------------------------------------------
+    /**
+     * Name of the path. Used by the [PumpStation] harnesses to locate this path when signals are sent to it
+     * from the dispatcher agent.
+     *
+     * WARNING: This is a required value. If not assigned, the DSL will throw an [IllegalArgumentException] at
+     * build time, and the path object will throw it at init() time.
+     */
+    var pathName = ""
+
+    /**
+     * Description of the path. Optional, bug strongly recommended. This explains to the dispatch agent what this
+     * path does, how to use it, and helps improve accurate turn routing.
+     */
+    var pathDescription = ""
+
     /**
      * Configurable var to define the max number of concurrent agents allowed to be spawned. Acts as a passthrough
      * and a hint. This allows someone building a path object to abide by constraints or user requests and config
@@ -144,7 +161,7 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var executionFunction: (suspend (content: MultimodalContent, stationRef: PumpStation,  turnHistory: ConverseHistory?, turnSummary: String) -> MultimodalContent)? = null
 
 
-
+//-----------------------------------------------------DITL-------------------------------------------------------------
 
 }
 
@@ -341,7 +358,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     val summaryMutex = Mutex()
 
-    
+
 
 //---------------------------------------------------DITL---------------------------------------------------------------
 
