@@ -85,6 +85,13 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
 
 //============================================== Properties ============================================================
     /**
+     * Configurable var to define the max number of concurrent agents allowed to be spawned. Acts as a passthrough
+     * and a hint. This allows someone building a path object to abide by constraints or user requests and config
+     * settings.
+     */
+    private var maxConcurrentAgents = 3
+
+    /**
      * Must be set, or pulled from the parent [PumpStation]. This required for us to calculate if we're about to
      * blow out a context window.
      */
@@ -240,6 +247,19 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * exploding token costs.
      */
     private var maxHarnessTurns = 50
+
+    /**
+     * Defines the maximum number of concurrent background agents that can be spawned at any given time.
+     * If a spawn request would exceed this number it will be queued and batched out at the maximun number
+     * allowed at a given time.
+     */
+    private var maxConcurrentBackgroundAgents = 3
+
+    /**
+     * Defines the max number of foreground agents that can be spawned by path calls, or by the dispatch agent.
+     * This is passed into the path object and acts as hint the coder can abide by to constrain max agent concurrency.
+     */
+    private var maxConcurrentForegroundAgents = 3
 
     /**
      * Defines the default concurrency mode. This affects how background tasks impact the harness loop.
