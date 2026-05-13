@@ -37,6 +37,8 @@ import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Structs.PipeSettings
 import com.TTT.Pipe.PipeError
 import com.TTT.Pipe.TruncationSettings
 import com.TTT.Pipe.hasError
@@ -138,6 +140,9 @@ class DistributionGrid : P2PInterface
 
     private var routerBinding: DistributionGridBinding? = null
     private var workerBinding: DistributionGridBinding? = null
+    private var entryPipeline: Pipeline? = null
+    private var judgePipeline: Pipeline? = null
+    private var workerPipelines: MutableList<Pipeline>? = null
     private val localPeerBindingsByKey = linkedMapOf<String, DistributionGridBinding>()
     private val externalPeerDescriptorsByKey = linkedMapOf<String, P2PDescriptor>()
 
@@ -604,6 +609,22 @@ class DistributionGrid : P2PInterface
         }
 
         return pipelineSet.toList()
+    }
+
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
+    {
+        entryPipeline?.setTokenBudgetRecursive(budget)
+        judgePipeline?.setTokenBudgetRecursive(budget)
+        workerPipelines?.forEach { it.setTokenBudgetRecursive(budget) }
+    }
+
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        entryPipeline?.setPipeSettingsRecursively(settings)
+        judgePipeline?.setPipeSettingsRecursively(settings)
+        workerPipelines?.forEach { it.setPipeSettingsRecursively(settings) }
     }
 
     /**

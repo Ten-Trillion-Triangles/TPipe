@@ -23,7 +23,9 @@ import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipe.TruncationSettings
+import com.TTT.Structs.PipeSettings
 import com.TTT.PipeContextProtocol.Transport
 import com.TTT.Util.deepCopy
 import com.TTT.Util.deserialize
@@ -289,6 +291,26 @@ class Junction : P2PInterface
         // Local execution is intentionally the same as the generic execution path so the harness behaves
         // identically whether it is invoked directly or through the P2P surface.
         return execute(content)
+    }
+
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
+    {
+        moderatorBinding?.component?.setTokenBudgetRecursive(budget)
+        for (binding in participantBindings)
+        {
+            binding.component.setTokenBudgetRecursive(budget)
+        }
+    }
+
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        moderatorBinding?.component?.setPipeSettingsRecursively(settings)
+        for (binding in participantBindings)
+        {
+            binding.component.setPipeSettingsRecursively(settings)
+        }
     }
 
 //----------------------------------------------Configuration------------------------------------------------------------

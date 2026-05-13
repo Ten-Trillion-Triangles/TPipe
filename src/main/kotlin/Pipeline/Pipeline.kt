@@ -17,6 +17,8 @@ import com.TTT.Pipe.PipeError
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenUsage
 import com.TTT.Pipe.PipeTimeoutStrategy
+import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Structs.PipeSettings
 import com.TTT.Util.copyPipeline
 import com.TTT.Util.deepCopy
 import com.TTT.Util.RuntimeState
@@ -383,9 +385,26 @@ class Pipeline : P2PInterface
         return listOf(this)
     }
 
-
-    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
     {
+        for (pipe in getPipes())
+        {
+            pipe.setTokenBudgetRecursive(budget)
+        }
+    }
+
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        for (pipe in getPipes())
+        {
+            pipe.setPipeSettingsRecursively(settings)
+        }
+    }
+
+
+    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
         /** Start as "this" but we may need to alter our target if we need to copy "this" due to some change the
          *  requested be made during the p2p request operation.
          */

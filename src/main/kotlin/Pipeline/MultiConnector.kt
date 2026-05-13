@@ -11,6 +11,8 @@ import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PResponse
 import com.TTT.P2P.P2PTransport
+import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Structs.PipeSettings
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.RuntimeState
 import kotlinx.coroutines.async
@@ -118,6 +120,30 @@ class MultiConnector : P2PInterface
             return connectors.first().executeP2PRequest(request)
         }
         return null
+    }
+
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
+    {
+        for (connector in connectors)
+        {
+            for (pipeline in connector.getPipelinesFromInterface())
+            {
+                pipeline.setTokenBudgetRecursive(budget)
+            }
+        }
+    }
+
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        for (connector in connectors)
+        {
+            for (pipeline in connector.getPipelinesFromInterface())
+            {
+                pipeline.setPipeSettingsRecursively(settings)
+            }
+        }
     }
 
 //============================================== MultiConnector ========================================================

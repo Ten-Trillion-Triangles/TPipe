@@ -13,6 +13,8 @@ import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PResponse
 import com.TTT.P2P.P2PTransport
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Structs.PipeSettings
 import com.TTT.Util.RuntimeState
 import kotlinx.coroutines.Job
 
@@ -75,6 +77,24 @@ class Connector : P2PInterface
 
     override fun getPipelinesFromInterface(): List<Pipeline> {
         return branches.values.toList()
+    }
+
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
+    {
+        for (pipeline in branches.values)
+        {
+            pipeline.setTokenBudgetRecursive(budget)
+        }
+    }
+
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        for (pipeline in branches.values)
+        {
+            pipeline.setPipeSettingsRecursively(settings)
+        }
     }
 
 

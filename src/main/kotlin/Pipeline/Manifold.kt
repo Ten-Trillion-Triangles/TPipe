@@ -21,6 +21,7 @@ import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Structs.PipeSettings
 import com.TTT.Pipe.deepCopy
 import com.TTT.Pipe.toTokenBudgetSettings
 import com.TTT.Pipe.toTruncationSettings
@@ -125,6 +126,26 @@ class Manifold : P2PInterface
         val promptResult = execute(request.prompt)
         val newResponse = P2PResponse(output = promptResult)
         return newResponse
+    }
+
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
+    {
+        managerPipeline.setTokenBudgetRecursive(budget)
+        for (workerPipeline in workerPipelines)
+        {
+            workerPipeline.setTokenBudgetRecursive(budget)
+        }
+    }
+
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        managerPipeline.setPipeSettingsRecursively(settings)
+        for (workerPipeline in workerPipelines)
+        {
+            workerPipeline.setPipeSettingsRecursively(settings)
+        }
     }
 
 //=============================================Properties===============================================================

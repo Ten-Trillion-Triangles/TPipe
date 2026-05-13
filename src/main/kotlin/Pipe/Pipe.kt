@@ -882,6 +882,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * setups.
      */
     @Serializable
+    @get:JvmName("getTokenBudgetSettingsInternal")
     protected var tokenBudgetSettings : TokenBudgetSettings? = null
 
     /**
@@ -7145,6 +7146,33 @@ abstract class Pipe : P2PInterface, ProviderInterface
     override fun setContainerObject(container: Any)
     {
         containerObject = container
+    }
+
+    @Suppress("CONFLICTING_OVERRIDE_AND_MEMBER_FROM_SUPERTYPE")
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = tokenBudgetSettings
+
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
+    {
+        if (containerPtr == null)
+        {
+            setTokenBudget(budget)
+        }
+        else
+        {
+            containerPtr!!.setTokenBudgetRecursive(budget)
+        }
+    }
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        if (containerPtr == null)
+        {
+            applyPipeSettings(settings)
+        }
+        else
+        {
+            containerPtr!!.setPipeSettingsRecursively(settings)
+        }
     }
 
     /**

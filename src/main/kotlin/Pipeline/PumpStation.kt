@@ -326,7 +326,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * the harness agents. The map consists of a string based Id that is definable, and can be retrieved automatically
      * by a path designed and equipped to handle a stache situation.
      */
-    private val stache = mutableMapOf<String, ConverseData>()
+    private val stash = mutableMapOf<String, ConverseData>()
 
     /**
      * Mutex lock used for async lorebook agents. This allows us to queue up and safely ensure that the lorebook agents
@@ -341,8 +341,10 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     val summaryMutex = Mutex()
 
+    
+
 //---------------------------------------------------DITL---------------------------------------------------------------
 
-    
+
 
 }
