@@ -240,6 +240,18 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     private var summaryAgentBuilderFunction: (suspend (content: MultimodalContent) -> P2PInterface)? = null
 
+    /**
+     * Allows the user to add additional required agents between the output of dispatch, and the return to the judge
+     * agent. Each agent will be invoked in the order that they are assigned to this list.
+     */
+    private var additionalHarnessAgents: MutableList<P2PInterface> = mutableListOf()
+
+    /**
+     * Alternate set of bindable builder functions. When invoked each will be invoked in order.
+     * If this is bound, it will override the [additionalHarnessAgents] variable.
+     */
+    private var additionalHarnessAgentBuilderFuncList: MutableList<(suspend () -> P2PInterface)>? = null
+
 //--------------------------------------------------Config--------------------------------------------------------------
 
     /**
@@ -329,5 +341,8 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     val summaryMutex = Mutex()
 
+//---------------------------------------------------DITL---------------------------------------------------------------
+
+    
 
 }
