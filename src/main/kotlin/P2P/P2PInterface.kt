@@ -84,6 +84,12 @@ interface P2PInterface
     fun setPipeSettingsRecursively(settings: PipeSettings) {}
 
     /**
+     * Sets the parent interface to any child P2PInterface object. This useful for generic pass of this data
+     * during complex container classes.
+     */
+    fun setParentInterface(parent: P2PInterface) {}
+
+    /**
      * Equivalent to execute() in the local scope of a pipe or pipeline. Many container objects manage pipes
      * in very complex ways, and they will have to compensate for some of the more complex features such as
      * duplication features and updating json schemas or context instructions that the P2P protocol supports.

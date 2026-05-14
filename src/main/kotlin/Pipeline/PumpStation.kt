@@ -1,5 +1,6 @@
 package com.TTT.Pipeline
 
+import com.TTT.Context.ContextWindow
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.MiniBank
@@ -409,19 +410,41 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var preInitAgentBuilder: (suspend () -> P2PInterface)? = null
 
     /**
+     * DITL function invoked at the very beginning of harness runtime. Activates prior to any action or state.
+     * Triggered only once, at the very startup of the harness. Allows for inspection, and formatting of
+     * the input content object.
+     */
+    private var preInitFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> MultimodalContent)? = null
+
+    /**
      * Pre-validation DITL call. Follow TPipe standard pre-validation pattern. Allows context to be adjusted
      * prior to the llm call. This will be called prior to the judge agent.
      */
-    private var preValidationJudgeFunction: (suspend (content: MultimodalContent, miniBank: MiniBank) -> MiniBank)? = null
+    private var preValidationJudgeFunction: (suspend (content: MultimodalContent, miniBank: MiniBank, harness: PumpStation) -> MiniBank)? = null
 
     /**
      * Pre-validation DITL call for the dispatch agent. Invoked prior to running the dispatch agent. Works the same way
      * as the other pre-validation function in PumpStation.
      */
-    private var preValidationDispatchFunction: (suspend (content: MultimodalContent, context: MiniBank) -> MiniBank)? = null
+    private var preValidationDispatchFunction: (suspend (content: MultimodalContent, context: MiniBank, harness: PumpStation) -> MiniBank)? = null
 
-    
+    /**
+     * DITL function invoked just prior to the judge agent. Allows the developer to decide to shut down and end the
+     * PumpStation harness loop based on logic.
+     */
+    private var preInvokeFunction: (suspend (turnState: ContextWindow, harness: PumpStation) -> Boolean)? = null
 
+    /**
+     * DITL function invoked after the dispatch agent has generated its path output.
+     */
+    private var postGenerateFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> P2PInterface)? = null
+
+    /**
+     * DITL function invoked after the path has fully executed. Result is stored in the content object.
+     * If false, an error will occur, and we'll try to recover with a branch failure. Otherwise, stop the harness
+     * in an error state.
+     */
+    private var pathValidationFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> Boolean)? = null
 
 
 
