@@ -127,6 +127,8 @@ class DistributionGrid : P2PInterface
     private var p2pRequirements: P2PRequirements? = null
     @RuntimeState
     private var containerObject: Any? = null
+    @RuntimeState
+    private var parentInterface: P2PInterface? = null
     @kotlinx.serialization.Transient
     private var _killSwitch: com.TTT.P2P.KillSwitch? = null
     override var killSwitch: com.TTT.P2P.KillSwitch?
@@ -589,6 +591,11 @@ class DistributionGrid : P2PInterface
     {
         containerObject = container
         markShellDirty()
+    }
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
     }
 
     /**

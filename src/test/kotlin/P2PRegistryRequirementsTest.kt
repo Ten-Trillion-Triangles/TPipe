@@ -18,6 +18,10 @@ class TestP2PInterface(
     override fun getP2pDescription(): P2PDescriptor? = descriptor
     override fun getP2pRequirements(): P2PRequirements? = requirements
     override fun getContainerObject(): Any? = container
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse {
         return P2PResponse(output = MultimodalContent().apply { addText("Success") })
@@ -37,6 +41,10 @@ class CapturingP2PInterface(
     override fun getP2pDescription(): P2PDescriptor? = descriptor
     override fun getP2pRequirements(): P2PRequirements? = requirements
     override fun getContainerObject(): Any? = container
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse {
         lastRequest = request

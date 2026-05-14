@@ -51,6 +51,13 @@ class Splitter: P2PInterface
 {
 //----------------------------------------------Interface---------------------------------------------------------------
 
+    private var parentInterface: P2PInterface? = null
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
+    }
+
     override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
     {
         val result = executePipelines()

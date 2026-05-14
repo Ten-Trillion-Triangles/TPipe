@@ -503,6 +503,9 @@ abstract class Pipe : P2PInterface, ProviderInterface
     @kotlinx.serialization.Transient
     private var containerObject: Any? = null
 
+    @kotlinx.serialization.Transient
+    private var parentInterface: P2PInterface? = null
+
     /**
      * Emergency kill switch for halting execution when token limits are exceeded.
      * When tripped, throws [KillSwitchException] — an uncaught exception that bypasses
@@ -7146,6 +7149,11 @@ abstract class Pipe : P2PInterface, ProviderInterface
     override fun setContainerObject(container: Any)
     {
         containerObject = container
+    }
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
     }
 
     @Suppress("CONFLICTING_OVERRIDE_AND_MEMBER_FROM_SUPERTYPE")

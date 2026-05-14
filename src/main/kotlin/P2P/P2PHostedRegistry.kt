@@ -489,8 +489,14 @@ class P2PHostedRegistry(
         allowCustomContext = false,
         allowCustomJson = false
     )
+    private var parentInterface: P2PInterface? = null
     @kotlinx.serialization.Transient
     override var killSwitch: com.TTT.P2P.KillSwitch? = null
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
+    }
 
     override fun setP2pDescription(description: P2PDescriptor)
     {

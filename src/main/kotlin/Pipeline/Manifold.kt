@@ -72,6 +72,8 @@ class Manifold : P2PInterface
     private var p2PRequirements: P2PRequirements? = null
     @RuntimeState
     private var containerObject: Any? = null
+    @RuntimeState
+    private var parentInterface: P2PInterface? = null
 
     override fun setP2pDescription(description: P2PDescriptor)
     {
@@ -111,6 +113,11 @@ class Manifold : P2PInterface
     override fun setContainerObject(container: Any)
     {
         containerObject = container
+    }
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
     }
 
     override fun getPipelinesFromInterface(): List<Pipeline>

@@ -246,6 +246,7 @@ private class DummyPipe : Pipe()
 private class TestSimpleP2PInterface(private val name: String) : P2PInterface
 {
     private var containerObject: Any? = null
+    private var parentInterface: P2PInterface? = null
     override var killSwitch: KillSwitch? = null
 
     override fun getContainerObject(): Any? = containerObject
@@ -255,6 +256,10 @@ private class TestSimpleP2PInterface(private val name: String) : P2PInterface
         containerObject = container
     }
 
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
     override fun getP2pDescription(): P2PDescriptor? = P2PDescriptor(
         agentName = name,
         agentDescription = "Test $name",
@@ -292,9 +297,14 @@ private class TestRecordingP2PInterface(
     private val responseText: String = ""
 ) : P2PInterface
 {
+    private var parentInterface: P2PInterface? = null
     private var containerObject: Any? = null
     override var killSwitch: KillSwitch? = null
 
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
     override fun getContainerObject(): Any? = containerObject
 
     override fun setContainerObject(container: Any)

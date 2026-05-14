@@ -1885,6 +1885,7 @@ private class RecordingP2PInterface(
         private set
 
     var containerRef: Any? = null
+    private var parentInterface: P2PInterface? = null
 
     private var descriptor: P2PDescriptor? = null
     private var requirements: P2PRequirements? = null
@@ -1929,6 +1930,11 @@ private class RecordingP2PInterface(
     override fun setContainerObject(container: Any)
     {
         containerRef = container
+    }
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
     }
 
     override fun getPipelinesFromInterface(): List<Pipeline>
@@ -2000,6 +2006,8 @@ private class NestedWorkflowParticipant(
     var requestCount: Int = 0
         private set
 
+    private var parentInterface: P2PInterface? = null
+
     private var descriptor: P2PDescriptor? = null
     private var requirements: P2PRequirements? = null
     private var transport: P2PTransport? = null
@@ -2043,6 +2051,11 @@ private class NestedWorkflowParticipant(
     override fun setContainerObject(container: Any)
     {
         // Nested fixtures keep the injected ancestry that was supplied at construction time.
+    }
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
     }
 
     override fun getPipelinesFromInterface(): List<Pipeline>

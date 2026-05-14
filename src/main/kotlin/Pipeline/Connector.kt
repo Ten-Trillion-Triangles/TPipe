@@ -79,6 +79,11 @@ class Connector : P2PInterface
         return branches.values.toList()
     }
 
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        // Connector does not store a parent interface reference
+    }
+
     override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
     {
         for (pipeline in branches.values)

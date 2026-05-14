@@ -89,6 +89,16 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
 
 //---------------------------------------------------Core---------------------------------------------------------------
     /**
+     * Reference to the parent P2PInterface when this [PathObject] is nested inside a complex container.
+     */
+    private var parentInterface: P2PInterface? = null
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
+    }
+
+    /**
      * Name of the path. Used by the [PumpStation] harnesses to locate this path when signals are sent to it
      * from the dispatcher agent.
      *
@@ -191,6 +201,16 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
 //======================================Properties======================================================================
 
 //---------------------------------------------Core Agents--------------------------------------------------------------
+
+    /**
+     * Reference to the parent P2PInterface when this PumpStation is nested inside a complex container.
+     */
+    private var parentInterface: P2PInterface? = null
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
+    }
 
     /**
      * OPTIONAL: This agent judges if the given harness task is considered complete or not. Once completed,

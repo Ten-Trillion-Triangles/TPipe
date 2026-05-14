@@ -55,6 +55,12 @@ class MultiConnector : P2PInterface
      */
     @RuntimeState
     private var containerObject: Any? = null
+
+    /**
+     * Reference to the parent P2PInterface when this MultiConnector is nested inside a complex container.
+     */
+    @RuntimeState
+    private var parentInterface: P2PInterface? = null
     @kotlinx.serialization.Transient
     private var _killSwitch: com.TTT.P2P.KillSwitch? = null
     override var killSwitch: com.TTT.P2P.KillSwitch?
@@ -105,6 +111,11 @@ class MultiConnector : P2PInterface
     override fun setContainerObject(container: Any)
     {
         containerObject = container
+    }
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
     }
 
     override fun getPipelinesFromInterface(): List<Pipeline>

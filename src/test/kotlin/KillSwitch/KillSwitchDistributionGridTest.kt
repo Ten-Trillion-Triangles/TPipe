@@ -57,7 +57,10 @@ class KillSwitchDistributionGridTest
         override fun getP2pRequirements(): P2PRequirements? = null
         override fun getContainerObject(): Any? = null
         override fun setContainerObject(container: Any) {}
-
+        override fun setParentInterface(parent: P2PInterface)
+        {
+            // no-op
+        }
         override fun getPipelinesFromInterface(): List<Pipeline>
         {
             return listOf(pipeline)

@@ -281,6 +281,11 @@ class Pipeline : P2PInterface
         pipelineContainer = container
     }
 
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        // Pipeline stores parent reference via pipelineContainer; this is for generic P2PInterface compatibility
+    }
+
     /**
      * Checks the kill switch if one is set. If token consumption exceeds the configured limits,
      * the kill switch's onTripped callback is invoked — this typically throws [KillSwitchException]
