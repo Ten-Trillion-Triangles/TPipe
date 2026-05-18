@@ -1193,4 +1193,91 @@ fun testPresencePenaltySerialization()
         assertTrue(json.contains("true"))
         assertTrue(json.contains("5"))
     }
+
+//=========================================AnthropicSseParser Unit Tests===========================================
+
+    @Test
+    fun testParseAnthropicLine_message_start()
+    {
+        // message_start has no content delta — should return Unknown, NOT Done
+        val json = """{"type":"message_start","message":{"id":"msg_123","role":"assistant","model":"claude-3-5","type":"message"}}"""
+        val result = AnthropicSseParser.parseAnthropicLine("data: $json")
+        // Unknown means the stream continues, not terminates
+        assertTrue(result is AnthropicStreamEvent.Unknown, "message_start should return Unknown, not Done")
+    }
+
+    @Test
+    fun testParseAnthropicLine_content_block_delta()
+    {
+        val json = """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"""
+        val result = AnthropicSseParser.parseAnthropicLine("data: $json")
+        assertTrue(result is AnthropicStreamEvent.ContentBlockDelta, "content_block_delta should return ContentBlockDelta")
+        val delta = result as AnthropicStreamEvent.ContentBlockDelta
+        assertEquals("Hello", AnthropicSseParser.extractContent(delta.chunk))
+    }
+
+    @Test
+    fun testParseAnthropicLine_content_block_start()
+    {
+        // content_block_start has no delta — should return Unknown, NOT Done
+        val json = """{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"""
+        val result = AnthropicSseParser.parseAnthropicLine("data: $json")
+        assertTrue(result is AnthropicStreamEvent.Unknown, "content_block_start should return Unknown")
+    }
+
+    @Test
+    fun testParseAnthropicLine_ping()
+    {
+        // ping events have no content — should return Unknown, NOT Done
+        val json = """{"type":"ping"}"""
+        val result = AnthropicSseParser.parseAnthropicLine("data: $json")
+        assertTrue(result is AnthropicStreamEvent.Unknown, "ping should return Unknown")
+    }
+
+    @Test
+    fun testParseAnthropicLine_message_stop()
+    {
+        // message_stop signals end of stream
+        val result = AnthropicSseParser.parseAnthropicLine("data: {\"type\":\"message_stop\"}")
+        assertTrue(result is AnthropicStreamEvent.Unknown, "message_stop returns Unknown for executeStreamingAnthropic to handle")
+    }
+
+    @Test
+    fun testParseAnthropicChunk_text_delta()
+    {
+        val json = """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"World"}}"""
+        val chunk = AnthropicSseParser.parseAnthropicChunk(json)
+        assertNotNull(chunk)
+        assertTrue(chunk.delta is AnthropicDelta.TextDelta)
+        assertEquals("World", (chunk.delta as AnthropicDelta.TextDelta).text)
+    }
+
+    @Test
+    fun testParseAnthropicChunk_input_json_delta()
+    {
+        val json = """{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"key\":"}}"""
+        val chunk = AnthropicSseParser.parseAnthropicChunk(json)
+        assertNotNull(chunk)
+        assertTrue(chunk.delta is AnthropicDelta.InputJsonDelta)
+        assertEquals("{\"key\":", (chunk.delta as AnthropicDelta.InputJsonDelta).partialJson)
+    }
+
+    @Test
+    fun testExtractContentFromAnthropicChunk()
+    {
+        val json = """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Test"}}"""
+        val chunk = AnthropicSseParser.parseAnthropicChunk(json)!!
+        val content = AnthropicSseParser.extractContent(chunk)
+        assertEquals("Test", content)
+    }
+
+    @Test
+    fun testExtractContentFromAnthropicChunk_input_json()
+    {
+        // InputJsonDelta returns empty string (caller handles structured output separately)
+        val json = """{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"abc"}}"""
+        val chunk = AnthropicSseParser.parseAnthropicChunk(json)!!
+        val content = AnthropicSseParser.extractContent(chunk)
+        assertEquals("", content, "InputJsonDelta should return empty string")
+    }
 }

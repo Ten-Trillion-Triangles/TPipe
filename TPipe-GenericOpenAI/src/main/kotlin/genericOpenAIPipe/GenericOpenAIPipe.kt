@@ -737,14 +737,47 @@ val jsonRequest = requestSerializer.serialize(request, apiMode)
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
               metadata = mapOf(
                   "step" to "streamingStart",
-                  "streaming" to true
+                  "streaming" to true,
+                  "apiMode" to when(apiMode) { is ApiMode.OpenAI -> "OpenAI"; is ApiMode.Anthropic -> "Anthropic" }
               ))
 
+        // Branch on apiMode: Anthropic uses AnthropicSseParser with different SSE format
+        // OpenAI uses existing SseParser path
+        when(apiMode)
+        {
+            ApiMode.Anthropic -> executeStreamingAnthropic(channel, textBuilder)
+            ApiMode.OpenAI -> executeStreamingOpenAI(channel, textBuilder)
+        }
+
+        val resultText = textBuilder.toString()
+
+        trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+              metadata = mapOf(
+                  "responseLength" to resultText.length,
+                  "model" to model,
+                  "streaming" to true,
+                  "success" to true,
+                  "apiType" to "ChatAPI"
+              ))
+
+        return resultText
+    }
+
+    /**
+     * Handles streaming response for [ApiMode.OpenAI].
+     * Uses OpenAI SSE format: `data: {...}` lines with [StreamingChunk] deserialization.
+     * @param channel The HTTP response channel
+     * @param textBuilder Accumulator for response text
+     */
+    private suspend fun executeStreamingOpenAI(
+        channel: ByteReadChannel,
+        textBuilder: StringBuilder
+    )
+    {
         while(!channel.isClosedForRead)
         {
             val line = channel.readUTF8Line() ?: break
 
-            // Use SseParser for line type detection
             val sseLine = SseParser.parseLine(line)
 
             when(sseLine)
@@ -780,19 +813,84 @@ val jsonRequest = requestSerializer.serialize(request, apiMode)
                 is SseParser.SseLine.Invalid -> continue
             }
         }
+    }
 
-        val resultText = textBuilder.toString()
+    /**
+     * Handles streaming response for [ApiMode.Anthropic].
+     * Uses Anthropic SSE format: `event:` prefix + `data:` lines with [AnthropicStreamingChunk] deserialization.
+     * Anthropic errors are thrown by [AnthropicSseParser], not deserialized from content.
+     * @param channel The HTTP response channel
+     * @param textBuilder Accumulator for response text
+     */
+    private suspend fun executeStreamingAnthropic(
+        channel: ByteReadChannel,
+        textBuilder: StringBuilder
+    )
+    {
+        // For Anthropic streaming, we track the current event type from `event:` lines
+        // The `data:` line that follows uses the appropriate parser
+        var currentEventType: String? = null
 
-        trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
-              metadata = mapOf(
-                  "responseLength" to resultText.length,
-                  "model" to model,  // Already known before request
-                  "streaming" to true,
-                  "success" to true,
-                  "apiType" to "ChatAPI"
-              ))
+        while(!channel.isClosedForRead)
+        {
+            val line = channel.readUTF8Line() ?: break
+            val trimmed = line.trim()
 
-        return resultText
+            // Empty line — skip (blank separator between events)
+            if(trimmed.isEmpty())
+            {
+                continue
+            }
+
+            // `event:` prefix line — set the current event type for the next data line
+            if(trimmed.startsWith("event: "))
+            {
+                currentEventType = trimmed.substringAfter("event: ").trim()
+                continue
+            }
+
+            // `data:` line — parse based on current event type
+            if(trimmed.startsWith("data: "))
+            {
+                val dataLine = trimmed
+
+                // Only process content_block_delta events — ignore ping, message_start, content_block_start
+                // message_delta signals end of stream (stop_reason available)
+                when(currentEventType)
+                {
+                    "content_block_delta" ->
+                    {
+                        val contentDelta = AnthropicSseParser.extractContentFromLine(dataLine)
+                        if(!contentDelta.isNullOrEmpty())
+                        {
+                            textBuilder.append(contentDelta)
+                            emitStreamingChunk(contentDelta)
+                        }
+                    }
+                    "message_delta" ->
+                    {
+                        // message_delta is the final event — stream ends here
+                        // No content to emit, just break to return accumulated text
+                        break
+                    }
+                    // ping, message_start, content_block_start, message_stop, etc. — ignore, continue
+                    else ->
+                    {
+                        // Unknown or non-content event — continue without terminating
+                        // Task 8: unknown events must NOT return Done to avoid premature stream termination
+                        if(currentEventType == "message_stop")
+                        {
+                            break
+                        }
+                        // all other unknown events — just continue reading
+                        continue
+                    }
+                }
+
+                // Reset event type after processing data line
+                currentEventType = null
+            }
+        }
     }
 
 //=========================================Context Management==========================================================
