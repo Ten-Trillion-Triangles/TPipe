@@ -284,6 +284,7 @@ object AnthropicSseParser
         return when(val delta = chunk.delta)
         {
             is AnthropicDelta.TextDelta -> delta.text
+            is AnthropicDelta.ThinkingDelta -> delta.thinking
             is AnthropicDelta.InputJsonDelta -> ""   // structured output — caller handles separately
             else -> ""
         }

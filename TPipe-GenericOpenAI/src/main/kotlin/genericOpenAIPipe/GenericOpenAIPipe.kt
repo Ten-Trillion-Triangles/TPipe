@@ -202,7 +202,7 @@ class GenericOpenAIPipe : Pipe()
         return when(apiMode)
         {
             is ApiMode.OpenAI -> "/chat/completions"
-            is ApiMode.Anthropic -> "/messages"
+            is ApiMode.Anthropic -> "/anthropic/v1/messages"
         }
     }
 
@@ -631,7 +631,7 @@ class GenericOpenAIPipe : Pipe()
                 stream = streamingEnabled
             )
 
-val jsonRequest = requestSerializer.serialize(request, apiMode)
+            val jsonRequest = requestSerializer.serialize(request, apiMode)
 
             if(streamingEnabled)
             {
@@ -731,6 +731,7 @@ val jsonRequest = requestSerializer.serialize(request, apiMode)
      */
     private suspend fun executeStreaming(httpResponse: HttpResponse): String
     {
+        System.err.println("DEBUG: HTTP response status = ${httpResponse.status}")
         val channel = httpResponse.bodyAsChannel()
         val textBuilder = StringBuilder()
 
@@ -741,12 +742,14 @@ val jsonRequest = requestSerializer.serialize(request, apiMode)
                   "apiMode" to when(apiMode) { is ApiMode.OpenAI -> "OpenAI"; is ApiMode.Anthropic -> "Anthropic" }
               ))
 
+        System.err.println("DEBUG: apiMode at executeStreaming = $apiMode")
+        System.err.println("DEBUG: HTTP response status = ${httpResponse.status}")
         // Branch on apiMode: Anthropic uses AnthropicSseParser with different SSE format
         // OpenAI uses existing SseParser path
         when(apiMode)
         {
-            ApiMode.Anthropic -> executeStreamingAnthropic(channel, textBuilder)
-            ApiMode.OpenAI -> executeStreamingOpenAI(channel, textBuilder)
+            is ApiMode.Anthropic -> { System.err.println("DEBUG: branching to executeStreamingAnthropic"); executeStreamingAnthropic(channel, textBuilder) }
+            is ApiMode.OpenAI -> executeStreamingOpenAI(channel, textBuilder)
         }
 
         val resultText = textBuilder.toString()
@@ -830,10 +833,12 @@ val jsonRequest = requestSerializer.serialize(request, apiMode)
         // For Anthropic streaming, we track the current event type from `event:` lines
         // The `data:` line that follows uses the appropriate parser
         var currentEventType: String? = null
+        var lineCount = 0
 
         while(!channel.isClosedForRead)
         {
             val line = channel.readUTF8Line() ?: break
+            lineCount++
             val trimmed = line.trim()
 
             // Empty line — skip (blank separator between events)

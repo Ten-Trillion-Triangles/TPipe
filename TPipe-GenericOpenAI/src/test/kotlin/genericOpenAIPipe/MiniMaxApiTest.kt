@@ -14,12 +14,12 @@ import kotlin.test.assertTrue
 /**
  * Live integration test for GenericOpenAIPipe with MiniMax API (Anthropic format).
  *
- * This test is disabled by default and must be enabled manually.
+ * This test is DISABLED by default — it requires a live API key.
+ * To enable: replace @Disabled with @Test and set MINIMAX_API_KEY env var.
  * Credentials are injected via GenericOpenAIEnv at runtime — not hardcoded.
  *
- * To run:
- *   cd TPipe-GenericOpenAI
- *   ../gradlew :TPipe-GenericOpenAI:test --tests "*.MiniMaxApiTest"
+ * To run with live credentials:
+ *   MINIMAX_API_KEY=your_key ./gradlew :TPipe-GenericOpenAI:test --tests "*.MiniMaxApiTest"
  *
  * Prerequisites:
  *   - Java 24
@@ -30,6 +30,7 @@ import kotlin.test.assertTrue
  * NOTE: Do NOT commit API keys. Credentials are injected programmatically
  * via GenericOpenAIEnv.setApiKey() in @BeforeAll — never hardcoded in this file.
  */
+@Disabled("Live integration test — enable manually with MINIMAX_API_KEY env var set")
 class MiniMaxApiTest
 {
 

@@ -54,6 +54,19 @@ sealed class AnthropicDelta
         @SerialName("partial_json")
         val partialJson: String
     ) : AnthropicDelta()
+
+    /**
+     * A thinking delta containing a fragment of the model's thinking (for models like MiniMax-M2.7).
+     *
+     * @property type Delta type (always "thinking_delta")
+     * @property thinking The thinking content delta
+     */
+    @Serializable
+    @SerialName("thinking_delta")
+    data class ThinkingDelta(
+        val type: String = "thinking_delta",
+        val thinking: String
+    ) : AnthropicDelta()
 }
 
 /**

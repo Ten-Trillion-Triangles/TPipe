@@ -33,7 +33,7 @@ class GenericOpenAILiveTest {
 
     private fun getBaseUrl(): String {
         val togetherKey = System.getenv("TOGETHER_API_KEY")
-        return if (togetherKey != null) {
+        return if(togetherKey != null) {
             "https://api.together.xyz/v1"
         } else {
             "https://api.openai.com/v1"
@@ -42,7 +42,7 @@ class GenericOpenAILiveTest {
 
     private fun getModel(): String {
         val togetherKey = System.getenv("TOGETHER_API_KEY")
-        return if (togetherKey != null) {
+        return if(togetherKey != null) {
             "meta-llama/Llama-3.3-70B-Instruct-Turbo"
         } else {
             "gpt-4o-mini"
@@ -51,7 +51,7 @@ class GenericOpenAILiveTest {
 
     private fun skipIfNoCredentials(): Boolean {
         val apiKey = getApiKey()
-        if (apiKey == null || apiKey.isBlank()) {
+        if(apiKey == null || apiKey.isBlank()) {
             println("No API key found — skipping live test")
             return true
         }
@@ -62,7 +62,7 @@ class GenericOpenAILiveTest {
 
     @Test
     fun testLiveApiCallNonStreaming() = runBlocking {
-        if (skipIfNoCredentials()) return@runBlocking
+        if(skipIfNoCredentials()) return@runBlocking
 
         val apiKey = getApiKey()!!
         val baseUrl = getBaseUrl()
@@ -96,7 +96,7 @@ class GenericOpenAILiveTest {
 
     @Test
     fun testLiveApiCallWithSystemPrompt() = runBlocking {
-        if (skipIfNoCredentials()) return@runBlocking
+        if(skipIfNoCredentials()) return@runBlocking
 
         val apiKey = getApiKey()!!
         val baseUrl = getBaseUrl()
@@ -127,7 +127,7 @@ class GenericOpenAILiveTest {
 
     @Test
     fun testLiveApiWithInvalidModel() = runBlocking {
-        if (skipIfNoCredentials()) return@runBlocking
+        if(skipIfNoCredentials()) return@runBlocking
 
         val apiKey = getApiKey()!!
         val baseUrl = getBaseUrl()
@@ -152,7 +152,7 @@ class GenericOpenAILiveTest {
     fun testLiveApiCallWithoutCredentials() = runBlocking {
         val apiKey = getApiKey()
 
-        if (apiKey == null || apiKey.isBlank()) {
+        if(apiKey == null || apiKey.isBlank()) {
             println("No API credentials available — test skipped gracefully")
             return@runBlocking
         }
@@ -180,7 +180,7 @@ class GenericOpenAILiveTest {
 
     @Test
     fun testLiveApiCallWithHtmlTracing() = runBlocking {
-        if (skipIfNoCredentials()) return@runBlocking
+        if(skipIfNoCredentials()) return@runBlocking
 
         val apiKey = getApiKey()!!
         val baseUrl = getBaseUrl()
@@ -213,7 +213,7 @@ class GenericOpenAILiveTest {
         val htmlReport = pipeline.getTraceReport(TraceFormat.HTML)
         assertNotNull(htmlReport, "HTML trace report should not be null")
 
-        if (htmlReport.isNotEmpty()) {
+        if(htmlReport.isNotEmpty()) {
             println("HTML trace contains 'Tracing works!': ${htmlReport.contains("Tracing works!")}")
         }
     }
