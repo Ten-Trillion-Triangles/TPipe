@@ -36,6 +36,7 @@ class Connector : P2PInterface
     private var p2pDescriptor: P2PDescriptor? = null
     private var p2pTransport: P2PTransport? = null
     private var p2PRequirements: P2PRequirements? = null
+    private var parentInterface: P2PInterface? = null
     @kotlinx.serialization.Transient
     private var _killSwitch: com.TTT.P2P.KillSwitch? = null
     override var killSwitch: com.TTT.P2P.KillSwitch?
@@ -81,8 +82,10 @@ class Connector : P2PInterface
 
     override fun setParentInterface(parent: P2PInterface)
     {
-        // Connector does not store a parent interface reference
+        parentInterface = parent
     }
+
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
 
     override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
     {

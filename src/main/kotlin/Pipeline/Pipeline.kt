@@ -235,6 +235,7 @@ class Pipeline : P2PInterface
      * to this pipeline or not based on compatibility and security standards.
      */
     private var p2PRequirements: P2PRequirements? = null
+    private var parentInterface: P2PInterface? = null
 
 
 
@@ -283,8 +284,10 @@ class Pipeline : P2PInterface
 
     override fun setParentInterface(parent: P2PInterface)
     {
-        // Pipeline stores parent reference via pipelineContainer; this is for generic P2PInterface compatibility
+        parentInterface = parent
     }
+
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
 
     /**
      * Checks the kill switch if one is set. If token consumption exceeds the configured limits,

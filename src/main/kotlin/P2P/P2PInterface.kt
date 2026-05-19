@@ -3,6 +3,7 @@ package com.TTT.P2P
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipeline.Pipeline
+import com.TTT.Pipeline.PumpStation
 import com.TTT.Structs.PipeSettings
 
 /**
@@ -94,8 +95,6 @@ interface P2PInterface
      */
     fun getParentP2PInterface(): P2PInterface? = null
 
-    
-
     /**
      * Equivalent to execute() in the local scope of a pipe or pipeline. Many container objects manage pipes
      * in very complex ways, and they will have to compensate for some of the more complex features such as
@@ -119,5 +118,34 @@ interface P2PInterface
      * all retry policies and generic exception handlers. Set to null to disable.
      */
     var killSwitch: KillSwitch?
+
+
+//============================================Defaults=================================================================
+
+    /**
+     * Recursively search for the parent level interface by continuing to search up the tree.
+     */
+    fun getTopLevelParentInterface(): P2PInterface?
+    {
+        val parent = getParentP2PInterface()
+        return parent?.getTopLevelParentInterface()
+    }
+
+    /**
+     * Attempt to dig upwards in the P2PInterface ownership tree until we find the nearest [PumpStation]
+     * This is required because the PumpStation class has many features such as paths that need to be pulled in
+     * by the child agent at the very bottom that is responsible for invoking and routing paths.
+     */
+    fun getNearestPumpStationParent(): P2PInterface?
+    {
+       val parent = getParentP2PInterface()
+
+        if(parent != null)
+       {
+           return parent as? PumpStation ?: parent.getNearestPumpStationParent()
+       }
+
+       return null
+    }
 
 }

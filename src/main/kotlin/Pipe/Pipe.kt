@@ -7156,6 +7156,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
         parentInterface = parent
     }
 
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
     @Suppress("CONFLICTING_OVERRIDE_AND_MEMBER_FROM_SUPERTYPE")
     override fun getTokenBudgetSettings(): TokenBudgetSettings? = tokenBudgetSettings
 

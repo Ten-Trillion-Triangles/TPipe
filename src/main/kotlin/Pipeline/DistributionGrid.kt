@@ -598,6 +598,8 @@ class DistributionGrid : P2PInterface
         parentInterface = parent
     }
 
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
     /**
      * Expose the child pipelines registered through the router, worker, and local peer bindings.
      *

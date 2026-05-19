@@ -498,6 +498,8 @@ class P2PHostedRegistry(
         parentInterface = parent
     }
 
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
     override fun setP2pDescription(description: P2PDescriptor)
     {
         descriptor = description.deepCopy()

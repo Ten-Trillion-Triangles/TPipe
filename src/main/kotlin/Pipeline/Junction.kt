@@ -264,6 +264,8 @@ class Junction : P2PInterface
         parentInterface = parent
     }
 
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
     override fun getPipelinesFromInterface(): List<Pipeline>
     {
         // Junction exposes the pipelines from every registered binding so nested harnesses keep their own

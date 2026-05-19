@@ -120,6 +120,8 @@ class Manifold : P2PInterface
         parentInterface = parent
     }
 
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
     override fun getPipelinesFromInterface(): List<Pipeline>
     {
         return listOf(managerPipeline) + workerPipelines

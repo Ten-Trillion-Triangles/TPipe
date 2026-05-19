@@ -98,6 +98,8 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
         parentInterface = parent
     }
 
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
     /**
      * Name of the path. Used by the [PumpStation] harnesses to locate this path when signals are sent to it
      * from the dispatcher agent.
@@ -211,6 +213,8 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     {
         parentInterface = parent
     }
+
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
 
     /**
      * OPTIONAL: This agent judges if the given harness task is considered complete or not. Once completed,
