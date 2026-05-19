@@ -90,6 +90,13 @@ interface P2PInterface
     fun setParentInterface(parent: P2PInterface) {}
 
     /**
+     * Gets the parent P2PInterface owned by the object above the current object being ran.
+     */
+    fun getParentP2PInterface(): P2PInterface? = null
+
+    
+
+    /**
      * Equivalent to execute() in the local scope of a pipe or pipeline. Many container objects manage pipes
      * in very complex ways, and they will have to compensate for some of the more complex features such as
      * duplication features and updating json schemas or context instructions that the P2P protocol supports.
