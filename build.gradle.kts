@@ -30,7 +30,7 @@ kotlin {
 }
 
 group = "com.TTT"
-version = "0.0.1"
+version = "1.0.0"
 
 application {
     mainClass = "com.TTT.ApplicationKt"

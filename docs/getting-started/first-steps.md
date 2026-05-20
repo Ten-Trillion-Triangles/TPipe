@@ -41,8 +41,8 @@ repositories {
 }
 
 dependencies {
-    implementation("com.TTT:TPipe:0.0.1")
-    implementation("com.TTT:TPipe-Bedrock:0.0.1")
+    implementation("com.TTT:TPipe:1.0.0")
+    implementation("com.TTT:TPipe-Bedrock:1.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-io-core:0.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
 }
