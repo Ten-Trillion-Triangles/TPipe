@@ -2266,6 +2266,7 @@ class Junction : P2PInterface
         {
             component.setContainerObject(this)
         }
+        component.setParentInterface(this)
     }
 
     /**

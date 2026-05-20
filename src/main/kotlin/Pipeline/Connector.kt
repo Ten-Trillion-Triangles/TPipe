@@ -238,6 +238,7 @@ class Connector : P2PInterface
     fun add(key: Any, pipeline: Pipeline) : Connector
     {
         branches[key] = pipeline
+        pipeline.setParentInterface(this)
         return this
     }
 

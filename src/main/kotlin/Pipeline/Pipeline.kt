@@ -653,6 +653,7 @@ class Pipeline : P2PInterface
         {
             pipes.add(pipe)
             pipe.setPipelineRef(this)
+            pipe.setParentInterface(this)
         }
 
         return this
@@ -667,6 +668,7 @@ class Pipeline : P2PInterface
     {
         pipes.add(index, pipe)
         pipe.setPipelineRef(this)
+        pipe.setParentInterface(this)
         return this
     }
 
@@ -1106,7 +1108,8 @@ class Pipeline : P2PInterface
         for(pipe in pipes)
         {
             pipe.setPipelineRef(this)
-            
+            pipe.setParentInterface(this)
+
             // Apply pipeline-level timeout settings if enabled
             if(enablePipeTimeout) 
             {

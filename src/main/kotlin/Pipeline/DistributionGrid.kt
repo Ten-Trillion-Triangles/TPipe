@@ -8160,6 +8160,7 @@ class DistributionGrid : P2PInterface
         {
             component.setContainerObject(this)
         }
+        component.setParentInterface(this)
 
         val bindingKey = forcedBindingKey ?: buildPeerKey(
             descriptor = resolvedDescriptor,

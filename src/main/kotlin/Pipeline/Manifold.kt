@@ -824,6 +824,7 @@ class Manifold : P2PInterface
          * the user supplied a descriptor or requirements that makes the pipeline global.
          */
         managerPipeline.setContainerObject(this)
+        managerPipeline.setParentInterface(this)
         managerPipeline.setP2pTransport(descriptor.transport)
         managerPipeline.setP2pDescription(descriptor)
         managerPipeline.setP2pRequirements(requirements)
@@ -951,6 +952,7 @@ class Manifold : P2PInterface
              * failure if we don't have any agents registered.
              */
             pipeline.setContainerObject(this)
+            pipeline.setParentInterface(this)
             pipeline.setP2pTransport(transport)
             pipeline.setP2pDescription(workerDescriptor)
             pipeline.setP2pRequirements(requirements)
@@ -970,6 +972,7 @@ class Manifold : P2PInterface
          * registry before it activates worker pipelines.
          */
         pipeline.setContainerObject(this)
+        pipeline.setParentInterface(this)
         pipeline.setP2pTransport(descriptor.transport)
         pipeline.setP2pDescription(descriptor)
         pipeline.setP2pRequirements(requirements)
@@ -1001,6 +1004,7 @@ class Manifold : P2PInterface
 
         //Bind our container to ensure our manifold manager is local. Init to ensure it's ready to make llm calls.
         managerPipeline.setContainerObject(this)
+        managerPipeline.setParentInterface(this)
         
         // Setup tracing propagation to manager pipeline if enabled
         if(tracingEnabled)
@@ -1077,6 +1081,7 @@ class Manifold : P2PInterface
         for(workerPipe in workerPipelines)
         {
             workerPipe.setContainerObject(this)
+            workerPipe.setParentInterface(this)
             
             // Setup tracing propagation to worker pipelines if enabled
             if(tracingEnabled)

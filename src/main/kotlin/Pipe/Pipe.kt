@@ -4581,15 +4581,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
          // THEN initialize them
          validatorPipe?.init()
          validatorPipe?.pipelineRef = pipelineRef
-         
+         validatorPipe?.setParentInterface(this)
+
          branchPipe?.init()
          branchPipe?.pipelineRef = pipelineRef
-         
+         branchPipe?.setParentInterface(this)
+
          transformationPipe?.init()
          transformationPipe?.pipelineRef = pipelineRef
-         
+         transformationPipe?.setParentInterface(this)
+
          reasoningPipe?.init()
          reasoningPipe?.pipelineRef = pipelineRef
+         reasoningPipe?.setParentInterface(this)
 
          // Enable memory introspection tools if configured
          memoryIntrospectionConfig?.let {

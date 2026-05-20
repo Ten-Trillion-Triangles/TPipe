@@ -327,6 +327,7 @@ class MultiConnector : P2PInterface
     fun add(connector: Connector): MultiConnector
     {
         connectors.add(connector)
+        connector.setParentInterface(this)
         return this
     }
     

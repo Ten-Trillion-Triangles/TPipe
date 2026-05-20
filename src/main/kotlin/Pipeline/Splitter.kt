@@ -354,6 +354,7 @@ class Splitter: P2PInterface
         
         //Add pipeline to the key's pipeline list.
         activatorValue.pipelines.add(pipeline)
+        pipeline.setParentInterface(this)
         activatorKeys[key] = activatorValue
         return this
     }
@@ -626,6 +627,7 @@ class Splitter: P2PInterface
             {
                 //Set this splitter as the pipeline's container for context.
                 pipeline.pipelineContainer = this
+                pipeline.setParentInterface(this)
                 
                 //Apply tracing configuration if tracing is enabled.
                 if(tracingEnabled)
