@@ -12,6 +12,7 @@ plugins {
     alias(libs.plugins.ktor)
     alias(libs.plugins.kotlin.plugin.serialization)
     alias(libs.plugins.shadow)
+    `maven-publish`
 }
 
 java {
