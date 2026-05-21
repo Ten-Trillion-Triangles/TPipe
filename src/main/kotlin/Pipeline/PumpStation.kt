@@ -200,6 +200,12 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var maxConcurrentAgents = 3
 
     /**
+     * If true, the path will kick off and not block the harness. It will then send an interrupt signal to the harness to
+     * interject its results upon completion into latest turn history event.
+     */
+    private var runsInBackground = false
+
+    /**
      * Must be set, or pulled from the parent [PumpStation]. This required for us to calculate if we're about to
      * blow out a context window.
      */
@@ -311,7 +317,8 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      *
      * @param agent The P2PInterface agent to set as the internal agent.
      */
-    fun setInternalAgent(agent: P2PInterface) {
+    fun setInternalAgent(agent: P2PInterface)
+    {
         this.internalAgent = agent
     }
 
@@ -321,7 +328,8 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      *
      * @param function The suspend function to invoke when this path is called.
      */
-    fun setExecutionFunction(function: (suspend (content: MultimodalContent, stationRef: PumpStation, turnHistory: ConverseHistory?, turnSummary: String) -> MultimodalContent)?) {
+    fun setExecutionFunction(function: (suspend (content: MultimodalContent, stationRef: PumpStation, turnHistory: ConverseHistory?, turnSummary: String) -> MultimodalContent)?)
+    {
         this.executionFunction = function
     }
 
@@ -329,7 +337,8 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      * P2PInterface required init function. Delegates to [init] for path initialization.
      * Present to satisfy the [P2PInterface] contract.
      */
-    override suspend fun P2PInit() {
+    override suspend fun P2PInit()
+    {
         init()
     }
 
@@ -645,7 +654,8 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
 
 //===========================================P2PInterface Implementation==============================================
 
-    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
+    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
+    {
         // PumpStation does not support direct P2P execution — it is invoked by the dispatch agent via paths
         return null
     }
@@ -654,7 +664,8 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * P2PInterface required init function. Initializes the PumpStation harness.
      * Present to satisfy the [P2PInterface] contract.
      */
-    override suspend fun P2PInit() {
+    override suspend fun P2PInit()
+    {
         // TODO: PumpStation init — wire in judge/dispatch agents initialization when needed
     }
 

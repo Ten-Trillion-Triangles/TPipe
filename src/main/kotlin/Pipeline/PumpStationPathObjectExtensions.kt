@@ -22,8 +22,12 @@ import kotlin.reflect.KFunction
  * @return This PathObject for method chaining.
  * @throws IllegalArgumentException if name is blank.
  */
-fun PathObject.bindFunction(name: String, function: KFunction<*>): PathObject {
-    require(name.isNotBlank()) { "Function name must not be blank" }
+fun PathObject.bindFunction(name: String, function: KFunction<*>): PathObject
+{
+    require(name.isNotBlank())
+    {
+        "Function name must not be blank"
+    }
 
     // Step 1: Register function in FunctionRegistry (creates FunctionSignature via reflection)
     FunctionRegistry.registerFunction(name, function)
@@ -35,7 +39,8 @@ fun PathObject.bindFunction(name: String, function: KFunction<*>): PathObject {
     val tpipeOption = TPipeContextOptions().fromFunctionSignature(signature)
 
     // Step 3: Initialize pcpSchema if null, then add the new tpipeOption
-    if (this.pcpSchema == null) {
+    if(this.pcpSchema == null)
+    {
         this.pcpSchema = PcpContext()
     }
     this.pcpSchema!!.addTPipeOption(tpipeOption)

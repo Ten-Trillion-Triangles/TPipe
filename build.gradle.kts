@@ -33,6 +33,16 @@ kotlin {
     }
 }
 
+// Bundle LICENSE into the main JAR so published artifacts include it
+val licenseJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("license")
+    from(rootProject.file("LICENSE"))
+}
+
+artifacts {
+    add("archives", licenseJar)
+}
+
 group = "com.TTT"
 version = "1.0.0"
 

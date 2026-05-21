@@ -14,11 +14,13 @@ import kotlin.test.assertTrue
 /**
  * Mock agent that tracks whether P2PInit was called.
  */
-class MockAgentWithInitCallTracker : P2PInterface {
+class MockAgentWithInitCallTracker : P2PInterface
+{
     var initCalled = false
     override var killSwitch: KillSwitch? = null
 
-    override suspend fun P2PInit() {
+    override suspend fun P2PInit()
+    {
         initCalled = true
     }
 
@@ -30,10 +32,12 @@ class MockAgentWithInitCallTracker : P2PInterface {
 /**
  * Mock agent that tracks nothing (no init call tracking needed).
  */
-class MockPathAgent : P2PInterface {
+class MockPathAgent : P2PInterface
+{
     override var killSwitch: KillSwitch? = null
 
-    override suspend fun P2PInit() {
+    override suspend fun P2PInit()
+    {
         // no-op
     }
 
@@ -47,10 +51,12 @@ class MockPathAgent : P2PInterface {
  * Verifies that init() validates configuration, builds PathDescriptionData,
  * calls P2PInit() on internal agent, and returns the PathDescriptionData.
  */
-class PumpStationPathInitTest {
+class PumpStationPathInitTest
+{
 
     @Test
-    fun testInitReturnsPathDescriptionData() {
+    fun testInitReturnsPathDescriptionData()
+    {
         runBlocking {
             val path = PathObject()
             path.pathName = "test_path"
@@ -68,7 +74,8 @@ class PumpStationPathInitTest {
     }
 
     @Test
-    fun testInitCallsP2PInitOnInternalAgent() {
+    fun testInitCallsP2PInitOnInternalAgent()
+    {
         runBlocking {
             val mockAgent = MockAgentWithInitCallTracker()
             val path = PathObject()
@@ -83,7 +90,8 @@ class PumpStationPathInitTest {
     }
 
     @Test
-    fun testInitDoesNotFailWhenNoInternalAgent() {
+    fun testInitDoesNotFailWhenNoInternalAgent()
+    {
         runBlocking {
             val path = PathObject()
             path.pathName = "no_agent_path"
@@ -99,16 +107,20 @@ class PumpStationPathInitTest {
     }
 
     @Test
-    fun testInitThrowsWhenNoExecutionMechanism() {
+    fun testInitThrowsWhenNoExecutionMechanism()
+    {
         runBlocking {
             val path = PathObject()
             path.pathName = "exec_path"
             // Deliberately not setting any execution mechanism (no executionFunction, no agent, no PCP)
 
             var threw = false
-            try {
+            try
+            {
                 path.init()
-            } catch(e: Exception) {
+            }
+            catch(e: Exception)
+            {
                 // require() throws when no execution mechanism is configured
                 threw = true
             }
@@ -117,7 +129,8 @@ class PumpStationPathInitTest {
     }
 
     @Test
-    fun testInitPopulatesHasExecutionFunctionCorrectly() {
+    fun testInitPopulatesHasExecutionFunctionCorrectly()
+    {
         runBlocking {
             val path = PathObject()
             path.pathName = "exec_path"
@@ -130,7 +143,8 @@ class PumpStationPathInitTest {
     }
 
     @Test
-    fun testInitSetsAgentTypeNameWhenInternalAgentPresent() {
+    fun testInitSetsAgentTypeNameWhenInternalAgentPresent()
+    {
         runBlocking {
             val mockAgent = MockPathAgent()
             val path = PathObject()
@@ -144,7 +158,8 @@ class PumpStationPathInitTest {
     }
 
     @Test
-    fun testInitSetsAgentTypeNameNullWhenNoInternalAgent() {
+    fun testInitSetsAgentTypeNameNullWhenNoInternalAgent()
+    {
         runBlocking {
             val path = PathObject()
             path.pathName = "no_agent_name_path"
@@ -156,7 +171,8 @@ class PumpStationPathInitTest {
     }
 
     @Test
-    fun testInitPopulatesPcpSchemaInReturn() {
+    fun testInitPopulatesPcpSchemaInReturn()
+    {
         runBlocking {
             FunctionRegistry.clear()
 
@@ -172,7 +188,8 @@ class PumpStationPathInitTest {
     }
 
     // Test function used in testPopulatesPcpSchemaInReturn
-    fun validateUserForInitTest(userId: String, role: String): String {
+    fun validateUserForInitTest(userId: String, role: String): String
+    {
         return "User: $userId, Role: $role"
     }
 }

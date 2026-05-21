@@ -89,3 +89,4 @@ aws/
 /md
 /.sisyphus
 /.playwright-mcp
+/.hermes/plans
