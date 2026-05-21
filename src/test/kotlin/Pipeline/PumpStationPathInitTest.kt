@@ -108,7 +108,7 @@ class PumpStationPathInitTest {
             var threw = false
             try {
                 path.init()
-            } catch (e: Exception) {
+            } catch(e: Exception) {
                 // require() throws when no execution mechanism is configured
                 threw = true
             }

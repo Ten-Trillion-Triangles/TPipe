@@ -249,7 +249,7 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      * @param turnSummary Reference to the turn summary if present and enabled in [PumpStation]. May be desirable to
      * pass onward to an internal agent.
      */
-    private var executionFunction: (suspend (content: MultimodalContent, stationRef: PumpStation,  turnHistory: ConverseHistory?, turnSummary: String) -> MultimodalContent)? = null
+    private var executionFunction: (suspend (content: MultimodalContent, stationRef: PumpStation, turnHistory: ConverseHistory?, turnSummary: String) -> MultimodalContent)? = null
 
 
 //-----------------------------------------------------init--------------------------------------------------------
