@@ -11,12 +11,17 @@ plugins {
     alias(libs.plugins.kotlin.jvm) version "2.2.20"
     alias(libs.plugins.ktor)
     alias(libs.plugins.kotlin.plugin.serialization)
+    alias(libs.plugins.shadow)
+    id("maven-publish")
+    id("signing")
 }
 
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(24))   // compileJava → 24
     }
+    withSourcesJar()
+    withJavadocJar()
 }
 
 kotlin {
@@ -77,4 +82,83 @@ dependencies {
 
 tasks.test {
     jvmArgs("-Xmx512m")
+}
+
+publishing {
+    publications {
+        create("mavenCommunity", MavenPublication::class) {
+            artifactId = "TPipe-community"
+            version = "1.0.0"
+            from(components["java"])
+            pom {
+                name.set("TPipe Community")
+                description.set("Agent Operating Environment for engineering robust, deterministic AI systems")
+                url.set("https://github.com/TT-Taylor/TPipe")
+                licenses {
+                    license {
+                        name.set("AGPL-3.0")
+                        url.set("https://www.gnu.org/licenses/agpl-3.0.en.html")
+                        distribution.set("repo")
+                    }
+                }
+                developers {
+                    developer {
+                        id.set("TT-Taylor")
+                        name.set("Taylor")
+                        email.set("tt-taylor@example.com")
+                    }
+                }
+                scm {
+                    url.set("https://github.com/TT-Taylor/TPipe")
+                    connection.set("scm:git:git://github.com/TT-Taylor/TPipe.git")
+                    developerConnection.set("scm:git:ssh://github.com:TT-Taylor/TPipe.git")
+                }
+            }
+        }
+        create("mavenStartup", MavenPublication::class) {
+            artifactId = "TPipe-startup"
+            version = "1.0.0"
+            from(components["java"])
+            pom {
+                name.set("TPipe Startup")
+                description.set("Agent Operating Environment for engineering robust, deterministic AI systems")
+                url.set("https://github.com/TT-Taylor/TPipe")
+                licenses {
+                    license {
+                        name.set("Commercial")
+                        url.set("https://example.com/commercial-license")
+                        distribution.set("repo")
+                    }
+                }
+                developers {
+                    developer {
+                        id.set("TT-Taylor")
+                        name.set("Taylor")
+                        email.set("tt-taylor@example.com")
+                    }
+                }
+                scm {
+                    url.set("https://github.com/TT-Taylor/TPipe")
+                    connection.set("scm:git:git://github.com/TT-Taylor/TPipe.git")
+                    developerConnection.set("scm:git:ssh://github.com:TT-Taylor/TPipe.git")
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            val releaseUrl = "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
+            val snapshotUrl = "https://s01.oss.sonatype.org/content/repositories/snapshots/"
+            url = uri(if (version.toString().endsWith("SNAPSHOT")) snapshotUrl else releaseUrl)
+            credentials {
+                username = System.getenv("OSSRH_USERNAME")
+                password = System.getenv("OSSRH_PASSWORD")
+            }
+        }
+    }
+}
+
+signing {
+    useInMemoryPgpKeys(System.getenv("SIGNING_KEY"), System.getenv("SIGNING_PASSWORD"))
+    sign(publishing.publications["mavenCommunity"], publishing.publications["mavenStartup"])
 }

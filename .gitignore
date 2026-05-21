@@ -48,6 +48,11 @@ reports/
 
 # BlueJ files
 *.ctxt
+
+# GPG/Signing artifacts
+*.asc
+secring.gpg
+gradle.properties.local
 docs/advanced-concepts/pcp-restoration-plan.md
 docs/security-fix-plan.md
 splitter_comprehensive_trace.html
@@ -74,8 +79,8 @@ docs/licensing/dependency-audit.md
 
 .gemini/
 gha-creds-*.json
+# Keep commands directory untracked if desired, but workflows MUST be tracked for CI/CD
 /.github/commands
-/.github/workflows
 
 aws/
 /md/native-compilation
