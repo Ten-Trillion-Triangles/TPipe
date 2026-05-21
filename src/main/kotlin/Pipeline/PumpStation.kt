@@ -9,6 +9,7 @@ import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipe.TruncationSettings
+import com.TTT.PipeContextProtocol.PcpContext
 import kotlinx.coroutines.sync.Mutex
 
 /**
@@ -76,7 +77,40 @@ enum class PumpStationCompactionStrategy
     Hybrid
 }
 
+/**
+ * Descriptor class for invoking a path. This injected into the dispatch agent for each path in this
+ * harness. Includes name, description of what this path does and how to and when to use it, input schema if provided
+ * and tools as PCP context which will be pulled from the bound PCP tools set to the path internally.
+ *
+ * This class is intended to be generated at runtime by parsing the settings of each path object registered in
+ * [PumpStation] and is not intended to be manually created by hand.
+ *
+ * @throws IllegalArgumentException if there is both no input schema or pcp tools schema.
+ *
+ * NOTE: PCP tool schema will always override input schema if pcp tools are a visible invokable value for the path.
+ * This does not apply if an agent is invoking pcp internally, and ONLY applies if the input schema for the path
+ * is a pcp tool call of some kind. In this case, it will be routed forward and invoked instead of the execution
+ * function, and the results will be aggregated (if any) into the multimodal content object output [MultimodalContent].
+ *
+ */
+@kotlinx.serialization.Serializable
+data class PathDescription(
+    var name: String = "",
+    var description: String = "",
+    var inputSchema: String = "",
+    var tools: PcpContext? = null
+)
 
+/**
+ * Request object called by the llm to invoke a given path. Requires a path name to be passed, and the schema to be
+ * supplied. This might be a custom JSON schema, a data class, or [PcpContext]. If PcpContext is supplied, then
+ * the instructions on how to supply pcp will be auto-injected into the agent as well.
+ */
+@kotlinx.serialization.Serializable
+data class PathRequest(
+    var pathName: String = "",
+    var pathSchema: String = ""
+)
 
 /**
  * Core object class that is embedded into the [PumpStation] class. A PathObject is a special container for harness
@@ -116,6 +150,18 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      * path does, how to use it, and helps improve accurate turn routing.
      */
     var pathDescription = ""
+
+    /**
+     * Schema required to invoke the path. Can either be json, or a data class.
+     */
+    var pathSchema = ""
+
+    /**
+     * Alternative pcp schema. If present, A pcp function will be invoked by the executor function, and treated
+     * as the action taken by the path. Results will be collected and converted back to a string automatically,
+     * then passed out as the [MultimodalContent] object.
+     */
+    var pcpSchema: PcpContext? = null
 
     /**
      * Configurable var to define the max number of concurrent agents allowed to be spawned. Acts as a passthrough
