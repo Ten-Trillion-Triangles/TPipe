@@ -76,6 +76,8 @@ enum class PumpStationCompactionStrategy
     Hybrid
 }
 
+
+
 /**
  * Core object class that is embedded into the [PumpStation] class. A PathObject is a special container for harness
  * calls. It comprises execution functions, internal agents, memory management, and PCP tool calls. It effectively
@@ -312,7 +314,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
 
     /**
      * Defines the maximum number of concurrent background agents that can be spawned at any given time.
-     * If a spawn request would exceed this number it will be queued and batched out at the maximun number
+     * If a spawn request would exceed this number it will be queued and batched out at the maximum number
      * allowed at a given time.
      */
     private var maxConcurrentBackgroundAgents = 3
