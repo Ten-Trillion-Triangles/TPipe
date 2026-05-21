@@ -113,6 +113,12 @@ interface P2PInterface
      suspend fun executeLocal(content: MultimodalContent) : MultimodalContent {return content}
 
     /**
+     * Generic init function that is intended to map into local init system of a given agent. Serves the same task as
+     * [executeLocal] does.
+     */
+    suspend fun P2PInit() { }
+
+    /**
      * Emergency kill switch for halting agent execution when token limits are exceeded.
      * When tripped, throws [KillSwitchException] — an uncaught exception that bypasses
      * all retry policies and generic exception handlers. Set to null to disable.

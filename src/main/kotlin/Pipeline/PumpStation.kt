@@ -6,9 +6,12 @@ import com.TTT.Context.ConverseHistory
 import com.TTT.Context.MiniBank
 import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PInterface
+import com.TTT.P2P.P2PRequest
+import com.TTT.P2P.P2PResponse
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipe.TruncationSettings
+import com.TTT.PipeContextProtocol.FunctionRegistry
 import com.TTT.PipeContextProtocol.PcpContext
 import kotlinx.coroutines.sync.Mutex
 
@@ -99,6 +102,32 @@ data class PathDescription(
     var description: String = "",
     var inputSchema: String = "",
     var tools: PcpContext? = null
+)
+
+/**
+ * Immutable record produced by [PathObject.init]. Captures the fully initialized
+ * configuration of a path — its name, description, invocation schema, and agent metadata.
+ *
+ * This is what the dispatch agent's prompt receives when it needs to understand
+ * what a path is and how to call it. It is derived from [PathDescription] at init time
+ * and augmented with runtime state (agent alive status, PCP schema availability).
+ *
+ * @property name The path's unique identifier.
+ * @property description Human-readable description of what the path does.
+ * @property inputSchema JSON schema string for non-PCP path invocation.
+ * @property pcpSchema The fully populated [PcpContext] if PCP tools are bound to this path.
+ * @property hasInternalAgent True if the path has an internal agent ready to execute.
+ * @property hasExecutionFunction True if the path has a raw execution function bound.
+ * @property agentTypeName Simple class name of the internal agent, if present.
+ */
+data class PathDescriptionData(
+    val name: String,
+    val description: String,
+    val inputSchema: String,
+    val pcpSchema: PcpContext?,
+    val hasInternalAgent: Boolean,
+    val hasExecutionFunction: Boolean,
+    val agentTypeName: String?
 )
 
 /**
@@ -223,6 +252,88 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var executionFunction: (suspend (content: MultimodalContent, stationRef: PumpStation,  turnHistory: ConverseHistory?, turnSummary: String) -> MultimodalContent)? = null
 
 
+//-----------------------------------------------------init--------------------------------------------------------
+
+    /**
+     * Initializes this [PathObject], transitioning it from build-time configuration to
+     * runtime-ready state. Must be called once before the path is used in a [PumpStation] harness.
+     *
+     * Performs the following in order:
+     * 1. Validates that [pathName] is set (required for dispatch routing)
+     * 2. Validates that at least one execution mechanism is configured
+     * 3. Calls [P2PInit] on the internal agent if one is present
+     * 4. Builds and returns a [PathDescriptionData] record capturing the fully initialized path state
+     *
+     * @return [PathDescriptionData] containing the path's name, description, schema, and agent metadata
+     * @throws IllegalArgumentException if [pathName] is blank
+     * @throws IllegalStateException if neither [executionFunction], [internalAgent], [agentBuilderFunction],
+     *         nor a bound PCP function is configured (path has no means of execution)
+     */
+    suspend fun init(): PathDescriptionData {
+        // Step 1: Validate required configuration
+        require(pathName.isNotBlank()) {
+            "PathObject.init() failed: pathName is required and cannot be blank. " +
+            "Set pathName before calling init()."
+        }
+
+        // Check that at least one execution path is available
+        val hasExecution = executionFunction != null
+        val hasAgent = internalAgent != null
+        val hasAgentBuilder = agentBuilderFunction != null
+        val hasPcpFunction = pcpSchema != null && pcpSchema!!.tpipeOptions.isNotEmpty()
+
+        require(hasExecution || hasAgent || hasAgentBuilder || hasPcpFunction) {
+            "PathObject.init() failed for path '${pathName}': no execution mechanism configured. " +
+            "At least one of executionFunction, internalAgent, agentBuilderFunction, or a bound PCP function is required."
+        }
+
+        // Step 2: Invoke P2PInit on internal agent if present
+        val agentTypeName = internalAgent?.let { agent ->
+            agent.P2PInit()
+            agent::class.simpleName
+        }
+
+        // Step 3: Build and return PathDescriptionData
+        return PathDescriptionData(
+            name = pathName,
+            description = pathDescription,
+            inputSchema = pathSchema,
+            pcpSchema = pcpSchema,
+            hasInternalAgent = hasAgent,
+            hasExecutionFunction = hasExecution,
+            agentTypeName = agentTypeName
+        )
+    }
+
+    /**
+     * Sets the internal agent for this path. When assigned, the agent builder function
+     * is skipped at execution time.
+     *
+     * @param agent The P2PInterface agent to set as the internal agent.
+     */
+    fun setInternalAgent(agent: P2PInterface) {
+        this.internalAgent = agent
+    }
+
+    /**
+     * Sets the execution function for this path. This is the fallback when no internal agent
+     * or agent builder is present.
+     *
+     * @param function The suspend function to invoke when this path is called.
+     */
+    fun setExecutionFunction(function: (suspend (content: MultimodalContent, stationRef: PumpStation, turnHistory: ConverseHistory?, turnSummary: String) -> MultimodalContent)?) {
+        this.executionFunction = function
+    }
+
+    /**
+     * P2PInterface required init function. Delegates to [init] for path initialization.
+     * Present to satisfy the [P2PInterface] contract.
+     */
+    override suspend fun P2PInit() {
+        init()
+    }
+
+
 //-----------------------------------------------------DITL-------------------------------------------------------------
 
 }
@@ -345,6 +456,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var goalAgent: P2PInterface? = null
 
     /**
+     * Stored paths on this harness. Each path is mapped by its name from inside the path object, and the
+     * reference to the object. Names are normalized to be case-insensitive, and all path calls will normalize
+     * to lowercase when calling a path.
+     */
+    private val pathList: MutableMap<String, PathObject> = mutableMapOf()
+
+    /**
      * Optional bindable builder function. Allows for a dynamically generated agent at runtime. If non-null
      * [goalAgent] will be ignored and this will be invoked to generate the valid agent object at runtime.
      */
@@ -422,6 +540,12 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * or async as turns are stored. Is injected if present, prior to the turn history in the agent's context.
      */
     private var turnSummary = ""
+
+    /**
+     * If true, and the dispatch agent generates invalid json for a path request, throw an error, and
+     * exit the PumpStation harness on the spot.
+     */
+    private var stopHarnessOnInvalidPathRequest = false
 
 //--------------------------------------------------Internal------------------------------------------------------------
 
@@ -519,5 +643,19 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var pathValidationFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> Boolean)? = null
 
 
+//===========================================P2PInterface Implementation==============================================
+
+    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
+        // PumpStation does not support direct P2P execution — it is invoked by the dispatch agent via paths
+        return null
+    }
+
+    /**
+     * P2PInterface required init function. Initializes the PumpStation harness.
+     * Present to satisfy the [P2PInterface] contract.
+     */
+    override suspend fun P2PInit() {
+        // TODO: PumpStation init — wire in judge/dispatch agents initialization when needed
+    }
 
 }
