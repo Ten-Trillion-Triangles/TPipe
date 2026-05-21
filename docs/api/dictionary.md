@@ -98,6 +98,25 @@ Convenience method for truncation using TruncationSettings object.
 
 ---
 
+| `overlapTokens` | `Int` | Tokens overlapping between chunks. Default `0` (no overlap). When > 0, the last N tokens of chunk N are repeated as the first N tokens of chunk N+1 to preserve context continuity. |
+| `preserveWordBoundary` | `Boolean` | If `true`, a word that alone fits within maxTokens will start a new chunk rather than being forced into the current chunk over budget. Default `true`. |
+
+**Returns:** List of text chunks, each containing at most `maxTokens` tokens. Empty chunks are omitted.
+
+#### `chunkByTokensWithSettings(text: String, maxTokens: Int, settings: TruncationSettings, overlapTokens: Int = 0, preserveWordBoundary: Boolean = true): List<String>`
+Convenience wrapper for `chunkByTokens()` that accepts a `TruncationSettings` object instead of individual parameters.
+
+**Behavior:** Extracts all tokenization parameters from `TruncationSettings` and delegates to `chunkByTokens()`. Pairs well with `Pipe.getTruncationSettings()`.
+
+**Parameters:**
+- **`text`**: Input text to split into token-bounded chunks
+- **`maxTokens`**: Maximum token count per chunk
+- **`settings`**: `TruncationSettings` containing all tokenization parameters
+- **`overlapTokens`**: Tokens overlapping between chunks (default 0)
+- **`preserveWordBoundary`**: Preserve word boundaries (default `true`)
+
+**Returns:** List of text chunks with token budget applied.
+
 ### List Truncation
 
 #### `truncate(messages: List<String>, windowSize: Int, multiplyWindowSizeBy: Int = 1000, truncateSettings: ContextWindowSettings, ...tokenization parameters...): List<String>`

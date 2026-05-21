@@ -22,7 +22,10 @@ enum class ConverseRole {
     system,
     user,
     agent,
-    assistant
+    assistant,
+    tool_response,
+    pcp_response,
+    mcp_response
 }
 ```
 

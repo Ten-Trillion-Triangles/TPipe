@@ -100,7 +100,7 @@ For better dependency management, you can use a version catalog like TPipe does:
 [versions]
 kotlin-version = "2.2.20"
 ktor-version = "3.1.3"
-tpipe-version = "0.0.1"
+tpipe-version = "1.0.0"
 
 [libraries]
 tpipe-main = { module = "com.TTT:TPipe", version.ref = "tpipe-version" }
