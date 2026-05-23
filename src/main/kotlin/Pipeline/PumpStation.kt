@@ -81,6 +81,22 @@ enum class PumpStationCompactionStrategy
 }
 
 /**
+ * Defines the harness state of memory. Provided to the memory DITL function tto allow the coder
+ * to quickly assess how memory was managed in a memory manage push.
+ *
+ * @param memoryMode Current mode this harness is set to.
+ * @param memoryStrategy
+ */
+data class MemoryActionResult(
+    var memoryMode: PumpStationMemoryManagementMode,
+    var memoryStrategy: PumpStationCompactionStrategy,
+    var loreBookActive: Boolean,
+    var summaryActive: Boolean,
+    var compactionPercent: Double,
+    var budgetSettings: TokenBudgetSettings
+)
+
+/**
  * Descriptor class for invoking a path. This injected into the dispatch agent for each path in this
  * harness. Includes name, description of what this path does and how to and when to use it, input schema if provided
  * and tools as PCP context which will be pulled from the bound PCP tools set to the path internally.
@@ -275,7 +291,8 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      * @throws IllegalStateException if neither [executionFunction], [internalAgent], [agentBuilderFunction],
      *         nor a bound PCP function is configured (path has no means of execution)
      */
-    suspend fun init(): PathDescriptionData {
+    suspend fun init(): PathDescriptionData
+    {
         // Step 1: Validate required configuration
         require(pathName.isNotBlank()) {
             "PathObject.init() failed: pathName is required and cannot be blank. " +
@@ -480,6 +497,29 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
 //--------------------------------------------------Config--------------------------------------------------------------
 
     /**
+     * Treated as the "system prompt" for the harness. Is injected into the harness after initial backed in harness
+     * system instructions that are used to teach the agents how to drive the harness. Treated as highest priority
+     * after the harness core guidelines of driving and always present regardless of user instructions.
+     */
+    private var systemTask = ""
+
+    /**
+     * Secondary after [systemTask] these are user guidelines the judge and dispatch agents should follow as long as they
+     * are able to still fully follow their system task. This is where traditional "skills" in other harnesses would
+     * be injected.
+     */
+    private var userGuidelines = ""
+
+    /**
+     * Third tier down. This is the initial user prompt sent to this harness via the [MultimodalContent] input or
+     * P2P [P2PInterface.executeLocal] invocation. This is the core task of work to be done within the constraints
+     * of both the core system prompts of the agents, the system task which is injected second, and the userGuidelines
+     * aka: "skills" third. This will always be held at the top of the history and made clear to the agent that this
+     * is the core task it must complete within its boundaries.
+     */
+    private var entryUserPrompt = ""
+
+    /**
      * Exceeding this number will instantly end the harness. Acts as a safety limit to avoid llm loops and
      * exploding token costs.
      */
@@ -557,6 +597,11 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var stopHarnessOnInvalidPathRequest = false
 
 //--------------------------------------------------Internal------------------------------------------------------------
+
+    /**
+     * Used to track init state and auto-init if the user forgot to invoke init at execution time.
+     */
+    private var harnessIsReady = false
 
     /**
      * Stored turn history. The entire history is shown to the harness agent after the summary is provided if
@@ -651,12 +696,32 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     private var pathValidationFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> Boolean)? = null
 
+    /**
+     * DITL function to allow for content transformation after a path has executed, and just before the results of the path
+     * are injected into the harness history.
+     */
+    private var pathTransformationFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> MultimodalContent)? = null
 
+    /**
+     * DITL function that executes after memory agents complete a memory update task.
+     */
+    private var postMemoryFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> MultimodalContent)? = null
+
+    /**
+     * DITL function that fires when a memory blowout has been detected. Commonly caused by an unmanaged path that did not
+     * catch this internally. Allows the developer to intervene before compaction triggers.
+     */
+    private var preCompactionFunction: (suspend (content: MultimodalContent, overflowTurn: ConverseData, currentHistory: ConverseHistory, harness: PumpStation) -> MultimodalContent)? = null
+
+    /**
+     * DITL function that fires after a TPipe emergency compaction/memory event happens.
+     */
+    private var postCompactionFunction: (suspend (content: MultimodalContent, newHistory: ConverseHistory, harness: PumpStation) -> MultimodalContent)? = null
 //===========================================P2PInterface Implementation==============================================
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {
-        // PumpStation does not support direct P2P execution — it is invoked by the dispatch agent via paths
+        // PumpStation does not support direct P2P execution yet, but will upon true completion.
         return null
     }
 
