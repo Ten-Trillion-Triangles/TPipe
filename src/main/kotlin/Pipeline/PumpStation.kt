@@ -96,36 +96,14 @@ data class MemoryActionResult(
     var budgetSettings: TokenBudgetSettings
 )
 
-/**
- * Descriptor class for invoking a path. This injected into the dispatch agent for each path in this
- * harness. Includes name, description of what this path does and how to and when to use it, input schema if provided
- * and tools as PCP context which will be pulled from the bound PCP tools set to the path internally.
- *
- * This class is intended to be generated at runtime by parsing the settings of each path object registered in
- * [PumpStation] and is not intended to be manually created by hand.
- *
- * @throws IllegalArgumentException if there is both no input schema or pcp tools schema.
- *
- * NOTE: PCP tool schema will always override input schema if pcp tools are a visible invokable value for the path.
- * This does not apply if an agent is invoking pcp internally, and ONLY applies if the input schema for the path
- * is a pcp tool call of some kind. In this case, it will be routed forward and invoked instead of the execution
- * function, and the results will be aggregated (if any) into the multimodal content object output [MultimodalContent].
- *
- */
-@kotlinx.serialization.Serializable
-data class PathDescription(
-    var name: String = "",
-    var description: String = "",
-    var inputSchema: String = "",
-    var tools: PcpContext? = null
-)
+
 
 /**
  * Immutable record produced by [PathObject.init]. Captures the fully initialized
  * configuration of a path — its name, description, invocation schema, and agent metadata.
  *
  * This is what the dispatch agent's prompt receives when it needs to understand
- * what a path is and how to call it. It is derived from [PathDescription] at init time
+ * what a path is and how to call it. It is derived from  at init time
  * and augmented with runtime state (agent alive status, PCP schema availability).
  *
  * @property name The path's unique identifier.
@@ -136,6 +114,7 @@ data class PathDescription(
  * @property hasExecutionFunction True if the path has a raw execution function bound.
  * @property agentTypeName Simple class name of the internal agent, if present.
  */
+@kotlinx.serialization.Serializable
 data class PathDescriptionData(
     val name: String,
     val description: String,
@@ -144,6 +123,14 @@ data class PathDescriptionData(
     val hasInternalAgent: Boolean,
     val hasExecutionFunction: Boolean,
     val agentTypeName: String?
+)
+
+/**
+ * List of all path descriptors which can be used to serialize and pass inward to agents.
+ */
+@kotlinx.serialization.Serializable
+data class PathDescriptionList(
+    var paths: MutableList<PathDescriptionData> = mutableListOf()
 )
 
 /**
@@ -602,6 +589,14 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * Used to track init state and auto-init if the user forgot to invoke init at execution time.
      */
     private var harnessIsReady = false
+
+    /**
+     * Descriptors produced from initializing each path. This is required to pass onward to the dispatch
+     * agent's internal systems to allow it to call a given path. The general expectation is that the dispatch agent
+     * will eventually bubble down to a child agent which will be a pipeline, and that pipeline will embed
+     * a pipe that contains this and has the ability to call a path as JSON.
+     */
+    private val pathDescriptors = PathDescriptionList()
 
     /**
      * Stored turn history. The entire history is shown to the harness agent after the summary is provided if

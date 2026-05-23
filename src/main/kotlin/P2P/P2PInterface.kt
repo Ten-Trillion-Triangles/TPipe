@@ -119,6 +119,12 @@ interface P2PInterface
     suspend fun P2PInit() { }
 
     /**
+     * Implemented only on [PumpStation]. Will retrieve the [com.TTT.Pipeline.PathDescriptionList] and serialize it
+     * returning a string based set of results that can be injected into a pipe similar to pcp tool and p2p injectors.
+     */
+    fun getPaths() : String
+
+    /**
      * Emergency kill switch for halting agent execution when token limits are exceeded.
      * When tripped, throws [KillSwitchException] — an uncaught exception that bypasses
      * all retry policies and generic exception handlers. Set to null to disable.
