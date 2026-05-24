@@ -1,5 +1,7 @@
 package com.TTT.P2P
 
+import com.TTT.Context.ContextWindow
+import com.TTT.Context.MiniBank
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipeline.Pipeline
@@ -122,7 +124,17 @@ interface P2PInterface
      * Implemented only on [PumpStation]. Will retrieve the [com.TTT.Pipeline.PathDescriptionList] and serialize it
      * returning a string based set of results that can be injected into a pipe similar to pcp tool and p2p injectors.
      */
-    fun getPaths() : String
+    fun getPaths() : String = ""
+
+    /**
+     * Interface method for retrieving an agent's stored context window if it supports that.
+     */
+    fun getContextWindowFromInterface(): ContextWindow? = null
+
+    /**
+     * Interface method of getting an agent's stored MiniBank if it supports that.
+     */
+    fun getMiniBankFromInterface(): MiniBank? = null
 
     /**
      * Emergency kill switch for halting agent execution when token limits are exceeded.

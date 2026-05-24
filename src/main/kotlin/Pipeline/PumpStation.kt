@@ -13,6 +13,7 @@ import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipe.TruncationSettings
 import com.TTT.PipeContextProtocol.FunctionRegistry
 import com.TTT.PipeContextProtocol.PcpContext
+import com.TTT.Util.serialize
 import kotlinx.coroutines.sync.Mutex
 
 /**
@@ -626,6 +627,17 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private val stash = mutableMapOf<String, ConverseData>()
 
     /**
+     * Internal context window addressable by this harness, and able to be passed into the various agents
+     * that are deployed here.
+     */
+    private val contextWindow = ContextWindow()
+
+    /**
+     * Internal miniBank serves the same purpose as [contextWindow]
+     */
+    private val miniBank = MiniBank()
+
+    /**
      * Mutex lock used for async lorebook agents. This allows us to queue up and safely ensure that the lorebook agents
      * are able to update the lorebook in sequence even if the turn harness moves fast enough to cause a backlog of
      * lorebook updates.
@@ -727,6 +739,26 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     override suspend fun P2PInit()
     {
         // TODO: PumpStation init — wire in judge/dispatch agents initialization when needed
+    }
+
+    /**
+     * Fetch all paths in this harness, serialize them to be ready for injection into a pipe, and return
+     * them as a string.
+     */
+    override fun getPaths(): String
+    {
+        val schema = serialize(pathList)
+        return schema
+    }
+
+    override fun getContextWindowFromInterface(): ContextWindow?
+    {
+        return contextWindow
+    }
+
+    override fun getMiniBankFromInterface(): MiniBank?
+    {
+        return miniBank
     }
 
 }

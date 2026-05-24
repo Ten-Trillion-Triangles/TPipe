@@ -902,6 +902,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
     protected var readFromParentPipeContext = false
 
     /**
+     * If true, we'll attempt to resolve [P2PInterface] parents up to the closest [com.TTT.Pipeline.PumpStation]
+     * and pull its [ContextWindow] and [MiniBank]. This will get merged after [readFromParentPipeContext] is merged
+     * in the merge order.
+     */
+    @kotlinx.serialization.Serializable
+    protected var readFromPumpStationContext = false
+
+    /**
      * If true this pipe will automatically update the pipeline's context with its own context by
      * merging the two together.
      */
@@ -919,6 +927,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     @Serializable
     protected var autoTruncateContext = false
+
+    /**
+     * If true the pipe will pull all path data during [applySystemPrompt] from it's nearest parent [com.TTT.Pipeline.PumpStation]
+     * When enabled, this will disable both PCP, and json output support replacing it with path calls.
+     */
+    @Serializable
+    protected var autoInjectPathDataFromPumpStation = false
 
 
     /**
@@ -988,41 +1003,28 @@ abstract class Pipe : P2PInterface, ProviderInterface
     @Serializable
     protected var emplaceConverseHistoryOnlyIfNull = false
 
-        /**
-
-         * Some models have thinking modes, also known as reasoning. If true TPipe will enable model thinking/reasoning
-
-         * on models where it can be enabled or disabled.
-
-         */
-
-        @Serializable
-
-        protected var useModelReasoning = false
+    /**
+    * Some models have thinking modes, also known as reasoning. If true TPipe will enable model thinking/reasoning
+    * on models where it can be enabled or disabled.
+    */
+    @Serializable
+    protected var useModelReasoning = false
 
     
 
-        /**
-
-         * If true, model reasoning content will be streamed to the registered callbacks
-
-         * during generation. This applies to models that produce reasoning in a separate
-
-         * stream or field from the main response text.
-
-         */
-
-        @Serializable
-
-        protected var streamModelReasoning: Boolean = true
+    /**
+    * If true, model reasoning content will be streamed to the registered callbacks
+    * during generation. This applies to models that produce reasoning in a separate
+    * stream or field from the main response text.
+    */
+    @Serializable
+    protected var streamModelReasoning: Boolean = true
 
     
 
-        /**
-
-         * Version of model reasoning that uses a designation of how many tokens to afford to model reasoning.
-
-         */
+    /**
+    * Version of model reasoning that uses a designation of how many tokens to afford to model reasoning.
+    */
     @Serializable
     protected var modelReasoningSettingsV2 = 5000
 
@@ -2353,6 +2355,23 @@ abstract class Pipe : P2PInterface, ProviderInterface
         supportsNativeJson = false
     }
 
+    /**
+     * Activates harness mode for a pipe. When enabled standard json output is disabled, and the pipe will
+     * be configured to invoke paths from the parent harness [com.TTT.Pipeline.PumpStation] that's nearest
+     * to it on the ownership chain. Paths available on the harness will be injected into the system prompt,
+     * instructions on how to use them, and instructions on how to call them. JSON output will be automatically
+     * bound to only allow the model to emit a [com.TTT.Pipeline.PathRequest] object as it's output.
+     *
+     * WARNING: in harness mode, neither P2P nor PCP can be used by this pipe. It will be bound to the path system
+     * schema and mechanism's used by the PumpStation class.
+     */
+    fun enableHarnessMode() : Pipe
+    {
+        supportsNativeJson = false
+        autoInjectPathDataFromPumpStation = true
+        return this
+    }
+
 
     /**
      * Set the temperature for generation. This is used to control the randomness of the generation.
@@ -3203,6 +3222,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun pullParentPipeContext() : Pipe
     {
         readFromParentPipeContext = true
+        return this
+    }
+
+    fun pullPumpStationContext() : Pipe
+    {
+        readFromPumpStationContext = true
         return this
     }
 
