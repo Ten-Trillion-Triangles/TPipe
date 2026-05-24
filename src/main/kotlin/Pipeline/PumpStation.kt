@@ -477,6 +477,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private val pathList: MutableMap<String, PathObject> = mutableMapOf()
 
     /**
+     * Paths stored here are placed in "reserve". This allows them to be loaded into the system prompt of the
+     * dispatch agent dynamically which is useful for keeping token costs and usage under control. A path cannot
+     * exist both in reserve, and in the main [pathList] at the same time.
+     */
+    private val reservePaths: MutableMap<String, PathObject> = mutableMapOf()
+
+    /**
      * Optional bindable builder function. Allows for a dynamically generated agent at runtime. If non-null
      * [goalAgent] will be ignored and this will be invoked to generate the valid agent object at runtime.
      */
