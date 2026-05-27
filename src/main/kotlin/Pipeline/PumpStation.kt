@@ -6,9 +6,14 @@ import com.TTT.Context.ConverseHistory
 import com.TTT.Context.MiniBank
 import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PInterface
+import com.TTT.P2P.P2PRequest
+import com.TTT.P2P.P2PResponse
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipe.TruncationSettings
+import com.TTT.PipeContextProtocol.FunctionRegistry
+import com.TTT.PipeContextProtocol.PcpContext
+import com.TTT.Util.serialize
 import kotlinx.coroutines.sync.Mutex
 
 /**
@@ -76,7 +81,69 @@ enum class PumpStationCompactionStrategy
     Hybrid
 }
 
+/**
+ * Defines the harness state of memory. Provided to the memory DITL function tto allow the coder
+ * to quickly assess how memory was managed in a memory manage push.
+ *
+ * @param memoryMode Current mode this harness is set to.
+ * @param memoryStrategy
+ */
+data class MemoryActionResult(
+    var memoryMode: PumpStationMemoryManagementMode,
+    var memoryStrategy: PumpStationCompactionStrategy,
+    var loreBookActive: Boolean,
+    var summaryActive: Boolean,
+    var compactionPercent: Double,
+    var budgetSettings: TokenBudgetSettings
+)
 
+
+
+/**
+ * Immutable record produced by [PathObject.init]. Captures the fully initialized
+ * configuration of a path — its name, description, invocation schema, and agent metadata.
+ *
+ * This is what the dispatch agent's prompt receives when it needs to understand
+ * what a path is and how to call it. It is derived from  at init time
+ * and augmented with runtime state (agent alive status, PCP schema availability).
+ *
+ * @property name The path's unique identifier.
+ * @property description Human-readable description of what the path does.
+ * @property inputSchema JSON schema string for non-PCP path invocation.
+ * @property pcpSchema The fully populated [PcpContext] if PCP tools are bound to this path.
+ * @property hasInternalAgent True if the path has an internal agent ready to execute.
+ * @property hasExecutionFunction True if the path has a raw execution function bound.
+ * @property agentTypeName Simple class name of the internal agent, if present.
+ */
+@kotlinx.serialization.Serializable
+data class PathDescriptionData(
+    val name: String,
+    val description: String,
+    val inputSchema: String,
+    val pcpSchema: PcpContext?,
+    val hasInternalAgent: Boolean,
+    val hasExecutionFunction: Boolean,
+    val agentTypeName: String?
+)
+
+/**
+ * List of all path descriptors which can be used to serialize and pass inward to agents.
+ */
+@kotlinx.serialization.Serializable
+data class PathDescriptionList(
+    var paths: MutableList<PathDescriptionData> = mutableListOf()
+)
+
+/**
+ * Request object called by the llm to invoke a given path. Requires a path name to be passed, and the schema to be
+ * supplied. This might be a custom JSON schema, a data class, or [PcpContext]. If PcpContext is supplied, then
+ * the instructions on how to supply pcp will be auto-injected into the agent as well.
+ */
+@kotlinx.serialization.Serializable
+data class PathRequest(
+    var pathName: String = "",
+    var pathSchema: String = ""
+)
 
 /**
  * Core object class that is embedded into the [PumpStation] class. A PathObject is a special container for harness
@@ -118,11 +185,29 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     var pathDescription = ""
 
     /**
+     * Schema required to invoke the path. Can either be json, or a data class.
+     */
+    var pathSchema = ""
+
+    /**
+     * Alternative pcp schema. If present, A pcp function will be invoked by the executor function, and treated
+     * as the action taken by the path. Results will be collected and converted back to a string automatically,
+     * then passed out as the [MultimodalContent] object.
+     */
+    var pcpSchema: PcpContext? = null
+
+    /**
      * Configurable var to define the max number of concurrent agents allowed to be spawned. Acts as a passthrough
      * and a hint. This allows someone building a path object to abide by constraints or user requests and config
      * settings.
      */
     private var maxConcurrentAgents = 3
+
+    /**
+     * If true, the path will kick off and not block the harness. It will then send an interrupt signal to the harness to
+     * interject its results upon completion into latest turn history event.
+     */
+    private var runsInBackground = false
 
     /**
      * Must be set, or pulled from the parent [PumpStation]. This required for us to calculate if we're about to
@@ -174,7 +259,93 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      * @param turnSummary Reference to the turn summary if present and enabled in [PumpStation]. May be desirable to
      * pass onward to an internal agent.
      */
-    private var executionFunction: (suspend (content: MultimodalContent, stationRef: PumpStation,  turnHistory: ConverseHistory?, turnSummary: String) -> MultimodalContent)? = null
+    private var executionFunction: (suspend (content: MultimodalContent, stationRef: PumpStation, turnHistory: ConverseHistory?, turnSummary: String) -> MultimodalContent)? = null
+
+
+//-----------------------------------------------------init--------------------------------------------------------
+
+    /**
+     * Initializes this [PathObject], transitioning it from build-time configuration to
+     * runtime-ready state. Must be called once before the path is used in a [PumpStation] harness.
+     *
+     * Performs the following in order:
+     * 1. Validates that [pathName] is set (required for dispatch routing)
+     * 2. Validates that at least one execution mechanism is configured
+     * 3. Calls [P2PInit] on the internal agent if one is present
+     * 4. Builds and returns a [PathDescriptionData] record capturing the fully initialized path state
+     *
+     * @return [PathDescriptionData] containing the path's name, description, schema, and agent metadata
+     * @throws IllegalArgumentException if [pathName] is blank
+     * @throws IllegalStateException if neither [executionFunction], [internalAgent], [agentBuilderFunction],
+     *         nor a bound PCP function is configured (path has no means of execution)
+     */
+    suspend fun init(): PathDescriptionData
+    {
+        // Step 1: Validate required configuration
+        require(pathName.isNotBlank()) {
+            "PathObject.init() failed: pathName is required and cannot be blank. " +
+            "Set pathName before calling init()."
+        }
+
+        // Check that at least one execution path is available
+        val hasExecution = executionFunction != null
+        val hasAgent = internalAgent != null
+        val hasAgentBuilder = agentBuilderFunction != null
+        val hasPcpFunction = pcpSchema != null && pcpSchema!!.tpipeOptions.isNotEmpty()
+
+        require(hasExecution || hasAgent || hasAgentBuilder || hasPcpFunction) {
+            "PathObject.init() failed for path '${pathName}': no execution mechanism configured. " +
+            "At least one of executionFunction, internalAgent, agentBuilderFunction, or a bound PCP function is required."
+        }
+
+        // Step 2: Invoke P2PInit on internal agent if present
+        val agentTypeName = internalAgent?.let { agent ->
+            agent.P2PInit()
+            agent::class.simpleName
+        }
+
+        // Step 3: Build and return PathDescriptionData
+        return PathDescriptionData(
+            name = pathName,
+            description = pathDescription,
+            inputSchema = pathSchema,
+            pcpSchema = pcpSchema,
+            hasInternalAgent = hasAgent,
+            hasExecutionFunction = hasExecution,
+            agentTypeName = agentTypeName
+        )
+    }
+
+    /**
+     * Sets the internal agent for this path. When assigned, the agent builder function
+     * is skipped at execution time.
+     *
+     * @param agent The P2PInterface agent to set as the internal agent.
+     */
+    fun setInternalAgent(agent: P2PInterface)
+    {
+        this.internalAgent = agent
+    }
+
+    /**
+     * Sets the execution function for this path. This is the fallback when no internal agent
+     * or agent builder is present.
+     *
+     * @param function The suspend function to invoke when this path is called.
+     */
+    fun setExecutionFunction(function: (suspend (content: MultimodalContent, stationRef: PumpStation, turnHistory: ConverseHistory?, turnSummary: String) -> MultimodalContent)?)
+    {
+        this.executionFunction = function
+    }
+
+    /**
+     * P2PInterface required init function. Delegates to [init] for path initialization.
+     * Present to satisfy the [P2PInterface] contract.
+     */
+    override suspend fun P2PInit()
+    {
+        init()
+    }
 
 
 //-----------------------------------------------------DITL-------------------------------------------------------------
@@ -238,6 +409,12 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var judgeAgent: P2PInterface? = null
 
     /**
+     * Optional builder function to generate the [judgeAgent] on the fly. When non-null this will completely
+     * override whatever is set for judgeAgent.
+     */
+    private var judgeAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+
+    /**
      * REQUIRED: This agent evaluates what the next steps in the harness needs to be, and dispatches the to the
      * next path. (Equal to a tool call, or turn in traditional agent harnesses.) If null, or if a [Splitter] has
      * been assigned to this an illegal argument exception will be thrown.
@@ -252,6 +429,26 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var dispatchAgent: P2PInterface? = null
 
     /**
+     * Optional builder function to generate [dispatchAgent] on the fly, overrides any value set to dispatch agent
+     * when not null.
+     */
+    private var dispatchAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+
+
+    /**
+     * Optional agent that is able to intervene with path calls. Can be enabled for things like enforcing specific
+     * retries when a path has an error, requring an agent to call a specific path under a specific condtition etc.
+     * When this fires it will investigate its assignment, and
+     */
+    private var interventionAgent: P2PInterface? = null
+
+    /**
+     * Optional builder function for the intervention agent that overrides [interventionAgent] at runtime each
+     * time it would be called.
+     */
+    private var interventionAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+
+    /**
      * Optional background lorebook agent. Invoked as the first background agent in the harness if present.
      * Is used to update the lorebook of the [PumpStation] internal context window/minibank.
      */
@@ -262,7 +459,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * to ensure a thread safe, and stateless implementation. If not assigned, the PumpStation will attempt to
      * duplicate the agent using reflection.
      */
-    private var lorebookAgentBuilderFunction : (suspend () -> P2PInterface)? = null
+    private var lorebookAgentBuilderFunction : (suspend (harness: PumpStation) -> P2PInterface)? = null
 
     /**
      * Optional background agent to generate summaries of the events occurring in the harness for compaction, and
@@ -275,7 +472,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * to ensure a thread safe, and stateless implementation. If not assigned, the PumpStation will attempt to
      * duplicate the agent using reflection.
      */
-    private var summaryAgentBuilderFunction: (suspend (content: MultimodalContent) -> P2PInterface)? = null
+    private var summaryAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
 
     /**
      * Allows the user to add additional required agents between the output of dispatch, and the return to the judge
@@ -287,7 +484,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * Alternate set of bindable builder functions. When invoked each will be invoked in order.
      * If this is bound, it will override the [additionalHarnessAgents] variable.
      */
-    private var additionalHarnessAgentBuilderFuncList: MutableList<(suspend () -> P2PInterface)>? = null
+    private var additionalHarnessAgentBuilderFuncList: MutableList<(suspend (harness: PumpStation) -> P2PInterface)>? = null
 
     /**
      * Optional goal agent. This agent can be used to scan the work done by the harness once the harness is in an
@@ -298,13 +495,53 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     private var goalAgent: P2PInterface? = null
 
+
     /**
      * Optional bindable builder function. Allows for a dynamically generated agent at runtime. If non-null
      * [goalAgent] will be ignored and this will be invoked to generate the valid agent object at runtime.
      */
-    private var goalAgentBuilderFunction: (suspend () -> P2PInterface)? = null
+    private var goalAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+
+    /**
+     * Stored paths on this harness. Each path is mapped by its name from inside the path object, and the
+     * reference to the object. Names are normalized to be case-insensitive, and all path calls will normalize
+     * to lowercase when calling a path.
+     */
+    private val pathList: MutableMap<String, PathObject> = mutableMapOf()
+
+    /**
+     * Paths stored here are placed in "reserve". This allows them to be loaded into the system prompt of the
+     * dispatch agent dynamically which is useful for keeping token costs and usage under control. A path cannot
+     * exist both in reserve, and in the main [pathList] at the same time.
+     */
+    private val reservePaths: MutableMap<String, PathObject> = mutableMapOf()
+
+
 
 //--------------------------------------------------Config--------------------------------------------------------------
+
+    /**
+     * Treated as the "system prompt" for the harness. Is injected into the harness after initial backed in harness
+     * system instructions that are used to teach the agents how to drive the harness. Treated as highest priority
+     * after the harness core guidelines of driving and always present regardless of user instructions.
+     */
+    private var systemTask = ""
+
+    /**
+     * Secondary after [systemTask] these are user guidelines the judge and dispatch agents should follow as long as they
+     * are able to still fully follow their system task. This is where traditional "skills" in other harnesses would
+     * be injected.
+     */
+    private var userGuidelines = ""
+
+    /**
+     * Third tier down. This is the initial user prompt sent to this harness via the [MultimodalContent] input or
+     * P2P [P2PInterface.executeLocal] invocation. This is the core task of work to be done within the constraints
+     * of both the core system prompts of the agents, the system task which is injected second, and the userGuidelines
+     * aka: "skills" third. This will always be held at the top of the history and made clear to the agent that this
+     * is the core task it must complete within its boundaries.
+     */
+    private var entryUserPrompt = ""
 
     /**
      * Exceeding this number will instantly end the harness. Acts as a safety limit to avoid llm loops and
@@ -377,7 +614,26 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     private var turnSummary = ""
 
+    /**
+     * If true, and the dispatch agent generates invalid json for a path request, throw an error, and
+     * exit the PumpStation harness on the spot.
+     */
+    private var stopHarnessOnInvalidPathRequest = false
+
 //--------------------------------------------------Internal------------------------------------------------------------
+
+    /**
+     * Used to track init state and auto-init if the user forgot to invoke init at execution time.
+     */
+    private var harnessIsReady = false
+
+    /**
+     * Descriptors produced from initializing each path. This is required to pass onward to the dispatch
+     * agent's internal systems to allow it to call a given path. The general expectation is that the dispatch agent
+     * will eventually bubble down to a child agent which will be a pipeline, and that pipeline will embed
+     * a pipe that contains this and has the ability to call a path as JSON.
+     */
+    private val pathDescriptors = PathDescriptionList()
 
     /**
      * Stored turn history. The entire history is shown to the harness agent after the summary is provided if
@@ -405,6 +661,17 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * by a path designed and equipped to handle a stache situation.
      */
     private val stash = mutableMapOf<String, ConverseData>()
+
+    /**
+     * Internal context window addressable by this harness, and able to be passed into the various agents
+     * that are deployed here.
+     */
+    private val contextWindow = ContextWindow()
+
+    /**
+     * Internal miniBank serves the same purpose as [contextWindow]
+     */
+    private val miniBank = MiniBank()
 
     /**
      * Mutex lock used for async lorebook agents. This allows us to queue up and safely ensure that the lorebook agents
@@ -472,6 +739,62 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     private var pathValidationFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> Boolean)? = null
 
+    /**
+     * DITL function to allow for content transformation after a path has executed, and just before the results of the path
+     * are injected into the harness history.
+     */
+    private var pathTransformationFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> MultimodalContent)? = null
 
+    /**
+     * DITL function that executes after memory agents complete a memory update task.
+     */
+    private var postMemoryFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> MultimodalContent)? = null
+
+    /**
+     * DITL function that fires when a memory blowout has been detected. Commonly caused by an unmanaged path that did not
+     * catch this internally. Allows the developer to intervene before compaction triggers.
+     */
+    private var preCompactionFunction: (suspend (content: MultimodalContent, overflowTurn: ConverseData, currentHistory: ConverseHistory, harness: PumpStation) -> MultimodalContent)? = null
+
+    /**
+     * DITL function that fires after a TPipe emergency compaction/memory event happens.
+     */
+    private var postCompactionFunction: (suspend (content: MultimodalContent, newHistory: ConverseHistory, harness: PumpStation) -> MultimodalContent)? = null
+//===========================================P2PInterface Implementation==============================================
+
+    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
+    {
+        // PumpStation does not support direct P2P execution yet, but will upon true completion.
+        return null
+    }
+
+    /**
+     * P2PInterface required init function. Initializes the PumpStation harness.
+     * Present to satisfy the [P2PInterface] contract.
+     */
+    override suspend fun P2PInit()
+    {
+        // TODO: PumpStation init — wire in judge/dispatch agents initialization when needed
+    }
+
+    /**
+     * Fetch all paths in this harness, serialize them to be ready for injection into a pipe, and return
+     * them as a string.
+     */
+    override fun getPaths(): String
+    {
+        val schema = serialize(pathList)
+        return schema
+    }
+
+    override fun getContextWindowFromInterface(): ContextWindow?
+    {
+        return contextWindow
+    }
+
+    override fun getMiniBankFromInterface(): MiniBank?
+    {
+        return miniBank
+    }
 
 }

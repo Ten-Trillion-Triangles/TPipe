@@ -1,5 +1,7 @@
 # Installation and Setup
 
+*Built by [Ten Trillion Triangles](https://tentrilliontriangles.com) — TPipe is the Agent Operating Environment.*
+
 ## Prerequisites
 
 ### Required Versions

@@ -11,12 +11,16 @@ plugins {
     alias(libs.plugins.kotlin.jvm) version "2.2.20"
     alias(libs.plugins.ktor)
     alias(libs.plugins.kotlin.plugin.serialization)
+    alias(libs.plugins.shadow)
+    `maven-publish`
 }
 
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(24))   // compileJava → 24
     }
+    withSourcesJar()
+    withJavadocJar()
 }
 
 kotlin {
@@ -27,6 +31,16 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_24)                   // compileKotlin → 24
     }
+}
+
+// Bundle LICENSE into the main JAR so published artifacts include it
+val licenseJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("license")
+    from(rootProject.file("LICENSE"))
+}
+
+artifacts {
+    add("archives", licenseJar)
 }
 
 group = "com.TTT"
