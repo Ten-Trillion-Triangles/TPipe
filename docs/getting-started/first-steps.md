@@ -1,5 +1,7 @@
 # First Steps - Hello World with TPipe
 
+*From [Ten Trillion Triangles](https://tentrilliontriangles.com) — makers of TPipe.*
+
 > 💡 **Tip:** This guide walks you through creating your first TPipe application. Think of your first `Pipe` as connecting your main water line—once it's flowing, you can route it anywhere.
 
 ## Prerequisites
