@@ -2,6 +2,8 @@
 
 *Built by [Ten Trillion Triangles](https://tentrilliontriangles.com) — TPipe is the Agent Operating Environment.*
 
+> ⚠️ **Startup License Branch** — This branch uses the TPipe Startup License (free below $1M revenue, closed-source). For AGPL-3.0, use the [`main`](https://github.com/ten-trillion-triangles/TPipe/tree/main) branch.
+
 ## Prerequisites
 
 ### Required Versions

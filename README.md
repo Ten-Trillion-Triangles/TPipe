@@ -4,6 +4,12 @@
 
 **TPipe is the Agent Operating Environment**
 
+---
+
+> ⚠️ **Startup License Branch** — This branch carries the TPipe Startup License, a free closed-source license for companies under $1M annual revenue. If you're looking for the **open-source AGPL-3.0** version of TPipe, use the default `main` branch instead. See [TPipe Pricing](https://tentrilliontriangles.com/pricing) for full licensing details.
+
+---
+
 TPipe provides the managed substrate for AI agents, moving beyond simple library wrappers into a production-grade runtime. It treats LLM interactions as data flowing through a managed plumbing system: **Pipes** (Valves) transport data, **Pipelines** (Mainlines) route it, and **ContextWindow**/**ContextBank** (Reservoirs) provide persistent state. Built on Kotlin and GraalVM, it provides strict resource accounting, secure sandboxing, and structured reasoning for production-grade autonomous systems.
 
 ## Different by Design: Substrate vs. Harness
@@ -188,9 +194,11 @@ dependencies {
 
 ## Licensing
 
+> ⚠️ **This branch uses the TPipe Startup License** — free for companies under $1M/year, no source release required. For the AGPL-3.0 open-source version, use the `main` branch.
+
 TPipe is triple-licensed to meet the needs of both open-source developers and enterprise organizations.
 
-*   **Open Source**: Licensed under the **GNU Affero General Public License v3 (AGPL-3.0)**.
+*   **Open Source (AGPL-3.0)**: Available on the [`main`](https://github.com/ten-trillion-triangles/TPipe/tree/main) branch. Full open-source rights — requires derivative works to also be open-source.
 *   **Startup**: Free closed-source license for companies under $1M annual revenue — see [TPipe Pricing](https://tentrilliontriangles.com/pricing).
 *   **Commercial**: For closed-source applications and proprietary integrations above $1M revenue. See [TPipe Pricing](https://tentrilliontriangles.com/pricing) for tiers and terms.
 
