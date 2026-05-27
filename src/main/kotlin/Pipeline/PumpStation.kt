@@ -409,6 +409,12 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var judgeAgent: P2PInterface? = null
 
     /**
+     * Optional builder function to generate the [judgeAgent] on the fly. When non-null this will completely
+     * override whatever is set for judgeAgent.
+     */
+    private var judgeAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+
+    /**
      * REQUIRED: This agent evaluates what the next steps in the harness needs to be, and dispatches the to the
      * next path. (Equal to a tool call, or turn in traditional agent harnesses.) If null, or if a [Splitter] has
      * been assigned to this an illegal argument exception will be thrown.
@@ -423,6 +429,26 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var dispatchAgent: P2PInterface? = null
 
     /**
+     * Optional builder function to generate [dispatchAgent] on the fly, overrides any value set to dispatch agent
+     * when not null.
+     */
+    private var dispatchAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+
+
+    /**
+     * Optional agent that is able to intervene with path calls. Can be enabled for things like enforcing specific
+     * retries when a path has an error, requring an agent to call a specific path under a specific condtition etc.
+     * When this fires it will investigate its assignment, and
+     */
+    private var interventionAgent: P2PInterface? = null
+
+    /**
+     * Optional builder function for the intervention agent that overrides [interventionAgent] at runtime each
+     * time it would be called.
+     */
+    private var interventionAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+
+    /**
      * Optional background lorebook agent. Invoked as the first background agent in the harness if present.
      * Is used to update the lorebook of the [PumpStation] internal context window/minibank.
      */
@@ -433,7 +459,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * to ensure a thread safe, and stateless implementation. If not assigned, the PumpStation will attempt to
      * duplicate the agent using reflection.
      */
-    private var lorebookAgentBuilderFunction : (suspend () -> P2PInterface)? = null
+    private var lorebookAgentBuilderFunction : (suspend (harness: PumpStation) -> P2PInterface)? = null
 
     /**
      * Optional background agent to generate summaries of the events occurring in the harness for compaction, and
@@ -446,7 +472,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * to ensure a thread safe, and stateless implementation. If not assigned, the PumpStation will attempt to
      * duplicate the agent using reflection.
      */
-    private var summaryAgentBuilderFunction: (suspend (content: MultimodalContent) -> P2PInterface)? = null
+    private var summaryAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
 
     /**
      * Allows the user to add additional required agents between the output of dispatch, and the return to the judge
@@ -458,7 +484,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * Alternate set of bindable builder functions. When invoked each will be invoked in order.
      * If this is bound, it will override the [additionalHarnessAgents] variable.
      */
-    private var additionalHarnessAgentBuilderFuncList: MutableList<(suspend () -> P2PInterface)>? = null
+    private var additionalHarnessAgentBuilderFuncList: MutableList<(suspend (harness: PumpStation) -> P2PInterface)>? = null
 
     /**
      * Optional goal agent. This agent can be used to scan the work done by the harness once the harness is in an
@@ -468,6 +494,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * This can be seen as effectively the same as a ralph loop in terms of enforcement.
      */
     private var goalAgent: P2PInterface? = null
+
+
+    /**
+     * Optional bindable builder function. Allows for a dynamically generated agent at runtime. If non-null
+     * [goalAgent] will be ignored and this will be invoked to generate the valid agent object at runtime.
+     */
+    private var goalAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
 
     /**
      * Stored paths on this harness. Each path is mapped by its name from inside the path object, and the
@@ -483,11 +516,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     private val reservePaths: MutableMap<String, PathObject> = mutableMapOf()
 
-    /**
-     * Optional bindable builder function. Allows for a dynamically generated agent at runtime. If non-null
-     * [goalAgent] will be ignored and this will be invoked to generate the valid agent object at runtime.
-     */
-    private var goalAgentBuilderFunction: (suspend () -> P2PInterface)? = null
+
 
 //--------------------------------------------------Config--------------------------------------------------------------
 
