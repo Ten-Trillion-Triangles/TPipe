@@ -144,7 +144,8 @@ data class PathDescriptionData(
     val pcpSchema: PcpContext?,
     val hasInternalAgent: Boolean,
     val hasExecutionFunction: Boolean,
-    val agentTypeName: String?
+    val runsInBackground: Boolean,
+    val agentTypeName: String? = null
 )
 
 /**
@@ -339,7 +340,8 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
             pcpSchema = pcpSchema,
             hasInternalAgent = hasAgent,
             hasExecutionFunction = hasExecution,
-            agentTypeName = agentTypeName
+            agentTypeName = agentTypeName,
+            runsInBackground = runsInBackground,
         )
     }
 
