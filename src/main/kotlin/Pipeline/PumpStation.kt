@@ -467,7 +467,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     /**
      * Optional agent that is able to intervene with path calls. Can be enabled for things like enforcing specific
      * retries when a path has an error, requring an agent to call a specific path under a specific condtition etc.
-     * When this fires it will investigate its assignment, and
+     * When this fires it will investigate its assignment, and help reinforce correct agent behavior in responce to
+     * various path output calls.
+     *
+     * intervetionAgent is invoked post path execution after DITL validator and branch invocations, and is able to
+     * hook it's output automatically into the turn history system. This allows it to provide nudges, hints, and
+     * agressive suggestions to the agent about how it should handle the output of a given path when it detects
+     * intervenion and further guidance to steer the main dispatch and judge agents are required.
      */
     private var interventionAgent: P2PInterface? = null
 
@@ -754,7 +760,10 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * DITL function invoked just prior to the judge agent. Allows the developer to decide to shut down and end the
      * PumpStation harness loop based on logic.
      */
-    private var preInvokeFunction: (suspend (turnState: ContextWindow, harness: PumpStation) -> Boolean)? = null
+    private var preInvokeFunction: (suspend (turnState: ContextWindow, miniBank: MiniBank, harness: PumpStation) -> Boolean)? = null
+
+    
+    private var pathSafetyFunction: (suspend (targetPath: PathObject, schemaIn: String, harness: PumpStation) -> Boolean)? = null
 
     /**
      * DITL function invoked after the dispatch agent has generated its path output.
