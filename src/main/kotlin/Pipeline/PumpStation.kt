@@ -82,6 +82,27 @@ enum class PumpStationCompactionStrategy
 }
 
 /**
+ * Defines risk level for path. This determines if an attempt to call path requires a validator agent to
+ * kick on, or additional code to validate the safety of whatever the dispatcher agent is trying to call.
+ * Breaks down to three levels:
+ *
+ * Low: Considered safe and does not require a validator agent to investigate the path call.
+ *
+ * Medium: Considered unsafe enough that a validator agent should examine what tthe path call is about to be,
+ * what the dispatcher is trying to do, and weather it's about to defy orders, or do something stupid or destructive
+ * and intervene.
+ *
+ * High: Always considered dangerous and should fire a handler function to allow the human programmer to intervene
+ * as they see fit.
+ */
+enum class PathRiskLevel
+{
+    Low,
+    Medium,
+    High
+}
+
+/**
  * Defines the harness state of memory. Provided to the memory DITL function tto allow the coder
  * to quickly assess how memory was managed in a memory manage push.
  *
@@ -195,6 +216,12 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      * then passed out as the [MultimodalContent] object.
      */
     var pcpSchema: PcpContext? = null
+
+    /**
+     * Defines risk level for the path. Allows for the [PumpStation] to automatically intervene with
+     * validation agents, or human written DITL interrupts.
+     */
+    var riskLevel: PathRiskLevel = PathRiskLevel.Low
 
     /**
      * Configurable var to define the max number of concurrent agents allowed to be spawned. Acts as a passthrough
