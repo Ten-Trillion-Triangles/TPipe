@@ -455,13 +455,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * be resolved, OR token budget settings are not manually set in the PumpStation itself, an exception will be
      * thrown.
      */
-    private var dispatchAgent: P2PInterface? = null
+    private var dispatchAgent: Pipeline? = null
 
     /**
      * Optional builder function to generate [dispatchAgent] on the fly, overrides any value set to dispatch agent
      * when not null.
      */
-    private var dispatchAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+    private var dispatchAgentBuilderFunction: (suspend (harness: PumpStation) -> Pipeline)? = null
 
 
     /**
