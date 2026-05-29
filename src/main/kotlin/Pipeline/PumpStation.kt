@@ -756,7 +756,11 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     private var preInvokeFunction: (suspend (turnState: ContextWindow, miniBank: MiniBank, harness: PumpStation) -> Boolean)? = null
 
-    
+    /**
+     * DITL agent that is invoked to check path safety. When a path call is registered as medium risk or above. This agent
+     * will be called if valid to check if the path is valid or needs intervention.
+     */
+    private var pathSafetyAgent: P2PInterface? = null
 
     /**
      * DITL function invoked when a path request is made to a path listed as high risk [PathRiskLevel] or if a
