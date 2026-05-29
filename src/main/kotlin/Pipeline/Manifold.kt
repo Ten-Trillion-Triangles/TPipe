@@ -1688,9 +1688,9 @@ class Manifold : P2PInterface
                 val workerConverseHistory = extractJson<ConverseHistory>(workingContentObject.text)
                 if(workerConverseHistory != null)
                 {
-                    agentRequest.prompt = serializeConverseHistory(workerConverseHistory)
+                    agentRequest.prompt = ""
+                    agentRequest.content = serializeConverseHistory(workerConverseHistory)
                     agentRequest.promptSchema = InputSchema.json
-                    agentRequest.content = ""
                 }
 
                 // Kill switch check before worker dispatch
