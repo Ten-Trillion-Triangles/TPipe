@@ -28,6 +28,8 @@ import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PResponse
 import com.TTT.PipeContextProtocol.PcPRequest
+import com.TTT.Pipeline.PathDescriptionList
+import com.TTT.Pipeline.PathRequest
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Structs.PipeSettings
@@ -2101,6 +2103,40 @@ abstract class Pipe : P2PInterface, ProviderInterface
             if(p2pAgentRequestsDescription.isNotEmpty()) defaultP2PDescription = p2pAgentRequestsDescription
 
             systemPrompt = systemPrompt + defaultP2PDescription
+        }
+
+        // Inject path descriptors from parent PumpStation when harness mode is enabled
+        if(autoInjectPathDataFromPumpStation)
+        {
+            val parentStation = getNearestPumpStationParent() as? com.TTT.Pipeline.PumpStation
+            if(parentStation != null)
+            {
+                val pathDescriptorList = parentStation.getVisiblePathDescriptorsForDispatch()
+                val pathDescriptorJson = serialize(pathDescriptorList, false)
+                val pathRequestSchema = examplePromptFor(PathRequest::class)
+
+                val defaultPathInjection = """
+                    |
+                    |You may invoke named paths to continue your task using the Path Invocation Protocol.
+                    |Available paths:
+                    |${pathDescriptorJson}
+                    |
+                    |The above defines each path you can call and what it does. You may call any path
+                    |to complete the task the user has requested of you.
+                    |
+                    |If you wish to call a path, return the following json:
+                    |${pathRequestSchema}
+                    |
+                    |When returning a path request json. You must always follow the schema exactly. You may not issue any
+                    |calls to paths that do not exist. You may not change the name of the path you are calling.
+                """.trimMargin()
+
+                systemPrompt = systemPrompt + defaultPathInjection
+
+                // Bind output to PathRequest schema
+                jsonOutput = pathRequestSchema
+                supportsNativeJson = false
+            }
         }
 
         //Bind context instructions and context json schema.
