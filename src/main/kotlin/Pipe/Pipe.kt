@@ -2117,18 +2117,55 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
                 val defaultPathInjection = """
                     |
-                    |You may invoke named paths to continue your task using the Path Invocation Protocol.
+                    |=== Path Invocation Protocol (MANDATORY) ===
+                    |
+                    |You MUST use the paths below to continue your task. This is not optional — the harness
+                    |WILL reject any output that does not conform to the PathRequest schema.
+                    |
                     |Available paths:
                     |${pathDescriptorJson}
                     |
-                    |The above defines each path you can call and what it does. You may call any path
-                    |to complete the task the user has requested of you.
+                    |=== Calling a Path ===
+                    |To call a path, you MUST return a valid PathRequest JSON object:
+                    |{
+                    |    "pathName": "the exact path name from the list above",
+                    |    "inputData": { ... path-specific input fields ... }
+                    |}
                     |
-                    |If you wish to call a path, return the following json:
+                    |The "inputData" schema for each path is shown in the path descriptor above under "inputSchema".
+                    |Do NOT invent fields. Do NOT omit required fields. Do NOT call paths not listed above.
+                    |
+                    |=== Calling Paths with PCP Schemas ===
+                    |If a path has a "pcpSchema" section in its descriptor, that path's inputData MUST conform
+                    |to the PCP function's input format defined in that pcpSchema. The pcpSchema shows:
+                    |  - functionName: the PCP function to invoke
+                    |  - tPipeContextOptions / stdioContextOptions / httpContextOptions / pythonContextOptions / etc.
+                    |  - params (where "isRequired" indicates required vs optional fields)
+                    |
+                    |To call a PCP-enabled path:
+                    |  1. Set "pathName" to the path's exact name
+                    |  2. For "inputData", construct the PCP call exactly as described in that path's pcpSchema:
+                    |     - Set tPipeContextOptions.functionName to the PCP function name
+                    |     - Set tPipeContextOptions.callParams to a map of argument names → values
+                    |       OR set tPipeContextOptions.argumentsOrFunctionParams to a list of positional values
+                    |     - For stdio/http/python/etc calls, populate the respective context options accordingly
+                    |  3. Include ALL required params (isRequired=true). Optional params may be omitted.
+                    |
+                    |=== Rules (ALL STRICTLY ENFORCED) ===
+                    |1. You MUST only call paths listed above — no invented path names
+                    |2. You MUST follow the exact inputSchema for the path you are calling
+                    |3. You MUST provide all required inputData fields for the selected path
+                    |4. For PCP paths: you MUST follow the PCP function's parameter schema exactly
+                    |5. You MUST NOT change the name of the path you are calling
+                    |6. You MUST return valid JSON matching the PathRequest schema below
+                    |
+                    |PathRequest schema:
                     |${pathRequestSchema}
                     |
-                    |When returning a path request json. You must always follow the schema exactly. You may not issue any
-                    |calls to paths that do not exist. You may not change the name of the path you are calling.
+                    |=== Output Requirement ===
+                    |Your final response must be a PathRequest JSON object. Do not return any other format.
+                    |If you do not need to call a path, return: {"pathName": "", "inputData": {}}
+                    |
                 """.trimMargin()
 
                 systemPrompt = systemPrompt + defaultPathInjection
