@@ -44,6 +44,9 @@ object EnumMappings {
                 KotlinConverseRole.system -> SYSTEM.cValue
                 KotlinConverseRole.agent -> TOOL.cValue
                 KotlinConverseRole.developer -> FUNCTION.cValue
+                KotlinConverseRole.tool_response -> VISUAL.cValue
+                KotlinConverseRole.pcp_response -> VISUAL.cValue
+                KotlinConverseRole.mcp_response -> VISUAL.cValue
             }
         }
     }
