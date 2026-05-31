@@ -177,4 +177,21 @@ class BinaryHandle(
         result = 31 * result + (filename?.hashCode() ?: 0)
         return result
     }
+
+    /**
+     * Creates a deep copy of this BinaryHandle.
+     * The byte array is copied using clone() to ensure independence.
+     * @return A new BinaryHandle with copied data
+     */
+    fun clone(): BinaryHandle {
+        return BinaryHandle(
+            variant = this.variant,
+            bytes = this.bytes?.clone(),
+            base64Data = this.base64Data,
+            cloudRef = this.cloudRef,
+            textDocRef = this.textDocRef,
+            mimeType = this.mimeType,
+            filename = this.filename
+        )
+    }
 }

@@ -33,7 +33,8 @@ class PipeSettingsHandle private constructor(
     var temperatureOverride: Float? = null,  // override Pipe's default temperature
     var topP: Float? = null,  // nucleus sampling parameter
     var topK: Int? = null,  // top-k sampling parameter
-    var stopSequences: List<String>? = null  // custom stop sequences
+    var stopSequences: List<String>? = null,  // custom stop sequences
+    var repetitionPenalty: Float? = null  // repetition penalty parameter
 ) {
     fun setModel(model: String): PipeSettingsHandle {
         this.model = model
@@ -92,6 +93,11 @@ class PipeSettingsHandle private constructor(
 
     fun setStopSequences(sequences: List<String>): PipeSettingsHandle {
         this.stopSequences = sequences
+        return this
+    }
+
+    fun setRepetitionPenalty(penalty: Float): PipeSettingsHandle {
+        this.repetitionPenalty = penalty
         return this
     }
 
