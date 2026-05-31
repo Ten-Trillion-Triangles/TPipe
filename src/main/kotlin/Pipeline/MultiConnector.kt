@@ -11,6 +11,8 @@ import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PResponse
 import com.TTT.P2P.P2PTransport
+import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Structs.PipeSettings
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.RuntimeState
 import kotlinx.coroutines.async
@@ -53,6 +55,12 @@ class MultiConnector : P2PInterface
      */
     @RuntimeState
     private var containerObject: Any? = null
+
+    /**
+     * Reference to the parent P2PInterface when this MultiConnector is nested inside a complex container.
+     */
+    @RuntimeState
+    private var parentInterface: P2PInterface? = null
     @kotlinx.serialization.Transient
     private var _killSwitch: com.TTT.P2P.KillSwitch? = null
     override var killSwitch: com.TTT.P2P.KillSwitch?
@@ -105,6 +113,13 @@ class MultiConnector : P2PInterface
         containerObject = container
     }
 
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
+    }
+
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
     override fun getPipelinesFromInterface(): List<Pipeline>
     {
         return connectors.flatMap { it.getPipelinesFromInterface() }
@@ -118,6 +133,30 @@ class MultiConnector : P2PInterface
             return connectors.first().executeP2PRequest(request)
         }
         return null
+    }
+
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
+    {
+        for (connector in connectors)
+        {
+            for (pipeline in connector.getPipelinesFromInterface())
+            {
+                pipeline.setTokenBudgetRecursive(budget)
+            }
+        }
+    }
+
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        for (connector in connectors)
+        {
+            for (pipeline in connector.getPipelinesFromInterface())
+            {
+                pipeline.setPipeSettingsRecursively(settings)
+            }
+        }
     }
 
 //============================================== MultiConnector ========================================================
@@ -288,6 +327,7 @@ class MultiConnector : P2PInterface
     fun add(connector: Connector): MultiConnector
     {
         connectors.add(connector)
+        connector.setParentInterface(this)
         return this
     }
     

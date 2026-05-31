@@ -621,4 +621,223 @@ object Dictionary
         }
     }
 
+    /**
+     * Splits text into chunks where each chunk is at most [maxTokens] in size using the same token counting
+     * logic as [countTokens]. Chunks are formed by greedily accumulating words until the token budget
+     * for that chunk is exhausted, then beginning a new chunk.
+     *
+     * @param text Input text to split into token-bounded chunks.
+     * @param maxTokens Maximum token count per chunk. Must be greater than 0.
+     * @param countSubWordsInFirstWord Token counting parameter - count subwords in first word.
+     * @param favorWholeWords Token counting parameter - prefer whole words over subwords.
+     * @param countOnlyFirstWordFound Token counting parameter - only count first word match.
+     * @param splitForNonWordChar Token counting parameter - split on non-word characters.
+     * @param alwaysSplitIfWholeWordExists Token counting parameter - always split if whole word exists.
+     * @param countSubWordsIfSplit Token counting parameter - count subwords after splitting.
+     * @param nonWordSplitCount Token counting parameter - character count per token for non-words.
+     * @param tokenCountingBias Token counting bias multiplier applied to final token count.
+     * @param overlapTokens Number of tokens to overlap between consecutive chunks. Defaults to 0
+     *                       (no overlap). When > 0, the last N tokens of chunk N are repeated as the
+     *                       first N tokens of chunk N+1 to preserve context continuity.
+     * @param preserveWordBoundary If true, a chunk will not be emitted if adding the next word would
+     *                              exceed maxTokens AND that word alone fits within maxTokens — the
+     *                              word starts a new chunk instead. If false, the word is forced into
+     *                              the current chunk even if it pushes over the budget.
+     * @return List of text chunks, each containing at most [maxTokens] tokens. Empty chunks are omitted.
+     */
+    fun chunkByTokens(
+        text: String,
+        maxTokens: Int,
+        countSubWordsInFirstWord: Boolean = true,
+        favorWholeWords: Boolean = true,
+        countOnlyFirstWordFound: Boolean = false,
+        splitForNonWordChar: Boolean = true,
+        alwaysSplitIfWholeWordExists: Boolean = false,
+        countSubWordsIfSplit: Boolean = false,
+        nonWordSplitCount: Int = 4,
+        tokenCountingBias: Double = 0.0,
+        overlapTokens: Int = 0,
+        preserveWordBoundary: Boolean = true
+    ): List<String>
+    {
+        if(text.isEmpty() || maxTokens <= 0) return listOf()
+
+        val words = text.split(" ")
+        if(words.isEmpty()) return listOf()
+
+        val chunks = mutableListOf<String>()
+        var currentChunkWords = mutableListOf<String>()
+        var currentChunkTokenCount = 0
+
+        val count = { word: String ->
+            countTokens(
+                word, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
+            )
+        }
+
+        for(word in words)
+        {
+            if(word.isEmpty()) continue
+
+            val wordTokens = count(word)
+            val nextChunkTokenCount = if(currentChunkWords.isEmpty())
+            {
+                wordTokens
+            }
+            else
+            {
+                val trialChunk = currentChunkWords.joinToString(" ") + " " + word
+                countTokens(
+                    trialChunk, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
+                )
+            }
+
+            when
+            {
+                nextChunkTokenCount <= maxTokens -> {
+                    currentChunkWords.add(word)
+                    currentChunkTokenCount = nextChunkTokenCount
+                }
+
+                wordTokens <= maxTokens && preserveWordBoundary -> {
+                    if(currentChunkWords.isNotEmpty())
+                    {
+                        chunks.add(currentChunkWords.joinToString(" "))
+                    }
+                    currentChunkWords = mutableListOf(word)
+                    currentChunkTokenCount = wordTokens
+                }
+
+                else -> {
+                    if(currentChunkWords.isNotEmpty())
+                    {
+                        chunks.add(currentChunkWords.joinToString(" "))
+                    }
+                    currentChunkWords = mutableListOf(word)
+                    currentChunkTokenCount = wordTokens
+                }
+            }
+        }
+
+        if(currentChunkWords.isNotEmpty())
+        {
+            chunks.add(currentChunkWords.joinToString(" "))
+        }
+
+        // Apply overlap if requested
+        if(overlapTokens > 0 && chunks.size > 1)
+        {
+            return applyChunkOverlap(chunks, overlapTokens, countSubWordsInFirstWord, favorWholeWords,
+                countOnlyFirstWordFound, splitForNonWordChar, alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias)
+        }
+
+        return chunks
+    }
+
+    /**
+     * Applies token-based overlap between consecutive chunks by prepending tokens from the end of
+     * the previous chunk to the beginning of the next chunk.
+     *
+     * @param chunks The list of chunks to apply overlap to.
+     * @param overlapTokens Number of tokens from the end of the previous chunk to prepend.
+     * @param countSubWordsInFirstWord Token counting parameter.
+     * @param favorWholeWords Token counting parameter.
+     * @param countOnlyFirstWordFound Token counting parameter.
+     * @param splitForNonWordChar Token counting parameter.
+     * @param alwaysSplitIfWholeWordExists Token counting parameter.
+     * @param countSubWordsIfSplit Token counting parameter.
+     * @param nonWordSplitCount Token counting parameter.
+     * @param tokenCountingBias Token counting bias multiplier.
+     * @return New list of chunks with overlap applied.
+     */
+    private fun applyChunkOverlap(
+        chunks: List<String>,
+        overlapTokens: Int,
+        countSubWordsInFirstWord: Boolean,
+        favorWholeWords: Boolean,
+        countOnlyFirstWordFound: Boolean,
+        splitForNonWordChar: Boolean,
+        alwaysSplitIfWholeWordExists: Boolean,
+        countSubWordsIfSplit: Boolean,
+        nonWordSplitCount: Int,
+        tokenCountingBias: Double
+    ): List<String>
+    {
+        if(chunks.size < 2) return chunks
+
+        val result = mutableListOf<String>()
+        result.add(chunks[0])
+
+        for(i in 1 until chunks.size)
+        {
+            val previousChunk = result.last()
+            val previousWords = previousChunk.split(" ")
+
+            // Accumulate words from the end of previous chunk until we reach overlapTokens
+            val overlapWords = mutableListOf<String>()
+            var overlapTokenCount = 0
+
+            for(j in previousWords.indices.reversed())
+            {
+                val word = previousWords[j]
+                val wordTokens = countTokens(
+                    word, countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
+                    splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
+                )
+
+                if(overlapTokenCount + wordTokens <= overlapTokens)
+                {
+                    overlapWords.add(0, word)
+                    overlapTokenCount += wordTokens
+                }
+                else break
+            }
+
+            val overlapPrefix = overlapWords.joinToString(" ")
+            result[result.size - 1] = previousChunk
+            result.add(if(overlapPrefix.isNotEmpty()) "$overlapPrefix ${chunks[i]}" else chunks[i])
+        }
+
+        return result
+    }
+
+    /**
+     * Helper function to allow calling [chunkByTokens] using a [TruncationSettings] object instead of
+     * having to always fill the entire set of parameters. Pairs well with [com.TTT.Pipe.getTruncationSettings].
+     *
+     * @param text Input text to split into token-bounded chunks.
+     * @param maxTokens Maximum token count per chunk. Must be greater than 0.
+     * @param settings TruncationSettings containing all tokenization parameters.
+     * @param overlapTokens Number of tokens to overlap between consecutive chunks. Defaults to 0.
+     * @param preserveWordBoundary If true, a word that alone fits in maxTokens will start a new chunk
+     *                              rather than being forced into the current chunk over budget.
+     * @return List of text chunks, each containing at most [maxTokens] tokens. Empty chunks are omitted.
+     */
+    fun chunkByTokensWithSettings(
+        text: String,
+        maxTokens: Int,
+        settings: TruncationSettings,
+        overlapTokens: Int = 0,
+        preserveWordBoundary: Boolean = true
+    ): List<String>
+    {
+        return chunkByTokens(
+            text = text,
+            maxTokens = maxTokens,
+            countSubWordsInFirstWord = settings.countSubWordsInFirstWord,
+            favorWholeWords = settings.favorWholeWords,
+            countOnlyFirstWordFound = settings.countOnlyFirstWordFound,
+            splitForNonWordChar = settings.splitForNonWordChar,
+            alwaysSplitIfWholeWordExists = settings.alwaysSplitIfWholeWordExists,
+            countSubWordsIfSplit = settings.countSubWordsIfSplit,
+            nonWordSplitCount = settings.nonWordSplitCount,
+            tokenCountingBias = settings.tokenCountingBias,
+            overlapTokens = overlapTokens,
+            preserveWordBoundary = preserveWordBoundary
+        )
+    }
+
 }

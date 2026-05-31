@@ -171,7 +171,7 @@ class AnthropicApiModeTest
         assertNotNull(deserialized)
         assertEquals("claude-3-5-sonnet-20241022", deserialized.model)
         assertEquals(1, deserialized.messages.size)
-        assertTrue(deserialized.messages[0] is AnthropicMessage.UserMessage)
+        assertTrue(deserialized.messages[0].role == "user")
     }
 
     @Test
@@ -192,8 +192,8 @@ class AnthropicApiModeTest
         val deserialized = deserialize<AnthropicMessagesRequest>(json)
         assertNotNull(deserialized)
         assertEquals(2, deserialized.messages.size)
-        assertTrue(deserialized.messages[0] is AnthropicMessage.UserMessage)
-        assertTrue(deserialized.messages[1] is AnthropicMessage.AssistantMessage)
+        assertTrue(deserialized.messages[0].role == "user")
+        assertTrue(deserialized.messages[1].role == "assistant")
     }
 
     @Test
@@ -343,7 +343,7 @@ class AnthropicApiModeTest
         // user message should still be present
         assertEquals(1, deserialized.messages.size)
         // system should be removed from messages
-        assertTrue(deserialized.messages[0] is AnthropicMessage.UserMessage)
+        assertTrue(deserialized.messages[0].role == "user")
     }
 
     @Test
@@ -459,6 +459,6 @@ class AnthropicApiModeTest
         assertEquals("claude-3-5-sonnet-20241022", deserialized.model)
         assertEquals("You are a mathematician", deserialized.system)
         assertEquals(1, deserialized.messages.size)
-        assertTrue(deserialized.messages[0] is AnthropicMessage.UserMessage)
+        assertTrue(deserialized.messages[0].role == "user")
     }
 }

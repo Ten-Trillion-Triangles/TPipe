@@ -64,6 +64,26 @@ Retrieves reference to parent container.
 
 **Behavior:** Default implementation returns null. Enables access to parent container for context sharing, tracing integration, and hierarchical management in complex orchestration scenarios.
 
+#### `setParentInterface(parent: P2PInterface)`
+Sets the parent interface to any child P2PInterface object. This enables generic pass-through of interface data during complex container operations.
+
+**Behavior:** Default implementation is empty. Implementing classes should store the parent reference for hierarchical traversal and interface delegation. Used by container classes (Pipeline, Manifold, Junction, Connector, Splitter, MultiConnector) and Pipe to maintain parent-child relationships.
+
+#### `getParentP2PInterface(): P2PInterface?`
+Retrieves the parent P2PInterface owned by the object above the current object.
+
+**Behavior:** Default implementation returns null. Enables upward traversal of the P2PInterface ownership tree. Used for recursive operations and hierarchical context propagation.
+
+#### `getTopLevelParentInterface(): P2PInterface?`
+Recursively searches for the top-level parent interface by traversing up the ownership tree.
+
+**Behavior:** Default implementation follows the parent chain until reaching a node with no parent. Returns the root of the hierarchy.
+
+#### `getNearestPumpStationParent(): P2PInterface?`
+Traverses upward through the P2PInterface ownership tree to find the nearest `PumpStation`.
+
+**Behavior:** Returns the first `PumpStation` ancestor found, or null if none exists in the parent chain. Required because PumpStation contains features like paths that need to be pulled in by child agents responsible for routing.
+
 ---
 
 ### Pipeline Access

@@ -1,5 +1,7 @@
 # First Steps - Hello World with TPipe
 
+*From [Ten Trillion Triangles](https://tentrilliontriangles.com) — makers of TPipe.*
+
 > 💡 **Tip:** This guide walks you through creating your first TPipe application. Think of your first `Pipe` as connecting your main water line—once it's flowing, you can route it anywhere.
 
 ## Prerequisites
@@ -41,8 +43,8 @@ repositories {
 }
 
 dependencies {
-    implementation("com.TTT:TPipe:0.0.1")
-    implementation("com.TTT:TPipe-Bedrock:0.0.1")
+    implementation("com.TTT:TPipe:1.0.0")
+    implementation("com.TTT:TPipe-Bedrock:1.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-io-core:0.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
 }

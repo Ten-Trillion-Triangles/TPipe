@@ -1,15 +1,15 @@
 package com.TTT.Debug
 
 /**
- * Produces text and HTML reports from trace streams, with special handling for harness-level orchestration
- * traces such as Junction and Manifold.
+ * Produces text && HTML reports from trace streams, with special handling for harness-level orchestration
+ * traces such as Junction && Manifold.
  */
 class TraceVisualizer
 {
     /**
      * Render a human-readable flow chart for a trace stream.
      *
-     * Junction and other harness traces get a dedicated heading so their orchestration steps are easy to
+     * Junction && other harness traces get a dedicated heading so their orchestration steps are easy to
      * distinguish from ordinary pipe traces.
      *
      * @param trace The trace events to render.
@@ -19,7 +19,7 @@ class TraceVisualizer
         val flowChart = StringBuilder()
         
         // Detect whether the trace belongs to a container harness so the visualizer can pick the correct
-        // heading and event symbols for Junction's discussion/workflow lifecycle.
+        // heading && event symbols for Junction's discussion/workflow lifecycle.
         val isManifoldTrace = trace.any { it.eventType.name.startsWith("MANIFOLD_") }
         val isJunctionTrace = trace.any { it.eventType.name.startsWith("JUNCTION_") }
         val isDistributionGridTrace = trace.any { it.eventType.name.startsWith("DISTRIBUTION_GRID_") }
@@ -264,7 +264,7 @@ class TraceVisualizer
     /**
      * Render an HTML report for the supplied trace stream.
      *
-     * Junction traces use a custom report path so workflow phases, handoff events, and discussion rounds can
+     * Junction traces use a custom report path so workflow phases, handoff events, && discussion rounds can
      * be grouped into a harness-aware presentation.
      *
      * @param trace The trace events to render.
@@ -272,12 +272,16 @@ class TraceVisualizer
      */
     fun generateHtmlReport(trace: List<TraceEvent>): String {
         // Junction traces are rendered with their own report layout because the harness can emit both
-        // discussion and workflow phase events, and those need to be grouped differently from plain pipes.
+        // discussion && workflow phase events, && those need to be grouped differently from plain pipes.
         val isJunctionTrace = trace.any { it.eventType.name.startsWith("JUNCTION_") }
         val isManifoldTrace = trace.any { it.eventType.name.startsWith("MANIFOLD_") }
         val isDistributionGridTrace = trace.any { it.eventType.name.startsWith("DISTRIBUTION_GRID_") }
+        val isSplitterTrace = trace.any { it.eventType.name.startsWith("SPLITTER_") }
 
-        return if(isDistributionGridTrace) {
+        return if(isSplitterTrace) {
+            generateSplitterHtmlReport(trace)
+        }
+        else if(isDistributionGridTrace) {
             generateDistributionGridHtmlReport(trace)
         }
         else if(isJunctionTrace) {
@@ -309,12 +313,15 @@ class TraceVisualizer
             graph.append("    click ${node.nodeId} scrollToEvent\n")  // ADD: Click handler
         }
         
-        // Add connections and styling based on events
+        // Add connections && styling based on events
         var prevNode: String? = null
         trace.forEach { event ->
             val nodeKey = TraceNodeMapper.resolveNodeKey(event)
             val currentNode = nodeMap[nodeKey]
-            
+                ?: nodeMap.entries.find { it.key.startsWith(nodeKey) && it.key.count { it == ':' } == nodeKey.count { it == ':' } + 1 }?.value
+                ?: nodeMap.entries.find { nodeKey.startsWith(it.key) && nodeKey.count { it == ':' } == it.key.count { it == ':' } + 1 }?.value
+                ?: nodeMap[event.pipeName]
+
             if(prevNode != null && currentNode != null && prevNode != currentNode)
             {
                 graph.append("    $prevNode --> $currentNode\n")
@@ -383,7 +390,7 @@ class TraceVisualizer
             }
             else if(event.metadata.isNotEmpty() || event.content?.text?.isNotBlank() == true)
             {
-                // Separate reasoning content, inputText, and outputText from other metadata for better display
+                // Separate reasoning content, inputText, && outputText from other metadata for better display
                 val reasoningKeys = listOf("modelReasoning", "reasoningPipeContent", "reasoningContent")
                 val reasoningKey = event.metadata.keys.find { it in reasoningKeys }
                 val inputKey = event.metadata.keys.find { it == "inputText" }
@@ -768,7 +775,7 @@ class TraceVisualizer
     }
 
     /**
-     * Generates DistributionGrid-specific HTML report with unified execution, discovery, and hosted-listing views.
+     * Generates DistributionGrid-specific HTML report with unified execution, discovery, && hosted-listing views.
      */
     private fun generateDistributionGridHtmlReport(trace: List<TraceEvent>): String
     {
@@ -864,12 +871,12 @@ class TraceVisualizer
                     </div>
 
                     <div class="grid-section orchestration">
-                        <h2>🎯 Routing, Handoff, and Decision Timeline</h2>
+                        <h2>🎯 Routing, Handoff, && Decision Timeline</h2>
                         $orchestrationTable
                     </div>
 
                     <div class="grid-section activity">
-                        <h2>🗂️ Discovery, Registry, and Public Listing Activity</h2>
+                        <h2>🗂️ Discovery, Registry, && Public Listing Activity</h2>
                         $activityTable
                     </div>
                 </div>
@@ -886,6 +893,67 @@ class TraceVisualizer
             </html>
         """.trimIndent()
     }
+    /**
+     * Generates Splitter-specific HTML report with parallel pipeline visualization.
+     */
+    private fun generateSplitterHtmlReport(trace: List<TraceEvent>): String
+    {
+        val nodes = TraceNodeMapper.mapEventsToNodes(trace)
+        val mermaidGraph = generateMermaidFlowGraph(trace, nodes)
+        val detailsTable = generateDetailsTable(trace)
+        val javascript = TraceInteractivity.generateJavaScript(nodes)
+
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>TPipe Splitter Execution Flow</title>
+                <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+                <style>
+                    body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #f5f5f5; }
+                    .container { max-width: 1400px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                    h1 { color: #333; text-align: center; margin-bottom: 30px; }
+                    h1 span { color: #6366f1; }
+                    .flow-section { margin-bottom: 40px; }
+                    .details-section { margin-top: 40px; }
+                    .instruction { text-align: center; color: #666; font-style: italic; margin-bottom: 20px; }
+                    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+                    th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+                    th { background-color: #6366f1; color: white; font-weight: 600; }
+                    tr:nth-child(even) { background-color: #f8f9fa; }
+                    .mermaid { text-align: center; background: white; padding: 20px; border-radius: 8px; }
+                    .trace-item.highlighted { background-color: #fff3cd !important; border-left: 4px solid #ffc107; }
+                    .flash-highlight { animation: flashEffect 2s ease-in-out; }
+                    @keyframes flashEffect { 0%, 100% { background-color: inherit; } 50% { background-color: #ffeb3b; } }
+                    .trace-item { transition: background-color 0.3s ease; cursor: pointer; }
+                    .trace-item:hover { background-color: #f8f9fa; }
+                    #trace-details-table { scroll-margin-top: 20px; }
+                    .node rect { cursor: pointer; transition: stroke-width 0.2s ease; }
+                    .node:hover rect { stroke-width: 3px !important; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1><span>&#9660;</span> TPipe Splitter Execution Flow</h1>
+
+                    <div class="flow-section">
+                        <h2>&#128202; Interactive Flow Graph</h2>
+                        <p class="instruction">&#128161; Click on any node to jump to its events in the table below</p>
+                        <div class="mermaid">$mermaidGraph</div>
+                    </div>
+
+                    <div class="details-section">
+                        <h2>&#128203; Execution Details</h2>
+                        $detailsTable
+                    </div>
+                </div>
+
+                $javascript
+            </body>
+            </html>
+        """.trimIndent()
+    }
+
     
     /**
      * Generates standard HTML report for non-Manifold traces.
@@ -1115,12 +1183,12 @@ class TraceVisualizer
                 <div class="summary-card">
                     <h3>Discovery Activity</h3>
                     <div class="value">$discoveryEvents</div>
-                    <div class="subtext">Bootstrap, registry, and admission activity</div>
+                    <div class="subtext">Bootstrap, registry, && admission activity</div>
                 </div>
                 <div class="summary-card">
                     <h3>Public Listing Activity</h3>
                     <div class="value">$listingEvents</div>
-                    <div class="subtext">Publish, update, renew, remove, and auto-renew</div>
+                    <div class="subtext">Publish, update, renew, remove, && auto-renew</div>
                 </div>
             </div>
         """.trimIndent()

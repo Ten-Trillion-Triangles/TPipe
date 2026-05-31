@@ -144,6 +144,12 @@ var currentPipelineId: String? = null
 ```
 ID of currently executing pipeline. Used for tracking and coordination.
 
+**`parentInterface`**
+```kotlin
+var parentInterface: P2PInterface? = null
+```
+Parent P2PInterface reference for hierarchical traversal. Set automatically when this pipe is embedded in a container or assigned to a pipeline. Used for recursive operations and context propagation.
+
 ## Public Functions
 
 ### Configuration

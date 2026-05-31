@@ -2690,6 +2690,12 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        private var parentInterface: P2PInterface? = null
+
+        override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
         override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var handshakeCount: Int = 0
@@ -2871,6 +2877,12 @@ class DistributionGridRemoteHandoffTest
         private val delegateGrid: DistributionGrid
     ) : P2PInterface
     {
+        private var parentInterface: P2PInterface? = null
+
+        override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
         override var killSwitch: com.TTT.P2P.KillSwitch? = null
         var handshakeCount: Int = 0
             private set
@@ -3406,6 +3418,12 @@ class DistributionGridRemoteHandoffTest
         private var requirements: P2PRequirements? = null
         private var transport: P2PTransport? = null
         private var containerRef: Any? = null
+        private var parentInterface: P2PInterface? = null
+
+        override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
         override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var localExecutionCount: Int = 0
@@ -3475,6 +3493,12 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        private var parentInterface: P2PInterface? = null
+
+        override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
         override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var handshakeCount: Int = 0
@@ -3646,6 +3670,12 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        private var parentInterface: P2PInterface? = null
+
+        override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
         override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var handshakeCount: Int = 0
@@ -3793,6 +3823,12 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        private var parentInterface: P2PInterface? = null
+
+        override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
         override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var handshakeCount: Int = 0
@@ -3984,6 +4020,12 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        private var parentInterface: P2PInterface? = null
+
+        override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
         override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         override fun setP2pDescription(description: P2PDescriptor)
@@ -4091,6 +4133,12 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        private var parentInterface: P2PInterface? = null
+
+        override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
         override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         override fun setP2pDescription(description: P2PDescriptor)
@@ -4227,6 +4275,12 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        private var parentInterface: P2PInterface? = null
+
+        override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
         override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         override fun setP2pDescription(description: P2PDescriptor)
@@ -4387,6 +4441,12 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        private var parentInterface: P2PInterface? = null
+
+        override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
         override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var handshakeCount: Int = 0
@@ -4534,6 +4594,12 @@ class DistributionGridRemoteHandoffTest
             allowExternalConnections = true,
             acceptedContent = mutableListOf(SupportedContentTypes.text)
         )
+        private var parentInterface: P2PInterface? = null
+
+        override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
         override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
         var handshakeCount = 0

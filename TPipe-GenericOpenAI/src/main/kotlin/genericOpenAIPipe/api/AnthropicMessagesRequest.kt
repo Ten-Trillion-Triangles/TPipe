@@ -31,34 +31,13 @@ data class AnthropicMessagesRequest(
 
 /**
  * Anthropic message with role and content blocks.
- * Note: Anthropic only supports "user" and "assistant" roles.
- * System prompts are passed separately in the request, not in messages.
+ * Uses `type` field with values "user" or "assistant" (Anthropic API format).
  */
 @Serializable
-sealed class AnthropicMessage {
-
-    /**
-     * User message from the conversation.
-     *
-     * @property content List of content blocks (text and/or images)
-     */
-    @Serializable
-    @SerialName("user")
-    data class UserMessage(
-        val content: List<AnthropicContentBlock>
-    ) : AnthropicMessage()
-
-    /**
-     * Assistant message from the model.
-     *
-     * @property content List of content blocks (text and/or tool use results)
-     */
-    @Serializable
-    @SerialName("assistant")
-    data class AssistantMessage(
-        val content: List<AnthropicContentBlock>
-    ) : AnthropicMessage()
-}
+data class AnthropicMessage(
+    val role: String,
+    val content: List<AnthropicContentBlock>
+)
 
 /**
  * Content blocks within Anthropic messages.

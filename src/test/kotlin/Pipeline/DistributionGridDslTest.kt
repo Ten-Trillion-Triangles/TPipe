@@ -428,8 +428,13 @@ class DistributionGridDslTest
         private var requirements: P2PRequirements? = null
         private var transport: P2PTransport? = null
         private var containerRef: Any? = null
+    private var parentInterface: P2PInterface? = null
         override var killSwitch: KillSwitch? = null
 
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        // no-op
+    }
         override fun setP2pDescription(description: P2PDescriptor)
         {
             descriptor = description

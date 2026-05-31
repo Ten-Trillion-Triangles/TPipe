@@ -1,5 +1,7 @@
 # Installation and Setup
 
+*Built by [Ten Trillion Triangles](https://tentrilliontriangles.com) — TPipe is the Agent Operating Environment.*
+
 ## Prerequisites
 
 ### Required Versions
@@ -75,13 +77,13 @@ repositories {
 
 dependencies {
     // Main TPipe library (required)
-    implementation("com.TTT:TPipe:0.0.1")
+    implementation("com.TTT:TPipe:1.0.0")
     
     // Provider-specific modules (choose what you need)
-    implementation("com.TTT:TPipe-Bedrock:0.0.1")  // AWS Bedrock support
-    implementation("com.TTT:TPipe-Ollama:0.0.1")   // Ollama support
-    implementation("com.TTT:TPipe-MCP:0.0.1")      // MCP support
-    implementation("com.TTT:TPipe-Defaults:0.0.1") // Default configurations
+    implementation("com.TTT:TPipe-Bedrock:1.0.0")  // AWS Bedrock support
+    implementation("com.TTT:TPipe-Ollama:1.0.0")   // Ollama support
+    implementation("com.TTT:TPipe-MCP:1.0.0")      // MCP support
+    implementation("com.TTT:TPipe-Defaults:1.0.0") // Default configurations
     
     // Required dependencies
     implementation("org.jetbrains.kotlinx:kotlinx-io-core:0.8.0")
@@ -100,7 +102,7 @@ For better dependency management, you can use a version catalog like TPipe does:
 [versions]
 kotlin-version = "2.2.20"
 ktor-version = "3.1.3"
-tpipe-version = "0.0.1"
+tpipe-version = "1.0.0"
 
 [libraries]
 tpipe-main = { module = "com.TTT:TPipe", version.ref = "tpipe-version" }

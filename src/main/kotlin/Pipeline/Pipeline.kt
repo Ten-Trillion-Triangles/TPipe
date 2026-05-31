@@ -17,6 +17,8 @@ import com.TTT.Pipe.PipeError
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenUsage
 import com.TTT.Pipe.PipeTimeoutStrategy
+import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Structs.PipeSettings
 import com.TTT.Util.copyPipeline
 import com.TTT.Util.deepCopy
 import com.TTT.Util.RuntimeState
@@ -233,6 +235,7 @@ class Pipeline : P2PInterface
      * to this pipeline or not based on compatibility and security standards.
      */
     private var p2PRequirements: P2PRequirements? = null
+    private var parentInterface: P2PInterface? = null
 
 
 
@@ -278,6 +281,13 @@ class Pipeline : P2PInterface
     {
         pipelineContainer = container
     }
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
+    }
+
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
 
     /**
      * Checks the kill switch if one is set. If token consumption exceeds the configured limits,
@@ -383,9 +393,26 @@ class Pipeline : P2PInterface
         return listOf(this)
     }
 
-
-    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
     {
+        for (pipe in getPipes())
+        {
+            pipe.setTokenBudgetRecursive(budget)
+        }
+    }
+
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        for (pipe in getPipes())
+        {
+            pipe.setPipeSettingsRecursively(settings)
+        }
+    }
+
+
+    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
         /** Start as "this" but we may need to alter our target if we need to copy "this" due to some change the
          *  requested be made during the p2p request operation.
          */
@@ -626,6 +653,7 @@ class Pipeline : P2PInterface
         {
             pipes.add(pipe)
             pipe.setPipelineRef(this)
+            pipe.setParentInterface(this)
         }
 
         return this
@@ -640,6 +668,7 @@ class Pipeline : P2PInterface
     {
         pipes.add(index, pipe)
         pipe.setPipelineRef(this)
+        pipe.setParentInterface(this)
         return this
     }
 
@@ -1079,7 +1108,8 @@ class Pipeline : P2PInterface
         for(pipe in pipes)
         {
             pipe.setPipelineRef(this)
-            
+            pipe.setParentInterface(this)
+
             // Apply pipeline-level timeout settings if enabled
             if(enablePipeTimeout) 
             {

@@ -24,16 +24,13 @@ fun AnthropicMessagesRequest.Companion.fromGenericOpenAI(request: GenericOpenAIC
     val systemMessage = request.messages.filter { it.role == "system" }.joinToString("\n") { (it.content as? genericOpenAIPipe.env.MessageContent.TextContent)?.text ?: "" }
     val nonSystemMessages = request.messages.filter { it.role != "system" }
 
-    val anthropicMessages = nonSystemMessages.map { msg ->
+    val anthropicMessages = nonSystemMessages.mapNotNull { msg ->
+        val textContent = (msg.content as? genericOpenAIPipe.env.MessageContent.TextContent)?.text ?: return@mapNotNull null
         when(msg.role)
         {
-            "user" -> AnthropicMessage.UserMessage(
-                content = listOf(AnthropicContentBlock.TextBlock((msg.content as genericOpenAIPipe.env.MessageContent.TextContent).text))
-            )
-            "assistant" -> AnthropicMessage.AssistantMessage(
-                content = listOf(AnthropicContentBlock.TextBlock((msg.content as genericOpenAIPipe.env.MessageContent.TextContent).text))
-            )
-            else -> throw IllegalArgumentException("Unsupported role: ${msg.role}")
+            "user" -> AnthropicMessage(role = "user", content = listOf(AnthropicContentBlock.TextBlock(text = textContent)))
+            "assistant" -> AnthropicMessage(role = "assistant", content = listOf(AnthropicContentBlock.TextBlock(text = textContent)))
+            else -> null
         }
     }
 

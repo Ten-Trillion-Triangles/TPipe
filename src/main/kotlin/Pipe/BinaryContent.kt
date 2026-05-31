@@ -153,6 +153,14 @@ data class MultimodalContent @OptIn(ExperimentalSerializationApi::class) constru
    var passPipeline: Boolean = false
 
     /**
+     * Allows the developer to fire an interupt signal. This is curretnly designed and used by [com.TTT.Pipeline.PumpStation]
+     * to signal to the harness, that specialized agents need to trigger a built in path, intervention point, or other
+     * interupt stage at various points inside the harness loop cycle.
+     */
+   @kotlinx.serialization.Serializable
+   var interuptPipeline: Boolean = false
+
+    /**
      * Allows the reasoning pipe system to be skipped. When toggled to true reasoning content won't be extracted,
      * and instead the system will treat it like the reasoning pipe never ran. This is particularly useful for skipping
      * dynamic reasoning cases like semantic compression, where a token budget may not have needed to deploy
@@ -212,6 +220,15 @@ data class MultimodalContent @OptIn(ExperimentalSerializationApi::class) constru
     fun terminate()
     {
         terminatePipeline = true
+    }
+
+    /**
+     * Trips the interupt signal which will be picked up at various stages by anything that implements interupts.
+     * Currently uses only by [com.TTT.Pipeline.PumpStation] for it's harness interupt systems.
+     */
+    fun interupt()
+    {
+        interuptPipeline = true
     }
 
     fun repeat()

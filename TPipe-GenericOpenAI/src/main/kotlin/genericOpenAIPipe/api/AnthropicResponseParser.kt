@@ -100,9 +100,9 @@ class AnthropicResponseParser(private val json: Json) : ResponseParser
      */
     private fun extractTextContent(contentBlocks: List<ResponseContentBlock>): String
     {
-        for (block in contentBlocks)
+        for(block in contentBlocks)
         {
-            when (block)
+            when(block)
             {
                 is ResponseContentBlock.TextContentBlock -> return block.text
                 is ResponseContentBlock.ThinkingBlock -> { /* Ignore for V1 */ }

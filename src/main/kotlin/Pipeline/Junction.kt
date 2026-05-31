@@ -23,7 +23,9 @@ import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipe.TruncationSettings
+import com.TTT.Structs.PipeSettings
 import com.TTT.PipeContextProtocol.Transport
 import com.TTT.Util.deepCopy
 import com.TTT.Util.deserialize
@@ -86,6 +88,8 @@ class Junction : P2PInterface
     private var p2pRequirements: P2PRequirements? = null
     @RuntimeState
     private var containerObject: Any? = null
+    @RuntimeState
+    private var parentInterface: P2PInterface? = null
     @kotlinx.serialization.Transient
     private var _killSwitch: com.TTT.P2P.KillSwitch? = null
     override var killSwitch: com.TTT.P2P.KillSwitch?
@@ -255,6 +259,13 @@ class Junction : P2PInterface
         containerObject = container
     }
 
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
+    }
+
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
     override fun getPipelinesFromInterface(): List<Pipeline>
     {
         // Junction exposes the pipelines from every registered binding so nested harnesses keep their own
@@ -289,6 +300,26 @@ class Junction : P2PInterface
         // Local execution is intentionally the same as the generic execution path so the harness behaves
         // identically whether it is invoked directly or through the P2P surface.
         return execute(content)
+    }
+
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
+    {
+        moderatorBinding?.component?.setTokenBudgetRecursive(budget)
+        for (binding in participantBindings)
+        {
+            binding.component.setTokenBudgetRecursive(budget)
+        }
+    }
+
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        moderatorBinding?.component?.setPipeSettingsRecursively(settings)
+        for (binding in participantBindings)
+        {
+            binding.component.setPipeSettingsRecursively(settings)
+        }
     }
 
 //----------------------------------------------Configuration------------------------------------------------------------
@@ -2235,6 +2266,7 @@ class Junction : P2PInterface
         {
             component.setContainerObject(this)
         }
+        component.setParentInterface(this)
     }
 
     /**

@@ -230,7 +230,7 @@ class AnthropicMessagesTest
         val deserialized = deserialize<genericOpenAIPipe.api.AnthropicMessagesRequest>(jsonResult)
         assertNotNull(deserialized)
         assertEquals(1, deserialized.messages.size)
-        assertTrue(deserialized.messages[0] is AnthropicMessage.UserMessage)
+        assertTrue(deserialized.messages[0].role == "user")
     }
 
     @Test
@@ -251,8 +251,8 @@ class AnthropicMessagesTest
         val deserialized = deserialize<genericOpenAIPipe.api.AnthropicMessagesRequest>(jsonResult)
         assertNotNull(deserialized)
         assertEquals(2, deserialized.messages.size)
-        assertTrue(deserialized.messages[0] is AnthropicMessage.UserMessage)
-        assertTrue(deserialized.messages[1] is AnthropicMessage.AssistantMessage)
+        assertTrue(deserialized.messages[0].role == "user")
+        assertTrue(deserialized.messages[1].role == "assistant")
     }
 
     @Test

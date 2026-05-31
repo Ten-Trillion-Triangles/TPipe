@@ -21,6 +21,7 @@ import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Structs.PipeSettings
 import com.TTT.Pipe.deepCopy
 import com.TTT.Pipe.toTokenBudgetSettings
 import com.TTT.Pipe.toTruncationSettings
@@ -71,6 +72,8 @@ class Manifold : P2PInterface
     private var p2PRequirements: P2PRequirements? = null
     @RuntimeState
     private var containerObject: Any? = null
+    @RuntimeState
+    private var parentInterface: P2PInterface? = null
 
     override fun setP2pDescription(description: P2PDescriptor)
     {
@@ -112,6 +115,13 @@ class Manifold : P2PInterface
         containerObject = container
     }
 
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
+    }
+
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
     override fun getPipelinesFromInterface(): List<Pipeline>
     {
         return listOf(managerPipeline) + workerPipelines
@@ -125,6 +135,26 @@ class Manifold : P2PInterface
         val promptResult = execute(request.prompt)
         val newResponse = P2PResponse(output = promptResult)
         return newResponse
+    }
+
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
+    {
+        managerPipeline.setTokenBudgetRecursive(budget)
+        for (workerPipeline in workerPipelines)
+        {
+            workerPipeline.setTokenBudgetRecursive(budget)
+        }
+    }
+
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        managerPipeline.setPipeSettingsRecursively(settings)
+        for (workerPipeline in workerPipelines)
+        {
+            workerPipeline.setPipeSettingsRecursively(settings)
+        }
     }
 
 //=============================================Properties===============================================================
@@ -794,6 +824,7 @@ class Manifold : P2PInterface
          * the user supplied a descriptor or requirements that makes the pipeline global.
          */
         managerPipeline.setContainerObject(this)
+        managerPipeline.setParentInterface(this)
         managerPipeline.setP2pTransport(descriptor.transport)
         managerPipeline.setP2pDescription(descriptor)
         managerPipeline.setP2pRequirements(requirements)
@@ -921,6 +952,7 @@ class Manifold : P2PInterface
              * failure if we don't have any agents registered.
              */
             pipeline.setContainerObject(this)
+            pipeline.setParentInterface(this)
             pipeline.setP2pTransport(transport)
             pipeline.setP2pDescription(workerDescriptor)
             pipeline.setP2pRequirements(requirements)
@@ -940,6 +972,7 @@ class Manifold : P2PInterface
          * registry before it activates worker pipelines.
          */
         pipeline.setContainerObject(this)
+        pipeline.setParentInterface(this)
         pipeline.setP2pTransport(descriptor.transport)
         pipeline.setP2pDescription(descriptor)
         pipeline.setP2pRequirements(requirements)
@@ -971,6 +1004,7 @@ class Manifold : P2PInterface
 
         //Bind our container to ensure our manifold manager is local. Init to ensure it's ready to make llm calls.
         managerPipeline.setContainerObject(this)
+        managerPipeline.setParentInterface(this)
         
         // Setup tracing propagation to manager pipeline if enabled
         if(tracingEnabled)
@@ -1047,6 +1081,7 @@ class Manifold : P2PInterface
         for(workerPipe in workerPipelines)
         {
             workerPipe.setContainerObject(this)
+            workerPipe.setParentInterface(this)
             
             // Setup tracing propagation to worker pipelines if enabled
             if(tracingEnabled)
@@ -1653,9 +1688,9 @@ class Manifold : P2PInterface
                 val workerConverseHistory = extractJson<ConverseHistory>(workingContentObject.text)
                 if(workerConverseHistory != null)
                 {
-                    agentRequest.prompt = serializeConverseHistory(workerConverseHistory)
+                    agentRequest.prompt = ""
+                    agentRequest.content = serializeConverseHistory(workerConverseHistory)
                     agentRequest.promptSchema = InputSchema.json
-                    agentRequest.content = ""
                 }
 
                 // Kill switch check before worker dispatch

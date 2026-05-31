@@ -13,6 +13,8 @@ import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PResponse
 import com.TTT.P2P.P2PTransport
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Structs.PipeSettings
 import com.TTT.Util.RuntimeState
 import kotlinx.coroutines.Job
 
@@ -34,6 +36,7 @@ class Connector : P2PInterface
     private var p2pDescriptor: P2PDescriptor? = null
     private var p2pTransport: P2PTransport? = null
     private var p2PRequirements: P2PRequirements? = null
+    private var parentInterface: P2PInterface? = null
     @kotlinx.serialization.Transient
     private var _killSwitch: com.TTT.P2P.KillSwitch? = null
     override var killSwitch: com.TTT.P2P.KillSwitch?
@@ -75,6 +78,31 @@ class Connector : P2PInterface
 
     override fun getPipelinesFromInterface(): List<Pipeline> {
         return branches.values.toList()
+    }
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
+    }
+
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
+    {
+        for (pipeline in branches.values)
+        {
+            pipeline.setTokenBudgetRecursive(budget)
+        }
+    }
+
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        for (pipeline in branches.values)
+        {
+            pipeline.setPipeSettingsRecursively(settings)
+        }
     }
 
 
@@ -210,6 +238,7 @@ class Connector : P2PInterface
     fun add(key: Any, pipeline: Pipeline) : Connector
     {
         branches[key] = pipeline
+        pipeline.setParentInterface(this)
         return this
     }
 

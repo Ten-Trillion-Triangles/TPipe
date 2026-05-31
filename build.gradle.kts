@@ -12,12 +12,16 @@ plugins {
     alias(libs.plugins.ktor)
     alias(libs.plugins.kotlin.plugin.serialization)
     id("org.graalvm.buildtools.native") version "0.10.0"
+    alias(libs.plugins.shadow)
+    `maven-publish`
 }
 
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(24))   // compileJava → 24
     }
+    withSourcesJar()
+    withJavadocJar()
 }
 
 kotlin {
@@ -30,8 +34,18 @@ kotlin {
     }
 }
 
+// Bundle LICENSE into the main JAR so published artifacts include it
+val licenseJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("license")
+    from(rootProject.file("LICENSE"))
+}
+
+artifacts {
+    add("archives", licenseJar)
+}
+
 group = "com.TTT"
-version = "0.0.1"
+version = "1.0.0"
 
 application {
     mainClass = "com.TTT.ApplicationKt"

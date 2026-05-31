@@ -2,7 +2,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm") version "2.2.20"
-    `maven-publish`
 }
 
 java {
@@ -20,7 +19,7 @@ kotlin {
 }
 
 group = "com.TTT"
-version = "0.0.1"
+version = "1.0.0"
 
 repositories {
     mavenCentral()

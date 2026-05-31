@@ -1,6 +1,8 @@
 # TPipe: The Agent Operating Environment
 
-**TPipe is the Agent Operating Environment for engineering robust, deterministic AI systems.**
+**Built by [Ten Trillion Triangles](https://tentrilliontriangles.com)**
+
+**TPipe is the Agent Operating Environment**
 
 TPipe provides the managed substrate for AI agents, moving beyond simple library wrappers into a production-grade runtime. It treats LLM interactions as data flowing through a managed plumbing system: **Pipes** (Valves) transport data, **Pipelines** (Mainlines) route it, and **ContextWindow**/**ContextBank** (Reservoirs) provide persistent state. Built on Kotlin and GraalVM, it provides strict resource accounting, secure sandboxing, and structured reasoning for production-grade autonomous systems.
 
@@ -178,18 +180,18 @@ println(result.text)
 
 ```kotlin
 dependencies {
-    implementation("com.TTT:TPipe:0.0.1")
-    implementation("com.TTT:TPipe-Bedrock:0.0.1")  // For AWS Bedrock
-    implementation("com.TTT:TPipe-Ollama:0.0.1")   // For Ollama
+    implementation("com.TTT:TPipe:1.0.0")
+    implementation("com.TTT:TPipe-Bedrock:1.0.0")  // For AWS Bedrock
+    implementation("com.TTT:TPipe-Ollama:1.0.0")   // For Ollama
 }
 ```
 
 ## Licensing
 
-TPipe is dual-licensed to meet the needs of both open-source developers and enterprise organizations.
+TPipe is triple-licensed to meet the needs of both open-source developers and enterprise organizations.
 
 *   **Open Source**: Licensed under the **GNU Affero General Public License v3 (AGPL-3.0)**.
-*   **Commercial**: For closed-source commercial applications and proprietary integrations.
-*   **Enterprise**: Custom support, SLA, and feature prioritization for large-scale deployments.
+*   **Startup**: Free closed-source license for companies under $1M annual revenue — see [TPipe Pricing](https://tentrilliontriangles.com/pricing).
+*   **Commercial**: For closed-source applications and proprietary integrations above $1M revenue. See [TPipe Pricing](https://tentrilliontriangles.com/pricing) for tiers and terms.
 
-Contact [contact@tentrilliontriangles.com] for commercial and enterprise inquiries.
+Contact [contact@tentrilliontriangles.com](mailto:contact@tentrilliontriangles.com) for commercial and enterprise inquiries.

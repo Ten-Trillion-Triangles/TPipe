@@ -28,6 +28,8 @@ import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PResponse
 import com.TTT.PipeContextProtocol.PcPRequest
+import com.TTT.Pipeline.PathDescriptionList
+import com.TTT.Pipeline.PathRequest
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Structs.PipeSettings
@@ -160,6 +162,38 @@ data class TokenBudgetSettings(
      */
     var reserveEmptyPageBudget: Boolean = true
 )
+{
+    /**
+     * Calculates the available context space remaining after all reserved token allocations
+     * have been subtracted from the configured context window.
+     *
+     * Subtraction order:
+     *   1. contextWindowSize (total budget — the starting point)
+     *   2. maxTokens (space reserved for LLM output)
+     *   3. reasoningBudget — only when [subtractReasoningFromInput] is true.
+     *      When false, reasoningBudget is carved out of maxTokens and does not
+     *      reduce available context further.
+     *   4. userPromptSize (explicit cap on user-prompt reservation)
+     *
+     * @return The number of tokens available for lorebook and context elements.
+     *         Returns 0 if reserved areas equal or exceed the window.
+     */
+    fun calculateAvailableContext(): Int
+    {
+        val totalWindow = contextWindowSize ?: return 0
+
+        var available = totalWindow - (maxTokens ?: 0)
+
+        if(subtractReasoningFromInput)
+        {
+            available -= (reasoningBudget ?: 0)
+        }
+
+        available -= (userPromptSize ?: 0)
+
+        return available.coerceAtLeast(0)
+    }
+}
 
 /**
  * Comprehensive token usage data for a pipe and any nested pipes it owns.
@@ -245,6 +279,66 @@ enum class MultiPageBudgetStrategy {
     DYNAMIC_FILL,
     DYNAMIC_SIZE_FILL
 }
+
+/**
+ * Result of simulating token budget truncation without actually modifying state.
+ * Provides detailed prediction of what would happen during actual truncation.
+ *
+ * @param wouldTruncate True if context tokens would be reduced by truncation
+ * @param totalTokensBefore Total tokens in context before simulation
+ * @param totalTokensAfter Total tokens that would remain after simulation
+ * @param tokensSaved Number of tokens that would be removed by truncation
+ * @param workingContextWindowSpace Available budget for context after all allocations
+ * @param allocations Breakdown of how the budget is distributed across components
+ * @param perPagePreviews Per-page predictions when using MiniBank multi-page budget
+ */
+data class TruncationPreview(
+    val wouldTruncate: Boolean,
+    val totalTokensBefore: Int,
+    val totalTokensAfter: Int,
+    val tokensSaved: Int,
+    val workingContextWindowSpace: Int,
+    val allocations: BudgetAllocations,
+    val perPagePreviews: Map<String, PagePreview>
+)
+
+/**
+ * Breakdown of token budget allocations across all components.
+ *
+ * @param contextWindowSize Total token budget for this context window
+ * @param systemPromptTokens Tokens allocated to system prompt
+ * @param maxOutputTokens Tokens allocated for LLM output (includes reasoning if not subtracted from input)
+ * @param reasoningBudgetTokens Tokens reserved for model reasoning
+ * @param userPromptTokens Tokens allocated for user prompt (dynamic if not explicitly set)
+ * @param binaryTokens Tokens allocated for binary content
+ * @param availableForContext Tokens available for context elements (lorebook, context history, etc.)
+ */
+data class BudgetAllocations(
+    val contextWindowSize: Int,
+    val systemPromptTokens: Int,
+    val maxOutputTokens: Int,
+    val reasoningBudgetTokens: Int,
+    val userPromptTokens: Int,
+    val binaryTokens: Int,
+    val availableForContext: Int
+)
+
+/**
+ * Prediction result for a single MiniBank page's truncation.
+ *
+ * @param pageKey Identifier for this page in MiniBank
+ * @param originalTokens Token count before simulation
+ * @param allocatedBudget Budget that would be allocated to this page
+ * @param wouldBeTruncated True if this page would be reduced
+ * @param actualTokensAfter Token count after truncation simulation
+ */
+data class PagePreview(
+    val pageKey: String,
+    val originalTokens: Int,
+    val allocatedBudget: Int,
+    val wouldBeTruncated: Boolean,
+    val actualTokensAfter: Int
+)
 
 /**
  * Builds TokenBudgetSettings from TruncationSettings so the budget can inherit the same tokenizer configuration
@@ -470,6 +564,9 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
     @kotlinx.serialization.Transient
     private var containerObject: Any? = null
+
+    @kotlinx.serialization.Transient
+    private var parentInterface: P2PInterface? = null
 
     /**
      * Emergency kill switch for halting execution when token limits are exceeded.
@@ -850,6 +947,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * setups.
      */
     @Serializable
+    @get:JvmName("getTokenBudgetSettingsInternal")
     protected var tokenBudgetSettings : TokenBudgetSettings? = null
 
     /**
@@ -864,6 +962,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     @Serializable
     protected var readFromParentPipeContext = false
+
+    /**
+     * If true, we'll attempt to resolve [P2PInterface] parents up to the closest [com.TTT.Pipeline.PumpStation]
+     * and pull its [ContextWindow] and [MiniBank]. This will get merged after [readFromParentPipeContext] is merged
+     * in the merge order.
+     */
+    @kotlinx.serialization.Serializable
+    protected var readFromPumpStationContext = false
 
     /**
      * If true this pipe will automatically update the pipeline's context with its own context by
@@ -883,6 +989,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     @Serializable
     protected var autoTruncateContext = false
+
+    /**
+     * If true the pipe will pull all path data during [applySystemPrompt] from it's nearest parent [com.TTT.Pipeline.PumpStation]
+     * When enabled, this will disable both PCP, and json output support replacing it with path calls.
+     */
+    @Serializable
+    protected var autoInjectPathDataFromPumpStation = false
 
 
     /**
@@ -952,41 +1065,28 @@ abstract class Pipe : P2PInterface, ProviderInterface
     @Serializable
     protected var emplaceConverseHistoryOnlyIfNull = false
 
-        /**
-
-         * Some models have thinking modes, also known as reasoning. If true TPipe will enable model thinking/reasoning
-
-         * on models where it can be enabled or disabled.
-
-         */
-
-        @Serializable
-
-        protected var useModelReasoning = false
+    /**
+    * Some models have thinking modes, also known as reasoning. If true TPipe will enable model thinking/reasoning
+    * on models where it can be enabled or disabled.
+    */
+    @Serializable
+    protected var useModelReasoning = false
 
     
 
-        /**
-
-         * If true, model reasoning content will be streamed to the registered callbacks
-
-         * during generation. This applies to models that produce reasoning in a separate
-
-         * stream or field from the main response text.
-
-         */
-
-        @Serializable
-
-        protected var streamModelReasoning: Boolean = true
+    /**
+    * If true, model reasoning content will be streamed to the registered callbacks
+    * during generation. This applies to models that produce reasoning in a separate
+    * stream or field from the main response text.
+    */
+    @Serializable
+    protected var streamModelReasoning: Boolean = true
 
     
 
-        /**
-
-         * Version of model reasoning that uses a designation of how many tokens to afford to model reasoning.
-
-         */
+    /**
+    * Version of model reasoning that uses a designation of how many tokens to afford to model reasoning.
+    */
     @Serializable
     protected var modelReasoningSettingsV2 = 5000
 
@@ -1113,6 +1213,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
     @kotlinx.serialization.Transient
     var preValidationMiniBankFunction: (suspend (context: MiniBank, content: MultimodalContent?) -> MiniBank)? = null
 
+    /**
+     * Callback fired after token budgeting completes.
+     * @param wasTruncated True if context was actually truncated; false if content fit without truncation.
+     * @param remainingFreeSpace Actual token budget available after accounting for all reserved allocations
+     *                          (system prompt, user prompt, binary data, max tokens, reasoning budget).
+     */
+    @kotlinx.serialization.Transient
+    var onContextTruncated: (suspend (wasTruncated: Boolean, remainingFreeSpace: Int) -> Unit)? = null
 
 
     /**
@@ -1997,6 +2105,77 @@ abstract class Pipe : P2PInterface, ProviderInterface
             systemPrompt = systemPrompt + defaultP2PDescription
         }
 
+        // Inject path descriptors from parent PumpStation when harness mode is enabled
+        if(autoInjectPathDataFromPumpStation)
+        {
+            val parentStation = getNearestPumpStationParent() as? com.TTT.Pipeline.PumpStation
+            if(parentStation != null)
+            {
+                val pathDescriptorList = parentStation.getVisiblePathDescriptorsForDispatch()
+                val pathDescriptorJson = serialize(pathDescriptorList, false)
+                val pathRequestSchema = examplePromptFor(PathRequest::class)
+
+                val defaultPathInjection = """
+                    |
+                    |=== Path Invocation Protocol (MANDATORY) ===
+                    |
+                    |You MUST use the paths below to continue your task. This is not optional — the harness
+                    |WILL reject any output that does not conform to the PathRequest schema.
+                    |
+                    |Available paths:
+                    |${pathDescriptorJson}
+                    |
+                    |=== Calling a Path ===
+                    |To call a path, you MUST return a valid PathRequest JSON object:
+                    |{
+                    |    "pathName": "the exact path name from the list above",
+                    |    "inputData": { ... path-specific input fields ... }
+                    |}
+                    |
+                    |The "inputData" schema for each path is shown in the path descriptor above under "inputSchema".
+                    |Do NOT invent fields. Do NOT omit required fields. Do NOT call paths not listed above.
+                    |
+                    |=== Calling Paths with PCP Schemas ===
+                    |If a path has a "pcpSchema" section in its descriptor, that path's inputData MUST conform
+                    |to the PCP function's input format defined in that pcpSchema. The pcpSchema shows:
+                    |  - functionName: the PCP function to invoke
+                    |  - tPipeContextOptions / stdioContextOptions / httpContextOptions / pythonContextOptions / etc.
+                    |  - params (where "isRequired" indicates required vs optional fields)
+                    |
+                    |To call a PCP-enabled path:
+                    |  1. Set "pathName" to the path's exact name
+                    |  2. For "inputData", construct the PCP call exactly as described in that path's pcpSchema:
+                    |     - Set tPipeContextOptions.functionName to the PCP function name
+                    |     - Set tPipeContextOptions.callParams to a map of argument names → values
+                    |       OR set tPipeContextOptions.argumentsOrFunctionParams to a list of positional values
+                    |     - For stdio/http/python/etc calls, populate the respective context options accordingly
+                    |  3. Include ALL required params (isRequired=true). Optional params may be omitted.
+                    |
+                    |=== Rules (ALL STRICTLY ENFORCED) ===
+                    |1. You MUST only call paths listed above — no invented path names
+                    |2. You MUST follow the exact inputSchema for the path you are calling
+                    |3. You MUST provide all required inputData fields for the selected path
+                    |4. For PCP paths: you MUST follow the PCP function's parameter schema exactly
+                    |5. You MUST NOT change the name of the path you are calling
+                    |6. You MUST return valid JSON matching the PathRequest schema below
+                    |
+                    |PathRequest schema:
+                    |${pathRequestSchema}
+                    |
+                    |=== Output Requirement ===
+                    |Your final response must be a PathRequest JSON object. Do not return any other format.
+                    |If you do not need to call a path, return: {"pathName": "", "inputData": {}}
+                    |
+                """.trimMargin()
+
+                systemPrompt = systemPrompt + defaultPathInjection
+
+                // Bind output to PathRequest schema
+                jsonOutput = pathRequestSchema
+                supportsNativeJson = false
+            }
+        }
+
         //Bind context instructions and context json schema.
         if(autoInjectContext)
         {
@@ -2315,6 +2494,23 @@ abstract class Pipe : P2PInterface, ProviderInterface
     internal fun ensureJsonPromptInjectionEnabled()
     {
         supportsNativeJson = false
+    }
+
+    /**
+     * Activates harness mode for a pipe. When enabled standard json output is disabled, and the pipe will
+     * be configured to invoke paths from the parent harness [com.TTT.Pipeline.PumpStation] that's nearest
+     * to it on the ownership chain. Paths available on the harness will be injected into the system prompt,
+     * instructions on how to use them, and instructions on how to call them. JSON output will be automatically
+     * bound to only allow the model to emit a [com.TTT.Pipeline.PathRequest] object as it's output.
+     *
+     * WARNING: in harness mode, neither P2P nor PCP can be used by this pipe. It will be bound to the path system
+     * schema and mechanism's used by the PumpStation class.
+     */
+    fun enableHarnessMode() : Pipe
+    {
+        supportsNativeJson = false
+        autoInjectPathDataFromPumpStation = true
+        return this
     }
 
 
@@ -3167,6 +3363,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun pullParentPipeContext() : Pipe
     {
         readFromParentPipeContext = true
+        return this
+    }
+
+    fun pullPumpStationContext() : Pipe
+    {
+        readFromPumpStationContext = true
         return this
     }
 
@@ -4545,15 +4747,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
          // THEN initialize them
          validatorPipe?.init()
          validatorPipe?.pipelineRef = pipelineRef
-         
+         validatorPipe?.setParentInterface(this)
+
          branchPipe?.init()
          branchPipe?.pipelineRef = pipelineRef
-         
+         branchPipe?.setParentInterface(this)
+
          transformationPipe?.init()
          transformationPipe?.pipelineRef = pipelineRef
-         
+         transformationPipe?.setParentInterface(this)
+
          reasoningPipe?.init()
          reasoningPipe?.pipelineRef = pipelineRef
+         reasoningPipe?.setParentInterface(this)
 
          // Enable memory introspection tools if configured
          memoryIntrospectionConfig?.let {
@@ -4686,6 +4892,192 @@ abstract class Pipe : P2PInterface, ProviderInterface
         return Dictionary.countTokens(serializedWindow, truncationSettings)
     }
 
+    /**
+     * Simulates token budget truncation without actually modifying any state.
+     * This predicts what would happen during actual truncation, including per-page allocations
+     * and whether context would be reduced.
+     *
+     * This is useful for PumpStation or other consumers to detect in advance whether
+     * truncation would occur, without triggering actual truncation.
+     *
+     * @param content The MultimodalContent representing the user prompt and binary data to simulate budgeting for
+     * @param customBudget Optional custom TokenBudgetSettings to override the pipe's configured budget
+     * @return TruncationPreview containing detailed predictions of truncation outcomes and budget allocations
+     */
+    fun simulateTokenBudgetTruncation(
+        content: MultimodalContent,
+        customBudget: TokenBudgetSettings? = null
+    ): TruncationPreview
+    {
+        val configuredBudget = customBudget ?: tokenBudgetSettings ?: return createEmptyPreview()
+        val workingBudget = cloneTokenBudgetSettings(configuredBudget)
+        val truncationSettings = getTruncationSettings()
+
+        // Step 1: Calculate all budget allocations (mirrors setTokenBudgetInternal)
+        var workingTokenWindowSize = workingBudget.contextWindowSize ?: contextWindowSize
+        val systemPromptTokens = Dictionary.countTokens(systemPrompt, truncationSettings)
+        workingTokenWindowSize -= systemPromptTokens
+
+        if(workingTokenWindowSize <= 0)
+        {
+            return createEmptyPreview()
+        }
+
+        var maxTokensFromSettings = workingBudget.maxTokens ?: maxTokens
+        workingTokenWindowSize -= maxTokensFromSettings
+
+        if(workingTokenWindowSize <= 0)
+        {
+            return createEmptyPreview()
+        }
+
+        val reasoningBudget = workingBudget.reasoningBudget ?: 0
+        var reasoningBudgetTokens = 0
+
+        if(!workingBudget.subtractReasoningFromInput)
+        {
+            maxTokensFromSettings -= reasoningBudget
+            reasoningBudgetTokens = reasoningBudget
+        }
+        else
+        {
+            workingTokenWindowSize -= reasoningBudget
+            reasoningBudgetTokens = reasoningBudget
+        }
+
+        val userPrompt = content.text
+        var userPromptTokenCost = Dictionary.countTokens(userPrompt, truncationSettings)
+
+        if(workingBudget.userPromptSize != null && workingBudget.userPromptSize!! > workingTokenWindowSize)
+        {
+            return createEmptyPreview()
+        }
+
+        workingTokenWindowSize -= workingBudget.userPromptSize ?: userPromptTokenCost
+
+        val binaryTokens = countBinaryTokens(content, truncationSettings)
+        val availableForContext = workingTokenWindowSize - binaryTokens
+
+        if(availableForContext <= 0)
+        {
+            return createEmptyPreview()
+        }
+
+        // Step 2: Capture before state - total context tokens before simulation
+        val contextTokensBefore = countContextWindowTokens(contextWindow, truncationSettings)
+
+        // Step 3: Simulate MiniBank page truncation if miniContextBank is not empty
+        val perPagePreviews = mutableMapOf<String, PagePreview>()
+        var totalPageTokensAfter = 0
+
+        if(!miniContextBank.isEmpty())
+        {
+            val pageKeys = miniContextBank.contextMap.keys.toList()
+            val allocations = calculatePageBudgets(
+                availableForContext,
+                pageKeys,
+                workingBudget.multiPageBudgetStrategy,
+                workingBudget.pageWeights,
+                truncationSettings,
+                workingBudget.reserveEmptyPageBudget
+            )
+
+            for((pageKey, contextWindow) in miniContextBank.contextMap)
+            {
+                val originalTokens = countContextWindowTokens(contextWindow, truncationSettings)
+                val allocatedBudget = allocations[pageKey] ?: 0
+
+                // Simulate truncation on a copy
+                val copy = contextWindow.deepCopy()
+                copy.selectAndTruncateContext(
+                    content.text,
+                    allocatedBudget,
+                    workingBudget.truncationMethod,
+                    truncationSettings,
+                    fillMode = loreBookFillMode,
+                    fillAndSplitMode = loreBookFillAndSplitMode,
+                    preserveTextMatches = workingBudget.preserveTextMatches
+                )
+
+                val actualTokensAfter = countContextWindowTokens(copy, truncationSettings)
+                val wouldBeTruncated = actualTokensAfter < originalTokens
+
+                perPagePreviews[pageKey] = PagePreview(
+                    pageKey = pageKey,
+                    originalTokens = originalTokens,
+                    allocatedBudget = allocatedBudget,
+                    wouldBeTruncated = wouldBeTruncated,
+                    actualTokensAfter = actualTokensAfter
+                )
+
+                totalPageTokensAfter += actualTokensAfter
+            }
+        }
+
+        // Step 4: Simulate main context window truncation
+        val mainContextCopy = contextWindow.deepCopy()
+        mainContextCopy.selectAndTruncateContext(
+            content.text,
+            availableForContext,
+            workingBudget.truncationMethod,
+            truncationSettings,
+            fillMode = loreBookFillMode,
+            fillAndSplitMode = loreBookFillAndSplitMode,
+            preserveTextMatches = workingBudget.preserveTextMatches
+        )
+        val mainContextTokensAfter = countContextWindowTokens(mainContextCopy, truncationSettings)
+
+        // Step 5: Calculate totals
+        val totalTokensAfter = totalPageTokensAfter + mainContextTokensAfter
+        val tokensSaved = contextTokensBefore - totalTokensAfter
+        val wouldTruncate = totalTokensAfter < contextTokensBefore
+
+        // Step 6: Build allocations breakdown
+        val allocationsBreakdown = BudgetAllocations(
+            contextWindowSize = workingBudget.contextWindowSize ?: contextWindowSize,
+            systemPromptTokens = systemPromptTokens,
+            maxOutputTokens = maxTokensFromSettings,
+            reasoningBudgetTokens = reasoningBudgetTokens,
+            userPromptTokens = userPromptTokenCost,
+            binaryTokens = binaryTokens,
+            availableForContext = availableForContext
+        )
+
+        return TruncationPreview(
+            wouldTruncate = wouldTruncate,
+            totalTokensBefore = contextTokensBefore,
+            totalTokensAfter = totalTokensAfter,
+            tokensSaved = tokensSaved,
+            workingContextWindowSpace = availableForContext,
+            allocations = allocationsBreakdown,
+            perPagePreviews = perPagePreviews
+        )
+    }
+
+    /**
+     * Creates an empty TruncationPreview for error cases where budget cannot be calculated.
+     */
+    private fun createEmptyPreview(): TruncationPreview
+    {
+        return TruncationPreview(
+            wouldTruncate = false,
+            totalTokensBefore = 0,
+            totalTokensAfter = 0,
+            tokensSaved = 0,
+            workingContextWindowSpace = 0,
+            allocations = BudgetAllocations(
+                contextWindowSize = 0,
+                systemPromptTokens = 0,
+                maxOutputTokens = 0,
+                reasoningBudgetTokens = 0,
+                userPromptTokens = 0,
+                binaryTokens = 0,
+                availableForContext = 0
+            ),
+            perPagePreviews = emptyMap()
+        )
+    }
+
 
 
     /**
@@ -4700,12 +5092,18 @@ abstract class Pipe : P2PInterface, ProviderInterface
         val workingBudget = cloneTokenBudgetSettings(configuredBudget)
         val executionSnapshot = captureTokenBudgetExecutionSnapshot()
 
+        // Capture before state for onContextTruncated callback
+        val truncationSettings = getTruncationSettings()
+        val contextTokensBefore = countContextWindowTokens(contextWindow, truncationSettings)
+        var finalRemainingFreeSpace = 0
+
         try
         {
             setTokenBudgetInternal(workingBudget)
 
             var tempContextWindowSize = 0
-            var workingContextWindowSpace = contextWindowSize
+            finalRemainingFreeSpace = contextWindowSize
+            var workingContextWindowSpace = finalRemainingFreeSpace
             tempContextWindowSize = workingContextWindowSpace
             val truncationSettings = getTruncationSettings()
 
@@ -4904,11 +5302,15 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 }
             }
 
+            finalRemainingFreeSpace = workingContextWindowSpace
             return content
         }
 
         finally
         {
+            val contextTokensAfter = countContextWindowTokens(contextWindow, truncationSettings)
+            val wasTruncated = contextTokensAfter < contextTokensBefore
+            onContextTruncated?.invoke(wasTruncated, finalRemainingFreeSpace)
             restoreTokenBudgetExecutionSnapshot(executionSnapshot)
         }
     }
@@ -7113,6 +7515,40 @@ abstract class Pipe : P2PInterface, ProviderInterface
     override fun setContainerObject(container: Any)
     {
         containerObject = container
+    }
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
+    }
+
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
+    @Suppress("CONFLICTING_OVERRIDE_AND_MEMBER_FROM_SUPERTYPE")
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = tokenBudgetSettings
+
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
+    {
+        if (containerPtr == null)
+        {
+            setTokenBudget(budget)
+        }
+        else
+        {
+            containerPtr!!.setTokenBudgetRecursive(budget)
+        }
+    }
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        if (containerPtr == null)
+        {
+            applyPipeSettings(settings)
+        }
+        else
+        {
+            containerPtr!!.setPipeSettingsRecursively(settings)
+        }
     }
 
     /**

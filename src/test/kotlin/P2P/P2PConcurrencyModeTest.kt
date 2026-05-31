@@ -28,11 +28,17 @@ class P2PConcurrencyModeTest
     {
         var requestCount = 0
         override var killSwitch: KillSwitch? = null
+        private var parentInterface: P2PInterface? = null
 
         override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse
         {
             requestCount++
             return P2PResponse(output = MultimodalContent("count=$requestCount"))
+        }
+
+        override fun setParentInterface(parent: P2PInterface)
+        {
+            parentInterface = parent
         }
     }
 

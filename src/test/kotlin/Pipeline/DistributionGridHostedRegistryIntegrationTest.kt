@@ -385,6 +385,7 @@ private class GridExecutionInterface(
 ) : P2PInterface
 {
     private var containerObject: Any? = null
+    private var parentInterface: P2PInterface? = null
     override var killSwitch: KillSwitch? = null
 
     override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
@@ -424,5 +425,10 @@ private class GridExecutionInterface(
     override fun setContainerObject(container: Any)
     {
         containerObject = container
+    }
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
     }
 }

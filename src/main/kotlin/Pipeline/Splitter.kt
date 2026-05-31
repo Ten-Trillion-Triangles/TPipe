@@ -2,6 +2,8 @@ package com.TTT.Pipeline
 
 import com.TTT.Debug.*
 import com.TTT.P2P.P2PInterface
+import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Structs.PipeSettings
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
@@ -49,6 +51,15 @@ class Splitter: P2PInterface
 {
 //----------------------------------------------Interface---------------------------------------------------------------
 
+    private var parentInterface: P2PInterface? = null
+
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
+    }
+
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
     override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
     {
         val result = executePipelines()
@@ -68,6 +79,30 @@ class Splitter: P2PInterface
         }
 
         return outputContent
+    }
+
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
+    {
+        for (activatorValue in activatorKeys.values)
+        {
+            for (pipeline in activatorValue.pipelines)
+            {
+                pipeline.setTokenBudgetRecursive(budget)
+            }
+        }
+    }
+
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        for (activatorValue in activatorKeys.values)
+        {
+            for (pipeline in activatorValue.pipelines)
+            {
+                pipeline.setPipeSettingsRecursively(settings)
+            }
+        }
     }
 
 //-------------------------------------------Properties--------------------------------------------------------------------
@@ -319,6 +354,7 @@ class Splitter: P2PInterface
         
         //Add pipeline to the key's pipeline list.
         activatorValue.pipelines.add(pipeline)
+        pipeline.setParentInterface(this)
         activatorKeys[key] = activatorValue
         return this
     }
@@ -591,6 +627,7 @@ class Splitter: P2PInterface
             {
                 //Set this splitter as the pipeline's container for context.
                 pipeline.pipelineContainer = this
+                pipeline.setParentInterface(this)
                 
                 //Apply tracing configuration if tracing is enabled.
                 if(tracingEnabled)

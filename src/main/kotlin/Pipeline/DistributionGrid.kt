@@ -37,6 +37,8 @@ import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Structs.PipeSettings
 import com.TTT.Pipe.PipeError
 import com.TTT.Pipe.TruncationSettings
 import com.TTT.Pipe.hasError
@@ -125,6 +127,8 @@ class DistributionGrid : P2PInterface
     private var p2pRequirements: P2PRequirements? = null
     @RuntimeState
     private var containerObject: Any? = null
+    @RuntimeState
+    private var parentInterface: P2PInterface? = null
     @kotlinx.serialization.Transient
     private var _killSwitch: com.TTT.P2P.KillSwitch? = null
     override var killSwitch: com.TTT.P2P.KillSwitch?
@@ -138,6 +142,9 @@ class DistributionGrid : P2PInterface
 
     private var routerBinding: DistributionGridBinding? = null
     private var workerBinding: DistributionGridBinding? = null
+    private var entryPipeline: Pipeline? = null
+    private var judgePipeline: Pipeline? = null
+    private var workerPipelines: MutableList<Pipeline>? = null
     private val localPeerBindingsByKey = linkedMapOf<String, DistributionGridBinding>()
     private val externalPeerDescriptorsByKey = linkedMapOf<String, P2PDescriptor>()
 
@@ -586,6 +593,13 @@ class DistributionGrid : P2PInterface
         markShellDirty()
     }
 
+    override fun setParentInterface(parent: P2PInterface)
+    {
+        parentInterface = parent
+    }
+
+    override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
     /**
      * Expose the child pipelines registered through the router, worker, and local peer bindings.
      *
@@ -604,6 +618,22 @@ class DistributionGrid : P2PInterface
         }
 
         return pipelineSet.toList()
+    }
+
+    override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
+    {
+        entryPipeline?.setTokenBudgetRecursive(budget)
+        judgePipeline?.setTokenBudgetRecursive(budget)
+        workerPipelines?.forEach { it.setTokenBudgetRecursive(budget) }
+    }
+
+    override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+
+    override fun setPipeSettingsRecursively(settings: PipeSettings)
+    {
+        entryPipeline?.setPipeSettingsRecursively(settings)
+        judgePipeline?.setPipeSettingsRecursively(settings)
+        workerPipelines?.forEach { it.setPipeSettingsRecursively(settings) }
     }
 
     /**
@@ -8130,6 +8160,7 @@ class DistributionGrid : P2PInterface
         {
             component.setContainerObject(this)
         }
+        component.setParentInterface(this)
 
         val bindingKey = forcedBindingKey ?: buildPeerKey(
             descriptor = resolvedDescriptor,
