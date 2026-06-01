@@ -36,6 +36,7 @@ enum class PumpStationStatus
 enum class PumpStationPhase
 {
     PreInit,
+    HealthCheck,
     Judge,
     Dispatch,
     PathSafety,
@@ -112,6 +113,82 @@ enum class StashReason
     DeveloperRequested,
     BackgroundResult
 }
+
+/**
+ * Policy for how the harness responds when [maxTotalPathCallsPerPath] is exceeded.
+ *
+ * [Skip] removes the path from dispatch visibility by moving it to reserve — the dispatch
+ * agent will no longer see it until the harness resets or the path is explicitly revealed.
+ *
+ * [Halt] terminates the harness immediately with [PumpStationError.MaxTurnsExceeded].
+ *
+ * [Continue] logs the violation and proceeds with path execution anyway.
+ */
+enum class PathLimitExceededPolicy
+{
+    Skip,
+    Halt,
+    Continue
+}
+
+/**
+ * Health status levels that healthAgent can report.
+ */
+enum class HealthStatus
+{
+    /** Harness is operating normally with no detected issues. */
+    Healthy,
+    /** Harness is functioning but some degradation or concern detected. */
+    Degraded,
+    /** Harness is showing serious signs of going off-rails or context drift. */
+    Critical,
+    /** Agent unable to determine health status (insufficient data). */
+    Unknown
+}
+
+/**
+ * Structured context passed to healthAgent as JSON in MultimodalContent.text.
+ * Contains all state healthAgent needs to assess harness wellness.
+ */
+@kotlinx.serialization.Serializable
+data class HealthContext(
+    val runId: String,
+    val turnIndex: Int,
+    val harnessStatus: PumpStationStatus,
+    val lastError: String?,
+    val consecutivePathCount: Int,
+    val lastSelectedPathName: String?,
+    val pathCallCounts: Map<String, Int>,
+    val visiblePathNames: List<String>,
+    val reservePathNames: List<String>,
+    val contextFillPercent: Double,
+    val turnHistorySummary: List<String>,
+    val recentErrors: List<String>
+)
+
+/**
+ * Result returned by healthAgent. Contains the agent's assessment of harness wellness.
+ */
+@kotlinx.serialization.Serializable
+data class HealthReport(
+    val status: HealthStatus = HealthStatus.Unknown,
+    val warnings: List<String> = emptyList(),
+    val suggestions: List<String> = emptyList(),
+    val metrics: Map<String, Double> = emptyMap(),
+    val suggestedNextPath: String? = null,
+    val terminateHarness: Boolean = false
+)
+
+/**
+ * Result returned by pathLimitExceededFunction when maxTotalPathCallsPerPath is exceeded.
+ * Allows dynamic runtime policy instead of static PathLimitExceededPolicy.
+ */
+@kotlinx.serialization.Serializable
+data class PathLimitExceededResult(
+    val action: PathLimitExceededPolicy,
+    val reason: String = "",
+    val nextPathOverride: String? = null
+)
 
 //=========================================Sealed Interface & Events==============================================
 
@@ -270,6 +347,19 @@ data class PathCompleted(
 ) : PumpStationEvent
 
 /**
+ * Intervention phase started — emitted before calling the intervention agent.
+ */
+@kotlinx.serialization.Serializable
+data class InterventionStarted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Intervention,
+    val trigger: PumpStationError,
+    val pathName: String
+) : PumpStationEvent
+
+/**
  * Path execution failed.
  */
 @kotlinx.serialization.Serializable
@@ -282,6 +372,19 @@ data class PathFailed(
     val riskLevel: PathRiskLevel,
     val error: PumpStationError,
     val errorMessage: String?
+) : PumpStationEvent
+
+/**
+ * Path was hidden from dispatch due to exceeding call limits.
+ */
+@kotlinx.serialization.Serializable
+data class PathHidden(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.PathExecution,
+    val pathName: String,
+    val reason: String
 ) : PumpStationEvent
 
 /**
@@ -309,6 +412,20 @@ data class InterventionCompleted(
     override val phase: PumpStationPhase = PumpStationPhase.Intervention,
     val nudges: Int,
     val shouldContinue: Boolean
+) : PumpStationEvent
+
+/**
+ * Health check phase completed — emitted after healthAgent finishes its assessment.
+ */
+@kotlinx.serialization.Serializable
+data class HealthCheckCompleted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.HealthCheck,
+    val status: HealthStatus,
+    val warnings: Int,
+    val terminateHarness: Boolean
 ) : PumpStationEvent
 
 /**

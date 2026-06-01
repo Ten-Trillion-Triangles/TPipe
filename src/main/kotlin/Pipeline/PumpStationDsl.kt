@@ -68,6 +68,11 @@ class PumpStationDslConfig
     var judgeAgent: P2PInterface? = null
     var dispatchAgent: Pipeline? = null
     var interventionAgent: P2PInterface? = null
+    var healthAgent: P2PInterface? = null
+    var healthAgentBuilderFunction: (suspend (com.TTT.Pipeline.PumpStation) -> P2PInterface)? = null
+    var healthAgentTurnInterval: Int? = null
+    var healthAgentErrorRatioThreshold: Double? = null
+    var healthAgentConcurrencyMode: PumpStationConcurrencyMode? = null
     var lorebookAgent: P2PInterface? = null
     var summaryAgent: P2PInterface? = null
     var goalAgent: P2PInterface? = null
@@ -92,6 +97,8 @@ class PumpStationDslConfig
 
     var maxConsecutiveSamePath: Int = 3
     var maxTotalPathCallsPerPath: Int? = null
+    var pathLimitExceededPolicy: PathLimitExceededPolicy = PathLimitExceededPolicy.Skip
+    var pathLimitExceededFunction: (suspend (PathObject, String, PumpStation) -> PathLimitExceededResult)? = null
 
     var externalContextProvider: ((PumpStationTaskState) -> MutableMap<String, Any>)? = null
 
@@ -187,6 +194,32 @@ class PumpStationBuilder(val name: String)
      * DITL agent invoked to check path safety when a path is medium or high risk.
      */
     var pathSafetyAgent: P2PInterface? = null
+
+    /**
+     * Proactive health monitoring agent. Fires before judge based on
+     * [healthAgentTurnInterval] or [healthAgentErrorRatioThreshold].
+     */
+    var healthAgent: P2PInterface? = null
+
+    /**
+     * Builder function for healthAgent — creates fresh instance each invocation.
+     */
+    var healthAgentBuilderFunction: (suspend (PumpStation) -> P2PInterface)? = null
+
+    /**
+     * Fire healthAgent every N turns. null = disabled.
+     */
+    var healthAgentTurnInterval: Int? = null
+
+    /**
+     * Fire healthAgent when error ratio exceeds threshold. null = disabled.
+     */
+    var healthAgentErrorRatioThreshold: Double? = null
+
+    /**
+     * Concurrency mode: Blocking (judge waits) or Async (judge fires immediately).
+     */
+    var healthAgentConcurrencyMode: PumpStationConcurrencyMode? = null
 
     /**
      * Additional harness agents invoked between dispatch output and return to judge agent.
@@ -288,6 +321,17 @@ class PumpStationBuilder(val name: String)
      * null means unlimited.
      */
     var maxTotalPathCallsPerPath: Int? = null
+
+    /**
+     * Policy for how the harness responds when [maxTotalPathCallsPerPath] is exceeded.
+     */
+    var pathLimitExceededPolicy: PathLimitExceededPolicy = PathLimitExceededPolicy.Skip
+
+    /**
+     * Optional DITL function invoked when [maxTotalPathCallsPerPath] is exceeded.
+     * Allows dynamic runtime policy instead of static [PathLimitExceededPolicy].
+     */
+    var pathLimitExceededFunction: (suspend (PathObject, String, PumpStation) -> PathLimitExceededResult)? = null
 
 //=========================================Reserve Paths & External Context=========================================
 
@@ -457,6 +501,11 @@ class PumpStationBuilder(val name: String)
         config.judgeAgent = judgeAgent
         config.dispatchAgent = dispatchAgent as Pipeline
         config.interventionAgent = interventionAgent
+        config.healthAgent = healthAgent
+        config.healthAgentBuilderFunction = healthAgentBuilderFunction
+        config.healthAgentTurnInterval = healthAgentTurnInterval
+        config.healthAgentErrorRatioThreshold = healthAgentErrorRatioThreshold
+        config.healthAgentConcurrencyMode = healthAgentConcurrencyMode
         config.lorebookAgent = lorebookAgent
         config.summaryAgent = summaryAgent
         config.goalAgent = goalAgent
@@ -483,6 +532,8 @@ class PumpStationBuilder(val name: String)
         // Wire up loop guards
         config.maxConsecutiveSamePath = maxConsecutiveSamePath
         config.maxTotalPathCallsPerPath = maxTotalPathCallsPerPath
+        config.pathLimitExceededPolicy = pathLimitExceededPolicy
+        config.pathLimitExceededFunction = pathLimitExceededFunction
 
         // Wire up external context provider
         config.externalContextProvider = externalContextProvider
