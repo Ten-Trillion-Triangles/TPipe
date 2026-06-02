@@ -251,7 +251,7 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
 
     /**
      * Optional metadata storage dump to allow the developer to store read arbitrary values as needed from the path
-     * object. 
+     * object.
      */
     val pathMetadata: MutableMap<Any, Any> = mutableMapOf()
 
@@ -553,13 +553,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * be resolved, OR token budget settings are not manually set in the PumpStation itself, an exception will be
      * thrown.
      */
-    private var judgeAgent: P2PInterface? = null
+    private var judgeAgent: Pipeline? = null
 
     /**
      * Optional builder function to generate the [judgeAgent] on the fly. When non-null this will completely
      * override whatever is set for judgeAgent.
      */
-    private var judgeAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+    private var judgeAgentBuilderFunction: (suspend (harness: PumpStation) -> Pipeline)? = null
 
     /**
      * REQUIRED: This agent evaluates what the next steps in the harness needs to be, and dispatches the to the
