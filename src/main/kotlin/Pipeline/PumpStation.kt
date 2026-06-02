@@ -864,6 +864,12 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private val stash = mutableMapOf<String, ConverseData>()
 
     /**
+     * Optional metadata that can be used for anything the developer wants in the harnness. Useful for storing
+     * whatever arbitrary data might need to be shared between functions across agents or other sub-systems.
+     */
+    val metadata = mutableMapOf<Any?, Any?>()
+
+    /**
      * Internal context window addressable by this harness, and able to be passed into the various agents
      * that are deployed here.
      */
@@ -1034,6 +1040,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var preValidationJudgeFunction: (suspend (content: MultimodalContent, miniBank: MiniBank, harness: PumpStation) -> MiniBank)? = null
 
     /**
+     * Execution function ran immediately after the judge agent exits. Allows the developer to intercept and fetch output,
+     * or other data to control, update context and history, or alter the behavior of the harness in response to
+     * the output of the judge agent.
+     */
+    private var postJudgeFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> MultimodalContent)? = null
+
+    /**
      * Pre-validation DITL call for the dispatch agent. Invoked prior to running the dispatch agent. Works the same way
      * as the other pre-validation function in PumpStation.
      */
@@ -1094,6 +1107,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * DITL function that fires after a TPipe emergency compaction/memory event happens.
      */
     private var postCompactionFunction: (suspend (content: MultimodalContent, newHistory: ConverseHistory, harness: PumpStation) -> MultimodalContent)? = null
+
+    /**
+     * Fires anytime an agent has an internal context truncation due to token budgeting. Allows for direct intervention
+     * to repair things like the conversation history, and handle possible loss of user instructions or other required
+     * data in the history itself. If not bound, a default function will be at harness startup time.
+     */
+    private var onContextTruncated: (suspend (wasTruncated: Boolean, remainingFreeSpace: Int) -> Unit)? = null
 
     /**
      * P2PInterface required init function. Initializes the PumpStation harness.

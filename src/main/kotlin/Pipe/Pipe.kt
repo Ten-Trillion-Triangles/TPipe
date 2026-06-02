@@ -2,6 +2,7 @@ package com.TTT.Pipe
 
 import com.TTT.Context.ContextBank
 import com.TTT.Context.ContextWindow
+import com.TTT.Context.buildLorebookScanText
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ConverseRole
@@ -1051,6 +1052,15 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     @Serializable
     protected var loreBookFillAndSplitMode = false
+
+    /**
+     * When true, the lorebook matcher scans the user prompt plus this pipe's
+     * contextWindow.contextElements and converseHistory.history. When false (default),
+     * only the user prompt is scanned. This is the historical behavior and the default
+     * to preserve backward compatibility.
+     */
+    @Serializable
+    protected var useEntireContextForLoreSelection = false
 
     /**
      * If true when merging context windows we will replace the converse history with the incoming converse history.
@@ -3513,6 +3523,17 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
+     * Enables expanded lorebook scanning: the matcher will consider contextElements
+     * and converseHistory in addition to the user prompt.
+     * @return This Pipe object for method chaining.
+     */
+    fun useEntireContextForLoreSelection() : Pipe
+    {
+        useEntireContextForLoreSelection = true
+        return this
+    }
+
+    /**
      * Enables full rewriting and construction of the converse history upon merging into the context window
      * or mini bank of this pipe. Is mutually exclusive with [emplaceConverseHistoryOnlyIfNull]
      */
@@ -4990,8 +5011,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
                 // Simulate truncation on a copy
                 val copy = contextWindow.deepCopy()
-                copy.selectAndTruncateContext(
+                val scanText = contextWindow.buildLorebookScanText(
                     content.text,
+                    useEntireContextForLoreSelection
+                )
+                copy.selectAndTruncateContext(
+                    scanText,
                     allocatedBudget,
                     workingBudget.truncationMethod,
                     truncationSettings,
@@ -5017,8 +5042,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
         // Step 4: Simulate main context window truncation
         val mainContextCopy = contextWindow.deepCopy()
-        mainContextCopy.selectAndTruncateContext(
+        val scanText = contextWindow.buildLorebookScanText(
             content.text,
+            useEntireContextForLoreSelection
+        )
+        mainContextCopy.selectAndTruncateContext(
+            scanText,
             availableForContext,
             workingBudget.truncationMethod,
             truncationSettings,
@@ -5156,8 +5185,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
             {
                 if(!workingBudget.truncateContextWindowAsString)
                 {
-                    contextWindow.selectAndTruncateContextSuspend(
+                    val scanText = contextWindow.buildLorebookScanText(
                         content.text,
+                        useEntireContextForLoreSelection
+                    )
+                    contextWindow.selectAndTruncateContextSuspend(
+                        scanText,
                         workingContextWindowSpace,
                         workingBudget.truncationMethod,
                         truncationSettings,
@@ -5169,8 +5202,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
                 else
                 {
-                    val asString = contextWindow.combineAndTruncateAsStringWithSettingsSuspend(
+                    val scanText = contextWindow.buildLorebookScanText(
                         content.text,
+                        useEntireContextForLoreSelection
+                    )
+                    val asString = contextWindow.combineAndTruncateAsStringWithSettingsSuspend(
+                        scanText,
                         workingContextWindowSpace,
                         truncationSettings,
                         workingBudget.truncationMethod
@@ -5387,8 +5424,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
             val allocatedBudget = pageBudgets[pageKey] ?: 0
             if(allocatedBudget <= 0) continue
 
-            contextWindow.selectAndTruncateContextSuspend(
+            val scanText = contextWindow.buildLorebookScanText(
                 content.text,
+                useEntireContextForLoreSelection
+            )
+            contextWindow.selectAndTruncateContextSuspend(
+                scanText,
                 allocatedBudget,
                 budget.truncationMethod,
                 truncationSettings,
@@ -7317,6 +7358,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             appendLoreBook = appendLoreBook,
             loreBookFillMode = loreBookFillMode,
             loreBookFillAndSplitMode = loreBookFillAndSplitMode,
+            useEntireContextForLoreSelection = useEntireContextForLoreSelection,
             useModelReasoning = useModelReasoning,
             modelReasoningSettingsV2 = modelReasoningSettingsV2,
             modelReasoningSettingsV3 = modelReasoningSettingsV3,

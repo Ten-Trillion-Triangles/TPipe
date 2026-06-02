@@ -515,6 +515,7 @@ Enables automatic context truncation with optional fill or fill-and-split select
 **Parameters:**
 - `fillMode`: If true, enables select-and-fill lorebook selection during context truncation. When active, split budgets are applied after priority lorebook selection has filled with top-weighted entries.
 - `fillAndSplitMode`: If true, enables fill mode and reserves a split budget for the rest of the top-level context. This keeps lorebook selection weighted first, then redistributes any unused lorebook budget to the rest of the context window.
+- `useEntireContextForLoreSelection`: If true, expands the lorebook scan surface to include `contextElements` and `converseHistory` in addition to the user prompt. Default is `false` (scan user prompt only). See [`useEntireContextForLoreSelection()`](#useentirecontextforloreselection-pipe) and the [Scan Surface](lorebook.md#scan-surface) section of the Lorebook API for the full contract.
 
 **Behavior:** Context is automatically truncated during execution based on `contextWindowSize` and `contextWindowTruncation` settings. Essential for preventing token overflow. When `fillMode` is true, lorebook entries are prioritized and filled first before remaining budget is split between other context components. When `fillAndSplitMode` is true, the top-level context window reserves half of the budget for lorebook entries and half for the remaining context, but any unused lorebook space is reclaimed and handed to the rest of the context window while still preserving the existing context-elements vs conversation-history split.
 
@@ -693,6 +694,16 @@ Enables append-only lorebook updates.
 Enables the select-and-fill strategy for LoreBook selection used during context truncation.
 
 **Behavior:** Sets `loreBookFillMode = true`. When enabled, `selectAndTruncateContext()` first runs `selectAndFillLoreBookContext()` using the full budget, then truncates context elements and conversation history with any remaining tokens, ensuring the lorebook crowding is capped by the requested token allocation.
+
+#### `enableLoreBookFillAndSplitMode(): Pipe`
+Enables the select-and-fill strategy for LoreBook selection and reserves a split budget for the rest of the top-level context window during truncation.
+
+**Behavior:** Sets both `loreBookFillMode = true` and `loreBookFillAndSplitMode = true`. In addition to the select-and-fill behavior of [`enableLoreBookFillMode()`](#enablelorebookfillmode-pipe), the top-level context window reserves half of the budget for lorebook entries and half for the remaining context. Any unused lorebook space is reclaimed and handed to the rest of the context window while still preserving the existing context-elements vs conversation-history split. Use this when you want lorebook selection weighted first AND a hard cap on how much of the context lorebooks can consume.
+
+#### `useEntireContextForLoreSelection(): Pipe`
+Opts in to a wider lorebook scan surface so context elements and conversation history are matched alongside the user prompt.
+
+**Behavior:** Sets `useEntireContextForLoreSelection = true`. When enabled, every lorebook selection/truncation call site in the pipe's execution path calls `ContextWindow.buildLorebookScanText(userPrompt, true)`, so the matcher runs against `userPrompt` + `contextElements` + `converseHistory.history[*].content.text` instead of the user prompt alone. Default is `false`, which preserves the historical "scan user prompt only" contract. In `MiniBank` multi-page contexts, each page's scan surface is still scoped to that page's own `contextElements` and `converseHistory` (the shared user prompt is the only cross-page input), so per-page isolation is preserved. See [Lorebook API: Scan Surface](lorebook.md#scan-surface) for the full helper contract.
 
 ---
 

@@ -3,8 +3,12 @@ package com.TTT
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.LoreBook
 import com.TTT.Context.Dictionary
+import com.TTT.Context.buildLorebookScanText
+import com.TTT.Context.ConverseRole
+import com.TTT.Pipe.MultimodalContent
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ContextWindowTest {
@@ -163,7 +167,7 @@ class ContextWindowTest {
     @Test
     fun selectLoreBookContextNoDuplicatesTest() {
         val contextWindow = ContextWindow()
-        
+
         // Setup lorebook where multiple paths could lead to same entry
         contextWindow.addLoreBookEntry(
             key = "dragon",
@@ -178,13 +182,127 @@ class ContextWindowTest {
             weight = 5,
             linkedKeys = listOf("dragon") // Circular reference
         )
-        
+
         // Test text that could trigger dragon multiple ways
         val selectedContext = contextWindow.selectLoreBookContext("The dragon breathes fire and the wyrm roars", 100)
-        
+
         // Should not have duplicates despite multiple trigger paths
         assertEquals(2, selectedContext.size)
         assertEquals(1, selectedContext.count { it == "dragon" })
         assertEquals(1, selectedContext.count { it == "fire" })
+    }
+
+    @Test
+    fun buildLorebookScanTextReturnsUserPromptWhenFlagOff() {
+        val contextWindow = ContextWindow()
+
+        // Populate both extra sources so any leakage would be visible.
+        contextWindow.contextElements.add("context element with dragon keyword")
+        contextWindow.contextElements.add("context element with phoenix keyword")
+        contextWindow.converseHistory.add(
+            ConverseRole.user,
+            MultimodalContent("prior turn mentions wyvern")
+        )
+        contextWindow.converseHistory.add(
+            ConverseRole.assistant,
+            MultimodalContent("assistant turn mentions drake")
+        )
+
+        val userPrompt = "Tell me about the hero."
+        val scanText = contextWindow.buildLorebookScanText(userPrompt, useEntireContext = false)
+
+        assertEquals(
+            userPrompt,
+            scanText,
+            "When useEntireContext is false the helper must return the user prompt verbatim"
+        )
+    }
+
+    @Test
+    fun buildLorebookScanTextReturnsUserPromptWhenFlagOnButNoExtraSources() {
+        val contextWindow = ContextWindow()
+
+        val userPrompt = "Tell me about the hero."
+        val scanText = contextWindow.buildLorebookScanText(userPrompt, useEntireContext = true)
+
+        assertEquals(
+            userPrompt,
+            scanText,
+            "With no contextElements or converseHistory the helper must return the user prompt unchanged"
+        )
+        assertFalse(
+            scanText.endsWith("\n"),
+            "There must be no trailing newline when both extra sources are empty"
+        )
+    }
+
+    @Test
+    fun buildLorebookScanTextAppendsContextElementsWhenFlagOn() {
+        val contextWindow = ContextWindow()
+
+        contextWindow.contextElements.add("first context element")
+        contextWindow.contextElements.add("second context element")
+        // converseHistory stays empty so only the contextElements branch fires.
+
+        val userPrompt = "Tell me about the hero."
+        val scanText = contextWindow.buildLorebookScanText(userPrompt, useEntireContext = true)
+
+        val expected = "$userPrompt\nfirst context element\nsecond context element"
+        assertEquals(
+            expected,
+            scanText,
+            "contextElements must be joined with \\n and prefixed by a single \\n separator"
+        )
+    }
+
+    @Test
+    fun buildLorebookScanTextAppendsConverseHistoryWhenFlagOn() {
+        val contextWindow = ContextWindow()
+
+        // contextElements stays empty so only the converseHistory branch fires.
+        contextWindow.converseHistory.add(
+            ConverseRole.user,
+            MultimodalContent("user turn keeps the conversation grounded")
+        )
+        contextWindow.converseHistory.add(
+            ConverseRole.assistant,
+            MultimodalContent("assistant turn keeps the conversation grounded")
+        )
+
+        val userPrompt = "Tell me about the hero."
+        val scanText = contextWindow.buildLorebookScanText(userPrompt, useEntireContext = true)
+
+        val expected = "$userPrompt\nuser turn keeps the conversation grounded\nassistant turn keeps the conversation grounded"
+        assertEquals(
+            expected,
+            scanText,
+            "converseHistory text must be joined with \\n and prefixed by a single \\n separator"
+        )
+    }
+
+    @Test
+    fun buildLorebookScanTextConcatenatesAllSourcesInOrder() {
+        val contextWindow = ContextWindow()
+
+        contextWindow.contextElements.add("alpha context")
+        contextWindow.contextElements.add("beta context")
+        contextWindow.converseHistory.add(
+            ConverseRole.user,
+            MultimodalContent("user said gamma")
+        )
+        contextWindow.converseHistory.add(
+            ConverseRole.assistant,
+            MultimodalContent("assistant said delta")
+        )
+
+        val userPrompt = "Tell me about the hero."
+        val scanText = contextWindow.buildLorebookScanText(userPrompt, useEntireContext = true)
+
+        val expected = "$userPrompt\nalpha context\nbeta context\nuser said gamma\nassistant said delta"
+        assertEquals(
+            expected,
+            scanText,
+            "userPrompt + \\n + contextElements.joinToString(\"\\n\") + \\n + converseHistory.joinToString(\"\\n\") { it.content.text }"
+        )
     }
 }

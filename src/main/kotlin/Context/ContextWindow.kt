@@ -2274,3 +2274,39 @@ data class ContextWindow(
         return ContextLock.getLockedKeysForContext(this)
     }
 }
+
+/**
+ * Single source of truth for what text the lorebook matcher should scan.
+ *
+ * When [useEntireContext] is false, returns [userPrompt] unchanged — preserving
+ * the historical "scan only the user prompt" behavior.
+ *
+ * When [useEntireContext] is true, returns the user prompt concatenated with
+ * this window's [contextElements] and [converseHistory.history] text,
+ * newline-separated. Empty sources are skipped (no trailing newlines).
+ *
+ * @param userPrompt The user prompt text the caller is about to feed to selection.
+ * @param useEntireContext When true, expand the scan surface to the entire window.
+ * @return The text to feed into selectLoreBookContext / selectAndTruncateContext.
+ */
+fun ContextWindow.buildLorebookScanText(
+    userPrompt: String,
+    useEntireContext: Boolean
+): String
+{
+    if(!useEntireContext) return userPrompt
+
+    return buildString {
+        append(userPrompt)
+        if(contextElements.isNotEmpty())
+        {
+            append('\n')
+            append(contextElements.joinToString("\n"))
+        }
+        if(converseHistory.history.isNotEmpty())
+        {
+            append('\n')
+            append(converseHistory.history.joinToString("\n") { it.content.text })
+        }
+    }
+}
