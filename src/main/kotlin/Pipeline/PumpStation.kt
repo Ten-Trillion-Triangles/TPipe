@@ -250,6 +250,12 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var parentTokenBudgetSettings: TokenBudgetSettings? = null
 
     /**
+     * Optional metadata storage dump to allow the developer to store read arbitrary values as needed from the path
+     * object. 
+     */
+    val pathMetadata: MutableMap<Any, Any> = mutableMapOf()
+
+    /**
      * Optional internal agent. Stored as a P2P interface to allow any possible TPipe agent type to be stored internally
      * this includes embedding another [PumpStation] inside the path object that can be called by an outer PumpStation.
      * When assigned, the agent builder function will be skipped over.
@@ -705,6 +711,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
 
 
 //--------------------------------------------------Config--------------------------------------------------------------
+
+    /**
+     * Top level variable that allows the injection of a persona, or personality. This value can also be automatically
+     * applied to any role-play reasoning pipes deployed into pipes and pipelines. Forces the agent to take on the persona
+     * and prioritize the persona above every other instruction.
+     */
+    private var personality = ""
 
     /**
      * Treated as the "system prompt" for the harness. Is injected into the harness after initial backed in harness
