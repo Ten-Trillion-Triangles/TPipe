@@ -5,6 +5,8 @@ import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ConverseRole
 import com.TTT.Context.MiniBank
+import com.TTT.Context.TodoList
+import com.TTT.Context.TodoListTask
 import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequest
@@ -865,12 +867,12 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * Internal context window addressable by this harness, and able to be passed into the various agents
      * that are deployed here.
      */
-    private val contextWindow = ContextWindow()
+     val contextWindow = ContextWindow()
 
     /**
      * Internal miniBank serves the same purpose as [contextWindow]
      */
-    private val miniBank = MiniBank()
+    val miniBank = MiniBank()
 
     /**
      * Mutex lock used for async lorebook agents. This allows us to queue up and safely ensure that the lorebook agents

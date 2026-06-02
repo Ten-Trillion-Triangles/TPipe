@@ -2457,6 +2457,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun setTodoListPageKey(key: String) : Pipe
     {
         todoPageKey = key
+        injectTodoList = true
         return this
     }
 
