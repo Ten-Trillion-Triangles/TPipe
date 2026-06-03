@@ -5,6 +5,8 @@ import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ConverseRole
 import com.TTT.Context.MiniBank
+import com.TTT.Context.TodoList
+import com.TTT.Context.TodoListTask
 import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequest
@@ -15,7 +17,9 @@ import com.TTT.Pipe.TruncationSettings
 import com.TTT.Structs.PipeSettings
 import com.TTT.PipeContextProtocol.FunctionRegistry
 import com.TTT.PipeContextProtocol.PcpContext
+import com.TTT.PipeContextProtocol.PcpExecutionDispatcher
 import com.TTT.Util.serialize
+import kotlinx.serialization.json.Json
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.Contextual
@@ -248,6 +252,12 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var parentTokenBudgetSettings: TokenBudgetSettings? = null
 
     /**
+     * Optional metadata storage dump to allow the developer to store read arbitrary values as needed from the path
+     * object.
+     */
+    val pathMetadata: MutableMap<Any, Any> = mutableMapOf()
+
+    /**
      * Optional internal agent. Stored as a P2P interface to allow any possible TPipe agent type to be stored internally
      * this includes embedding another [PumpStation] inside the path object that can be called by an outer PumpStation.
      * When assigned, the agent builder function will be skipped over.
@@ -435,11 +445,27 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
         turnSummary: String
     ): MultimodalContent
     {
-        // Priority 1: PCP function
+        // Priority 1: PCP function — dispatch to PcpExecutionDispatcher if a function is named
         if (pcpSchema != null && pcpSchema!!.tpipeOptions.isNotEmpty())
         {
-            // TODO: PCP invocation path — PCP executes and returns MultimodalContent
-            // For now fall through to next priority
+            val functionName = content.tools.tPipeContextOptions.functionName
+            if (functionName.isNotBlank())
+            {
+                val dispatcher = PcpExecutionDispatcher()
+                val result = dispatcher.executeRequest(content.tools, pcpSchema!!)
+                if (result.success)
+                {
+                    val pcpResult = MultimodalContent(text = result.output)
+                    pcpResult.metadata["pcpOutput"] = result.output
+                    return pcpResult
+                }
+                else
+                {
+                    // PCP execution failed — set lastError and fall through to next priority
+                    station.getTaskState().lastError = PumpStationError.PathExecutionException
+                    // Fall through to executionFunction or other priorities
+                }
+            }
         }
 
         // Priority 2: execution function
@@ -529,13 +555,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * be resolved, OR token budget settings are not manually set in the PumpStation itself, an exception will be
      * thrown.
      */
-    private var judgeAgent: P2PInterface? = null
+    private var judgeAgent: Pipeline? = null
 
     /**
      * Optional builder function to generate the [judgeAgent] on the fly. When non-null this will completely
      * override whatever is set for judgeAgent.
      */
-    private var judgeAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+    private var judgeAgentBuilderFunction: (suspend (harness: PumpStation) -> Pipeline)? = null
 
     /**
      * REQUIRED: This agent evaluates what the next steps in the harness needs to be, and dispatches the to the
@@ -576,6 +602,45 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * time it would be called.
      */
     private var interventionAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+
+    /**
+     * Proactive health monitoring agent. Fires based on [healthAgentTurnInterval]
+     * or [healthAgentErrorRatioThreshold] to detect harness degradation,
+     * context drift, looping, or struggle patterns.
+     *
+     * Unlike [interventionAgent] which is REACTIVE (fires after failure), healthAgent
+     * is PROACTIVE and fires conditionally before the judge agent.
+     */
+    private var healthAgent: P2PInterface? = null
+
+    /**
+     * Builder function — creates fresh thread-safe agent instance each invocation.
+     */
+    private var healthAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+
+    /**
+     * Fire healthAgent after this many turns since last health check.
+     * null = disabled.
+     */
+    private var healthAgentTurnInterval: Int? = null
+
+    /**
+     * Fire healthAgent when errors/turns ratio exceeds this threshold (0.0–1.0).
+     * null = disabled.
+     */
+    private var healthAgentErrorRatioThreshold: Double? = null
+
+    /**
+     * Concurrency mode for healthAgent execution.
+     * Blocking: judge waits for healthAgent to complete.
+     * Async: judge fires immediately; healthAgent runs in background.
+     */
+    private var healthAgentConcurrencyMode: PumpStationConcurrencyMode? = null
+
+    /**
+     * Tracks turn index of last health check for interval evaluation.
+     */
+    private var lastHealthCheckTurn: Int = 0
 
     /**
      * Optional background lorebook agent. Invoked as the first background agent in the harness if present.
@@ -648,6 +713,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
 
 
 //--------------------------------------------------Config--------------------------------------------------------------
+
+    /**
+     * Top level variable that allows the injection of a persona, or personality. This value can also be automatically
+     * applied to any role-play reasoning pipes deployed into pipes and pipelines. Forces the agent to take on the persona
+     * and prioritize the persona above every other instruction.
+     */
+    private var personality = ""
 
     /**
      * Treated as the "system prompt" for the harness. Is injected into the harness after initial backed in harness
@@ -792,15 +864,21 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private val stash = mutableMapOf<String, ConverseData>()
 
     /**
+     * Optional metadata that can be used for anything the developer wants in the harnness. Useful for storing
+     * whatever arbitrary data might need to be shared between functions across agents or other sub-systems.
+     */
+    val metadata = mutableMapOf<Any?, Any?>()
+
+    /**
      * Internal context window addressable by this harness, and able to be passed into the various agents
      * that are deployed here.
      */
-    private val contextWindow = ContextWindow()
+     val contextWindow = ContextWindow()
 
     /**
      * Internal miniBank serves the same purpose as [contextWindow]
      */
-    private val miniBank = MiniBank()
+    val miniBank = MiniBank()
 
     /**
      * Mutex lock used for async lorebook agents. This allows us to queue up and safely ensure that the lorebook agents
@@ -886,6 +964,23 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var maxTotalPathCallsPerPath: Int? = null
 
     /**
+     * Policy for how the harness responds when [maxTotalPathCallsPerPath] is exceeded.
+     * Default is [PathLimitExceededPolicy.Skip] — path is moved to reserve.
+     */
+    var pathLimitExceededPolicy: PathLimitExceededPolicy = PathLimitExceededPolicy.Skip
+
+    /**
+     * Optional DITL function invoked when [maxTotalPathCallsPerPath] is exceeded.
+     * Allows dynamic runtime policy instead of static [PathLimitExceededPolicy].
+     * If null, static pathLimitExceededPolicy value is used.
+     */
+    private var pathLimitExceededFunction: (suspend (
+        path: PathObject,
+        reason: String,
+        harness: PumpStation
+    ) -> PathLimitExceededResult)? = null
+
+    /**
      * Tracks invocation counts per path name for loop guard enforcement.
      */
     private val pathCallCounts = mutableMapOf<String, Int>()
@@ -943,6 +1038,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * prior to the llm call. This will be called prior to the judge agent.
      */
     private var preValidationJudgeFunction: (suspend (content: MultimodalContent, miniBank: MiniBank, harness: PumpStation) -> MiniBank)? = null
+
+    /**
+     * Execution function ran immediately after the judge agent exits. Allows the developer to intercept and fetch output,
+     * or other data to control, update context and history, or alter the behavior of the harness in response to
+     * the output of the judge agent.
+     */
+    private var postJudgeFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> MultimodalContent)? = null
 
     /**
      * Pre-validation DITL call for the dispatch agent. Invoked prior to running the dispatch agent. Works the same way
@@ -1007,6 +1109,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var postCompactionFunction: (suspend (content: MultimodalContent, newHistory: ConverseHistory, harness: PumpStation) -> MultimodalContent)? = null
 
     /**
+     * Fires anytime an agent has an internal context truncation due to token budgeting. Allows for direct intervention
+     * to repair things like the conversation history, and handle possible loss of user instructions or other required
+     * data in the history itself. If not bound, a default function will be at harness startup time.
+     */
+    private var onContextTruncated: (suspend (wasTruncated: Boolean, remainingFreeSpace: Int) -> Unit)? = null
+
+    /**
      * P2PInterface required init function. Initializes the PumpStation harness.
      * Present to satisfy the [P2PInterface] contract.
      * Actual initialization is performed by the full [P2PInitInternal] method.
@@ -1066,6 +1175,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         goalAgent?.setParentInterface(this)
         preInitAgent?.setParentInterface(this)
         pathSafetyAgent?.setParentInterface(this)
+        healthAgent?.setParentInterface(this)
         for (agent in additionalHarnessAgents)
         {
             agent.setParentInterface(this)
@@ -1075,6 +1185,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         judgeAgent?.P2PInit()
         dispatchAgent?.P2PInit()
         interventionAgent?.P2PInit()
+        healthAgent?.P2PInit()
         lorebookAgent?.P2PInit()
         summaryAgent?.P2PInit()
         goalAgent?.P2PInit()
@@ -1109,6 +1220,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
             judgeAgent?.let { add(it) }
             dispatchAgent?.let { add(it) }
             interventionAgent?.let { add(it) }
+            healthAgent?.let { add(it) }
             lorebookAgent?.let { add(it) }
             summaryAgent?.let { add(it) }
             goalAgent?.let { add(it) }
@@ -1251,6 +1363,72 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
             originalInput = content
         ))
 
+        // === HealthCheck phase — conditional proactive wellness check ===
+        if (healthAgent != null)
+        {
+            val turnsSinceLastHealth = taskState.turnIndex - lastHealthCheckTurn
+            val errorRatio = if (taskState.turnIndex > lastHealthCheckTurn) {
+                pathCallCounts.values.sum().toDouble() / (taskState.turnIndex - lastHealthCheckTurn)
+            } else 0.0
+
+            val shouldFire = (healthAgentTurnInterval != null && turnsSinceLastHealth >= healthAgentTurnInterval!!) ||
+                (healthAgentErrorRatioThreshold != null && errorRatio >= healthAgentErrorRatioThreshold!!)
+
+            if (shouldFire)
+            {
+                // Build structured HealthContext JSON
+                val healthContextJson = serialize(HealthContext(
+                    runId = taskState.runId,
+                    turnIndex = taskState.turnIndex,
+                    harnessStatus = taskState.status,
+                    lastError = taskState.lastError?.name,
+                    consecutivePathCount = consecutivePathCount,
+                    lastSelectedPathName = lastSelectedPathName,
+                    pathCallCounts = pathCallCounts.toMap(),
+                    visiblePathNames = getVisiblePathNames(),
+                    reservePathNames = getReservePathNames(),
+                    contextFillPercent = 0.0,
+                    turnHistorySummary = turnHistory.history.takeLast(5).mapNotNull { it.content.text },
+                    recentErrors = emptyList()
+                ))
+                val healthContextContent = MultimodalContent(text = healthContextJson)
+
+                // Emit pre-event
+                backgroundEventQueue.trySend(HealthCheckCompleted(
+                    runId = taskState.runId,
+                    turnIndex = taskState.turnIndex,
+                    status = HealthStatus.Unknown,
+                    warnings = 0,
+                    terminateHarness = false
+                ))
+
+                // Execute healthAgent — Blocking mode only; Async is fire-and-forget
+                if (healthAgentConcurrencyMode != PumpStationConcurrencyMode.Async)
+                {
+                    val agent = healthAgentBuilderFunction?.invoke(this) ?: healthAgent
+                    val result = agent?.executeLocal(healthContextContent)
+
+                    // Attempt to parse HealthReport from result text
+                    val healthReport = result?.text?.let { json ->
+                        try { Json.decodeFromString<HealthReport>(json) } catch (e: Exception) { null }
+                    } ?: HealthReport()
+
+                    backgroundEventQueue.trySend(HealthCheckCompleted(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        status = healthReport.status,
+                        warnings = healthReport.warnings.size,
+                        terminateHarness = healthReport.terminateHarness
+                    ))
+                    if (healthReport.terminateHarness)
+                    {
+                        taskState.latestContent?.terminatePipeline = true
+                    }
+                    lastHealthCheckTurn = taskState.turnIndex
+                }
+            }
+        }
+
         // TODO: Full harness execution loop goes here
         // For now, return the input as-is as a stub
         return content
@@ -1305,6 +1483,15 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     fun getTaskState(): PumpStationTaskState = taskState
 
     /**
+     * Emits a PumpStation event. Called by inner PathObject to emit events
+     * from within path execution without needing backgroundEventQueue visibility.
+     */
+    private fun emitEvent(event: PumpStationEvent)
+    {
+        backgroundEventQueue.trySend(event)
+    }
+
+    /**
      * Returns the current stash manifest (rich metadata about stashed content)
      * without loading the full content.
      */
@@ -1330,6 +1517,17 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     fun removePath(name: String)
     {
         pathList.remove(name)
+    }
+
+    /**
+     * Moves a path from the normal path list to reserve, making it invisible to dispatch
+     * until explicitly revealed or the harness resets.
+     */
+    private fun movePathToReserve(name: String)
+    {
+        val path = pathList.remove(name) ?: return
+        path.revealWhen = { _, _ -> false }
+        reservePaths[name] = path
     }
 
     /**
@@ -1456,7 +1654,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
                 consecutivePathCount++
                 if (consecutivePathCount >= maxConsecutiveSamePath!!)
                 {
-                    // Loop guard triggered — TODO: trigger intervention or forced path change
+                    // Loop guard triggered — emit PathFailed, then call interventionAgent if set
                     backgroundEventQueue.trySend(PathFailed(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
@@ -1465,6 +1663,23 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
                         riskLevel = riskLevel,
                         error = PumpStationError.LoopGuardTriggered,
                         errorMessage = "maxConsecutiveSamePath exceeded for path '${pathName}'"
+                    ))
+
+                    // Emit InterventionStarted, invoke interventionAgent if configured, then emit InterventionCompleted
+                    backgroundEventQueue.trySend(InterventionStarted(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        trigger = PumpStationError.LoopGuardTriggered,
+                        pathName = pathName
+                    ))
+
+                    interventionAgent?.executeLocal(taskState.latestContent ?: MultimodalContent())
+
+                    backgroundEventQueue.trySend(InterventionCompleted(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        nudges = 0,
+                        shouldContinue = true
                     ))
                 }
             }
@@ -1480,7 +1695,55 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         pathCallCounts[pathName] = callCount
         if (maxTotalPathCallsPerPath != null && callCount > maxTotalPathCallsPerPath!!)
         {
-            // Path call limit exceeded — TODO: hide path or force intervention
+            val limitResult = pathLimitExceededFunction?.invoke(
+                path,
+                "maxTotalPathCallsPerPath exceeded",
+                this
+            ) ?: PathLimitExceededResult(
+                action = pathLimitExceededPolicy,
+                reason = "Using static policy"
+            )
+
+            when (limitResult.action)
+            {
+                PathLimitExceededPolicy.Skip ->
+                {
+                    backgroundEventQueue.trySend(PathHidden(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        pathName = pathName,
+                        reason = limitResult.reason.ifEmpty { "maxTotalPathCallsPerPath exceeded" }
+                    ))
+                    movePathToReserve(pathName)
+                }
+                PathLimitExceededPolicy.Halt ->
+                {
+                    taskState.latestContent?.terminatePipeline = true
+                    taskState.lastError = PumpStationError.MaxTurnsExceeded
+                    backgroundEventQueue.trySend(PathFailed(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        phase = PumpStationPhase.PathExecution,
+                        pathName = pathName,
+                        riskLevel = riskLevel,
+                        error = PumpStationError.MaxTurnsExceeded,
+                        errorMessage = limitResult.reason.ifEmpty { "maxTotalPathCallsPerPath exceeded, harness halting" }
+                    ))
+                    return input
+                }
+                PathLimitExceededPolicy.Continue ->
+                {
+                    backgroundEventQueue.trySend(PathFailed(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        phase = PumpStationPhase.PathExecution,
+                        pathName = pathName,
+                        riskLevel = riskLevel,
+                        error = PumpStationError.MaxTurnsExceeded,
+                        errorMessage = limitResult.reason.ifEmpty { "maxTotalPathCallsPerPath exceeded but continuing" }
+                    ))
+                }
+            }
         }
 
         // --- Risk check ---
@@ -1494,11 +1757,11 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
                 riskLevel = riskLevel
             ))
 
-            // Call path safety function or agent
+            // Call path safety function or agent — function OR agent, first to return true approves
             val approved = pathSafetyFunction?.invoke(path, path.pathSchema, this)
-                ?: pathSafetyAgent?.let {
-                    it.executeLocal(input)
-                    true // TODO: actually check result
+                ?: pathSafetyAgent?.let { agent ->
+                    val result = agent.executeLocal(input)
+                    !(result.terminatePipeline || result.passPipeline)
                 }
                 ?: true
 

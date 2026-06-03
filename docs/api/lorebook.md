@@ -8,6 +8,7 @@
 - [Public Functions](#public-functions)
   - [Content Management](#content-management)
   - [Utilities](#utilities)
+- [Scan Surface](#scan-surface)
 
 ## Overview
 
@@ -82,6 +83,90 @@ Useful for consolidating related lorebook entries or accumulating context from m
 Converts this LoreBook to a single-entry map.
 
 **Behavior:** Returns `Map<String, LoreBook>` with this lorebook's key as the map key and this object as the value. Convenient for integration with ContextWindow's `loreBookKeys` map structure.
+
+## Scan Surface
+
+The "scan surface" is the text that the lorebook matcher runs against when deciding which entries to inject. The default is the user prompt only — that contract is preserved for any caller that has not opted in.
+
+### Default Scan Surface
+
+By default, the lorebook matcher scans **only the user prompt** (`content.text`). Neither `ContextWindow.contextElements` nor `ContextWindow.converseHistory` are included in the scan. This is the historical behavior and remains the default so existing pipelines keep their selection results.
+
+If your lorebook keys are designed to fire on the user's most recent message alone, leave the scan surface alone. If your lorebook keys reference concepts that live in earlier context (recent turns of conversation, system-injected context elements, prior assistant replies), the default surface can miss them.
+
+### Expanding the Scan Surface
+
+To opt in to a larger scan surface, call `buildLorebookScanText(userPrompt, useEntireContext)` on the `ContextWindow` you are about to run selection against. The helper is the canonical way to build the scan text for any of the five lorebook selection/truncation call sites in `Pipe.kt`.
+
+```kotlin
+fun ContextWindow.buildLorebookScanText(
+    userPrompt: String,
+    useEntireContext: Boolean
+): String
+```
+
+**Parameters:**
+- **`userPrompt`**: The user prompt text the caller is about to feed to selection.
+- **`useEntireContext`**: When `true`, expand the scan surface to the entire window. When `false`, the helper returns `userPrompt` unchanged.
+
+**Returns:** The text to feed into `selectLoreBookContext` / `selectAndTruncateContext`.
+
+### Behavior Contract
+
+- **When `useEntireContext` is `false`**: returns `userPrompt` verbatim, regardless of what `contextElements` and `converseHistory` contain. This is the default and preserves the historical "scan only the user prompt" contract.
+- **When `useEntireContext` is `true`**: returns the user prompt concatenated with `contextElements` (newline-separated) and `converseHistory.history[*].content.text` (newline-separated). Empty sources are skipped — there is no trailing newline if either side is empty.
+
+The concatenation order is: `userPrompt`, then `contextElements` (if non-empty), then `converseHistory.history[*].content.text` (if non-empty). Each component is joined with `'\n'`. The user prompt is always present and always first.
+
+### Example
+
+```kotlin
+import com.TTT.Context.ContextWindow
+import com.TTT.Context.ConverseHistory
+import com.TTT.Context.ConverseRole
+import com.TTT.Pipe.MultimodalContent
+import com.TTT.Context.buildLorebookScanText
+
+val contextWindow = ContextWindow()
+contextWindow.contextElements.add(
+    "Lyra first visited the Silverbrook archives on the eve of the autumn equinox."
+)
+contextWindow.converseHistory.add(
+    ConverseRole.user,
+    MultimodalContent("Tell me about the last time you were in Silverbrook.")
+)
+contextWindow.converseHistory.add(
+    ConverseRole.agent,
+    MultimodalContent("I remember the archives well — the dust on the southern stacks was almost gold in the lamplight.")
+)
+
+val userPrompt = "What did Lyra find in the restricted wing?"
+val scanText = contextWindow.buildLorebookScanText(userPrompt, true)
+// scanText:
+// "What did Lyra find in the restricted wing?
+// Lyra first visited the Silverbrook archives on the eve of the autumn equinox.
+// Tell me about the last time you were in Silverbrook.
+// I remember the archives well — the dust on the southern stacks was almost gold in the lamplight."
+
+// With useEntireContext = false, the same call returns userPrompt unchanged:
+// "What did Lyra find in the restricted wing?"
+```
+
+### Enabling on a Pipe
+
+The Pipe-level DSL flag is what flips `useEntireContext` to `true` for every selection/truncation call site in the pipe's execution path:
+
+```kotlin
+val pipe = BedrockPipe()
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .useEntireContextForLoreSelection()
+```
+
+See [Pipe: useEntireContextForLoreSelection()](pipe.md#useentirecontextforloreselection-pipe) for the full Pipe-side contract.
+
+### MiniBank Per-Page Behavior
+
+In multi-page contexts (`MiniBank`), each page's matcher uses the shared user prompt plus **that page's own** `contextElements` and `converseHistory` — not the main window's. The per-page isolation is preserved even when `useEntireContext = true`. The helper is called per page against each page's `ContextWindow`, so each page's lorebook selection sees a scan surface scoped to its own context.
 
 ## Usage Patterns
 

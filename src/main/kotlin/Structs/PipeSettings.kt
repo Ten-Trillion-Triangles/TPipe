@@ -43,6 +43,7 @@ data class PipeSettings(
     var appendLoreBook: Boolean? = null,
     var loreBookFillMode: Boolean? = null,
     var loreBookFillAndSplitMode: Boolean? = null,
+    var useEntireContextForLoreSelection: Boolean? = null,
     var useModelReasoning: Boolean? = null,
     var modelReasoningSettingsV2: Int? = null,
     var modelReasoningSettingsV3: String? = null,

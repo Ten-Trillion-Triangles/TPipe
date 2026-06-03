@@ -2,6 +2,7 @@ package com.TTT
 
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.ConverseRole
+import com.TTT.Context.buildLorebookScanText
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.Pipe
 import com.TTT.Enums.ContextWindowSettings
@@ -318,5 +319,226 @@ class FillAndSplitModeTest
         val contextTokens = window.contextElements.sumOf { Dictionary.countTokens(it) }
         val historyTokens = window.converseHistory.history.sumOf { Dictionary.countTokens(it.content.text) }
         return lorebookTokens + contextTokens + historyTokens
+    }
+
+    @Test
+    fun useEntireContextForLoreSelectionOff_excludesContextElementMatches()
+    {
+        val window = ContextWindow()
+        window.addLoreBookEntry(
+            "dragonlord",
+            "dragonlord lorebook entry keeps the runtime state visible",
+            10
+        )
+        window.addLoreBookEntry(
+            "decoy",
+            "decoy lorebook entry keeps the runtime state visible",
+            10
+        )
+
+        window.contextElements.add("the dragonlord arrived at dawn")
+
+        val userPrompt = "Tell me about the hero."
+        window.selectAndTruncateContext(
+            text = userPrompt,
+            totalTokenBudget = 200,
+            multiplyWindowSizeBy = 0,
+            truncateSettings = ContextWindowSettings.TruncateBottom
+        )
+
+        assertTrue(
+            !window.loreBookKeys.containsKey("dragonlord"),
+            "Without the flag, lorebook keys that only match contextElements must not be selected"
+        )
+        assertTrue(
+            !window.loreBookKeys.containsKey("decoy"),
+            "Decoy lorebook keys with no prompt match must not be selected"
+        )
+    }
+
+    @Test
+    fun useEntireContextForLoreSelectionOn_includesContextElementMatches()
+    {
+        val window = ContextWindow()
+        window.addLoreBookEntry(
+            "dragonlord",
+            "dragonlord lorebook entry keeps the runtime state visible",
+            10
+        )
+        window.addLoreBookEntry(
+            "decoy",
+            "decoy lorebook entry keeps the runtime state visible",
+            10
+        )
+
+        window.contextElements.add("the dragonlord arrived at dawn")
+
+        val userPrompt = "Tell me about the hero."
+        val scanText = window.buildLorebookScanText(userPrompt, useEntireContext = true)
+        window.selectAndTruncateContext(
+            text = scanText,
+            totalTokenBudget = 200,
+            multiplyWindowSizeBy = 0,
+            truncateSettings = ContextWindowSettings.TruncateBottom
+        )
+
+        assertTrue(
+            window.loreBookKeys.containsKey("dragonlord"),
+            "With the flag ON, lorebook keys that match contextElements must be selected"
+        )
+        assertTrue(
+            !window.loreBookKeys.containsKey("decoy"),
+            "Lorebook keys with no match anywhere in the scan text must still be filtered out"
+        )
+    }
+
+    @Test
+    fun useEntireContextForLoreSelectionOn_includesConverseHistoryMatches()
+    {
+        val window = ContextWindow()
+        window.addLoreBookEntry(
+            "phoenix",
+            "phoenix lorebook entry keeps the runtime state visible",
+            10
+        )
+        window.addLoreBookEntry(
+            "decoy",
+            "decoy lorebook entry keeps the runtime state visible",
+            10
+        )
+
+        window.converseHistory.add(
+            ConverseRole.user,
+            MultimodalContent("the phoenix rose from the ashes")
+        )
+        window.converseHistory.add(
+            ConverseRole.assistant,
+            MultimodalContent("assistant turn keeps the conversation grounded")
+        )
+
+        val userPrompt = "Tell me about the hero."
+        val scanText = window.buildLorebookScanText(userPrompt, useEntireContext = true)
+        window.selectAndTruncateContext(
+            text = scanText,
+            totalTokenBudget = 200,
+            multiplyWindowSizeBy = 0,
+            truncateSettings = ContextWindowSettings.TruncateBottom
+        )
+
+        assertTrue(
+            window.loreBookKeys.containsKey("phoenix"),
+            "With the flag ON, lorebook keys that match converseHistory must be selected"
+        )
+        assertTrue(
+            !window.loreBookKeys.containsKey("decoy"),
+            "Lorebook keys with no match anywhere in the scan text must still be filtered out"
+        )
+    }
+
+    @Test
+    fun useEntireContextForLoreSelection_defaultIsOff()
+    {
+        // The flag lives on Pipe, not on ContextWindow. The contract is:
+        // any caller that has not opted in (useEntireContext = false) must
+        // see zero behavior change. The helper is the only seam we need to
+        // exercise from the ContextWindow side, since the default flows
+        // through the unscanned user prompt.
+        val window = ContextWindow()
+        window.addLoreBookEntry(
+            "dragonlord",
+            "dragonlord lorebook entry keeps the runtime state visible",
+            10
+        )
+        window.contextElements.add("the dragonlord arrived at dawn")
+
+        val userPrompt = "Tell me about the hero."
+        val scanText = window.buildLorebookScanText(userPrompt, useEntireContext = false)
+        assertEquals(
+            userPrompt,
+            scanText,
+            "The default-off contract must keep the helper returning the user prompt verbatim"
+        )
+
+        window.selectAndTruncateContext(
+            text = scanText,
+            totalTokenBudget = 200,
+            multiplyWindowSizeBy = 0,
+            truncateSettings = ContextWindowSettings.TruncateBottom
+        )
+
+        assertFalse(
+            window.loreBookKeys.containsKey("dragonlord"),
+            "Default-off callers must not get contextElements-expanded lorebook matches"
+        )
+    }
+
+    @Test
+    fun useEntireContextForLoreSelection_interactsWithFillMode()
+    {
+        // Both the priority step and the fill step respect the new scan text.
+        // The flag controls ONLY what text is fed to the matcher; fill mode's
+        // behavior of adding remaining entries by weight is unchanged.
+
+        val offWindow = ContextWindow()
+        offWindow.addLoreBookEntry(
+            "alpha",
+            "alpha lorebook entry keeps the runtime state visible",
+            10
+        )
+        offWindow.addLoreBookEntry(
+            "beta",
+            "beta lorebook entry keeps the runtime state visible",
+            10
+        )
+        offWindow.contextElements.add("beta keeps the runtime state visible")
+
+        val offScanText = offWindow.buildLorebookScanText("Tell me about alpha.", useEntireContext = false)
+        offWindow.selectAndTruncateContext(
+            text = offScanText,
+            totalTokenBudget = 200,
+            multiplyWindowSizeBy = 0,
+            truncateSettings = ContextWindowSettings.TruncateBottom,
+            fillMode = true
+        )
+
+        assertTrue(
+            offWindow.loreBookKeys.containsKey("alpha"),
+            "Off + fillMode: the prompt-matched lorebook key must survive priority selection"
+        )
+        assertTrue(
+            offWindow.loreBookKeys.containsKey("beta"),
+            "Off + fillMode: the fill step adds remaining entries by weight, so beta (matching the scan text via fill weight sort) still survives"
+        )
+
+        val onWindow = ContextWindow()
+        onWindow.addLoreBookEntry(
+            "alpha",
+            "alpha lorebook entry keeps the runtime state visible",
+            10
+        )
+        onWindow.addLoreBookEntry(
+            "beta",
+            "beta lorebook entry keeps the runtime state visible",
+            10
+        )
+        onWindow.contextElements.add("beta keeps the runtime state visible")
+
+        val onScanText = onWindow.buildLorebookScanText("Tell me about alpha.", useEntireContext = true)
+        onWindow.selectAndTruncateContext(
+            text = onScanText,
+            totalTokenBudget = 200,
+            multiplyWindowSizeBy = 0,
+            truncateSettings = ContextWindowSettings.TruncateBottom,
+            fillMode = true
+        )
+
+        assertTrue(
+            onWindow.loreBookKeys.containsKey("alpha"),
+            "On + fillMode: the prompt-matched lorebook key must survive priority selection"
+        )
+        assertTrue(
+            onWindow.loreBookKeys.containsKey("beta"),
+            "On + fillMode: the contextElement-matched lorebook key must survive via the expanded scan (priority step or fill)"
+        )
     }
 }
