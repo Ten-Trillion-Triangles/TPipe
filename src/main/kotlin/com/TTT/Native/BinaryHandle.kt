@@ -26,6 +26,10 @@ class BinaryHandle(
     var mimeType: String = "application/octet-stream",
     var filename: String? = null
 ) {
+    init {
+        validateSize()
+    }
+
     /**
      * Discriminates the 4 binary content variant types.
      */

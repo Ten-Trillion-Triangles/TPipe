@@ -42,6 +42,7 @@ object EnumMappings {
                 KotlinConverseRole.user -> USER.cValue
                 KotlinConverseRole.assistant -> ASSISTANT.cValue
                 KotlinConverseRole.system -> SYSTEM.cValue
+                KotlinConverseRole.supervisor -> FUNCTION.cValue
                 KotlinConverseRole.agent -> TOOL.cValue
                 KotlinConverseRole.developer -> FUNCTION.cValue
                 KotlinConverseRole.tool_response -> VISUAL.cValue

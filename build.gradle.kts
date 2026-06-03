@@ -97,12 +97,22 @@ tasks.test {
 graalvmNative {
     val mainBinary = binaries.getByName("main")
 
-    // Build args for debuggability and correctness
+    // Build args for debuggability and correctness.
+    // NOTE: The previous --features=org.graalvm.nativeimage.impl.InternalResourcesFeature
+    // line referenced a class that is not part of the public GraalVM API in 24.x
+    // (the correct class is com.oracle.svm.hosted.ResourcesFeature and it is
+    // auto-registered, so the explicit --features flag is no longer required).
     mainBinary.buildArgs.addAll(listOf(
         "--shared",
         "-H:+ReportExceptionStackTraces",
-        "--no-fallback"
+        "--no-fallback",
+        "--enable-https",
+        "-H:+AllowVMInternalThreads"
     ))
+
+    metadataRepository {
+        enabled = true
+    }
 
     // Exclude META-INF/native-image from kotlin-compiler-embeddable JARs.
     // These JARs contain jline native-image configs that reference non-existent

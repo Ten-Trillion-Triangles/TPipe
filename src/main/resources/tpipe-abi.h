@@ -6,14 +6,85 @@
  * interop via GraalVM Native Image shared library. All functions return
  * 0 on success, negative error code on failure.
  *
- * @version 1.0
- * @date 2026-05-16
+ * ============================================================================
+ * OPTION A: graal_isolatethread_t* THREADED ENTRY POINTS
+ * ============================================================================
+ *
+ * Every API function takes `graal_isolatethread_t* thread` as the FIRST
+ * parameter. This matches the GraalVM @CEntryPoint calling convention where
+ * the IsolateThread is automatically populated by the native image runtime
+ * and passed across the JNI boundary.
+ *
+ * Usage pattern:
+ *
+ *     #include "tpipe-abi.h"
+ *     #include "graal_isolate.h"
+ *
+ *     graal_isolate_t*     isolate = NULL;
+ *     graal_isolatethread_t* thread = NULL;
+ *     if (graal_create_isolate(NULL, &isolate, &thread) != 0) {
+ *         fprintf(stderr, "Failed to create isolate\n");
+ *         return 1;
+ *     }
+ *
+ *     int rc = TPipe_init(thread);
+ *     // ... use other TPipe_* functions ...
+ *     TPipe_shutdown(thread);
+ *
+ *     graal_detach_thread(thread);
+ *     graal_tear_down_isolate(thread);
+ *
+ * The C caller is responsible for creating the isolate, attaching threads,
+ * and tearing down the isolate when done. The TPipe library does not
+ * manage isolate lifecycle.
+ *
+ * ============================================================================
+ *
+ * @version 2.0 (Option A)
+ * @date 2026-06-03
  */
 #ifndef TPIPE_ABI_H
 #define TPIPE_ABI_H
 
 #include <stdbool.h>
 #include <stdint.h>
+
+/*
+ * GraalVM Native Image types. Pulled in via the SDK header generated during
+ * the nativeCompile build step. This brings in:
+ *   - graal_isolate_t
+ *   - graal_isolatethread_t
+ *   - graal_create_isolate_params_t
+ *   - graal_create_isolate / graal_attach_thread / graal_detach_thread
+ *   - graal_tear_down_isolate / graal_detach_all_threads_and_tear_down_isolate
+ */
+#ifdef __has_include
+  #if __has_include("graal_isolate.h")
+    #include "graal_isolate.h"
+  #else
+    /* Forward declarations for consumers that don't have graal_isolate.h.
+       These match the GraalVM SDK 24.x ABI. */
+    struct __graal_isolate_t;
+    typedef struct __graal_isolate_t graal_isolate_t;
+    struct __graal_isolatethread_t;
+    typedef struct __graal_isolatethread_t graal_isolatethread_t;
+    typedef unsigned long __graal_uword;
+    enum { __graal_create_isolate_params_version = 4 };
+    struct __graal_create_isolate_params_t {
+        int version;
+        __graal_uword reserved_address_space_size;
+    };
+    typedef struct __graal_create_isolate_params_t graal_create_isolate_params_t;
+    int graal_create_isolate(graal_create_isolate_params_t*, graal_isolate_t**, graal_isolatethread_t**);
+    int graal_attach_thread(graal_isolate_t*, graal_isolatethread_t**);
+    int graal_detach_thread(graal_isolatethread_t*);
+    int graal_tear_down_isolate(graal_isolatethread_t*);
+    int graal_detach_all_threads_and_tear_down_isolate(graal_isolatethread_t*);
+  #endif
+#else
+  /* No __has_include — assume consumer has graal_isolate.h. */
+  #include "graal_isolate.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,7 +95,7 @@ extern "C" {
  *============================================================================*/
 
 /** ABI Version - bump on breaking changes */
-#define TPIPE_COMPATIBLE_ABI_VERSION 1
+#define TPIPE_COMPATIBLE_ABI_VERSION 2
 
 /*==============================================================================
  * CONSTANTS AND LIMITS
@@ -68,6 +139,10 @@ extern "C" {
 #define TPIPE_ERR_ALREADY_INITIALIZED -0x1B
 /** Operation cancelled - GAP-17 */
 #define TPIPE_ERR_OPERATION_CANCELLED -0x1C
+/** Binary payload too large */
+#define TPIPE_ERR_BINARY_TOO_LARGE    -0x1D
+/** String exceeds maximum length */
+#define TPIPE_ERR_STRING_TOO_LONG     -0x1E
 
 /*==============================================================================
  * OPERATION STATUS (from hostile review)
@@ -81,7 +156,7 @@ extern "C" {
 #define TPIPE_OPERATION_FAILED    2
 
 /*==============================================================================
- * LIBRARY STATE (TPipe_GetState)
+ * LIBRARY STATE (TPipe_getState)
  *============================================================================*/
 
 /** Library not initialized */
@@ -102,10 +177,10 @@ extern "C" {
 /** Base handle type - all handles derive from this */
 typedef uint64_t TPipe_Handle;
 
-/** Handle for MultimodalContent */
+/** Handle for Content (multimodal) */
 typedef uint64_t TPipe_ContentHandle;
 
-/** Handle for BinaryContent (4 variants: bytes/base64/cloudRef/textDoc) */
+/** Handle for Binary (4 variants: bytes/base64/cloudRef/textDoc) */
 typedef uint64_t TPipe_BinaryHandle;
 
 /** Handle for Pipe operations */
@@ -234,63 +309,78 @@ typedef enum TPipe_BinaryVariant {
 } TPipe_BinaryVariant;
 
 /*==============================================================================
- * 8 PHANTOM FUNCTIONS (Bootstrap - from plan Task 3)
+ * 8 PHANTOM FUNCTIONS (Library Lifecycle)
  *============================================================================*/
 
 /**
  * @brief Initialize the TPipe library
+ * @param thread Caller's IsolateThread (must be attached to an isolate)
  * @return 0 on success, negative error code on failure
  */
-int TPipe_init(void);
+int TPipe_init(graal_isolatethread_t* thread);
 
 /**
  * @brief Shutdown the TPipe library
+ * @param thread Caller's IsolateThread
  * @return 0 on success, negative error code on failure
  */
-int TPipe_shutdown(void);
+int TPipe_shutdown(graal_isolatethread_t* thread);
 
 /**
  * @brief Get the current library state
+ * @param thread Caller's IsolateThread
  * @return Current state (TPIPE_STATE_*)
  */
-int TPipe_getState(void);
+int TPipe_getState(graal_isolatethread_t* thread);
+
+/**
+ * @brief Check if the library is initialized and ready
+ * @param thread Caller's IsolateThread
+ * @return 1 if ready, 0 otherwise
+ */
+int TPipe_isInitialized(graal_isolatethread_t* thread);
 
 /**
  * @brief Increment reference count of a handle
+ * @param thread Caller's IsolateThread
  * @param handle Handle to add reference to
  * @return 0 on success, negative error code on failure
  */
-int TPipe_Handle_addRef(TPipe_Handle handle);
+int TPipe_Handle_addRef(graal_isolatethread_t* thread, TPipe_Handle handle);
 
 /**
  * @brief Release a handle (decrement reference count)
+ * @param thread Caller's IsolateThread
  * @param handle Handle to release
  * @return 0 on success, negative error code on failure
  */
-int TPipe_Handle_release(TPipe_Handle handle);
+int TPipe_Handle_release(graal_isolatethread_t* thread, TPipe_Handle handle);
 
 /**
  * @brief Get current reference count of a handle
+ * @param thread Caller's IsolateThread
  * @param handle Handle to query
  * @param refCount Output: current reference count
  * @return 0 on success, negative error code on failure
  */
-int TPipe_Handle_getRefCount(TPipe_Handle handle, int* refCount);
+int TPipe_Handle_getRefCount(graal_isolatethread_t* thread, TPipe_Handle handle, int* refCount);
 
 /**
  * @brief Check if a handle is valid
+ * @param thread Caller's IsolateThread
  * @param handle Handle to validate
  * @return 0 if valid, negative error code if invalid
  */
-int TPipe_Handle_isValid(TPipe_Handle handle);
+int TPipe_Handle_isValid(graal_isolatethread_t* thread, TPipe_Handle handle);
 
 /**
  * @brief Get library capabilities
+ * @param thread Caller's IsolateThread
  * @param capabilities Output array for capability flags
  * @param capabilitiesSize Size of the capabilities array
  * @return 0 on success, negative error code on failure
  */
-int TPipe_getCapabilities(int* capabilities, int capabilitiesSize);
+int TPipe_getCapabilities(graal_isolatethread_t* thread, int* capabilities, int capabilitiesSize);
 
 /*==============================================================================
  * ERROR REPORTING FUNCTIONS
@@ -298,548 +388,915 @@ int TPipe_getCapabilities(int* capabilities, int capabilitiesSize);
 
 /**
  * @brief Get the last error message from the library
+ * @param thread Caller's IsolateThread
  * @param buffer Buffer to store error message
  * @param bufferSize Size of the buffer
- * @return 0 on success, negative error code on failure
+ * @return Length of error string on success, negative error code on failure
  */
-int TPipe_getLastError(char* buffer, int bufferSize);
-
-/**
- * @brief Get the last error message for a specific handle
- * @param handle Handle to get error for
- * @param buffer Buffer to store error message
- * @param bufferSize Size of the buffer
- * @return 0 on success, negative error code on failure
- */
-int TPipe_Handle_getLastError(TPipe_Handle handle, char* buffer, int bufferSize);
+int TPipe_getLastError(graal_isolatethread_t* thread, char* buffer, int bufferSize);
 
 /*==============================================================================
- * VERSION AND STATS FUNCTIONS
+ * VERSION FUNCTIONS
  *============================================================================*/
 
 /**
  * @brief Get the library version
- * @param major Output: major version number
- * @param minor Output: minor version number
- * @param patch Output: patch version number
- * @return 0 on success, negative error code on failure
+ * @param thread Caller's IsolateThread
+ * @param buffer Output buffer for version string
+ * @param bufferSize Size of the buffer
+ * @return Length of the version string on success, negative error code on failure
  */
-int TPipe_getVersion(int* major, int* minor, int* patch);
-
-/**
- * @brief Get memory statistics
- * @param statsStruct Pointer to stats structure to fill
- * @return 0 on success, negative error code on failure
- */
-int TPipe_getMemoryStats(void* statsStruct);
+int TPipe_getVersion(graal_isolatethread_t* thread, char* buffer, int bufferSize);
 
 /*==============================================================================
  * CONTENT HANDLE FUNCTIONS
  *============================================================================*/
 
 /**
- * @brief Create a content handle from text
- * @param text Text content (UTF-8)
+ * @brief Create a content handle from null-terminated text
+ * @param thread Caller's IsolateThread
+ * @param text Text content (UTF-8, null-terminated)
  * @return Content handle, or 0 on failure
  */
-TPipe_Handle TPipe_ContentHandle_create(const char* text);
+TPipe_Handle TPipe_Content_create(graal_isolatethread_t* thread, const char* text);
 
 /**
- * @brief Set the terminate flag on content
- * @param handle Content handle
- * @param value terminate flag value (0 or 1)
- * @return 0 on success, negative error code on failure
+ * @brief Create a content handle with explicit text length
+ * @param thread Caller's IsolateThread
+ * @param text Text content (UTF-8)
+ * @param length Number of bytes in the text
+ * @return Content handle, or 0 on failure
  */
-int TPipe_ContentHandle_setTerminate(TPipe_ContentHandle handle, int value);
-
-/**
- * @brief Get the terminate flag from content
- * @param handle Content handle
- * @param value Output: terminate flag value
- * @return 0 on success, negative error code on failure
- */
-int TPipe_ContentHandle_getTerminate(TPipe_ContentHandle handle, int* value);
-
-/**
- * @brief Set the repeat flag on content
- * @param handle Content handle
- * @param value repeat flag value (0 or 1)
- * @return 0 on success, negative error code on failure
- */
-int TPipe_ContentHandle_setRepeat(TPipe_ContentHandle handle, int value);
-
-/**
- * @brief Get the repeat flag from content
- * @param handle Content handle
- * @param value Output: repeat flag value
- * @return 0 on success, negative error code on failure
- */
-int TPipe_ContentHandle_getRepeat(TPipe_ContentHandle handle, int* value);
-
-/**
- * @brief Set the pass flag on content
- * @param handle Content handle
- * @param value pass flag value (0 or 1)
- * @return 0 on success, negative error code on failure
- */
-int TPipe_ContentHandle_setPass(TPipe_ContentHandle handle, int value);
-
-/**
- * @brief Get the pass flag from content
- * @param handle Content handle
- * @param value Output: pass flag value
- * @return 0 on success, negative error code on failure
- */
-int TPipe_ContentHandle_getPass(TPipe_ContentHandle handle, int* value);
-
-/**
- * @brief Set the skip flag on content
- * @param handle Content handle
- * @param value skip flag value (0 or 1)
- * @return 0 on success, negative error code on failure
- */
-int TPipe_ContentHandle_setSkip(TPipe_ContentHandle handle, int value);
-
-/**
- * @brief Get the skip flag from content
- * @param handle Content handle
- * @param value Output: skip flag value
- * @return 0 on success, negative error code on failure
- */
-int TPipe_ContentHandle_getSkip(TPipe_ContentHandle handle, int* value);
-
-/**
- * @brief Set the jump flag on content
- * @param handle Content handle
- * @param value jump flag value (0 or 1)
- * @return 0 on success, negative error code on failure
- */
-int TPipe_ContentHandle_setJump(TPipe_ContentHandle handle, int value);
-
-/**
- * @brief Get the jump flag from content
- * @param handle Content handle
- * @param value Output: jump flag value
- * @return 0 on success, negative error code on failure
- */
-int TPipe_ContentHandle_getJump(TPipe_ContentHandle handle, int* value);
+TPipe_Handle TPipe_Content_createWithText(graal_isolatethread_t* thread, const char* text, int length);
 
 /**
  * @brief Add binary content to a content handle
- * @param handle Content handle to add binary to
- * @param binary Binary handle to add
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle to add binary to
+ * @param variant Binary variant (TPipe_BinaryVariant)
+ * @param data Pointer to binary data
+ * @param dataLen Length of binary data
+ * @param mimeType MIME type string (may be NULL)
+ * @param filename Filename string (may be NULL)
  * @return 0 on success, negative error code on failure
  */
-int TPipe_ContentHandle_addBinary(TPipe_ContentHandle handle, TPipe_BinaryHandle binary);
+int TPipe_Content_addBinary(graal_isolatethread_t* thread,
+                            TPipe_ContentHandle contentHandle,
+                            int variant,
+                            const uint8_t* data,
+                            int dataLen,
+                            const char* mimeType,
+                            const char* filename);
+
+/**
+ * @brief Free a result handle returned by TPipe_Pipe_execute
+ * @param thread Caller's IsolateThread
+ * @param operationHandle Operation handle to free
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Result_free(graal_isolatethread_t* thread, TPipe_Handle operationHandle);
+
+/**
+ * @brief Clone a content handle (creates a new handle with refcount=1)
+ * @param thread Caller's IsolateThread
+ * @param sourceHandle Source content handle
+ * @return New content handle, or 0 on failure
+ */
+TPipe_Handle TPipe_Content_clone(graal_isolatethread_t* thread, TPipe_Handle sourceHandle);
+
+/**
+ * @brief Release a content handle (decrement refcount; frees if zero)
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle to release
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_release(graal_isolatethread_t* thread, TPipe_ContentHandle contentHandle);
+
+/**
+ * @brief Get the text content of a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param buffer Output buffer for text
+ * @param bufferSize Size of the buffer
+ * @return Length of text on success, negative error code on failure
+ */
+int TPipe_Content_getText(graal_isolatethread_t* thread,
+                          TPipe_ContentHandle contentHandle,
+                          char* buffer,
+                          int bufferSize);
+
+/**
+ * @brief Set the text content of a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param text New text content (UTF-8)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_setText(graal_isolatethread_t* thread,
+                          TPipe_ContentHandle contentHandle,
+                          const char* text);
+
+/**
+ * @brief Get the context (system prompt) of a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param buffer Output buffer for context
+ * @param bufferSize Size of the buffer
+ * @return Length of context on success, negative error code on failure
+ */
+int TPipe_Content_getContext(graal_isolatethread_t* thread,
+                             TPipe_ContentHandle contentHandle,
+                             char* buffer,
+                             int bufferSize);
+
+/**
+ * @brief Get the MiniBank JSON of a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param buffer Output buffer for MiniBank JSON
+ * @param bufferSize Size of the buffer
+ * @return Length of JSON on success, negative error code on failure
+ */
+int TPipe_Content_getMiniBank(graal_isolatethread_t* thread,
+                              TPipe_ContentHandle contentHandle,
+                              char* buffer,
+                              int bufferSize);
+
+/**
+ * @brief Set the MiniBank on a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param miniBank MiniBank JSON string
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_setMiniBank(graal_isolatethread_t* thread,
+                              TPipe_ContentHandle contentHandle,
+                              const char* miniBank);
+
+/**
+ * @brief Set the context (system prompt) on a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param context Context string
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_setContext(graal_isolatethread_t* thread,
+                             TPipe_ContentHandle contentHandle,
+                             const char* context);
+
+/**
+ * @brief Get a single binary attachment by index
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param index Binary index (0-based)
+ * @param buffer Output buffer for binary metadata JSON
+ * @param bufferSize Size of the buffer
+ * @return Length of JSON on success, negative error code on failure
+ */
+int TPipe_Content_getBinary(graal_isolatethread_t* thread,
+                            TPipe_ContentHandle contentHandle,
+                            int index,
+                            char* buffer,
+                            int bufferSize);
+
+/**
+ * @brief Get all binary attachments as JSON array
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param buffer Output buffer for binaries JSON
+ * @param bufferSize Size of the buffer
+ * @return Length of JSON on success, negative error code on failure
+ */
+int TPipe_Content_getBinaries(graal_isolatethread_t* thread,
+                              TPipe_ContentHandle contentHandle,
+                              char* buffer,
+                              int bufferSize);
+
+/**
+ * @brief Clear all binary attachments
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_clearBinary(graal_isolatethread_t* thread, TPipe_ContentHandle contentHandle);
+
+/**
+ * @brief Set the JumpTo target (pipe name) on a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param jumpTo Target pipe name
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_setJumpTo(graal_isolatethread_t* thread,
+                            TPipe_ContentHandle contentHandle,
+                            const char* jumpTo);
+
+/**
+ * @brief Clear the JumpTo target on a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_clearJumpTo(graal_isolatethread_t* thread, TPipe_ContentHandle contentHandle);
+
+/**
+ * @brief Get the JumpTo target from a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param buffer Output buffer for jump target
+ * @param bufferSize Size of the buffer
+ * @return Length on success, negative error code on failure
+ */
+int TPipe_Content_getJumpTo(graal_isolatethread_t* thread,
+                            TPipe_ContentHandle contentHandle,
+                            char* buffer,
+                            int bufferSize);
+
+/**
+ * @brief Set the JumpTo target as a pipe reference
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param pipeName Target pipe name
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_setJumpToPipe(graal_isolatethread_t* thread,
+                                TPipe_ContentHandle contentHandle,
+                                const char* pipeName);
+
+/**
+ * @brief Set the terminate flag on a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param terminate 1 to terminate, 0 to clear
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_setTerminate(graal_isolatethread_t* thread,
+                               TPipe_ContentHandle contentHandle,
+                               int terminate);
+
+/**
+ * @brief Get the terminate flag from a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param value Output: terminate flag value
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_getTerminate(graal_isolatethread_t* thread,
+                               TPipe_ContentHandle contentHandle,
+                               int* value);
+
+/**
+ * @brief Set the pass flag on a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param pass 1 to pass, 0 to clear
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_setPass(graal_isolatethread_t* thread,
+                          TPipe_ContentHandle contentHandle,
+                          int pass);
+
+/**
+ * @brief Set the repeat flag on a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param repeat 1 to repeat, 0 to clear
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_setRepeat(graal_isolatethread_t* thread,
+                            TPipe_ContentHandle contentHandle,
+                            int repeat);
+
+/**
+ * @brief Set the skip-reasoning flag on a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param skip 1 to skip reasoning, 0 to allow
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_setSkipReasoning(graal_isolatethread_t* thread,
+                                   TPipe_ContentHandle contentHandle,
+                                   int skip);
+
+/**
+ * @brief Set the repeat-pipe name on a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param pipeName Target pipe name
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_setRepeatPipe(graal_isolatethread_t* thread,
+                                TPipe_ContentHandle contentHandle,
+                                const char* pipeName);
+
+/**
+ * @brief Clear the repeat flag on a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_clearRepeat(graal_isolatethread_t* thread, TPipe_ContentHandle contentHandle);
+
+/**
+ * @brief Get the repeat flag from a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param value Output: repeat flag value
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_getRepeat(graal_isolatethread_t* thread,
+                            TPipe_ContentHandle contentHandle,
+                            int* value);
+
+/**
+ * @brief Get the skip flag from a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param value Output: skip flag value
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_getSkip(graal_isolatethread_t* thread,
+                          TPipe_ContentHandle contentHandle,
+                          int* value);
+
+/**
+ * @brief Get the jump flag from a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param value Output: jump flag value
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_getJump(graal_isolatethread_t* thread,
+                          TPipe_ContentHandle contentHandle,
+                          int* value);
+
+/**
+ * @brief Set the jump flag on a content handle
+ * @param thread Caller's IsolateThread
+ * @param contentHandle Content handle
+ * @param value jump flag value (0 or 1)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Content_setJump(graal_isolatethread_t* thread,
+                          TPipe_ContentHandle contentHandle,
+                          int value);
 
 /*==============================================================================
  * BINARY HANDLE FUNCTIONS
  *============================================================================*/
 
 /**
- * @brief Create a binary handle from raw bytes
- * @param data Pointer to byte data
- * @param length Length of byte data
+ * @brief Create a binary handle
+ * @param thread Caller's IsolateThread
+ * @param variant Binary variant (TPipe_BinaryVariant)
+ * @param data Pointer to binary data
+ * @param dataLen Length of binary data
+ * @param mimeType MIME type string (may be NULL)
+ * @param filename Filename string (may be NULL)
  * @return Binary handle, or 0 on failure
  */
-TPipe_Handle TPipe_BinaryHandle_createBytes(const uint8_t* data, int length);
+TPipe_Handle TPipe_Binary_create(graal_isolatethread_t* thread,
+                                 int variant,
+                                 const uint8_t* data,
+                                 int dataLen,
+                                 const char* mimeType,
+                                 const char* filename);
 
 /**
- * @brief Create a binary handle from base64 encoded data
- * @param base64Data Base64 encoded string
+ * @brief Create an empty binary handle
+ * @param thread Caller's IsolateThread
  * @return Binary handle, or 0 on failure
  */
-TPipe_Handle TPipe_BinaryHandle_createBase64(const char* base64Data);
+TPipe_Handle TPipe_Binary_createEmpty(graal_isolatethread_t* thread);
 
 /**
- * @brief Create a binary handle from a cloud reference
- * @param ref Cloud reference string (URI, S3 path, etc.)
- * @return Binary handle, or 0 on failure
+ * @brief Release a binary handle
+ * @param thread Caller's IsolateThread
+ * @param binaryHandle Binary handle to release
+ * @return 0 on success, negative error code on failure
  */
-TPipe_Handle TPipe_BinaryHandle_createCloudRef(const char* ref);
-
-/**
- * @brief Create a binary handle from a text document reference
- * @param docRef Document reference string
- * @return Binary handle, or 0 on failure
- */
-TPipe_Handle TPipe_BinaryHandle_createTextDoc(const char* docRef);
+int TPipe_Binary_release(graal_isolatethread_t* thread, TPipe_BinaryHandle binaryHandle);
 
 /**
  * @brief Get the variant type of a binary handle
- * @param handle Binary handle
+ * @param thread Caller's IsolateThread
+ * @param binaryHandle Binary handle
  * @param variant Output: variant type (TPipe_BinaryVariant)
  * @return 0 on success, negative error code on failure
  */
-int TPipe_BinaryHandle_getVariant(TPipe_BinaryHandle handle, int* variant);
+int TPipe_Binary_getVariant(graal_isolatethread_t* thread,
+                            TPipe_BinaryHandle binaryHandle,
+                            int* variant);
 
 /**
- * @brief Get the raw bytes from a binary handle
- * @param handle Binary handle
+ * @brief Get the raw bytes pointer and length from a binary handle
+ * @param thread Caller's IsolateThread
+ * @param binaryHandle Binary handle
  * @param data Output: pointer to byte data
  * @param length Output: length of byte data
  * @return 0 on success, negative error code on failure
  */
-int TPipe_BinaryHandle_getBytes(TPipe_BinaryHandle handle, const uint8_t** data, int* length);
+int TPipe_Binary_getBytes(graal_isolatethread_t* thread,
+                          TPipe_BinaryHandle binaryHandle,
+                          const uint8_t** data,
+                          int* length);
 
 /*==============================================================================
  * PIPE API FUNCTIONS
  *============================================================================*/
 
 /**
- * @brief Execute a synchronous pipe operation
- * @param pipe Pipe handle
- * @param content Input content handle
- * @param settings Pipe settings handle (can be 0 for defaults)
- * @param result Output: result content handle
+ * @brief Create a pipe handle from provider, model, region, and settings
+ * @param thread Caller's IsolateThread
+ * @param provider Provider enum (TPipe_ProviderName)
+ * @param model Model identifier (null-terminated)
+ * @param region Region string (may be NULL for default)
+ * @param settings Settings handle (0 for defaults)
+ * @return Pipe handle, or 0 on failure
+ */
+TPipe_Handle TPipe_Pipe_create(graal_isolatethread_t* thread,
+                               int provider,
+                               const char* model,
+                               const char* region,
+                               TPipe_Handle settings);
+
+/**
+ * @brief Set the provider on an existing pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param provider Provider enum (TPipe_ProviderName)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setProvider(graal_isolatethread_t* thread,
+                           TPipe_PipeHandle pipeHandle,
+                           int provider);
+
+/**
+ * @brief Set the temperature on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param temperature Temperature value (0.0 - 2.0)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setTemperature(graal_isolatethread_t* thread,
+                               TPipe_PipeHandle pipeHandle,
+                               float temperature);
+
+/**
+ * @brief Set the repetition penalty on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param penalty Penalty value
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setRepetitionPenalty(graal_isolatethread_t* thread,
+                                    TPipe_PipeHandle pipeHandle,
+                                    float penalty);
+
+/**
+ * @brief Set the reasoning token budget on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param reasoningTokens Reasoning token budget
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setReasoning(graal_isolatethread_t* thread,
+                            TPipe_PipeHandle pipeHandle,
+                            int reasoningTokens);
+
+/**
+ * @brief Initialize a pipe with content and context
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param contentHandle Content handle
+ * @param contextHandle Context handle (0 for none)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_init(graal_isolatethread_t* thread,
+                    TPipe_PipeHandle pipeHandle,
+                    TPipe_ContentHandle contentHandle,
+                    TPipe_ContextHandle contextHandle);
+
+/**
+ * @brief Execute a pipe operation synchronously
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param contentHandle Input content handle
+ * @param settings Settings handle (0 for defaults)
+ * @param result Output: result content handle (out parameter)
  * @return Operation handle, or 0 on failure
  */
-TPipe_Handle TPipe_Pipe_execute(TPipe_PipeHandle pipe,
-                                  TPipe_ContentHandle content,
-                                  TPipe_PipeSettingsHandle settings,
-                                  TPipe_ContentHandle* result);
+TPipe_Handle TPipe_Pipe_execute(graal_isolatethread_t* thread,
+                                TPipe_PipeHandle pipeHandle,
+                                TPipe_ContentHandle contentHandle,
+                                TPipe_PipeSettingsHandle settings,
+                                TPipe_ContentHandle* result);
 
 /**
- * @brief Execute an asynchronous pipe operation
- * @param pipe Pipe handle
- * @param content Input content handle
- * @param settings Pipe settings handle (can be 0 for defaults)
- * @return Async handle, or 0 on failure
+ * @brief Execute a pipe operation asynchronously
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param contentHandle Input content handle
+ * @param settings Settings handle (0 for defaults)
+ * @return Async operation handle, or 0 on failure
  */
-TPipe_Handle TPipe_Pipe_executeAsync(TPipe_PipeHandle pipe,
-                                      TPipe_ContentHandle content,
-                                      TPipe_PipeSettingsHandle settings);
+TPipe_Handle TPipe_Pipe_executeContentAsync(graal_isolatethread_t* thread,
+                                            TPipe_PipeHandle pipeHandle,
+                                            TPipe_ContentHandle contentHandle,
+                                            TPipe_PipeSettingsHandle settings);
+
+/**
+ * @brief Get token usage from a pipe operation
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param inputTokens Output: input tokens for last call
+ * @param outputTokens Output: output tokens for last call
+ * @param totalInputTokens Output: cumulative input tokens
+ * @param totalOutputTokens Output: cumulative output tokens
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_getTokenUsage(graal_isolatethread_t* thread,
+                             TPipe_PipeHandle pipeHandle,
+                             int* inputTokens,
+                             int* outputTokens,
+                             int* totalInputTokens,
+                             int* totalOutputTokens);
 
 /*==============================================================================
- * ASYNC HANDLE FUNCTIONS
- *============================================================================*/
-
-/**
- * @brief Poll the status of an async operation
- * @param handle Async handle
- * @param status Output: operation status (TPIPE_OPERATION_*)
- * @return 0 on success, negative error code on failure
- */
-int TPipe_AsyncHandle_poll(TPipe_AsyncHandle handle, int* status);
-
-/**
- * @brief Get the result of a completed async operation
- * @param handle Async handle
- * @param result Output: result content handle
- * @return 0 on success, negative error code on failure
- */
-int TPipe_AsyncHandle_getResult(TPipe_AsyncHandle handle, TPipe_ContentHandle* result);
-
-/**
- * @brief Cancel an ongoing async operation
- * @param handle Async handle
- * @return 0 on success, negative error code on failure
- */
-int TPipe_AsyncHandle_cancel(TPipe_AsyncHandle handle);
-
-/*==============================================================================
- * PIPE SETTINGS FUNCTIONS
+ * PIPE SETTINGS HANDLE (10 functions)
  *============================================================================*/
 
 /**
  * @brief Create a new pipe settings handle
- * @return Pipe settings handle, or 0 on failure
+ * @param thread Caller's IsolateThread
+ * @return PipeSettings handle, or 0 on failure
  */
-TPipe_Handle TPipe_PipeSettings_create(void);
+TPipe_Handle TPipe_PipeSettings_create(graal_isolatethread_t* thread);
 
 /**
  * @brief Set the model on pipe settings
- * @param settings Pipe settings handle
- * @param model Model identifier string
+ * @param thread Caller's IsolateThread
+ * @param settings PipeSettings handle
+ * @param model Model identifier string (UTF-8)
  * @return 0 on success, negative error code on failure
  */
-int TPipe_PipeSettings_setModel(TPipe_PipeSettingsHandle settings, const char* model);
+int TPipe_PipeSettings_setModel(graal_isolatethread_t* thread, TPipe_PipeSettingsHandle settings, const char* model);
 
 /**
- * @brief Set the temperature on pipe settings
- * @param settings Pipe settings handle
- * @param temperature Temperature value (0.0 - 2.0)
+ * @brief Set the temperature on pipe settings (0.0 - 2.0)
+ * @param thread Caller's IsolateThread
+ * @param settings PipeSettings handle
+ * @param temperature Temperature value
  * @return 0 on success, negative error code on failure
  */
-int TPipe_PipeSettings_setTemperature(TPipe_PipeSettingsHandle settings, float temperature);
+int TPipe_PipeSettings_setTemperature(graal_isolatethread_t* thread, TPipe_PipeSettingsHandle settings, float temperature);
 
 /**
  * @brief Set the max tokens on pipe settings
- * @param settings Pipe settings handle
+ * @param thread Caller's IsolateThread
+ * @param settings PipeSettings handle
  * @param maxTokens Maximum tokens value
  * @return 0 on success, negative error code on failure
  */
-int TPipe_PipeSettings_setMaxTokens(TPipe_PipeSettingsHandle settings, int maxTokens);
+int TPipe_PipeSettings_setMaxTokens(graal_isolatethread_t* thread, TPipe_PipeSettingsHandle settings, int maxTokens);
 
 /**
- * @brief Set the timeout on pipe settings (in milliseconds)
- * @param settings Pipe settings handle
+ * @brief Set the timeout on pipe settings (milliseconds)
+ * @param thread Caller's IsolateThread
+ * @param settings PipeSettings handle
  * @param timeoutMs Timeout in milliseconds
  * @return 0 on success, negative error code on failure
  */
-int TPipe_PipeSettings_setTimeout(TPipe_PipeSettingsHandle settings, int timeoutMs);
+int TPipe_PipeSettings_setTimeout(graal_isolatethread_t* thread, TPipe_PipeSettingsHandle settings, int timeoutMs);
 
 /**
  * @brief Set the provider on pipe settings
- * @param settings Pipe settings handle
+ * @param thread Caller's IsolateThread
+ * @param settings PipeSettings handle
  * @param provider Provider name (TPipe_ProviderName)
  * @return 0 on success, negative error code on failure
  */
-int TPipe_PipeSettings_setProvider(TPipe_PipeSettingsHandle settings, int provider);
+int TPipe_PipeSettings_setProvider(graal_isolatethread_t* thread, TPipe_PipeSettingsHandle settings, int provider);
 
 /**
  * @brief Set a string parameter on pipe settings
- * @param settings Pipe settings handle
- * @param key Parameter key
- * @param value Parameter value string
+ * @param thread Caller's IsolateThread
+ * @param settings PipeSettings handle
+ * @param key Parameter key (UTF-8)
+ * @param value Parameter value string (UTF-8)
  * @return 0 on success, negative error code on failure
  */
-int TPipe_PipeSettings_setString(TPipe_PipeSettingsHandle settings, const char* key, const char* value);
+int TPipe_PipeSettings_setString(graal_isolatethread_t* thread, TPipe_PipeSettingsHandle settings, const char* key, const char* value);
 
 /**
  * @brief Set an int parameter on pipe settings
- * @param settings Pipe settings handle
- * @param key Parameter key
+ * @param thread Caller's IsolateThread
+ * @param settings PipeSettings handle
+ * @param key Parameter key (UTF-8)
  * @param value Parameter value
  * @return 0 on success, negative error code on failure
  */
-int TPipe_PipeSettings_setInt(TPipe_PipeSettingsHandle settings, const char* key, int value);
+int TPipe_PipeSettings_setInt(graal_isolatethread_t* thread, TPipe_PipeSettingsHandle settings, const char* key, int value);
 
 /**
  * @brief Set a float parameter on pipe settings
- * @param settings Pipe settings handle
- * @param key Parameter key
+ * @param thread Caller's IsolateThread
+ * @param settings PipeSettings handle
+ * @param key Parameter key (UTF-8)
  * @param value Parameter value
  * @return 0 on success, negative error code on failure
  */
-int TPipe_PipeSettings_setFloat(TPipe_PipeSettingsHandle settings, const char* key, float value);
+int TPipe_PipeSettings_setFloat(graal_isolatethread_t* thread, TPipe_PipeSettingsHandle settings, const char* key, float value);
 
 /**
  * @brief Set a bool parameter on pipe settings
- * @param settings Pipe settings handle
- * @param key Parameter key
- * @param value Parameter value
+ * @param thread Caller's IsolateThread
+ * @param settings PipeSettings handle
+ * @param key Parameter key (UTF-8)
+ * @param value 0=false, non-zero=true
  * @return 0 on success, negative error code on failure
  */
-int TPipe_PipeSettings_setBool(TPipe_PipeSettingsHandle settings, const char* key, int value);
+int TPipe_PipeSettings_setBool(graal_isolatethread_t* thread, TPipe_PipeSettingsHandle settings, const char* key, int value);
 
 /*==============================================================================
- * PIPELINE API FUNCTIONS
+ * PIPELINE API FUNCTIONS (7 functions)
  *============================================================================*/
 
 /**
  * @brief Create a pipeline from JSON configuration
- * @param configJson JSON configuration string
+ * @param thread Caller's IsolateThread
+ * @param configJson JSON configuration string (UTF-8)
  * @return Pipeline handle, or 0 on failure
  */
-TPipe_Handle TPipe_Pipeline_create(const char* configJson);
+TPipe_Handle TPipe_Pipeline_create(graal_isolatethread_t* thread, const char* configJson);
+
+/**
+ * @brief Add a pipe to a pipeline
+ * @param thread Caller's IsolateThread
+ * @param pipeline Pipeline handle
+ * @param pipe Pipe handle to add
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipeline_add(graal_isolatethread_t* thread, TPipe_PipelineHandle pipeline, TPipe_PipeHandle pipe);
 
 /**
  * @brief Execute a pipeline
+ * @param thread Caller's IsolateThread
  * @param pipeline Pipeline handle
  * @param content Input content handle
  * @param result Output: result content handle
  * @return 0 on success, negative error code on failure
  */
-int TPipe_Pipeline_execute(TPipe_PipelineHandle pipeline,
-                           TPipe_ContentHandle content,
-                           TPipe_ContentHandle* result);
+int TPipe_Pipeline_execute(graal_isolatethread_t* thread, TPipe_PipelineHandle pipeline, TPipe_ContentHandle content, TPipe_ContentHandle* result);
 
 /**
  * @brief Get the outcome of a pipeline as JSON
+ * @param thread Caller's IsolateThread
  * @param pipeline Pipeline handle
- * @param outcomeJson Buffer for outcome JSON
+ * @param outcomeJson Output buffer for outcome JSON
  * @param outcomeJsonSize Size of outcome buffer
  * @return 0 on success, negative error code on failure
  */
-int TPipe_Pipeline_getOutcome(TPipe_PipelineHandle pipeline,
-                               char* outcomeJson,
-                               int outcomeJsonSize);
+int TPipe_Pipeline_getOutcome(graal_isolatethread_t* thread, TPipe_PipelineHandle pipeline, char* outcomeJson, int outcomeJsonSize);
+
+/**
+ * @brief Get the name of a pipeline
+ * @param thread Caller's IsolateThread
+ * @param pipeline Pipeline handle
+ * @param nameBuf Output buffer for name string
+ * @param nameBufSize Size of name buffer
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipeline_getName(graal_isolatethread_t* thread, TPipe_PipelineHandle pipeline, char* nameBuf, int nameBufSize);
+
+/**
+ * @brief Set the name of a pipeline
+ * @param thread Caller's IsolateThread
+ * @param pipeline Pipeline handle
+ * @param name New name string (UTF-8)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipeline_setName(graal_isolatethread_t* thread, TPipe_PipelineHandle pipeline, const char* name);
+
+/**
+ * @brief Get the context window handle of a pipeline
+ * @param thread Caller's IsolateThread
+ * @param pipeline Pipeline handle
+ * @return Context handle, or 0 if none
+ */
+TPipe_Handle TPipe_Pipeline_getContextWindow(graal_isolatethread_t* thread, TPipe_PipelineHandle pipeline);
+
+/**
+ * @brief Get the mini bank handle of a pipeline
+ * @param thread Caller's IsolateThread
+ * @param pipeline Pipeline handle
+ * @return MiniBank handle, or 0 if none
+ */
+TPipe_Handle TPipe_Pipeline_getMiniBank(graal_isolatethread_t* thread, TPipe_PipelineHandle pipeline);
 
 /*==============================================================================
- * CONTEXT API FUNCTIONS
+ * LOREBOOK AND CONVERSE HISTORY ADD FUNCTIONS (2 functions)
  *============================================================================*/
-
-/**
- * @brief Create a new context handle
- * @return Context handle, or 0 on failure
- */
-TPipe_Handle TPipe_Context_create(void);
-
-/**
- * @brief Create a mini bank with token budget
- * @param tokenBudget Maximum tokens for context
- * @return MiniBank handle, or 0 on failure
- */
-TPipe_Handle TPipe_MiniBank_create(int tokenBudget);
-
-/**
- * @brief Create a lore book with name
- * @param name Lore book name
- * @return LoreBook handle, or 0 on failure
- */
-TPipe_Handle TPipe_LoreBook_create(const char* name);
 
 /**
  * @brief Add an entry to a lore book
+ * @param thread Caller's IsolateThread
  * @param loreBook LoreBook handle
- * @param key Entry key
- * @param value Entry value
+ * @param key Entry key (UTF-8)
+ * @param value Entry value (UTF-8)
  * @return 0 on success, negative error code on failure
  */
-int TPipe_LoreBook_addEntry(TPipe_LoreBookHandle loreBook, const char* key, const char* value);
-
-/**
- * @brief Create a conversation history
- * @return ConverseHistory handle, or 0 on failure
- */
-TPipe_Handle TPipe_ConverseHistory_create(void);
+int TPipe_LoreBook_addEntry(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, const char* key, const char* value);
 
 /**
  * @brief Add a message to conversation history
+ * @param thread Caller's IsolateThread
  * @param history ConverseHistory handle
  * @param role Message role (TPipe_ConverseRole)
- * @param content Message content
+ * @param content Message content (UTF-8)
  * @return 0 on success, negative error code on failure
  */
-int TPipe_ConverseHistory_add(TPipe_ConverseHistoryHandle history, TPipe_ConverseRole role, const char* content);
+int TPipe_ConverseHistory_add(graal_isolatethread_t* thread, TPipe_ConverseHistoryHandle history, int role, const char* content);
 
 /*==============================================================================
- * PCP API FUNCTIONS (Pipe Context Protocol)
+ * PCP API FUNCTIONS (1 function)
  *============================================================================*/
 
 /**
- * @brief Create a PCP handle
- * @return PCP handle, or 0 on failure
- */
-TPipe_Handle TPipe_PCPHandle_create(void);
-
-/**
  * @brief Execute a PCP request
+ * @param thread Caller's IsolateThread
  * @param pcp PCP handle
- * @param requestJson Request JSON string
- * @param responseJson Buffer for response JSON
+ * @param requestJson Request JSON string (UTF-8)
+ * @param responseJson Output buffer for response JSON
  * @param responseJsonSize Size of response buffer
  * @return 0 on success, negative error code on failure
  */
-int TPipe_PCPHandle_execute(TPipe_PCPHandle pcp,
-                            const char* requestJson,
-                            char* responseJson,
-                            int responseJsonSize);
+int TPipe_PCPHandle_execute(graal_isolatethread_t* thread, TPipe_PCPHandle pcp, const char* requestJson, char* responseJson, int responseJsonSize);
+
+/**
+ * @brief Create a PCP handle
+ * @param thread Caller's IsolateThread
+ * @return PCP handle, or 0 on failure
+ */
+TPipe_Handle TPipe_PCPHandle_create(graal_isolatethread_t* thread);
 
 /*==============================================================================
- * P2P API FUNCTIONS (Peer-to-Peer)
+ * P2P API FUNCTIONS (4 functions)
  *============================================================================*/
 
 /**
  * @brief Create a P2P handle
+ * @param thread Caller's IsolateThread
  * @return P2P handle, or 0 on failure
  */
-TPipe_Handle TPipe_P2PHandle_create(void);
+TPipe_Handle TPipe_P2PHandle_create(graal_isolatethread_t* thread);
 
 /**
  * @brief Register an agent with P2P
+ * @param thread Caller's IsolateThread
  * @param p2p P2P handle
- * @param agentId Agent identifier
- * @param metadata Agent metadata JSON
+ * @param agentId Agent identifier (UTF-8)
+ * @param metadata Agent metadata JSON (UTF-8)
  * @return 0 on success, negative error code on failure
  */
-int TPipe_P2PHandle_registerAgent(TPipe_P2PHandle p2p,
-                                   const char* agentId,
-                                   const char* metadata);
+int TPipe_P2PHandle_registerAgent(graal_isolatethread_t* thread, TPipe_P2PHandle p2p, const char* agentId, const char* metadata);
 
 /**
  * @brief Connect to a peer agent
+ * @param thread Caller's IsolateThread
  * @param p2p P2P handle
- * @param peerId Peer agent identifier
+ * @param peerId Peer agent identifier (UTF-8)
  * @return 0 on success, negative error code on failure
  */
-int TPipe_P2PHandle_connect(TPipe_P2PHandle p2p, const char* peerId);
+int TPipe_P2PHandle_connect(graal_isolatethread_t* thread, TPipe_P2PHandle p2p, const char* peerId);
 
 /**
  * @brief Send a message to a peer
+ * @param thread Caller's IsolateThread
  * @param p2p P2P handle
- * @param peerId Peer agent identifier
- * @param message Message content
+ * @param peerId Peer agent identifier (UTF-8)
+ * @param message Message content handle
  * @param response Output: response content handle
  * @return 0 on success, negative error code on failure
  */
-int TPipe_P2PHandle_send(TPipe_P2PHandle p2p,
-                          const char* peerId,
-                          TPipe_ContentHandle message,
-                          TPipe_ContentHandle* response);
+int TPipe_P2PHandle_send(graal_isolatethread_t* thread, TPipe_P2PHandle p2p, const char* peerId, TPipe_ContentHandle message, TPipe_ContentHandle* response);
 
 /*==============================================================================
- * LIST COLLECTION FUNCTIONS
+ * LIST COLLECTION FUNCTIONS (4 functions)
  *============================================================================*/
 
 /**
  * @brief Create a new list handle
+ * @param thread Caller's IsolateThread
  * @return List handle, or 0 on failure
  */
-TPipe_Handle TPipe_List_create(void);
+TPipe_Handle TPipe_List_create(graal_isolatethread_t* thread);
 
 /**
  * @brief Append an item to a list
+ * @param thread Caller's IsolateThread
  * @param list List handle
  * @param item Item handle to append
  * @return 0 on success, negative error code on failure
  */
-int TPipe_List_append(TPipe_ListHandle list, TPipe_Handle item);
+int TPipe_List_append(graal_isolatethread_t* thread, TPipe_ListHandle list, TPipe_Handle item);
 
 /**
  * @brief Get an item from a list by index
+ * @param thread Caller's IsolateThread
  * @param list List handle
  * @param index Item index (0-based)
  * @param item Output: item handle
  * @return 0 on success, negative error code on failure
  */
-int TPipe_List_get(TPipe_ListHandle list, int index, TPipe_Handle* item);
+int TPipe_List_get(graal_isolatethread_t* thread, TPipe_ListHandle list, int index, TPipe_Handle* item);
 
 /**
  * @brief Get the size of a list
+ * @param thread Caller's IsolateThread
  * @param list List handle
  * @param size Output: list size
  * @return 0 on success, negative error code on failure
  */
-int TPipe_List_size(TPipe_ListHandle list, int* size);
+int TPipe_List_size(graal_isolatethread_t* thread, TPipe_ListHandle list, int* size);
 
 /*==============================================================================
- * MAP COLLECTION FUNCTIONS
+ * MAP COLLECTION FUNCTIONS (4 functions)
  *============================================================================*/
 
 /**
  * @brief Create a new map handle
+ * @param thread Caller's IsolateThread
  * @return Map handle, or 0 on failure
  */
-TPipe_Handle TPipe_Map_create(void);
+TPipe_Handle TPipe_Map_create(graal_isolatethread_t* thread);
 
 /**
  * @brief Set a key-value pair in a map
+ * @param thread Caller's IsolateThread
  * @param map Map handle
- * @param key Key string
+ * @param key Key string (UTF-8)
  * @param value Value handle
  * @return 0 on success, negative error code on failure
  */
-int TPipe_Map_set(TPipe_MapHandle map, const char* key, TPipe_Handle value);
+int TPipe_Map_set(graal_isolatethread_t* thread, TPipe_MapHandle map, const char* key, TPipe_Handle value);
 
 /**
  * @brief Get a value from a map by key
+ * @param thread Caller's IsolateThread
  * @param map Map handle
- * @param key Key string
+ * @param key Key string (UTF-8)
  * @param value Output: value handle
  * @return 0 on success, negative error code on failure
  */
-int TPipe_Map_get(TPipe_MapHandle map, const char* key, TPipe_Handle* value);
+int TPipe_Map_get(graal_isolatethread_t* thread, TPipe_MapHandle map, const char* key, TPipe_Handle* value);
 
 /**
  * @brief Check if a key exists in a map
+ * @param thread Caller's IsolateThread
  * @param map Map handle
- * @param key Key string
+ * @param key Key string (UTF-8)
  * @param has Output: 1 if key exists, 0 otherwise
  * @return 0 on success, negative error code on failure
  */
-int TPipe_Map_has(TPipe_MapHandle map, const char* key, int* has);
+int TPipe_Map_has(graal_isolatethread_t* thread, TPipe_MapHandle map, const char* key, int* has);
+
+/*==============================================================================
+ * ASYNC HANDLE FUNCTIONS (4 functions)
+ *============================================================================*/
+
+/**
+ * @brief Create an async operation handle (typically returned by executeAsync)
+ * @param thread Caller's IsolateThread
+ * @return Async handle, or 0 on failure
+ */
+TPipe_Handle TPipe_AsyncHandle_create(graal_isolatethread_t* thread);
+
+/**
+ * @brief Poll the status of an async operation
+ * @param thread Caller's IsolateThread
+ * @param handle Async handle
+ * @param status Output: operation status (TPIPE_OPERATION_*)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_AsyncHandle_poll(graal_isolatethread_t* thread, TPipe_AsyncHandle handle, int* status);
+
+/**
+ * @brief Get the result of a completed async operation
+ * @param thread Caller's IsolateThread
+ * @param handle Async handle
+ * @param result Output: result content handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_AsyncHandle_getResult(graal_isolatethread_t* thread, TPipe_AsyncHandle handle, TPipe_ContentHandle* result);
+
+/**
+ * @brief Cancel an ongoing async operation
+ * @param thread Caller's IsolateThread
+ * @param handle Async handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_AsyncHandle_cancel(graal_isolatethread_t* thread, TPipe_AsyncHandle handle);
 
 #ifdef __cplusplus
 }
