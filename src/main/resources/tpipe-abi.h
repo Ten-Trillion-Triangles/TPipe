@@ -1108,6 +1108,145 @@ TPipe_Handle TPipe_Pipeline_getMiniBank(graal_isolatethread_t* thread, TPipe_Pip
  */
 int TPipe_LoreBook_addEntry(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, const char* key, const char* value);
 
+/*------------------------------------------------------------------------------
+ * Phase 7 — Full LoreBookHandle coverage. The 14 functions below expose
+ * every public method on com.TTT.Native.LoreBookHandle (setters, getters,
+ * linked/alias/required key management, combine, and toJson).
+ *----------------------------------------------------------------------------*/
+
+/**
+ * @brief Set the key of a LoreBook entry.
+ * @param thread Caller's IsolateThread
+ * @param loreBook LoreBook handle
+ * @param key New key value (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_LoreBook_setKey(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, const char* key);
+
+/**
+ * @brief Get the key of a LoreBook entry.
+ * @param thread Caller's IsolateThread
+ * @param loreBook LoreBook handle
+ * @param buf Output buffer for the key (UTF-8, null-terminated)
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written (excluding null terminator), or negative
+ *   error code on failure
+ */
+int TPipe_LoreBook_getKey(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, char* buf, int bufSize);
+
+/**
+ * @brief Set the value (context body) of a LoreBook entry.
+ * @param thread Caller's IsolateThread
+ * @param loreBook LoreBook handle
+ * @param value New value (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_LoreBook_setValue(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, const char* value);
+
+/**
+ * @brief Get the value (context body) of a LoreBook entry.
+ * @param thread Caller's IsolateThread
+ * @param loreBook LoreBook handle
+ * @param buf Output buffer for the value (UTF-8, null-terminated)
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_LoreBook_getValue(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, char* buf, int bufSize);
+
+/**
+ * @brief Set the weight of a LoreBook entry.
+ * @param thread Caller's IsolateThread
+ * @param loreBook LoreBook handle
+ * @param weight Weight value
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_LoreBook_setWeight(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, int weight);
+
+/**
+ * @brief Get the weight of a LoreBook entry.
+ * @param thread Caller's IsolateThread
+ * @param loreBook LoreBook handle
+ * @param outWeight Output pointer for the weight value
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_LoreBook_getWeight(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, int* outWeight);
+
+/**
+ * @brief Append a linked key to a LoreBook entry. Idempotent.
+ * @param thread Caller's IsolateThread
+ * @param loreBook LoreBook handle
+ * @param key Linked key to append (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_LoreBook_addLinkedKey(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, const char* key);
+
+/**
+ * @brief Get the linked keys as a JSON array string (e.g. `["a","b"]`).
+ * @param thread Caller's IsolateThread
+ * @param loreBook LoreBook handle
+ * @param buf Output buffer for the JSON array (UTF-8, null-terminated)
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_LoreBook_getLinkedKeys(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, char* buf, int bufSize);
+
+/**
+ * @brief Append an alias key to a LoreBook entry. Idempotent.
+ * @param thread Caller's IsolateThread
+ * @param loreBook LoreBook handle
+ * @param key Alias key to append (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_LoreBook_addAliasKey(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, const char* key);
+
+/**
+ * @brief Get the alias keys as a JSON array string.
+ * @param thread Caller's IsolateThread
+ * @param loreBook LoreBook handle
+ * @param buf Output buffer for the JSON array (UTF-8, null-terminated)
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_LoreBook_getAliasKeys(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, char* buf, int bufSize);
+
+/**
+ * @brief Append a required key to a LoreBook entry. Idempotent.
+ * @param thread Caller's IsolateThread
+ * @param loreBook LoreBook handle
+ * @param key Required key to append (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_LoreBook_addRequiredKey(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, const char* key);
+
+/**
+ * @brief Get the required keys as a JSON array string.
+ * @param thread Caller's IsolateThread
+ * @param loreBook LoreBook handle
+ * @param buf Output buffer for the JSON array (UTF-8, null-terminated)
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_LoreBook_getRequiredKeys(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, char* buf, int bufSize);
+
+/**
+ * @brief Combine another LoreBook into this one. Mutates [loreBook] in place.
+ * @param thread Caller's IsolateThread
+ * @param loreBook Destination LoreBook handle (mutated)
+ * @param other Source LoreBook handle (read-only)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_LoreBook_combine(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, TPipe_LoreBookHandle other);
+
+/**
+ * @brief Serialize a LoreBook entry to a JSON string.
+ * @param thread Caller's IsolateThread
+ * @param loreBook LoreBook handle
+ * @param buf Output buffer for the JSON string (UTF-8, null-terminated)
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_LoreBook_toJson(graal_isolatethread_t* thread, TPipe_LoreBookHandle loreBook, char* buf, int bufSize);
+
 /**
  * @brief Add a message to conversation history
  * @param thread Caller's IsolateThread
@@ -1117,6 +1256,195 @@ int TPipe_LoreBook_addEntry(graal_isolatethread_t* thread, TPipe_LoreBookHandle 
  * @return 0 on success, negative error code on failure
  */
 int TPipe_ConverseHistory_add(graal_isolatethread_t* thread, TPipe_ConverseHistoryHandle history, int role, const char* content);
+
+/*------------------------------------------------------------------------------
+ * Phase 8 — Full ConverseHistoryHandle coverage. The 6 functions below
+ * expose every public method on com.TTT.Native.ConverseHistoryHandle
+ * (addString, size, isEmpty, clear, getAt, toJson).
+ *----------------------------------------------------------------------------*/
+
+/**
+ * @brief Add a message to conversation history using a string role name.
+ * @param thread Caller's IsolateThread
+ * @param history ConverseHistory handle
+ * @param role Role name (UTF-8, e.g. "user", "assistant", "system")
+ * @param content Message content (UTF-8)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_ConverseHistory_addString(graal_isolatethread_t* thread, TPipe_ConverseHistoryHandle history, const char* role, const char* content);
+
+/**
+ * @brief Get the number of conversation turns.
+ * @param thread Caller's IsolateThread
+ * @param history ConverseHistory handle
+ * @return Number of turns (>= 0), or negative error code on failure
+ */
+int TPipe_ConverseHistory_size(graal_isolatethread_t* thread, TPipe_ConverseHistoryHandle history);
+
+/**
+ * @brief Check whether the conversation history is empty.
+ * @param thread Caller's IsolateThread
+ * @param history ConverseHistory handle
+ * @return 1 if empty, 0 if not, or negative error code on failure
+ */
+int TPipe_ConverseHistory_isEmpty(graal_isolatethread_t* thread, TPipe_ConverseHistoryHandle history);
+
+/**
+ * @brief Clear all conversation turns.
+ * @param thread Caller's IsolateThread
+ * @param history ConverseHistory handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_ConverseHistory_clear(graal_isolatethread_t* thread, TPipe_ConverseHistoryHandle history);
+
+/**
+ * @brief Get a single conversation turn at the given index as a JSON
+ *        object (e.g. `{"role":"user","content":"hi"}`).
+ * @param thread Caller's IsolateThread
+ * @param history ConverseHistory handle
+ * @param index Zero-based turn index
+ * @param buf Output buffer for the JSON object (UTF-8, null-terminated)
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ *   (e.g. INVALID_ARGUMENT when index is out of range)
+ */
+int TPipe_ConverseHistory_getAt(graal_isolatethread_t* thread, TPipe_ConverseHistoryHandle history, int index, char* buf, int bufSize);
+
+/**
+ * @brief Serialize the entire conversation history to JSON.
+ * @param thread Caller's IsolateThread
+ * @param history ConverseHistory handle
+ * @param buf Output buffer for the JSON string (UTF-8, null-terminated)
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_ConverseHistory_toJson(graal_isolatethread_t* thread, TPipe_ConverseHistoryHandle history, char* buf, int bufSize);
+
+/*------------------------------------------------------------------------------
+ * Phase 9 — Full MiniBankHandle coverage. The 6 functions below expose every
+ * public method on com.TTT.Native.MiniBankHandle (isEmpty, clear, pageCount,
+ * getPageKeys, getPageJson, merge). The 2 pre-existing TPipe_MiniBank_*
+ * symbols (create, set) are unchanged.
+ *----------------------------------------------------------------------------*/
+
+/**
+ * @brief Check whether the MiniBank contains no context pages.
+ * @param thread Caller's IsolateThread
+ * @param miniBank MiniBank handle
+ * @return 1 if empty, 0 if not, or negative error code on failure
+ */
+int TPipe_MiniBank_isEmpty(graal_isolatethread_t* thread, TPipe_MiniBankHandle miniBank);
+
+/**
+ * @brief Clear every context page in the MiniBank.
+ * @param thread Caller's IsolateThread
+ * @param miniBank MiniBank handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_MiniBank_clear(graal_isolatethread_t* thread, TPipe_MiniBankHandle miniBank);
+
+/**
+ * @brief Get the number of context pages currently in the MiniBank.
+ * @param thread Caller's IsolateThread
+ * @param miniBank MiniBank handle
+ * @return Page count (>= 0), or negative error code on failure
+ */
+int TPipe_MiniBank_pageCount(graal_isolatethread_t* thread, TPipe_MiniBankHandle miniBank);
+
+/**
+ * @brief Write the MiniBank's page keys as a JSON array string
+ *        (e.g. `["a","b"]`) into the caller's buffer.
+ * @param thread Caller's IsolateThread
+ * @param miniBank MiniBank handle
+ * @param buf Output buffer for the JSON array (UTF-8, null-terminated)
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_MiniBank_getPageKeys(graal_isolatethread_t* thread, TPipe_MiniBankHandle miniBank, char* buf, int bufSize);
+
+/**
+ * @brief Snapshot a single MiniBank page to a JSON object describing the
+ *        page. If the key is not present, writes an empty object `{}`.
+ * @param thread Caller's IsolateThread
+ * @param miniBank MiniBank handle
+ * @param key Page key to look up (UTF-8, null-terminated)
+ * @param buf Output buffer for the JSON object (UTF-8, null-terminated)
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_MiniBank_getPageJson(graal_isolatethread_t* thread, TPipe_MiniBankHandle miniBank, const char* key, char* buf, int bufSize);
+
+/**
+ * @brief Merge another MiniBank into this one. The destination is mutated
+ *        in place.
+ * @param thread Caller's IsolateThread
+ * @param miniBank Destination MiniBank handle (mutated)
+ * @param other Source MiniBank handle (read-only)
+ * @param emplaceLorebookKeys 1 to emplace (replace) existing lorebook keys
+ * @param appendKeys 1 to append to existing lorebook key values
+ * @param emplaceConverseHistory 1 to merge converse history
+ * @param onlyEmplaceIfNull 1 to only copy history when destination is empty
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_MiniBank_merge(graal_isolatethread_t* thread, TPipe_MiniBankHandle miniBank, TPipe_MiniBankHandle other, int emplaceLorebookKeys, int appendKeys, int emplaceConverseHistory, int onlyEmplaceIfNull);
+
+/*------------------------------------------------------------------------------
+ * Phase 10 — Full ContextHandle coverage. The 5 functions below expose every
+ * public method on com.TTT.Native.ContextHandle (getLoreBookKeys,
+ * getContextElementsCount, getConverseHistorySize, getVersion, getContextJson).
+ * The pre-existing TPipe_ContextWindow_create symbol is unchanged.
+ *----------------------------------------------------------------------------*/
+
+/**
+ * @brief Get the ContextWindow's lorebook keys as a JSON array string
+ *        (e.g. `["a","b"]`).
+ * @param thread Caller's IsolateThread
+ * @param context Context handle
+ * @param buf Output buffer for the JSON array (UTF-8, null-terminated)
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_Context_getLoreBookKeys(graal_isolatethread_t* thread, TPipe_ContextHandle context, char* buf, int bufSize);
+
+/**
+ * @brief Get the number of context elements (raw context strings) in the
+ *        ContextWindow.
+ * @param thread Caller's IsolateThread
+ * @param context Context handle
+ * @param outCount Output pointer for the element count
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Context_getContextElementsCount(graal_isolatethread_t* thread, TPipe_ContextHandle context, int* outCount);
+
+/**
+ * @brief Get the number of conversation turns stored in this context window.
+ * @param thread Caller's IsolateThread
+ * @param context Context handle
+ * @param outSize Output pointer for the converse-history size
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Context_getConverseHistorySize(graal_isolatethread_t* thread, TPipe_ContextHandle context, int* outSize);
+
+/**
+ * @brief Get the monotonic version counter of the context window.
+ * @param thread Caller's IsolateThread
+ * @param context Context handle
+ * @param outVersion Output pointer (int64_t*) for the version value
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Context_getVersion(graal_isolatethread_t* thread, TPipe_ContextHandle context, int64_t* outVersion);
+
+/**
+ * @brief Snapshot the context window to a JSON object describing its
+ *        lorebook-keys count, context-elements count, converse-history size,
+ *        and version, and write it into the caller's buffer.
+ * @param thread Caller's IsolateThread
+ * @param context Context handle
+ * @param buf Output buffer for the JSON object (UTF-8, null-terminated)
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_Context_getContextJson(graal_isolatethread_t* thread, TPipe_ContextHandle context, char* buf, int bufSize);
 
 /*==============================================================================
  * PCP API FUNCTIONS (1 function)
@@ -1297,6 +1625,183 @@ int TPipe_AsyncHandle_getResult(graal_isolatethread_t* thread, TPipe_AsyncHandle
  * @return 0 on success, negative error code on failure
  */
 int TPipe_AsyncHandle_cancel(graal_isolatethread_t* thread, TPipe_AsyncHandle handle);
+
+/*==============================================================================
+ * MANIFOLD API FUNCTIONS (8 functions)
+ *============================================================================*/
+
+/** Handle for Manifold (multi-agent orchestration) */
+typedef uint64_t TPipe_ManifoldHandle;
+
+/**
+ * @brief Create a new Manifold handle
+ * @param thread Caller's IsolateThread
+ * @return Manifold handle, or 0 on failure
+ */
+TPipe_Handle TPipe_Manifold_create(graal_isolatethread_t* thread);
+
+/**
+ * @brief Release a Manifold handle (decrement refcount; frees if zero)
+ * @param thread Caller's IsolateThread
+ * @param manifold Manifold handle to release
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Manifold_release(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold);
+
+/**
+ * @brief Initialize the wrapped Manifold (binds agent list, validates
+ *        worker pipelines, activates all pipes for LLM calls)
+ * @param thread Caller's IsolateThread
+ * @param manifold Manifold handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Manifold_init(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold);
+
+/**
+ * @brief Execute the Manifold with the given content. Returns a new CONTENT
+ *        handle wrapping the output MultimodalContent. The C ABI caller is
+ *        responsible for releasing the returned handle.
+ * @param thread Caller's IsolateThread
+ * @param manifold Manifold handle
+ * @param content Input content handle
+ * @return Content handle wrapping the output, or 0 on failure
+ */
+TPipe_Handle TPipe_Manifold_execute(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, TPipe_ContentHandle content);
+
+/**
+ * @brief Register a worker Pipe on the Manifold under the given name
+ * @param thread Caller's IsolateThread
+ * @param manifold Manifold handle
+ * @param name Worker identifier (UTF-8, null-terminated)
+ * @param pipe Pipe handle backing the worker
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Manifold_addWorker(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, const char* name, TPipe_PipeHandle pipe);
+
+/**
+ * @brief Get the number of workers currently registered on the Manifold
+ * @param thread Caller's IsolateThread
+ * @param manifold Manifold handle
+ * @param count Output: worker count
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Manifold_getWorkerCount(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, int* count);
+
+/**
+ * @brief Set the Manifold's max loop iterations
+ * @param thread Caller's IsolateThread
+ * @param manifold Manifold handle
+ * @param limit Maximum loop iterations (0 means default 100)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Manifold_setMaxLoopIterations(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, int limit);
+
+/**
+ * @brief Serialize the Manifold state to a JSON string. Writes a
+ *        null-terminated UTF-8 string and returns the byte count (not
+ *        including the null terminator), or a negative error code.
+ * @param thread Caller's IsolateThread
+ * @param manifold Manifold handle
+ * @param buf Output buffer
+ * @param bufSize Size of the buffer (must be >= 1)
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_Manifold_serialize(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, char* buf, int bufSize);
+
+/*==============================================================================
+ * DISTRIBUTION GRID API FUNCTIONS (6 functions — Phase 11 stub)
+ *============================================================================*/
+
+/** Handle for DistributionGrid (distributed node routing) */
+typedef uint64_t TPipe_DistributionGridHandle;
+
+/**
+ * @brief Create a new DistributionGrid handle.
+ *
+ * Phase 11 exposes a stub-level read surface. Full mutation API
+ * (addNode, routeRequest, advertiseService, etc.) is out of scope — the
+ * DistributionGrid is a 240+ method system that requires JVM-side
+ * infrastructure (e.g. coroutine scopes, P2P registry wiring) that
+ * does not fit cleanly into the C ABI's synchronous request/response
+ * model. Real grid functionality requires the JVM build.
+ *
+ * @param thread Caller's IsolateThread
+ * @return DistributionGrid handle, or 0 on failure
+ */
+TPipe_Handle TPipe_DistributionGrid_create(graal_isolatethread_t* thread);
+
+/**
+ * @brief Release a DistributionGrid handle (decrement refcount; frees if
+ *        zero).
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle to release
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_DistributionGrid_release(graal_isolatethread_t* thread, TPipe_DistributionGridHandle grid);
+
+/**
+ * @brief Get the number of nodes known to the DistributionGrid.
+ *        Phase 11 stub always returns 0 via [count].
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @param count Output: node count
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_DistributionGrid_getNodeCount(graal_isolatethread_t* thread, TPipe_DistributionGridHandle grid, int* count);
+
+/**
+ * @brief Serialize the DistributionGrid state to a JSON string. Writes a
+ *        null-terminated UTF-8 string and returns the byte count (not
+ *        including the null terminator). Phase 11 stub returns
+ *        `{"nodeCount":0,"status":"stub"}`.
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @param buf Output buffer
+ * @param bufSize Size of the buffer (must be >= 1)
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_DistributionGrid_serialize(graal_isolatethread_t* thread, TPipe_DistributionGridHandle grid, char* buf, int bufSize);
+
+/**
+ * @brief Get a health string describing the DistributionGrid. Phase 11
+ *        stub always returns "ok".
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @param buf Output buffer for the health string (UTF-8, null-terminated)
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_DistributionGrid_getHealth(graal_isolatethread_t* thread, TPipe_DistributionGridHandle grid, char* buf, int bufSize);
+
+/**
+ * @brief Stub rebalance operation. Returns a fixed string indicating the
+ *        operation is not yet implemented. Phase 11 stub always returns
+ *        "rebalance not yet implemented (stub)".
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @param buf Output buffer for the rebalance result string
+ * @param bufSize Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_DistributionGrid_rebalance_stub(graal_isolatethread_t* thread, TPipe_DistributionGridHandle grid, char* buf, int bufSize);
+
+/*==============================================================================
+ * TOP-LEVEL C ENTRY POINT
+ *============================================================================*/
+
+/**
+ * @brief Top-level C entry point. Bootstraps the library (auto-initializing
+ *        if the caller has not yet invoked TPipe_init) and dispatches to the
+ *        requested hosting mode. Equivalent to the JVM-side
+ *        com.TTT.Application.main() but reachable from a C program.
+ *
+ * @param thread  GraalVM isolate thread (auto-populated by the runtime).
+ * @param mode    Mode string. One of: "stdio-once", "stdio-loop",
+ *                "pcp-stdio-once", "pcp-stdio-loop", "http".
+ *                NULL or empty string defaults to "http".
+ * @return 0 on success; negative TPIPE_ERR_* code on failure.
+ */
+int TPipe_main(graal_isolatethread_t* thread, const char* mode);
 
 #ifdef __cplusplus
 }

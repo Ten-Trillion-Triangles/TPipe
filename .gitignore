@@ -90,3 +90,5 @@ aws/
 /.sisyphus
 /.playwright-mcp
 /.hermes/plans
+*.bak
+*.bak

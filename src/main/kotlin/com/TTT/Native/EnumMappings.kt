@@ -55,7 +55,8 @@ object EnumMappings {
     //================================================================
     // ProviderName — TPipe_ProviderName
     // C ABI: MINIMAX=0, OPENAI=1, ANTHROPIC=2, BEDROCK=3, OLLAMA=4,
-    //        MISTRAL=5, GROQ=6, DEEPSEEK=7, TOGETHER=8
+    //        MISTRAL=5, GROQ=6, DEEPSEEK=7, TOGETHER=8, UNKNOWN=9,
+    //        OPENROUTER=10, GENERIC_OPENAI=11
     // Kotlin: Aws, Nai, Gemini, Gpt, Ollama, OpenRouter
     //================================================================
     enum class ProviderName(private val cValue: Int) {
@@ -68,7 +69,9 @@ object EnumMappings {
         GROQ(6),
         DEEPSEEK(7),
         TOGETHER(8),
-        UNKNOWN(9);  // Forward compatibility for providers not in C ABI
+        UNKNOWN(9),         // Forward compatibility for providers not in C ABI
+        OPENROUTER(10),     // TPIPE_PROVIDER_OPENROUTER
+        GENERIC_OPENAI(11); // TPIPE_PROVIDER_GENERIC_OPENAI
 
         companion object {
             fun fromInt(value: Int): ProviderName = entries.find { it.cValue == value } ?: UNKNOWN
@@ -78,8 +81,23 @@ object EnumMappings {
                 KotlinProviderName.Gemini -> UNKNOWN.cValue  // Gemini not in C ABI
                 KotlinProviderName.Gpt -> OPENAI.cValue
                 KotlinProviderName.Ollama -> OLLAMA.cValue
-                KotlinProviderName.OpenRouter -> UNKNOWN.cValue  // OpenRouter not in C ABI
+                KotlinProviderName.OpenRouter -> OPENROUTER.cValue
             }
+
+            /**
+             * Returns the C ABI integer for a GenericOpenAI provider.
+             *
+             * The Kotlin [KotlinProviderName] enum does not currently expose a
+             * GenericOpenAI entry, but the C ABI shim accepts a provider id of
+             * 11 to mean "OpenAI-compatible endpoint that is not the official
+             * OpenAI service" (e.g. the `TPipe-GenericOpenAI` sub-module).
+             * The C caller passes the integer 11 through the ABI and the JVM
+             * side resolves it via this helper.
+             *
+             * @return the C ABI provider id (11) for GenericOpenAI.
+             */
+            @JvmStatic
+            fun toIntGenericOpenAI(): Int = GENERIC_OPENAI.cValue
         }
     }
 
@@ -285,7 +303,7 @@ object EnumMappings {
     // LibraryState — TPipe_GetState return values
     // C ABI: UNINITIALIZED=0, INITIALIZING=1, READY=2, SHUTTING_DOWN=3, SHUTDOWN=4
     //================================================================
-    enum class LibraryState(private val cValue: Int) {
+    enum class LibraryState(val cValue: Int) {
         UNINITIALIZED(0),  // TPIPE_STATE_UNINITIALIZED
         INITIALIZING(1),   // TPIPE_STATE_INITIALIZING
         READY(2),          // TPIPE_STATE_READY

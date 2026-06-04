@@ -78,7 +78,7 @@ class PCPHandleTest {
         )
         FunctionRegistry.registerLambda(
             name = "pcp_test_echo",
-            lambda = { params: Map<String, Any?> -> params["input"] ?: "" },
+            lambda = { input: String -> input },
             signature = signature
         )
 

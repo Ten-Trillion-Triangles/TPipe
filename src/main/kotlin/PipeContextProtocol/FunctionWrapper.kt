@@ -125,7 +125,9 @@ class LambdaFunction<T>(
         // Use reflection to invoke the lambda
         val invokeMethod = lambda!!::class.java.methods.find { it.name == "invoke" }
             ?: throw IllegalStateException("Lambda function does not have invoke method")
-        
+        // Lambdas are synthetic; their invoke method is package-private. setAccessible(true)
+        // allows reflection-based invocation regardless of access modifier.
+        invokeMethod.isAccessible = true
         return invokeMethod.invoke(lambda, *orderedParams)
     }
     

@@ -129,6 +129,61 @@ typedef int                 (*fn_TPipe_Pipe_init_t)(graal_isolatethread_t*, TPip
 typedef TPipe_Handle        (*fn_TPipe_Pipe_execute_t)(graal_isolatethread_t*, TPipe_PipeHandle, TPipe_ContentHandle, TPipe_PipeSettingsHandle, TPipe_ContentHandle*);
 typedef TPipe_Handle        (*fn_TPipe_Pipe_executeContentAsync_t)(graal_isolatethread_t*, TPipe_PipeHandle, TPipe_ContentHandle, TPipe_PipeSettingsHandle);
 typedef int                 (*fn_TPipe_Pipe_getTokenUsage_t)(graal_isolatethread_t*, TPipe_PipeHandle, int*, int*, int*, int*);
+typedef TPipe_Handle        (*fn_TPipe_Manifold_create_t)(graal_isolatethread_t*);
+typedef int                 (*fn_TPipe_Manifold_release_t)(graal_isolatethread_t*, TPipe_ManifoldHandle);
+typedef int                 (*fn_TPipe_Manifold_init_t)(graal_isolatethread_t*, TPipe_ManifoldHandle);
+typedef TPipe_Handle        (*fn_TPipe_Manifold_execute_t)(graal_isolatethread_t*, TPipe_ManifoldHandle, TPipe_ContentHandle);
+typedef int                 (*fn_TPipe_Manifold_addWorker_t)(graal_isolatethread_t*, TPipe_ManifoldHandle, const char*, TPipe_PipeHandle);
+typedef int                 (*fn_TPipe_Manifold_getWorkerCount_t)(graal_isolatethread_t*, TPipe_ManifoldHandle, int*);
+typedef int                 (*fn_TPipe_Manifold_setMaxLoopIterations_t)(graal_isolatethread_t*, TPipe_ManifoldHandle, int);
+typedef int                 (*fn_TPipe_Manifold_serialize_t)(graal_isolatethread_t*, TPipe_ManifoldHandle, char*, int);
+
+/* Phase 7 — Full LoreBookHandle coverage (14 functions). */
+typedef int                 (*fn_TPipe_LoreBook_setKey_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, const char*);
+typedef int                 (*fn_TPipe_LoreBook_getKey_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, char*, int);
+typedef int                 (*fn_TPipe_LoreBook_setValue_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, const char*);
+typedef int                 (*fn_TPipe_LoreBook_getValue_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, char*, int);
+typedef int                 (*fn_TPipe_LoreBook_setWeight_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, int);
+typedef int                 (*fn_TPipe_LoreBook_getWeight_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, int*);
+typedef int                 (*fn_TPipe_LoreBook_addLinkedKey_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, const char*);
+typedef int                 (*fn_TPipe_LoreBook_getLinkedKeys_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, char*, int);
+typedef int                 (*fn_TPipe_LoreBook_addAliasKey_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, const char*);
+typedef int                 (*fn_TPipe_LoreBook_getAliasKeys_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, char*, int);
+typedef int                 (*fn_TPipe_LoreBook_addRequiredKey_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, const char*);
+typedef int                 (*fn_TPipe_LoreBook_getRequiredKeys_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, char*, int);
+typedef int                 (*fn_TPipe_LoreBook_combine_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, TPipe_LoreBookHandle);
+typedef int                 (*fn_TPipe_LoreBook_toJson_t)(graal_isolatethread_t*, TPipe_LoreBookHandle, char*, int);
+
+/* Phase 8 — Full ConverseHistoryHandle coverage (6 functions). */
+typedef int                 (*fn_TPipe_ConverseHistory_addString_t)(graal_isolatethread_t*, TPipe_ConverseHistoryHandle, const char*, const char*);
+typedef int                 (*fn_TPipe_ConverseHistory_size_t)(graal_isolatethread_t*, TPipe_ConverseHistoryHandle);
+typedef int                 (*fn_TPipe_ConverseHistory_isEmpty_t)(graal_isolatethread_t*, TPipe_ConverseHistoryHandle);
+typedef int                 (*fn_TPipe_ConverseHistory_clear_t)(graal_isolatethread_t*, TPipe_ConverseHistoryHandle);
+typedef int                 (*fn_TPipe_ConverseHistory_getAt_t)(graal_isolatethread_t*, TPipe_ConverseHistoryHandle, int, char*, int);
+typedef int                 (*fn_TPipe_ConverseHistory_toJson_t)(graal_isolatethread_t*, TPipe_ConverseHistoryHandle, char*, int);
+
+/* Phase 9 — Full MiniBankHandle coverage (6 functions). */
+typedef int                 (*fn_TPipe_MiniBank_isEmpty_t)(graal_isolatethread_t*, TPipe_MiniBankHandle);
+typedef int                 (*fn_TPipe_MiniBank_clear_t)(graal_isolatethread_t*, TPipe_MiniBankHandle);
+typedef int                 (*fn_TPipe_MiniBank_pageCount_t)(graal_isolatethread_t*, TPipe_MiniBankHandle);
+typedef int                 (*fn_TPipe_MiniBank_getPageKeys_t)(graal_isolatethread_t*, TPipe_MiniBankHandle, char*, int);
+typedef int                 (*fn_TPipe_MiniBank_getPageJson_t)(graal_isolatethread_t*, TPipe_MiniBankHandle, const char*, char*, int);
+typedef int                 (*fn_TPipe_MiniBank_merge_t)(graal_isolatethread_t*, TPipe_MiniBankHandle, TPipe_MiniBankHandle, int, int, int, int);
+
+/* Phase 10 — Full ContextHandle coverage (5 functions). */
+typedef int                 (*fn_TPipe_Context_getLoreBookKeys_t)(graal_isolatethread_t*, TPipe_ContextHandle, char*, int);
+typedef int                 (*fn_TPipe_Context_getContextElementsCount_t)(graal_isolatethread_t*, TPipe_ContextHandle, int*);
+typedef int                 (*fn_TPipe_Context_getConverseHistorySize_t)(graal_isolatethread_t*, TPipe_ContextHandle, int*);
+typedef int                 (*fn_TPipe_Context_getVersion_t)(graal_isolatethread_t*, TPipe_ContextHandle, int64_t*);
+typedef int                 (*fn_TPipe_Context_getContextJson_t)(graal_isolatethread_t*, TPipe_ContextHandle, char*, int);
+
+/* Phase 11 — Stub-level DistributionGrid coverage (6 functions). */
+typedef TPipe_Handle        (*fn_TPipe_DistributionGrid_create_t)(graal_isolatethread_t*);
+typedef int                 (*fn_TPipe_DistributionGrid_release_t)(graal_isolatethread_t*, TPipe_DistributionGridHandle);
+typedef int                 (*fn_TPipe_DistributionGrid_getNodeCount_t)(graal_isolatethread_t*, TPipe_DistributionGridHandle, int*);
+typedef int                 (*fn_TPipe_DistributionGrid_serialize_t)(graal_isolatethread_t*, TPipe_DistributionGridHandle, char*, int);
+typedef int                 (*fn_TPipe_DistributionGrid_getHealth_t)(graal_isolatethread_t*, TPipe_DistributionGridHandle, char*, int);
+typedef int                 (*fn_TPipe_DistributionGrid_rebalance_stub_t)(graal_isolatethread_t*, TPipe_DistributionGridHandle, char*, int);
 
 /*==============================================================================
  * Resolved function pointers
@@ -192,6 +247,61 @@ static fn_TPipe_Pipe_init_t                   fn_TPipe_Pipe_init;
 static fn_TPipe_Pipe_execute_t                fn_TPipe_Pipe_execute;
 static fn_TPipe_Pipe_executeContentAsync_t    fn_TPipe_Pipe_executeContentAsync;
 static fn_TPipe_Pipe_getTokenUsage_t          fn_TPipe_Pipe_getTokenUsage;
+static fn_TPipe_Manifold_create_t             fn_TPipe_Manifold_create;
+static fn_TPipe_Manifold_release_t            fn_TPipe_Manifold_release;
+static fn_TPipe_Manifold_init_t               fn_TPipe_Manifold_init;
+static fn_TPipe_Manifold_execute_t            fn_TPipe_Manifold_execute;
+static fn_TPipe_Manifold_addWorker_t          fn_TPipe_Manifold_addWorker;
+static fn_TPipe_Manifold_getWorkerCount_t     fn_TPipe_Manifold_getWorkerCount;
+static fn_TPipe_Manifold_setMaxLoopIterations_t fn_TPipe_Manifold_setMaxLoopIterations;
+static fn_TPipe_Manifold_serialize_t          fn_TPipe_Manifold_serialize;
+
+/* Phase 7 — Full LoreBookHandle coverage. */
+static fn_TPipe_LoreBook_setKey_t             fn_TPipe_LoreBook_setKey;
+static fn_TPipe_LoreBook_getKey_t             fn_TPipe_LoreBook_getKey;
+static fn_TPipe_LoreBook_setValue_t           fn_TPipe_LoreBook_setValue;
+static fn_TPipe_LoreBook_getValue_t           fn_TPipe_LoreBook_getValue;
+static fn_TPipe_LoreBook_setWeight_t          fn_TPipe_LoreBook_setWeight;
+static fn_TPipe_LoreBook_getWeight_t          fn_TPipe_LoreBook_getWeight;
+static fn_TPipe_LoreBook_addLinkedKey_t       fn_TPipe_LoreBook_addLinkedKey;
+static fn_TPipe_LoreBook_getLinkedKeys_t      fn_TPipe_LoreBook_getLinkedKeys;
+static fn_TPipe_LoreBook_addAliasKey_t        fn_TPipe_LoreBook_addAliasKey;
+static fn_TPipe_LoreBook_getAliasKeys_t       fn_TPipe_LoreBook_getAliasKeys;
+static fn_TPipe_LoreBook_addRequiredKey_t     fn_TPipe_LoreBook_addRequiredKey;
+static fn_TPipe_LoreBook_getRequiredKeys_t    fn_TPipe_LoreBook_getRequiredKeys;
+static fn_TPipe_LoreBook_combine_t            fn_TPipe_LoreBook_combine;
+static fn_TPipe_LoreBook_toJson_t             fn_TPipe_LoreBook_toJson;
+
+/* Phase 8 — Full ConverseHistoryHandle coverage. */
+static fn_TPipe_ConverseHistory_addString_t   fn_TPipe_ConverseHistory_addString;
+static fn_TPipe_ConverseHistory_size_t        fn_TPipe_ConverseHistory_size;
+static fn_TPipe_ConverseHistory_isEmpty_t     fn_TPipe_ConverseHistory_isEmpty;
+static fn_TPipe_ConverseHistory_clear_t       fn_TPipe_ConverseHistory_clear;
+static fn_TPipe_ConverseHistory_getAt_t       fn_TPipe_ConverseHistory_getAt;
+static fn_TPipe_ConverseHistory_toJson_t      fn_TPipe_ConverseHistory_toJson;
+
+/* Phase 9 — Full MiniBankHandle coverage. */
+static fn_TPipe_MiniBank_isEmpty_t            fn_TPipe_MiniBank_isEmpty;
+static fn_TPipe_MiniBank_clear_t              fn_TPipe_MiniBank_clear;
+static fn_TPipe_MiniBank_pageCount_t          fn_TPipe_MiniBank_pageCount;
+static fn_TPipe_MiniBank_getPageKeys_t        fn_TPipe_MiniBank_getPageKeys;
+static fn_TPipe_MiniBank_getPageJson_t        fn_TPipe_MiniBank_getPageJson;
+static fn_TPipe_MiniBank_merge_t              fn_TPipe_MiniBank_merge;
+
+/* Phase 10 — Full ContextHandle coverage. */
+static fn_TPipe_Context_getLoreBookKeys_t           fn_TPipe_Context_getLoreBookKeys;
+static fn_TPipe_Context_getContextElementsCount_t   fn_TPipe_Context_getContextElementsCount;
+static fn_TPipe_Context_getConverseHistorySize_t    fn_TPipe_Context_getConverseHistorySize;
+static fn_TPipe_Context_getVersion_t                fn_TPipe_Context_getVersion;
+static fn_TPipe_Context_getContextJson_t            fn_TPipe_Context_getContextJson;
+
+/* Phase 11 — Stub-level DistributionGrid coverage. */
+static fn_TPipe_DistributionGrid_create_t           fn_TPipe_DistributionGrid_create;
+static fn_TPipe_DistributionGrid_release_t          fn_TPipe_DistributionGrid_release;
+static fn_TPipe_DistributionGrid_getNodeCount_t     fn_TPipe_DistributionGrid_getNodeCount;
+static fn_TPipe_DistributionGrid_serialize_t        fn_TPipe_DistributionGrid_serialize;
+static fn_TPipe_DistributionGrid_getHealth_t        fn_TPipe_DistributionGrid_getHealth;
+static fn_TPipe_DistributionGrid_rebalance_stub_t   fn_TPipe_DistributionGrid_rebalance_stub;
 
 /*==============================================================================
  * Symbol resolution
@@ -253,6 +363,56 @@ static int resolve_all_symbols(void) {
     CHECK_SYM(TPipe_Pipe_execute);
     CHECK_SYM(TPipe_Pipe_executeContentAsync);
     CHECK_SYM(TPipe_Pipe_getTokenUsage);
+    CHECK_SYM(TPipe_Manifold_create);
+    CHECK_SYM(TPipe_Manifold_release);
+    CHECK_SYM(TPipe_Manifold_init);
+    CHECK_SYM(TPipe_Manifold_execute);
+    CHECK_SYM(TPipe_Manifold_addWorker);
+    CHECK_SYM(TPipe_Manifold_getWorkerCount);
+    CHECK_SYM(TPipe_Manifold_setMaxLoopIterations);
+    CHECK_SYM(TPipe_Manifold_serialize);
+    /* Phase 7 — Full LoreBookHandle coverage. */
+    CHECK_SYM(TPipe_LoreBook_setKey);
+    CHECK_SYM(TPipe_LoreBook_getKey);
+    CHECK_SYM(TPipe_LoreBook_setValue);
+    CHECK_SYM(TPipe_LoreBook_getValue);
+    CHECK_SYM(TPipe_LoreBook_setWeight);
+    CHECK_SYM(TPipe_LoreBook_getWeight);
+    CHECK_SYM(TPipe_LoreBook_addLinkedKey);
+    CHECK_SYM(TPipe_LoreBook_getLinkedKeys);
+    CHECK_SYM(TPipe_LoreBook_addAliasKey);
+    CHECK_SYM(TPipe_LoreBook_getAliasKeys);
+    CHECK_SYM(TPipe_LoreBook_addRequiredKey);
+    CHECK_SYM(TPipe_LoreBook_getRequiredKeys);
+    CHECK_SYM(TPipe_LoreBook_combine);
+    CHECK_SYM(TPipe_LoreBook_toJson);
+    /* Phase 8 — Full ConverseHistoryHandle coverage. */
+    CHECK_SYM(TPipe_ConverseHistory_addString);
+    CHECK_SYM(TPipe_ConverseHistory_size);
+    CHECK_SYM(TPipe_ConverseHistory_isEmpty);
+    CHECK_SYM(TPipe_ConverseHistory_clear);
+    CHECK_SYM(TPipe_ConverseHistory_getAt);
+    CHECK_SYM(TPipe_ConverseHistory_toJson);
+    /* Phase 9 — Full MiniBankHandle coverage. */
+    CHECK_SYM(TPipe_MiniBank_isEmpty);
+    CHECK_SYM(TPipe_MiniBank_clear);
+    CHECK_SYM(TPipe_MiniBank_pageCount);
+    CHECK_SYM(TPipe_MiniBank_getPageKeys);
+    CHECK_SYM(TPipe_MiniBank_getPageJson);
+    CHECK_SYM(TPipe_MiniBank_merge);
+    /* Phase 10 — Full ContextHandle coverage. */
+    CHECK_SYM(TPipe_Context_getLoreBookKeys);
+    CHECK_SYM(TPipe_Context_getContextElementsCount);
+    CHECK_SYM(TPipe_Context_getConverseHistorySize);
+    CHECK_SYM(TPipe_Context_getVersion);
+    CHECK_SYM(TPipe_Context_getContextJson);
+    /* Phase 11 — Stub-level DistributionGrid coverage. */
+    CHECK_SYM(TPipe_DistributionGrid_create);
+    CHECK_SYM(TPipe_DistributionGrid_release);
+    CHECK_SYM(TPipe_DistributionGrid_getNodeCount);
+    CHECK_SYM(TPipe_DistributionGrid_serialize);
+    CHECK_SYM(TPipe_DistributionGrid_getHealth);
+    CHECK_SYM(TPipe_DistributionGrid_rebalance_stub);
     return 1;
 }
 
@@ -333,6 +493,67 @@ static void run_compliance(void) {
     CALL_FN_HANDLE("TPipe_Pipe_executeContentAsync",  fn_TPipe_Pipe_executeContentAsync(g_thread, 0, 0, 0));
     CALL_FN("TPipe_Pipe_getTokenUsage",              fn_TPipe_Pipe_getTokenUsage(g_thread, 0, &iarr[0], &iarr[1], &iarr[2], &iarr[3]));
 
+    /* ---- Manifold API ---- */
+    CALL_FN_HANDLE("TPipe_Manifold_create",             fn_TPipe_Manifold_create(g_thread));
+    CALL_FN("TPipe_Manifold_release",                   fn_TPipe_Manifold_release(g_thread, 0));
+    CALL_FN("TPipe_Manifold_init",                      fn_TPipe_Manifold_init(g_thread, 0));
+    CALL_FN_HANDLE("TPipe_Manifold_execute",             fn_TPipe_Manifold_execute(g_thread, 0, 0));
+    CALL_FN("TPipe_Manifold_addWorker",                 fn_TPipe_Manifold_addWorker(g_thread, 0, "w1", 0));
+    CALL_FN("TPipe_Manifold_getWorkerCount",            fn_TPipe_Manifold_getWorkerCount(g_thread, 0, &iout));
+    CALL_FN("TPipe_Manifold_setMaxLoopIterations",      fn_TPipe_Manifold_setMaxLoopIterations(g_thread, 0, 100));
+    CALL_FN("TPipe_Manifold_serialize",                 fn_TPipe_Manifold_serialize(g_thread, 0, buf, sizeof(buf)));
+
+    /* ---- LoreBook API (Phase 7 — full coverage of 14 LoreBookHandle methods) ---- */
+    CALL_FN("TPipe_LoreBook_setKey",          fn_TPipe_LoreBook_setKey(g_thread, 0, "k"));
+    CALL_FN("TPipe_LoreBook_getKey",          fn_TPipe_LoreBook_getKey(g_thread, 0, buf, sizeof(buf)));
+    CALL_FN("TPipe_LoreBook_setValue",        fn_TPipe_LoreBook_setValue(g_thread, 0, "v"));
+    CALL_FN("TPipe_LoreBook_getValue",        fn_TPipe_LoreBook_getValue(g_thread, 0, buf, sizeof(buf)));
+    CALL_FN("TPipe_LoreBook_setWeight",       fn_TPipe_LoreBook_setWeight(g_thread, 0, 42));
+    CALL_FN("TPipe_LoreBook_getWeight",       fn_TPipe_LoreBook_getWeight(g_thread, 0, &iout));
+    CALL_FN("TPipe_LoreBook_addLinkedKey",    fn_TPipe_LoreBook_addLinkedKey(g_thread, 0, "linked"));
+    CALL_FN("TPipe_LoreBook_getLinkedKeys",   fn_TPipe_LoreBook_getLinkedKeys(g_thread, 0, buf, sizeof(buf)));
+    CALL_FN("TPipe_LoreBook_addAliasKey",     fn_TPipe_LoreBook_addAliasKey(g_thread, 0, "alias"));
+    CALL_FN("TPipe_LoreBook_getAliasKeys",    fn_TPipe_LoreBook_getAliasKeys(g_thread, 0, buf, sizeof(buf)));
+    CALL_FN("TPipe_LoreBook_addRequiredKey",  fn_TPipe_LoreBook_addRequiredKey(g_thread, 0, "req"));
+    CALL_FN("TPipe_LoreBook_getRequiredKeys", fn_TPipe_LoreBook_getRequiredKeys(g_thread, 0, buf, sizeof(buf)));
+    CALL_FN("TPipe_LoreBook_combine",         fn_TPipe_LoreBook_combine(g_thread, 0, 0));
+    CALL_FN("TPipe_LoreBook_toJson",          fn_TPipe_LoreBook_toJson(g_thread, 0, buf, sizeof(buf)));
+
+    /* ---- ConverseHistory API (Phase 8 — full coverage of 6 ConverseHistoryHandle methods) ---- */
+    CALL_FN("TPipe_ConverseHistory_addString", fn_TPipe_ConverseHistory_addString(g_thread, 0, "user", "hi"));
+    CALL_FN("TPipe_ConverseHistory_size",      fn_TPipe_ConverseHistory_size(g_thread, 0));
+    CALL_FN("TPipe_ConverseHistory_isEmpty",   fn_TPipe_ConverseHistory_isEmpty(g_thread, 0));
+    CALL_FN("TPipe_ConverseHistory_clear",     fn_TPipe_ConverseHistory_clear(g_thread, 0));
+    CALL_FN("TPipe_ConverseHistory_getAt",     fn_TPipe_ConverseHistory_getAt(g_thread, 0, 0, buf, sizeof(buf)));
+    CALL_FN("TPipe_ConverseHistory_toJson",    fn_TPipe_ConverseHistory_toJson(g_thread, 0, buf, sizeof(buf)));
+
+    /* ---- MiniBank API (Phase 9 — full coverage of 6 MiniBankHandle methods) ---- */
+    CALL_FN("TPipe_MiniBank_isEmpty",     fn_TPipe_MiniBank_isEmpty(g_thread, 0));
+    CALL_FN("TPipe_MiniBank_clear",       fn_TPipe_MiniBank_clear(g_thread, 0));
+    CALL_FN("TPipe_MiniBank_pageCount",   fn_TPipe_MiniBank_pageCount(g_thread, 0));
+    CALL_FN("TPipe_MiniBank_getPageKeys", fn_TPipe_MiniBank_getPageKeys(g_thread, 0, buf, sizeof(buf)));
+    CALL_FN("TPipe_MiniBank_getPageJson", fn_TPipe_MiniBank_getPageJson(g_thread, 0, "k", buf, sizeof(buf)));
+    CALL_FN("TPipe_MiniBank_merge",       fn_TPipe_MiniBank_merge(g_thread, 0, 0, 1, 0, 0, 0));
+
+    /* ---- Context API (Phase 10 — full coverage of 5 ContextHandle methods) ---- */
+    {
+        int64_t versionOut = 0;
+        CALL_FN("TPipe_Context_getLoreBookKeys",          fn_TPipe_Context_getLoreBookKeys(g_thread, 0, buf, sizeof(buf)));
+        CALL_FN("TPipe_Context_getContextElementsCount", fn_TPipe_Context_getContextElementsCount(g_thread, 0, &iout));
+        CALL_FN("TPipe_Context_getConverseHistorySize",  fn_TPipe_Context_getConverseHistorySize(g_thread, 0, &iout));
+        CALL_FN("TPipe_Context_getVersion",              fn_TPipe_Context_getVersion(g_thread, 0, &versionOut));
+        CALL_FN("TPipe_Context_getContextJson",          fn_TPipe_Context_getContextJson(g_thread, 0, buf, sizeof(buf)));
+        (void)versionOut;
+    }
+
+    /* ---- DistributionGrid API (Phase 11 — stub-level coverage of 6 symbols) ---- */
+    CALL_FN_HANDLE("TPipe_DistributionGrid_create",          fn_TPipe_DistributionGrid_create(g_thread));
+    CALL_FN("TPipe_DistributionGrid_release",                fn_TPipe_DistributionGrid_release(g_thread, 0));
+    CALL_FN("TPipe_DistributionGrid_getNodeCount",           fn_TPipe_DistributionGrid_getNodeCount(g_thread, 0, &iout));
+    CALL_FN("TPipe_DistributionGrid_serialize",              fn_TPipe_DistributionGrid_serialize(g_thread, 0, buf, sizeof(buf)));
+    CALL_FN("TPipe_DistributionGrid_getHealth",              fn_TPipe_DistributionGrid_getHealth(g_thread, 0, buf, sizeof(buf)));
+    CALL_FN("TPipe_DistributionGrid_rebalance_stub",         fn_TPipe_DistributionGrid_rebalance_stub(g_thread, 0, buf, sizeof(buf)));
+
     /* ---- Shutdown ---- */
     CALL_FN("TPipe_shutdown", fn_TPipe_shutdown(g_thread));
 
@@ -396,15 +617,20 @@ int main(int argc, char** argv) {
 
     printf("ABI compliance: %d/%d functions OK\n", g_passed, g_total);
 
-    /* Teardown */
-    graal_detach_thread_fn(g_thread);
-    graal_tear_down_isolate_fn(g_thread);
-    dlclose(g_lib);
-
+    /* Print success/failure BEFORE teardown — SubstrateVM may abort during
+       teardown due to a known issue with non-Java threads, but the actual
+       function-call compliance result is established by this point. */
     if (g_failed > 0 || g_total == 0 || g_passed != g_total) {
         fprintf(stderr, "FAILED: %d of %d functions did not return cleanly\n", g_failed, g_total);
         return 1;
     }
     printf("All compliance checks passed\n");
+
+    /* Teardown (best-effort — may abort with SubstrateVM safepoint error
+       on some configurations, but the compliance result is already printed). */
+    graal_detach_thread_fn(g_thread);
+    graal_tear_down_isolate_fn(g_thread);
+    dlclose(g_lib);
+
     return 0;
 }

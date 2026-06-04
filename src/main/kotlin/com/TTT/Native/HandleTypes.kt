@@ -20,10 +20,12 @@ object HandleTypes {
     const val MAP = 13
     const val PIPE_SETTINGS = 14
     const val OPERATION = 15
+    const val MANIFOLD = 16
+    const val DISTRIBUTION_GRID = 17
 
     /** Base type for all handles (used in generic operations). */
     const val BASE = 0
 
     /** Total number of handle types. */
-    const val TYPE_COUNT = 16
+    const val TYPE_COUNT = 18
 }

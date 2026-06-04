@@ -22,6 +22,17 @@ java {
     }
     withSourcesJar()
     withJavadocJar()
+
+    // TPipeBootstrap.java lives under src/main/kotlin/ alongside its Kotlin
+    // siblings. The Kotlin gradle plugin's default compileJava task only scans
+    // src/main/java/, so the .java file would be silently skipped. Add this
+    // sourceset so the 108 @CEntryPoint methods are actually compiled and
+    // exported by native-image.
+    sourceSets {
+        named("main") {
+            java.srcDir("src/main/kotlin")
+        }
+    }
 }
 
 kotlin {
@@ -38,6 +49,23 @@ kotlin {
 val licenseJar by tasks.registering(Jar::class) {
     archiveClassifier.set("license")
     from(rootProject.file("LICENSE"))
+}
+
+// Phase 2: when :TPipe adds :TPipe-Ollama and :TPipe-Bedrock to its
+// runtime classpath, those jars transitively appear in :TPipe-MCP's
+// runtime classpath (because :TPipe-MCP `implementation(project(":"))`).
+// :TPipe-MCP:jar is a custom uber-jar task that does
+// `from(configurations.runtimeClasspath.get().files)`, so it
+// reads the new provider jars' outputs. Gradle 8.14.3's strict
+// `validation_problems` rule then fails the build with
+// "Task :TPipe-MCP:jar uses this output of task :TPipe-Ollama:jar
+// without declaring an explicit or implicit dependency." Fix it
+// by declaring :TPipe-MCP:jar's `dependsOn` here, from the root
+// project, so we don't have to touch :TPipe-MCP's own build script.
+subprojects {
+    tasks.matching { it.name == "jar" && it.project.path == ":TPipe-MCP" }.configureEach {
+        dependsOn(":TPipe-Ollama:jar", ":TPipe-Bedrock:jar")
+    }
 }
 
 artifacts {
@@ -80,14 +108,47 @@ dependencies {
     // Using runtimeOnly to avoid circular dependency at compile time.
     runtimeOnly(project(":TPipe-MCP"))
 
+    // Provider sub-modules — wired in as `runtimeOnly` (not `implementation`)
+    // because the sub-modules already declare `implementation(project(":"))`,
+    // which would create a compile-time task cycle if :TPipe also depended
+    // on them via `implementation`. The existing `runtimeOnly(project(":TPipe-MCP"))`
+    // line above uses the same pattern to break that cycle; we mirror it here.
+    // The classes are still on the main :TPipe runtime classpath (so GraalVM
+    // native-image can resolve them via the `-H:Class=...` reachability hints
+    // further down in this file) and on the test classpath via
+    // `testImplementation(...)` below.
+    runtimeOnly(project(":TPipe-Ollama"))
+    runtimeOnly(project(":TPipe-Bedrock"))
+
     // MCP Server Hosting
     implementation("io.modelcontextprotocol:kotlin-sdk:0.11.1")
     implementation("io.ktor:ktor-server-cio:3.3.3")
     implementation("io.ktor:ktor-server-auth:3.3.3")
 
+    // GraalVM SDK — required at compile time for TPipeBootstrap.java's
+    // @CEntryPoint, @CContext, WordBase, CCharPointer, IsolateThread, etc.
+    // The native-image plugin auto-adds these to the runtime classpath but
+    // NOT to the compileJava classpath, so we declare them explicitly.
+    // Note: GraalVM 24.0.2 removed `org.graalvm.word.Word`. The replacement
+    // is `org.graalvm.word.WordBase`, which is API-compatible for the
+    // operations TPipeBootstrap.java uses (rawValue, equals, hashCode).
+    compileOnly("org.graalvm.sdk:graal-sdk:24.0.2")
+    compileOnly("org.graalvm.sdk:nativeimage:24.0.2")
+    compileOnly("org.graalvm.sdk:word:24.0.2")
+    compileOnly("org.graalvm.sdk:collections:24.0.2")
+
     // Testing
     testImplementation(libs.ktor.server.test.host)
     testImplementation(libs.kotlin.test.junit)
+    // Phase 2: provider classpath reachability test. The test file
+    // (ProviderClasspathTest.kt) references ollamaPipe.OllamaPipe and
+    // bedrockPipe.BedrockPipe directly via `::class.java`, which requires
+    // the classes to be on the test compile classpath. testImplementation
+    // does NOT create a compile-time cycle because the providers are only
+    // referenced from :TPipe's test source set — the main :TPipe source
+    // set never depends on them at compile time.
+    testImplementation(project(":TPipe-Ollama"))
+    testImplementation(project(":TPipe-Bedrock"))
 }
 
 tasks.test {
@@ -107,7 +168,34 @@ graalvmNative {
         "-H:+ReportExceptionStackTraces",
         "--no-fallback",
         "--enable-https",
-        "-H:+AllowVMInternalThreads"
+        "-H:+AllowVMInternalThreads",
+        // Register the C ABI entry-point class as a reachable image class.
+        // Without this, native-image does not discover com.TTT.Native.TPipeBootstrap
+        // (reachable only via @CEntryPoint annotations), so the TPipe_* symbols are
+        // never emitted into the shared object.
+        "-H:Class=com.TTT.Native.TPipeBootstrap",
+        // Phase 2: register the provider sub-module classes as reachable.
+        // NativeBridge.pipeCreate constructs these via Class.forName + ctor
+        // newInstance() in Phase 3/4, which is a reflective code path that
+        // native-image cannot discover at build time without an explicit
+        // hint. The $-suffixed entries are the auto-generated Companion
+        // inner classes that hold @JvmStatic factories; native-image
+        // reports them as "Companion class not found" if omitted.
+        "-H:Class=ollamaPipe.OllamaPipe",
+        "-H:Class=bedrockPipe.BedrockPipe",
+        "-H:Class=ollamaPipe.OllamaPipe\$Companion",
+        "-H:Class=bedrockPipe.BedrockPipe\$Companion",
+        // Phase 5: Manifold is constructed via Manifold() in
+        // NativeBridge.manifoldCreate. Native-image cannot discover
+        // reflective constructors of a class only referenced through the
+        // C ABI's @CEntryPoint -> NativeBridge -> ManifoldHandle ->
+        // Manifold() chain, so we register it explicitly.
+        "-H:Class=com.TTT.Pipeline.Manifold",
+        // Phase 11: DistributionGrid is constructed via DistributionGrid()
+        // in NativeBridge.distributionGridCreate. Same reasoning as
+        // Manifold above — native-image needs an explicit hint to keep
+        // the class reachable for the @CEntryPoint code path.
+        "-H:Class=com.TTT.Pipeline.DistributionGrid"
     ))
 
     metadataRepository {

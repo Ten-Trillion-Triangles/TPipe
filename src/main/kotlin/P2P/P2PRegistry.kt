@@ -271,6 +271,17 @@ object P2PRegistry
     }
 
     /**
+     * List the hosted (local-registered) agent descriptors currently active in the registry.
+     *
+     * <p>These are agents registered via {@link #register(P2PInterface, P2PTransport, P2PDescriptor, P2PRequirements, P2PConcurrencyMode)}
+     * or the factory variant. Distinct from {@link #listClientAgents()} which returns imported remote agents.
+     */
+    fun listHostedAgents(): List<P2PDescriptor>
+    {
+        return Agents.values.map { it.descriptor.deepCopy<P2PDescriptor>() }
+    }
+
+    /**
      * Register one trusted hosted-registry source.
      *
      * If [P2PTrustedRegistrySource.autoPullOnRegister] is true, one pull runs immediately after registration.

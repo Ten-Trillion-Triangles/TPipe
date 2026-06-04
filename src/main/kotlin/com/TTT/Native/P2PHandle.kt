@@ -130,7 +130,7 @@ class P2PHandle(
      */
     fun getActiveAgents(): List<String> {
         return try {
-            registry.listClientAgents().map { it.agentName }
+            registry.listHostedAgents().map { it.agentName }
         } catch (e: Exception) {
             emptyList()
         }
