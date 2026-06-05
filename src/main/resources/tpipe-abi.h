@@ -1018,6 +1018,14 @@ int TPipe_PipeSettings_setFloat(graal_isolatethread_t* thread, TPipe_PipeSetting
  */
 int TPipe_PipeSettings_setBool(graal_isolatethread_t* thread, TPipe_PipeSettingsHandle settings, const char* key, int value);
 
+/**
+ * @brief Release a PipeSettings handle (decrement refcount; frees if zero)
+ * @param thread Caller's IsolateThread
+ * @param settings PipeSettings handle to release
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_PipeSettings_release(graal_isolatethread_t* thread, TPipe_PipeSettingsHandle settings);
+
 /*==============================================================================
  * PIPELINE API FUNCTIONS (7 functions)
  *============================================================================*/
@@ -1094,9 +1102,24 @@ TPipe_Handle TPipe_Pipeline_getContextWindow(graal_isolatethread_t* thread, TPip
  */
 TPipe_Handle TPipe_Pipeline_getMiniBank(graal_isolatethread_t* thread, TPipe_PipelineHandle pipeline);
 
+/**
+ * @brief Release a Pipeline handle (decrement refcount; frees if zero)
+ * @param thread Caller's IsolateThread
+ * @param pipeline Pipeline handle to release
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipeline_release(graal_isolatethread_t* thread, TPipe_PipelineHandle pipeline);
+
 /*==============================================================================
  * LOREBOOK AND CONVERSE HISTORY ADD FUNCTIONS (2 functions)
  *============================================================================*/
+
+/**
+ * @brief Create a LoreBook handle
+ * @param thread Caller's IsolateThread
+ * @return LoreBook handle, or 0 on failure
+ */
+TPipe_Handle TPipe_LoreBook_create(graal_isolatethread_t* thread);
 
 /**
  * @brief Add an entry to a lore book
@@ -1328,6 +1351,23 @@ int TPipe_ConverseHistory_toJson(graal_isolatethread_t* thread, TPipe_ConverseHi
  *----------------------------------------------------------------------------*/
 
 /**
+ * @brief Create a new MiniBank handle
+ * @param thread Caller's IsolateThread
+ * @return MiniBank handle, or 0 on failure
+ */
+TPipe_Handle TPipe_MiniBank_create(graal_isolatethread_t* thread);
+
+/**
+ * @brief Set a value on a MiniBank page
+ * @param thread Caller's IsolateThread
+ * @param miniBank MiniBank handle
+ * @param key Page key (UTF-8)
+ * @param value Page value (UTF-8)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_MiniBank_set(graal_isolatethread_t* thread, TPipe_MiniBankHandle miniBank, const char* key, const char* value);
+
+/**
  * @brief Check whether the MiniBank contains no context pages.
  * @param thread Caller's IsolateThread
  * @param miniBank MiniBank handle
@@ -1394,6 +1434,13 @@ int TPipe_MiniBank_merge(graal_isolatethread_t* thread, TPipe_MiniBankHandle min
  * getContextElementsCount, getConverseHistorySize, getVersion, getContextJson).
  * The pre-existing TPipe_ContextWindow_create symbol is unchanged.
  *----------------------------------------------------------------------------*/
+
+/**
+ * @brief Create a new ContextWindow handle
+ * @param thread Caller's IsolateThread
+ * @return Context handle, or 0 on failure
+ */
+TPipe_Handle TPipe_ContextWindow_create(graal_isolatethread_t* thread);
 
 /**
  * @brief Get the ContextWindow's lorebook keys as a JSON array string
@@ -1589,6 +1636,14 @@ int TPipe_Map_get(graal_isolatethread_t* thread, TPipe_MapHandle map, const char
  */
 int TPipe_Map_has(graal_isolatethread_t* thread, TPipe_MapHandle map, const char* key, int* has);
 
+/**
+ * @brief Get the number of entries in a map
+ * @param thread Caller's IsolateThread
+ * @param map Map handle
+ * @return Number of entries (>= 0), or negative error code on failure
+ */
+int TPipe_Map_size(graal_isolatethread_t* thread, TPipe_MapHandle map);
+
 /*==============================================================================
  * ASYNC HANDLE FUNCTIONS (4 functions)
  *============================================================================*/
@@ -1625,6 +1680,25 @@ int TPipe_AsyncHandle_getResult(graal_isolatethread_t* thread, TPipe_AsyncHandle
  * @return 0 on success, negative error code on failure
  */
 int TPipe_AsyncHandle_cancel(graal_isolatethread_t* thread, TPipe_AsyncHandle handle);
+
+/**
+ * @brief Check whether the async operation has completed (success or failure)
+ * @param thread Caller's IsolateThread
+ * @param handle Async handle
+ * @return 1 if the operation is done, 0 if still pending
+ */
+int TPipe_AsyncHandle_isDone(graal_isolatethread_t* thread, TPipe_AsyncHandle handle);
+
+/**
+ * @brief Block until the async operation completes or the timeout elapses
+ * @param thread Caller's IsolateThread
+ * @param handle Async handle
+ * @param timeoutMs Maximum milliseconds to wait
+ * @return 0 on success, TPIPE_ERR_OPERATION_TIMEOUT on timeout,
+ *   TPIPE_ERR_OPERATION_CANCELLED on interrupt, TPIPE_ERR_INTERNAL on
+ *   failure, or negative error code on handle type mismatch
+ */
+int TPipe_AsyncHandle_wait(graal_isolatethread_t* thread, TPipe_AsyncHandle handle, int timeoutMs);
 
 /*==============================================================================
  * MANIFOLD API FUNCTIONS (8 functions)
@@ -1784,6 +1858,169 @@ int TPipe_DistributionGrid_getHealth(graal_isolatethread_t* thread, TPipe_Distri
  * @return Number of bytes written, or negative error code on failure
  */
 int TPipe_DistributionGrid_rebalance_stub(graal_isolatethread_t* thread, TPipe_DistributionGridHandle grid, char* buf, int bufSize);
+
+/*==============================================================================
+ * JUNCTION API FUNCTIONS (5 functions — Phase 12)
+ *============================================================================*/
+
+/** Handle for Junction (multi-participant discussion harness) */
+typedef uint64_t TPipe_JunctionHandle;
+
+/**
+ * @brief Create a new Junction handle.
+ * @param thread Caller's IsolateThread
+ * @return Junction handle, or 0 on failure
+ */
+TPipe_Handle TPipe_Junction_create(graal_isolatethread_t* thread);
+
+/**
+ * @brief Release a Junction handle (decrement refcount; frees if zero)
+ * @param thread Caller's IsolateThread
+ * @param junction Junction handle to release
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Junction_release(graal_isolatethread_t* thread, TPipe_JunctionHandle junction);
+
+/**
+ * @brief Initialize the wrapped Junction (validates moderator + participants,
+ *        builds workflow phase order, validates participant graphs).
+ * @param thread Caller's IsolateThread
+ * @param junction Junction handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Junction_init(graal_isolatethread_t* thread, TPipe_JunctionHandle junction);
+
+/**
+ * @brief Execute the Junction with the given content. Returns a new
+ *        CONTENT handle wrapping the output MultimodalContent. The C ABI
+ *        caller is responsible for releasing the returned handle.
+ * @param thread Caller's IsolateThread
+ * @param junction Junction handle
+ * @param content Input content handle
+ * @return Content handle wrapping the output, or 0 on failure
+ */
+TPipe_Handle TPipe_Junction_execute(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, TPipe_ContentHandle content);
+
+/**
+ * @brief Serialize the Junction state to a JSON string. Writes a
+ *        null-terminated UTF-8 string and returns the byte count (not
+ *        including the null terminator), or a negative error code.
+ * @param thread Caller's IsolateThread
+ * @param junction Junction handle
+ * @param buf Output buffer
+ * @param bufSize Size of the buffer (must be >= 1)
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_Junction_serialize(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, char* buf, int bufSize);
+
+/*==============================================================================
+ * CONNECTOR API FUNCTIONS (5 functions — Phase 12)
+ *============================================================================*/
+
+/** Handle for Connector (conditional branching container) */
+typedef uint64_t TPipe_ConnectorHandle;
+
+/**
+ * @brief Create a new Connector handle.
+ * @param thread Caller's IsolateThread
+ * @return Connector handle, or 0 on failure
+ */
+TPipe_Handle TPipe_Connector_create(graal_isolatethread_t* thread);
+
+/**
+ * @brief Release a Connector handle (decrement refcount; frees if zero)
+ * @param thread Caller's IsolateThread
+ * @param connector Connector handle to release
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Connector_release(graal_isolatethread_t* thread, TPipe_ConnectorHandle connector);
+
+/**
+ * @brief Initialize the wrapped Connector. Connector has no public init()
+ *        method, so this is always a no-op success. Kept for symmetry with
+ *        the other container handles so the C ABI surface is uniform.
+ * @param thread Caller's IsolateThread
+ * @param connector Connector handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Connector_init(graal_isolatethread_t* thread, TPipe_ConnectorHandle connector);
+
+/**
+ * @brief Execute the Connector with the given content. The branch path is
+ *        read from the content's connector path. Returns a new CONTENT
+ *        handle wrapping the output MultimodalContent.
+ * @param thread Caller's IsolateThread
+ * @param connector Connector handle
+ * @param content Input content handle
+ * @return Content handle wrapping the output, or 0 on failure
+ */
+TPipe_Handle TPipe_Connector_execute(graal_isolatethread_t* thread, TPipe_ConnectorHandle connector, TPipe_ContentHandle content);
+
+/**
+ * @brief Serialize the Connector state to a JSON string. Writes a
+ *        null-terminated UTF-8 string and returns the byte count (not
+ *        including the null terminator), or a negative error code.
+ * @param thread Caller's IsolateThread
+ * @param connector Connector handle
+ * @param buf Output buffer
+ * @param bufSize Size of the buffer (must be >= 1)
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_Connector_serialize(graal_isolatethread_t* thread, TPipe_ConnectorHandle connector, char* buf, int bufSize);
+
+/*==============================================================================
+ * SPLITTER API FUNCTIONS (5 functions — Phase 12)
+ *============================================================================*/
+
+/** Handle for Splitter (parallel-fanout container) */
+typedef uint64_t TPipe_SplitterHandle;
+
+/**
+ * @brief Create a new Splitter handle.
+ * @param thread Caller's IsolateThread
+ * @return Splitter handle, or 0 on failure
+ */
+TPipe_Handle TPipe_Splitter_create(graal_isolatethread_t* thread);
+
+/**
+ * @brief Release a Splitter handle (decrement refcount; frees if zero)
+ * @param thread Caller's IsolateThread
+ * @param splitter Splitter handle to release
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Splitter_release(graal_isolatethread_t* thread, TPipe_SplitterHandle splitter);
+
+/**
+ * @brief Initialize the wrapped Splitter (binds all activator key
+ *        pipelines and content, applies tracing if enabled).
+ * @param thread Caller's IsolateThread
+ * @param splitter Splitter handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Splitter_init(graal_isolatethread_t* thread, TPipe_SplitterHandle splitter);
+
+/**
+ * @brief Execute the Splitter with the given content. The splitter's
+ *        executeLocal fans the content out to all bound pipelines in
+ *        parallel and returns the aggregated content.
+ * @param thread Caller's IsolateThread
+ * @param splitter Splitter handle
+ * @param content Input content handle
+ * @return Content handle wrapping the output, or 0 on failure
+ */
+TPipe_Handle TPipe_Splitter_execute(graal_isolatethread_t* thread, TPipe_SplitterHandle splitter, TPipe_ContentHandle content);
+
+/**
+ * @brief Serialize the Splitter state to a JSON string. Writes a
+ *        null-terminated UTF-8 string and returns the byte count (not
+ *        including the null terminator), or a negative error code.
+ * @param thread Caller's IsolateThread
+ * @param splitter Splitter handle
+ * @param buf Output buffer
+ * @param bufSize Size of the buffer (must be >= 1)
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_Splitter_serialize(graal_isolatethread_t* thread, TPipe_SplitterHandle splitter, char* buf, int bufSize);
 
 /*==============================================================================
  * TOP-LEVEL C ENTRY POINT

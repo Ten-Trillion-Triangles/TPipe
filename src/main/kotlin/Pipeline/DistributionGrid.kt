@@ -4953,10 +4953,8 @@ class DistributionGrid : P2PInterface
             gridPauseRequested = false
             val cancellationNote = "Pause request was canceled because checkpoint '$checkpointReason' could not be saved."
             checkpointEnvelope.executionNotes.add(cancellationNote)
-            if(checkpointEnvelope !== envelope)
-            {
-                envelope.executionNotes.add(cancellationNote)
-            }
+            // Always preserve the diagnostic on the live envelope for durability debugging
+            envelope.executionNotes.add(cancellationNote)
             trace(
                 TraceEventType.DISTRIBUTION_GRID_RESUME,
                 TracePhase.CLEANUP,
@@ -5578,10 +5576,10 @@ class DistributionGrid : P2PInterface
         {
             request.authBody.isNotBlank() -> request.authBody
             else -> sequenceOf(
-                request.transport.transportAddress.takeIf { it.isNotBlank() },
                 resolvedPeerNodeId.takeIf { it.isNotBlank() },
                 peerKey.takeIf { it.isNotBlank() },
-                descriptor.agentName.takeIf { it.isNotBlank() }
+                descriptor.agentName.takeIf { it.isNotBlank() },
+                request.transport.transportAddress.takeIf { it.isNotBlank() }
             ).mapNotNull { identity ->
                 identity?.let { AuthRegistry.getToken(it).takeIf { token -> token.isNotBlank() } }
             }.firstOrNull().orEmpty()

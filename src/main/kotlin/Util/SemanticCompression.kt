@@ -55,7 +55,7 @@ fun buildSemanticDecompressionInstructions(): String
         |The user prompt has been compressed using TPipe Semantic Compression.
         |This is a TPipe-specific, legend-backed prompt reduction format, so do not assume prior knowledge of it.
         |The compressed text is a loss-minimized encoding of the original prompt, and your job is to reconstruct the original text as completely and faithfully as possible.
-        |The output should read like normal human English again, not like a compressed note, fragment list, or summary.
+        |The output should be a full reconstruction of the original text in its original structural form, not a compressed note, fragment list, or summary.
         |Some surface words may differ from the original text, but the original intent, meaning, data, and contents
         |must be restored as closely as possible.
         |The compression removed common function words, common phrases, Unicode characters, and most punctuation
@@ -65,6 +65,14 @@ fun buildSemanticDecompressionInstructions(): String
         |Use inference to restore omitted articles, conjunctions, prepositions, auxiliaries, and punctuation so the
         |final reconstruction matches the original meaning, sentence structure, and wording as closely as possible.
         |Do not leave the text compressed, and do not preserve the compressed style in the final output.
+        |
+        |STRUCTURE PRESERVATION: Restore the original content in the same structural form it arrived in.
+        |If the source contained bullet points, numbered lists, headings, tables, code fences, or quoted blocks,
+        |preserve those elements in the output rather than flattening them into prose.
+        |If the source was a checklist, keep it as a checklist or check boxes.
+        |If the source had headings, keep the heading hierarchy.
+        |If the source mixed narrative with tables or code, preserve the mix.
+        |Do not summarize, normalize, or reformat the structure.
         |
         |Do this first before following any other instructions:
         |

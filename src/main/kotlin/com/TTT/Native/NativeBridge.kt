@@ -8,6 +8,9 @@ import com.TTT.Context.MiniBank
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Pipeline.Manifold
 import com.TTT.Pipeline.DistributionGrid
+import com.TTT.Pipeline.Junction
+import com.TTT.Pipeline.Connector
+import com.TTT.Pipeline.Splitter
 import com.TTT.Native.BinaryHandle.BinaryVariant
 import com.TTT.Native.EnumMappings.LibraryState
 import com.TTT.Native.EnumMappings.OperationStatus
@@ -317,6 +320,58 @@ object NativeBridge {
                     return -1L
                 }
             }
+            ProviderName.OPENROUTER -> {
+                try
+                {
+                    @Suppress("UNCHECKED_CAST")
+                    val openRouterCls = Class.forName("openrouterPipe.OpenRouterPipe")
+                            as Class<out com.TTT.Pipe.Pipe>
+                    val ctor = openRouterCls.getDeclaredConstructor()
+                    val openRouter = ctor.newInstance()
+                    openRouter.setModel(model)
+                }
+                catch(e: ClassNotFoundException)
+                {
+                    lastError.set("OpenRouterPipe class not found: ${e.message}")
+                    return -1L
+                }
+                catch(e: NoSuchMethodException)
+                {
+                    lastError.set("OpenRouterPipe constructor not found: ${e.message}")
+                    return -1L
+                }
+                catch(e: Exception)
+                {
+                    lastError.set("OpenRouterPipe construction failed: ${e.message}")
+                    return -1L
+                }
+            }
+            ProviderName.GENERIC_OPENAI -> {
+                try
+                {
+                    @Suppress("UNCHECKED_CAST")
+                    val genericCls = Class.forName("genericOpenAIPipe.GenericOpenAIPipe")
+                            as Class<out com.TTT.Pipe.Pipe>
+                    val ctor = genericCls.getDeclaredConstructor()
+                    val generic = ctor.newInstance()
+                    generic.setModel(model)
+                }
+                catch(e: ClassNotFoundException)
+                {
+                    lastError.set("GenericOpenAIPipe class not found: ${e.message}")
+                    return -1L
+                }
+                catch(e: NoSuchMethodException)
+                {
+                    lastError.set("GenericOpenAIPipe constructor not found: ${e.message}")
+                    return -1L
+                }
+                catch(e: Exception)
+                {
+                    lastError.set("GenericOpenAIPipe construction failed: ${e.message}")
+                    return -1L
+                }
+            }
             else -> {
                 val stub = com.TTT.Pipe.DummyPipe()
                 try {
@@ -549,7 +604,25 @@ object NativeBridge {
         return HandleRegistry.allocate(HandleTypes.LOREBOOK, lh)
     }
 
-    @JvmStatic fun loreBookAddEntry(handle: Long, key: String, value: String, weight: Int) {
+    /**
+     * Add or replace a LoreBook entry. The C ABI uses this 3-arg shape
+     * (key + value only); weight is exposed separately via
+     * [loreBookSetWeight] / `TPipe_LoreBook_setWeight`.
+     */
+    @JvmStatic fun loreBookAddEntry(handle: Long, key: String, value: String)
+    {
+        val lh = HandleRegistry.getData(handle) as? LoreBookHandle ?: return
+        lh.setKey(key)
+        lh.setValue(value)
+    }
+
+    /**
+     * Backwards-compatible 4-arg overload retained for any in-VM callers
+     * that still pass an explicit weight. Weight defaults to 0 when the
+     * caller has not previously set one.
+     */
+    @JvmStatic fun loreBookAddEntry(handle: Long, key: String, value: String, weight: Int)
+    {
         val lh = HandleRegistry.getData(handle) as? LoreBookHandle ?: return
         lh.setKey(key)
         lh.setValue(value)
@@ -1086,34 +1159,96 @@ object NativeBridge {
         return HandleRegistry.allocate(HandleTypes.P2P, P2PHandle())
     }
 
-    @JvmStatic fun p2pRegisterAgent(handle: Long, agentName: String): Int {
+    /**
+     * Register an agent with a P2P handle, including a free-form metadata
+     * JSON document. The C ABI surface is
+     * {@code TPipe_P2PHandle_registerAgent(p2p, agentId, metadata)}.
+     *
+     * <p>P2PHandle.registerAgent() requires a fully-configured P2PInterface
+     * implementation. The C ABI cannot construct one without bringing in
+     * agent code. Storing the agent name on the handle lets isRegistered()
+     * and getAgentId() return the registered name without requiring a full
+     * P2PInterface.
+     *
+     * @param handle   The P2P handle.
+     * @param agentId  The agent identifier (UTF-8).
+     * @param metadata Optional JSON metadata (UTF-8); may be null.
+     * @return 0 on success; TPIPE_ERR_INVALID_HANDLE on type mismatch;
+     *   TPIPE_ERR_NOT_IMPLEMENTED (-0x10) on internal reflection failure.
+     */
+    @JvmStatic fun p2pRegisterAgent(handle: Long, agentId: String, metadata: String?): Int
+    {
         val p = HandleRegistry.getData(handle) as? P2PHandle ?: return -0x03
-        // P2PHandle.registerAgent() requires a fully-configured P2PInterface
-        // implementation. The C ABI cannot construct one without bringing in
-        // agent code. Storing the agent name on the handle lets isRegistered()
-        // and getAgentId() return the registered name without requiring a full
-        // P2PInterface.
-        return try {
+        return try
+        {
             val f = P2PHandle::class.java.getDeclaredField("agentId")
             f.isAccessible = true
-            f.set(p, agentName)
+            f.set(p, agentId)
             0
-        } catch (e: Exception) {
+        } catch (e: Exception)
+        {
             lastError.set(e.message)
             -0x10
         }
     }
 
-    @JvmStatic fun p2pConnect(handle: Long, @Suppress("UNUSED_PARAMETER") remoteAddress: String): Int {
+    /**
+     * Backwards-compatible 2-arg overload retained for any in-VM callers
+     * that do not pass metadata. The C ABI shim uses the 3-arg form.
+     */
+    @JvmStatic fun p2pRegisterAgent(handle: Long, agentId: String): Int =
+        p2pRegisterAgent(handle, agentId, null)
+
+    @JvmStatic fun p2pConnect(handle: Long, @Suppress("UNUSED_PARAMETER") remoteAddress: String): Int
+    {
         if (HandleRegistry.getData(handle) !is P2PHandle) return -0x03
         // Real connect requires P2PInterface registration via the registry.
         return 0
     }
 
+    /**
+     * Send a message to a peer. The C ABI surface is
+     * {@code TPipe_P2PHandle_send(p2p, peerId, message, response)}: the
+     * message is a CONTENT handle, and the response is written into the
+     * caller's {@code TPipe_ContentHandle*} out-param.
+     *
+     * <p>Real send requires P2PInterface registration via the registry, which
+     * the C ABI cannot construct on its own. The current implementation
+     * validates the handle types and returns 0 (a null content handle for
+     * the response) on success. The Java shim writes 0 to the out-param
+     * when the result is null.
+     *
+     * @param handle      The P2P handle.
+     * @param peerId      The peer agent identifier (UTF-8).
+     * @param message     The message CONTENT handle. Must be a valid CONTENT
+     *   handle. A handle of 0 or a non-CONTENT type returns
+     *   TPIPE_ERR_INVALID_ARGUMENT.
+     * @return A CONTENT handle for the peer's response, or 0 if the peer
+     *   produced no response. Returns a negative TPIPE_ERR_* code on
+     *   invalid handle type.
+     */
     @JvmStatic fun p2pSend(
-        handle: Long, @Suppress("UNUSED_PARAMETER") targetAgent: String,
-        @Suppress("UNUSED_PARAMETER") request: String
-    ): Int {
+        handle: Long, @Suppress("UNUSED_PARAMETER") peerId: String, message: Long
+    ): Long
+    {
+        if (HandleRegistry.getData(handle) !is P2PHandle) return -0x03L
+        if (message == 0L) return -0x04L // INVALID_ARGUMENT
+        if (HandleRegistry.getType(message) != HandleTypes.CONTENT) return -0x13L
+        // Real send requires P2PInterface registration via the registry. The
+        // C ABI cannot construct a fully-wired P2PInterface; return 0 (no
+        // response content) on success.
+        return 0L
+    }
+
+    /**
+     * Backwards-compatible 3-arg overload retained for any in-VM callers
+     * that still pass a request text string. The C ABI shim uses the
+     * 3-arg content-handle form.
+     */
+    @JvmStatic fun p2pSend(
+        handle: Long, targetAgent: String, @Suppress("UNUSED_PARAMETER") request: String
+    ): Int
+    {
         if (HandleRegistry.getData(handle) !is P2PHandle) return -0x03
         return 0
     }
@@ -1136,7 +1271,26 @@ object NativeBridge {
     @JvmStatic fun mapSize(handle: Long): Int =
         (HandleRegistry.getData(handle) as? MapHandle)?.size() ?: -0x03
 
-    @JvmStatic fun asyncCreate(): Long {
+    /**
+     * Check whether [key] exists in the map.
+     *
+     * @param map The MAP handle.
+     * @param key Key to look up (UTF-8).
+     * @param hasOut Single-element output array; on success, hasOut[0] is 1 if
+     *   the key exists, 0 otherwise.
+     * @return 0 on success; TPIPE_ERR_INVALID_HANDLE on type mismatch;
+     *   TPIPE_ERR_INVALID_ARGUMENT when [hasOut] is empty.
+     */
+    @JvmStatic fun mapHas(map: Long, key: String, hasOut: IntArray): Int
+    {
+        val m = HandleRegistry.getData(map) as? MapHandle ?: return -0x03
+        if (hasOut.isEmpty()) return -0x04
+        hasOut[0] = if (m.has(key)) 1 else 0
+        return 0
+    }
+
+    @JvmStatic fun asyncCreate(): Long
+    {
         val op = OperationHandle(OperationStatus.PENDING, 0L, null)
         return HandleRegistry.allocate(HandleTypes.OPERATION, op)
     }
@@ -1157,6 +1311,43 @@ object NativeBridge {
             try { Thread.sleep(1) } catch (e: InterruptedException) { return -0x1C }
         }
         return if (op.isSuccessful()) 0 else -0x01
+    }
+
+    /**
+     * Poll the status of an async operation. Mirrors the C ABI's
+     * [TPipe_AsyncHandle_poll] entry point.
+     *
+     * @param handle The OPERATION handle.
+     * @param statusOut Single-element output array; on success, statusOut[0]
+     *   is the C ABI status code (0=PENDING, 1=COMPLETE, 2=FAILED).
+     * @return 0 on success; TPIPE_ERR_INVALID_HANDLE on type mismatch;
+     *   TPIPE_ERR_INVALID_ARGUMENT when [statusOut] is empty.
+     */
+    @JvmStatic fun asyncPoll(handle: Long, statusOut: IntArray): Int
+    {
+        val op = HandleRegistry.getData(handle) as? OperationHandle ?: return -0x03
+        if (statusOut.isEmpty()) return -0x04
+        statusOut[0] = op.poll().cValue
+        return 0
+    }
+
+    /**
+     * Get the result handle of a completed async operation. Mirrors the C
+     * ABI's [TPipe_AsyncHandle_getResult] entry point.
+     *
+     * @param handle The OPERATION handle.
+     * @param resultOut Single-element output array; on success, resultOut[0]
+     *   is the result handle (or 0 if the operation is still pending or
+     *   failed).
+     * @return 0 on success; TPIPE_ERR_INVALID_HANDLE on type mismatch;
+     *   TPIPE_ERR_INVALID_ARGUMENT when [resultOut] is empty.
+     */
+    @JvmStatic fun asyncGetResult(handle: Long, resultOut: LongArray): Int
+    {
+        val op = HandleRegistry.getData(handle) as? OperationHandle ?: return -0x03
+        if (resultOut.isEmpty()) return -0x04
+        resultOut[0] = op.getResult()
+        return 0
     }
 
     //====================================================================
@@ -1355,6 +1546,234 @@ object NativeBridge {
     @JvmStatic fun distributionGridRebalanceStub(handle: Long, buf: ByteArray, offset: Int, maxLen: Int): Int {
         val str = (HandleRegistry.getData(handle) as? DistributionGridHandle)?.rebalanceStub() ?: return -0x03
         val bytes = str.toByteArray(Charsets.UTF_8)
+        val n = minOf(bytes.size, maxLen)
+        System.arraycopy(bytes, 0, buf, offset, n)
+        return n
+    }
+
+    //====================================================================
+    // Junction (discussion harness C ABI surface)
+    //====================================================================
+
+    /**
+     * Allocate a new JunctionHandle wrapping a fresh
+     * [com.TTT.Pipeline.Junction].
+     *
+     * @return The new handle, or -1 on handle limit exceeded.
+     */
+    @JvmStatic fun junctionCreate(): Long
+    {
+        val jh = JunctionHandle(Junction())
+        return HandleRegistry.allocate(HandleTypes.JUNCTION, jh)
+    }
+
+    /**
+     * Release a junction handle.
+     *
+     * @param handle The JUNCTION handle to release.
+     * @return 0 on success; TPIPE_ERR_INVALID_HANDLE if the handle is not
+     *   a JunctionHandle.
+     */
+    @JvmStatic fun junctionRelease(handle: Long): Int
+    {
+        if (HandleRegistry.getData(handle) !is JunctionHandle) return -0x03
+        return HandleRegistry.release(handle)
+    }
+
+    /**
+     * Initialize the wrapped [com.TTT.Pipeline.Junction].
+     *
+     * @param handle The JUNCTION handle.
+     * @return 0 on success; TPIPE_ERR_INVALID_HANDLE on type mismatch;
+     *   TPIPE_ERR_INTERNAL on init failure.
+     */
+    @JvmStatic fun junctionInit(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.init() ?: -0x03
+
+    /**
+     * Execute the wrapped junction with the given input content.
+     *
+     * @param handle The JUNCTION handle.
+     * @param contentHandle The CONTENT handle whose MultimodalContent is
+     *   fed into the junction's execute().
+     * @return A new CONTENT handle wrapping the output MultimodalContent,
+     *   or 0 on failure.
+     */
+    @JvmStatic fun junctionExecute(handle: Long, contentHandle: Long): Long
+    {
+        val jh = HandleRegistry.getData(handle) as? JunctionHandle ?: return 0L
+        val ch = HandleRegistry.getData(contentHandle) as? ContentHandle ?: return 0L
+        return jh.execute(ch)
+    }
+
+    /**
+     * Serialize the junction state to a JSON string and copy it into the
+     * caller's buffer.
+     *
+     * @param handle The JUNCTION handle.
+     * @param buf Caller-provided byte buffer.
+     * @param offset Offset into [buf] at which to begin writing.
+     * @param maxLen Maximum number of bytes to write (must be >= 1).
+     * @return The number of bytes written, or TPIPE_ERR_INVALID_HANDLE on
+     *   type mismatch.
+     */
+    @JvmStatic fun junctionSerialize(handle: Long, buf: ByteArray, offset: Int, maxLen: Int): Int
+    {
+        val json = (HandleRegistry.getData(handle) as? JunctionHandle)?.serialize() ?: return -0x03
+        val bytes = json.toByteArray(Charsets.UTF_8)
+        val n = minOf(bytes.size, maxLen)
+        System.arraycopy(bytes, 0, buf, offset, n)
+        return n
+    }
+
+    //====================================================================
+    // Connector (branching container C ABI surface)
+    //====================================================================
+
+    /**
+     * Allocate a new ConnectorHandle wrapping a fresh
+     * [com.TTT.Pipeline.Connector].
+     *
+     * @return The new handle, or -1 on handle limit exceeded.
+     */
+    @JvmStatic fun connectorCreate(): Long
+    {
+        val ch = ConnectorHandle(Connector())
+        return HandleRegistry.allocate(HandleTypes.CONNECTOR, ch)
+    }
+
+    /**
+     * Release a connector handle.
+     *
+     * @param handle The CONNECTOR handle to release.
+     * @return 0 on success; TPIPE_ERR_INVALID_HANDLE if the handle is not
+     *   a ConnectorHandle.
+     */
+    @JvmStatic fun connectorRelease(handle: Long): Int
+    {
+        if (HandleRegistry.getData(handle) !is ConnectorHandle) return -0x03
+        return HandleRegistry.release(handle)
+    }
+
+    /**
+     * Initialize the wrapped [com.TTT.Pipeline.Connector]. Connector has
+     * no public init() method, so this is always a no-op success.
+     *
+     * @param handle The CONNECTOR handle.
+     * @return 0 on success; TPIPE_ERR_INVALID_HANDLE on type mismatch.
+     */
+    @JvmStatic fun connectorInit(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? ConnectorHandle)?.init() ?: -0x03
+
+    /**
+     * Execute the wrapped connector with the given input content. The
+     * connector's executeLocal reads the branch path from the content.
+     *
+     * @param handle The CONNECTOR handle.
+     * @param contentHandle The CONTENT handle whose MultimodalContent is
+     *   fed into the connector's executeLocal().
+     * @return A new CONTENT handle wrapping the output MultimodalContent,
+     *   or 0 on failure.
+     */
+    @JvmStatic fun connectorExecute(handle: Long, contentHandle: Long): Long
+    {
+        val ch = HandleRegistry.getData(handle) as? ConnectorHandle ?: return 0L
+        val ih = HandleRegistry.getData(contentHandle) as? ContentHandle ?: return 0L
+        return ch.execute(ih)
+    }
+
+    /**
+     * Serialize the connector state to a JSON string and copy it into the
+     * caller's buffer.
+     *
+     * @param handle The CONNECTOR handle.
+     * @param buf Caller-provided byte buffer.
+     * @param offset Offset into [buf] at which to begin writing.
+     * @param maxLen Maximum number of bytes to write.
+     * @return The number of bytes written, or TPIPE_ERR_INVALID_HANDLE on
+     *   type mismatch.
+     */
+    @JvmStatic fun connectorSerialize(handle: Long, buf: ByteArray, offset: Int, maxLen: Int): Int
+    {
+        val json = (HandleRegistry.getData(handle) as? ConnectorHandle)?.serialize() ?: return -0x03
+        val bytes = json.toByteArray(Charsets.UTF_8)
+        val n = minOf(bytes.size, maxLen)
+        System.arraycopy(bytes, 0, buf, offset, n)
+        return n
+    }
+
+    //====================================================================
+    // Splitter (parallel-fanout container C ABI surface)
+    //====================================================================
+
+    /**
+     * Allocate a new SplitterHandle wrapping a fresh
+     * [com.TTT.Pipeline.Splitter].
+     *
+     * @return The new handle, or -1 on handle limit exceeded.
+     */
+    @JvmStatic fun splitterCreate(): Long
+    {
+        val sh = SplitterHandle(Splitter())
+        return HandleRegistry.allocate(HandleTypes.SPLITTER, sh)
+    }
+
+    /**
+     * Release a splitter handle.
+     *
+     * @param handle The SPLITTER handle to release.
+     * @return 0 on success; TPIPE_ERR_INVALID_HANDLE if the handle is not
+     *   a SplitterHandle.
+     */
+    @JvmStatic fun splitterRelease(handle: Long): Int
+    {
+        if (HandleRegistry.getData(handle) !is SplitterHandle) return -0x03
+        return HandleRegistry.release(handle)
+    }
+
+    /**
+     * Initialize the wrapped [com.TTT.Pipeline.Splitter].
+     *
+     * @param handle The SPLITTER handle.
+     * @return 0 on success; TPIPE_ERR_INVALID_HANDLE on type mismatch;
+     *   TPIPE_ERR_INTERNAL on init failure.
+     */
+    @JvmStatic fun splitterInit(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? SplitterHandle)?.init() ?: -0x03
+
+    /**
+     * Execute the wrapped splitter with the given input content. The
+     * splitter's executeLocal fans the content out to all bound
+     * pipelines in parallel and returns the aggregated content.
+     *
+     * @param handle The SPLITTER handle.
+     * @param contentHandle The CONTENT handle whose MultimodalContent is
+     *   fed into the splitter's executeLocal().
+     * @return A new CONTENT handle wrapping the output MultimodalContent,
+     *   or 0 on failure.
+     */
+    @JvmStatic fun splitterExecute(handle: Long, contentHandle: Long): Long
+    {
+        val sh = HandleRegistry.getData(handle) as? SplitterHandle ?: return 0L
+        val ch = HandleRegistry.getData(contentHandle) as? ContentHandle ?: return 0L
+        return sh.execute(ch)
+    }
+
+    /**
+     * Serialize the splitter state to a JSON string and copy it into the
+     * caller's buffer.
+     *
+     * @param handle The SPLITTER handle.
+     * @param buf Caller-provided byte buffer.
+     * @param offset Offset into [buf] at which to begin writing.
+     * @param maxLen Maximum number of bytes to write.
+     * @return The number of bytes written, or TPIPE_ERR_INVALID_HANDLE on
+     *   type mismatch.
+     */
+    @JvmStatic fun splitterSerialize(handle: Long, buf: ByteArray, offset: Int, maxLen: Int): Int
+    {
+        val json = (HandleRegistry.getData(handle) as? SplitterHandle)?.serialize() ?: return -0x03
+        val bytes = json.toByteArray(Charsets.UTF_8)
         val n = minOf(bytes.size, maxLen)
         System.arraycopy(bytes, 0, buf, offset, n)
         return n

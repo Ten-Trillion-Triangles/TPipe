@@ -8,13 +8,14 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * TDD tests for ManifoldHandle and the Manifold C ABI surface.
+ * TDD tests for [ManifoldHandle] and the Manifold C ABI surface.
  *
- * Phase 5: Manifold C ABI exposure. These tests verify the Kotlin-side
- * NativeBridge + ManifoldHandle contract, which is the same code path the
- * Java @CEntryPoint shims in TPipeBootstrap.java delegate to.
+ * These tests verify the Kotlin-side NativeBridge + ManifoldHandle
+ * contract, which is the same code path the Java `@CEntryPoint` shims in
+ * [TPipeBootstrap] delegate to.
  */
-class ManifoldHandleTest {
+class ManifoldHandleTest
+{
 
     @BeforeTest
     fun setUp()
@@ -25,9 +26,11 @@ class ManifoldHandleTest {
     }
 
     @AfterTest
-    fun tearDown() {
+    fun tearDown()
+    {
         HandleRegistry.closeAll()
     }
+
 
     //==========================================================================
     // HandleTypes.MANIFOLD discriminator
@@ -36,11 +39,10 @@ class ManifoldHandleTest {
     @Test
     fun testManifoldTypeDiscriminator()
     {
-        // MANIFOLD discriminator must be 16.
         assertEquals(16, HandleTypes.MANIFOLD, "HandleTypes.MANIFOLD should be 16")
-        // TYPE_COUNT must be 18 to fit DISTRIBUTION_GRID=17.
-        assertEquals(18, HandleTypes.TYPE_COUNT, "HandleTypes.TYPE_COUNT should be 18")
+        assertEquals(21, HandleTypes.TYPE_COUNT, "HandleTypes.TYPE_COUNT should be 21")
     }
+
 
     //==========================================================================
     // NativeBridge.manifoldCreate
@@ -64,10 +66,14 @@ class ManifoldHandleTest {
             data is ManifoldHandle,
             "manifold handle data should be a ManifoldHandle, got ${data?.let { it::class.simpleName }}"
         )
-        // Verify the type discriminator is in the high 8 bits of the handle.
-        assertEquals(HandleTypes.MANIFOLD, HandleRegistry.getType(handle), "handle type should be MANIFOLD")
+        assertEquals(
+            HandleTypes.MANIFOLD,
+            HandleRegistry.getType(handle),
+            "handle type should be MANIFOLD"
+        )
         HandleRegistry.release(handle)
     }
+
 
     //==========================================================================
     // NativeBridge.manifoldInit
@@ -77,13 +83,18 @@ class ManifoldHandleTest {
     fun testManifoldInitReturnsZero()
     {
         val handle = NativeBridge.manifoldCreate()
-        // Manifold().init() throws because no workers are registered, so we
-        // accept 0, -0x0E, or -0x01 — the load-bearing assertion is that the
-        // call dispatches and returns a known int.
+        // Manifold().init() throws because no workers are registered, so the
+        // bridge may return 0, TPIPE_ERR_INTERNAL, or TPIPE_ERR_INVALID_HANDLE.
+        // The load-bearing assertion is that the call dispatches and returns
+        // a known int.
         val rc = NativeBridge.manifoldInit(handle)
-        assertTrue(rc == 0 || rc == -0x0E || rc == -0x01, "init should return a known error code, got $rc")
+        assertTrue(
+            rc == 0 || rc == -0x0E || rc == -0x01,
+            "init should return a known error code, got $rc"
+        )
         HandleRegistry.release(handle)
     }
+
 
     //==========================================================================
     // NativeBridge.manifoldAddWorker + manifoldGetWorkerCount
@@ -108,6 +119,7 @@ class ManifoldHandleTest {
         HandleRegistry.release(mh)
     }
 
+
     //==========================================================================
     // NativeBridge.manifoldSerialize
     //==========================================================================
@@ -128,6 +140,7 @@ class ManifoldHandleTest {
         HandleRegistry.release(mh)
     }
 
+
     //==========================================================================
     // Negative path: type mismatch
     //==========================================================================
@@ -137,7 +150,11 @@ class ManifoldHandleTest {
     {
         val ch = NativeBridge.contentCreate("hello")
         val rc = NativeBridge.manifoldInit(ch)
-        assertEquals(-0x03, rc, "manifoldInit on a CONTENT handle should return INVALID_HANDLE (-0x03)")
+        assertEquals(
+            -0x03,
+            rc,
+            "manifoldInit on a CONTENT handle should return INVALID_HANDLE (-0x03)"
+        )
         HandleRegistry.release(ch)
     }
 }

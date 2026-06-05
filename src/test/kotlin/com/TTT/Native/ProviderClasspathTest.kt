@@ -7,11 +7,12 @@ import kotlin.test.assertSame
 
 /**
  * Classpath reachability test for the provider sub-modules
- * ([ollamaPipe.OllamaPipe] and [bedrockPipe.BedrockPipe]).
+ * ([ollamaPipe.OllamaPipe] and [bedrockPipe.BedrockPipe], plus the
+ * OpenRouter and GenericOpenAI providers).
  *
- * Phase 2 wires `implementation(project(":TPipe-Ollama"))` and
- * `implementation(project(":TPipe-Bedrock"))` into the root
- * [build.gradle.kts] of `:TPipe` so that:
+ * The root [build.gradle.kts] of `:TPipe` wires
+ * `implementation(project(":TPipe-Ollama"))` and
+ * `implementation(project(":TPipe-Bedrock"))` so that:
  *  - the JVM test classpath can resolve these classes,
  *  - the GraalVM native-image build can link them into the .so via
  *    the `-H:Class=...` reachability hints in [build.gradle.kts].
@@ -23,9 +24,9 @@ import kotlin.test.assertSame
  * to prove the class is on the classpath and keeps the test JVM-isolated
  * (no network, no AWS credentials).
  *
- * Phase 3 / Phase 4 extend [NativeBridge.pipeCreate] to construct these
- * providers via `Class.forName(...).getDeclaredConstructor().newInstance()`,
- * which depends on this test staying green.
+ * [NativeBridge.pipeCreate] constructs these providers via
+ * `Class.forName(...).getDeclaredConstructor().newInstance()`, which
+ * depends on this test staying green.
  */
 class ProviderClasspathTest {
 
@@ -51,6 +52,24 @@ class ProviderClasspathTest {
         assertEquals("bedrockPipe.BedrockPipe", resolved.name)
     }
 
+    @Test
+    fun openRouterPipeClassIsResolvable() {
+        // The OpenRouterPipe class must be loadable from the main :TPipe
+        // classpath. If `testImplementation(project(":TPipe-OpenRouter"))`
+        // is missing, Class.forName throws ClassNotFoundException.
+        val resolved = Class.forName("openrouterPipe.OpenRouterPipe")
+        assertEquals("openrouterPipe.OpenRouterPipe", resolved.name)
+    }
+
+    @Test
+    fun genericOpenAIPipeClassIsResolvable() {
+        // The GenericOpenAIPipe class must be loadable from the main
+        // :TPipe classpath. If `testImplementation(project(":TPipe-GenericOpenAI"))`
+        // is missing, Class.forName throws ClassNotFoundException.
+        val resolved = Class.forName("genericOpenAIPipe.GenericOpenAIPipe")
+        assertEquals("genericOpenAIPipe.GenericOpenAIPipe", resolved.name)
+    }
+
     //==========================================================================
     // No-arg declared constructor
     //==========================================================================
@@ -71,6 +90,22 @@ class ProviderClasspathTest {
         // the no-arg constructor is declared and do not invoke it.
         val constructor = bedrockPipe.BedrockPipe::class.java.getDeclaredConstructor()
         assertNotNull(constructor, "BedrockPipe must declare a no-arg constructor")
+    }
+
+    @Test
+    fun openRouterPipeExposesNoArgDeclaredConstructor() {
+        // OpenRouterPipe's init block reaches into Ktor, so we only verify
+        // the no-arg constructor is declared and do not invoke it.
+        val constructor = openrouterPipe.OpenRouterPipe::class.java.getDeclaredConstructor()
+        assertNotNull(constructor, "OpenRouterPipe must declare a no-arg constructor")
+    }
+
+    @Test
+    fun genericOpenAIPipeExposesNoArgDeclaredConstructor() {
+        // GenericOpenAIPipe's init block reaches into Ktor, so we only
+        // verify the no-arg constructor is declared and do not invoke it.
+        val constructor = genericOpenAIPipe.GenericOpenAIPipe::class.java.getDeclaredConstructor()
+        assertNotNull(constructor, "GenericOpenAIPipe must declare a no-arg constructor")
     }
 
     //==========================================================================

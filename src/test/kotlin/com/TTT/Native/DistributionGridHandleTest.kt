@@ -10,9 +10,8 @@ import kotlin.test.assertTrue
 /**
  * TDD tests for [DistributionGridHandle] and the DistributionGrid C ABI surface.
  *
- * Phase 11: stub-level exposure of [com.TTT.Pipeline.DistributionGrid]. These
- * tests verify the Kotlin-side NativeBridge + DistributionGridHandle contract,
- * which is the same code path the Java `@CEntryPoint` shims in
+ * These tests verify the Kotlin-side NativeBridge + DistributionGridHandle
+ * contract, which is the same code path the Java `@CEntryPoint` shims in
  * [TPipeBootstrap] delegate to.
  *
  * These tests cover the 6 symbols exposed by the C ABI. The full 240+ method
@@ -44,10 +43,8 @@ class DistributionGridHandleTest {
     @Test
     fun testDistributionGridTypeDiscriminator()
     {
-        // DISTRIBUTION_GRID discriminator must be 17.
         assertEquals(17, HandleTypes.DISTRIBUTION_GRID, "HandleTypes.DISTRIBUTION_GRID should be 17")
-        // TYPE_COUNT must be 18 to fit DISTRIBUTION_GRID=17.
-        assertEquals(18, HandleTypes.TYPE_COUNT, "HandleTypes.TYPE_COUNT should be 18")
+        assertEquals(21, HandleTypes.TYPE_COUNT, "HandleTypes.TYPE_COUNT should be 21")
     }
 
     //==========================================================================
@@ -86,10 +83,11 @@ class DistributionGridHandleTest {
     //==========================================================================
 
     @Test
-    fun distributionGridGetNodeCountReturnsInt() {
+    fun distributionGridGetNodeCountReturnsInt()
+    {
         val handle = NativeBridge.distributionGridCreate()
         val count = NativeBridge.distributionGridGetNodeCount(handle)
-        assertEquals(0, count, "Phase 11 stub should always return 0 nodes")
+        assertEquals(0, count, "stub should always return 0 nodes")
         HandleRegistry.release(handle)
     }
 
@@ -98,7 +96,8 @@ class DistributionGridHandleTest {
     //==========================================================================
 
     @Test
-    fun distributionGridSerializeWritesJson() {
+    fun distributionGridSerializeWritesJson()
+    {
         val handle = NativeBridge.distributionGridCreate()
         val buf = ByteArray(256)
         val n = NativeBridge.distributionGridSerialize(handle, buf, 0, 256)
@@ -107,7 +106,7 @@ class DistributionGridHandleTest {
         assertEquals(
             "{\"nodeCount\":0,\"status\":\"stub\"}",
             s,
-            "Phase 11 stub serialize should return the fixed JSON sentinel"
+            "stub serialize should return the fixed JSON sentinel"
         )
         HandleRegistry.release(handle)
     }
@@ -117,13 +116,14 @@ class DistributionGridHandleTest {
     //==========================================================================
 
     @Test
-    fun distributionGridGetHealthReturnsString() {
+    fun distributionGridGetHealthReturnsString()
+    {
         val handle = NativeBridge.distributionGridCreate()
         val buf = ByteArray(32)
         val n = NativeBridge.distributionGridGetHealth(handle, buf, 0, 32)
         assertTrue(n > 0, "getHealth should write a positive number of bytes, got $n")
         val s = String(buf, 0, n, Charsets.UTF_8)
-        assertEquals("ok", s, "Phase 11 stub getHealth should return 'ok'")
+        assertEquals("ok", s, "stub getHealth should return 'ok'")
         HandleRegistry.release(handle)
     }
 
@@ -132,7 +132,8 @@ class DistributionGridHandleTest {
     //==========================================================================
 
     @Test
-    fun distributionGridRebalanceStubReturnsSentinel() {
+    fun distributionGridRebalanceStubReturnsSentinel()
+    {
         val handle = NativeBridge.distributionGridCreate()
         val buf = ByteArray(128)
         val n = NativeBridge.distributionGridRebalanceStub(handle, buf, 0, 128)
@@ -141,7 +142,7 @@ class DistributionGridHandleTest {
         assertEquals(
             "rebalance not yet implemented (stub)",
             s,
-            "Phase 11 rebalanceStub should return the fixed sentinel string"
+            "rebalanceStub should return the fixed sentinel string"
         )
         HandleRegistry.release(handle)
     }
@@ -151,18 +152,28 @@ class DistributionGridHandleTest {
     //==========================================================================
 
     @Test
-    fun distributionGridReleaseRejectsContentHandle() {
+    fun distributionGridReleaseRejectsContentHandle()
+    {
         val ch = NativeBridge.contentCreate("hello")
         val rc = NativeBridge.distributionGridRelease(ch)
-        assertEquals(-0x03, rc, "distributionGridRelease on a CONTENT handle should return INVALID_HANDLE (-0x03)")
+        assertEquals(
+            -0x03,
+            rc,
+            "distributionGridRelease on a CONTENT handle should return INVALID_HANDLE (-0x03)"
+        )
         HandleRegistry.release(ch)
     }
 
     @Test
-    fun distributionGridGetNodeCountRejectsContentHandle() {
+    fun distributionGridGetNodeCountRejectsContentHandle()
+    {
         val ch = NativeBridge.contentCreate("hello")
         val rc = NativeBridge.distributionGridGetNodeCount(ch)
-        assertEquals(-0x03, rc, "distributionGridGetNodeCount on a CONTENT handle should return INVALID_HANDLE (-0x03)")
+        assertEquals(
+            -0x03,
+            rc,
+            "distributionGridGetNodeCount on a CONTENT handle should return INVALID_HANDLE (-0x03)"
+        )
         HandleRegistry.release(ch)
     }
 }

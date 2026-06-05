@@ -107,6 +107,21 @@ public class TPipeBootstrap {
         }
     }
 
+    /**
+     * Holder for {@code sun.misc.Unsafe} constants that are not part of
+     * the public API but are stable across supported JVM versions.
+     *
+     * <p>SubstrateVM exposes the same constants; native-image compilation
+     * preserves the values used here.
+     */
+    private static final class UnsafeHelpers {
+        /**
+         * Offset in bytes of the first element of a Java {@code byte[]}
+         * array. Mirrors {@code sun.misc.Unsafe.ARRAY_BYTE_BASE_OFFSET}.
+         */
+        static final int ARRAY_BYTE_BASE_OFFSET = UNSAFE.arrayBaseOffset(byte[].class);
+    }
+
     //====================================================================
     // C string / output pointer helpers
     //====================================================================
@@ -114,20 +129,27 @@ public class TPipeBootstrap {
     private static String readCString(long addr) {
         if (addr == 0L) return null;
         int maxBytes = GapVerification.MAX_STRING_LEN;
-        byte[] buf = new byte[Math.min(maxBytes, 4096)];
+        int capacity = 4096;
+        byte[] buf = new byte[capacity];
         int total = 0;
-        for (int chunk = 0; chunk < maxBytes; chunk += buf.length) {
-            int want = Math.min(buf.length, maxBytes - chunk);
-            for (int i = 0; i < want; i++) {
-                byte b = UNSAFE.getByte(addr + chunk + i);
-                if (b == 0) {
-                    return new String(buf, 0, total + i, java.nio.charset.StandardCharsets.UTF_8);
+        while (total < maxBytes) {
+            if (total == capacity) {
+                if (capacity >= maxBytes) {
+                    throw new RuntimeException("TPIPE_ERR_STRING_TOO_LONG: input exceeds " + maxBytes + " bytes without null terminator");
                 }
-                buf[i] = b;
+                int newCapacity = Math.min(capacity * 2, maxBytes);
+                byte[] newBuf = new byte[newCapacity];
+                System.arraycopy(buf, 0, newBuf, 0, total);
+                buf = newBuf;
+                capacity = newCapacity;
             }
-            total += want;
+            byte b = UNSAFE.getByte(addr + total);
+            if (b == 0) {
+                return new String(buf, 0, total, java.nio.charset.StandardCharsets.UTF_8);
+            }
+            buf[total++] = b;
         }
-        return new String(buf, 0, total, java.nio.charset.StandardCharsets.UTF_8);
+        throw new RuntimeException("TPIPE_ERR_STRING_TOO_LONG: input exceeds " + maxBytes + " bytes without null terminator");
     }
 
     private static String readCString(long addr, int knownLength) {
@@ -522,16 +544,61 @@ public class TPipeBootstrap {
         return writeInt(variant, v);
     }
 
+    /**
+     * Get the raw bytes pointer and length from a binary handle. The C
+     * ABI signature (per {@code tpipe-abi.h}) is:
+     * <pre>
+     *   int TPipe_Binary_getBytes(
+     *       graal_isolatethread_t* thread,
+     *       TPipe_BinaryHandle binaryHandle,
+     *       const uint8_t** data,
+     *       int* length);
+     * </pre>
+     * On success, a freshly-allocated native buffer holding the bytes is
+     * written to {@code *data} and the buffer length to {@code *length}.
+     * The C caller is responsible for releasing the buffer via
+     * {@link #freeNative}.
+     */
     @CEntryPoint(name = "TPipe_Binary_getBytes")
     public static int binaryGetBytes(IsolateThread thread, long binaryHandle, long dataAddress, long lengthAddress) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         byte[] bytes = NativeBridge.binaryGetBytes(binaryHandle);
         if (bytes == null) return TPIPE_ERR_INVALID_HANDLE;
-        // dataAddress is uint8_t** — write the length and leave the pointer 0.
-        // The C ABI caller is expected to use TPipe_Content_getBinary for the payload.
+        long buf = 0L;
+        if (bytes.length > 0) {
+            buf = UNSAFE.allocateMemory(bytes.length);
+            // Copy the bytes into the native buffer. The base offset of a
+            // Java byte[] is calculated from its identity hash code trick
+            // here via the ARRAY_BYTE_BASE_OFFSET constant.
+            UNSAFE.copyMemory(bytes, UnsafeHelpers.ARRAY_BYTE_BASE_OFFSET, null, buf, bytes.length);
+        }
         int rc2 = writeInt(lengthAddress, bytes.length);
-        if (rc2 != TPIPE_OK) return rc2;
-        return writePtr(dataAddress, 0L);
+        if (rc2 != TPIPE_OK) {
+            if (buf != 0L) UNSAFE.freeMemory(buf);
+            return rc2;
+        }
+        int rc3 = writePtr(dataAddress, buf);
+        if (rc3 != TPIPE_OK) {
+            if (buf != 0L) UNSAFE.freeMemory(buf);
+            return rc3;
+        }
+        return TPIPE_OK;
+    }
+
+    /**
+     * Free a native buffer previously allocated and returned by
+     * {@link #binaryGetBytes}. Mirrors the C standard library
+     * {@code free(3)} for the JVM-side allocator.
+     *
+     * <p>Symbol: {@code TPipe_free}. Safe to call with a NULL pointer
+     * (no-op, returns 0).
+     */
+    @CEntryPoint(name = "TPipe_free")
+    public static int freeNative(IsolateThread thread, long ptr) {
+        if (ptr != 0L) {
+            UNSAFE.freeMemory(ptr);
+        }
+        return TPIPE_OK;
     }
 
     //====================================================================
@@ -723,10 +790,29 @@ public class TPipeBootstrap {
         return NativeBridge.pipelineAdd(pipeline, pipe);
     }
 
+    /**
+     * Execute a pipeline. The C ABI signature (per {@code tpipe-abi.h}) is:
+     * <pre>
+     *   int TPipe_Pipeline_execute(
+     *       graal_isolatethread_t* thread,
+     *       TPipe_PipelineHandle pipeline,
+     *       TPipe_ContentHandle content,
+     *       TPipe_ContentHandle* result);
+     * </pre>
+     * Returns 0 on success; on success, the resulting content handle is
+     * written to {@code *result} (or 0 if the operation failed).
+     */
     @CEntryPoint(name = "TPipe_Pipeline_execute")
-    public static long pipelineExecute(IsolateThread thread, long pipeline, long content) {
-        int rc = requireReady(); if (rc != TPIPE_OK) return 0L;
-        return NativeBridge.pipelineExecute(pipeline, content);
+    public static int pipelineExecute(IsolateThread thread, long pipeline, long content, long resultOut) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        long op = NativeBridge.pipelineExecute(pipeline, content);
+        if (op == 0L) {
+            if (resultOut != 0L) writePtr(resultOut, 0L);
+            return TPIPE_ERR_INTERNAL;
+        }
+        long resultHandle = NativeBridge.operationGetResult(op);
+        if (resultOut != 0L) writePtr(resultOut, resultHandle);
+        return TPIPE_OK;
     }
 
     @CEntryPoint(name = "TPipe_Pipeline_getOutcome")
@@ -783,13 +869,20 @@ public class TPipeBootstrap {
         return NativeBridge.loreBookCreate();
     }
 
+    /**
+     * Add an entry to a LoreBook. The C ABI signature (per
+     * {@code tpipe-abi.h}) is {@code (loreBook, key, value)} — weight is
+     * NOT part of the public C ABI; it is set separately via
+     * {@link #loreBookSetWeight} which corresponds to
+     * {@code TPipe_LoreBook_setWeight}.
+     */
     @CEntryPoint(name = "TPipe_LoreBook_addEntry")
-    public static int loreBookAddEntry(IsolateThread thread, long loreBook, long key, long value, int weight) {
+    public static int loreBookAddEntry(IsolateThread thread, long loreBook, long key, long value) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         String k = readCString(key);
         String v = readCString(value);
         if (k == null || v == null) return TPIPE_ERR_INVALID_ARGUMENT;
-        NativeBridge.loreBookAddEntry(loreBook, k, v, weight);
+        NativeBridge.loreBookAddEntry(loreBook, k, v);
         return TPIPE_OK;
     }
 
@@ -1125,19 +1218,116 @@ public class TPipeBootstrap {
         return NativeBridge.pcpCreate();
     }
 
+    /**
+     * Execute a PCP request. The C ABI signature (per {@code tpipe-abi.h}) is:
+     * <pre>
+     *   int TPipe_PCPHandle_execute(
+     *       graal_isolatethread_t* thread,
+     *       TPipe_PCPHandle pcp,
+     *       const char* requestJson,
+     *       char* responseJson,
+     *       int responseJsonSize);
+     * </pre>
+     * The {@code requestJson} string must be a JSON object containing
+     * {@code "function"} and {@code "parameters"} fields:
+     * <pre>{"function":"my_fn","parameters":{"input":"hello"}}</pre>
+     * On success, the response JSON is written to {@code responseJson} (with
+     * a trailing null terminator). The function return value is the number of
+     * bytes written (excluding the null terminator), or a negative
+     * TPIPE_ERR_* on failure.
+     */
     @CEntryPoint(name = "TPipe_PCPHandle_execute")
-    public static int pcpHandleExecute(IsolateThread thread, long pcp, long functionName, long parameters) {
+    public static int pcpHandleExecute(IsolateThread thread, long pcp, long requestJson, long responseJson, int responseJsonSize) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
-        String fn = readCString(functionName);
-        if (fn == null) return TPIPE_ERR_INVALID_ARGUMENT;
-        String result = NativeBridge.pcpExecute(pcp, fn, readCString(parameters));
-        // The C ABI doesn't declare an output buffer for PCP execute — the result
-        // is stored as the thread-local last error. Real callers should use the
-        // JVM-side PCP API for full result return.
-        if (result != null) {
-            NativeBridge.setLastError(result);
+        String req = readCString(requestJson);
+        if (req == null) return TPIPE_ERR_INVALID_ARGUMENT;
+        // Parse {"function":"...","parameters":{...}} into a Pair<String, String>
+        String[] parsed = parsePcpRequestJson(req);
+        if (parsed == null) return TPIPE_ERR_INVALID_ARGUMENT;
+        String result = NativeBridge.pcpExecute(pcp, parsed[0], parsed[1]);
+        if (result == null) return TPIPE_ERR_INTERNAL;
+        return writeCString(responseJson, responseJsonSize, result);
+    }
+
+    /**
+     * Parse the C-ABI PCP request envelope. The shape is
+     * {@code {"function":"<name>","parameters":<json>}}. Returns
+     * {@code [functionName, parametersJson]} on success, or null on parse
+     * failure.
+     */
+    private static String[] parsePcpRequestJson(String req) {
+        // Minimal hand-rolled parser. The parameters sub-document is copied
+        // verbatim into the resulting array; the function name is the
+        // string value of the "function" key.
+        String s = req.trim();
+        if (!s.startsWith("{") || !s.endsWith("}")) return null;
+        String body = s.substring(1, s.length() - 1).trim();
+        // Split on the first top-level comma that separates "function"
+        // from "parameters".
+        int comma = findTopLevelComma(body);
+        if (comma < 0) return null;
+        String fnPart = body.substring(0, comma).trim();
+        String paramsPart = body.substring(comma + 1).trim();
+        String functionName = extractJsonStringValue(fnPart, "function");
+        if (functionName == null) return null;
+        // parameters may be any JSON literal (object, array, scalar).
+        // We pass it through to the JVM-side parser as-is, omitting the
+        // trailing comma if any.
+        String parametersJson = paramsPart;
+        int colon = paramsPart.indexOf(':');
+        if (colon >= 0) parametersJson = paramsPart.substring(colon + 1).trim();
+        return new String[] { functionName, parametersJson };
+    }
+
+    /**
+     * Locate the top-level comma separating two object fields. A
+     * naive bracket-aware scan is sufficient because parameter JSON
+     * values are nested one level deep at most in practice.
+     */
+    private static int findTopLevelComma(String s) {
+        int depth = 0;
+        boolean inString = false;
+        boolean escape = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (escape) { escape = false; continue; }
+            if (inString) {
+                if (c == '\\') { escape = true; continue; }
+                if (c == '"') inString = false;
+                continue;
+            }
+            if (c == '"') { inString = true; continue; }
+            if (c == '{' || c == '[') depth++;
+            else if (c == '}' || c == ']') depth--;
+            else if (c == ',' && depth == 0) return i;
         }
-        return TPIPE_OK;
+        return -1;
+    }
+
+    /**
+     * Pull the string value of {@code key} from a fragment of the form
+     * {@code "<key>":"<value>"}. Returns null if the fragment does not
+     * start with that key.
+     */
+    private static String extractJsonStringValue(String fragment, String key) {
+        String prefix = "\"" + key + "\"";
+        if (!fragment.startsWith(prefix)) return null;
+        int colon = fragment.indexOf(':', prefix.length());
+        if (colon < 0) return null;
+        int q1 = fragment.indexOf('"', colon + 1);
+        if (q1 < 0) return null;
+        int q2 = findClosingQuote(fragment, q1 + 1);
+        if (q2 < 0) return null;
+        return fragment.substring(q1 + 1, q2);
+    }
+
+    private static int findClosingQuote(String s, int from) {
+        for (int i = from; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\') { i++; continue; }
+            if (c == '"') return i;
+        }
+        return -1;
     }
 
     //====================================================================
@@ -1150,12 +1340,26 @@ public class TPipeBootstrap {
         return NativeBridge.p2pCreate();
     }
 
+    /**
+     * Register an agent with P2P. The C ABI signature (per
+     * {@code tpipe-abi.h}) is:
+     * <pre>
+     *   int TPipe_P2PHandle_registerAgent(
+     *       graal_isolatethread_t* thread,
+     *       TPipe_P2PHandle p2p,
+     *       const char* agentId,
+     *       const char* metadata);
+     * </pre>
+     * The {@code metadata} parameter is a JSON document (may be NULL) that
+     * is stored alongside the agent registration.
+     */
     @CEntryPoint(name = "TPipe_P2PHandle_registerAgent")
-    public static int p2pHandleRegisterAgent(IsolateThread thread, long p2p, long agentName, long transport) {
+    public static int p2pHandleRegisterAgent(IsolateThread thread, long p2p, long agentId, long metadata) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
-        String name = readCString(agentName);
+        String name = readCString(agentId);
         if (name == null) return TPIPE_ERR_INVALID_ARGUMENT;
-        return NativeBridge.p2pRegisterAgent(p2p, name);
+        String meta = readCString(metadata); // may be null
+        return NativeBridge.p2pRegisterAgent(p2p, name, meta);
     }
 
     @CEntryPoint(name = "TPipe_P2PHandle_connect")
@@ -1166,13 +1370,29 @@ public class TPipeBootstrap {
         return NativeBridge.p2pConnect(p2p, addr);
     }
 
+    /**
+     * Send a message to a peer. The C ABI signature (per {@code tpipe-abi.h})
+     * is:
+     * <pre>
+     *   int TPipe_P2PHandle_send(
+     *       graal_isolatethread_t* thread,
+     *       TPipe_P2PHandle p2p,
+     *       const char* peerId,
+     *       TPipe_ContentHandle message,
+     *       TPipe_ContentHandle* response);
+     * </pre>
+     * On success, the response content handle is written to {@code *response}
+     * (or 0 if the peer produced no response content).
+     */
     @CEntryPoint(name = "TPipe_P2PHandle_send")
-    public static int p2pHandleSend(IsolateThread thread, long p2p, long targetAgent, long request) {
+    public static int p2pHandleSend(IsolateThread thread, long p2p, long peerId, long message, long responseOut) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
-        String agent = readCString(targetAgent);
-        String req = readCString(request);
-        if (agent == null || req == null) return TPIPE_ERR_INVALID_ARGUMENT;
-        return NativeBridge.p2pSend(p2p, agent, req);
+        String agent = readCString(peerId);
+        if (agent == null) return TPIPE_ERR_INVALID_ARGUMENT;
+        if (message == 0L) return TPIPE_ERR_INVALID_ARGUMENT;
+        long resp = NativeBridge.p2pSend(p2p, agent, message);
+        if (responseOut != 0L) writePtr(responseOut, resp);
+        return TPIPE_OK;
     }
 
     //====================================================================
@@ -1241,6 +1461,18 @@ public class TPipeBootstrap {
         return sz < 0 ? sz : sz;
     }
 
+    @CEntryPoint(name = "TPipe_Map_has")
+    public static int mapHas(IsolateThread thread, long map, long key, long has) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String k = readCString(key);
+        if (k == null) return TPIPE_ERR_INVALID_ARGUMENT;
+        if (has == 0L) return TPIPE_ERR_NULL_POINTER;
+        int[] tmp = new int[1];
+        int code = NativeBridge.mapHas(map, k, tmp);
+        if (code != TPIPE_OK) return code;
+        return writeInt(has, tmp[0]);
+    }
+
     //====================================================================
     // Async API
     //====================================================================
@@ -1266,6 +1498,26 @@ public class TPipeBootstrap {
     public static int asyncHandleWait(IsolateThread thread, long handle, int timeoutMs) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         return NativeBridge.asyncWait(handle, timeoutMs);
+    }
+
+    @CEntryPoint(name = "TPipe_AsyncHandle_poll")
+    public static int asyncHandlePoll(IsolateThread thread, long handle, long status) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (status == 0L) return TPIPE_ERR_NULL_POINTER;
+        int[] tmp = new int[1];
+        int code = NativeBridge.asyncPoll(handle, tmp);
+        if (code != TPIPE_OK) return code;
+        return writeInt(status, tmp[0]);
+    }
+
+    @CEntryPoint(name = "TPipe_AsyncHandle_getResult")
+    public static int asyncHandleGetResult(IsolateThread thread, long handle, long result) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (result == 0L) return TPIPE_ERR_NULL_POINTER;
+        long[] tmp = new long[1];
+        int code = NativeBridge.asyncGetResult(handle, tmp);
+        if (code != TPIPE_OK) return code;
+        return writePtr(result, tmp[0]);
     }
 
     //====================================================================
@@ -1322,18 +1574,18 @@ public class TPipeBootstrap {
     @CEntryPoint(name = "TPipe_Manifold_serialize")
     public static int manifoldSerialize(IsolateThread thread, long manifold, long buffer, int bufferSize) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
-        // Use a temporary Java byte[] of up to bufferSize bytes, hand it to
-        // NativeBridge.manifoldSerialize, then copy the result into the
-        // caller's native buffer with the existing writeCString helper.
-        byte[] tmp = new byte[Math.max(1, bufferSize)];
-        int n = NativeBridge.manifoldSerialize(manifold, tmp, 0, bufferSize > 0 ? bufferSize - 1 : 0);
+        // Defensive null/size checks on the output buffer — Phase 7 audit
+        // found that this entry point previously inlined UNSAFE.putByte
+        // calls without a null-check on `buffer`, which would segfault if
+        // a C caller passed 0. Use the same copyToNativeBuffer helper as
+        // the other serialize methods (distributionGrid, junction,
+        // connector, splitter) so the safety guards are uniform.
+        if (buffer == 0L) return TPIPE_ERR_NULL_POINTER;
+        if (bufferSize <= 0) return TPIPE_ERR_INVALID_ARGUMENT;
+        byte[] tmp = new byte[bufferSize];
+        int n = NativeBridge.manifoldSerialize(manifold, tmp, 0, bufferSize - 1);
         if (n < 0) return n;
-        // Copy the n bytes from tmp[0..n) to the caller's native buffer.
-        for (int i = 0; i < n; i++) {
-            UNSAFE.putByte(buffer + i, tmp[i]);
-        }
-        UNSAFE.putByte(buffer + n, (byte) 0);
-        return n;
+        return copyToNativeBuffer(buffer, bufferSize, tmp, n);
     }
 
     //====================================================================
@@ -1384,6 +1636,120 @@ public class TPipeBootstrap {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         byte[] tmp = new byte[Math.max(1, bufferSize)];
         int n = NativeBridge.distributionGridRebalanceStub(grid, tmp, 0, bufferSize > 0 ? bufferSize - 1 : 0);
+        if (n < 0) return n;
+        return copyToNativeBuffer(buffer, bufferSize, tmp, n);
+    }
+
+    //====================================================================
+    // Junction API (Phase 12 — discussion harness C ABI surface)
+    //====================================================================
+
+    @CEntryPoint(name = "TPipe_Junction_create")
+    public static long junctionCreate(IsolateThread thread) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return 0L;
+        return NativeBridge.junctionCreate();
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_release")
+    public static int junctionRelease(IsolateThread thread, long junction) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (HandleRegistry.INSTANCE.getType(junction) != HandleTypes.JUNCTION) return TPIPE_ERR_INVALID_HANDLE;
+        return NativeBridge.junctionRelease(junction);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_init")
+    public static int junctionInit(IsolateThread thread, long junction) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.junctionInit(junction);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_execute")
+    public static long junctionExecute(IsolateThread thread, long junction, long content) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return 0L;
+        return NativeBridge.junctionExecute(junction, content);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_serialize")
+    public static int junctionSerialize(IsolateThread thread, long junction, long buffer, int bufferSize) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        byte[] tmp = new byte[Math.max(1, bufferSize)];
+        int n = NativeBridge.junctionSerialize(junction, tmp, 0, bufferSize > 0 ? bufferSize - 1 : 0);
+        if (n < 0) return n;
+        return copyToNativeBuffer(buffer, bufferSize, tmp, n);
+    }
+
+    //====================================================================
+    // Connector API (Phase 12 — branching container C ABI surface)
+    //====================================================================
+
+    @CEntryPoint(name = "TPipe_Connector_create")
+    public static long connectorCreate(IsolateThread thread) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return 0L;
+        return NativeBridge.connectorCreate();
+    }
+
+    @CEntryPoint(name = "TPipe_Connector_release")
+    public static int connectorRelease(IsolateThread thread, long connector) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (HandleRegistry.INSTANCE.getType(connector) != HandleTypes.CONNECTOR) return TPIPE_ERR_INVALID_HANDLE;
+        return NativeBridge.connectorRelease(connector);
+    }
+
+    @CEntryPoint(name = "TPipe_Connector_init")
+    public static int connectorInit(IsolateThread thread, long connector) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.connectorInit(connector);
+    }
+
+    @CEntryPoint(name = "TPipe_Connector_execute")
+    public static long connectorExecute(IsolateThread thread, long connector, long content) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return 0L;
+        return NativeBridge.connectorExecute(connector, content);
+    }
+
+    @CEntryPoint(name = "TPipe_Connector_serialize")
+    public static int connectorSerialize(IsolateThread thread, long connector, long buffer, int bufferSize) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        byte[] tmp = new byte[Math.max(1, bufferSize)];
+        int n = NativeBridge.connectorSerialize(connector, tmp, 0, bufferSize > 0 ? bufferSize - 1 : 0);
+        if (n < 0) return n;
+        return copyToNativeBuffer(buffer, bufferSize, tmp, n);
+    }
+
+    //====================================================================
+    // Splitter API (Phase 12 — parallel-fanout container C ABI surface)
+    //====================================================================
+
+    @CEntryPoint(name = "TPipe_Splitter_create")
+    public static long splitterCreate(IsolateThread thread) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return 0L;
+        return NativeBridge.splitterCreate();
+    }
+
+    @CEntryPoint(name = "TPipe_Splitter_release")
+    public static int splitterRelease(IsolateThread thread, long splitter) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (HandleRegistry.INSTANCE.getType(splitter) != HandleTypes.SPLITTER) return TPIPE_ERR_INVALID_HANDLE;
+        return NativeBridge.splitterRelease(splitter);
+    }
+
+    @CEntryPoint(name = "TPipe_Splitter_init")
+    public static int splitterInit(IsolateThread thread, long splitter) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.splitterInit(splitter);
+    }
+
+    @CEntryPoint(name = "TPipe_Splitter_execute")
+    public static long splitterExecute(IsolateThread thread, long splitter, long content) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return 0L;
+        return NativeBridge.splitterExecute(splitter, content);
+    }
+
+    @CEntryPoint(name = "TPipe_Splitter_serialize")
+    public static int splitterSerialize(IsolateThread thread, long splitter, long buffer, int bufferSize) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        byte[] tmp = new byte[Math.max(1, bufferSize)];
+        int n = NativeBridge.splitterSerialize(splitter, tmp, 0, bufferSize > 0 ? bufferSize - 1 : 0);
         if (n < 0) return n;
         return copyToNativeBuffer(buffer, bufferSize, tmp, n);
     }

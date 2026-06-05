@@ -22,10 +22,13 @@ object HandleTypes {
     const val OPERATION = 15
     const val MANIFOLD = 16
     const val DISTRIBUTION_GRID = 17
+    const val JUNCTION = 18
+    const val CONNECTOR = 19
+    const val SPLITTER = 20
 
     /** Base type for all handles (used in generic operations). */
     const val BASE = 0
 
     /** Total number of handle types. */
-    const val TYPE_COUNT = 18
+    const val TYPE_COUNT = 21
 }

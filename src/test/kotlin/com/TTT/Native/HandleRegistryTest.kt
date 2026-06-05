@@ -13,9 +13,6 @@ private const val ERR_REFCOUNT_OVERFLOW = -23 // TPIPE_ERR_REFCOUNT_OVERFLOW (-0
 /**
  * TDD tests for TPipe GraalVM C ABI Handle Registry.
  * Tests handle lifecycle, reference counting, type encoding, and safety limits.
- *
- * RED PHASE: These tests define expected behavior. They fail until the ABI
- * implementation is complete. Following TDD: RED first, then GREEN.
  */
 class HandleRegistryTest {
 
@@ -240,5 +237,28 @@ class HandleRegistryTest {
         assertEquals(65536, GapVerification.MAX_HANDLE_COUNT)
         assertEquals(104857600, GapVerification.MAX_BINARY_SIZE)  // 100MB
         assertEquals(1048576, GapVerification.MAX_STRING_LEN)    // 1MB
+    }
+
+    //==========================================================================
+    // Large-payload round-trip — readCString fix validation
+    //==========================================================================
+
+    @Test
+    fun testContentHandlePreservesTextExceedingOneMegabyte() {
+        val targetSize = GapVerification.MAX_STRING_LEN + (512 * 1024)
+        val payload = buildString(targetSize) {
+            for (i in 0 until targetSize) {
+                append(('a' + (i % 26)).toChar())
+            }
+        }
+        val originalLength = payload.length
+        val handle = HandleRegistry.allocate(HandleTypes.CONTENT, payload)
+        assertTrue(handle >= 0, "allocate() should accept a >1MB content payload")
+        val retrieved = HandleRegistry.getData(handle)
+        assertTrue(retrieved is String, "getData() should return the stored String for CONTENT type")
+        val retrievedString = retrieved as String
+        assertEquals(originalLength, retrievedString.length, "text length must be preserved across the registry")
+        assertEquals(payload, retrievedString, "full payload must round-trip through HandleRegistry")
+        HandleRegistry.release(handle)
     }
 }

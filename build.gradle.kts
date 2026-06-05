@@ -64,7 +64,16 @@ val licenseJar by tasks.registering(Jar::class) {
 // project, so we don't have to touch :TPipe-MCP's own build script.
 subprojects {
     tasks.matching { it.name == "jar" && it.project.path == ":TPipe-MCP" }.configureEach {
-        dependsOn(":TPipe-Ollama:jar", ":TPipe-Bedrock:jar")
+        dependsOn(
+            ":TPipe-Ollama:jar",
+            ":TPipe-Bedrock:jar",
+            // Phase 4: same Gradle 8.14.3 strict-validation rule applies to the
+            // two new runtimeOnly providers — :TPipe-MCP:jar reads them via
+            // configurations.runtimeClasspath and needs an explicit task
+            // ordering dep declared from the root project.
+            ":TPipe-OpenRouter:jar",
+            ":TPipe-GenericOpenAI:jar"
+        )
     }
 }
 
@@ -119,6 +128,12 @@ dependencies {
     // `testImplementation(...)` below.
     runtimeOnly(project(":TPipe-Ollama"))
     runtimeOnly(project(":TPipe-Bedrock"))
+    // Phase 4: wire the two pre-existing-but-unwired provider sub-modules so
+    // NativeBridge.pipeCreate can construct their Pipe classes via
+    // Class.forName + reflective ctor newInstance(). Same reasoning as the
+    // Ollama/Bedrock lines above.
+    runtimeOnly(project(":TPipe-OpenRouter"))
+    runtimeOnly(project(":TPipe-GenericOpenAI"))
 
     // MCP Server Hosting
     implementation("io.modelcontextprotocol:kotlin-sdk:0.11.1")
@@ -149,6 +164,11 @@ dependencies {
     // set never depends on them at compile time.
     testImplementation(project(":TPipe-Ollama"))
     testImplementation(project(":TPipe-Bedrock"))
+    // Phase 4: mirror the runtimeOnly entries above for the test compile
+    // classpath so ProviderClasspathTest can reference the new provider
+    // classes via `::class.java` and Class.forName.
+    testImplementation(project(":TPipe-OpenRouter"))
+    testImplementation(project(":TPipe-GenericOpenAI"))
 }
 
 tasks.test {
@@ -185,6 +205,13 @@ graalvmNative {
         "-H:Class=bedrockPipe.BedrockPipe",
         "-H:Class=ollamaPipe.OllamaPipe\$Companion",
         "-H:Class=bedrockPipe.BedrockPipe\$Companion",
+        // Phase 4: register the two pre-existing-but-unwired provider classes
+        // as reachable image classes. NativeBridge.pipeCreate constructs them
+        // via Class.forName + ctor newInstance() for the C ABI ids 10 and 11.
+        "-H:Class=openrouterPipe.OpenRouterPipe",
+        "-H:Class=genericOpenAIPipe.GenericOpenAIPipe",
+        "-H:Class=openrouterPipe.OpenRouterPipe\$Companion",
+        "-H:Class=genericOpenAIPipe.GenericOpenAIPipe\$Companion",
         // Phase 5: Manifold is constructed via Manifold() in
         // NativeBridge.manifoldCreate. Native-image cannot discover
         // reflective constructors of a class only referenced through the
