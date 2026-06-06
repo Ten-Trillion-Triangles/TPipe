@@ -2,6 +2,7 @@ package com.TTT.Pipe
 
 import com.TTT.Context.ContextBank
 import com.TTT.Context.ContextWindow
+import com.TTT.Context.buildLorebookScanText
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ConverseRole
@@ -28,6 +29,8 @@ import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PResponse
 import com.TTT.PipeContextProtocol.PcPRequest
+import com.TTT.Pipeline.PathDescriptionList
+import com.TTT.Pipeline.PathRequest
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Structs.PipeSettings
@@ -1049,6 +1052,15 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     @Serializable
     protected var loreBookFillAndSplitMode = false
+
+    /**
+     * When true, the lorebook matcher scans the user prompt plus this pipe's
+     * contextWindow.contextElements and converseHistory.history. When false (default),
+     * only the user prompt is scanned. This is the historical behavior and the default
+     * to preserve backward compatibility.
+     */
+    @Serializable
+    protected var useEntireContextForLoreSelection = false
 
     /**
      * If true when merging context windows we will replace the converse history with the incoming converse history.
@@ -2103,6 +2115,77 @@ abstract class Pipe : P2PInterface, ProviderInterface
             systemPrompt = systemPrompt + defaultP2PDescription
         }
 
+        // Inject path descriptors from parent PumpStation when harness mode is enabled
+        if(autoInjectPathDataFromPumpStation)
+        {
+            val parentStation = getNearestPumpStationParent() as? com.TTT.Pipeline.PumpStation
+            if(parentStation != null)
+            {
+                val pathDescriptorList = parentStation.getVisiblePathDescriptorsForDispatch()
+                val pathDescriptorJson = serialize(pathDescriptorList, false)
+                val pathRequestSchema = examplePromptFor(PathRequest::class)
+
+                val defaultPathInjection = """
+                    |
+                    |=== Path Invocation Protocol (MANDATORY) ===
+                    |
+                    |You MUST use the paths below to continue your task. This is not optional — the harness
+                    |WILL reject any output that does not conform to the PathRequest schema.
+                    |
+                    |Available paths:
+                    |${pathDescriptorJson}
+                    |
+                    |=== Calling a Path ===
+                    |To call a path, you MUST return a valid PathRequest JSON object:
+                    |{
+                    |    "pathName": "the exact path name from the list above",
+                    |    "inputData": { ... path-specific input fields ... }
+                    |}
+                    |
+                    |The "inputData" schema for each path is shown in the path descriptor above under "inputSchema".
+                    |Do NOT invent fields. Do NOT omit required fields. Do NOT call paths not listed above.
+                    |
+                    |=== Calling Paths with PCP Schemas ===
+                    |If a path has a "pcpSchema" section in its descriptor, that path's inputData MUST conform
+                    |to the PCP function's input format defined in that pcpSchema. The pcpSchema shows:
+                    |  - functionName: the PCP function to invoke
+                    |  - tPipeContextOptions / stdioContextOptions / httpContextOptions / pythonContextOptions / etc.
+                    |  - params (where "isRequired" indicates required vs optional fields)
+                    |
+                    |To call a PCP-enabled path:
+                    |  1. Set "pathName" to the path's exact name
+                    |  2. For "inputData", construct the PCP call exactly as described in that path's pcpSchema:
+                    |     - Set tPipeContextOptions.functionName to the PCP function name
+                    |     - Set tPipeContextOptions.callParams to a map of argument names → values
+                    |       OR set tPipeContextOptions.argumentsOrFunctionParams to a list of positional values
+                    |     - For stdio/http/python/etc calls, populate the respective context options accordingly
+                    |  3. Include ALL required params (isRequired=true). Optional params may be omitted.
+                    |
+                    |=== Rules (ALL STRICTLY ENFORCED) ===
+                    |1. You MUST only call paths listed above — no invented path names
+                    |2. You MUST follow the exact inputSchema for the path you are calling
+                    |3. You MUST provide all required inputData fields for the selected path
+                    |4. For PCP paths: you MUST follow the PCP function's parameter schema exactly
+                    |5. You MUST NOT change the name of the path you are calling
+                    |6. You MUST return valid JSON matching the PathRequest schema below
+                    |
+                    |PathRequest schema:
+                    |${pathRequestSchema}
+                    |
+                    |=== Output Requirement ===
+                    |Your final response must be a PathRequest JSON object. Do not return any other format.
+                    |If you do not need to call a path, return: {"pathName": "", "inputData": {}}
+                    |
+                """.trimMargin()
+
+                systemPrompt = systemPrompt + defaultPathInjection
+
+                // Bind output to PathRequest schema
+                jsonOutput = pathRequestSchema
+                supportsNativeJson = false
+            }
+        }
+
         //Bind context instructions and context json schema.
         if(autoInjectContext)
         {
@@ -2384,6 +2467,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun setTodoListPageKey(key: String) : Pipe
     {
         todoPageKey = key
+        injectTodoList = true
         return this
     }
 
@@ -3435,6 +3519,17 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         loreBookFillMode = true
         loreBookFillAndSplitMode = true
+        return this
+    }
+
+    /**
+     * Enables expanded lorebook scanning: the matcher will consider contextElements
+     * and converseHistory in addition to the user prompt.
+     * @return This Pipe object for method chaining.
+     */
+    fun useEntireContextForLoreSelection() : Pipe
+    {
+        useEntireContextForLoreSelection = true
         return this
     }
 
@@ -4916,8 +5011,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
                 // Simulate truncation on a copy
                 val copy = contextWindow.deepCopy()
-                copy.selectAndTruncateContext(
+                val scanText = contextWindow.buildLorebookScanText(
                     content.text,
+                    useEntireContextForLoreSelection
+                )
+                copy.selectAndTruncateContext(
+                    scanText,
                     allocatedBudget,
                     workingBudget.truncationMethod,
                     truncationSettings,
@@ -4943,8 +5042,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
         // Step 4: Simulate main context window truncation
         val mainContextCopy = contextWindow.deepCopy()
-        mainContextCopy.selectAndTruncateContext(
+        val scanText = contextWindow.buildLorebookScanText(
             content.text,
+            useEntireContextForLoreSelection
+        )
+        mainContextCopy.selectAndTruncateContext(
+            scanText,
             availableForContext,
             workingBudget.truncationMethod,
             truncationSettings,
@@ -5082,8 +5185,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
             {
                 if(!workingBudget.truncateContextWindowAsString)
                 {
-                    contextWindow.selectAndTruncateContextSuspend(
+                    val scanText = contextWindow.buildLorebookScanText(
                         content.text,
+                        useEntireContextForLoreSelection
+                    )
+                    contextWindow.selectAndTruncateContextSuspend(
+                        scanText,
                         workingContextWindowSpace,
                         workingBudget.truncationMethod,
                         truncationSettings,
@@ -5095,8 +5202,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
                 else
                 {
-                    val asString = contextWindow.combineAndTruncateAsStringWithSettingsSuspend(
+                    val scanText = contextWindow.buildLorebookScanText(
                         content.text,
+                        useEntireContextForLoreSelection
+                    )
+                    val asString = contextWindow.combineAndTruncateAsStringWithSettingsSuspend(
+                        scanText,
                         workingContextWindowSpace,
                         truncationSettings,
                         workingBudget.truncationMethod
@@ -5313,8 +5424,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
             val allocatedBudget = pageBudgets[pageKey] ?: 0
             if(allocatedBudget <= 0) continue
 
-            contextWindow.selectAndTruncateContextSuspend(
+            val scanText = contextWindow.buildLorebookScanText(
                 content.text,
+                useEntireContextForLoreSelection
+            )
+            contextWindow.selectAndTruncateContextSuspend(
+                scanText,
                 allocatedBudget,
                 budget.truncationMethod,
                 truncationSettings,
@@ -7243,6 +7358,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             appendLoreBook = appendLoreBook,
             loreBookFillMode = loreBookFillMode,
             loreBookFillAndSplitMode = loreBookFillAndSplitMode,
+            useEntireContextForLoreSelection = useEntireContextForLoreSelection,
             useModelReasoning = useModelReasoning,
             modelReasoningSettingsV2 = modelReasoningSettingsV2,
             modelReasoningSettingsV3 = modelReasoningSettingsV3,

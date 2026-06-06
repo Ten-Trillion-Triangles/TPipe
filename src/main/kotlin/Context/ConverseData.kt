@@ -16,6 +16,7 @@ enum class ConverseRole
     developer,
     system,
     user,
+    supervisor,
     agent,
     assistant,
     tool_response,
