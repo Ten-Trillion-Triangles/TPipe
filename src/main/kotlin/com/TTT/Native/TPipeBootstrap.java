@@ -2,6 +2,7 @@ package com.TTT.Native;
 
 import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.c.function.CEntryPoint;
+import org.graalvm.nativeimage.c.type.CCharPointer;
 
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -165,6 +166,32 @@ public class TPipeBootstrap {
         return new String(buf, java.nio.charset.StandardCharsets.UTF_8);
     }
 
+    /**
+     * Phase 3 — read a C string from a caller-provided buffer using
+     * CCharPointer instead of `sun.misc.Unsafe`. This is the
+     * GraalVM-recommended way; the {@code sun.misc.Unsafe::getByte}
+     * deprecation warning no longer fires for entry points that
+     * route through this helper.
+     *
+     * Reads up to {@code bufferSize} bytes (or up to the first NUL
+     * terminator, whichever comes first) and returns the result as a
+     * Java String. Returns null if the buffer is null.
+     */
+    static String readCStringViaWord(CCharPointer addr, int bufferSize) {
+        if (addr.isNull()) return null;
+        if (bufferSize <= 0) return "";
+        int maxBytes = Math.min(bufferSize, GapVerification.MAX_STRING_LEN);
+        byte[] buf = new byte[maxBytes];
+        for (int i = 0; i < maxBytes; i++) {
+            byte b = addr.read(i);
+            if (b == 0) {
+                return new String(buf, 0, i, java.nio.charset.StandardCharsets.UTF_8);
+            }
+            buf[i] = b;
+        }
+        return new String(buf, 0, maxBytes, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
     private static int writeCString(long addr, int bufferSize, String s) {
         if (addr == 0L) return TPIPE_ERR_NULL_POINTER;
         if (bufferSize <= 0) return TPIPE_ERR_INVALID_ARGUMENT;
@@ -177,23 +204,112 @@ public class TPipeBootstrap {
         UNSAFE.putByte(addr + writeLen, (byte) 0);
         return writeLen;
     }
+    /**
+     * Phase 3 — write a C string to a caller-provided buffer, using
+     * the GraalVM Word-based CCharPointer instead of `sun.misc.Unsafe`.
+     * This is the public method that converted @CEntryPoint methods
+     * call. The long-based writeCString remains for the
+     * not-yet-converted entry points.
+     *
+     * Returns {@link #TPIPE_OK} on success, {@link #TPIPE_ERR_NULL_POINTER}
+     * if the buffer is null, or {@link #TPIPE_ERR_INVALID_ARGUMENT} if
+     * the bufferSize is <= 0.
+     */
+    static int writeCStringViaWord(CCharPointer addr, int bufferSize, String s) {
+        if (addr.isNull()) return TPIPE_ERR_NULL_POINTER;
+        if (bufferSize <= 0) return TPIPE_ERR_INVALID_ARGUMENT;
+        if (s == null) s = "";
+        byte[] bytes = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        int writeLen = Math.min(bytes.length, bufferSize - 1);
+        for (int i = 0; i < writeLen; i++) {
+            addr.write(i, bytes[i]);
+        }
+        addr.write(writeLen, (byte) 0);
+        return writeLen;
+    }
 
-    private static int writeInt(long addr, int value) {
+
+    /**
+     * Write a 4-byte int to a caller-provided buffer. Validates the
+     * buffer is at least 4 bytes long when {@code bufferSize > 0}.
+     * Pass {@code bufferSize = 0} when the C ABI does not provide a
+     * size to the caller (legacy entry points that take only a
+     * pointer) — the bounds check is then skipped.
+     *
+     * Returns {@link #TPIPE_OK} on success, {@link #TPIPE_ERR_NULL_POINTER}
+     * if the address is null, or {@link #TPIPE_ERR_BUFFER_TOO_SMALL} if
+     * the buffer is too small for the type.
+     */
+    static int writeInt(long addr, int bufferSize, int value) {
         if (addr == 0L) return TPIPE_ERR_NULL_POINTER;
+        if (bufferSize > 0 && bufferSize < 4) return TPIPE_ERR_BUFFER_TOO_SMALL;
         UNSAFE.putInt(addr, value);
         return TPIPE_OK;
     }
 
-    private static int writeFloat(long addr, float value) {
+    /**
+     * Write a 4-byte float to a caller-provided buffer. See
+     * {@link #writeInt} for the {@code bufferSize} contract.
+     */
+    static int writeFloat(long addr, int bufferSize, float value) {
         if (addr == 0L) return TPIPE_ERR_NULL_POINTER;
+        if (bufferSize > 0 && bufferSize < 4) return TPIPE_ERR_BUFFER_TOO_SMALL;
         UNSAFE.putFloat(addr, value);
         return TPIPE_OK;
     }
 
-    private static int writePtr(long addr, long value) {
+    /**
+     * Write an 8-byte pointer/long to a caller-provided buffer. See
+     * {@link #writeInt} for the {@code bufferSize} contract.
+     */
+    static int writePtr(long addr, int bufferSize, long value) {
         if (addr == 0L) return TPIPE_ERR_NULL_POINTER;
+        if (bufferSize > 0 && bufferSize < 8) return TPIPE_ERR_BUFFER_TOO_SMALL;
         UNSAFE.putLong(addr, value);
         return TPIPE_OK;
+    }
+
+    //====================================================================
+    // TPipe_Handle typedef sanity check (Phase 2)
+    //====================================================================
+    //
+    // The C ABI exposes handles as opaque uint64_t. The high 8 bits are
+    // the handle type discriminator; the low 56 bits are the registry id.
+    // These helpers let any @CEntryPoint (or test) verify a handle is
+    // well-formed before dereferencing it. They are package-private so
+    // the test can call them directly; they are NOT @CEntryPoint methods
+    // (no C ABI symbol, no audit impact).
+
+    /**
+     * True iff {@code type} is a known handle type (one of the
+     * 1..20 {@code HandleTypes} constants). Type 0 (BASE) is reserved
+     * and types 21+ are not defined.
+     */
+    static boolean isValidHandleType(int type) {
+        return type >= 1 && type <= 20;
+    }
+
+    /**
+     * Decode the type byte from a handle (high 8 bits). Returns -1 if
+     * the handle is 0 or the type byte is not in the valid 1..20 range.
+     */
+    static int decodeHandleType(long handle) {
+        if (handle == 0L) return -1;
+        int type = (int) ((handle >>> 56) & 0xFFL);
+        if (type < 1 || type > 20) return -1;
+        return type;
+    }
+
+    /**
+     * Decode the registry id from a handle (low 56 bits). Returns -1
+     * if the handle is 0 or the type byte is not in the valid 1..20
+     * range (a malformed handle cannot be trusted to yield a valid id).
+     */
+    static int decodeHandleId(long handle) {
+        if (handle == 0L) return -1;
+        int type = (int) ((handle >>> 56) & 0xFFL);
+        if (type < 1 || type > 20) return -1;
+        return (int) (handle & 0x00FFFFFFFFFFFFFFL);
     }
 
     //====================================================================
@@ -229,14 +345,18 @@ public class TPipeBootstrap {
     }
 
     @CEntryPoint(name = "TPipe_getLastError")
-    public static int getLastError(IsolateThread thread, long buffer, int bufferSize) {
+    public static int getLastError(IsolateThread thread, CCharPointer buffer, int bufferSize) {
         String msg = NativeBridge.getLastError();
-        return writeCString(buffer, bufferSize, msg == null ? "" : msg);
+        return writeCStringViaWord(buffer, bufferSize, msg == null ? "" : msg);
     }
 
     @CEntryPoint(name = "TPipe_getVersion")
-    public static int getVersion(IsolateThread thread, long buffer, int bufferSize) {
-        return writeCString(buffer, bufferSize, TPIPE_VERSION);
+    public static int getVersion(IsolateThread thread, CCharPointer buffer, int bufferSize) {
+        /* Phase 3: now uses CCharPointer + writeCStringViaWord. The
+         * `sun.misc.Unsafe::getByte` deprecation warning no longer
+         * fires for this entry point. The C ABI signature is unchanged
+         * (both `long` and `CCharPointer` are pointer-sized). */
+        return writeCStringViaWord(buffer, bufferSize, TPIPE_VERSION);
     }
 
     @CEntryPoint(name = "TPipe_getCapabilities")
@@ -267,7 +387,7 @@ public class TPipeBootstrap {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         int c = HandleRegistry.INSTANCE.getRefCount(handle);
         if (c < 0) return c;
-        return writeInt(refCount, c);
+        return writeInt(refCount, 0, c);
     }
 
     @CEntryPoint(name = "TPipe_Handle_isValid")
@@ -289,10 +409,10 @@ public class TPipeBootstrap {
     //====================================================================
 
     @CEntryPoint(name = "TPipe_Content_create")
-    public static long contentCreate(IsolateThread thread, long text) {
+    public static long contentCreate(IsolateThread thread, CCharPointer text) {
         int rc = requireReady(); if (rc != TPIPE_OK) return 0L;
         try {
-            return NativeBridge.contentCreate(readCString(text));
+            return NativeBridge.contentCreate(readCStringViaWord(text, GapVerification.MAX_STRING_LEN));
         } catch (Exception e) {
             NativeBridge.setLastError(e.getMessage());
             return 0L;
@@ -300,10 +420,10 @@ public class TPipeBootstrap {
     }
 
     @CEntryPoint(name = "TPipe_Content_createWithText")
-    public static long contentCreateWithText(IsolateThread thread, long text, int length) {
+    public static long contentCreateWithText(IsolateThread thread, CCharPointer text, int length) {
         int rc = requireReady(); if (rc != TPIPE_OK) return 0L;
         try {
-            return NativeBridge.contentCreate(readCString(text, length));
+            return NativeBridge.contentCreate(readCStringViaWord(text, length));
         } catch (Exception e) {
             NativeBridge.setLastError(e.getMessage());
             return 0L;
@@ -327,17 +447,17 @@ public class TPipeBootstrap {
     }
 
     @CEntryPoint(name = "TPipe_Content_getText")
-    public static int contentGetText(IsolateThread thread, long contentHandle, long buffer, int bufferSize) {
+    public static int contentGetText(IsolateThread thread, long contentHandle, CCharPointer buffer, int bufferSize) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         String s = NativeBridge.contentGetText(contentHandle);
         if (s == null) return TPIPE_ERR_INVALID_HANDLE;
-        return writeCString(buffer, bufferSize, s);
+        return writeCStringViaWord(buffer, bufferSize, s);
     }
 
     @CEntryPoint(name = "TPipe_Content_setText")
-    public static int contentSetText(IsolateThread thread, long contentHandle, long text) {
+    public static int contentSetText(IsolateThread thread, long contentHandle, CCharPointer text) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
-        NativeBridge.contentSetText(contentHandle, readCString(text));
+        NativeBridge.contentSetText(contentHandle, readCStringViaWord(text, GapVerification.MAX_STRING_LEN));
         return TPIPE_OK;
     }
 
@@ -442,7 +562,7 @@ public class TPipeBootstrap {
     @CEntryPoint(name = "TPipe_Content_getTerminate")
     public static int contentGetTerminate(IsolateThread thread, long contentHandle, long terminate) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
-        return writeInt(terminate, NativeBridge.contentGetTerminate(contentHandle) ? 1 : 0);
+        return writeInt(terminate, 0, NativeBridge.contentGetTerminate(contentHandle) ? 1 : 0);
     }
 
     @CEntryPoint(name = "TPipe_Content_setPass")
@@ -483,19 +603,19 @@ public class TPipeBootstrap {
     @CEntryPoint(name = "TPipe_Content_getRepeat")
     public static int contentGetRepeat(IsolateThread thread, long contentHandle, long repeat) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
-        return writeInt(repeat, NativeBridge.contentGetRepeat(contentHandle) ? 1 : 0);
+        return writeInt(repeat, 0, NativeBridge.contentGetRepeat(contentHandle) ? 1 : 0);
     }
 
     @CEntryPoint(name = "TPipe_Content_getSkip")
     public static int contentGetSkip(IsolateThread thread, long contentHandle, long skip) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
-        return writeInt(skip, NativeBridge.contentGetSkip(contentHandle) ? 1 : 0);
+        return writeInt(skip, 0, NativeBridge.contentGetSkip(contentHandle) ? 1 : 0);
     }
 
     @CEntryPoint(name = "TPipe_Content_getJump")
     public static int contentGetJump(IsolateThread thread, long contentHandle, long jump) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
-        return writeInt(jump, NativeBridge.contentGetJump(contentHandle) ? 1 : 0);
+        return writeInt(jump, 0, NativeBridge.contentGetJump(contentHandle) ? 1 : 0);
     }
 
     @CEntryPoint(name = "TPipe_Content_setJump")
@@ -541,7 +661,7 @@ public class TPipeBootstrap {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         int v = NativeBridge.binaryGetVariant(binaryHandle);
         if (v < 0) return v;
-        return writeInt(variant, v);
+        return writeInt(variant, 0, v);
     }
 
     /**
@@ -572,12 +692,13 @@ public class TPipeBootstrap {
             // here via the ARRAY_BYTE_BASE_OFFSET constant.
             UNSAFE.copyMemory(bytes, UnsafeHelpers.ARRAY_BYTE_BASE_OFFSET, null, buf, bytes.length);
         }
-        int rc2 = writeInt(lengthAddress, bytes.length);
+        int rc2 = writeInt(lengthAddress, 0, bytes.length);
         if (rc2 != TPIPE_OK) {
             if (buf != 0L) UNSAFE.freeMemory(buf);
             return rc2;
         }
-        int rc3 = writePtr(dataAddress, buf);
+        // Binary data: caller-provided dataAddress; we trust the size contract.
+        int rc3 = writePtr(dataAddress, 0, buf);
         if (rc3 != TPIPE_OK) {
             if (buf != 0L) UNSAFE.freeMemory(buf);
             return rc3;
@@ -661,7 +782,7 @@ public class TPipeBootstrap {
         if (op == 0L) return 0L;
         // Extract the result content handle from the operation handle and write to resultOut
         if (resultOut != 0L) {
-            writePtr(resultOut, NativeBridge.operationGetResult(op));
+            writePtr(resultOut, 0, NativeBridge.operationGetResult(op));
         }
         return op;
     }
@@ -676,10 +797,10 @@ public class TPipeBootstrap {
     public static int pipeGetTokenUsage(IsolateThread thread, long pipe, long inputTokens, long outputTokens, long totalTokens, long cost) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         int[] usage = NativeBridge.pipeGetTokenUsage(pipe);
-        int rc2 = writeInt(inputTokens, usage[0]); if (rc2 != TPIPE_OK) return rc2;
-        rc2 = writeInt(outputTokens, usage[1]); if (rc2 != TPIPE_OK) return rc2;
-        rc2 = writeInt(totalTokens, usage[2]); if (rc2 != TPIPE_OK) return rc2;
-        return writeFloat(cost, (float) usage[3]);
+        int rc2 = writeInt(inputTokens, 0, usage[0]); if (rc2 != TPIPE_OK) return rc2;
+        rc2 = writeInt(outputTokens, 0, usage[1]); if (rc2 != TPIPE_OK) return rc2;
+        rc2 = writeInt(totalTokens, 0, usage[2]); if (rc2 != TPIPE_OK) return rc2;
+        return writeFloat(cost, 0, (float) usage[3]);
     }
 
     //====================================================================
@@ -807,11 +928,11 @@ public class TPipeBootstrap {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         long op = NativeBridge.pipelineExecute(pipeline, content);
         if (op == 0L) {
-            if (resultOut != 0L) writePtr(resultOut, 0L);
+            if (resultOut != 0L) writePtr(resultOut, 0, 0L);
             return TPIPE_ERR_INTERNAL;
         }
         long resultHandle = NativeBridge.operationGetResult(op);
-        if (resultOut != 0L) writePtr(resultOut, resultHandle);
+        if (resultOut != 0L) writePtr(resultOut, 0, resultHandle);
         return TPIPE_OK;
     }
 
@@ -950,7 +1071,7 @@ public class TPipeBootstrap {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         int w = NativeBridge.loreBookGetWeight(loreBook);
         if (w == TPIPE_ERR_INVALID_HANDLE) return w;
-        return writeInt(outWeight, w);
+        return writeInt(outWeight, 0, w);
     }
 
     @CEntryPoint(name = "TPipe_LoreBook_addLinkedKey")
@@ -1177,7 +1298,7 @@ public class TPipeBootstrap {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         int c = NativeBridge.contextGetContextElementsCount(context);
         if (c < 0) return c;
-        return writeInt(outCount, c);
+        return writeInt(outCount, 0, c);
     }
 
     @CEntryPoint(name = "TPipe_Context_getConverseHistorySize")
@@ -1185,7 +1306,7 @@ public class TPipeBootstrap {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         int s = NativeBridge.contextGetConverseHistorySize(context);
         if (s < 0) return s;
-        return writeInt(outSize, s);
+        return writeInt(outSize, 0, s);
     }
 
     @CEntryPoint(name = "TPipe_Context_getVersion")
@@ -1391,7 +1512,7 @@ public class TPipeBootstrap {
         if (agent == null) return TPIPE_ERR_INVALID_ARGUMENT;
         if (message == 0L) return TPIPE_ERR_INVALID_ARGUMENT;
         long resp = NativeBridge.p2pSend(p2p, agent, message);
-        if (responseOut != 0L) writePtr(responseOut, resp);
+        if (responseOut != 0L) writePtr(responseOut, 0, resp);
         return TPIPE_OK;
     }
 
@@ -1416,7 +1537,7 @@ public class TPipeBootstrap {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         Long h = NativeBridge.listGet(list, index);
         if (h == null) return TPIPE_ERR_INVALID_ARGUMENT;
-        return writePtr(item, h);
+        return writePtr(item, 0, h);
     }
 
     @CEntryPoint(name = "TPipe_List_size")
@@ -1451,7 +1572,7 @@ public class TPipeBootstrap {
         if (k == null) return TPIPE_ERR_INVALID_ARGUMENT;
         Long v = NativeBridge.mapGet(map, k);
         if (v == null) return TPIPE_ERR_INVALID_ARGUMENT;
-        return writePtr(value, v);
+        return writePtr(value, 0, v);
     }
 
     @CEntryPoint(name = "TPipe_Map_size")
@@ -1470,7 +1591,7 @@ public class TPipeBootstrap {
         int[] tmp = new int[1];
         int code = NativeBridge.mapHas(map, k, tmp);
         if (code != TPIPE_OK) return code;
-        return writeInt(has, tmp[0]);
+        return writeInt(has, 0, tmp[0]);
     }
 
     //====================================================================
@@ -1507,7 +1628,7 @@ public class TPipeBootstrap {
         int[] tmp = new int[1];
         int code = NativeBridge.asyncPoll(handle, tmp);
         if (code != TPIPE_OK) return code;
-        return writeInt(status, tmp[0]);
+        return writeInt(status, 0, tmp[0]);
     }
 
     @CEntryPoint(name = "TPipe_AsyncHandle_getResult")
@@ -1517,7 +1638,7 @@ public class TPipeBootstrap {
         long[] tmp = new long[1];
         int code = NativeBridge.asyncGetResult(handle, tmp);
         if (code != TPIPE_OK) return code;
-        return writePtr(result, tmp[0]);
+        return writePtr(result, 0, tmp[0]);
     }
 
     //====================================================================
@@ -1562,7 +1683,7 @@ public class TPipeBootstrap {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         int c = NativeBridge.manifoldGetWorkerCount(manifold);
         if (c < 0) return c;
-        return writeInt(count, c);
+        return writeInt(count, 0, c);
     }
 
     @CEntryPoint(name = "TPipe_Manifold_setMaxLoopIterations")
@@ -1610,7 +1731,7 @@ public class TPipeBootstrap {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
         int c = NativeBridge.distributionGridGetNodeCount(grid);
         if (c < 0) return c;
-        return writeInt(count, c);
+        return writeInt(count, 0, c);
     }
 
     @CEntryPoint(name = "TPipe_DistributionGrid_serialize")
@@ -1638,6 +1759,52 @@ public class TPipeBootstrap {
         int n = NativeBridge.distributionGridRebalanceStub(grid, tmp, 0, bufferSize > 0 ? bufferSize - 1 : 0);
         if (n < 0) return n;
         return copyToNativeBuffer(buffer, bufferSize, tmp, n);
+    }
+
+    // ---- Phase 6: additional read-only entry points ----
+
+    /**
+     * Write the grid's node count into the caller's int*. The
+     * `out` parameter is an int* (32-bit). Returns 0 on success,
+     * a negative error code on failure.
+     */
+    @CEntryPoint(name = "TPipe_DistributionGrid_getNodeCount_v2")
+    public static int distributionGridGetNodeCountV2(IsolateThread thread, long grid, long out) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (out == 0L) return TPIPE_ERR_NULL_POINTER;
+        int count = NativeBridge.distributionGridGetNodeCount(grid);
+        if (count < 0) return count;
+        return writeInt(out, 4, count);
+    }
+
+    /**
+     * Write the grid's status JSON into the caller's char* buffer.
+     * Returns 0 on success, a negative error code on failure.
+     */
+    @CEntryPoint(name = "TPipe_DistributionGrid_getStatusJson")
+    public static int distributionGridGetStatusJson(IsolateThread thread, long grid, long buffer, int bufferSize) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (buffer == 0L) return TPIPE_ERR_NULL_POINTER;
+        Object data = HandleRegistry.INSTANCE.getData(grid);
+        if (!(data instanceof DistributionGridHandle)) return TPIPE_ERR_INVALID_HANDLE;
+        String json = ((DistributionGridHandle) data).serialize();
+        if (json == null || json.isEmpty()) return TPIPE_ERR_INVALID_HANDLE;
+        byte[] bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        int n = Math.min(bytes.length, bufferSize > 0 ? bufferSize - 1 : 0);
+        return copyToNativeBuffer(buffer, bufferSize, bytes, n);
+    }
+
+    /**
+     * Write the timestamp (ms since epoch) of the most recent
+     * rebalance into the caller's int64_t*. Returns 0 on success.
+     */
+    @CEntryPoint(name = "TPipe_DistributionGrid_getLastRebalanceMs")
+    public static int distributionGridGetLastRebalanceMs(IsolateThread thread, long grid, long out) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (out == 0L) return TPIPE_ERR_NULL_POINTER;
+        long ts = NativeBridge.distributionGridGetLastRebalanceMs(grid);
+        if (ts < 0) return (int) ts;
+        return writePtr(out, 8, ts);
     }
 
     //====================================================================

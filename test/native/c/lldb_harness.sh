@@ -32,7 +32,7 @@
 #     2   setup error (bad test name, no lldb, no .so, no gcc)
 #     3   gradle build failed
 
-set -uo pipefail
+set -euo pipefail
 
 #==============================================================================
 # Paths

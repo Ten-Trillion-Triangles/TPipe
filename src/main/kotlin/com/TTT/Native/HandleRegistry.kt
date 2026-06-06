@@ -113,25 +113,47 @@ object HandleRegistry {
     private fun sanitize(entry: HandleEntry) {
         when (val data = entry.data) {
             is PipeSettingsHandle -> {
+                // Sensitive: system prompt, structured-output schema, stop sequences
                 data.systemPrompt = null
                 data.jsonOutput = null
                 data.stopSequences = null
             }
             is ContentHandle -> {
-                // Zero out text content
+                // Sensitive: text payload, error traces, attached context/miniBank,
+                // model reasoning, jump pointers
                 data.text = ""
                 data.errorMessage = null
                 data.context = null
                 data.miniBank = null
                 data.modelReasoning = null
                 data.jump = null
-                // Sanitize binary content strings
+                // Sanitize each attached binary content
                 for (bh in data.binaryContent) {
                     bh.sanitize()
                 }
                 data.binaryContent.clear()
             }
-            // Add other sensitive handle types as needed
+            is BinaryHandle -> {
+                // Phase 4: zero the four sensitive payload fields. We overwrite
+                // bytes in place (preserves array size to avoid leaking the size
+                // of the secret) and null the string-typed payloads.
+                data.bytes?.fill(0)
+                data.base64Data = null
+                data.cloudRef = null
+                data.textDocRef = null
+            }
+            is ConverseHistoryHandle -> {
+                // Phase 4: clear the entire conversation history so a heap
+                // dump after release cannot recover past turns. The handle
+                // itself remains valid; only the conversation is gone.
+                data.converseHistory.history.clear()
+            }
+            // Phase 4 scope: PipeHandle, PipelineHandle, ManifoldHandle,
+            // JunctionHandle, ConnectorHandle, SplitterHandle, P2PHandle,
+            // LoreBookHandle currently have no exposed sensitive fields
+            // on the handle itself — the wrapped objects hold the state.
+            // The wrapped objects are still in the JVM heap; a full
+            // defense-in-depth sanitizer would need per-class hooks.
         }
     }
 

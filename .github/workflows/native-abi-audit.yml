@@ -1,0 +1,63 @@
+name: native-abi-audit
+
+on:
+  push:
+    branches: [ main, mcp-server ]
+    paths:
+      - 'src/main/kotlin/com/TTT/Native/**'
+      - 'src/main/resources/tpipe-abi.h'
+      - 'src/main/resources/META-INF/native-image/**'
+      - 'src/test/kotlin/com/TTT/Native/**'
+      - 'test/native/**'
+      - 'build.gradle.kts'
+  pull_request:
+    branches: [ main, mcp-server ]
+
+# Cancel any in-flight run of this workflow for the same branch.
+concurrency:
+  group: native-abi-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 24 (GraalVM CE 24)
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '24'
+          distribution: 'graalvm-community'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the .so (libTPipe.so)
+        run: ./gradlew --no-daemon nativeCompile
+
+      - name: Run the JVM-side parity matrix
+        run: ./gradlew --no-daemon test --tests "com.TTT.Native.AbiParityMatrixTest"
+
+      - name: Run the C-side parity matrix
+        run: bash test/native/c/run_native_abi_audit.sh
+
+      - name: Run the memory-safety audit
+        run: bash test/native/c/run_native_safety_audit.sh
+
+      - name: Run the AddressSanitizer variant
+        run: bash test/native/c/run_native_safety_asan.sh
+
+      - name: Upload the parity report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-abi-parity-report
+          path: build/reports/native-abi-parity.md
+
+      - name: Upload the lldb transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lldb-transcript
+          path: test/native/lldb_transcripts/phase7_safety.txt

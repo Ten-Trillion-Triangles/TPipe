@@ -1858,6 +1858,10 @@ int TPipe_DistributionGrid_getHealth(graal_isolatethread_t* thread, TPipe_Distri
  * @return Number of bytes written, or negative error code on failure
  */
 int TPipe_DistributionGrid_rebalance_stub(graal_isolatethread_t* thread, TPipe_DistributionGridHandle grid, char* buf, int bufSize);
+int TPipe_DistributionGrid_getNodeCount_v2(graal_isolatethread_t* thread, TPipe_DistributionGridHandle grid, int* out);
+int TPipe_DistributionGrid_getStatusJson(graal_isolatethread_t* thread, TPipe_DistributionGridHandle grid, char* buffer, int bufferSize);
+int TPipe_DistributionGrid_getLastRebalanceMs(graal_isolatethread_t* thread, TPipe_DistributionGridHandle grid, int64_t* out);
+
 
 /*==============================================================================
  * JUNCTION API FUNCTIONS (5 functions — Phase 12)

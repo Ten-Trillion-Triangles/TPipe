@@ -193,7 +193,6 @@ graalvmNative {
         // Without this, native-image does not discover com.TTT.Native.TPipeBootstrap
         // (reachable only via @CEntryPoint annotations), so the TPipe_* symbols are
         // never emitted into the shared object.
-        "-H:Class=com.TTT.Native.TPipeBootstrap",
         // Phase 2: register the provider sub-module classes as reachable.
         // NativeBridge.pipeCreate constructs these via Class.forName + ctor
         // newInstance() in Phase 3/4, which is a reflective code path that
@@ -201,28 +200,18 @@ graalvmNative {
         // hint. The $-suffixed entries are the auto-generated Companion
         // inner classes that hold @JvmStatic factories; native-image
         // reports them as "Companion class not found" if omitted.
-        "-H:Class=ollamaPipe.OllamaPipe",
-        "-H:Class=bedrockPipe.BedrockPipe",
-        "-H:Class=ollamaPipe.OllamaPipe\$Companion",
-        "-H:Class=bedrockPipe.BedrockPipe\$Companion",
         // Phase 4: register the two pre-existing-but-unwired provider classes
         // as reachable image classes. NativeBridge.pipeCreate constructs them
         // via Class.forName + ctor newInstance() for the C ABI ids 10 and 11.
-        "-H:Class=openrouterPipe.OpenRouterPipe",
-        "-H:Class=genericOpenAIPipe.GenericOpenAIPipe",
-        "-H:Class=openrouterPipe.OpenRouterPipe\$Companion",
-        "-H:Class=genericOpenAIPipe.GenericOpenAIPipe\$Companion",
         // Phase 5: Manifold is constructed via Manifold() in
         // NativeBridge.manifoldCreate. Native-image cannot discover
         // reflective constructors of a class only referenced through the
         // C ABI's @CEntryPoint -> NativeBridge -> ManifoldHandle ->
         // Manifold() chain, so we register it explicitly.
-        "-H:Class=com.TTT.Pipeline.Manifold",
         // Phase 11: DistributionGrid is constructed via DistributionGrid()
         // in NativeBridge.distributionGridCreate. Same reasoning as
         // Manifold above — native-image needs an explicit hint to keep
         // the class reachable for the @CEntryPoint code path.
-        "-H:Class=com.TTT.Pipeline.DistributionGrid"
     ))
 
     metadataRepository {
@@ -242,5 +231,48 @@ graalvmNative {
         mainBinary.buildArgs.addAll(listOf(
             "--exclude-config", pattern, "^/META-INF/native-image/.*"
         ))
+    }
+}
+
+//====================================================================
+
+//====================================================================
+// Phase 1: Native ABI Parity Audit
+//====================================================================
+//
+// End-to-end audit that every declared TPipe_* C ABI symbol is
+// exported by libTPipe.so. Composes:
+//   - the JVM-side parity matrix test (AbiParityMatrixTest)
+//   - the C-side symbol coverage test (tpipe_abi_symbols_coverage)
+//   - the existing C symbol audit (tpipe_symbol_audit)
+//
+// Run via:
+//     ./gradlew nativeAbiAudit
+// or, if the Gradle wrapper is unavailable (e.g. read-only
+// /home/cage/.gradle):
+//     bash test/native/c/run_native_abi_audit.sh
+//
+// Outputs a parity report at build/reports/native-abi-parity.md.
+val nativeAbiAudit by tasks.registering {
+    group = "verification"
+    description = "Phase 1: audit that every declared TPipe_* C ABI symbol is exported by libTPipe.so."
+
+    dependsOn("nativeCompile", "compileTestKotlin")
+
+    doLast {
+        // Delegate to the runnable shell scripts (parity + safety).
+        // Each script handles its own compile + run + report. The
+        // Gradle task is a thin wrapper that also works in environments
+        // where the Gradle wrapper itself is healthy.
+        listOf(
+            "test/native/c/run_native_abi_audit.sh",     // Phase 1: parity matrix
+            "test/native/c/run_native_safety_audit.sh",   // Phase 7: memory-safety
+            "test/native/c/run_native_safety_asan.sh"     // Phase 8: ASan variant
+        ).forEach { script ->
+            exec {
+                commandLine("bash", script)
+                workingDir = rootDir
+            }
+        }
     }
 }

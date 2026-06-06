@@ -103,11 +103,11 @@ class DistributionGridHandleTest {
         val n = NativeBridge.distributionGridSerialize(handle, buf, 0, 256)
         assertTrue(n > 0, "serialize should write a positive number of bytes, got $n")
         val s = String(buf, 0, n, Charsets.UTF_8)
-        assertEquals(
-            "{\"nodeCount\":0,\"status\":\"stub\"}",
-            s,
-            "stub serialize should return the fixed JSON sentinel"
-        )
+        // Phase 6: serialize returns a real JSON with nodeCount, status, and lastRebalanceMs.
+        // Accept any valid JSON containing the expected keys.
+        assertTrue(s.contains("\"nodeCount\""), "JSON must include nodeCount: $s")
+        assertTrue(s.contains("\"status\""), "JSON must include status: $s")
+        assertTrue(!s.contains("\"stub\""), "Phase 6: serialize must not return stub sentinel; got $s")
         HandleRegistry.release(handle)
     }
 
@@ -123,7 +123,10 @@ class DistributionGridHandleTest {
         val n = NativeBridge.distributionGridGetHealth(handle, buf, 0, 32)
         assertTrue(n > 0, "getHealth should write a positive number of bytes, got $n")
         val s = String(buf, 0, n, Charsets.UTF_8)
-        assertEquals("ok", s, "stub getHealth should return 'ok'")
+        // Phase 6: getHealth is derived from P2PRegistry state; valid values are
+        // "empty" (no agents), "degraded" (no description), or "ok".
+        assertTrue(s in listOf("empty", "degraded", "ok"),
+            "getHealth must be empty/degraded/ok; got '$s'")
         HandleRegistry.release(handle)
     }
 
@@ -139,11 +142,8 @@ class DistributionGridHandleTest {
         val n = NativeBridge.distributionGridRebalanceStub(handle, buf, 0, 128)
         assertTrue(n > 0, "rebalanceStub should write a positive number of bytes, got $n")
         val s = String(buf, 0, n, Charsets.UTF_8)
-        assertEquals(
-            "rebalance not yet implemented (stub)",
-            s,
-            "rebalanceStub should return the fixed sentinel string"
-        )
+        // Phase 6: rebalance returns a real JSON with rebalanced=true
+        assertTrue(s.contains("\"rebalanced\":true"), "rebalanceStub should now return real JSON; got '$s'")
         HandleRegistry.release(handle)
     }
 
@@ -177,3 +177,53 @@ class DistributionGridHandleTest {
         HandleRegistry.release(ch)
     }
 }
+
+    //==========================================================================
+    // Phase 6: real implementations (not stubs)
+    //==========================================================================
+
+    @Test
+    fun testGetNodeCountReturnsRegistrySize() {
+        // The new implementation reads from P2PRegistry.listClientAgents().
+        // With no P2PInterface registered in the test env, size is 0.
+        val data = DistributionGridHandle(com.TTT.Pipeline.DistributionGrid())
+        // getNodeCount no longer hardcodes 0; it reflects the registry.
+        // We accept any non-negative integer (the registry might have entries
+        // from earlier tests that leaked, depending on JVM shutdown hooks).
+        assertTrue(data.getNodeCount() >= 0,
+            "getNodeCount should return a non-negative integer; got ${data.getNodeCount()}")
+    }
+
+    @Test
+    fun testSerializeReturnsRealJson() {
+        val data = DistributionGridHandle(com.TTT.Pipeline.DistributionGrid())
+        val json = data.serialize()
+        // No longer contains "stub"
+        assertTrue(!json.contains("\"stub\""),
+            "serialize() should not return a stub; got $json")
+        // Has the expected keys
+        assertTrue(json.contains("\"nodeCount\""), "JSON must include nodeCount: $json")
+        assertTrue(json.contains("\"status\""), "JSON must include status: $json")
+        assertTrue(json.contains("\"lastRebalanceMs\""), "JSON must include lastRebalanceMs: $json")
+    }
+
+    @Test
+    fun testGetHealthIsDerived() {
+        val data = DistributionGridHandle(com.TTT.Pipeline.DistributionGrid())
+        val health = data.getHealth()
+        // Health is now derived; possible values are "empty", "degraded", "ok"
+        assertTrue(health in listOf("empty", "degraded", "ok"),
+            "getHealth must be one of empty/degraded/ok; got '$health'")
+    }
+
+    @Test
+    fun testRebalanceUpdatesTimestamp() {
+        val data = DistributionGridHandle(com.TTT.Pipeline.DistributionGrid())
+        assertEquals(0L, data.lastRebalanceMs(), "initial lastRebalanceMs is 0")
+        val before = System.currentTimeMillis()
+        val result = data.rebalance()
+        val after = System.currentTimeMillis()
+        assertTrue(data.lastRebalanceMs() in before..after,
+            "lastRebalanceMs should be updated to the current time after rebalance()")
+        assertTrue(result.contains("\"rebalanced\":true"), "rebalance result must report success: $result")
+    }

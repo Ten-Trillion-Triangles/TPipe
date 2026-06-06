@@ -36,20 +36,30 @@ class AbiParityMatrixTest {
      * TPipe_* C-callable wrapper for methods that carry @CEntryPoint, so
      * this set is the source of truth for "what symbols the .so should
      * contain."
+     *
+     * Each @CEntryPoint in TPipeBootstrap declares its C ABI name
+     * explicitly via `name = "TPipe_*"`. We use that name (not the Java
+     * method name) because it is the name the native-image toolchain
+     * emits into the .so.
      */
     private fun discoverEntryPoints(): List<DiscoveredEntryPoint> {
         return TPipeBootstrap::class.java.declaredMethods
             .filter { it.isAnnotationPresent(CEntryPoint::class.java) }
             .map { method ->
+                val annotation = method.getAnnotation(CEntryPoint::class.java)
+                // name is a required String per @CEntryPoint; defensive default
+                // to method.name only if it's somehow missing.
+                val abiName = annotation.name.takeIf { it.isNotEmpty() } ?: method.name
                 DiscoveredEntryPoint(
-                    name = method.name,
+                    abiName = abiName,
+                    javaName = method.name,
                     paramCount = method.parameterCount,
                     firstParamIsIsolateThread = method.parameterTypes.firstOrNull()
                         ?.let { it == IsolateThread::class.java } ?: false,
                     returnType = method.returnType.simpleName
                 )
             }
-            .sortedBy { it.name }
+            .sortedBy { it.abiName }
     }
 
     /**
@@ -138,26 +148,26 @@ class AbiParityMatrixTest {
         val violations = eps.filter { !it.firstParamIsIsolateThread }
         assertEquals(emptyList(), violations,
             "All @CEntryPoint methods must take IsolateThread as the first parameter; " +
-            "violations: ${violations.map { it.name }}")
+            "violations: ${violations.map { it.abiName }}")
     }
 
     @Test
-    fun testEntryPointNamesAreUnique() {
+    fun testAbiNamesAreUnique() {
         val eps = discoverEntryPoints()
-        val duplicates = eps.groupBy { it.name }
+        val duplicates = eps.groupBy { it.abiName }
             .filter { it.value.size > 1 }
             .keys
         assertEquals(emptySet(), duplicates,
-            "All @CEntryPoint method names must be unique; duplicates: $duplicates")
+            "All @CEntryPoint C ABI names must be unique; duplicates: $duplicates")
     }
 
     @Test
-    fun testEntryPointNamesFollowNamingConvention() {
+    fun testAbiNamesFollowNamingConvention() {
         val eps = discoverEntryPoints()
         val pattern = Regex("""^TPipe_[A-Za-z0-9_]+$""")
-        val violations = eps.map { it.name }.filter { !pattern.matches(it) }
+        val violations = eps.map { it.abiName }.filter { !pattern.matches(it) }
         assertEquals(emptyList(), violations,
-            "All @CEntryPoint names must match $pattern; violations: $violations")
+            "All @CEntryPoint ABI names must match $pattern; violations: $violations")
     }
 
     //==========================================================================
@@ -166,7 +176,7 @@ class AbiParityMatrixTest {
 
     @Test
     fun testEveryDeclaredSymbolHasAJavaEntryPoint() {
-        val eps = discoverEntryPoints().map { it.name }.toSet()
+        val eps = discoverEntryPoints().map { it.abiName }.toSet()
         val declared = discoverDeclaredSymbols(locateHeader()).map { it.first }.toSet()
         val orphans = declared - eps
         assertEquals(emptySet(), orphans,
@@ -176,19 +186,23 @@ class AbiParityMatrixTest {
     }
 
     @Test
-    fun testOrphanSetMatchesDocumentedBaseline() {
-        // The Phase 1 baseline documents two known orphans: TPipe_free and
-        // TPipe_ConverseHistory_create. Phase 2 will resolve them; until
-        // then, the orphan set must be EXACTLY this set, not larger.
-        // This guard rail catches accidental new orphans.
-        val eps = discoverEntryPoints().map { it.name }.toSet()
+    fun testOrphanSetIsEmpty() {
+        // Phase 1 baseline: the orphan set is EMPTY. The prior analysis
+        // noted TPipe_free and TPipe_ConverseHistory_create as orphans;
+        // those have since been resolved (either the Java @CEntryPoint
+        // was added or the header declaration was removed). This guard
+        // rail asserts the empty-set state and fails if a new orphan
+        // is introduced — every declared TPipe_* in tpipe-abi.h must
+        // have a matching @CEntryPoint on TPipeBootstrap.
+        val eps = discoverEntryPoints().map { it.abiName }.toSet()
         val declared = discoverDeclaredSymbols(locateHeader()).map { it.first }.toSet()
         val currentOrphans = declared - eps
-        val documentedOrphans = setOf("TPipe_free", "TPipe_ConverseHistory_create")
-        assertEquals(documentedOrphans, currentOrphans,
-            "Orphan symbol set has drifted from the Phase 1 baseline. " +
-            "If a new orphan was added intentionally, update the documented set; " +
-            "if an orphan was resolved, remove it from the documented set. " +
+        assertEquals(emptySet(), currentOrphans,
+            "Orphan set is no longer empty. Either: " +
+            "(a) a new TPipe_* declaration was added to tpipe-abi.h without a matching " +
+            "@CEntryPoint on TPipeBootstrap (add the Java method), or " +
+            "(b) a @CEntryPoint was removed from TPipeBootstrap but the corresponding " +
+            "header declaration was left behind (remove it from tpipe-abi.h). " +
             "Current orphans: $currentOrphans")
     }
 
@@ -203,7 +217,7 @@ class AbiParityMatrixTest {
             println("Skipping: TPipe.so not found. Run ./gradlew nativeCompile to enable this test.")
             return
         }
-        val eps = discoverEntryPoints().map { it.name }.toSet()
+        val eps = discoverEntryPoints().map { it.abiName }.toSet()
         val exported = discoverExportedSymbols(soFile).toSet()
         val missing = eps - exported
         assertEquals(emptySet(), missing,
@@ -218,7 +232,7 @@ class AbiParityMatrixTest {
             println("Skipping: TPipe.so not found. Run ./gradlew nativeCompile to enable this test.")
             return
         }
-        val eps = discoverEntryPoints().map { it.name }.toSet()
+        val eps = discoverEntryPoints().map { it.abiName }.toSet()
         val exported = discoverExportedSymbols(soFile).toSet()
         val extras = exported - eps
         assertEquals(emptySet(), extras,
@@ -247,19 +261,19 @@ class AbiParityMatrixTest {
             appendLine("T-type TPipe_* symbols in .so:          ${exported.size}")
             appendLine("so path: ${soFile?.absolutePath ?: "(not built)"}")
             appendLine()
-            val orphans = declared.map { it.first }.toSet() - eps.map { it.name }.toSet()
+            val orphans = declared.map { it.first }.toSet() - eps.map { it.abiName }.toSet()
             if (orphans.isNotEmpty()) {
                 appendLine("Orphans (declared in header, no Java entry point):")
                 orphans.sorted().forEach { appendLine("  - $it") }
                 appendLine()
             }
-            val missingFromSo = eps.map { it.name }.toSet() - exported.toSet()
+            val missingFromSo = eps.map { it.abiName }.toSet() - exported.toSet()
             if (missingFromSo.isNotEmpty()) {
                 appendLine("Missing from .so (Java has entry point, binary does not):")
                 missingFromSo.sorted().forEach { appendLine("  - $it") }
                 appendLine()
             }
-            val extraInSo = exported.toSet() - eps.map { it.name }.toSet()
+            val extraInSo = exported.toSet() - eps.map { it.abiName }.toSet()
             if (extraInSo.isNotEmpty()) {
                 appendLine("Extras in .so (binary symbol, no Java entry point):")
                 extraInSo.sorted().forEach { appendLine("  - $it") }
@@ -275,7 +289,8 @@ class AbiParityMatrixTest {
     //==========================================================================
 
     private data class DiscoveredEntryPoint(
-        val name: String,
+        val abiName: String,
+        val javaName: String,
         val paramCount: Int,
         val firstParamIsIsolateThread: Boolean,
         val returnType: String

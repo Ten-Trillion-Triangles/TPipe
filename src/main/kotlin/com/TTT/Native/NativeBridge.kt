@@ -1495,6 +1495,15 @@ object NativeBridge {
         (HandleRegistry.getData(handle) as? DistributionGridHandle)?.getNodeCount() ?: -0x03
 
     /**
+     * Phase 6: returns the timestamp (ms since epoch) of the most
+     * recent rebalance call on the grid, or 0 if none has happened
+     * yet. The C ABI entry point writes this into the caller's
+     * int64_t* via {@code writePtr}.
+     */
+    @JvmStatic fun distributionGridGetLastRebalanceMs(handle: Long): Long =
+        (HandleRegistry.getData(handle) as? DistributionGridHandle)?.lastRebalanceMs() ?: -0x03L
+
+    /**
      * Serialize the DistributionGrid state to a JSON string and copy it
      * into the caller's buffer.
      *

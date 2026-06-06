@@ -59,6 +59,7 @@ typedef int                 (*fn_init_t)(graal_isolatethread_t*);
 typedef int                 (*fn_shutdown_t)(graal_isolatethread_t*);
 typedef TPipe_Handle        (*fn_content_create_t)(graal_isolatethread_t*, const char*);
 typedef int                 (*fn_handle_release_t)(graal_isolatethread_t*, TPipe_Handle);
+typedef int                 (*fn_handle_add_ref_t)(graal_isolatethread_t*, TPipe_Handle);
 typedef int                 (*fn_handle_get_refcount_t)(graal_isolatethread_t*, TPipe_Handle, int*);
 typedef int                 (*fn_handle_is_valid_t)(graal_isolatethread_t*, TPipe_Handle);
 typedef int                 (*fn_attach_thread_t)(graal_isolate_t*, graal_isolatethread_t**);
@@ -70,6 +71,7 @@ typedef struct WorkerCtx {
     fn_handle_release_t       release;
     fn_handle_get_refcount_t  getRefCount;
     fn_handle_is_valid_t      isValid;
+    fn_handle_add_ref_t       addRef;
     fn_attach_thread_t        attach;
     graal_isolate_t*          isolate;
     pthread_barrier_t*        barrier;
@@ -127,6 +129,182 @@ static void* worker_main(void* arg) {
      * probe to run; then we are done. We do NOT detach the thread here
      * because the C ABI may need the isolate attached for cleanup. */
     return (void*) (intptr_t) 0;
+}
+
+
+/*==========================================================================
+ * Shared-handle concurrent-release test
+ *
+ * Allocates a single handle, addRefs it R times, then spawns R threads
+ * each of which calls TPipe_Handle_release exactly once. The handle
+ * starts at refcount = 1 + R. After all threads complete, refcount
+ * must be 0. During the run, no thread should see a negative refcount
+ * (which would indicate an atomic-CAS bug) and no thread should
+ * observe refcount dropping below 0 (underflow protection must
+ * engage).
+ *
+ * This is the test the prior Phase 7 plan called out: "exactly one
+ * observes the final release path." We count the number of threads
+ * whose release call returns 0 (TPIPE_OK = refcount went to 0
+ * exactly once) and assert that count is 1.
+ *==========================================================================*/
+typedef struct {
+    graal_isolate_t* isolate;
+    graal_isolatethread_t* thr;
+    TPipe_Handle handle;
+    int releaseRc;
+    int observedFinalRelease;   /* 1 if THIS thread was the one that drove refcount to 0 */
+} SharedReleaseCtx;
+
+static int (*shared_release_fp)(graal_isolatethread_t*, TPipe_Handle) = NULL;
+static int (*shared_isValid_fp)(graal_isolatethread_t*, TPipe_Handle) = NULL;
+static int (*shared_attach_fp)(graal_isolate_t*, graal_isolatethread_t**) = NULL;
+static int (*shared_detach_fp)(graal_isolatethread_t*) = NULL;
+static graal_isolate_t* shared_isolate_ptr = NULL;
+static void* shared_release_worker(void* arg) {
+    SharedReleaseCtx* ctx = (SharedReleaseCtx*) arg;
+    /* Each worker thread must attach to the isolate before calling
+     * TPipe_* functions. SubstrateVM rejects calls from non-attached
+     * threads (the "Must either be at a safepoint or in native mode"
+     * error). Attach on entry, detach on exit. */
+    graal_isolatethread_t* my_thr = NULL;
+    int ga_rc = shared_attach_fp(ctx->isolate, &my_thr);
+    if (ga_rc != 0 || !my_thr) {
+        fprintf(stderr, "graal_attach_thread failed: %d\n", ga_rc);
+        ctx->releaseRc = -1;
+        return NULL;
+    }
+    int rc = shared_release_fp(my_thr, ctx->handle);
+    ctx->releaseRc = rc;
+    int valid = shared_isValid_fp(my_thr, ctx->handle);
+    if (rc == 0 && valid == 0) {
+        ctx->observedFinalRelease = 1;
+    }
+    shared_detach_fp(my_thr);
+    return NULL;
+}
+
+static int run_shared_handle_concurrent_release(
+    int refCount,
+    fn_content_create_t create_fn,
+    fn_handle_release_t release_fn,
+    fn_handle_add_ref_t addRef_fn,
+    fn_handle_get_refcount_t getRefCount_fn,
+    fn_handle_is_valid_t isValid_fn,
+    fn_attach_thread_t attach_fn,
+    int (*detach_fn_local)(graal_isolatethread_t*),
+    graal_isolate_t* isolate,
+    graal_isolatethread_t* thr) {
+    printf("\n=== Shared-handle concurrent-release (refCount=%d) ===\n", refCount);
+    shared_release_fp = release_fn;
+    shared_isValid_fp = isValid_fn;
+    shared_release_fp = release_fn;
+    shared_isValid_fp = isValid_fn;
+    shared_attach_fp = attach_fn;
+    shared_detach_fp = detach_fn_local;
+    shared_isolate_ptr = isolate;
+    TPipe_Handle h = create_fn(thr, "shared-release-target");
+    if (h == 0) {
+        fprintf(stderr, "create_fn returned 0; cannot test shared release\n");
+        return 1;
+    }
+    /* Boost the refcount. */
+    for (int i = 0; i < refCount - 1; i++) {
+        int rc = addRef_fn(thr, h);
+        if (rc != 0) {
+            fprintf(stderr, "addRef #%d returned %d (expected 0); abort shared release test\n", i, rc);
+            release_fn(thr, h);
+            return 1;
+        }
+    }
+    /* Now refcount = 1 + refCount (1 from create, refCount from addRefs). */
+    int initialRc = 0;
+    int initialRef = 0;
+    getRefCount_fn(thr, h, &initialRef);
+    if (initialRef < refCount + 1) {
+        fprintf(stderr, "post-addRef refcount = %d (expected >= %d)\n", initialRef, refCount + 1);
+    }
+    printf("Setup: refcount=%d before concurrent release\n", initialRef);
+
+    /* Spawn refCount threads, each releases once. */
+    SharedReleaseCtx* ctxs = (SharedReleaseCtx*) calloc(refCount, sizeof(SharedReleaseCtx));
+    pthread_t* tids = (pthread_t*) calloc(refCount, sizeof(pthread_t));
+    if (!ctxs || !tids) {
+        fprintf(stderr, "calloc failed\n");
+        free(ctxs); free(tids);
+        release_fn(thr, h);
+        return 1;
+    }
+    for (int i = 0; i < refCount; i++) {
+        ctxs[i].isolate = shared_isolate_ptr;
+        ctxs[i].thr = thr;
+        ctxs[i].handle = h;
+        ctxs[i].releaseRc = -1;
+        ctxs[i].observedFinalRelease = 0;
+        int prc = pthread_create(&tids[i], NULL, shared_release_worker, &ctxs[i]);
+        if (prc != 0) {
+            fprintf(stderr, "pthread_create #%d failed: %d\n", i, prc);
+            free(ctxs); free(tids);
+            release_fn(thr, h);
+            return 1;
+        }
+    }
+    /* Join all workers. */
+    for (int i = 0; i < refCount; i++) {
+        pthread_join(tids[i], NULL);
+    }
+
+    /* Aggregate results. */
+    int successCount = 0;
+    int finalReleaseObserved = 0;
+    int unexpectedReturnCount = 0;
+    for (int i = 0; i < refCount; i++) {
+        if (ctxs[i].releaseRc == 0) successCount++;
+        else if (ctxs[i].releaseRc != 0) unexpectedReturnCount++;
+        if (ctxs[i].observedFinalRelease) finalReleaseObserved++;
+    }
+    int finalRef = -42;
+    int finalRc = getRefCount_fn(thr, h, &finalRef);
+    printf("After concurrent release:\n");
+    printf("  total releases:        %d\n", refCount);
+    printf("  releases returned 0:   %d (every release should succeed; underflow check)\n", successCount);
+    printf("  final-release observer: %d (exactly one thread should drive refcount to 0)\n", finalReleaseObserved);
+    printf("  unexpected returns:    %d (must be 0)\n", unexpectedReturnCount);
+    printf("  post-run refcount:    %d (rc=%d; expect ERR_INVALID_HANDLE for a freed handle)\n",
+           finalRef, finalRc);
+
+    int localFailed = 0;
+    if (successCount != refCount) {
+        fprintf(stderr, "  [FAIL] only %d of %d releases returned 0\n", successCount, refCount);
+        localFailed++;
+    }
+    if (finalReleaseObserved != 1) {
+        fprintf(stderr, "  [FAIL] expected exactly 1 final-release observer, got %d\n", finalReleaseObserved);
+        localFailed++;
+    }
+    if (unexpectedReturnCount != 0) {
+        fprintf(stderr, "  [FAIL] %d releases returned non-zero (refcount underflow?)\n",
+                unexpectedReturnCount);
+        localFailed++;
+    }
+    if (finalRc != TPIPE_ERR_INVALID_HANDLE) {
+        fprintf(stderr, "  [FAIL] post-run getRefCount returned %d (expected ERR_INVALID_HANDLE)\n", finalRc);
+        localFailed++;
+    }
+    if (localFailed == 0) {
+        printf("  [PASS] shared-handle concurrent release: 1 final observer, no underflow, no leaks\n");
+    }
+
+    free(ctxs);
+    free(tids);
+    /* The handle is already freed (refcount=0). Calling release again
+     * should return ERR_INVALID_HANDLE. */
+    int post = release_fn(thr, h);
+    if (post != TPIPE_ERR_INVALID_HANDLE) {
+        fprintf(stderr, "  [INFO] post-test extra release returned %d (expected ERR_INVALID_HANDLE = %d)\n",
+                post, TPIPE_ERR_INVALID_HANDLE);
+    }
+    return localFailed;
 }
 
 int main(int argc, char** argv) {
@@ -188,8 +366,9 @@ int main(int argc, char** argv) {
     fn_handle_release_t      release_fn       = (fn_handle_release_t)     dlsym(lib, "TPipe_Handle_release");
     fn_handle_get_refcount_t getRefCount_fn   = (fn_handle_get_refcount_t) dlsym(lib, "TPipe_Handle_getRefCount");
     fn_handle_is_valid_t     isValid_fn       = (fn_handle_is_valid_t)    dlsym(lib, "TPipe_Handle_isValid");
+    fn_handle_add_ref_t      addRef_fn        = (fn_handle_add_ref_t)     dlsym(lib, "TPipe_Handle_addRef");
 
-    if (!init_fn || !shutdown_fn || !create_fn || !release_fn || !getRefCount_fn || !isValid_fn) {
+    if (!init_fn || !shutdown_fn || !create_fn || !release_fn || !getRefCount_fn || !isValid_fn || !addRef_fn) {
         fprintf(stderr, "dlsym(TPipe_*) failed: %s\n", dlerror());
         dlclose(lib);
         return 2;
@@ -323,6 +502,19 @@ int main(int argc, char** argv) {
     }
     printf("Post-run probe: all %d sampled handles are gone from the registry (no leaks)\n", numThreads);
 
+    /* ---- shared-handle concurrent release (Phase 7 extension) ----
+     * Run BEFORE TPipe_shutdown so the library is in the READY state
+     * and create_fn actually returns a non-zero handle. */
+    if (run_shared_handle_concurrent_release(16, create_fn, release_fn, addRef_fn, getRefCount_fn, isValid_fn, ga, gd, iso, thr) != 0) {
+        fprintf(stderr, "shared-handle concurrent release test FAILED\n");
+        free(ctxs); free(tids);
+        pthread_barrier_destroy(&barrier);
+        gd(thr); gti(thr); dlclose(lib);
+        return 1;
+    }
+
+
+
     /* ---- TPipe_shutdown ---- */
     rc = shutdown_fn(thr);
     if (rc != 0) {
@@ -341,7 +533,7 @@ int main(int argc, char** argv) {
     /* Print success BEFORE teardown — SubstrateVM may abort during teardown
      * due to a known issue with non-Java threads, but the concurrency result
      * is already established by this point. */
-    printf("TPipe concurrency test passed (%d threads, %d handles each, no crashes, no leaks)\n",
+        printf("TPipe concurrency test passed (%d threads, %d handles each, no crashes, no leaks)\n",
            numThreads, perThread);
     fflush(stdout); fflush(stderr);
 
