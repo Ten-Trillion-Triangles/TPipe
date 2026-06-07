@@ -2,12 +2,12 @@
 <metadata>
   <groupId>com.github.ten-trillion-triangles</groupId>
   <artifactId>TPipe</artifactId>
-  <version>TPipe-Community-1.0.4</version>
+  <version>TPipe-Community-1.0.5</version>
   <versioning>
-    <latest>TPipe-Community-1.0.4</latest>
-    <release>TPipe-Community-1.0.4</release>
+    <latest>TPipe-Community-1.0.5</latest>
+    <release>TPipe-Community-1.0.5</release>
     <versions>
-      <version>TPipe-Community-1.0.4</version>
+      <version>TPipe-Community-1.0.5</version>
     </versions>
   </versioning>
 </metadata>

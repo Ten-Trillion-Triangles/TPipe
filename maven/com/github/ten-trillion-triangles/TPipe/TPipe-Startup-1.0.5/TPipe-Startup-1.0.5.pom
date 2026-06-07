@@ -9,6 +9,6 @@
   <description>TPipe - Agent Operating Environment for LLM orchestration - Startup tier</description>
   <url>https://github.com/Ten-Trillion-Triangles/TPipe</url>
   <distributionManagement>
-    <downloadUrl>https://github.com/Ten-Trillion-Triangles/TPipe/releases/download/TPipe-Startup-1.0.5/TPipe-TPipe-Startup-1.0.5.jar</downloadUrl>
+    <downloadUrl>https://github.com/Ten-Trillion-Triangles/TPipe/releases/download/TPipe-Startup-1.0.5/TPipe-Startup-1.0.5.jar</downloadUrl>
   </distributionManagement>
 </project>
