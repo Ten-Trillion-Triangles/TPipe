@@ -25,7 +25,23 @@ data class GenericOpenAIChatResponse(
     val choices: List<ChatChoice>,
     val usage: UsageInfo? = null,
     @SerialName("system_fingerprint")
-    val systemFingerprint: String? = null
+    val systemFingerprint: String? = null,
+    /**
+     * Model reasoning text (chain-of-thought) for reasoning-capable models.
+     *
+     * Populated by the OpenAI Responses parser by concatenating every
+     * `reasoning_text` part in every `reasoning` output item. Null when the
+     * model did not emit reasoning (e.g. non-reasoning models or when
+     * reasoning is disabled). The pipe surfaces this on
+     * `MultimodalContent.modelReasoning` so the base `Pipe.trace` auto-traces
+     * it as `reasoningContent`.
+     *
+     * Marked `@Transient` so the field is round-tripped when the response is
+     * embedded inside a serialised `MultimodalContent` but ignored when the
+     * response itself is serialised (it is not part of the OpenAI wire spec).
+     */
+    @kotlinx.serialization.Transient
+    val reasoningContent: String? = null
 )
 
 /**

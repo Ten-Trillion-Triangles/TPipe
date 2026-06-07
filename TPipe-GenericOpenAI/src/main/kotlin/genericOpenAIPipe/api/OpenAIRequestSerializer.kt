@@ -15,6 +15,15 @@ class OpenAIRequestSerializer : RequestSerializer
                 val anthropicRequest = AnthropicMessagesRequest.fromGenericOpenAI(request)
                 serialize(anthropicRequest, encodedefault = false)
             }
+            is ApiMode.OpenAIResponses ->
+            {
+                // OpenAIRequestSerializer does not own the Responses wire spec —
+                // delegate to the dedicated Responses serializer so callers that
+                // accidentally route Responses requests through this class still
+                // emit a well-formed body.
+                val responsesSerializer = OpenAIResponsesRequestSerializer()
+                responsesSerializer.serialize(request, apiMode)
+            }
         }
     }
 }

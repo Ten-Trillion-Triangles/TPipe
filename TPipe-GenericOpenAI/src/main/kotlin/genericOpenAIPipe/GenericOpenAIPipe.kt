@@ -11,8 +11,10 @@ import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import genericOpenAIPipe.env.*
 import genericOpenAIPipe.api.ApiMode
+import genericOpenAIPipe.api.OpenAIResponsesSseParser
 import genericOpenAIPipe.api.RequestSerializer
 import genericOpenAIPipe.api.ResponseParser
+import genericOpenAIPipe.env.OpenAIResponsesStreamEvent
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -66,6 +68,10 @@ class GenericOpenAIPipe : Pipe()
      */
     @kotlinx.serialization.Serializable
     private var streamingEnabled: Boolean = false
+    private var streamingReasoning: String = ""
+    private var streamingInputTokens: Int = 0
+    private var streamingOutputTokens: Int = 0
+    private var streamingReasoningTokens: Int = 0
 
     /**
      * Function calling tool definitions.
@@ -182,6 +188,7 @@ class GenericOpenAIPipe : Pipe()
         return when(apiMode)
         {
             is ApiMode.OpenAI -> mapOf("Authorization" to "Bearer $apiKey")
+            is ApiMode.OpenAIResponses -> mapOf("Authorization" to "Bearer $apiKey")
             is ApiMode.Anthropic -> mapOf(
                 "x-api-key" to apiKey,
                 "anthropic-version" to "2023-06-01"
@@ -202,6 +209,7 @@ class GenericOpenAIPipe : Pipe()
         return when(apiMode)
         {
             is ApiMode.OpenAI -> "/chat/completions"
+            is ApiMode.OpenAIResponses -> "/responses"
             is ApiMode.Anthropic -> "/anthropic/v1/messages"
         }
     }
@@ -587,7 +595,13 @@ class GenericOpenAIPipe : Pipe()
                   "model" to model,
                   "baseUrl" to baseUrl,
                   "promptLength" to promptInjector.length,
-                  "streaming" to streamingEnabled
+                  "streaming" to streamingEnabled,
+                  "apiType" to when(apiMode)
+                  {
+                      is ApiMode.OpenAI -> "ChatAPI"
+                      is ApiMode.OpenAIResponses -> "ResponsesAPI"
+                      is ApiMode.Anthropic -> "AnthropicAPI"
+                  }
               ))
 
         return try
@@ -687,19 +701,43 @@ class GenericOpenAIPipe : Pipe()
                 val outputTokens = usage?.completionTokens ?: 0
                 val totalTokens = usage?.totalTokens ?: 0
 
+                val reasoningContent = response.reasoningContent ?: ""
+                val result = com.TTT.Pipe.MultimodalContent(
+                    text = contentText,
+                    modelReasoning = reasoningContent
+                )
+
+                val successMetadata = mutableMapOf<String, Any>(
+                    "inputTokens" to inputTokens,
+                    "outputTokens" to outputTokens,
+                    "totalTokens" to totalTokens,
+                    "responseLength" to contentText.length,
+                    "model" to response.model,
+                    "success" to true,
+                    "apiType" to when(apiMode)
+                    {
+                        is ApiMode.OpenAI -> "ChatAPI"
+                        is ApiMode.OpenAIResponses -> "ResponsesAPI"
+                        is ApiMode.Anthropic -> "AnthropicAPI"
+                    },
+                    "finishReason" to (response.choices.firstOrNull()?.finishReason ?: "unknown"),
+                    "stopReason" to (response.choices.firstOrNull()?.finishReason ?: "unknown"),
+                    "responseId" to (response.id ?: "unknown"),
+                    "systemFingerprint" to (response.systemFingerprint ?: "none")
+                )
+                if(reasoningContent.isNotEmpty())
+                {
+                    successMetadata["reasoningLength"] = reasoningContent.length
+                    successMetadata["reasoningSupported"] = true
+                }
+                if(response.usage?.completionTokensDetails?.reasoningTokens != null)
+                {
+                    successMetadata["reasoningTokens"] = response.usage!!.completionTokensDetails!!.reasoningTokens!!
+                }
+
                 trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
-                      metadata = mapOf(
-                          "inputTokens" to inputTokens,
-                          "outputTokens" to outputTokens,
-                          "totalTokens" to totalTokens,
-                          "responseLength" to contentText.length,
-                          "model" to response.model,
-                          "success" to true,
-                          "apiType" to "ChatAPI",
-                          "finishReason" to (response.choices.firstOrNull()?.finishReason ?: "unknown"),
-                          "responseId" to (response.id ?: "unknown"),
-                          "systemFingerprint" to (response.systemFingerprint ?: "none")
-                      ))
+                      content = result,
+                      metadata = successMetadata)
 
                 return contentText
             }
@@ -731,7 +769,6 @@ class GenericOpenAIPipe : Pipe()
      */
     private suspend fun executeStreaming(httpResponse: HttpResponse): String
     {
-        System.err.println("DEBUG: HTTP response status = ${httpResponse.status}")
         val channel = httpResponse.bodyAsChannel()
         val textBuilder = StringBuilder()
 
@@ -739,29 +776,59 @@ class GenericOpenAIPipe : Pipe()
               metadata = mapOf(
                   "step" to "streamingStart",
                   "streaming" to true,
-                  "apiMode" to when(apiMode) { is ApiMode.OpenAI -> "OpenAI"; is ApiMode.Anthropic -> "Anthropic" }
+                  "apiMode" to when(apiMode) { is ApiMode.OpenAI -> "OpenAI"; is ApiMode.OpenAIResponses -> "OpenAIResponses"; is ApiMode.Anthropic -> "Anthropic" }
               ))
 
-        System.err.println("DEBUG: apiMode at executeStreaming = $apiMode")
-        System.err.println("DEBUG: HTTP response status = ${httpResponse.status}")
         // Branch on apiMode: Anthropic uses AnthropicSseParser with different SSE format
         // OpenAI uses existing SseParser path
+        // OpenAIResponses uses OpenAIResponsesSseParser with response.* event names
         when(apiMode)
         {
-            is ApiMode.Anthropic -> { System.err.println("DEBUG: branching to executeStreamingAnthropic"); executeStreamingAnthropic(channel, textBuilder) }
+            is ApiMode.Anthropic -> executeStreamingAnthropic(channel, textBuilder)
             is ApiMode.OpenAI -> executeStreamingOpenAI(channel, textBuilder)
+            is ApiMode.OpenAIResponses -> executeStreamingOpenAIResponses(channel, textBuilder)
         }
 
         val resultText = textBuilder.toString()
 
+        val streamingReasoningText = if(apiMode is ApiMode.OpenAIResponses) streamingReasoning else ""
+        val streamingInputTok = if(apiMode is ApiMode.OpenAIResponses) streamingInputTokens else 0
+        val streamingOutputTok = if(apiMode is ApiMode.OpenAIResponses) streamingOutputTokens else 0
+        val streamingReasonTok = if(apiMode is ApiMode.OpenAIResponses) streamingReasoningTokens else 0
+
+        val result = com.TTT.Pipe.MultimodalContent(
+            text = resultText,
+            modelReasoning = streamingReasoningText
+        )
+
+        val streamingMetadata = mutableMapOf<String, Any>(
+            "inputTokens" to streamingInputTok,
+            "outputTokens" to streamingOutputTok,
+            "totalTokens" to (streamingInputTok + streamingOutputTok),
+            "responseLength" to resultText.length,
+            "model" to model,
+            "streaming" to true,
+            "success" to true,
+            "apiType" to when(apiMode)
+            {
+                is ApiMode.OpenAI -> "ChatAPI"
+                is ApiMode.OpenAIResponses -> "ResponsesAPI"
+                is ApiMode.Anthropic -> "AnthropicAPI"
+            }
+        )
+        if(streamingReasoningText.isNotEmpty())
+        {
+            streamingMetadata["reasoningLength"] = streamingReasoningText.length
+            streamingMetadata["reasoningSupported"] = true
+        }
+        if(streamingReasonTok > 0)
+        {
+            streamingMetadata["reasoningTokens"] = streamingReasonTok
+        }
+
         trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
-              metadata = mapOf(
-                  "responseLength" to resultText.length,
-                  "model" to model,
-                  "streaming" to true,
-                  "success" to true,
-                  "apiType" to "ChatAPI"
-              ))
+              content = result,
+              metadata = streamingMetadata)
 
         return resultText
     }
@@ -898,6 +965,94 @@ class GenericOpenAIPipe : Pipe()
         }
     }
 
+    /**
+     * Handles streaming response for [ApiMode.OpenAIResponses].
+     * Uses the OpenAI Responses SSE format: `event: <type>` + `data: <json>` lines
+     * (or bare `data:` lines with `type` inside the JSON), terminated by
+     * `response.completed` / `response.failed`.
+     *
+     * Only [OpenAIResponsesStreamEvent.ResponseOutputTextDelta] deltas are appended
+     * to [textBuilder]; every other event is ignored. Errors are thrown by the parser
+     * (via [P2PException]) and abort the stream.
+     *
+     * @param channel The HTTP response channel
+     * @param textBuilder Accumulator for response text
+     */
+    private suspend fun executeStreamingOpenAIResponses(
+        channel: ByteReadChannel,
+        textBuilder: StringBuilder
+    )
+    {
+        // Reset cross-call state so a previous aborted stream does not leak.
+        streamingReasoning = ""
+        streamingInputTokens = 0
+        streamingOutputTokens = 0
+        streamingReasoningTokens = 0
+
+        val reasoningBuilder = StringBuilder()
+        var totalInputTokens = 0
+        var totalOutputTokens = 0
+        var totalReasoningTokens = 0
+
+        while(!channel.isClosedForRead)
+        {
+            val line = channel.readUTF8Line() ?: break
+            val event = try
+            {
+                OpenAIResponsesSseParser.parseLine(line)
+            }
+            catch(e: P2PException)
+            {
+                throw e
+            }
+            catch(e: Exception)
+            {
+                // Malformed single line should not kill the whole stream; skip it.
+                continue
+            }
+
+            when(event)
+            {
+                is OpenAIResponsesStreamEvent.ResponseOutputTextDelta ->
+                {
+                    if(event.delta.isNotEmpty())
+                    {
+                        textBuilder.append(event.delta)
+                        emitStreamingChunk(event.delta)
+                    }
+                }
+                is OpenAIResponsesStreamEvent.ResponseReasoningTextDelta ->
+                {
+                    if(event.delta.isNotEmpty())
+                    {
+                        reasoningBuilder.append(event.delta)
+                    }
+                }
+                is OpenAIResponsesStreamEvent.ResponseCompleted ->
+                {
+
+                    val usage = event.response.usage
+                    if(usage != null)
+                    {
+                        totalInputTokens = usage.inputTokens
+                        totalOutputTokens = usage.outputTokens
+                        totalReasoningTokens = usage.outputTokensDetails?.reasoningTokens ?: 0
+                    }
+                    break
+                }
+                is OpenAIResponsesStreamEvent.ResponseFailed -> break
+                else -> { /* Unknown / lifecycle / function-call: keep reading */ }
+            }
+        }
+
+        // Surface the accumulated reasoning on the trace event so it lands in
+        // the trace as `reasoningContent` via the base Pipe class auto-trace.
+        streamingReasoning = reasoningBuilder.toString()
+        streamingInputTokens = totalInputTokens
+        streamingOutputTokens = totalOutputTokens
+        streamingReasoningTokens = totalReasoningTokens
+    }
+
 //=========================================Context Management==========================================================
 
     /**
@@ -950,5 +1105,62 @@ class GenericOpenAIPipe : Pipe()
     override fun cleanPromptText(content: MultimodalContent): MultimodalContent
     {
         return content
+    }
+
+//=========================================Test Helpers=========================================================================
+// Package-private helpers used by `OpenAIResponsesPipeDispatchTest` and friends to drive
+// the pipe without a real HTTP server. They are intentionally minimal — they only expose
+// the seams the test suite actually uses (endpoint / auth-header introspection,
+// HTTP-client injection, suspendable init/abort, and a non-`Pipeline` text generation
+// path that bypasses `Pipeline.execute` so MockEngine round-trips stay synchronous).
+
+    /**
+     * Returns the endpoint the pipe would POST to, for the current [apiMode].
+     * Visible only to tests in the same module.
+     */
+    fun internalGetEndpointForTest(): String = getEndpoint()
+
+    /**
+     * Returns the auth headers the pipe would attach, for the current [apiMode].
+     * Visible only to tests in the same module.
+     */
+    fun internalGetAuthHeadersForTest(): Map<String, String> = getAuthHeaders()
+
+    /**
+     * Replaces the internal Ktor [HttpClient] with a caller-supplied one. The pipe
+     * does not own the new client — the caller is responsible for closing it.
+     * Visible only to tests in the same module.
+     */
+    fun injectHttpClientForTest(client: HttpClient)
+    {
+        httpClient = client
+    }
+
+    /**
+     * Suspending wrapper around [init] used by tests that need the pipe fully
+     * initialised without going through `Pipeline.init(true)`.
+     */
+    suspend fun initForTest()
+    {
+        init()
+    }
+
+    /**
+     * Suspending wrapper around [abort] used by tests so the test does not need
+     * a `runBlocking { abort() }` boilerplate.
+     */
+    suspend fun abortForTest()
+    {
+        abort()
+    }
+
+    /**
+     * Drives a single text generation through the pipe. Equivalent to
+     * [generateText] but exposed to the test suite so dispatch tests can run
+     * without standing up a full [com.TTT.Pipeline.Pipeline].
+     */
+    suspend fun generateTextForTest(prompt: String): String
+    {
+        return generateText(prompt)
     }
 }
