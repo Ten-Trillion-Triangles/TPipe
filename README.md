@@ -190,8 +190,8 @@ dependencies {
 
 TPipe is triple-licensed to meet the needs of both open-source developers and enterprise organizations.
 
-*   **Open Source**: Licensed under the **GNU Affero General Public License v3 (AGPL-3.0)**.
-*   **Startup**: Free closed-source license for companies under $1M annual revenue — see [TPipe Pricing](https://tentrilliontriangles.com/pricing).
-*   **Commercial**: For closed-source applications and proprietary integrations above $1M revenue. See [TPipe Pricing](https://tentrilliontriangles.com/pricing) for tiers and terms.
+*   **Open Source (AGPL-3.0)**: Free, requires derivative works to also be open-source.
+*   **Startup**: Free closed-source for companies under $1M annual revenue. Also available to OSI-approved FOSS projects using TPipe as a dependency — see the [TPipe Startup License](https://www.tentrilliontriangles.com/licenses/LICENSE.TPipe-Startup.txt) for conditions.
+*   **Commercial**: Above $1M revenue — see [TPipe Pricing](https://tentrilliontriangles.com/pricing) for tiers and terms.
 
 Contact [contact@tentrilliontriangles.com](mailto:contact@tentrilliontriangles.com) for commercial and enterprise inquiries.
