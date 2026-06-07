@@ -80,6 +80,12 @@ Allows pipeline to exit early without error. Useful when additional steps are un
 ```
 When true, the reasoning pipe's output is discarded before injection. The parent pipe's main LLM call proceeds as if no reasoning pipe was attached. Useful for conditional reasoning where runtime state determines whether reasoning output should be used.
 
+**`interuptPipeline`**
+```kotlin
+@Serializable var interuptPipeline: Boolean = false
+```
+Signals an interrupt to the pipeline runtime. Used by `PumpStation` to trigger built-in path interventions, interrupt stages, or other harness-level events. Unlike `terminatePipeline`, this does not fail the pipeline — it signals that a specialized handler should activate.
+
 ### Context Management
 
 **`context`**
@@ -197,6 +203,26 @@ pipe.setTransformationFunction { content ->
 
 **See Also:** [Skipping Reasoning Pipes](../core-concepts/reasoning-pipes.md#skipping-reasoning-pipes)
 
+#### `interupt()`
+Triggers an interrupt signal picked up by the pipeline runtime.
+
+**Behavior:** Sets `interuptPipeline = true`. Unlike `terminate()`, this does not stop the pipeline — it signals `PumpStation` to activate a specialized harness path or intervention point. Use this to redirect pipeline flow without failing.
+
+**Example:**
+```kotlin
+content.interupt()  // Signal PumpStation to handle this content specially
+```
+
+#### `terminateAndPassPipeline()`
+Marks content to exit the pipeline early with success status.
+
+**Behavior:** Sets `passPipeline = true`, causing the pipeline to exit cleanly without being treated as an error. Use this when a task is complete and no further processing is needed.
+
+**Example:**
+```kotlin
+content.terminateAndPassPipeline()  // Pipeline exits successfully
+```
+
 ---
 
 ### Content Queries
@@ -255,10 +281,58 @@ Creates a deep copy of this content object.
 
 **Behavior:** Uses serialization/deserialization for deep copying. Returns null if serialization fails. Useful for snapshots and state preservation.
 
+#### `saveSnapshot()`
+Forces a snapshot save to metadata.
+
+**Behavior:** Stores a deep copy of this content object under `metadata["snapshot"]`. Unlike `useSnapshot` (which triggers auto-save before LLM processing), this lets you explicitly save at any time. Overwrites any existing snapshot. Doubles memory usage while the snapshot is held.
+
+**Example:**
+```kotlin
+content.saveSnapshot()  // Explicitly preserve current state
+```
+
 #### `getSnapshot(): MultimodalContent?`
-Retrieves snapshot from metadata if present.
+Retrieves a previously saved snapshot.
 
-**Behavior:** Helper function that extracts snapshot stored in `metadata["snapshot"]` by the pipe execution system when `useSnapshot = true`.
+**Behavior:** Returns the content stored under `metadata["snapshot"]`, or null if no snapshot exists.
+
+**Example:**
+```kotlin
+val saved = content.getSnapshot()
+if (saved != null) {
+    content.merge(saved)  // Restore prior state
+}
+```
+
+#### `deleteSnapshot()`
+Deletes the stored snapshot from metadata.
+
+**Behavior:** Removes `metadata["snapshot"]`. Call this when the snapshot is no longer needed to free memory.
+
+#### `setDistributionGridDirective(directive: DistributionGridDirective)`
+Sets a `DistributionGridDirective` into content metadata for communication with `DistributionGrid`.
+
+**Behavior:** Stores the directive under `metadata["distributionGridDirective"]`. The grid reads this after your router pipeline returns to determine routing. This helper abstracts the magic string so you don't need to remember it.
+
+**Example:**
+```kotlin
+content.setDistributionGridDirective(
+    DistributionGridDirective(kind = DistributionGridDirectiveKind.RUN_LOCAL_WORKER)
+)
+```
+
+#### `getDistributionGridDirective(): DistributionGridDirective?`
+Retrieves a `DistributionGridDirective` from content metadata.
+
+**Behavior:** Returns the directive stored by a prior call to `setDistributionGridDirective()`, or null if none was set.
+
+**Example:**
+```kotlin
+val directive = content.getDistributionGridDirective()
+if (directive != null) {
+    // Grid set a routing decision
+}
+```
+
 ## Next Steps
-
 - [ContextWindow API](context-window.md) - Continue into memory and context operations.
