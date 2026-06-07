@@ -75,7 +75,23 @@ data class TruncationSettings(
          var fillMode: Boolean = false,
          var fillAndSplitMode: Boolean = false,
          var multiPageBudgetStrategy: MultiPageBudgetStrategy? = null,
-         var pageWeights: Map<String, Double>? = null)
+         var pageWeights: Map<String, Double>? = null,
+         /**
+          * Optional locale tag (e.g. "en", "ja", "es") that selects a bundled wordlist at classpath
+          * location `/Words-{locale}.txt` for tokenization and truncation. When set, takes priority
+          * over [dictionaryPath]. When the matching classpath resource is missing, the first call
+          * that resolves this settings instance throws [IllegalArgumentException]. When both this
+          * and [dictionaryPath] are null/blank, the bundled default dictionary (`/Words.txt`) is used.
+          */
+         var dictionaryLocale: String? = null,
+         /**
+          * Optional absolute or working-directory-relative path to a UTF-8 newline-delimited wordlist
+          * file used for tokenization and truncation. Only consulted when [dictionaryLocale] is null
+          * or blank. If the file is missing or unreadable, the first call that resolves this settings
+          * instance throws [IllegalArgumentException]. When both this and [dictionaryLocale] are
+          * null/blank, the bundled default dictionary (`/Words.txt`) is used.
+          */
+         var dictionaryPath: String? = null)
 
 /**
  * Data class that defines how advanced token budgeting is applied. In this scheme the user prompt, and system prompt
