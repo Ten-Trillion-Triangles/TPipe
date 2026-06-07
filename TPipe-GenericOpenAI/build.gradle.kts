@@ -28,8 +28,9 @@ repositories {
 dependencies {
     testImplementation(kotlin("test"))
     testImplementation("io.mockk:mockk:1.13.9")
+    testImplementation("io.ktor:ktor-client-mock:3.1.3")
     implementation(project(":"))
-    
+
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")

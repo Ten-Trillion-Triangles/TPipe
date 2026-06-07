@@ -39,6 +39,7 @@ interface ResponseParser
         private val anthropicResponseParser = AnthropicResponseParser(Json {
 
         })
+        private val openAIResponsesResponseParser = OpenAIResponsesResponseParser()
 
         fun create(): ResponseParser = object : ResponseParser
         {
@@ -48,6 +49,7 @@ interface ResponseParser
                 {
                     is ApiMode.OpenAI -> openAIResponseParser.parse(response, apiMode)
                     is ApiMode.Anthropic -> anthropicResponseParser.parse(response, apiMode)
+                    is ApiMode.OpenAIResponses -> openAIResponsesResponseParser.parse(response, apiMode)
                 }
             }
         }

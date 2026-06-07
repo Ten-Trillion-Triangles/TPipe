@@ -8,6 +8,7 @@ import genericOpenAIPipe.env.GenericOpenAIChatRequest
  * Implementations handle provider-specific serialization requirements:
  * - [ApiMode.OpenAI]: Standard OpenAI chat completions format
  * - [ApiMode.Anthropic]: Anthropic messages API format
+ * - [ApiMode.OpenAIResponses]: OpenAI Responses API format
  *
  * This follows the Strategy pattern, allowing runtime selection of serialization
  * behavior based on the target API provider.
@@ -27,6 +28,7 @@ interface RequestSerializer
     {
         private val openAIRequestSerializer = OpenAIRequestSerializer()
         private val anthropicRequestSerializer = AnthropicRequestSerializer()
+        private val openAIResponsesRequestSerializer = OpenAIResponsesRequestSerializer()
 
         fun create(): RequestSerializer = object : RequestSerializer
         {
@@ -36,6 +38,7 @@ interface RequestSerializer
                 {
                     is ApiMode.OpenAI -> openAIRequestSerializer.serialize(request, apiMode)
                     is ApiMode.Anthropic -> anthropicRequestSerializer.serialize(request, apiMode)
+                    is ApiMode.OpenAIResponses -> openAIResponsesRequestSerializer.serialize(request, apiMode)
                 }
             }
         }

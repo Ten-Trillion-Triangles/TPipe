@@ -14,8 +14,8 @@ import kotlinx.serialization.Serializable
 sealed class ApiMode
 {
     /**
-     * OpenAI-compatible API mode (default).
-     * Uses standard OpenAI chat completions format.
+     * OpenAI-compatible chat completions API mode (default).
+     * Uses standard OpenAI chat completions format at `/v1/chat/completions`.
      */
     data object OpenAI : ApiMode()
     {
@@ -27,9 +27,20 @@ sealed class ApiMode
 
     /**
      * Anthropic API mode.
-     * Uses Anthropic messages format with different request/response structure.
+     * Uses Anthropic messages format at `/anthropic/v1/messages`.
      */
     data object Anthropic : ApiMode()
+
+    /**
+     * OpenAI Responses API mode.
+     * Uses the OpenAI Responses wire spec at `/v1/responses` with `input` items,
+     * top-level `instructions`, and a streaming protocol driven by
+     * `response.created` / `response.output_text.delta` / `response.completed`
+     * events. Same Bearer-token auth as the chat-completions mode.
+     *
+     * @see <a href="https://platform.openai.com/docs/api-reference/responses">OpenAI Responses API</a>
+     */
+    data object OpenAIResponses : ApiMode()
 
     companion object
     {
