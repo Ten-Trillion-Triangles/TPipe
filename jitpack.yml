@@ -1,3 +1,4 @@
 before_install:
   - sdk install java 24-open
   - sdk use java 24-open
+  - export GRADLE_VERSION=8.14.3
