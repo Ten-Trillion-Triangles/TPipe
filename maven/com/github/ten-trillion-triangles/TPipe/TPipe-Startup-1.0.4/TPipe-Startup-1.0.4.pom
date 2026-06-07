@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.github.ten-trillion-triangles</groupId>
   <artifactId>TPipe</artifactId>
-  <version>TPipe-Startup-1.0.3</version>
+  <version>TPipe-Startup-1.0.4</version>
   <packaging>jar</packaging>
   <name>TPipe (Startup)</name>
   <description>TPipe - Agent Operating Environment for LLM orchestration - Startup tier</description>
