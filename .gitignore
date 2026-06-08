@@ -101,3 +101,6 @@ Abi/PARITY-CYCLE*.md
 Abi/ParityWorklist.md
 Abi/REVIEW-graalvm-abi-*.md
 Abi/ULTRAQA-REPORT-*.md
+
+# LLM-generated verification scripts (per-session debugging tools).
+Abi/lldb/

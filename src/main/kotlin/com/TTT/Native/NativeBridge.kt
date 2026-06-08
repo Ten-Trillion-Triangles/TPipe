@@ -420,7 +420,8 @@ object NativeBridge {
      * Returns the number of bytes written (the C entry point may append a
      * null terminator separately), or a negative error code.
      */
-    @JvmStatic fun pipeGetSystemPrompt(handle: Long, buf: ByteArray?, offset: Int, maxLen: Int): Int {
+    @JvmStatic fun pipeGetSystemPrompt(handle: Long, buf: ByteArray?, offset: Int, maxLen: Int): Int
+    {
         if (buf == null) return -0x05
         if (maxLen <= 0) return -0x04
         val s = (HandleRegistry.getData(handle) as? PipeHandle)?.getSystemPrompt() ?: return -0x03
@@ -487,6 +488,100 @@ object NativeBridge {
      */
     @JvmStatic fun pipeSetStopSequences(handle: Long, text: String?): Int =
         (HandleRegistry.getData(handle) as? PipeHandle)?.setStopSequences(text ?: "") ?: -0x03
+
+    //====================================================================
+    // Cycle 5 — Pipe JSON / multimodal / binary surface
+    //====================================================================
+
+    /**
+     * C ABI: `TPipe_Pipe_setJsonInput(handle, json)`.
+     * See [PipeHandle.setJsonInput].
+     */
+    @JvmStatic fun pipeSetJsonInput(handle: Long, json: String?): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setJsonInput(json ?: "") ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_setJsonOutput(handle, json)`.
+     * See [PipeHandle.setJsonOutput].
+     */
+    @JvmStatic fun pipeSetJsonOutput(handle: Long, json: String?): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setJsonOutput(json ?: "") ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_setJsonInputInstructions(handle, text)`.
+     * See [PipeHandle.setJsonInputInstructions].
+     */
+    @JvmStatic fun pipeSetJsonInputInstructions(handle: Long, text: String?): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setJsonInputInstructions(text ?: "") ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_setJsonOutputInstructions(handle, text)`.
+     * See [PipeHandle.setJsonOutputInstructions].
+     */
+    @JvmStatic fun pipeSetJsonOutputInstructions(handle: Long, text: String?): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setJsonOutputInstructions(text ?: "") ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_requireJsonPromptInjection(handle, stripExternalText)`.
+     * `stripExternalText` is 0 or 1. See [PipeHandle.requireJsonPromptInjection].
+     */
+    @JvmStatic fun pipeRequireJsonPromptInjection(handle: Long, stripExternalText: Int): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.requireJsonPromptInjection(stripExternalText) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_setMultimodalInput(handle, content)`.
+     * Resolves the Content handle, builds a [com.TTT.Pipe.MultimodalContent],
+     * and passes it to [PipeHandle.setMultimodalInput].
+     * Returns `TPIPE_ERR_TYPE_MISMATCH` (-0x13) when the content handle
+     * is the wrong type.
+     */
+    @JvmStatic fun pipeSetMultimodalInput(handle: Long, content: Long): Int
+    {
+        val ph = HandleRegistry.getData(handle) as? PipeHandle ?: return -0x03
+        if (content != 0L && HandleRegistry.getType(content) != HandleTypes.CONTENT) return -0x13
+        val mc = (HandleRegistry.getData(content) as? ContentHandle)?.toMultimodalContent() ?: return -0x05
+        return ph.setMultimodalInput(mc)
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_getCachedInput(handle)` (writes Content handle id
+     * to the caller's `TPipe_ContentHandle*` out parameter).
+     * Allocates a fresh Content handle wrapping the cached input and
+     * returns its positive handle id, or a negative error code:
+     *   - -0x03 INVALID_HANDLE  (null pipe)
+     *   - -0x01 INTERNAL        (allocation failed)
+     */
+    @JvmStatic fun pipeGetCachedInput(handle: Long): Long =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.getCachedInput() ?: -0x03L
+
+    /**
+     * C ABI: `TPipe_Pipe_setMergedPcpJsonInstructions(handle, text)`.
+     * See [PipeHandle.setMergedPcpJsonInstructions].
+     */
+    @JvmStatic fun pipeSetMergedPcpJsonInstructions(handle: Long, text: String?): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setMergedPcpJsonInstructions(text ?: "") ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_cacheInput(handle)`.
+     * See [PipeHandle.cacheInput].
+     */
+    @JvmStatic fun pipeCacheInput(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.cacheInput() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_forceCacheInput(handle, content)`.
+     * Resolves the Content handle, builds a [com.TTT.Pipe.MultimodalContent],
+     * and passes it to [PipeHandle.forceCacheInput].
+     * Returns `TPIPE_ERR_TYPE_MISMATCH` (-0x13) when the content handle
+     * is the wrong type.
+     */
+    @JvmStatic fun pipeForceCacheInput(handle: Long, content: Long): Int
+    {
+        val ph = HandleRegistry.getData(handle) as? PipeHandle ?: return -0x03
+        if (content != 0L && HandleRegistry.getType(content) != HandleTypes.CONTENT) return -0x13
+        val mc = (HandleRegistry.getData(content) as? ContentHandle)?.toMultimodalContent() ?: return -0x05
+        return ph.forceCacheInput(mc)
+    }
 
     @JvmStatic fun pipeInit(pipe: Long, content: Long, context: Long): Int {
         if (HandleRegistry.getData(pipe) !is PipeHandle) return -0x03

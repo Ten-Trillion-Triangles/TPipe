@@ -315,4 +315,259 @@ class PipeHandleTest
         val rc = NativeBridge.pipeSetStopSequences(0L, "X")
         assertEquals(-0x03, rc)
     }
+
+
+    //==========================================================================
+    // Cycle 5 — Pipe JSON / multimodal / binary surface
+    //==========================================================================
+
+    @Test
+    fun testTPipe_Pipe_setJsonInput_storesSchema()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetJsonInput(h, """{"name":"string"}""")
+        assertEquals(0, rc, "setJsonInput should return 0 on success")
+        val f = Pipe::class.java.getDeclaredField("jsonInput").apply { isAccessible = true }
+        assertEquals("""{"name":"string"}""", f.get(ph.pipe))
+        // ensureJsonPromptInjectionEnabled side effect: supportsNativeJson should now be false
+        val supportsField = Pipe::class.java.getDeclaredField("supportsNativeJson").apply { isAccessible = true }
+        assertEquals(false, supportsField.getBoolean(ph.pipe),
+            "setJsonInput should flip supportsNativeJson to false")
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setJsonInput_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetJsonInput(0L, "{}")
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setJsonOutput_storesSchema()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetJsonOutput(h, """{"answer":"int"}""")
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("jsonOutput").apply { isAccessible = true }
+        assertEquals("""{"answer":"int"}""", f.get(ph.pipe))
+        val supportsField = Pipe::class.java.getDeclaredField("supportsNativeJson").apply { isAccessible = true }
+        assertEquals(false, supportsField.getBoolean(ph.pipe))
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setJsonOutput_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetJsonOutput(0L, "{}")
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setJsonInputInstructions_storesText()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetJsonInputInstructions(h, "Parse the JSON carefully.")
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("jsonInputInstructions").apply { isAccessible = true }
+        assertEquals("Parse the JSON carefully.", f.get(ph.pipe))
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setJsonInputInstructions_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetJsonInputInstructions(0L, "x")
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setJsonOutputInstructions_storesText()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetJsonOutputInstructions(h, "Respond with valid JSON only.")
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("jsonOutputInstructions").apply { isAccessible = true }
+        assertEquals("Respond with valid JSON only.", f.get(ph.pipe))
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setJsonOutputInstructions_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetJsonOutputInstructions(0L, "x")
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_requireJsonPromptInjection_stripsExternalText()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeRequireJsonPromptInjection(h, 1)
+        assertEquals(0, rc)
+        val supportsField = Pipe::class.java.getDeclaredField("supportsNativeJson").apply { isAccessible = true }
+        val stripField = Pipe::class.java.getDeclaredField("stripNonJson").apply { isAccessible = true }
+        assertEquals(false, supportsField.getBoolean(ph.pipe))
+        assertEquals(true, stripField.getBoolean(ph.pipe))
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_requireJsonPromptInjection_keepsExternalText()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeRequireJsonPromptInjection(h, 0)
+        assertEquals(0, rc)
+        val supportsField = Pipe::class.java.getDeclaredField("supportsNativeJson").apply { isAccessible = true }
+        val stripField = Pipe::class.java.getDeclaredField("stripNonJson").apply { isAccessible = true }
+        assertEquals(false, supportsField.getBoolean(ph.pipe))
+        assertEquals(false, stripField.getBoolean(ph.pipe))
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_requireJsonPromptInjection_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeRequireJsonPromptInjection(0L, 1)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setMultimodalInput_storesContent()
+    {
+        // Build a real ContentHandle + register it, then pass to setMultimodalInput.
+        val ch = ContentHandle("hello multimodal world")
+        val contentHandleId = HandleRegistry.allocate(HandleTypes.CONTENT, ch)
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetMultimodalInput(h, contentHandleId)
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("multimodalInput").apply { isAccessible = true }
+        val stored = f.get(ph.pipe) as com.TTT.Pipe.MultimodalContent
+        assertEquals("hello multimodal world", stored.text)
+        HandleRegistry.release(h)
+        HandleRegistry.release(contentHandleId)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setMultimodalInput_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetMultimodalInput(0L, 0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setMultimodalInput_rejectsWrongTypeHandle()
+    {
+        val h = registerAndGetHandleId()
+        // A PIPE_SETTINGS handle is the wrong type for setMultimodalInput.
+        val wrongHandle = HandleRegistry.allocate(HandleTypes.PIPE_SETTINGS, PipeSettingsHandle.create())
+        val rc = NativeBridge.pipeSetMultimodalInput(h, wrongHandle)
+        assertEquals(-0x13, rc, "wrong-type handle should return TYPE_MISMATCH")
+        HandleRegistry.release(h)
+        HandleRegistry.release(wrongHandle)
+    }
+
+    @Test
+    fun testTPipe_Pipe_getCachedInput_writesValidContentHandle()
+    {
+        val h = registerAndGetHandleId()
+        // Seed a cached input via the JVM-side forceCacheInput.
+        val seed = com.TTT.Pipe.MultimodalContent("cached text")
+        ph.pipe.forceCacheInput(seed)
+        val contentHandleId = NativeBridge.pipeGetCachedInput(h)
+        assertTrue(contentHandleId > 0, "getCachedInput should return a positive handle id, got $contentHandleId")
+        assertEquals(HandleTypes.CONTENT, HandleRegistry.getType(contentHandleId))
+        val ch = HandleRegistry.getData(contentHandleId) as ContentHandle
+        assertEquals("cached text", ch.text)
+        HandleRegistry.release(contentHandleId)
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_getCachedInput_returnsEmptyContentWhenUnset()
+    {
+        val h = registerAndGetHandleId()
+        // No prior forceCacheInput — getCachedInput should still return a valid (empty) Content handle.
+        val contentHandleId = NativeBridge.pipeGetCachedInput(h)
+        assertTrue(contentHandleId > 0, "empty cache should still allocate a handle, got $contentHandleId")
+        val ch = HandleRegistry.getData(contentHandleId) as ContentHandle
+        assertEquals("", ch.text)
+        HandleRegistry.release(contentHandleId)
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_getCachedInput_rejectsNullHandle()
+    {
+        val contentHandleId = NativeBridge.pipeGetCachedInput(0L)
+        assertTrue(contentHandleId < 0, "null handle should return negative error code, got $contentHandleId")
+    }
+
+    @Test
+    fun testTPipe_Pipe_setMergedPcpJsonInstructions_storesText()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetMergedPcpJsonInstructions(h, "Use this format for merged PCP+JSON.")
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("mergedPcpJsonInstructions").apply { isAccessible = true }
+        assertEquals("Use this format for merged PCP+JSON.", f.get(ph.pipe))
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setMergedPcpJsonInstructions_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetMergedPcpJsonInstructions(0L, "x")
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_cacheInput_togglesCacheFlag()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeCacheInput(h)
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("cacheInput").apply { isAccessible = true }
+        assertEquals(true, f.getBoolean(ph.pipe))
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_cacheInput_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeCacheInput(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_forceCacheInput_storesContent()
+    {
+        val ch = ContentHandle("force cached")
+        val contentHandleId = HandleRegistry.allocate(HandleTypes.CONTENT, ch)
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeForceCacheInput(h, contentHandleId)
+        assertEquals(0, rc)
+        val cached = ph.pipe.getCachedInput()
+        assertEquals("force cached", cached.text)
+        HandleRegistry.release(h)
+        HandleRegistry.release(contentHandleId)
+    }
+
+    @Test
+    fun testTPipe_Pipe_forceCacheInput_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeForceCacheInput(0L, 0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_forceCacheInput_rejectsWrongTypeHandle()
+    {
+        val h = registerAndGetHandleId()
+        val wrongHandle = HandleRegistry.allocate(HandleTypes.PIPE_SETTINGS, PipeSettingsHandle.create())
+        val rc = NativeBridge.pipeForceCacheInput(h, wrongHandle)
+        assertEquals(-0x13, rc)
+        HandleRegistry.release(h)
+        HandleRegistry.release(wrongHandle)
+    }
 }

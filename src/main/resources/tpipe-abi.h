@@ -1042,6 +1042,129 @@ int TPipe_Pipe_setStopSequences(graal_isolatethread_t* thread,
                                 const char* text);
 
 /*==============================================================================
+ * CYCLE 5 — PIPE JSON / MULTIMODAL / BINARY SURFACE (10 functions)
+ *============================================================================*/
+
+/**
+ * @brief Set the JSON input schema on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param json JSON schema string (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ * @note Side effect: flips `supportsNativeJson` to false, enabling
+ *       prompt-injected JSON mode.
+ */
+int TPipe_Pipe_setJsonInput(graal_isolatethread_t* thread,
+                            TPipe_PipeHandle pipeHandle,
+                            const char* json);
+
+/**
+ * @brief Set the JSON output schema on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param json JSON schema string (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ * @note Side effect: flips `supportsNativeJson` to false, enabling
+ *       prompt-injected JSON mode.
+ */
+int TPipe_Pipe_setJsonOutput(graal_isolatethread_t* thread,
+                             TPipe_PipeHandle pipeHandle,
+                             const char* json);
+
+/**
+ * @brief Set the JSON input instructions on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param text Instructions string (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setJsonInputInstructions(graal_isolatethread_t* thread,
+                                        TPipe_PipeHandle pipeHandle,
+                                        const char* text);
+
+/**
+ * @brief Set the JSON output instructions on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param text Instructions string (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setJsonOutputInstructions(graal_isolatethread_t* thread,
+                                         TPipe_PipeHandle pipeHandle,
+                                         const char* text);
+
+/**
+ * @brief Require prompt-injected JSON mode on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param stripExternalText 0 = keep non-JSON wrapping, 1 = strip it
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_requireJsonPromptInjection(graal_isolatethread_t* thread,
+                                          TPipe_PipeHandle pipeHandle,
+                                          int stripExternalText);
+
+/**
+ * @brief Set the multimodal input content on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param content Content handle (multimodal content; carries text + binaries)
+ * @return 0 on success, negative error code on failure
+ *         (-0x13 TYPE_MISMATCH if content is the wrong handle type,
+ *          -0x05 NULL_POINTER if content is null after type-check)
+ */
+int TPipe_Pipe_setMultimodalInput(graal_isolatethread_t* thread,
+                                  TPipe_PipeHandle pipeHandle,
+                                  TPipe_ContentHandle content);
+
+/**
+ * @brief Read the cached input content from a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param outContent Output: receives an allocated Content handle wrapping
+ *                   the cached input. Caller owns the handle and must
+ *                   release it via TPipe_Handle_release.
+ * @return 0 on success, negative error code on failure
+ *         (-0x05 NULL_POINTER if outContent is null)
+ */
+int TPipe_Pipe_getCachedInput(graal_isolatethread_t* thread,
+                              TPipe_PipeHandle pipeHandle,
+                              TPipe_ContentHandle* outContent);
+
+/**
+ * @brief Set the merged PCP+JSON instructions on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param text Instructions string (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ * @note Used in merged mode (PCP tools + JSON output configured together).
+ */
+int TPipe_Pipe_setMergedPcpJsonInstructions(graal_isolatethread_t* thread,
+                                            TPipe_PipeHandle pipeHandle,
+                                            const char* text);
+
+/**
+ * @brief Toggle the per-pipe input cache flag
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_cacheInput(graal_isolatethread_t* thread,
+                          TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Force-snapshot a multimodal content as the cached input
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param content Content handle to snapshot
+ * @return 0 on success, negative error code on failure
+ *         (-0x13 TYPE_MISMATCH if content is the wrong handle type)
+ */
+int TPipe_Pipe_forceCacheInput(graal_isolatethread_t* thread,
+                               TPipe_PipeHandle pipeHandle,
+                               TPipe_ContentHandle content);
+
+/*==============================================================================
  * PIPE SETTINGS HANDLE (10 functions)
  *============================================================================*/
 

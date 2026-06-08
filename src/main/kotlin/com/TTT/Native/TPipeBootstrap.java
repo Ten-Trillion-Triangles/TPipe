@@ -878,6 +878,78 @@ public class TPipeBootstrap {
     }
 
     //====================================================================
+    // Cycle 5 — Pipe JSON / multimodal / binary surface
+    //====================================================================
+
+    @CEntryPoint(name = "TPipe_Pipe_setJsonInput")
+    public static int pipeSetJsonInput(IsolateThread thread, long pipe, long jsonPtr) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String json = readCString(jsonPtr);
+        return NativeBridge.pipeSetJsonInput(pipe, json);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setJsonOutput")
+    public static int pipeSetJsonOutput(IsolateThread thread, long pipe, long jsonPtr) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String json = readCString(jsonPtr);
+        return NativeBridge.pipeSetJsonOutput(pipe, json);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setJsonInputInstructions")
+    public static int pipeSetJsonInputInstructions(IsolateThread thread, long pipe, long textPtr) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String text = readCString(textPtr);
+        return NativeBridge.pipeSetJsonInputInstructions(pipe, text);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setJsonOutputInstructions")
+    public static int pipeSetJsonOutputInstructions(IsolateThread thread, long pipe, long textPtr) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String text = readCString(textPtr);
+        return NativeBridge.pipeSetJsonOutputInstructions(pipe, text);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_requireJsonPromptInjection")
+    public static int pipeRequireJsonPromptInjection(IsolateThread thread, long pipe, int stripExternalText) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeRequireJsonPromptInjection(pipe, stripExternalText);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setMultimodalInput")
+    public static int pipeSetMultimodalInput(IsolateThread thread, long pipe, long content) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetMultimodalInput(pipe, content);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_getCachedInput")
+    public static int pipeGetCachedInput(IsolateThread thread, long pipe, long outContent) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (outContent == 0L) return TPIPE_ERR_NULL_POINTER;
+        long handleId = NativeBridge.pipeGetCachedInput(pipe);
+        if (handleId < 0L) return (int) handleId;
+        return writePtr(outContent, 0, handleId);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setMergedPcpJsonInstructions")
+    public static int pipeSetMergedPcpJsonInstructions(IsolateThread thread, long pipe, long textPtr) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String text = readCString(textPtr);
+        return NativeBridge.pipeSetMergedPcpJsonInstructions(pipe, text);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_cacheInput")
+    public static int pipeCacheInput(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeCacheInput(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_forceCacheInput")
+    public static int pipeForceCacheInput(IsolateThread thread, long pipe, long content) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeForceCacheInput(pipe, content);
+    }
+
+    //====================================================================
     // PipeSettings API
     //====================================================================
 

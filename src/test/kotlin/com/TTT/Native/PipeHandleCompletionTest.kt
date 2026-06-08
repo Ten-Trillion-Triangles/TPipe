@@ -109,7 +109,14 @@ class PipeHandleCompletionTest
             "TPipe_Pipe_setUserPrompt", "TPipe_Pipe_setMiddlePrompt",
             "TPipe_Pipe_setFooterPrompt", "TPipe_Pipe_setTopP",
             "TPipe_Pipe_setTopK", "TPipe_Pipe_setMaxTokens",
-            "TPipe_Pipe_setSeed", "TPipe_Pipe_setStopSequences"
+            "TPipe_Pipe_setSeed", "TPipe_Pipe_setStopSequences",
+            // Cycle 5 — JSON / multimodal / binary surface
+            "TPipe_Pipe_setJsonInput", "TPipe_Pipe_setJsonOutput",
+            "TPipe_Pipe_setJsonInputInstructions", "TPipe_Pipe_setJsonOutputInstructions",
+            "TPipe_Pipe_requireJsonPromptInjection",
+            "TPipe_Pipe_setMultimodalInput", "TPipe_Pipe_getCachedInput",
+            "TPipe_Pipe_setMergedPcpJsonInstructions",
+            "TPipe_Pipe_cacheInput", "TPipe_Pipe_forceCacheInput"
         )
         for (symbol in expected)
         {

@@ -93,11 +93,14 @@ class PipeHandle(
      * C ABI: `TPipe_Pipe_setSystemPrompt(handle, text)`.
      * Delegates to [Pipe.setSystemPrompt].
      */
-    fun setSystemPrompt(text: String): Int {
+    fun setSystemPrompt(text: String): Int
+    {
         return try {
             pipe.setSystemPrompt(text)
             0
-        } catch (e: Exception) {
+        }
+        catch (e: Exception)
+        {
             -0x01  // TPIPE_ERR_INTERNAL
         }
     }
@@ -115,11 +118,14 @@ class PipeHandle(
      * C ABI: `TPipe_Pipe_setUserPrompt(handle, text)`.
      * Delegates to [Pipe.setUserPrompt].
      */
-    fun setUserPrompt(text: String): Int {
+    fun setUserPrompt(text: String): Int
+    {
         return try {
             pipe.setUserPrompt(text)
             0
-        } catch (e: Exception) {
+        }
+        catch (e: Exception)
+        {
             -0x01
         }
     }
@@ -128,11 +134,14 @@ class PipeHandle(
      * C ABI: `TPipe_Pipe_setMiddlePrompt(handle, text)`.
      * Delegates to [Pipe.setMiddlePrompt].
      */
-    fun setMiddlePrompt(text: String): Int {
+    fun setMiddlePrompt(text: String): Int
+    {
         return try {
             pipe.setMiddlePrompt(text)
             0
-        } catch (e: Exception) {
+        }
+        catch (e: Exception)
+        {
             -0x01
         }
     }
@@ -141,11 +150,14 @@ class PipeHandle(
      * C ABI: `TPipe_Pipe_setFooterPrompt(handle, text)`.
      * Delegates to [Pipe.setFooterPrompt].
      */
-    fun setFooterPrompt(text: String): Int {
+    fun setFooterPrompt(text: String): Int
+    {
         return try {
             pipe.setFooterPrompt(text)
             0
-        } catch (e: Exception) {
+        }
+        catch (e: Exception)
+        {
             -0x01
         }
     }
@@ -155,12 +167,15 @@ class PipeHandle(
      * `doubleBits` is the raw long bits of a [Double] (IEEE 754).
      * Delegates to [Pipe.setTopP].
      */
-    fun setTopP(doubleBits: Long): Int {
+    fun setTopP(doubleBits: Long): Int
+    {
         return try {
             val v = Double.fromBits(doubleBits)
             pipe.setTopP(v)
             0
-        } catch (e: Exception) {
+        }
+        catch (e: Exception)
+        {
             -0x01
         }
     }
@@ -169,11 +184,14 @@ class PipeHandle(
      * C ABI: `TPipe_Pipe_setTopK(handle, top)`.
      * Delegates to [Pipe.setTopK].
      */
-    fun setTopK(top: Int): Int {
+    fun setTopK(top: Int): Int
+    {
         return try {
             pipe.setTopK(top)
             0
-        } catch (e: Exception) {
+        }
+        catch (e: Exception)
+        {
             -0x01
         }
     }
@@ -182,11 +200,14 @@ class PipeHandle(
      * C ABI: `TPipe_Pipe_setMaxTokens(handle, max)`.
      * Delegates to [Pipe.setMaxTokens].
      */
-    fun setMaxTokens(max: Int): Int {
+    fun setMaxTokens(max: Int): Int
+    {
         return try {
             pipe.setMaxTokens(max)
             0
-        } catch (e: Exception) {
+        }
+        catch (e: Exception)
+        {
             -0x01
         }
     }
@@ -197,12 +218,15 @@ class PipeHandle(
      * (maps to the JVM-side `Int?` null). All other values take the lower
      * 32 bits as the Int seed. Delegates to [Pipe.setSeed].
      */
-    fun setSeed(seedBits: Long): Int {
+    fun setSeed(seedBits: Long): Int
+    {
         return try {
             val s: Int? = if (seedBits == Long.MIN_VALUE) null else seedBits.toInt()
             pipe.setSeed(s)
             0
-        } catch (e: Exception) {
+        }
+        catch (e: Exception)
+        {
             -0x01
         }
     }
@@ -212,12 +236,193 @@ class PipeHandle(
      * Splits the input text on the newline character. Empty input yields
      * an empty list, matching the JVM-side default for [Pipe.setStopSequences].
      */
-    fun setStopSequences(text: String): Int {
+    fun setStopSequences(text: String): Int
+    {
         return try {
             val list = if (text.isEmpty()) emptyList() else text.split("\n")
             pipe.setStopSequences(list)
             0
-        } catch (e: Exception) {
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    //==========================================================================
+    // Cycle 5 — Pipe JSON / multimodal / binary surface
+    //
+    // Each handle method mirrors a public JVM method on [com.TTT.Pipe.Pipe] so
+    // the C ABI can configure the JSON schema input/output, the multimodal
+    // content input pipeline, the merged PCP+JSON instructions, and the
+    // per-pipe input cache.
+    //
+    // `getCachedInput` returns the allocated Content handle id (a positive
+    // Long) on success or a negative error code. The bridge layer is
+    // responsible for the actual HandleRegistry.allocate() call.
+    //==========================================================================
+
+    /**
+     * C ABI: `TPipe_Pipe_setJsonInput(handle, json)`.
+     * Delegates to [Pipe.setJsonInput].
+     */
+    fun setJsonInput(json: String): Int
+    {
+        return try {
+            pipe.setJsonInput(json)
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setJsonOutput(handle, json)`.
+     * Delegates to [Pipe.setJsonOutput].
+     */
+    fun setJsonOutput(json: String): Int
+    {
+        return try {
+            pipe.setJsonOutput(json)
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setJsonInputInstructions(handle, text)`.
+     * Delegates to [Pipe.setJsonInputInstructions].
+     */
+    fun setJsonInputInstructions(text: String): Int
+    {
+        return try {
+            pipe.setJsonInputInstructions(text)
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setJsonOutputInstructions(handle, text)`.
+     * Delegates to [Pipe.setJsonOutputInstructions].
+     */
+    fun setJsonOutputInstructions(text: String): Int
+    {
+        return try {
+            pipe.setJsonOutputInstructions(text)
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_requireJsonPromptInjection(handle, stripExternalText)`.
+     * `stripExternalText` is 0 or 1. Delegates to [Pipe.requireJsonPromptInjection].
+     */
+    fun requireJsonPromptInjection(stripExternalText: Int): Int
+    {
+        return try {
+            pipe.requireJsonPromptInjection(stripExternalText != 0)
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setMultimodalInput(handle, content)`.
+     * The bridge layer is responsible for resolving the content handle and
+     * building the [MultimodalContent] before this method is called.
+     */
+    fun setMultimodalInput(content: MultimodalContent): Int
+    {
+        return try {
+            pipe.setMultimodalInput(content)
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_getCachedInput(handle)` (returns Content handle id).
+     * Reads the cached input via [Pipe.getCachedInput] and allocates a new
+     * Content handle wrapping it. Returns the positive handle id on success
+     * or a negative error code.
+     */
+    fun getCachedInput(): Long
+    {
+        return try {
+            val mc = pipe.getCachedInput()
+            val ch = ContentHandle.fromMultimodalContent(mc)
+            HandleRegistry.allocate(HandleTypes.CONTENT, ch)
+        }
+        catch (e: Exception)
+        {
+            -0x01L
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setMergedPcpJsonInstructions(handle, text)`.
+     * Delegates to [Pipe.setMergedPcpJsonInstructions].
+     */
+    fun setMergedPcpJsonInstructions(text: String): Int
+    {
+        return try {
+            pipe.setMergedPcpJsonInstructions(text)
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_cacheInput(handle)`.
+     * Toggles the per-pipe input cache flag. Delegates to [Pipe.cacheInput].
+     */
+    fun cacheInput(): Int
+    {
+        return try {
+            pipe.cacheInput()
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_forceCacheInput(handle, content)`.
+     * The bridge layer is responsible for resolving the content handle and
+     * building the [MultimodalContent] before this method is called.
+     */
+    fun forceCacheInput(content: MultimodalContent): Int
+    {
+        return try {
+            pipe.forceCacheInput(content)
+            0
+        }
+        catch (e: Exception)
+        {
             -0x01
         }
     }
