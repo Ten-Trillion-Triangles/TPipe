@@ -2154,6 +2154,80 @@ public class TPipeBootstrap {
         return copyToNativeBuffer(buffer, bufferSize, tmp, n);
     }
 
+    //====================================================================
+    // Cycle 8 — DistributionGrid configuration surface
+    //====================================================================
+
+    @CEntryPoint(name = "TPipe_DistributionGrid_setMaxHops")
+    public static int distributionGridSetMaxHops(IsolateThread thread, long grid, int max) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.distributionGridSetMaxHops(grid, max);
+    }
+
+    @CEntryPoint(name = "TPipe_DistributionGrid_getMaxHops")
+    public static int distributionGridGetMaxHops(IsolateThread thread, long grid, long outMax) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int v = NativeBridge.distributionGridGetMaxHops(grid);
+        if (v < 0) return v;
+        return writeInt(outMax, 0, v);
+    }
+
+    @CEntryPoint(name = "TPipe_DistributionGrid_setRpcTimeout")
+    public static int distributionGridSetRpcTimeout(IsolateThread thread, long grid, long millis) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.distributionGridSetRpcTimeout(grid, millis);
+    }
+
+    @CEntryPoint(name = "TPipe_DistributionGrid_getRpcTimeout")
+    public static int distributionGridGetRpcTimeout(IsolateThread thread, long grid, long outMillis) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        long v = NativeBridge.distributionGridGetRpcTimeout(grid);
+        if (v < 0) return (int) v;
+        return writePtr(outMillis, 0, v);
+    }
+
+    @CEntryPoint(name = "TPipe_DistributionGrid_setMaxSessionDuration")
+    public static int distributionGridSetMaxSessionDuration(IsolateThread thread, long grid, int seconds) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.distributionGridSetMaxSessionDuration(grid, seconds);
+    }
+
+    @CEntryPoint(name = "TPipe_DistributionGrid_getMaxSessionDuration")
+    public static int distributionGridGetMaxSessionDuration(IsolateThread thread, long grid, long outSeconds) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int v = NativeBridge.distributionGridGetMaxSessionDuration(grid);
+        if (v < 0) return v;
+        return writeInt(outSeconds, 0, v);
+    }
+
+    @CEntryPoint(name = "TPipe_DistributionGrid_setDiscoveryMode")
+    public static int distributionGridSetDiscoveryMode(IsolateThread thread, long grid, int mode) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.distributionGridSetDiscoveryMode(grid, mode);
+    }
+
+    @CEntryPoint(name = "TPipe_DistributionGrid_getDiscoveryMode")
+    public static int distributionGridGetDiscoveryMode(IsolateThread thread, long grid, long outMode) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int v = NativeBridge.distributionGridGetDiscoveryMode(grid);
+        if (v < 0) return v;
+        return writeInt(outMode, 0, v);
+    }
+
+    @CEntryPoint(name = "TPipe_DistributionGrid_pause")
+    public static int distributionGridPause(IsolateThread thread, long grid) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.distributionGridPause(grid);
+    }
+
+    @CEntryPoint(name = "TPipe_DistributionGrid_isPaused")
+    public static int distributionGridIsPaused(IsolateThread thread, long grid, long outPaused) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int v = NativeBridge.distributionGridIsPaused(grid);
+        if (v < 0) return v;
+        return writeInt(outPaused, 0, v);
+    }
+
     // ---- Phase 6: additional read-only entry points ----
 
     /**

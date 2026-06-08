@@ -2390,6 +2390,119 @@ int TPipe_DistributionGrid_getNodeCount_v2(graal_isolatethread_t* thread, TPipe_
 int TPipe_DistributionGrid_getStatusJson(graal_isolatethread_t* thread, TPipe_DistributionGridHandle grid, char* buffer, int bufferSize);
 int TPipe_DistributionGrid_getLastRebalanceMs(graal_isolatethread_t* thread, TPipe_DistributionGridHandle grid, int64_t* out);
 
+/*==============================================================================
+ * CYCLE 8 — DISTRIBUTIONGRID CONFIGURATION SURFACE (10 functions)
+ *============================================================================*/
+
+/**
+ * @brief Set the maximum hop count for routing
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @param max Maximum hop count to store
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_DistributionGrid_setMaxHops(graal_isolatethread_t* thread,
+                                       TPipe_DistributionGridHandle grid,
+                                       int max);
+
+/**
+ * @brief Read the configured maximum hop count
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @param outMax Output: stored maximum hop count
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_DistributionGrid_getMaxHops(graal_isolatethread_t* thread,
+                                       TPipe_DistributionGridHandle grid,
+                                       int* outMax);
+
+/**
+ * @brief Set the RPC timeout applied to all outbound grid calls
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @param millis Timeout in milliseconds (must be positive)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_DistributionGrid_setRpcTimeout(graal_isolatethread_t* thread,
+                                         TPipe_DistributionGridHandle grid,
+                                         int64_t millis);
+
+/**
+ * @brief Read the configured RPC timeout
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @param outMillis Output: stored RPC timeout in milliseconds
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_DistributionGrid_getRpcTimeout(graal_isolatethread_t* thread,
+                                         TPipe_DistributionGridHandle grid,
+                                         int64_t* outMillis);
+
+/**
+ * @brief Set the maximum session duration cap
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @param seconds Maximum session lifetime in seconds (must be positive)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_DistributionGrid_setMaxSessionDuration(graal_isolatethread_t* thread,
+                                                  TPipe_DistributionGridHandle grid,
+                                                  int seconds);
+
+/**
+ * @brief Read the configured maximum session duration
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @param outSeconds Output: stored maximum session duration in seconds
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_DistributionGrid_getMaxSessionDuration(graal_isolatethread_t* thread,
+                                                  TPipe_DistributionGridHandle grid,
+                                                  int* outSeconds);
+
+/**
+ * @brief Set the peer discovery mode
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @param mode Discovery mode ordinal (0=EXPLICIT_ONLY, 1=REGISTRY_ONLY, 2=HYBRID)
+ * @return 0 on success, negative error code on failure
+ * @note Out-of-range ordinals are coerced into range; passing 0 is safe.
+ */
+int TPipe_DistributionGrid_setDiscoveryMode(graal_isolatethread_t* thread,
+                                            TPipe_DistributionGridHandle grid,
+                                            int mode);
+
+/**
+ * @brief Read the configured peer discovery mode ordinal
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @param outMode Output: stored discovery mode ordinal
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_DistributionGrid_getDiscoveryMode(graal_isolatethread_t* thread,
+                                            TPipe_DistributionGridHandle grid,
+                                            int* outMode);
+
+/**
+ * @brief Request a grid-wide pause at the next safe checkpoint
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_DistributionGrid_pause(graal_isolatethread_t* thread,
+                                 TPipe_DistributionGridHandle grid);
+
+/**
+ * @brief Check whether a grid-wide pause has been requested
+ * @param thread Caller's IsolateThread
+ * @param grid DistributionGrid handle
+ * @param outPaused Output: 1 when paused, 0 when not
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_DistributionGrid_isPaused(graal_isolatethread_t* thread,
+                                    TPipe_DistributionGridHandle grid,
+                                    int* outPaused);
+
 
 /*==============================================================================
  * JUNCTION API FUNCTIONS (5 functions — Phase 12)

@@ -2063,6 +2063,83 @@ object NativeBridge {
         return HandleRegistry.allocate(HandleTypes.JUNCTION, jh)
     }
 
+    //====================================================================
+    // Cycle 8 — DistributionGrid configuration surface
+    //====================================================================
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_setMaxHops(handle, max)`.
+     * See [DistributionGridHandle.setMaxHops].
+     */
+    @JvmStatic fun distributionGridSetMaxHops(handle: Long, max: Int): Int =
+        (HandleRegistry.getData(handle) as? DistributionGridHandle)?.setMaxHops(max) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_getMaxHops(handle, int* out)`.
+     * Returns the stored maxHops value (positive) or a negative error code.
+     */
+    @JvmStatic fun distributionGridGetMaxHops(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? DistributionGridHandle)?.getMaxHops() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_setRpcTimeout(handle, millis)`.
+     * See [DistributionGridHandle.setRpcTimeout].
+     */
+    @JvmStatic fun distributionGridSetRpcTimeout(handle: Long, millis: Long): Int =
+        (HandleRegistry.getData(handle) as? DistributionGridHandle)?.setRpcTimeout(millis) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_getRpcTimeout(handle, int64* out)`.
+     * Returns the stored rpcTimeoutMillis value (positive) or a negative error code.
+     */
+    @JvmStatic fun distributionGridGetRpcTimeout(handle: Long): Long =
+        (HandleRegistry.getData(handle) as? DistributionGridHandle)?.getRpcTimeout() ?: -0x03L
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_setMaxSessionDuration(handle, seconds)`.
+     * See [DistributionGridHandle.setMaxSessionDuration].
+     */
+    @JvmStatic fun distributionGridSetMaxSessionDuration(handle: Long, seconds: Int): Int =
+        (HandleRegistry.getData(handle) as? DistributionGridHandle)?.setMaxSessionDuration(seconds) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_getMaxSessionDuration(handle, int* out)`.
+     * Returns the stored maxSessionDurationSeconds value (positive) or a negative error code.
+     */
+    @JvmStatic fun distributionGridGetMaxSessionDuration(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? DistributionGridHandle)?.getMaxSessionDuration() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_setDiscoveryMode(handle, mode)`.
+     * `mode` is the integer ordinal of
+     * [com.TTT.Pipeline.DistributionGridPeerDiscoveryMode].
+     * See [DistributionGridHandle.setDiscoveryMode].
+     */
+    @JvmStatic fun distributionGridSetDiscoveryMode(handle: Long, mode: Int): Int =
+        (HandleRegistry.getData(handle) as? DistributionGridHandle)?.setDiscoveryMode(mode) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_getDiscoveryMode(handle, int* out)`.
+     * Returns the discovery mode ordinal (non-negative) or a negative error code.
+     */
+    @JvmStatic fun distributionGridGetDiscoveryMode(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? DistributionGridHandle)?.getDiscoveryMode() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_pause(handle)`.
+     * See [DistributionGridHandle.pause].
+     */
+    @JvmStatic fun distributionGridPause(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? DistributionGridHandle)?.pause() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_isPaused(handle, int* out)`.
+     * Returns 1 when paused, 0 when not, or a negative error code.
+     */
+    @JvmStatic fun distributionGridIsPaused(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? DistributionGridHandle)?.isPaused() ?: -0x03
+
+
     /**
      * Release a junction handle.
      *

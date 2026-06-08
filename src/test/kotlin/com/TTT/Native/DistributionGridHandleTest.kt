@@ -226,4 +226,151 @@ class DistributionGridHandleTest {
             "lastRebalanceMs should be updated to the current time after rebalance()")
         assertTrue(result.contains("\"rebalanced\":true"), "rebalance result must report success: $result")
     }
+
+    //==========================================================================
+    // Cycle 8 — DistributionGrid configuration surface (10 new C symbols)
+    //
+    // The C ABI setter/getter pairs are exercised via NativeBridge in both
+    // directions (set via the setter, read back via the getter). Direct
+    // JVM field access is not used here because the DistributionGrid
+    // configuration fields are `private var` and only reachable through
+    // the public setter/getter methods.
+    //==========================================================================
+
+    @Test
+    fun testTPipe_DistributionGrid_setMaxHops_storesValue()
+    {
+        val handle = NativeBridge.distributionGridCreate()
+        val rc = NativeBridge.distributionGridSetMaxHops(handle, 7)
+        assertEquals(0, rc)
+        // Verify via the C ABI getter (round-trip).
+        assertEquals(7, NativeBridge.distributionGridGetMaxHops(handle))
+        HandleRegistry.release(handle)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_setMaxHops_rejectsNullHandle()
+    {
+        val rc = NativeBridge.distributionGridSetMaxHops(0L, 7)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_getMaxHops_rejectsNullHandle()
+    {
+        val rc = NativeBridge.distributionGridGetMaxHops(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_setRpcTimeout_storesValue()
+    {
+        val handle = NativeBridge.distributionGridCreate()
+        val rc = NativeBridge.distributionGridSetRpcTimeout(handle, 5000L)
+        assertEquals(0, rc)
+        assertEquals(5000L, NativeBridge.distributionGridGetRpcTimeout(handle))
+        HandleRegistry.release(handle)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_setRpcTimeout_rejectsNullHandle()
+    {
+        val rc = NativeBridge.distributionGridSetRpcTimeout(0L, 5000L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_getRpcTimeout_rejectsNullHandle()
+    {
+        val rc = NativeBridge.distributionGridGetRpcTimeout(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_setMaxSessionDuration_storesValue()
+    {
+        val handle = NativeBridge.distributionGridCreate()
+        val rc = NativeBridge.distributionGridSetMaxSessionDuration(handle, 3600)
+        assertEquals(0, rc)
+        assertEquals(3600, NativeBridge.distributionGridGetMaxSessionDuration(handle))
+        HandleRegistry.release(handle)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_setMaxSessionDuration_rejectsNullHandle()
+    {
+        val rc = NativeBridge.distributionGridSetMaxSessionDuration(0L, 3600)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_getMaxSessionDuration_rejectsNullHandle()
+    {
+        val rc = NativeBridge.distributionGridGetMaxSessionDuration(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_setDiscoveryMode_storesEnumOrdinal()
+    {
+        val handle = NativeBridge.distributionGridCreate()
+        val rc = NativeBridge.distributionGridSetDiscoveryMode(handle, 2)  // HYBRID
+        assertEquals(0, rc)
+        assertEquals(2, NativeBridge.distributionGridGetDiscoveryMode(handle),
+            "should return HYBRID ordinal (2)")
+        HandleRegistry.release(handle)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_setDiscoveryMode_rejectsNullHandle()
+    {
+        val rc = NativeBridge.distributionGridSetDiscoveryMode(0L, 1)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_getDiscoveryMode_rejectsNullHandle()
+    {
+        val rc = NativeBridge.distributionGridGetDiscoveryMode(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_pause_setsFlag()
+    {
+        val handle = NativeBridge.distributionGridCreate()
+        val rc = NativeBridge.distributionGridPause(handle)
+        assertEquals(0, rc)
+        assertEquals(1, NativeBridge.distributionGridIsPaused(handle),
+            "after pause, isPaused should report 1")
+        HandleRegistry.release(handle)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_pause_rejectsNullHandle()
+    {
+        val rc = NativeBridge.distributionGridPause(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_isPaused_returnsFlag()
+    {
+        val handle = NativeBridge.distributionGridCreate()
+        // Default: not paused
+        assertEquals(0, NativeBridge.distributionGridIsPaused(handle),
+            "default should report 0 (not paused)")
+        // After pause
+        NativeBridge.distributionGridPause(handle)
+        assertEquals(1, NativeBridge.distributionGridIsPaused(handle),
+            "after pause should report 1")
+        HandleRegistry.release(handle)
+    }
+
+    @Test
+    fun testTPipe_DistributionGrid_isPaused_rejectsNullHandle()
+    {
+        val rc = NativeBridge.distributionGridIsPaused(0L)
+        assertEquals(-0x03, rc)
+    }
 }

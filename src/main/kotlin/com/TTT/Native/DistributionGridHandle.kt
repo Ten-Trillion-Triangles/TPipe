@@ -104,4 +104,186 @@ class DistributionGridHandle(
      */
     @Suppress("FunctionName")
     fun rebalanceStub(): String = rebalance()
+
+    //==========================================================================
+    // Cycle 8 — DistributionGrid configuration surface
+    //
+    // Each handle method delegates to a public setter/getter on
+    // [com.TTT.Pipeline.DistributionGrid]. The configuration fields are
+    // `private var` so the C ABI tests must use the round-trip pattern
+    // (set via the setter, read back via the getter) to verify state.
+    //==========================================================================
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_setMaxHops(handle, max)`.
+     * Delegates to [com.TTT.Pipeline.DistributionGrid.setMaxHops].
+     */
+    fun setMaxHops(max: Int): Int
+    {
+        return try
+        {
+            grid.setMaxHops(max)
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_getMaxHops(handle, int* out)`.
+     * Reads via [com.TTT.Pipeline.DistributionGrid.getMaxHops].
+     */
+    fun getMaxHops(): Int
+    {
+        return try
+        {
+            grid.getMaxHops()
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_setRpcTimeout(handle, millis)`.
+     * Delegates to [com.TTT.Pipeline.DistributionGrid.setRpcTimeout].
+     */
+    fun setRpcTimeout(millis: Long): Int
+    {
+        return try
+        {
+            grid.setRpcTimeout(millis)
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_getRpcTimeout(handle, int64* out)`.
+     * Reads via [com.TTT.Pipeline.DistributionGrid.getRpcTimeout].
+     */
+    fun getRpcTimeout(): Long
+    {
+        return try
+        {
+            grid.getRpcTimeout()
+        }
+        catch (e: Exception)
+        {
+            -0x01L
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_setMaxSessionDuration(handle, seconds)`.
+     * Delegates to [com.TTT.Pipeline.DistributionGrid.setMaxSessionDuration].
+     */
+    fun setMaxSessionDuration(seconds: Int): Int
+    {
+        return try
+        {
+            grid.setMaxSessionDuration(seconds)
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_getMaxSessionDuration(handle, int* out)`.
+     * Reads via [com.TTT.Pipeline.DistributionGrid.getMaxSessionDuration].
+     */
+    fun getMaxSessionDuration(): Int
+    {
+        return try
+        {
+            grid.getMaxSessionDuration()
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_setDiscoveryMode(handle, mode)`.
+     * `mode` is the integer ordinal of
+     * [com.TTT.Pipeline.DistributionGridPeerDiscoveryMode] (EXPLICIT_ONLY=0,
+     * REGISTRY_ONLY=1, HYBRID=2). Delegates to
+     * [com.TTT.Pipeline.DistributionGrid.setDiscoveryMode].
+     */
+    fun setDiscoveryMode(mode: Int): Int
+    {
+        return try
+        {
+            val ordinal = mode.coerceIn(
+                0,
+                com.TTT.Pipeline.DistributionGridPeerDiscoveryMode.entries.size - 1
+            )
+            grid.setDiscoveryMode(com.TTT.Pipeline.DistributionGridPeerDiscoveryMode.entries[ordinal])
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_getDiscoveryMode(handle, int* out)`.
+     * Writes the ordinal of the current discovery mode into `*out`.
+     */
+    fun getDiscoveryMode(): Int
+    {
+        return try
+        {
+            grid.getDiscoveryMode().ordinal
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_pause(handle)`.
+     * Delegates to [com.TTT.Pipeline.DistributionGrid.pause].
+     */
+    fun pause(): Int
+    {
+        return try
+        {
+            grid.pause()
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_DistributionGrid_isPaused(handle, int* out)`.
+     * Reads via [com.TTT.Pipeline.DistributionGrid.isPaused].
+     * Returns 1 when paused, 0 when not.
+     */
+    fun isPaused(): Int
+    {
+        return try
+        {
+            if (grid.isPaused()) 1 else 0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
 }
