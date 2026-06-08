@@ -176,7 +176,6 @@ class DistributionGridHandleTest {
         )
         HandleRegistry.release(ch)
     }
-}
 
     //==========================================================================
     // Phase 6: real implementations (not stubs)
@@ -227,3 +226,4 @@ class DistributionGridHandleTest {
             "lastRebalanceMs should be updated to the current time after rebalance()")
         assertTrue(result.contains("\"rebalanced\":true"), "rebalance result must report success: $result")
     }
+}

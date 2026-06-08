@@ -157,4 +157,120 @@ class ManifoldHandleTest
         )
         HandleRegistry.release(ch)
     }
+
+    //==========================================================================
+    // Cycle 3 — Configuration surface (C ABI)
+    //==========================================================================
+
+    @Test
+    fun testManifoldSetContextWindowSize()
+    {
+        val mh = NativeBridge.manifoldCreate()
+        val rc = NativeBridge.manifoldSetContextWindowSize(mh, 4096)
+        assertEquals(0, rc, "setContextWindowSize should return 0")
+        val n = NativeBridge.manifoldGetContextWindowSize(mh)
+        assertEquals(4096, n, "getContextWindowSize should return 4096")
+        HandleRegistry.release(mh)
+    }
+
+    @Test
+    fun testManifoldSetContextWindowSizeRejectsNegative()
+    {
+        val mh = NativeBridge.manifoldCreate()
+        val rc = NativeBridge.manifoldSetContextWindowSize(mh, -1)
+        assertEquals(-0x04, rc, "setContextWindowSize(-1) should return INVALID_ARGUMENT")
+        HandleRegistry.release(mh)
+    }
+
+    @Test
+    fun testManifoldSetTruncationMethod()
+    {
+        val mh = NativeBridge.manifoldCreate()
+        val rc = NativeBridge.manifoldSetTruncationMethod(mh, 0)  // TruncateTop
+        assertEquals(0, rc)
+        val m = NativeBridge.manifoldGetTruncationMethod(mh)
+        assertEquals(0, m, "truncation method should be 0 (TruncateTop)")
+        HandleRegistry.release(mh)
+    }
+
+    @Test
+    fun testManifoldSetTruncationMethodRejectsBadOrdinal()
+    {
+        val mh = NativeBridge.manifoldCreate()
+        val rc = NativeBridge.manifoldSetTruncationMethod(mh, 99)
+        assertEquals(-0x04, rc, "setTruncationMethod(99) should return INVALID_ARGUMENT")
+        HandleRegistry.release(mh)
+    }
+
+    @Test
+    fun testManifoldSetSummaryMode()
+    {
+        val mh = NativeBridge.manifoldCreate()
+        val rc = NativeBridge.manifoldSetSummaryMode(mh, 1)  // REGENERATE
+        assertEquals(0, rc)
+        val m = NativeBridge.manifoldGetSummaryMode(mh)
+        assertEquals(1, m)
+        HandleRegistry.release(mh)
+    }
+
+    @Test
+    fun testManifoldGetMaxLoopIterationsDefaultsToUnlimited()
+    {
+        val mh = NativeBridge.manifoldCreate()
+        val n = NativeBridge.manifoldGetMaxLoopIterations(mh)
+        assertEquals(-1, n, "default max loop iterations is unlimited (-1)")
+        val h = NativeBridge.manifoldHasLoopLimit(mh)
+        assertEquals(0, h, "hasLoopLimit should be 0 by default")
+        HandleRegistry.release(mh)
+    }
+
+    @Test
+    fun testManifoldGetWorkerPipelinesEmptyByDefault()
+    {
+        val mh = NativeBridge.manifoldCreate()
+        val buf = ByteArray(64)
+        val n = NativeBridge.manifoldGetWorkerPipelines(mh, buf, 0, 64)
+        assertEquals(0, n, "empty manifold should serialize 0 bytes")
+        HandleRegistry.release(mh)
+    }
+
+    @Test
+    fun testManifoldSetManagerTokenBudget()
+    {
+        val mh = NativeBridge.manifoldCreate()
+        val rc = NativeBridge.manifoldSetManagerTokenBudget(mh, 1000)
+        assertEquals(0, rc, "setManagerTokenBudget(1000) should succeed")
+        val b = NativeBridge.manifoldGetManagerTokenBudget(mh)
+        assertEquals(1000, b, "getManagerTokenBudget should return 1000")
+        HandleRegistry.release(mh)
+    }
+
+    @Test
+    fun testManifoldSetManagerTokenBudgetRejectsNegative()
+    {
+        val mh = NativeBridge.manifoldCreate()
+        val rc = NativeBridge.manifoldSetManagerTokenBudget(mh, -100)
+        assertEquals(-0x04, rc, "negative budget should return INVALID_ARGUMENT")
+        HandleRegistry.release(mh)
+    }
+
+    @Test
+    fun testManifoldGetManagerPipelineDefaultsToFalse()
+    {
+        val mh = NativeBridge.manifoldCreate()
+        val h = NativeBridge.manifoldGetManagerPipeline(mh)
+        // The default Manifold has an empty Pipeline (no pipes), so the
+        // helper returns 0.
+        assertEquals(0, h, "fresh manifold has no manager pipeline registered")
+        HandleRegistry.release(mh)
+    }
+
+    @Test
+    fun testManifoldConfigMethodsRejectNonManifoldHandle()
+    {
+        val ch = NativeBridge.contentCreate("hello")
+        val rc = NativeBridge.manifoldSetContextWindowSize(ch, 100)
+        assertEquals(-0x03, rc, "setContextWindowSize on CONTENT should return INVALID_HANDLE")
+        HandleRegistry.release(ch)
+    }
 }

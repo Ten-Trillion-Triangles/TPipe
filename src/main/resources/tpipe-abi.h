@@ -1297,6 +1297,13 @@ int TPipe_ConverseHistory_add(graal_isolatethread_t* thread, TPipe_ConverseHisto
 int TPipe_ConverseHistory_addString(graal_isolatethread_t* thread, TPipe_ConverseHistoryHandle history, const char* role, const char* content);
 
 /**
+ * @brief Create an empty conversation history.
+ * @param thread Caller's IsolateThread
+ * @return A new ConverseHistory handle, or TPIPE_INVALID_HANDLE (0) on failure
+ */
+TPipe_ConverseHistoryHandle TPipe_ConverseHistory_create(graal_isolatethread_t* thread);
+
+/**
  * @brief Get the number of conversation turns.
  * @param thread Caller's IsolateThread
  * @param history ConverseHistory handle
@@ -1426,6 +1433,19 @@ int TPipe_MiniBank_getPageJson(graal_isolatethread_t* thread, TPipe_MiniBankHand
  * @param onlyEmplaceIfNull 1 to only copy history when destination is empty
  * @return 0 on success, negative error code on failure
  */
+/**
+ * @brief Look up a context window by key and return its full content as JSON.
+ *        Returns a metadata object plus a serialized "elements" array when
+ *        the key is present; returns "{}" (2 bytes) when the key is absent.
+ * @param thread   Caller's IsolateThread
+ * @param miniBank MINIBANK handle
+ * @param key      Page key (UTF-8)
+ * @param buf      Output buffer
+ * @param bufSize  Size of the output buffer
+ * @return Number of bytes written, or negative error code on failure
+ */
+int TPipe_MiniBank_get(graal_isolatethread_t* thread, TPipe_MiniBankHandle miniBank, const char* key, char* buf, int bufSize);
+
 int TPipe_MiniBank_merge(graal_isolatethread_t* thread, TPipe_MiniBankHandle miniBank, TPipe_MiniBankHandle other, int emplaceLorebookKeys, int appendKeys, int emplaceConverseHistory, int onlyEmplaceIfNull);
 
 /*------------------------------------------------------------------------------
@@ -1782,6 +1802,21 @@ int TPipe_Manifold_setMaxLoopIterations(graal_isolatethread_t* thread, TPipe_Man
  */
 int TPipe_Manifold_serialize(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, char* buf, int bufSize);
 
+/* --- Manifold Configuration API (Cycle 3) --- */
+int TPipe_Manifold_setContextWindowSize(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, int size);
+int TPipe_Manifold_getContextWindowSize(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, int* outSize);
+int TPipe_Manifold_setTruncationMethod(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, int method);
+int TPipe_Manifold_getTruncationMethod(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, int* outMethod);
+int TPipe_Manifold_setSummaryMode(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, int mode);
+int TPipe_Manifold_getSummaryMode(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, int* outMode);
+int TPipe_Manifold_getMaxLoopIterations(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, int* outLimit);
+int TPipe_Manifold_hasLoopLimit(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, int* outHasLimit);
+int TPipe_Manifold_getWorkerPipelines(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, char* buf, int bufSize);
+int TPipe_Manifold_setManagerTokenBudget(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, int budget);
+int TPipe_Manifold_getManagerTokenBudget(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, int* outBudget);
+int TPipe_Manifold_getManagerPipeline(graal_isolatethread_t* thread, TPipe_ManifoldHandle manifold, int* outHasManager);
+
+
 /*==============================================================================
  * DISTRIBUTION GRID API FUNCTIONS (6 functions — Phase 11 stub)
  *============================================================================*/
@@ -1917,6 +1952,26 @@ TPipe_Handle TPipe_Junction_execute(graal_isolatethread_t* thread, TPipe_Junctio
  */
 int TPipe_Junction_serialize(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, char* buf, int bufSize);
 
+/* --- Junction Configuration API (Cycle 3) --- */
+int TPipe_Junction_setStrategy(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, int strategy);
+int TPipe_Junction_getStrategy(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, int* outStrategy);
+int TPipe_Junction_setRounds(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, int rounds);
+int TPipe_Junction_getRounds(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, int* outRounds);
+int TPipe_Junction_setVotingThreshold(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, long thresholdBits);
+int TPipe_Junction_getVotingThreshold(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, long* outThresholdBits);
+int TPipe_Junction_setMaxNestedDepth(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, int depth);
+int TPipe_Junction_getMaxNestedDepth(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, int* outDepth);
+int TPipe_Junction_setWorkflowRecipe(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, int recipe);
+int TPipe_Junction_getWorkflowRecipe(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, int* outRecipe);
+int TPipe_Junction_setMemoryPolicy(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, int outboundBudget, int summaryBudget);
+int TPipe_Junction_getMemoryPolicy(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, int* outBudget);
+int TPipe_Junction_getMemoryPolicyEx(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, long* outCombined);
+int TPipe_Junction_enableTracing(graal_isolatethread_t* thread, TPipe_JunctionHandle junction);
+int TPipe_Junction_disableTracing(graal_isolatethread_t* thread, TPipe_JunctionHandle junction);
+int TPipe_Junction_getTraceId(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, char* buf, int bufSize);
+int TPipe_Junction_getFailureAnalysis(graal_isolatethread_t* thread, TPipe_JunctionHandle junction, char* buf, int bufSize);
+
+
 /*==============================================================================
  * CONNECTOR API FUNCTIONS (5 functions — Phase 12)
  *============================================================================*/
@@ -1972,6 +2027,11 @@ TPipe_Handle TPipe_Connector_execute(graal_isolatethread_t* thread, TPipe_Connec
  */
 int TPipe_Connector_serialize(graal_isolatethread_t* thread, TPipe_ConnectorHandle connector, char* buf, int bufSize);
 
+/* --- Connector Configuration API (Cycle 3) --- */
+int TPipe_Connector_add(graal_isolatethread_t* thread, TPipe_ConnectorHandle connector, const char* key, TPipe_PipelineHandle pipeline);
+TPipe_PipelineHandle TPipe_Connector_get(graal_isolatethread_t* thread, TPipe_ConnectorHandle connector, const char* key);
+
+
 /*==============================================================================
  * SPLITTER API FUNCTIONS (5 functions — Phase 12)
  *============================================================================*/
@@ -2026,6 +2086,13 @@ TPipe_Handle TPipe_Splitter_execute(graal_isolatethread_t* thread, TPipe_Splitte
  */
 int TPipe_Splitter_serialize(graal_isolatethread_t* thread, TPipe_SplitterHandle splitter, char* buf, int bufSize);
 
+/* --- Splitter Configuration API (Cycle 3) --- */
+int TPipe_Splitter_addPipeline(graal_isolatethread_t* thread, TPipe_SplitterHandle splitter, TPipe_PipelineHandle pipeline);
+int TPipe_Splitter_removePipeline(graal_isolatethread_t* thread, TPipe_SplitterHandle splitter, TPipe_PipelineHandle pipeline);
+int TPipe_Splitter_getAllChildPipelines(graal_isolatethread_t* thread, TPipe_SplitterHandle splitter, int* outCount);
+int TPipe_Splitter_getChildCount(graal_isolatethread_t* thread, TPipe_SplitterHandle splitter, int* outCount);
+
+
 /*==============================================================================
  * TOP-LEVEL C ENTRY POINT
  *============================================================================*/
@@ -2042,6 +2109,19 @@ int TPipe_Splitter_serialize(graal_isolatethread_t* thread, TPipe_SplitterHandle
  *                NULL or empty string defaults to "http".
  * @return 0 on success; negative TPIPE_ERR_* code on failure.
  */
+
+/**
+ * @brief Free a string or buffer previously returned by a TPipe_* function.
+ *        Use this to release malloc'd UTF-8 strings (e.g. from
+ *        TPipe_getVersion or TPipe_Content_getText) or buffer pointers
+ *        (e.g. from TPipe_Binary_getBytes). Safe to call with NULL.
+ *
+ * @param thread Caller's IsolateThread
+ * @param ptr    Pointer to free, or NULL (no-op)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_free(graal_isolatethread_t* thread, void* ptr);
+
 int TPipe_main(graal_isolatethread_t* thread, const char* mode);
 
 #ifdef __cplusplus

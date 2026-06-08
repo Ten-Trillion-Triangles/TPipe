@@ -1,5 +1,6 @@
 package com.TTT.Native
 
+import com.TTT.Pipeline.Pipeline
 import com.TTT.Pipeline.Splitter
 import com.TTT.Pipe.MultimodalContent
 import kotlinx.coroutines.runBlocking
@@ -12,10 +13,9 @@ import kotlinx.coroutines.runBlocking
  * which runs asynchronously. See [com.TTT.Pipeline.Splitter] for the
  * full contract.
  *
- * The C ABI exposes only the executable surface (create, init, execute,
- * release, serialize). The DSL's branch registration (`addPipeline`,
- * `addContent`) requires JVM-side pipeline construction and is not
- * currently reachable from C.
+ * The C ABI exposes the executable surface (create, init, execute,
+ * release, serialize) plus the C-callable pipeline registration surface
+ * (addPipeline, removePipeline, getAllChildPipelines, getChildCount).
  *
  * @param splitter The TPipe Splitter instance to wrap.
  */
@@ -77,10 +77,65 @@ class SplitterHandle(
         val sb = StringBuilder()
         sb.append("{")
         sb.append("\"type\":\"Splitter\",")
-        sb.append("\"className\":\"${splitter::class.simpleName ?: "Splitter"}\"")
+        sb.append("\"className\":\"${splitter::class.simpleName ?: "Splitter"}\",")
+        sb.append("\"childCount\":${splitter.getAllChildPipelines().size}")
         sb.append("}")
         sb.toString()
     } catch (e: Exception) {
         "{\"type\":\"Splitter\"}"
     }
+
+    //====================================================================
+    // Cycle 3 — C ABI configuration surface
+    //====================================================================
+
+    /**
+     * C ABI: `TPipe_Splitter_addPipeline(handle, pipelineHandle)`.
+     *
+     * Register a pipeline as a child branch on the splitter. The C ABI
+     * caller must create the pipeline first (via TPipe_Pipeline_create).
+     *
+     * @param pipeline The Pipeline instance to add.
+     * @return 0 on success; TPIPE_ERR_INTERNAL on failure.
+     */
+    fun addPipeline(pipeline: Pipeline): Int = try {
+        // Use the JVM addPipeline(key, pipeline) overload. The key is the
+        // pipeline's own hashCode wrapped as Int — sufficient for the C
+        // ABI view which doesn't expose keyed lookup.
+        splitter.addPipeline(pipeline.hashCode(), pipeline)
+        0
+    } catch (e: Exception) {
+        -0x0E
+    }
+
+    /**
+     * C ABI: `TPipe_Splitter_removePipeline(handle, pipelineHandle)`.
+     *
+     * @param pipeline The Pipeline instance to remove.
+     * @return 0 on success; TPIPE_ERR_INTERNAL on failure.
+     */
+    fun removePipeline(pipeline: Pipeline): Int = try {
+        splitter.removePipeline(pipeline)
+        0
+    } catch (e: Exception) {
+        -0x0E
+    }
+
+    /**
+     * C ABI: `TPipe_Splitter_getAllChildPipelines(handle, int*)`.
+     *
+     * @return The number of registered child pipelines.
+     */
+    fun getAllChildPipelines(): Int = try {
+        splitter.getAllChildPipelines().size
+    } catch (e: Exception) {
+        -0x0E
+    }
+
+    /**
+     * C ABI: `TPipe_Splitter_getChildCount(handle, int*)`.
+     *
+     * Alias of [getAllChildPipelines] for clarity.
+     */
+    fun getChildCount(): Int = getAllChildPipelines()
 }

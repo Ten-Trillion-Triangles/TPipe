@@ -1006,6 +1006,38 @@ object NativeBridge {
     }
 
     /**
+     * Look up a context window by key and return its serialized form as JSON.
+     *
+     * Distinct from miniBankGetPageJson in that the returned JSON contains
+     * the full context element list (truncated to [maxLen]), not just a
+     * metadata summary. Useful for clients that need to render the actual
+     * context that would be sent to the LLM.
+     *
+     * @param handle The MINIBANK handle.
+     * @param key    The page key to look up.
+     * @param buf    Output buffer (UTF-8, null-terminated).
+     * @param offset Offset into [buf] at which to begin writing.
+     * @param maxLen Maximum number of bytes to write.
+     * @return Number of bytes written, or TPIPE_ERR_INVALID_HANDLE (-0x03)
+     *   on type mismatch. If the key is absent, writes "{}" and returns 2.
+     */
+    @JvmStatic fun miniBankGet(handle: Long, key: String, buf: ByteArray, offset: Int, maxLen: Int): Int {
+        val mb = HandleRegistry.getData(handle) as? MiniBankHandle ?: return -0x03
+        val page = mb.miniBank.contextMap[key]
+        val json = if (page == null) {
+            "{}"
+        } else {
+            // Reuse getPageJson's metadata structure for consistency.
+            """{"key":"${escapeJsonField(key)}","version":${page.version},"isInitialized":${page.isInitialized},"loreBookKeysCount":${page.loreBookKeys.size},"contextElementsCount":${page.contextElements.size},"converseHistorySize":${page.converseHistory.history.size},"elements":${escapeJsonField(com.TTT.Util.serialize(page.contextElements))}}"""
+        }
+        val bytes = json.toByteArray(Charsets.UTF_8)
+        val n = minOf(bytes.size, maxLen)
+        System.arraycopy(bytes, 0, buf, offset, n)
+        return n
+    }
+
+
+    /**
      * Merge another MiniBank into this one.
      *
      * @param handle         Destination MINIBANK handle (mutated in place).
@@ -1457,6 +1489,90 @@ object NativeBridge {
     }
 
     //====================================================================
+    // Manifold configuration (Cycle 3)
+    //====================================================================
+
+    /**
+     * C ABI: `TPipe_Manifold_setContextWindowSize(handle, size)`.
+     */
+    @JvmStatic fun manifoldSetContextWindowSize(handle: Long, size: Int): Int =
+        (HandleRegistry.getData(handle) as? ManifoldHandle)?.setContextWindowSize(size) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Manifold_getContextWindowSize(handle, int*)`.
+     */
+    @JvmStatic fun manifoldGetContextWindowSize(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? ManifoldHandle)?.getContextWindowSize() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Manifold_setTruncationMethod(handle, method)`.
+     */
+    @JvmStatic fun manifoldSetTruncationMethod(handle: Long, method: Int): Int =
+        (HandleRegistry.getData(handle) as? ManifoldHandle)?.setTruncationMethod(method) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Manifold_getTruncationMethod(handle, int*)`.
+     */
+    @JvmStatic fun manifoldGetTruncationMethod(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? ManifoldHandle)?.getTruncationMethod() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Manifold_setSummaryMode(handle, mode)`.
+     */
+    @JvmStatic fun manifoldSetSummaryMode(handle: Long, mode: Int): Int =
+        (HandleRegistry.getData(handle) as? ManifoldHandle)?.setSummaryMode(mode) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Manifold_getSummaryMode(handle, int*)`.
+     */
+    @JvmStatic fun manifoldGetSummaryMode(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? ManifoldHandle)?.getSummaryMode() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Manifold_getMaxLoopIterations(handle, int*)`.
+     */
+    @JvmStatic fun manifoldGetMaxLoopIterations(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? ManifoldHandle)?.getMaxLoopIterations() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Manifold_hasLoopLimit(handle, int*)`.
+     */
+    @JvmStatic fun manifoldHasLoopLimit(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? ManifoldHandle)?.hasLoopLimit() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Manifold_getWorkerPipelines(handle, buf, bufSize)`.
+     * Returns comma-separated list of worker names.
+     */
+    @JvmStatic fun manifoldGetWorkerPipelines(handle: Long, buf: ByteArray, offset: Int, maxLen: Int): Int {
+        val s = (HandleRegistry.getData(handle) as? ManifoldHandle)?.getWorkerPipelines() ?: return -0x03
+        val bytes = s.toByteArray(Charsets.UTF_8)
+        val n = minOf(bytes.size, maxLen)
+        System.arraycopy(bytes, 0, buf, offset, n)
+        return n
+    }
+
+    /**
+     * C ABI: `TPipe_Manifold_setManagerTokenBudget(handle, budget)`.
+     */
+    @JvmStatic fun manifoldSetManagerTokenBudget(handle: Long, budget: Int): Int =
+        (HandleRegistry.getData(handle) as? ManifoldHandle)?.setManagerTokenBudget(budget) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Manifold_getManagerTokenBudget(handle, int*)`.
+     */
+    @JvmStatic fun manifoldGetManagerTokenBudget(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? ManifoldHandle)?.getManagerTokenBudget() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Manifold_getManagerPipeline(handle, int*)`.
+     * Returns 1 if a manager pipeline is registered, 0 otherwise.
+     */
+    @JvmStatic fun manifoldGetManagerPipeline(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? ManifoldHandle)?.getManagerPipeline() ?: -0x03
+
+
+    //====================================================================
     // DistributionGrid (Phase 11 — stub-level handle exposure)
     //====================================================================
 
@@ -1636,6 +1752,130 @@ object NativeBridge {
     }
 
     //====================================================================
+    // Junction configuration (Cycle 3)
+    //====================================================================
+
+    /**
+     * C ABI: `TPipe_Junction_setStrategy(handle, strategy)`.
+     * See [JunctionHandle.setStrategy].
+     */
+    @JvmStatic fun junctionSetStrategy(handle: Long, strategy: Int): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.setStrategy(strategy) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Junction_getStrategy(handle, int*)`.
+     * See [JunctionHandle.getStrategy].
+     */
+    @JvmStatic fun junctionGetStrategy(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.getStrategy() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Junction_setRounds(handle, rounds)`.
+     */
+    @JvmStatic fun junctionSetRounds(handle: Long, rounds: Int): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.setRounds(rounds) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Junction_getRounds(handle, int*)`.
+     */
+    @JvmStatic fun junctionGetRounds(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.getRounds() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Junction_setVotingThreshold(handle, threshold)`.
+     * `threshold` is the raw long bits of a double.
+     */
+    @JvmStatic fun junctionSetVotingThreshold(handle: Long, thresholdBits: Long): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.setVotingThreshold(thresholdBits) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Junction_getVotingThreshold(handle, double*)`.
+     * Returns the raw long bits of a double.
+     */
+    @JvmStatic fun junctionGetVotingThreshold(handle: Long): Long =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.getVotingThreshold() ?: -0x03L
+
+    /**
+     * C ABI: `TPipe_Junction_setMaxNestedDepth(handle, depth)`.
+     */
+    @JvmStatic fun junctionSetMaxNestedDepth(handle: Long, depth: Int): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.setMaxNestedDepth(depth) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Junction_getMaxNestedDepth(handle, int*)`.
+     */
+    @JvmStatic fun junctionGetMaxNestedDepth(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.getMaxNestedDepth() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Junction_setWorkflowRecipe(handle, recipe)`.
+     */
+    @JvmStatic fun junctionSetWorkflowRecipe(handle: Long, recipe: Int): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.setWorkflowRecipe(recipe) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Junction_getWorkflowRecipe(handle, int*)`.
+     */
+    @JvmStatic fun junctionGetWorkflowRecipe(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.getWorkflowRecipe() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Junction_setMemoryPolicy(handle, outboundBudget, summaryBudget)`.
+     */
+    @JvmStatic fun junctionSetMemoryPolicy(handle: Long, outboundBudget: Int, summaryBudget: Int): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.setMemoryPolicy(outboundBudget, summaryBudget) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Junction_getMemoryPolicy(handle, int*)`.
+     */
+    @JvmStatic fun junctionGetMemoryPolicy(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.getMemoryPolicy() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Junction_getMemoryPolicyEx(handle, int64*)`.
+     * Returns (outboundBudget in low 32 bits, summaryBudget in high 32 bits).
+     */
+    @JvmStatic fun junctionGetMemoryPolicyEx(handle: Long): Long =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.getMemoryPolicyEx() ?: -0x03L
+
+    /**
+     * C ABI: `TPipe_Junction_enableTracing(handle)`.
+     */
+    @JvmStatic fun junctionEnableTracing(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.enableTracing() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Junction_disableTracing(handle)`.
+     */
+    @JvmStatic fun junctionDisableTracing(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? JunctionHandle)?.disableTracing() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Junction_getTraceId(handle, buf, bufSize)`.
+     * Returns the trace ID string for serialization.
+     */
+    @JvmStatic fun junctionGetTraceId(handle: Long, buf: ByteArray, offset: Int, maxLen: Int): Int {
+        val s = (HandleRegistry.getData(handle) as? JunctionHandle)?.getTraceId() ?: return -0x03
+        val bytes = s.toByteArray(Charsets.UTF_8)
+        val n = minOf(bytes.size, maxLen)
+        System.arraycopy(bytes, 0, buf, offset, n)
+        return n
+    }
+
+    /**
+     * C ABI: `TPipe_Junction_getFailureAnalysis(handle, buf, bufSize)`.
+     * Returns the failure analysis as a JSON string for serialization.
+     */
+    @JvmStatic fun junctionGetFailureAnalysis(handle: Long, buf: ByteArray, offset: Int, maxLen: Int): Int {
+        val s = (HandleRegistry.getData(handle) as? JunctionHandle)?.getFailureAnalysis() ?: return -0x03
+        val bytes = s.toByteArray(Charsets.UTF_8)
+        val n = minOf(bytes.size, maxLen)
+        System.arraycopy(bytes, 0, buf, offset, n)
+        return n
+    }
+
+
+    //====================================================================
     // Connector (branching container C ABI surface)
     //====================================================================
 
@@ -1710,6 +1950,28 @@ object NativeBridge {
         System.arraycopy(bytes, 0, buf, offset, n)
         return n
     }
+
+    //====================================================================
+    // Connector configuration (Cycle 3)
+    //====================================================================
+
+    /**
+     * C ABI: `TPipe_Connector_add(handle, key, keyLen, pipelineHandle)`.
+     */
+    @JvmStatic fun connectorAdd(handle: Long, key: String, pipelineHandle: Long): Int {
+        val ch = HandleRegistry.getData(handle) as? ConnectorHandle ?: return -0x03
+        val ph = HandleRegistry.getData(pipelineHandle) as? PipelineHandle ?: return -0x13
+        return ch.add(key, ph.pipeline)
+    }
+
+    /**
+     * C ABI: `TPipe_Connector_get(handle, key, keyLen) -> pipelineHandle`.
+     */
+    @JvmStatic fun connectorGet(handle: Long, key: String): Long {
+        val ch = HandleRegistry.getData(handle) as? ConnectorHandle ?: return -0x03L
+        return ch.get(key)
+    }
+
 
     //====================================================================
     // Splitter (parallel-fanout container C ABI surface)
@@ -1787,6 +2049,42 @@ object NativeBridge {
         System.arraycopy(bytes, 0, buf, offset, n)
         return n
     }
+
+    //====================================================================
+    // Splitter configuration (Cycle 3)
+    //====================================================================
+
+    /**
+     * C ABI: `TPipe_Splitter_addPipeline(handle, pipelineHandle)`.
+     * See [SplitterHandle.addPipeline].
+     */
+    @JvmStatic fun splitterAddPipeline(handle: Long, pipelineHandle: Long): Int {
+        val sh = HandleRegistry.getData(handle) as? SplitterHandle ?: return -0x03
+        val ph = HandleRegistry.getData(pipelineHandle) as? PipelineHandle ?: return -0x13
+        return sh.addPipeline(ph.pipeline)
+    }
+
+    /**
+     * C ABI: `TPipe_Splitter_removePipeline(handle, pipelineHandle)`.
+     */
+    @JvmStatic fun splitterRemovePipeline(handle: Long, pipelineHandle: Long): Int {
+        val sh = HandleRegistry.getData(handle) as? SplitterHandle ?: return -0x03
+        val ph = HandleRegistry.getData(pipelineHandle) as? PipelineHandle ?: return -0x13
+        return sh.removePipeline(ph.pipeline)
+    }
+
+    /**
+     * C ABI: `TPipe_Splitter_getAllChildPipelines(handle, int*)`.
+     */
+    @JvmStatic fun splitterGetAllChildPipelines(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? SplitterHandle)?.getAllChildPipelines() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Splitter_getChildCount(handle, int*)`.
+     */
+    @JvmStatic fun splitterGetChildCount(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? SplitterHandle)?.getChildCount() ?: -0x03
+
 
     //====================================================================
     // Top-level C entry point

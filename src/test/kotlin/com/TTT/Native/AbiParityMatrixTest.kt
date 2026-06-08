@@ -295,4 +295,37 @@ class AbiParityMatrixTest {
         val firstParamIsIsolateThread: Boolean,
         val returnType: String
     )
+
+    //==========================================================================
+    // Reverse header parity: every Java @CEntryPoint has a header declaration
+    //==========================================================================
+
+    @Test
+    fun testEveryJavaEntryPointHasAHeaderDeclaration() {
+        val eps = discoverEntryPoints().map { it.abiName }.toSet()
+        val declared = discoverDeclaredSymbols(locateHeader()).map { it.first }.toSet()
+        val javaOnly = eps - declared
+        assertEquals(emptySet(), javaOnly,
+            "These @CEntryPoint methods exist on TPipeBootstrap but have NO matching " +
+            "declaration in tpipe-abi.h. Add a declaration to the C header so the " +
+            "function is part of the documented C ABI surface: ${javaOnly.sorted()}")
+    }
+
+    @Test
+    fun testReverseOrphanSetIsEmpty() {
+        // Phase 1 baseline: the reverse orphan set is EMPTY. The Java side may
+        // declare more @CEntryPoint methods than the C header documents, but
+        // each Java entry point must have a matching tpipe-abi.h declaration.
+        // This guard rail fails if a new @CEntryPoint is added to
+        // TPipeBootstrap without updating the header.
+        val eps = discoverEntryPoints().map { it.abiName }.toSet()
+        val declared = discoverDeclaredSymbols(locateHeader()).map { it.first }.toSet()
+        val reverseOrphans = eps - declared
+        assertEquals(emptySet(), reverseOrphans,
+            "Reverse orphan set is no longer empty. A new @CEntryPoint was added " +
+            "to TPipeBootstrap without updating tpipe-abi.h. Either: " +
+            "(a) add the matching declaration to tpipe-abi.h, or " +
+            "(b) remove the @CEntryPoint if the function should not be in the C ABI. " +
+            "Current reverse orphans: $reverseOrphans")
+    }
 }

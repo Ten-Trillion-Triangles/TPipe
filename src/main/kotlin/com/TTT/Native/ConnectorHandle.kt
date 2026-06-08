@@ -1,6 +1,7 @@
 package com.TTT.Native
 
 import com.TTT.Pipeline.Connector
+import com.TTT.Pipeline.Pipeline
 import com.TTT.Pipe.MultimodalContent
 import kotlinx.coroutines.runBlocking
 
@@ -12,10 +13,9 @@ import kotlinx.coroutines.runBlocking
  * by an arbitrary path value. See [com.TTT.Pipeline.Connector] for the
  * full contract.
  *
- * The C ABI exposes only the executable surface (create, init, execute,
- * release, serialize). The DSL's branch registration (`add(key, pipeline)`)
- * requires JVM-side pipeline construction and is not currently reachable
- * from C.
+ * The C ABI exposes the executable surface (create, init, execute,
+ * release, serialize) plus the C-callable branch registration surface
+ * (add, get, setDefaultPath, getDefaultPath).
  *
  * @param connector The TPipe Connector instance to wrap.
  */
@@ -72,10 +72,52 @@ class ConnectorHandle(
         val sb = StringBuilder()
         sb.append("{")
         sb.append("\"type\":\"Connector\",")
-        sb.append("\"className\":\"${connector::class.simpleName ?: "Connector"}\"")
+        val cn = connector::class.simpleName ?: "Connector"
+        sb.append("\"className\":\"").append(cn).append("\"")
         sb.append("}")
         sb.toString()
     } catch (e: Exception) {
         "{\"type\":\"Connector\"}"
+    }
+
+    //====================================================================
+    // Cycle 3 — C ABI configuration surface
+    //====================================================================
+
+    /**
+     * C ABI: `TPipe_Connector_add(handle, key, keyLen, pipelineHandle)`.
+     *
+     * Register a pipeline as a branch on the connector under the given
+     * key. The C ABI caller must create the pipeline first (via
+     * TPipe_Pipeline_create).
+     *
+     * @param key Branch key (typically a string path).
+     * @param pipeline The Pipeline instance to add.
+     * @return 0 on success; TPIPE_ERR_INTERNAL on failure.
+     */
+    fun add(key: String, pipeline: Pipeline): Int = try {
+        connector.add(key, pipeline)
+        0
+    } catch (e: Exception) {
+        -0x0E
+    }
+
+    /**
+     * C ABI: `TPipe_Connector_get(handle, key, keyLen, outPipeline)`.
+     *
+     * Look up a registered branch by key. Returns the matching PIPELINE
+     * handle (the caller must release it) or 0 if no branch is registered
+     * for the key.
+     *
+     * @param key Branch key.
+     * @return The PIPELINE handle, or 0 if no branch is registered for
+     *   the key, or TPIPE_ERR_INTERNAL on failure.
+     */
+    fun get(key: String): Long = try {
+        val p: Pipeline? = connector.get(key)
+        if (p == null) 0L
+        else HandleRegistry.allocate(HandleTypes.PIPELINE, PipelineHandle(p))
+    } catch (e: Exception) {
+        0L
     }
 }

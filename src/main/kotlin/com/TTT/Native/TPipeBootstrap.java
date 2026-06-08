@@ -1262,6 +1262,17 @@ public class TPipeBootstrap {
         return copyToNativeBuffer(buffer, bufferSize, tmp, n);
     }
 
+    @CEntryPoint(name = "TPipe_MiniBank_get")
+    public static int miniBankGet(IsolateThread thread, long miniBank, long key, long buffer, int bufferSize) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String k = readCString(key);
+        if (k == null) return TPIPE_ERR_INVALID_ARGUMENT;
+        byte[] tmp = new byte[Math.max(1, bufferSize)];
+        int n = NativeBridge.miniBankGet(miniBank, k, tmp, 0, bufferSize > 0 ? bufferSize - 1 : 0);
+        if (n < 0) return n;
+        return copyToNativeBuffer(buffer, bufferSize, tmp, n);
+    }
+
     @CEntryPoint(name = "TPipe_MiniBank_merge")
     public static int miniBankMerge(IsolateThread thread, long miniBank, long other, int emplaceLorebookKeys, int appendKeys, int emplaceConverseHistory, int onlyEmplaceIfNull) {
         int rc = requireReady(); if (rc != TPIPE_OK) return rc;
@@ -1710,6 +1721,101 @@ public class TPipeBootstrap {
     }
 
     //====================================================================
+    // Manifold Configuration API (Cycle 3)
+    //====================================================================
+
+    @CEntryPoint(name = "TPipe_Manifold_setContextWindowSize")
+    public static int manifoldSetContextWindowSize(IsolateThread thread, long manifold, int size) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.manifoldSetContextWindowSize(manifold, size);
+    }
+
+    @CEntryPoint(name = "TPipe_Manifold_getContextWindowSize")
+    public static int manifoldGetContextWindowSize(IsolateThread thread, long manifold, long outSize) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int s = NativeBridge.manifoldGetContextWindowSize(manifold);
+        if (s < 0) return s;
+        return writeInt(outSize, 0, s);
+    }
+
+    @CEntryPoint(name = "TPipe_Manifold_setTruncationMethod")
+    public static int manifoldSetTruncationMethod(IsolateThread thread, long manifold, int method) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.manifoldSetTruncationMethod(manifold, method);
+    }
+
+    @CEntryPoint(name = "TPipe_Manifold_getTruncationMethod")
+    public static int manifoldGetTruncationMethod(IsolateThread thread, long manifold, long outMethod) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int m = NativeBridge.manifoldGetTruncationMethod(manifold);
+        if (m < 0) return m;
+        return writeInt(outMethod, 0, m);
+    }
+
+    @CEntryPoint(name = "TPipe_Manifold_setSummaryMode")
+    public static int manifoldSetSummaryMode(IsolateThread thread, long manifold, int mode) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.manifoldSetSummaryMode(manifold, mode);
+    }
+
+    @CEntryPoint(name = "TPipe_Manifold_getSummaryMode")
+    public static int manifoldGetSummaryMode(IsolateThread thread, long manifold, long outMode) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int m = NativeBridge.manifoldGetSummaryMode(manifold);
+        if (m < 0) return m;
+        return writeInt(outMode, 0, m);
+    }
+
+    @CEntryPoint(name = "TPipe_Manifold_getMaxLoopIterations")
+    public static int manifoldGetMaxLoopIterations(IsolateThread thread, long manifold, long outLimit) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int l = NativeBridge.manifoldGetMaxLoopIterations(manifold);
+        if (l < 0) return l;
+        return writeInt(outLimit, 0, l);
+    }
+
+    @CEntryPoint(name = "TPipe_Manifold_hasLoopLimit")
+    public static int manifoldHasLoopLimit(IsolateThread thread, long manifold, long outHasLimit) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int h = NativeBridge.manifoldHasLoopLimit(manifold);
+        if (h < 0) return h;
+        return writeInt(outHasLimit, 0, h);
+    }
+
+    @CEntryPoint(name = "TPipe_Manifold_getWorkerPipelines")
+    public static int manifoldGetWorkerPipelines(IsolateThread thread, long manifold, long buffer, int bufferSize) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (buffer == 0L) return TPIPE_ERR_NULL_POINTER;
+        if (bufferSize <= 0) return TPIPE_ERR_INVALID_ARGUMENT;
+        byte[] tmp = new byte[bufferSize];
+        int n = NativeBridge.manifoldGetWorkerPipelines(manifold, tmp, 0, bufferSize - 1);
+        if (n < 0) return n;
+        return copyToNativeBuffer(buffer, bufferSize, tmp, n);
+    }
+
+    @CEntryPoint(name = "TPipe_Manifold_setManagerTokenBudget")
+    public static int manifoldSetManagerTokenBudget(IsolateThread thread, long manifold, int budget) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.manifoldSetManagerTokenBudget(manifold, budget);
+    }
+
+    @CEntryPoint(name = "TPipe_Manifold_getManagerTokenBudget")
+    public static int manifoldGetManagerTokenBudget(IsolateThread thread, long manifold, long outBudget) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int b = NativeBridge.manifoldGetManagerTokenBudget(manifold);
+        if (b < 0) return b;
+        return writeInt(outBudget, 0, b);
+    }
+
+    @CEntryPoint(name = "TPipe_Manifold_getManagerPipeline")
+    public static int manifoldGetManagerPipeline(IsolateThread thread, long manifold, long outHasManager) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int h = NativeBridge.manifoldGetManagerPipeline(manifold);
+        if (h < 0) return h;
+        return writeInt(outHasManager, 0, h);
+    }
+
+    //====================================================================
     // DistributionGrid API (Phase 11 — stub-level handle exposure)
     //====================================================================
 
@@ -1846,6 +1952,136 @@ public class TPipeBootstrap {
     }
 
     //====================================================================
+    // Junction Configuration API (Cycle 3)
+    //====================================================================
+
+    @CEntryPoint(name = "TPipe_Junction_setStrategy")
+    public static int junctionSetStrategy(IsolateThread thread, long junction, int strategy) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.junctionSetStrategy(junction, strategy);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_getStrategy")
+    public static int junctionGetStrategy(IsolateThread thread, long junction, long outStrategy) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int s = NativeBridge.junctionGetStrategy(junction);
+        if (s < 0) return s;
+        return writeInt(outStrategy, 0, s);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_setRounds")
+    public static int junctionSetRounds(IsolateThread thread, long junction, int rounds) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.junctionSetRounds(junction, rounds);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_getRounds")
+    public static int junctionGetRounds(IsolateThread thread, long junction, long outRounds) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int r = NativeBridge.junctionGetRounds(junction);
+        if (r < 0) return r;
+        return writeInt(outRounds, 0, r);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_setVotingThreshold")
+    public static int junctionSetVotingThreshold(IsolateThread thread, long junction, long thresholdBits) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.junctionSetVotingThreshold(junction, thresholdBits);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_getVotingThreshold")
+    public static int junctionGetVotingThreshold(IsolateThread thread, long junction, long outThreshold) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        long t = NativeBridge.junctionGetVotingThreshold(junction);
+        if (t < 0) return (int) t;
+        return writePtr(outThreshold, 0, t);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_setMaxNestedDepth")
+    public static int junctionSetMaxNestedDepth(IsolateThread thread, long junction, int depth) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.junctionSetMaxNestedDepth(junction, depth);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_getMaxNestedDepth")
+    public static int junctionGetMaxNestedDepth(IsolateThread thread, long junction, long outDepth) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int d = NativeBridge.junctionGetMaxNestedDepth(junction);
+        if (d < 0) return d;
+        return writeInt(outDepth, 0, d);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_setWorkflowRecipe")
+    public static int junctionSetWorkflowRecipe(IsolateThread thread, long junction, int recipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.junctionSetWorkflowRecipe(junction, recipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_getWorkflowRecipe")
+    public static int junctionGetWorkflowRecipe(IsolateThread thread, long junction, long outRecipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int r = NativeBridge.junctionGetWorkflowRecipe(junction);
+        if (r < 0) return r;
+        return writeInt(outRecipe, 0, r);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_setMemoryPolicy")
+    public static int junctionSetMemoryPolicy(IsolateThread thread, long junction, int outboundBudget, int summaryBudget) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.junctionSetMemoryPolicy(junction, outboundBudget, summaryBudget);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_getMemoryPolicy")
+    public static int junctionGetMemoryPolicy(IsolateThread thread, long junction, long outBudget) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int b = NativeBridge.junctionGetMemoryPolicy(junction);
+        if (b < 0) return b;
+        return writeInt(outBudget, 0, b);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_getMemoryPolicyEx")
+    public static int junctionGetMemoryPolicyEx(IsolateThread thread, long junction, long outCombined) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        long v = NativeBridge.junctionGetMemoryPolicyEx(junction);
+        if (v < 0) return (int) v;
+        return writePtr(outCombined, 0, v);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_enableTracing")
+    public static int junctionEnableTracing(IsolateThread thread, long junction) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.junctionEnableTracing(junction);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_disableTracing")
+    public static int junctionDisableTracing(IsolateThread thread, long junction) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.junctionDisableTracing(junction);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_getTraceId")
+    public static int junctionGetTraceId(IsolateThread thread, long junction, long buffer, int bufferSize) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (buffer == 0L) return TPIPE_ERR_NULL_POINTER;
+        if (bufferSize <= 0) return TPIPE_ERR_INVALID_ARGUMENT;
+        byte[] tmp = new byte[bufferSize];
+        int n = NativeBridge.junctionGetTraceId(junction, tmp, 0, bufferSize - 1);
+        if (n < 0) return n;
+        return copyToNativeBuffer(buffer, bufferSize, tmp, n);
+    }
+
+    @CEntryPoint(name = "TPipe_Junction_getFailureAnalysis")
+    public static int junctionGetFailureAnalysis(IsolateThread thread, long junction, long buffer, int bufferSize) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (buffer == 0L) return TPIPE_ERR_NULL_POINTER;
+        if (bufferSize <= 0) return TPIPE_ERR_INVALID_ARGUMENT;
+        byte[] tmp = new byte[bufferSize];
+        int n = NativeBridge.junctionGetFailureAnalysis(junction, tmp, 0, bufferSize - 1);
+        if (n < 0) return n;
+        return copyToNativeBuffer(buffer, bufferSize, tmp, n);
+    }
+
+    //====================================================================
     // Connector API (Phase 12 — branching container C ABI surface)
     //====================================================================
 
@@ -1884,6 +2120,26 @@ public class TPipeBootstrap {
     }
 
     //====================================================================
+    // Connector Configuration API (Cycle 3)
+    //====================================================================
+
+    @CEntryPoint(name = "TPipe_Connector_add")
+    public static int connectorAdd(IsolateThread thread, long connector, long key, long pipeline) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String k = readCString(key);
+        if (k == null) return TPIPE_ERR_INVALID_ARGUMENT;
+        return NativeBridge.connectorAdd(connector, k, pipeline);
+    }
+
+    @CEntryPoint(name = "TPipe_Connector_get")
+    public static long connectorGet(IsolateThread thread, long connector, long key) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return 0L;
+        String k = readCString(key);
+        if (k == null) return 0L;
+        return NativeBridge.connectorGet(connector, k);
+    }
+
+    //====================================================================
     // Splitter API (Phase 12 — parallel-fanout container C ABI surface)
     //====================================================================
 
@@ -1919,6 +2175,38 @@ public class TPipeBootstrap {
         int n = NativeBridge.splitterSerialize(splitter, tmp, 0, bufferSize > 0 ? bufferSize - 1 : 0);
         if (n < 0) return n;
         return copyToNativeBuffer(buffer, bufferSize, tmp, n);
+    }
+
+    //====================================================================
+    // Splitter Configuration API (Cycle 3)
+    //====================================================================
+
+    @CEntryPoint(name = "TPipe_Splitter_addPipeline")
+    public static int splitterAddPipeline(IsolateThread thread, long splitter, long pipeline) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.splitterAddPipeline(splitter, pipeline);
+    }
+
+    @CEntryPoint(name = "TPipe_Splitter_removePipeline")
+    public static int splitterRemovePipeline(IsolateThread thread, long splitter, long pipeline) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.splitterRemovePipeline(splitter, pipeline);
+    }
+
+    @CEntryPoint(name = "TPipe_Splitter_getAllChildPipelines")
+    public static int splitterGetAllChildPipelines(IsolateThread thread, long splitter, long outCount) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int c = NativeBridge.splitterGetAllChildPipelines(splitter);
+        if (c < 0) return c;
+        return writeInt(outCount, 0, c);
+    }
+
+    @CEntryPoint(name = "TPipe_Splitter_getChildCount")
+    public static int splitterGetChildCount(IsolateThread thread, long splitter, long outCount) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int c = NativeBridge.splitterGetChildCount(splitter);
+        if (c < 0) return c;
+        return writeInt(outCount, 0, c);
     }
 
     //====================================================================
