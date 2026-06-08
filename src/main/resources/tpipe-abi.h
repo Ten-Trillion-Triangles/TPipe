@@ -923,6 +923,125 @@ int TPipe_Pipe_getTokenUsage(graal_isolatethread_t* thread,
                              int* totalOutputTokens);
 
 /*==============================================================================
+ * CYCLE 4 — PIPE PROMPT + SAMPLING SURFACE (10 functions)
+ *============================================================================*/
+
+/**
+ * @brief Set the system prompt on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param text System prompt text (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setSystemPrompt(graal_isolatethread_t* thread,
+                               TPipe_PipeHandle pipeHandle,
+                               const char* text);
+
+/**
+ * @brief Read the system prompt currently bound to a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param buffer Output buffer (UTF-8, null-terminated on success)
+ * @param bufferSize Size of the output buffer in bytes
+ * @return Number of bytes written (excluding null terminator) on success,
+ *         negative error code on failure
+ */
+int TPipe_Pipe_getSystemPrompt(graal_isolatethread_t* thread,
+                               TPipe_PipeHandle pipeHandle,
+                               char* buffer,
+                               int bufferSize);
+
+/**
+ * @brief Set the user prompt on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param text User prompt text (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setUserPrompt(graal_isolatethread_t* thread,
+                             TPipe_PipeHandle pipeHandle,
+                             const char* text);
+
+/**
+ * @brief Set the middle prompt on a pipe (injected after JSON input)
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param text Middle prompt text (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setMiddlePrompt(graal_isolatethread_t* thread,
+                               TPipe_PipeHandle pipeHandle,
+                               const char* text);
+
+/**
+ * @brief Set the footer prompt on a pipe (injected at end of system prompt)
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param text Footer prompt text (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setFooterPrompt(graal_isolatethread_t* thread,
+                               TPipe_PipeHandle pipeHandle,
+                               const char* text);
+
+/**
+ * @brief Set the top_p (nucleus sampling) value on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param doubleBits Raw IEEE 754 bits of the top_p double (0.0 - 1.0)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setTopP(graal_isolatethread_t* thread,
+                       TPipe_PipeHandle pipeHandle,
+                       int64_t doubleBits);
+
+/**
+ * @brief Set the top_k value on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param top top_k value (must be > 0)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setTopK(graal_isolatethread_t* thread,
+                       TPipe_PipeHandle pipeHandle,
+                       int top);
+
+/**
+ * @brief Set the max tokens value on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param max Max tokens value (must be > 0)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setMaxTokens(graal_isolatethread_t* thread,
+                            TPipe_PipeHandle pipeHandle,
+                            int max);
+
+/**
+ * @brief Set the deterministic generation seed on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param seedBits Seed value (lower 32 bits used as Int) or INT64_MIN
+ *                 (0x8000000000000000) to clear the seed
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setSeed(graal_isolatethread_t* thread,
+                       TPipe_PipeHandle pipeHandle,
+                       int64_t seedBits);
+
+/**
+ * @brief Set the stop sequences on a pipe (newline-separated)
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param text Newline-separated stop sequences (UTF-8, null-terminated).
+ *             Empty string clears the list.
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_setStopSequences(graal_isolatethread_t* thread,
+                                TPipe_PipeHandle pipeHandle,
+                                const char* text);
+
+/*==============================================================================
  * PIPE SETTINGS HANDLE (10 functions)
  *============================================================================*/
 

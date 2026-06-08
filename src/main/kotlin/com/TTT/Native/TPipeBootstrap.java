@@ -804,6 +804,80 @@ public class TPipeBootstrap {
     }
 
     //====================================================================
+    // Cycle 4 — Pipe prompt + sampling surface
+    //====================================================================
+
+    @CEntryPoint(name = "TPipe_Pipe_setSystemPrompt")
+    public static int pipeSetSystemPrompt(IsolateThread thread, long pipe, long textPtr) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String text = readCString(textPtr);
+        return NativeBridge.pipeSetSystemPrompt(pipe, text);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_getSystemPrompt")
+    public static int pipeGetSystemPrompt(IsolateThread thread, long pipe, long buffer, int bufferSize) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (buffer == 0L) return TPIPE_ERR_NULL_POINTER;
+        if (bufferSize <= 0) return TPIPE_ERR_INVALID_ARGUMENT;
+        byte[] tmp = new byte[bufferSize];
+        int n = NativeBridge.pipeGetSystemPrompt(pipe, tmp, 0, bufferSize - 1);
+        if (n < 0) return n;
+        return copyToNativeBuffer(buffer, bufferSize, tmp, n);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setUserPrompt")
+    public static int pipeSetUserPrompt(IsolateThread thread, long pipe, long textPtr) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String text = readCString(textPtr);
+        return NativeBridge.pipeSetUserPrompt(pipe, text);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setMiddlePrompt")
+    public static int pipeSetMiddlePrompt(IsolateThread thread, long pipe, long textPtr) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String text = readCString(textPtr);
+        return NativeBridge.pipeSetMiddlePrompt(pipe, text);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setFooterPrompt")
+    public static int pipeSetFooterPrompt(IsolateThread thread, long pipe, long textPtr) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String text = readCString(textPtr);
+        return NativeBridge.pipeSetFooterPrompt(pipe, text);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setTopP")
+    public static int pipeSetTopP(IsolateThread thread, long pipe, long doubleBits) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetTopP(pipe, doubleBits);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setTopK")
+    public static int pipeSetTopK(IsolateThread thread, long pipe, int top) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetTopK(pipe, top);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setMaxTokens")
+    public static int pipeSetMaxTokens(IsolateThread thread, long pipe, int max) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetMaxTokens(pipe, max);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setSeed")
+    public static int pipeSetSeed(IsolateThread thread, long pipe, long seedBits) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetSeed(pipe, seedBits);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setStopSequences")
+    public static int pipeSetStopSequences(IsolateThread thread, long pipe, long textPtr) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String text = readCString(textPtr);
+        return NativeBridge.pipeSetStopSequences(pipe, text);
+    }
+
+    //====================================================================
     // PipeSettings API
     //====================================================================
 

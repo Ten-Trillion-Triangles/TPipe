@@ -403,6 +403,91 @@ object NativeBridge {
         (HandleRegistry.getData(handle) as? PipeHandle)?.settings?.setReasoning(r)
     }
 
+    //====================================================================
+    // Cycle 4 — Pipe prompt + sampling surface
+    //====================================================================
+
+    /**
+     * C ABI: `TPipe_Pipe_setSystemPrompt(handle, text)`.
+     * See [PipeHandle.setSystemPrompt].
+     */
+    @JvmStatic fun pipeSetSystemPrompt(handle: Long, text: String?): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setSystemPrompt(text ?: "") ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_getSystemPrompt(handle, buf, bufSize)`.
+     * Writes the system prompt text into the caller-supplied UTF-8 buffer.
+     * Returns the number of bytes written (the C entry point may append a
+     * null terminator separately), or a negative error code.
+     */
+    @JvmStatic fun pipeGetSystemPrompt(handle: Long, buf: ByteArray?, offset: Int, maxLen: Int): Int {
+        if (buf == null) return -0x05
+        if (maxLen <= 0) return -0x04
+        val s = (HandleRegistry.getData(handle) as? PipeHandle)?.getSystemPrompt() ?: return -0x03
+        val bytes = s.toByteArray(Charsets.UTF_8)
+        val n = minOf(bytes.size, maxLen)
+        System.arraycopy(bytes, 0, buf, offset, n)
+        return n
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setUserPrompt(handle, text)`.
+     * See [PipeHandle.setUserPrompt].
+     */
+    @JvmStatic fun pipeSetUserPrompt(handle: Long, text: String?): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setUserPrompt(text ?: "") ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_setMiddlePrompt(handle, text)`.
+     * See [PipeHandle.setMiddlePrompt].
+     */
+    @JvmStatic fun pipeSetMiddlePrompt(handle: Long, text: String?): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setMiddlePrompt(text ?: "") ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_setFooterPrompt(handle, text)`.
+     * See [PipeHandle.setFooterPrompt].
+     */
+    @JvmStatic fun pipeSetFooterPrompt(handle: Long, text: String?): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setFooterPrompt(text ?: "") ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_setTopP(handle, doubleBits)`.
+     * `doubleBits` is the raw long bits of a Double (IEEE 754).
+     * See [PipeHandle.setTopP].
+     */
+    @JvmStatic fun pipeSetTopP(handle: Long, doubleBits: Long): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setTopP(doubleBits) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_setTopK(handle, top)`.
+     * See [PipeHandle.setTopK].
+     */
+    @JvmStatic fun pipeSetTopK(handle: Long, top: Int): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setTopK(top) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_setMaxTokens(handle, max)`.
+     * See [PipeHandle.setMaxTokens].
+     */
+    @JvmStatic fun pipeSetMaxTokens(handle: Long, max: Int): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setMaxTokens(max) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_setSeed(handle, seedBits)`.
+     * `Long.MIN_VALUE` is the documented sentinel that clears the seed.
+     * See [PipeHandle.setSeed].
+     */
+    @JvmStatic fun pipeSetSeed(handle: Long, seedBits: Long): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setSeed(seedBits) ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_setStopSequences(handle, text)`.
+     * Splits `text` on the `\n` character. See [PipeHandle.setStopSequences].
+     */
+    @JvmStatic fun pipeSetStopSequences(handle: Long, text: String?): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.setStopSequences(text ?: "") ?: -0x03
+
     @JvmStatic fun pipeInit(pipe: Long, content: Long, context: Long): Int {
         if (HandleRegistry.getData(pipe) !is PipeHandle) return -0x03
         if (content != 0L && HandleRegistry.getType(content) != HandleTypes.CONTENT) return -0x13

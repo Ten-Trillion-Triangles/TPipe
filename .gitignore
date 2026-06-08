@@ -92,3 +92,12 @@ aws/
 /.hermes/plans
 *.bak
 *.bak
+
+# LLM-generated work artifacts (scorecards, audits, plans, worklists).
+# These are LLM session outputs, not source. Lives at
+# ~/.codex/tpipe-abi-stash/ if needed outside the repo.
+Abi/PARITY-ANALYSIS-*.md
+Abi/PARITY-CYCLE*.md
+Abi/ParityWorklist.md
+Abi/REVIEW-graalvm-abi-*.md
+Abi/ULTRAQA-REPORT-*.md
