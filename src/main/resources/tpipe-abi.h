@@ -1276,6 +1276,146 @@ int TPipe_Pipe_isAutoTruncateContextEnabled(graal_isolatethread_t* thread,
                                             int* outEnabled);
 
 /*==============================================================================
+ * CYCLE 7 — PIPE HOOKS (DSL SUSPEND-LAMBDA STUBS) + P2P/PCP/CONTEXTBANK (10 functions)
+ *
+ * All 10 functions in this section are UNSUPPORTED stubs that return
+ * TPIPE_ERR_NOT_IMPLEMENTED (-0x10) on a valid pipe handle. The JVM-side
+ * setters they wrap take either a `suspend` lambda or an object-typed
+ * parameter that the C ABI cannot accept directly.
+ *
+ * Functional support requires the future ABI vtable/indirection cycle
+ * (see the original plan's "Out of Scope" notes), which will let the
+ * language wrapper register function references that the JVM calls back
+ * out to fetch schemas / invoke suspend-lambda bodies.
+ *============================================================================*/
+
+/**
+ * @brief Set the retry function on a pipe (DSL-only stub).
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return TPIPE_ERR_NOT_IMPLEMENTED (-0x10) on a valid handle,
+ *         TPIPE_ERR_INVALID_HANDLE (-0x03) on a null handle
+ * @note DSL-only: the JVM method takes a
+ *       `suspend (Pipe, MultimodalContent) -> Boolean` lambda.
+ */
+int TPipe_Pipe_setRetryFunction(graal_isolatethread_t* thread,
+                                TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Set the exception handler on a pipe (DSL-only stub).
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return TPIPE_ERR_NOT_IMPLEMENTED (-0x10) on a valid handle,
+ *         TPIPE_ERR_INVALID_HANDLE (-0x03) on a null handle
+ * @note DSL-only: the JVM method takes a
+ *       `suspend (MultimodalContent, Throwable) -> Unit` lambda.
+ */
+int TPipe_Pipe_setExceptionFunction(graal_isolatethread_t* thread,
+                                    TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Set the string validator on a pipe (DSL-only stub).
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return TPIPE_ERR_NOT_IMPLEMENTED (-0x10) on a valid handle,
+ *         TPIPE_ERR_INVALID_HANDLE (-0x03) on a null handle
+ * @note DSL-only: the JVM method takes a `(String) -> Boolean` lambda.
+ */
+int TPipe_Pipe_setStringValidatorFunction(graal_isolatethread_t* thread,
+                                         TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Set the transformation function on a pipe (DSL-only stub).
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return TPIPE_ERR_NOT_IMPLEMENTED (-0x10) on a valid handle,
+ *         TPIPE_ERR_INVALID_HANDLE (-0x03) on a null handle
+ * @note DSL-only: the JVM method takes a
+ *       `suspend (MultimodalContent) -> MultimodalContent` lambda.
+ */
+int TPipe_Pipe_setTransformationFunction(graal_isolatethread_t* thread,
+                                         TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Set the pre-init function on a pipe (DSL-only stub).
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return TPIPE_ERR_NOT_IMPLEMENTED (-0x10) on a valid handle,
+ *         TPIPE_ERR_INVALID_HANDLE (-0x03) on a null handle
+ * @note DSL-only: the JVM method takes a
+ *       `suspend (MultimodalContent) -> Unit` lambda.
+ */
+int TPipe_Pipe_setPreInitFunction(graal_isolatethread_t* thread,
+                                  TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Set the pre-validation function on a pipe (DSL-only stub).
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return TPIPE_ERR_NOT_IMPLEMENTED (-0x10) on a valid handle,
+ *         TPIPE_ERR_INVALID_HANDLE (-0x03) on a null handle
+ * @note DSL-only: the JVM method takes a
+ *       `suspend (ContextWindow, MultimodalContent?) -> ContextWindow`
+ *       lambda.
+ */
+int TPipe_Pipe_setPreValidationFunction(graal_isolatethread_t* thread,
+                                       TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Set the pre-invoke function on a pipe (DSL-only stub).
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return TPIPE_ERR_NOT_IMPLEMENTED (-0x10) on a valid handle,
+ *         TPIPE_ERR_INVALID_HANDLE (-0x03) on a null handle
+ * @note DSL-only: the JVM method takes a
+ *       `suspend (MultimodalContent) -> Boolean` lambda.
+ */
+int TPipe_Pipe_setPreInvokeFunction(graal_isolatethread_t* thread,
+                                    TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Set the post-generate function on a pipe (DSL-only stub).
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return TPIPE_ERR_NOT_IMPLEMENTED (-0x10) on a valid handle,
+ *         TPIPE_ERR_INVALID_HANDLE (-0x03) on a null handle
+ * @note DSL-only: the JVM method takes a
+ *       `suspend (MultimodalContent) -> Unit` lambda.
+ */
+int TPipe_Pipe_setPostGenerateFunction(graal_isolatethread_t* thread,
+                                       TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Set the PcpContext on a pipe (object-typed stub).
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return TPIPE_ERR_NOT_IMPLEMENTED (-0x10) on a valid handle,
+ *         TPIPE_ERR_INVALID_HANDLE (-0x03) on a null handle
+ * @note Object-typed: the JVM method takes a
+ *       [com.TTT.PipeContextProtocol.PcpContext] object. The C ABI cannot
+ *       accept a typed object reference; the vtable indirection cycle
+ *       will provide a way to register a context from the language
+ *       wrapper.
+ */
+int TPipe_Pipe_setPcPContext(graal_isolatethread_t* thread,
+                             TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Enable memory introspection tools on a pipe (object-typed stub).
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return TPIPE_ERR_NOT_IMPLEMENTED (-0x10) on a valid handle,
+ *         TPIPE_ERR_INVALID_HANDLE (-0x03) on a null handle
+ * @note Object-typed: the JVM method takes a
+ *       [com.TTT.Context.MemoryIntrospectionConfig] object. The C ABI
+ *       cannot accept a typed object reference; the vtable indirection
+ *       cycle will provide a way to register a config from the language
+ *       wrapper.
+ */
+int TPipe_Pipe_enableMemoryIntrospection(graal_isolatethread_t* thread,
+                                        TPipe_PipeHandle pipeHandle);
+
+/*==============================================================================
  * PIPE SETTINGS HANDLE (10 functions)
  *============================================================================*/
 

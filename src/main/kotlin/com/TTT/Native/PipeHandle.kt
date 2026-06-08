@@ -607,6 +607,140 @@ class PipeHandle(
         }
     }
 
+    //==========================================================================
+    // Cycle 7 — Pipe hooks (DSL suspend-lambda stubs) + P2P/PCP/ContextBank
+    //
+    // All 10 of these methods are UNSUPPORTED stubs. The JVM-side setters
+    // they wrap take either a `suspend` lambda or an object-typed
+    // parameter (PcpContext, MemoryIntrospectionConfig) that the C ABI
+    // cannot accept directly.
+    //
+    // Per the original plan's "Out of Scope" policy, these return
+    // TPIPE_ERR_NOT_IMPLEMENTED (-0x10). Functional support requires the
+    // future vtable/indirection cycle, which will let the language
+    // wrapper register function references that the JVM calls back out
+    // to fetch schemas / invoke suspend-lambda bodies.
+    //
+    // Each stub still respects the null-handle check at the bridge layer
+    // (so callers get -0x03 for a missing handle, not a confusing -0x10).
+    //==========================================================================
+
+    /**
+     * C ABI: `TPipe_Pipe_setRetryFunction(handle)` (DSL-only stub).
+     * Wraps [Pipe.setRetryFunction] (Kotlin signature: takes a
+     * `suspend (Pipe, MultimodalContent) -> Boolean` lambda). The C ABI
+     * cannot accept a function reference; the vtable indirection cycle
+     * will provide a way to register a callback from the language
+     * wrapper. Always returns `TPIPE_ERR_NOT_IMPLEMENTED` (-0x10).
+     */
+    fun setRetryFunction(): Int
+    {
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setExceptionFunction(handle)` (DSL-only stub).
+     * Wraps [Pipe.setExceptionFunction] (Kotlin signature: takes a
+     * `suspend (MultimodalContent, Throwable) -> Unit` lambda).
+     * Always returns `TPIPE_ERR_NOT_IMPLEMENTED` (-0x10).
+     */
+    fun setExceptionFunction(): Int
+    {
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setStringValidatorFunction(handle)` (DSL-only stub).
+     * Wraps [Pipe.setStringValidatorFunction] (Kotlin signature: takes
+     * a `(String) -> Boolean` lambda). Always returns
+     * `TPIPE_ERR_NOT_IMPLEMENTED` (-0x10).
+     */
+    fun setStringValidatorFunction(): Int
+    {
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setTransformationFunction(handle)` (DSL-only stub).
+     * Wraps [Pipe.setTransformationFunction] (Kotlin signature: takes a
+     * `suspend (MultimodalContent) -> MultimodalContent` lambda).
+     * Always returns `TPIPE_ERR_NOT_IMPLEMENTED` (-0x10).
+     */
+    fun setTransformationFunction(): Int
+    {
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setPreInitFunction(handle)` (DSL-only stub).
+     * Wraps [Pipe.setPreInitFunction] (Kotlin signature: takes a
+     * `suspend (MultimodalContent) -> Unit` lambda). Always returns
+     * `TPIPE_ERR_NOT_IMPLEMENTED` (-0x10).
+     */
+    fun setPreInitFunction(): Int
+    {
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setPreValidationFunction(handle)` (DSL-only stub).
+     * Wraps [Pipe.setPreValidationFunction] (Kotlin signature: takes a
+     * `suspend (ContextWindow, MultimodalContent?) -> ContextWindow`
+     * lambda). Always returns `TPIPE_ERR_NOT_IMPLEMENTED` (-0x10).
+     */
+    fun setPreValidationFunction(): Int
+    {
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setPreInvokeFunction(handle)` (DSL-only stub).
+     * Wraps [Pipe.setPreInvokeFunction] (Kotlin signature: takes a
+     * `suspend (MultimodalContent) -> Boolean` lambda). Always returns
+     * `TPIPE_ERR_NOT_IMPLEMENTED` (-0x10).
+     */
+    fun setPreInvokeFunction(): Int
+    {
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setPostGenerateFunction(handle)` (DSL-only stub).
+     * Wraps [Pipe.setPostGenerateFunction] (Kotlin signature: takes a
+     * `suspend (MultimodalContent) -> Unit` lambda). Always returns
+     * `TPIPE_ERR_NOT_IMPLEMENTED` (-0x10).
+     */
+    fun setPostGenerateFunction(): Int
+    {
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setPcPContext(handle)` (object-typed stub).
+     * Wraps [Pipe.setPcPContext] (Kotlin signature: takes a
+     * [com.TTT.PipeContextProtocol.PcpContext] object). The C ABI
+     * cannot accept a typed object reference; the vtable indirection
+     * cycle will provide a way to register a context from the language
+     * wrapper. Always returns `TPIPE_ERR_NOT_IMPLEMENTED` (-0x10).
+     */
+    fun setPcPContext(): Int
+    {
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_enableMemoryIntrospection(handle)` (object-typed stub).
+     * Wraps [Pipe.enableMemoryIntrospection] (Kotlin signature: takes a
+     * [com.TTT.Context.MemoryIntrospectionConfig] object). The C ABI
+     * cannot accept a typed object reference; the vtable indirection
+     * cycle will provide a way to register a config from the language
+     * wrapper. Always returns `TPIPE_ERR_NOT_IMPLEMENTED` (-0x10).
+     */
+    fun enableMemoryIntrospection(): Int
+    {
+        return -0x10
+    }
+
     sealed class Result {
         data class Success(val handleId: Long) : Result()
         data class Error(val message: String) : Result()

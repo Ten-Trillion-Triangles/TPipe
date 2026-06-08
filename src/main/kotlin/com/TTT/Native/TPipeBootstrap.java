@@ -1023,6 +1023,74 @@ public class TPipeBootstrap {
     }
 
     //====================================================================
+    // Cycle 7 — Pipe hooks (DSL suspend-lambda stubs) + P2P/PCP/ContextBank
+    //
+    // All 10 of these are UNSUPPORTED stubs. They return TPIPE_ERR_NOT_IMPLEMENTED
+    // (-0x10) on a valid pipe handle, after the null-handle check in the bridge
+    // layer.
+    //====================================================================
+
+    @CEntryPoint(name = "TPipe_Pipe_setRetryFunction")
+    public static int pipeSetRetryFunction(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetRetryFunction(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setExceptionFunction")
+    public static int pipeSetExceptionFunction(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetExceptionFunction(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setStringValidatorFunction")
+    public static int pipeSetStringValidatorFunction(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetStringValidatorFunction(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setTransformationFunction")
+    public static int pipeSetTransformationFunction(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetTransformationFunction(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setPreInitFunction")
+    public static int pipeSetPreInitFunction(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetPreInitFunction(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setPreValidationFunction")
+    public static int pipeSetPreValidationFunction(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetPreValidationFunction(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setPreInvokeFunction")
+    public static int pipeSetPreInvokeFunction(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetPreInvokeFunction(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setPostGenerateFunction")
+    public static int pipeSetPostGenerateFunction(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetPostGenerateFunction(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_setPcPContext")
+    public static int pipeSetPcPContext(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeSetPcPContext(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_enableMemoryIntrospection")
+    public static int pipeEnableMemoryIntrospection(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeEnableMemoryIntrospection(pipe);
+    }
+
+    //====================================================================
     // PipeSettings API
     //====================================================================
 

@@ -792,4 +792,175 @@ class PipeHandleTest
         val rc = NativeBridge.pipeIsAutoTruncateContextEnabled(0L)
         assertTrue(rc < 0, "null handle should return negative error code, got $rc")
     }
+
+
+    //==========================================================================
+    // Cycle 7 — Pipe hooks (DSL suspend-lambda stubs) + P2P/PCP/ContextBank
+    //
+    // All 10 of these C symbols are stubs that return
+    // TPIPE_ERR_NOT_IMPLEMENTED (-0x10). The JVM-side methods they wrap take
+    // either a suspend lambda or an object-typed parameter that the C ABI
+    // cannot accept directly. Functional support requires the future
+    // vtable/indirection cycle (see the original plan's "Out of Scope" notes).
+    //==========================================================================
+
+    @Test
+    fun testTPipe_Pipe_setRetryFunction_returnsNotImplemented()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetRetryFunction(h)
+        assertEquals(-0x10, rc, "DSL suspend-lambda hook should return NOT_IMPLEMENTED")
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setRetryFunction_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetRetryFunction(0L)
+        assertEquals(-0x03, rc, "null handle still returns INVALID_HANDLE before the unsupported check")
+    }
+
+    @Test
+    fun testTPipe_Pipe_setExceptionFunction_returnsNotImplemented()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetExceptionFunction(h)
+        assertEquals(-0x10, rc)
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setExceptionFunction_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetExceptionFunction(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setStringValidatorFunction_returnsNotImplemented()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetStringValidatorFunction(h)
+        assertEquals(-0x10, rc)
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setStringValidatorFunction_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetStringValidatorFunction(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setTransformationFunction_returnsNotImplemented()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetTransformationFunction(h)
+        assertEquals(-0x10, rc)
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setTransformationFunction_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetTransformationFunction(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setPreInitFunction_returnsNotImplemented()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetPreInitFunction(h)
+        assertEquals(-0x10, rc)
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setPreInitFunction_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetPreInitFunction(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setPreValidationFunction_returnsNotImplemented()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetPreValidationFunction(h)
+        assertEquals(-0x10, rc)
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setPreValidationFunction_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetPreValidationFunction(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setPreInvokeFunction_returnsNotImplemented()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetPreInvokeFunction(h)
+        assertEquals(-0x10, rc)
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setPreInvokeFunction_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetPreInvokeFunction(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setPostGenerateFunction_returnsNotImplemented()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetPostGenerateFunction(h)
+        assertEquals(-0x10, rc)
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setPostGenerateFunction_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetPostGenerateFunction(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setPcPContext_returnsNotImplemented()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeSetPcPContext(h)
+        assertEquals(-0x10, rc, "object-typed PcpContext setter is UNSUPPORTED until vtable indirection")
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_setPcPContext_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeSetPcPContext(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_enableMemoryIntrospection_returnsNotImplemented()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeEnableMemoryIntrospection(h)
+        assertEquals(-0x10, rc, "object-typed MemoryIntrospectionConfig setter is UNSUPPORTED until vtable indirection")
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_enableMemoryIntrospection_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeEnableMemoryIntrospection(0L)
+        assertEquals(-0x03, rc)
+    }
 }

@@ -667,6 +667,113 @@ object NativeBridge {
     @JvmStatic fun pipeIsAutoTruncateContextEnabled(handle: Long): Int =
         (HandleRegistry.getData(handle) as? PipeHandle)?.isAutoTruncateContextEnabled() ?: -0x03
 
+    //====================================================================
+    // Cycle 7 — Pipe hooks (DSL suspend-lambda stubs) + P2P/PCP/ContextBank
+    //
+    // All 10 of these are UNSUPPORTED stubs. The bridge layer preserves
+    // the null-handle check (-0x03) and otherwise returns -0x10.
+    //====================================================================
+
+    /**
+     * C ABI: `TPipe_Pipe_setRetryFunction(handle)` (DSL-only stub).
+     * See [PipeHandle.setRetryFunction].
+     */
+    @JvmStatic fun pipeSetRetryFunction(handle: Long): Int
+    {
+        if (HandleRegistry.getData(handle) !is PipeHandle) return -0x03
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setExceptionFunction(handle)` (DSL-only stub).
+     * See [PipeHandle.setExceptionFunction].
+     */
+    @JvmStatic fun pipeSetExceptionFunction(handle: Long): Int
+    {
+        if (HandleRegistry.getData(handle) !is PipeHandle) return -0x03
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setStringValidatorFunction(handle)` (DSL-only stub).
+     * See [PipeHandle.setStringValidatorFunction].
+     */
+    @JvmStatic fun pipeSetStringValidatorFunction(handle: Long): Int
+    {
+        if (HandleRegistry.getData(handle) !is PipeHandle) return -0x03
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setTransformationFunction(handle)` (DSL-only stub).
+     * See [PipeHandle.setTransformationFunction].
+     */
+    @JvmStatic fun pipeSetTransformationFunction(handle: Long): Int
+    {
+        if (HandleRegistry.getData(handle) !is PipeHandle) return -0x03
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setPreInitFunction(handle)` (DSL-only stub).
+     * See [PipeHandle.setPreInitFunction].
+     */
+    @JvmStatic fun pipeSetPreInitFunction(handle: Long): Int
+    {
+        if (HandleRegistry.getData(handle) !is PipeHandle) return -0x03
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setPreValidationFunction(handle)` (DSL-only stub).
+     * See [PipeHandle.setPreValidationFunction].
+     */
+    @JvmStatic fun pipeSetPreValidationFunction(handle: Long): Int
+    {
+        if (HandleRegistry.getData(handle) !is PipeHandle) return -0x03
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setPreInvokeFunction(handle)` (DSL-only stub).
+     * See [PipeHandle.setPreInvokeFunction].
+     */
+    @JvmStatic fun pipeSetPreInvokeFunction(handle: Long): Int
+    {
+        if (HandleRegistry.getData(handle) !is PipeHandle) return -0x03
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setPostGenerateFunction(handle)` (DSL-only stub).
+     * See [PipeHandle.setPostGenerateFunction].
+     */
+    @JvmStatic fun pipeSetPostGenerateFunction(handle: Long): Int
+    {
+        if (HandleRegistry.getData(handle) !is PipeHandle) return -0x03
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_setPcPContext(handle)` (object-typed stub).
+     * See [PipeHandle.setPcPContext].
+     */
+    @JvmStatic fun pipeSetPcPContext(handle: Long): Int
+    {
+        if (HandleRegistry.getData(handle) !is PipeHandle) return -0x03
+        return -0x10
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_enableMemoryIntrospection(handle)` (object-typed stub).
+     * See [PipeHandle.enableMemoryIntrospection].
+     */
+    @JvmStatic fun pipeEnableMemoryIntrospection(handle: Long): Int
+    {
+        if (HandleRegistry.getData(handle) !is PipeHandle) return -0x03
+        return -0x10
+    }
+
     @JvmStatic fun pipeInit(pipe: Long, content: Long, context: Long): Int {
         if (HandleRegistry.getData(pipe) !is PipeHandle) return -0x03
         if (content != 0L && HandleRegistry.getType(content) != HandleTypes.CONTENT) return -0x13

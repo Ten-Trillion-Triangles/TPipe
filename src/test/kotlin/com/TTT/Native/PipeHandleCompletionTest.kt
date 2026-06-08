@@ -124,7 +124,18 @@ class PipeHandleCompletionTest
             "TPipe_Pipe_enableSemanticCompression",
             "TPipe_Pipe_enableSemanticDecompression",
             "TPipe_Pipe_enableMaxTokenOverflow",
-            "TPipe_Pipe_isAutoTruncateContextEnabled"
+            "TPipe_Pipe_isAutoTruncateContextEnabled",
+            // Cycle 7 — Pipe hooks (DSL suspend-lambda stubs) + P2P/PCP/ContextBank
+            "TPipe_Pipe_setRetryFunction",
+            "TPipe_Pipe_setExceptionFunction",
+            "TPipe_Pipe_setStringValidatorFunction",
+            "TPipe_Pipe_setTransformationFunction",
+            "TPipe_Pipe_setPreInitFunction",
+            "TPipe_Pipe_setPreValidationFunction",
+            "TPipe_Pipe_setPreInvokeFunction",
+            "TPipe_Pipe_setPostGenerateFunction",
+            "TPipe_Pipe_setPcPContext",
+            "TPipe_Pipe_enableMemoryIntrospection"
         )
         for (symbol in expected)
         {
