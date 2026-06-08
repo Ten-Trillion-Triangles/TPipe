@@ -583,6 +583,90 @@ object NativeBridge {
         return ph.forceCacheInput(mc)
     }
 
+    //====================================================================
+    // Cycle 6 — Pipe tracing / compression / token-budget surface
+    //====================================================================
+
+    /**
+     * C ABI: `TPipe_Pipe_enableTracing(handle)`.
+     * See [PipeHandle.enableTracing].
+     */
+    @JvmStatic fun pipeEnableTracing(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.enableTracing() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_disableTracing(handle)`.
+     * See [PipeHandle.disableTracing].
+     */
+    @JvmStatic fun pipeDisableTracing(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.disableTracing() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_addTraceId(handle, id)`.
+     * See [PipeHandle.addTraceId].
+     */
+    @JvmStatic fun pipeAddTraceId(handle: Long, id: String?): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.addTraceId(id ?: "") ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_removeTraceId(handle, id)`.
+     * See [PipeHandle.removeTraceId].
+     */
+    @JvmStatic fun pipeRemoveTraceId(handle: Long, id: String?): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.removeTraceId(id ?: "") ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_clearTraceIds(handle)`.
+     * See [PipeHandle.clearTraceIds].
+     */
+    @JvmStatic fun pipeClearTraceIds(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.clearTraceIds() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_getActiveTraceId(handle, buf, bufSize)`.
+     * Writes the first id in the active set into the caller-supplied UTF-8
+     * buffer. Returns 0 bytes when no ids are active. See
+     * [PipeHandle.getActiveTraceId].
+     */
+    @JvmStatic fun pipeGetActiveTraceId(handle: Long, buf: ByteArray?, offset: Int, maxLen: Int): Int
+    {
+        if (buf == null) return -0x05
+        if (maxLen <= 0) return -0x04
+        val s = (HandleRegistry.getData(handle) as? PipeHandle)?.getActiveTraceId() ?: return -0x03
+        val bytes = s.toByteArray(Charsets.UTF_8)
+        val n = minOf(bytes.size, maxLen)
+        System.arraycopy(bytes, 0, buf, offset, n)
+        return n
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_enableSemanticCompression(handle)`.
+     * See [PipeHandle.enableSemanticCompression].
+     */
+    @JvmStatic fun pipeEnableSemanticCompression(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.enableSemanticCompression() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_enableSemanticDecompression(handle)`.
+     * See [PipeHandle.enableSemanticDecompression].
+     */
+    @JvmStatic fun pipeEnableSemanticDecompression(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.enableSemanticDecompression() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_enableMaxTokenOverflow(handle)`.
+     * See [PipeHandle.enableMaxTokenOverflow].
+     */
+    @JvmStatic fun pipeEnableMaxTokenOverflow(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.enableMaxTokenOverflow() ?: -0x03
+
+    /**
+     * C ABI: `TPipe_Pipe_isAutoTruncateContextEnabled(handle)` (writes 0/1 to int* out).
+     * Returns 1 when the flag is set, 0 when not, or a negative error code.
+     */
+    @JvmStatic fun pipeIsAutoTruncateContextEnabled(handle: Long): Int =
+        (HandleRegistry.getData(handle) as? PipeHandle)?.isAutoTruncateContextEnabled() ?: -0x03
+
     @JvmStatic fun pipeInit(pipe: Long, content: Long, context: Long): Int {
         if (HandleRegistry.getData(pipe) !is PipeHandle) return -0x03
         if (content != 0L && HandleRegistry.getType(content) != HandleTypes.CONTENT) return -0x13

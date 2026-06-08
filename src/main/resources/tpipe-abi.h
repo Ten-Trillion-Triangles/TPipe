@@ -1165,6 +1165,117 @@ int TPipe_Pipe_forceCacheInput(graal_isolatethread_t* thread,
                                TPipe_ContentHandle content);
 
 /*==============================================================================
+ * CYCLE 6 — PIPE TRACING / COMPRESSION / TOKEN-BUDGET SURFACE (10 functions)
+ *============================================================================*/
+
+/**
+ * @brief Enable tracing on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return 0 on success, negative error code on failure
+ * @note Uses the default TraceConfig (comprehensive token tracking on).
+ */
+int TPipe_Pipe_enableTracing(graal_isolatethread_t* thread,
+                             TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Disable tracing on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_disableTracing(graal_isolatethread_t* thread,
+                              TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Add a trace ID to the active set on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param id Trace ID string (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_addTraceId(graal_isolatethread_t* thread,
+                          TPipe_PipeHandle pipeHandle,
+                          const char* id);
+
+/**
+ * @brief Remove a trace ID from the active set on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param id Trace ID string (UTF-8, null-terminated)
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_removeTraceId(graal_isolatethread_t* thread,
+                             TPipe_PipeHandle pipeHandle,
+                             const char* id);
+
+/**
+ * @brief Clear all active trace IDs on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_clearTraceIds(graal_isolatethread_t* thread,
+                             TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Read the first active trace ID from a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param buffer Output buffer (UTF-8, null-terminated on success)
+ * @param bufferSize Size of the output buffer in bytes
+ * @return Number of bytes written (excluding null terminator) on success
+ *         (0 when no IDs are active), negative error code on failure
+ *         (-0x05 NULL_POINTER if buffer is null)
+ */
+int TPipe_Pipe_getActiveTraceId(graal_isolatethread_t* thread,
+                                TPipe_PipeHandle pipeHandle,
+                                char* buffer,
+                                int bufferSize);
+
+/**
+ * @brief Enable semantic prompt compression on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return 0 on success, negative error code on failure
+ * @note Creates a TokenBudgetSettings with compressUserPrompt=true if absent;
+ *       merges with existing settings otherwise.
+ */
+int TPipe_Pipe_enableSemanticCompression(graal_isolatethread_t* thread,
+                                         TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Enable the semantic decompression hook on a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return 0 on success, negative error code on failure
+ * @note The decompression prelude is injected at the top of the system prompt
+ *       when semantic compression is also active.
+ */
+int TPipe_Pipe_enableSemanticDecompression(graal_isolatethread_t* thread,
+                                          TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Allow max-tokens overflow to be returned as text instead of error
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_enableMaxTokenOverflow(graal_isolatethread_t* thread,
+                                      TPipe_PipeHandle pipeHandle);
+
+/**
+ * @brief Read the auto-truncate-context flag from a pipe
+ * @param thread Caller's IsolateThread
+ * @param pipeHandle Pipe handle
+ * @param outEnabled Output: 1 when the flag is set, 0 when not
+ * @return 0 on success, negative error code on failure
+ */
+int TPipe_Pipe_isAutoTruncateContextEnabled(graal_isolatethread_t* thread,
+                                            TPipe_PipeHandle pipeHandle,
+                                            int* outEnabled);
+
+/*==============================================================================
  * PIPE SETTINGS HANDLE (10 functions)
  *============================================================================*/
 

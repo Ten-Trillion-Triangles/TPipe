@@ -6,6 +6,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -569,5 +570,226 @@ class PipeHandleTest
         assertEquals(-0x13, rc)
         HandleRegistry.release(h)
         HandleRegistry.release(wrongHandle)
+    }
+
+
+    //==========================================================================
+    // Cycle 6 — Pipe tracing / compression / token-budget surface
+    //==========================================================================
+
+    @Test
+    fun testTPipe_Pipe_enableTracing_setsFlag()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeEnableTracing(h)
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("tracingEnabled").apply { isAccessible = true }
+        assertEquals(true, f.getBoolean(ph.pipe))
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_enableTracing_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeEnableTracing(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_disableTracing_clearsFlag()
+    {
+        val h = registerAndGetHandleId()
+        NativeBridge.pipeEnableTracing(h)
+        val rc = NativeBridge.pipeDisableTracing(h)
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("tracingEnabled").apply { isAccessible = true }
+        assertEquals(false, f.getBoolean(ph.pipe))
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_disableTracing_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeDisableTracing(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_addTraceId_addsToSet()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeAddTraceId(h, "trace-123")
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("activeTraceIds").apply { isAccessible = true }
+        val ids = f.get(ph.pipe) as Set<String>
+        assertTrue("trace-123" in ids, "trace-123 should be in activeTraceIds")
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_addTraceId_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeAddTraceId(0L, "x")
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_removeTraceId_removesFromSet()
+    {
+        val h = registerAndGetHandleId()
+        NativeBridge.pipeAddTraceId(h, "trace-to-remove")
+        val rc = NativeBridge.pipeRemoveTraceId(h, "trace-to-remove")
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("activeTraceIds").apply { isAccessible = true }
+        val ids = f.get(ph.pipe) as Set<String>
+        assertFalse("trace-to-remove" in ids)
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_removeTraceId_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeRemoveTraceId(0L, "x")
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_clearTraceIds_emptiesSet()
+    {
+        val h = registerAndGetHandleId()
+        NativeBridge.pipeAddTraceId(h, "a")
+        NativeBridge.pipeAddTraceId(h, "b")
+        val rc = NativeBridge.pipeClearTraceIds(h)
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("activeTraceIds").apply { isAccessible = true }
+        val ids = f.get(ph.pipe) as Set<String>
+        assertTrue(ids.isEmpty(), "activeTraceIds should be empty after clear")
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_clearTraceIds_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeClearTraceIds(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_getActiveTraceId_returnsFirstId()
+    {
+        val h = registerAndGetHandleId()
+        NativeBridge.pipeAddTraceId(h, "first")
+        NativeBridge.pipeAddTraceId(h, "second")
+        val buf = ByteArray(64)
+        val n = NativeBridge.pipeGetActiveTraceId(h, buf, 0, 63)
+        assertTrue(n > 0, "getActiveTraceId should return positive byte count, got $n")
+        val text = String(buf, 0, n, Charsets.UTF_8)
+        assertTrue(text == "first" || text == "second",
+            "should be one of the two added ids, got '$text'")
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_getActiveTraceId_returnsEmptyWhenNoIds()
+    {
+        val h = registerAndGetHandleId()
+        val buf = ByteArray(64)
+        val n = NativeBridge.pipeGetActiveTraceId(h, buf, 0, 63)
+        assertEquals(0, n, "no ids => empty buffer (0 bytes)")
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_getActiveTraceId_rejectsNullHandle()
+    {
+        val buf = ByteArray(64)
+        val n = NativeBridge.pipeGetActiveTraceId(0L, buf, 0, 63)
+        assertEquals(-0x03, n)
+    }
+
+    @Test
+    fun testTPipe_Pipe_getActiveTraceId_rejectsNullBuffer()
+    {
+        val h = registerAndGetHandleId()
+        NativeBridge.pipeAddTraceId(h, "x")
+        val n = NativeBridge.pipeGetActiveTraceId(h, null, 0, 63)
+        assertEquals(-0x05, n, "null buffer should return NULL_POINTER")
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_enableSemanticCompression_setsFlag()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeEnableSemanticCompression(h)
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("tokenBudgetSettings").apply { isAccessible = true }
+        val settings = f.get(ph.pipe)
+        assertNotNull(settings, "enableSemanticCompression should create a TokenBudgetSettings")
+        val compressField = settings!!::class.java.getDeclaredField("compressUserPrompt").apply { isAccessible = true }
+        assertEquals(true, compressField.getBoolean(settings))
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_enableSemanticCompression_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeEnableSemanticCompression(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_enableSemanticDecompression_setsFlag()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeEnableSemanticDecompression(h)
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("semanticDecompressionEnabled").apply { isAccessible = true }
+        assertEquals(true, f.getBoolean(ph.pipe))
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_enableSemanticDecompression_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeEnableSemanticDecompression(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_enableMaxTokenOverflow_setsFlag()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeEnableMaxTokenOverflow(h)
+        assertEquals(0, rc)
+        val f = Pipe::class.java.getDeclaredField("allowMaxTokenOverflow").apply { isAccessible = true }
+        assertEquals(true, f.getBoolean(ph.pipe))
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_enableMaxTokenOverflow_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeEnableMaxTokenOverflow(0L)
+        assertEquals(-0x03, rc)
+    }
+
+    @Test
+    fun testTPipe_Pipe_isAutoTruncateContextEnabled_returnsTrueAfterEnable()
+    {
+        val h = registerAndGetHandleId()
+        val rc = NativeBridge.pipeIsAutoTruncateContextEnabled(h)
+        assertEquals(0, rc, "default state should report 0 (not enabled)")
+        ph.pipe.autoTruncateContext()
+        val rc2 = NativeBridge.pipeIsAutoTruncateContextEnabled(h)
+        assertEquals(1, rc2, "after autoTruncateContext, should report 1 (enabled)")
+        HandleRegistry.release(h)
+    }
+
+    @Test
+    fun testTPipe_Pipe_isAutoTruncateContextEnabled_rejectsNullHandle()
+    {
+        val rc = NativeBridge.pipeIsAutoTruncateContextEnabled(0L)
+        assertTrue(rc < 0, "null handle should return negative error code, got $rc")
     }
 }

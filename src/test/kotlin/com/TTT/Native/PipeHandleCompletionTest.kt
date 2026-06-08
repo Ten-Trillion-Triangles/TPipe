@@ -116,7 +116,15 @@ class PipeHandleCompletionTest
             "TPipe_Pipe_requireJsonPromptInjection",
             "TPipe_Pipe_setMultimodalInput", "TPipe_Pipe_getCachedInput",
             "TPipe_Pipe_setMergedPcpJsonInstructions",
-            "TPipe_Pipe_cacheInput", "TPipe_Pipe_forceCacheInput"
+            "TPipe_Pipe_cacheInput", "TPipe_Pipe_forceCacheInput",
+            // Cycle 6 — tracing / compression / token-budget surface
+            "TPipe_Pipe_enableTracing", "TPipe_Pipe_disableTracing",
+            "TPipe_Pipe_addTraceId", "TPipe_Pipe_removeTraceId",
+            "TPipe_Pipe_clearTraceIds", "TPipe_Pipe_getActiveTraceId",
+            "TPipe_Pipe_enableSemanticCompression",
+            "TPipe_Pipe_enableSemanticDecompression",
+            "TPipe_Pipe_enableMaxTokenOverflow",
+            "TPipe_Pipe_isAutoTruncateContextEnabled"
         )
         for (symbol in expected)
         {

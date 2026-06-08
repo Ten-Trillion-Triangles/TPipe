@@ -427,6 +427,186 @@ class PipeHandle(
         }
     }
 
+    //==========================================================================
+    // Cycle 6 — Pipe tracing / compression / token-budget surface
+    //
+    // Tracing methods: enable/disable + add/remove/clear trace ids +
+    // getActiveTraceId (the first id in the active set, or empty if none).
+    // Compression: enableSemanticCompression and enableSemanticDecompression
+    // flip the corresponding flags.
+    // Token budget: enableMaxTokenOverflow, isAutoTruncateContextEnabled.
+    //==========================================================================
+
+    /**
+     * C ABI: `TPipe_Pipe_enableTracing(handle)`.
+     * Delegates to [Pipe.enableTracing] using the default [com.TTT.Debug.TraceConfig].
+     */
+    fun enableTracing(): Int
+    {
+        return try
+        {
+            pipe.enableTracing()
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_disableTracing(handle)`.
+     * Delegates to [Pipe.disableTracing].
+     */
+    fun disableTracing(): Int
+    {
+        return try
+        {
+            pipe.disableTracing()
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_addTraceId(handle, id)`.
+     * Delegates to [Pipe.addTraceId].
+     */
+    fun addTraceId(id: String): Int
+    {
+        return try
+        {
+            pipe.addTraceId(id)
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_removeTraceId(handle, id)`.
+     * Delegates to [Pipe.removeTraceId].
+     */
+    fun removeTraceId(id: String): Int
+    {
+        return try
+        {
+            pipe.removeTraceId(id)
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_clearTraceIds(handle)`.
+     * Delegates to [Pipe.clearTraceIds].
+     */
+    fun clearTraceIds(): Int
+    {
+        return try
+        {
+            pipe.clearTraceIds()
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_getActiveTraceId(handle, buf, bufSize)`.
+     * Writes the first id in the active set into the caller's UTF-8 buffer
+     * (empty string when no ids are active). The bridge layer is responsible
+     * for the actual buffer copy at the C boundary.
+     */
+    fun getActiveTraceId(): String
+    {
+        return try
+        {
+            pipe.currentPipelineId ?: ""
+        }
+        catch (e: Exception)
+        {
+            ""
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_enableSemanticCompression(handle)`.
+     * Delegates to [Pipe.enableSemanticCompression].
+     */
+    fun enableSemanticCompression(): Int
+    {
+        return try
+        {
+            pipe.enableSemanticCompression()
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_enableSemanticDecompression(handle)`.
+     * Delegates to [Pipe.enableSemanticDecompression].
+     */
+    fun enableSemanticDecompression(): Int
+    {
+        return try
+        {
+            pipe.enableSemanticDecompression()
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_enableMaxTokenOverflow(handle)`.
+     * Delegates to [Pipe.enableMaxTokenOverflow].
+     */
+    fun enableMaxTokenOverflow(): Int
+    {
+        return try
+        {
+            pipe.enableMaxTokenOverflow()
+            0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
+    /**
+     * C ABI: `TPipe_Pipe_isAutoTruncateContextEnabled(handle)` (writes 0/1 to int* out).
+     * Delegates to [Pipe.isAutoTruncateContextEnabled].
+     */
+    fun isAutoTruncateContextEnabled(): Int
+    {
+        return try
+        {
+            if (pipe.isAutoTruncateContextEnabled()) 1 else 0
+        }
+        catch (e: Exception)
+        {
+            -0x01
+        }
+    }
+
     sealed class Result {
         data class Success(val handleId: Long) : Result()
         data class Error(val message: String) : Result()

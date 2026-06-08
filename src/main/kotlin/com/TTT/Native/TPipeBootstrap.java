@@ -950,6 +950,79 @@ public class TPipeBootstrap {
     }
 
     //====================================================================
+    // Cycle 6 — Pipe tracing / compression / token-budget surface
+    //====================================================================
+
+    @CEntryPoint(name = "TPipe_Pipe_enableTracing")
+    public static int pipeEnableTracing(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeEnableTracing(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_disableTracing")
+    public static int pipeDisableTracing(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeDisableTracing(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_addTraceId")
+    public static int pipeAddTraceId(IsolateThread thread, long pipe, long idPtr) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String id = readCString(idPtr);
+        return NativeBridge.pipeAddTraceId(pipe, id);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_removeTraceId")
+    public static int pipeRemoveTraceId(IsolateThread thread, long pipe, long idPtr) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        String id = readCString(idPtr);
+        return NativeBridge.pipeRemoveTraceId(pipe, id);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_clearTraceIds")
+    public static int pipeClearTraceIds(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeClearTraceIds(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_getActiveTraceId")
+    public static int pipeGetActiveTraceId(IsolateThread thread, long pipe, long buffer, int bufferSize) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        if (buffer == 0L) return TPIPE_ERR_NULL_POINTER;
+        if (bufferSize <= 0) return TPIPE_ERR_INVALID_ARGUMENT;
+        byte[] tmp = new byte[bufferSize];
+        int n = NativeBridge.pipeGetActiveTraceId(pipe, tmp, 0, bufferSize - 1);
+        if (n < 0) return n;
+        return copyToNativeBuffer(buffer, bufferSize, tmp, n);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_enableSemanticCompression")
+    public static int pipeEnableSemanticCompression(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeEnableSemanticCompression(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_enableSemanticDecompression")
+    public static int pipeEnableSemanticDecompression(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeEnableSemanticDecompression(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_enableMaxTokenOverflow")
+    public static int pipeEnableMaxTokenOverflow(IsolateThread thread, long pipe) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        return NativeBridge.pipeEnableMaxTokenOverflow(pipe);
+    }
+
+    @CEntryPoint(name = "TPipe_Pipe_isAutoTruncateContextEnabled")
+    public static int pipeIsAutoTruncateContextEnabled(IsolateThread thread, long pipe, long outEnabled) {
+        int rc = requireReady(); if (rc != TPIPE_OK) return rc;
+        int v = NativeBridge.pipeIsAutoTruncateContextEnabled(pipe);
+        if (v < 0) return v;
+        return writeInt(outEnabled, 0, v);
+    }
+
+    //====================================================================
     // PipeSettings API
     //====================================================================
 
