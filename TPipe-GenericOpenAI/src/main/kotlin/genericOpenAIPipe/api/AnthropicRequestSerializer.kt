@@ -20,11 +20,6 @@ class AnthropicRequestSerializer : RequestSerializer
             )
 
         val systemMessages = request.messages.filter { it.role == "system" }
-        if(systemMessages.size > 1)
-        {
-            println("WARNING: Multiple system messages found (${systemMessages.size}). Using first, dropping rest.")
-        }
-
         val systemMessage = systemMessages.firstOrNull()
             ?.let { extractTextContent(it.content) }
             ?.takeIf { it.isNotBlank() }

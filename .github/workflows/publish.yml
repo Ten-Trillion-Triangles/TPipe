@@ -1,0 +1,57 @@
+name: Publish Maven Artifact
+
+on:
+  push:
+    tags:
+      - 'TPipe-*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 24
+        uses: actions/setup-java@v4
+        with:
+          java-version: '24'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build jars
+        run: ./gradlew assemble --no-daemon
+
+      - name: Set up Maven
+        uses: actions/setup-java@v4
+        with:
+          java-version: '24'
+          distribution: 'temurin'
+          maven-version: '3.9.9'
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Deploy Community artifact
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./gradlew :publishToMavenLocal --no-daemon -Pversion=${{ steps.version.outputs.VERSION }} -Pgroup=com.github.ten-trillion-triangles
+          mvn deploy:deploy-file \
+            -Dfile=build/libs/TPipe-1.0.0.jar \
+            -DgroupId=com.github.ten-trillion-triangles \
+            -DartifactId=TPipe \
+            -Dversion=${{ steps.version.outputs.VERSION }} \
+            -Dpackaging=jar \
+            -Durl=https://maven.pkg.github.com/Ten-Trillion-Triangles/TPipe \
+            -DrepositoryId=github \
+            -DgeneratePom=true \
+            -Dtoken=$GITHUB_TOKEN

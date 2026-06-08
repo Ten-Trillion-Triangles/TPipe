@@ -1,0 +1,8 @@
+jdk:
+  - openjdk24
+before_install:
+  - sdk install java 24-open
+  - sdk use java 24-open
+  - export PATH=/opt/gradle-8.14.3/bin:$PATH
+  - gradle wrapper --gradle-version=8.14.3
+  - gradle publishToMavenLocal -Pgroup=com.github.ten-trillion-triangles -Pversion=TPipe-Community-1.0.3 --console=plain
