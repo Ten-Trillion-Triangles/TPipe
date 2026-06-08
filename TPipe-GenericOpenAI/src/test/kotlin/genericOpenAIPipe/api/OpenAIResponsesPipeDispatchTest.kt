@@ -4,12 +4,12 @@ import genericOpenAIPipe.GenericOpenAIPipe
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
-import io.ktor.client.engine.mock.respondError
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.fullPath
 import io.ktor.http.headersOf
+import io.ktor.http.content.OutgoingContent
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.client.request.HttpRequestData
 import org.junit.jupiter.api.Test
@@ -116,8 +116,10 @@ class OpenAIResponsesPipeDispatchTest
             .setApiKey("mock-key")
             .setBaseUrl("https://mock.local/v1")
             .setApiMode(ApiMode.OpenAIResponses)
-            .setModel("MiniMax-M2.7")
-            .setMaxTokens(64) as GenericOpenAIPipe
+
+        pipe.setModel("MiniMax-M2.7")
+        pipe.setMaxTokens(64)
+        pipe.setStreamingEnabled(true)
 
         pipe.injectHttpClientForTest(HttpClient(mockEngine))
         pipe.initForTest()
@@ -132,7 +134,11 @@ class OpenAIResponsesPipeDispatchTest
             Assertions.assertEquals("https://mock.local/v1/responses", "https://mock.local/v1" + req!!.url.fullPath)
             Assertions.assertEquals("Bearer mock-key", req.headers["Authorization"])
             // And the body must be the Responses shape, not chat-completions
-            val body = req.body.toByteArray().decodeToString()
+            val body = when (val reqBody = req.body)
+            {
+                is OutgoingContent.ByteArrayContent -> reqBody.bytes().decodeToString()
+                else -> throw IllegalStateException("Unexpected body type: ${reqBody::class}")
+            }
             Assertions.assertTrue(body.contains("\"input\""))
             Assertions.assertTrue(!body.contains("\"messages\""), "Responses body must not contain chat-completions 'messages' field")
         }
@@ -170,9 +176,10 @@ class OpenAIResponsesPipeDispatchTest
             .setApiKey("mock-key")
             .setBaseUrl("https://mock.local/v1")
             .setApiMode(ApiMode.OpenAIResponses)
-            .setModel("MiniMax-M2.7")
-            .setMaxTokens(64) as GenericOpenAIPipe
-            .setStreamingEnabled(true) as GenericOpenAIPipe
+
+        pipe.setModel("MiniMax-M2.7")
+        pipe.setMaxTokens(64)
+        pipe.setStreamingEnabled(true)
 
         pipe.injectHttpClientForTest(HttpClient(mockEngine))
         pipe.initForTest()
