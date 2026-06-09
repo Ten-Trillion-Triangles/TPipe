@@ -292,6 +292,6 @@ pipe.setSystemPrompt("prompt")
 
 ## See Also
 
-- [Pipe Context Protocol Overview](pipe-context-protocol.md)
+- [Pipe Context Protocol Overview](/docs/advanced-concepts/pipe-context-protocol)
 - [JSON Schema and System Prompts](json-and-system-prompts.md)
 - [Developer-in-the-Loop Functions](developer-in-the-loop.md)

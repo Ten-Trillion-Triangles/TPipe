@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>com.github.ten-trillion-triangles</groupId>
+  <artifactId>TPipe</artifactId>
+  <versioning>
+    <latest>TPipe-Startup-1.0.4</latest>
+    <release>TPipe-Startup-1.0.4</release>
+    <versions>
+      <version>TPipe-Community-1.0.4</version>
+      <version>TPipe-Startup-1.0.4</version>
+    </versions>
+  </versioning>
+</metadata>

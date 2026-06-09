@@ -7,6 +7,7 @@ import genericOpenAIPipe.api.AnthropicMessagesRequest
 import genericOpenAIPipe.api.AnthropicRequestSerializer
 import genericOpenAIPipe.api.ApiMode
 import genericOpenAIPipe.api.OpenAIRequestSerializer
+import genericOpenAIPipe.api.fromGenericOpenAI
 import genericOpenAIPipe.env.ChatMessage
 import genericOpenAIPipe.env.GenericOpenAIChatRequest
 import genericOpenAIPipe.env.MessageContent
@@ -461,4 +462,150 @@ class AnthropicApiModeTest
         assertEquals(1, deserialized.messages.size)
         assertTrue(deserialized.messages[0].role == "user")
     }
-}
+
+//=========================================Cache Control Tests=========================================
+
+    /**
+     * Test that when cacheControl is set, AnthropicRequestSerializer uses
+     * systemBlocks (structured) and places cache_control on the last block.
+     *
+     * Per Anthropic/MiniMax spec: cache is cumulative from all preceding blocks.
+     * Placing on the last block = caches the full system prompt.
+     */
+    @Test
+    fun testAnthropicRequestSerializerWithCacheControlEmitsSystemBlocks()
+    {
+        val request = GenericOpenAIChatRequest(
+            model = "MiniMax-M2.7",
+            messages = listOf(
+                ChatMessage(role = "system", content = MessageContent.TextContent("You are a helpful assistant.")),
+                ChatMessage(role = "user", content = MessageContent.TextContent("Hello"))
+            ),
+            maxTokens = 1024,
+            cacheControl = genericOpenAIPipe.env.CacheControl(type = "ephemeral", ttl = null)
+        )
+
+        val serializer = AnthropicRequestSerializer()
+        val json = serializer.serialize(request, ApiMode.Anthropic)
+
+        val deserialized = deserialize<AnthropicMessagesRequest>(json)
+        assertNotNull(deserialized)
+
+        // With cacheControl set, systemBlocks must be used (not plain system string)
+        assertNotNull(deserialized.systemBlocks, "systemBlocks must be non-null when cacheControl is set")
+        assertTrue(deserialized.systemBlocks.isNotEmpty())
+        assertNull(deserialized.system, "system string must be null when systemBlocks is used")
+
+        // Last system block must have cache_control
+        val lastBlock = deserialized.systemBlocks.last()
+        assertNotNull(lastBlock.cacheControl, "last system block must have cache_control")
+        assertEquals("ephemeral", lastBlock.cacheControl.type)
+        assertNull(lastBlock.cacheControl.ttl, "ttl must be null for MiniMax compat (no TTL support)")
+    }
+
+    /**
+     * Test that when cacheControl includes TTL, it is preserved on the block.
+     * TTL is supported on direct Anthropic API (not MiniMax).
+     */
+    @Test
+    fun testAnthropicRequestSerializerCacheControlWithTTL()
+    {
+        val request = GenericOpenAIChatRequest(
+            model = "claude-3-5-sonnet-20241022",
+            messages = listOf(
+                ChatMessage(role = "system", content = MessageContent.TextContent("You are a coder.")),
+                ChatMessage(role = "user", content = MessageContent.TextContent("Write a function"))
+            ),
+            maxTokens = 4096,
+            cacheControl = genericOpenAIPipe.env.CacheControl(type = "ephemeral", ttl = "1h")
+        )
+
+        val serializer = AnthropicRequestSerializer()
+        val json = serializer.serialize(request, ApiMode.Anthropic)
+
+        val deserialized = deserialize<AnthropicMessagesRequest>(json)
+        assertNotNull(deserialized)
+
+        val lastBlock = deserialized.systemBlocks!!.last()
+        assertEquals("ephemeral", lastBlock.cacheControl!!.type)
+        assertEquals("1h", lastBlock.cacheControl.ttl)
+    }
+
+    /**
+     * Test that without cacheControl, system remains a plain string
+     * (backward compatibility — no systemBlocks overhead).
+     */
+    @Test
+    fun testAnthropicRequestSerializerWithoutCacheControlUsesSystemString()
+    {
+        val request = GenericOpenAIChatRequest(
+            model = "claude-3-5-sonnet-20241022",
+            messages = listOf(
+                ChatMessage(role = "system", content = MessageContent.TextContent("You are a helpful assistant.")),
+                ChatMessage(role = "user", content = MessageContent.TextContent("Hi"))
+            ),
+            maxTokens = 4096
+        )
+
+        val serializer = AnthropicRequestSerializer()
+        val json = serializer.serialize(request, ApiMode.Anthropic)
+
+        val deserialized = deserialize<AnthropicMessagesRequest>(json)
+        assertNotNull(deserialized)
+
+        assertNull(deserialized.systemBlocks, "systemBlocks must be null when no cacheControl")
+        assertNotNull(deserialized.system, "system string must be used for backward compat")
+        assertEquals("You are a helpful assistant.", deserialized.system)
+    }
+
+    /**
+         * Test that OpenAIRequestSerializer's fromGenericOpenAI extension also
+         * applies cacheControl to systemBlocks correctly (mirrors AnthropicRequestSerializer).
+         */
+        @Test
+        fun testOpenAIRequestSerializerFromGenericOpenAIWithCacheControl()
+        {
+            val request = GenericOpenAIChatRequest(
+                model = "MiniMax-M2.7",
+                messages = listOf(
+                    ChatMessage(role = "system", content = MessageContent.TextContent("System prompt")),
+                    ChatMessage(role = "user", content = MessageContent.TextContent("Hello"))
+                ),
+                maxTokens = 1024,
+                cacheControl = genericOpenAIPipe.env.CacheControl(type = "ephemeral", ttl = null)
+            )
+
+            val anthropicRequest = fromGenericOpenAI(request)
+
+            assertNotNull(anthropicRequest.systemBlocks, "systemBlocks must be non-null when cacheControl is set")
+            assertNull(anthropicRequest.system, "system string must be null when systemBlocks is used")
+
+            val lastBlock = anthropicRequest.systemBlocks!!.last()
+            assertNotNull(lastBlock.cacheControl)
+            assertEquals("ephemeral", lastBlock.cacheControl!!.type)
+            assertNull(lastBlock.cacheControl.ttl)
+        }
+
+        /**
+         * Test that cacheControl with TTL works through fromGenericOpenAI.
+         */
+        @Test
+        fun testOpenAIRequestSerializerFromGenericOpenAIWithTTL()
+        {
+            val request = GenericOpenAIChatRequest(
+                model = "claude-3-5-sonnet-20241022",
+                messages = listOf(
+                    ChatMessage(role = "system", content = MessageContent.TextContent("System")),
+                    ChatMessage(role = "user", content = MessageContent.TextContent("Hi"))
+                ),
+                maxTokens = 4096,
+                cacheControl = genericOpenAIPipe.env.CacheControl(type = "ephemeral", ttl = "5m")
+            )
+
+            val anthropicRequest = fromGenericOpenAI(request)
+
+            val lastBlock = anthropicRequest.systemBlocks!!.last()
+            assertEquals("ephemeral", lastBlock.cacheControl!!.type)
+            assertEquals("5m", lastBlock.cacheControl.ttl)
+        }
+    }
