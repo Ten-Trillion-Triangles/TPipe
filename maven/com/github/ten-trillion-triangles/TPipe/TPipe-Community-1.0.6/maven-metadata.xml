@@ -3,12 +3,9 @@
   <groupId>com.github.ten-trillion-triangles</groupId>
   <artifactId>TPipe</artifactId>
   <versioning>
-    <release>TPipe-Startup-1.0.6</release>
+    <release>TPipe-Community-1.0.6</release>
     <versions>
-      <version>TPipe-Community-1.0.5</version>
       <version>TPipe-Community-1.0.6</version>
-      <version>TPipe-Startup-1.0.5</version>
-      <version>TPipe-Startup-1.0.6</version>
     </versions>
   </versioning>
 </metadata>
