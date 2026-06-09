@@ -344,6 +344,31 @@ class GenericOpenAIPipe : Pipe()
     }
 
     /**
+     * Cache control with TTL for Anthropic-style explicit prompt caching.
+     *
+     * When set, enables explicit prompt caching on the Anthropic API path.
+     * The cache breakpoint is placed on the last system block — caching the
+     * full system prompt prefix (tools + system) per Anthropic/MiniMax spec.
+     *
+     * **TTL behavior by provider:**
+     * - Direct Anthropic API: "5m" (default, 5 min) or "1h" (1 hour)
+     * - MiniMax /anthropic endpoint: TTL field is IGNORED — cache is always
+     *   5 minutes and auto-refreshes on hit at no additional cost
+     *
+     * **Supported models:** MiniMax-M2.7, M2.5, M2.1, M2.
+     * NOT supported on M3 (use passive auto-cache on /v1 instead).
+     *
+     * @param type Cache type — must be "ephemeral" (the only supported type)
+     * @param ttl Time-to-live: "5m" (default) or "1h". Omit for MiniMax compat.
+     * @return This pipe instance for fluent chaining
+     */
+    fun setCacheControl(type: String = "ephemeral", ttl: String? = null): GenericOpenAIPipe
+    {
+        cacheControl = genericOpenAIPipe.env.CacheControl(type = type, ttl = ttl)
+        return this
+    }
+
+    /**
      * Sets the API mode for the request format.
      * @param mode [ApiMode.OpenAI] for OpenAI-compatible format (default),
      *             [ApiMode.Anthropic] for Anthropic messages format

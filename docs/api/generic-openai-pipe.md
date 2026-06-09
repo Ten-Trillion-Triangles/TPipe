@@ -10,6 +10,7 @@
   - [Function Calling](#function-calling)
   - [Structured Output](#structured-output)
   - [Streaming](#streaming)
+  - [Prompt Caching](#prompt-caching)
   - [Reasoning](#reasoning)
   - [Resource Management](#resource-management)
 
@@ -199,6 +200,48 @@ pipe.setReasoningConfig(ReasoningConfig(
     exclude = false
 ))
 ```
+
+---
+
+### Prompt Caching
+
+#### `setCacheControl(type: String = "ephemeral", ttl: String? = null): GenericOpenAIPipe`
+Enables explicit prompt caching on the Anthropic API path. The cache breakpoint is placed on the **last system block**, caching the full system prompt prefix (tools + system) per the Anthropic/MiniMax spec.
+
+**Supported models:** MiniMax-M2.7, M2.5, M2.1, M2. Not supported on M3 — use passive auto-cache on `ApiMode.OpenAI` instead.
+
+**TTL behavior by provider:**
+
+| Provider | TTL support |
+|----------|-------------|
+| Direct Anthropic API | `"5m"` (default, 5 min) or `"1h"` (1 hour) |
+| MiniMax `/anthropic` endpoint | TTL **ignored** — cache is always 5 minutes, auto-refreshes on hit at no additional cost |
+
+**Example — MiniMax (no TTL):**
+```kotlin
+val pipe = GenericOpenAIPipe()
+    .setApiKey(System.getenv("MINIMAX_API_KEY"))
+    .setBaseUrl("https://api.minimax.io")
+    .setModel("MiniMax-M2.7")
+    .setApiMode(ApiMode.Anthropic)
+    .setSystemPrompt(systemPrompt)
+    .setCacheControl()  // ttl omitted — MiniMax uses 5 min default
+    .init()
+```
+
+**Example — Direct Anthropic (with 1h TTL):**
+```kotlin
+val pipe = GenericOpenAIPipe()
+    .setApiKey(System.getenv("ANTHROPIC_API_KEY"))
+    .setBaseUrl("https://api.anthropic.com")
+    .setModel("claude-3-5-sonnet-20241022")
+    .setApiMode(ApiMode.Anthropic)
+    .setSystemPrompt(systemPrompt)
+    .setCacheControl(ttl = "1h")  // 1-hour cache on Anthropic
+    .init()
+```
+
+**Note:** Passive auto-cache (on `ApiMode.OpenAI`) requires no code — MiniMax automatically caches at 512+ input tokens at no cost. Use explicit `setCacheControl` only when you need the longer TTL available on direct Anthropic, or when targeting M2-family models that support it.
 
 ---
 

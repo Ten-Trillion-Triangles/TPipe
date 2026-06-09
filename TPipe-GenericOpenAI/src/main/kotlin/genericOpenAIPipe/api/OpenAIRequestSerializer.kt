@@ -12,7 +12,7 @@ class OpenAIRequestSerializer : RequestSerializer
             is ApiMode.OpenAI -> serialize(request, encodedefault = false)
             is ApiMode.Anthropic ->
             {
-                val anthropicRequest = AnthropicMessagesRequest.fromGenericOpenAI(request)
+                val anthropicRequest = fromGenericOpenAI(request)
                 serialize(anthropicRequest, encodedefault = false)
             }
             is ApiMode.OpenAIResponses ->
@@ -28,9 +28,24 @@ class OpenAIRequestSerializer : RequestSerializer
     }
 }
 
-fun AnthropicMessagesRequest.Companion.fromGenericOpenAI(request: GenericOpenAIChatRequest): AnthropicMessagesRequest
+/**
+ * Converts a [GenericOpenAIChatRequest] to [AnthropicMessagesRequest] format.
+ *
+ * This is used when routing Anthropic-mode requests through the OpenAIRequestSerializer
+ * (e.g., SDK-style clients that use OpenAIRequestSerializer as their serializer).
+ *
+ * When [GenericOpenAIChatRequest.cacheControl] is set, uses [systemBlocks] with
+ * per-block cache_control on the last system block. Otherwise uses plain [system]
+ * string for backward compatibility.
+ *
+ * **MiniMax note**: TTL field is not supported by MiniMax's /anthropic endpoint —
+ * cache is always 5 minutes and auto-refreshes on hit. Direct Anthropic API
+ * supports TTL of "5m" (default) or "1h".
+ */
+fun fromGenericOpenAI(request: GenericOpenAIChatRequest): AnthropicMessagesRequest
 {
-    val systemMessage = request.messages.filter { it.role == "system" }.joinToString("\n") { (it.content as? genericOpenAIPipe.env.MessageContent.TextContent)?.text ?: "" }
+    val systemMessages = request.messages.filter { it.role == "system" }
+    val systemMessage = systemMessages.joinToString("\n") { (it.content as? genericOpenAIPipe.env.MessageContent.TextContent)?.text ?: "" }
     val nonSystemMessages = request.messages.filter { it.role != "system" }
 
     val anthropicMessages = nonSystemMessages.mapNotNull { msg ->
@@ -43,11 +58,50 @@ fun AnthropicMessagesRequest.Companion.fromGenericOpenAI(request: GenericOpenAIC
         }
     }
 
+    // Apply cache control to the last system block when present.
+    // This mirrors the logic in AnthropicRequestSerializer.buildSystemContent().
+    // For MiniMax: cache_control has no TTL support — always 5 minutes.
+    // For direct Anthropic: TTL "5m" (default) or "1h" is supported.
+    val (systemStr, systemBlocks) = if(request.cacheControl != null)
+    {
+        val blocks = systemMessages.mapNotNull { msg ->
+            val text = (msg.content as? genericOpenAIPipe.env.MessageContent.TextContent)?.text ?: return@mapNotNull null
+            AnthropicSystemBlock(text = text)
+        }.toMutableList()
+
+        if(blocks.isEmpty() && systemMessage.isNotEmpty())
+        {
+            blocks.add(AnthropicSystemBlock(text = systemMessage))
+        }
+
+        if(blocks.isNotEmpty())
+        {
+            val lastIdx = blocks.lastIndex
+            blocks[lastIdx] = blocks[lastIdx].copy(
+                cacheControl = AnthropicCacheControl(
+                    type = request.cacheControl.type,
+                    ttl = request.cacheControl.ttl
+                )
+            )
+            null to blocks
+        }
+        else
+        {
+            null to null
+        }
+    }
+    else
+    {
+        systemMessage.takeIf { it.isNotEmpty() } to null
+    }
+
     return AnthropicMessagesRequest(
         model = request.model,
         messages = anthropicMessages,
-        system = systemMessage.takeIf { it.isNotEmpty() },
+        system = systemStr,
+        systemBlocks = systemBlocks,
         maxTokens = request.maxTokens ?: request.maxCompletionTokens ?: 4096,
-        stream = request.stream
+        stream = request.stream,
+        cacheControl = null  // cacheControl applied via systemBlocks; not a top-level field
     )
 }
