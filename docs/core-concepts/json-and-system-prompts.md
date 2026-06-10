@@ -14,13 +14,52 @@ TPipe provides sophisticated JSON handling through automatic schema generation a
 ### The Problem
 Most AI models don't natively support structured JSON input/output. You need to force models to understand JSON schemas and produce valid JSON responses through prompt engineering.
 
-### Helper Categories
 
-There are two very different kinds of helpers on this page:
+There are two very different kinds of helpers on this page. The difference is critical:
 
-- **Safe composition helpers**: `setMiddlePrompt()` and `setFooterPrompt()` only place extra text at a specific point in the system prompt. They do not replace schema generation or prompt injection behavior.
-- **Normal schema helpers**: `setJsonInput(T/KClass)` and `setJsonOutput(T/KClass)` are the standard way to describe structured input and output. They keep TPipe's generated schema path intact.
-- **Advanced override helpers**: `setJsonInput(String)`, `setJsonOutput(String)`, `setJsonInputInstructions(...)`, `setJsonOutputInstructions(...)`, `setMergedPcpJsonInstructions(...)`, and `requireJsonPromptInjection(stripExternalText = true)` hand more responsibility back to the caller. Use them only when you specifically want to replace or bypass TPipe's generated guidance.
+#### Safe: Composition Helpers
+These helpers only add text at a specific point in the system prompt. They do **not** replace schema generation or the JSON injection contract.
+
+| Helper | What it does | Risk |
+|--------|-------------|------|
+| `setMiddlePrompt(...)` | Inserts text between input and output schema blocks | None - just text insertion |
+| `setFooterPrompt(...)` | Appends text after all automatic injections | None - just text insertion |
+
+Use these freely. They are safe, predictable, and TPipe's generated schema/instruction flow stays intact.
+
+
+#### Normal: Schema Helpers (Recommended)
+These are the standard way to describe structured input and output. TPipe generates the schema for you.
+
+| Helper | What it does | Risk |
+|--------|-------------|------|
+| `setJsonInput(T)` | Generates JSON schema from your data class | None - TPipe generates the schema |
+| `setJsonInput(KClass)` | Generates JSON schema from a Kotlin class | None - TPipe generates the schema |
+| `setJsonOutput(T)` | Generates JSON schema for output | None - TPipe generates the schema |
+| `setJsonOutput(KClass)` | Generates JSON schema for output | None - TPipe generates the schema |
+
+These are the recommended path. Use them unless you have a specific reason not to.
+
+#### Advanced: Override Helpers (Not for casual use)
+**These helpers replace TPipe's generated schema or instruction text.** When you use them, you are taking over the JSON contract — you now own it.
+
+| Helper | What it does | Risk |
+|--------|-------------|------|
+| `setJsonInput(String)` | Uses your raw JSON text **instead of** generating a schema | HIGH - you replace TPipe's schema generation |
+| `setJsonOutput(String)` | Uses your raw JSON text **instead of** generating a schema | HIGH - you replace TPipe's schema generation |
+| `setJsonInputInstructions(...)` | Replaces the default input instructions | MEDIUM - you own the input guidance |
+| `setJsonOutputInstructions(...)` | Replaces the default output instructions | MEDIUM - you own the output guidance |
+| `setMergedPcpJsonInstructions(...)` | Replaces the merged PCP+JSON instruction block | MEDIUM - you own the merged flow |
+| `requireJsonPromptInjection(stripExternalText = true)` | Enables explicit response stripping | LOW - opt-in behavior control |
+
+**When to use override helpers:**
+- Only when you specifically need to hand-write the schema or instructions
+- Only when you understand the injected prompt contract and are prepared to own it
+- The normal schema helpers do not exist "just in case" — they exist because TPipe's generated guidance is carefully tuned. Replacing it shifts the entire JSON contract to you.
+
+
+
+
 
 ### How JSON Injection Works
 
