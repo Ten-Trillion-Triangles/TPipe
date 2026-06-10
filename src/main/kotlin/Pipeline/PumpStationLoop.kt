@@ -2,11 +2,13 @@ package com.TTT.Pipeline
 
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseRole
+import com.TTT.Context.LoreBook
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Util.deserialize
+import com.TTT.Util.extractJson
 import com.TTT.Util.serialize
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
@@ -552,14 +554,58 @@ internal suspend fun PumpStation.runCompactionPhase()
 /**
  * Background lorebook update. Locks on [lorebookMutex] so concurrent turns
  * queue their updates in chronological order.
+ *
+ * The lorebook agent is expected to return a JSON object of the form:
+ * ```
+ * {
+ *   "updates": [
+ *     {
+ *       "key": "string",
+ *       "value": "string",
+ *       "weight": 0,
+ *       "linkedKeys": ["..."],
+ *       "aliasKeys": ["..."],
+ *       "requiredKeys": ["..."]
+ *     }
+ *   ]
+ * }
+ * ```
+ * For each update, if the key already exists in [ContextWindow.loreBookKeys] the
+ * new value is merged with the existing entry via [LoreBook.combineValue]; otherwise
+ * a fresh entry is created. Parse failures are silently ignored — the caller
+ * already isolates exceptions, and a malformed response should never crash a turn.
  */
 internal suspend fun PumpStation.updateLorebook()
 {
     if (lorebookAgentInternal == null) return
     lorebookMutex.withLock {
         val content = taskState.latestContent ?: MultimodalContent()
-        lorebookAgentInternal!!.executeLocal(content)
-        // Update lorebook keys based on agent response — placeholder for full impl
+        val response = lorebookAgentInternal!!.executeLocal(content)
+        applyLorebookUpdates(response)
+    }
+}
+
+/**
+ * Parse the lorebook agent's response and apply each update to
+ * [ContextWindow.loreBookKeys]. The agent is expected to return either a
+ * single [LoreBook] JSON object or a JSON array of [LoreBook] entries.
+ * Silently no-ops on parse failure.
+ */
+internal fun PumpStation.applyLorebookUpdates(response: MultimodalContent)
+{
+    val updates: List<LoreBook> = extractJson<List<LoreBook>>(response.text)
+        ?: extractJson<LoreBook>(response.text)?.let { listOf(it) }
+        ?: return
+
+    val map = contextWindow.loreBookKeys
+    for (entry in updates) {
+        if (entry.key.isEmpty()) continue
+        val existing = map[entry.key]
+        if (existing != null) {
+            existing.combineValue(entry)
+        } else {
+            map[entry.key] = entry
+        }
     }
 }
 
