@@ -1267,6 +1267,16 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Per-turn settings refresh (R.3). Re-propagates token budget and pipe
+     * settings to all configured agents so any mid-loop configuration change
+     * (e.g. via setTokenBudgetRecursive) is picked up before the next turn.
+     */
+    internal fun refreshSettingsPropagation()
+    {
+        propagateSettingsToAllAgents()
+    }
+
+    /**
      * Propagates token budget and pipe settings to all agents recursively.
      */
     private fun propagateSettingsToAllAgents()

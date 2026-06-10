@@ -241,6 +241,25 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
         ?.let { baseInput.copy(miniBankContext = it) } ?: baseInput
 
     var result = runAgent(dispatchAgent, input)
+
+    // Flag check at the DITL hook point: the universal loop-control contract.
+    // If the dispatch agent signaled halt on its response, we don't fire the
+    // post-generate hook — the harness needs to see the halt signal first.
+    val dispatchFlags = checkMultimodalFlags(result, "Dispatch")
+    if (dispatchFlags.shouldHalt) {
+        taskState.lastError = PumpStationError.P2PRequestInvalid
+        return null
+    }
+
+    // Post-generate DITL hook: fires after the dispatch agent has produced
+    // its path output. The hook may return a P2PInterface (e.g. an alternate
+    // agent the developer wants exposed for tracing) which we surface in
+    // the result's metadata. The actual path request is still parsed below
+    // from the original output.
+    postGenerateFunctionInternal?.invoke(result, this)?.let { returnedAgent ->
+        result.metadata["postGenerateAgent"] = returnedAgent
+    }
+
     var repairAttempts = 0
 
     while (repairAttempts <= failurePolicy.maxDispatchRepairAttempts) {
@@ -488,6 +507,29 @@ internal suspend fun PumpStation.runMemoryUpdatePhase()
         budgetSettings = tokenBudgetSettings ?: TokenBudgetSettings()
     )
     taskState.memoryActionResult = result
+
+    // Post-memory DITL hook: fires after the lorebook/summary agents have
+    // completed (or the memory-update timeout elapsed). The hook receives the
+    // current latestContent and may return a transformed version which
+    // replaces it. Allows the developer to scrub secrets, normalize output,
+    // or annotate the content before the next phase.
+    val currentContent = taskState.latestContent
+    if (currentContent != null) {
+        // Flag check at the DITL hook point: if the memory agents (or the
+        // path that produced latestContent) signaled halt on the content,
+        // surface it through lastError and skip the hook.
+        val memFlags = checkMultimodalFlags(currentContent, "Memory")
+        if (memFlags.shouldHalt) {
+            taskState.lastError = PumpStationError.P2PRequestInvalid
+            return
+        }
+        if (!memFlags.shouldPass) {
+            postMemoryFunctionInternal?.invoke(currentContent, this)?.let { transformed ->
+                taskState.latestContent = transformed
+            }
+        }
+    }
+
     emitEventInternal(MemoryUpdateCompleted(
         runId = taskState.runId,
         turnIndex = taskState.turnIndex,
@@ -581,6 +623,19 @@ internal suspend fun PumpStation.updateLorebook()
     lorebookMutex.withLock {
         val content = taskState.latestContent ?: MultimodalContent()
         val response = lorebookAgentInternal!!.executeLocal(content)
+
+        // Flag check: the lorebook agent signals halt/pass via the universal
+        // loop-control flags. These take precedence over the JSON payload —
+        // if the agent set terminatePipeline on its response, the harness
+        // needs to see that even if the JSON is otherwise valid.
+        val flags = checkMultimodalFlags(response, "Lorebook")
+        if (flags.shouldHalt) {
+            taskState.lastError = PumpStationError.P2PRequestInvalid
+            taskState.latestContent = response
+            return
+        }
+        if (flags.shouldPass) return
+
         applyLorebookUpdates(response)
     }
 }
@@ -619,6 +674,17 @@ internal suspend fun PumpStation.updateSummary()
     summaryMutex.withLock {
         val content = taskState.latestContent ?: MultimodalContent()
         val summaryResult = summaryAgentInternal!!.executeLocal(content)
+
+        // Flag check: the summary agent can signal halt/pass via flags.
+        // If the agent's response is marked terminate, we surface that
+        // through lastError and skip the summary update.
+        val flags = checkMultimodalFlags(summaryResult, "Summary")
+        if (flags.shouldHalt) {
+            taskState.lastError = PumpStationError.P2PRequestInvalid
+            return
+        }
+        if (flags.shouldPass) return
+
         turnSummary = summaryResult.text
     }
 }
@@ -855,6 +921,7 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
 
     refreshAgentInstances()
     refreshPipelinesPrompts()
+    refreshSettingsPropagation()
 
     val initAgent = preInitAgentInternal
     if (initAgent != null) {
@@ -910,6 +977,7 @@ internal suspend fun PumpStation.runTurn(): TurnResult
 {
     refreshAgentInstances()
     refreshPipelinesPrompts()
+    refreshSettingsPropagation()
 
     runHealthCheckPhase()
     detectAndHandleContextBlowout(PumpStationPhase.HealthCheck)
