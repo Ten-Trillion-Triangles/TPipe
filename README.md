@@ -45,6 +45,9 @@ Essential TPipe features organized by complexity:
 - [Pipeline Flow Control](docs/core-concepts/pipeline-flow-control.md) - Dynamic routing and conditional execution
 - [Error Handling and Propagation](docs/core-concepts/error-handling.md) - Programmatic error capture and debugging
 - [Tracing and Debugging](docs/core-concepts/tracing-and-debugging.md) - Monitoring and troubleshooting
+- [KillSwitch - Token Limit Enforcement](docs/core-concepts/killswitch.md) - Emergency safety mechanism for token exceedance
+- [Merged PCP + JSON Output Mode](docs/core-concepts/merged-pcp-json-output.md) - Simultaneous structured JSON and PCP tool calling
+- [Timeout and Retry System](docs/core-concepts/timeout-and-retry.md) - Pressure relief valves for transient failures
 
 ### 🏗️ Container Architecture
 
@@ -96,6 +99,20 @@ Integration guides for different AI providers:
 - [AWS Bedrock Inference Binding](docs/bedrock/inference-binding.md) - Cross-region model access and configuration
 - [AWS Bedrock Guardrails](docs/bedrock/guardrails.md) - Content safety and moderation with Guardrails
 
+#### Ollama
+- [Getting Started with TPipe-Ollama](docs/ollama/getting-started.md) - Local model setup and configuration
+
+#### OpenRouter
+- [Getting Started with TPipe-OpenRouter](docs/openrouter/getting-started.md) - Unified API access to 300+ models
+
+### 📚 Case Studies
+
+Real-world patterns and comparisons:
+
+- [Grounded Case Studies](docs/case-studies/grounded-case-studies.md) - TPipe as an operating environment for advanced systems
+- [Headless Use-Cases](docs/case-studies/headless-use-cases.md) - TPipe in autonomous, headless-first deployments
+- [TPipe vs Apache Camel](docs/comparison/TPipe-vs-Apache-Camel-Comparison.md) - Complete feature comparison
+
 ### 📚 API Reference
 
 Complete API documentation for all TPipe components:
@@ -115,6 +132,11 @@ Complete API documentation for all TPipe components:
 - [Dictionary API](docs/api/dictionary.md) - Token counting and truncation
 - [Lorebook API](docs/api/lorebook.md) - Knowledge base management
 
+#### Provider Pipe APIs
+- [GenericOpenAI Pipe API](docs/api/generic-openai-pipe.md) - Generic OpenAI-compatible provider interface
+- [Ollama Pipe API](docs/api/ollama-pipe.md) - Local Ollama model interface
+- [OpenRouter Pipe API](docs/api/openrouter-pipe.md) - OpenRouter unified API interface
+
 #### Advanced APIs
 - [Debug Package API](docs/api/debug-package.md) - Tracing and monitoring tools
 - [P2P Interface API](docs/api/p2p-interface.md) - Agent communication interface
@@ -130,7 +152,7 @@ Complete API documentation for all TPipe components:
 ## Quick Start
 
 ```kotlin
-import bedrockPipe.BedrockPipe
+import com.TTT.Pipe.BedrockPipe
 
 val pipe = BedrockPipe()
     .setRegion("us-east-1")
@@ -154,7 +176,7 @@ println(result.text)
 - **Context access control** with ContextLock enforcement for secure lorebook and page management
 - **Developer-in-the-loop integration** with code and AI-powered validation
 - **Chain-of-thought reasoning** with multiple strategies and focus points
-- **Multi-provider AI support** (AWS Bedrock, Ollama, extensible architecture)
+- **Multi-provider AI support** (AWS Bedrock, Ollama, OpenRouter, extensible architecture)
 - **Kotlin and JavaScript scripting** in PCP alongside Python and native functions
 - **Comprehensive debugging** with detailed tracing and monitoring
 - **Remote trace dashboard** with TraceServer for centralized real-time trace viewing
@@ -164,19 +186,21 @@ println(result.text)
 - **Service tier optimization** for AWS Bedrock (Reserved, Priority, Standard, Flex)
 - **Content safety with AWS Bedrock Guardrails** for automatic content moderation and policy enforcement
 - **Enhanced security** with DNS rebinding protection, AST-based Python validation, and UUID session IDs
+- **Merged PCP + JSON mode** for simultaneous structured output and tool calling in a single response
 
 ## Requirements
 
 - **Java 24** or higher (GraalVM CE 24 recommended)
-- **Kotlin 1.9.0** or higher
+- **Kotlin 2.2.20** or higher
 - **Gradle** with Kotlin DSL
 
 ## Installation
 
 ```kotlin
 dependencies {
-    implementation("com.TTT:TPipe-Core:1.0.0")
-    implementation("com.TTT:TPipe-Bedrock:1.0.0")  // For AWS Bedrock
-    implementation("com.TTT:TPipe-Ollama:1.0.0")   // For Ollama
+    implementation("com.TTT:TPipe-Core:1.0.6")
+    implementation("com.TTT:TPipe-Bedrock:1.0.6")  // For AWS Bedrock
+    implementation("com.TTT:TPipe-Ollama:1.0.6")   // For Ollama
+    implementation("com.TTT:TPipe-OpenRouter:1.0.6") // For OpenRouter
 }
 ```
