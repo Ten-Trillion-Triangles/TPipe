@@ -116,9 +116,10 @@ class PumpStationBuilder(val name: String)
 
     /**
      * Additional harness agents invoked between dispatch output and return to judge agent.
-     * Each agent is invoked in the order assigned.
+     * Each slot stores an agent (or builder function) with a concurrency mode, and is
+     * invoked in the order assigned.
      */
-    val additionalHarnessAgents: MutableList<P2PInterface> = mutableListOf()
+    val additionalHarnessAgentSlots: MutableList<HarnessAgentSlot> = mutableListOf()
 
 //=========================================Configuration============================================================
 
@@ -189,6 +190,41 @@ class PumpStationBuilder(val name: String)
      * Excess elements are popped from the stack.
      */
     var maxTurnHistorySize: Int = 50
+
+    /**
+     * Maximum number of consecutive goal-evaluation failures before the
+     * harness gives up on the current task. Defaults to 3.
+     */
+    var maxGoalFailAttempts: Int = 3
+
+    /**
+     * Maximum number of raw turn history entries to retain, or null to
+     * disable the cap. Distinct from the ConverseHistory turn history cap.
+     */
+    var maxRawTurnHistorySize: Int? = null
+
+    /**
+     * Threshold (0.0-1.0) of context window utilization that triggers
+     * blowout detection. Defaults to 0.9 (90%).
+     */
+    var blowoutThreshold: Double = 0.9
+
+    /**
+     * Timeout in milliseconds for memory update operations. Defaults to 30s.
+     */
+    var memoryUpdateTimeoutMs: Long = 30_000L
+
+    /**
+     * Maximum number of blowout recovery attempts before forced halt.
+     * Defaults to 3.
+     */
+    var maxBlowoutRecoveries: Int = 3
+
+    /**
+     * Maximum number of tokens allowed in a repair/regeneration prompt.
+     * Defaults to 500.
+     */
+    var maxRepairPromptTokens: Int = 500
 
     /**
      * If true, throw error and exit PumpStation when dispatch agent generates invalid JSON
@@ -338,6 +374,7 @@ class PumpStationBuilder(val name: String)
     fun path(pathName: String, block: PathBlock.() -> Unit) {
         val pb = PathBlock(pathName, this)
         pb.block()
+        pb.build()
     }
 
     /**
@@ -349,6 +386,7 @@ class PumpStationBuilder(val name: String)
     fun reservePath(pathName: String, block: ReservePathBlock.() -> Unit) {
         val rpb = ReservePathBlock(pathName, this)
         rpb.block()
+        rpb.build()
     }
 
     /**
@@ -404,9 +442,16 @@ class PumpStationBuilder(val name: String)
             .setPathSafetyAgent(pathSafetyAgent)
 
         // Additional harness agents (append each entry directly)
-        for (agent in additionalHarnessAgents)
+        for (slot in additionalHarnessAgentSlots)
         {
-            station.addHarnessAgent(agent)
+            if (slot.builderFunction != null)
+            {
+                station.addHarnessAgentBuilder(slot.builderFunction!!, slot.concurrency)
+            }
+            else if (slot.agent != null)
+            {
+                station.addHarnessAgent(slot.agent!!, slot.concurrency)
+            }
         }
 
         // Prompts and metadata
@@ -426,6 +471,12 @@ class PumpStationBuilder(val name: String)
             .setCompactionThreshold(compactionThreshold)
             .setCompactionStrategy(compactionStrategy)
             .setMaxTurnHistorySize(maxTurnHistorySize)
+            .setMaxGoalFailAttempts(maxGoalFailAttempts)
+            .setMaxRawTurnHistorySize(maxRawTurnHistorySize)
+            .setBlowoutThreshold(blowoutThreshold)
+            .setMemoryUpdateTimeoutMs(memoryUpdateTimeoutMs)
+            .setMaxBlowoutRecoveries(maxBlowoutRecoveries)
+            .setMaxRepairPromptTokens(maxRepairPromptTokens)
             .setStopHarnessOnInvalidPathRequest(stopHarnessOnInvalidPathRequest)
             .setFailurePolicy(failurePolicy)
 

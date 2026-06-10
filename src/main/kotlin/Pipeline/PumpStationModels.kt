@@ -3,6 +3,7 @@ package com.TTT.Pipeline
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
+import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import kotlinx.serialization.Contextual
 
@@ -254,6 +255,24 @@ data class JudgeCompleted(
 ) : PumpStationEvent
 
 /**
+ * Typed parser output for the judge agent's response. Encodes the LLM's
+ * verdict on task completion plus the MultimodalContent flags for loop control.
+ */
+@kotlinx.serialization.Serializable
+data class JudgeVerdict(
+    val isComplete: Boolean = false,
+    val shouldTerminate: Boolean = false,
+    val shouldHalt: Boolean = false,
+    val reason: PumpStationExitReason? = null
+)
+{
+    companion object
+    {
+        fun empty() = JudgeVerdict()
+    }
+}
+
+/**
  * Dispatch phase started.
  */
 @kotlinx.serialization.Serializable
@@ -429,6 +448,17 @@ data class HealthCheckCompleted(
 ) : PumpStationEvent
 
 /**
+ * Health check phase started — emitted before calling the healthAgent.
+ */
+@kotlinx.serialization.Serializable
+data class HealthCheckStarted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.HealthCheck
+) : PumpStationEvent
+
+/**
  * Foreground agent completed execution.
  */
 @kotlinx.serialization.Serializable
@@ -584,6 +614,67 @@ data class HarnessResumed(
     override val phase: PumpStationPhase = PumpStationPhase.Exit
 ) : PumpStationEvent
 
+//=========================================Turn Control============================================================
+
+/**
+ * Result of a single turn iteration. Continue means the loop should re-enter;
+ * Halt means the loop should exit with the given reason.
+ */
+sealed class TurnResult
+{
+    object Continue : TurnResult()
+    data class Halt(val reason: PumpStationExitReason) : TurnResult()
+}
+
+/**
+ * Wrapper for an additional harness agent. Each slot has a concurrency mode
+ * (Blocking = foreground, runs synchronously; Async = background, runs queued).
+ * The agent can be supplied directly or via a builder function for per-turn freshness.
+ */
+data class HarnessAgentSlot(
+    val agent: P2PInterface?,
+    val concurrency: PumpStationConcurrencyMode,
+    val builderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+)
+
+//=========================================Loop Control Flags======================================================
+
+/**
+ * Standardized result of checking MultimodalContent control flags.
+ * Used to drive loop control without magic contracts.
+ */
+@kotlinx.serialization.Serializable
+data class FlagCheckResult(
+    val shouldHalt: Boolean = false,
+    val shouldPass: Boolean = false,
+    val shouldInterrupt: Boolean = false,
+    val haltReason: String? = null
+)
+
+//=========================================Memory & Dispatch=======================================================
+
+/**
+ * Captured in-progress state of memory agents. Used by saveSnapshot() to record
+ * lorebook and summary mid-flight values, so a rollback can restore without losing work.
+ */
+@kotlinx.serialization.Serializable
+data class MemorySnapshot(
+    val lorebookKeysSnapshot: Map<String, String> = emptyMap(),
+    val summarySnapshot: String = "",
+    val snapshotAt: Int = 0
+)
+
+/**
+ * Result of parsing the dispatch agent's output. Carries the parsed PathRequest
+ * (if successful), the number of repair attempts made, and any parse error message.
+ */
+@kotlinx.serialization.Serializable
+data class DispatchOutput(
+    val pathRequest: PathRequest? = null,
+    val repairAttempts: Int = 0,
+    val parseError: String? = null
+)
+
 //=========================================Stash Models============================================================
 
 /**
@@ -659,6 +750,7 @@ data class PumpStationTaskState(
     var status: PumpStationStatus,
     var phase: PumpStationPhase,
     var turnIndex: Int,
+    var goalFailCount: Int = 0,
     var originalInput: MultimodalContent?,
     var latestContent: MultimodalContent?,
     var selectedPathName: String?,

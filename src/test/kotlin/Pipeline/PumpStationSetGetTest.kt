@@ -259,8 +259,8 @@ class PumpStationSetGetTest
                 goalAgent = SgTestAgent(agentTag = "dsl-goal")
                 preInitAgent = SgTestAgent(agentTag = "dsl-preInit")
                 pathSafetyAgent = SgTestAgent(agentTag = "dsl-pathSafety")
-                additionalHarnessAgents.add(SgTestAgent(agentTag = "dsl-extra1"))
-                additionalHarnessAgents.add(SgTestAgent(agentTag = "dsl-extra2"))
+                additionalHarnessAgentSlots.add(HarnessAgentSlot(agent = SgTestAgent(agentTag = "dsl-extra1"), concurrency = PumpStationConcurrencyMode.Blocking))
+                additionalHarnessAgentSlots.add(HarnessAgentSlot(agent = SgTestAgent(agentTag = "dsl-extra2"), concurrency = PumpStationConcurrencyMode.Blocking))
 
                 systemTask = "system task text"
                 userGuidelines = "guideline text"
@@ -309,12 +309,14 @@ class PumpStationSetGetTest
                     risk = PathRiskLevel.Medium
                     dispatchHint = "alpha hint"
                     runsInBackground = true
+                    setInternalAgent(SgTestAgent(agentTag = "alpha-agent"))
                 }
                 // A reserve path
                 reservePath("beta") {
                     description = "beta path"
                     risk = PathRiskLevel.High
                     revealWhen { _, _ -> true }
+                    setInternalAgent(SgTestAgent(agentTag = "beta-agent"))
                 }
                 // Dispatcher rules
                 dispatcherRules {

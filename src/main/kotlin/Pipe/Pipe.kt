@@ -1822,6 +1822,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
         return this
     }
 
+    /**
+     * Test-only accessor that returns the current (post-merge) system prompt.
+     * Used by harness-loop unit tests to verify prompt refresh behavior.
+     * Functions are not serialized by kotlinx-serialization, so no @Transient
+     * annotation is needed.
+     */
+    fun getSystemPromptForTest(): String = systemPrompt
+
 
     /**
      * Copy the system prompt and merge it with the user prompt, storing both into a converse history object
