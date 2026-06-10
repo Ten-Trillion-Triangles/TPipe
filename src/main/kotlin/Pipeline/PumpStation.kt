@@ -411,6 +411,18 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Marks this path as one that runs in the background when invoked by the harness.
+     * When true, the harness is expected to launch the path on its background scheduler
+     * rather than awaiting the result inline.
+     *
+     * @param value true to mark this path as background; false to mark it as foreground.
+     */
+    fun setRunsInBackground(value: Boolean)
+    {
+        this._runsInBackground = value
+    }
+
+    /**
      * P2PInterface required init function. Delegates to [init] for path initialization.
      * Present to satisfy the [P2PInterface] contract.
      */
@@ -1859,6 +1871,754 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     fun addDispatcherRule(rule: DispatcherRule)
     {
         dispatcherRules.add(rule)
+    }
+
+
+//=====================================Fluent Setters================================================================
+
+//---------------------------------------------Agent Setters--------------------------------------------------------
+
+    /**
+     * Sets the judge agent for this PumpStation. The judge agent evaluates whether
+     * the harness task is complete and can terminate the loop.
+     *
+     * @param agent The judge pipeline, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setJudgeAgent(agent: Pipeline?): PumpStation
+    {
+        this.judgeAgent = agent
+        return this
+    }
+
+    /**
+     * Sets the dispatch agent for this PumpStation. The dispatch agent evaluates
+     * what the next step in the harness needs to be and dispatches to the next path.
+     *
+     * @param agent The dispatch pipeline, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setDispatchAgent(agent: Pipeline?): PumpStation
+    {
+        this.dispatchAgent = agent
+        return this
+    }
+
+    /**
+     * Sets the intervention agent for this PumpStation. Invoked post path execution
+     * to provide nudges, hints, and aggressive suggestions to steer dispatch/judge.
+     *
+     * @param agent The intervention agent, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setInterventionAgent(agent: P2PInterface?): PumpStation
+    {
+        this.interventionAgent = agent
+        return this
+    }
+
+    /**
+     * Sets the health agent for this PumpStation. The health agent is a proactive
+     * monitor that fires before the judge based on interval/error-ratio thresholds.
+     *
+     * @param agent The health agent, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setHealthAgent(agent: P2PInterface?): PumpStation
+    {
+        this.healthAgent = agent
+        return this
+    }
+
+    /**
+     * Sets the lorebook agent for this PumpStation. The lorebook agent updates the
+     * lorebook of the internal context window/minibank in the background.
+     *
+     * @param agent The lorebook agent, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setLorebookAgent(agent: P2PInterface?): PumpStation
+    {
+        this.lorebookAgent = agent
+        return this
+    }
+
+    /**
+     * Sets the summary agent for this PumpStation. The summary agent generates
+     * summaries of harness events for compaction and turn history drop-off.
+     *
+     * @param agent The summary agent, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSummaryAgent(agent: P2PInterface?): PumpStation
+    {
+        this.summaryAgent = agent
+        return this
+    }
+
+    /**
+     * Sets the goal agent for this PumpStation. The goal agent scans the work done
+     * once the harness is in an exit state and can force work to resume.
+     *
+     * @param agent The goal agent, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setGoalAgent(agent: P2PInterface?): PumpStation
+    {
+        this.goalAgent = agent
+        return this
+    }
+
+    /**
+     * Sets the pre-init agent for this PumpStation. The pre-init agent fires prior
+     * to starting the harness for any initial setup or state handling.
+     *
+     * @param agent The pre-init agent, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPreInitAgent(agent: P2PInterface?): PumpStation
+    {
+        this.preInitAgent = agent
+        return this
+    }
+
+    /**
+     * Sets the path-safety agent for this PumpStation. Invoked to check path safety
+     * when a path call is medium risk or above.
+     *
+     * @param agent The path-safety agent, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPathSafetyAgent(agent: P2PInterface?): PumpStation
+    {
+        this.pathSafetyAgent = agent
+        return this
+    }
+
+//---------------------------------------Agent Builder Setters------------------------------------------------------
+
+    /**
+     * Sets the judge agent builder function. When non-null, this overrides
+     * any value set via [setJudgeAgent].
+     *
+     * @param fn The builder function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setJudgeAgentBuilderFunction(fn: (suspend (harness: PumpStation) -> Pipeline)?): PumpStation
+    {
+        this.judgeAgentBuilderFunction = fn
+        return this
+    }
+
+    /**
+     * Sets the dispatch agent builder function. When non-null, this overrides
+     * any value set via [setDispatchAgent].
+     *
+     * @param fn The builder function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setDispatchAgentBuilderFunction(fn: (suspend (harness: PumpStation) -> Pipeline)?): PumpStation
+    {
+        this.dispatchAgentBuilderFunction = fn
+        return this
+    }
+
+    /**
+     * Sets the intervention agent builder function. When non-null, this overrides
+     * any value set via [setInterventionAgent].
+     *
+     * @param fn The builder function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setInterventionAgentBuilderFunction(fn: (suspend (harness: PumpStation) -> P2PInterface)?): PumpStation
+    {
+        this.interventionAgentBuilderFunction = fn
+        return this
+    }
+
+    /**
+     * Sets the health agent builder function. When non-null, this overrides
+     * any value set via [setHealthAgent].
+     *
+     * @param fn The builder function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setHealthAgentBuilderFunction(fn: (suspend (harness: PumpStation) -> P2PInterface)?): PumpStation
+    {
+        this.healthAgentBuilderFunction = fn
+        return this
+    }
+
+    /**
+     * Sets the lorebook agent builder function. When non-null, this overrides
+     * any value set via [setLorebookAgent].
+     *
+     * @param fn The builder function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setLorebookAgentBuilderFunction(fn: (suspend (harness: PumpStation) -> P2PInterface)?): PumpStation
+    {
+        this.lorebookAgentBuilderFunction = fn
+        return this
+    }
+
+    /**
+     * Sets the summary agent builder function. When non-null, this overrides
+     * any value set via [setSummaryAgent].
+     *
+     * @param fn The builder function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSummaryAgentBuilderFunction(fn: (suspend (harness: PumpStation) -> P2PInterface)?): PumpStation
+    {
+        this.summaryAgentBuilderFunction = fn
+        return this
+    }
+
+    /**
+     * Sets the goal agent builder function. When non-null, this overrides
+     * any value set via [setGoalAgent].
+     *
+     * @param fn The builder function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setGoalAgentBuilderFunction(fn: (suspend (harness: PumpStation) -> P2PInterface)?): PumpStation
+    {
+        this.goalAgentBuilderFunction = fn
+        return this
+    }
+
+//---------------------------------------Concurrency / Loop / Memory------------------------------------------------
+
+    /**
+     * Sets the concurrency mode for background tasks. Async fires as soon as
+     * possible and queues; Blocking runs each background agent to completion in order.
+     *
+     * @param mode The concurrency mode.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setConcurrencyMode(mode: PumpStationConcurrencyMode): PumpStation
+    {
+        this.concurrencyMode = mode
+        return this
+    }
+
+    /**
+     * Sets the memory management mode. Compaction, Truncation, or Hybrid.
+     *
+     * @param mode The memory management mode.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMemoryManagementMode(mode: PumpStationMemoryManagementMode): PumpStation
+    {
+        this.memoryManagementMode = mode
+        return this
+    }
+
+    /**
+     * Sets the default compaction strategy.
+     *
+     * @param strategy The compaction strategy.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setCompactionStrategy(strategy: PumpStationCompactionStrategy): PumpStation
+    {
+        this.compactionStrategy = strategy
+        return this
+    }
+
+    /**
+     * Sets the % filled ratio of the available context window space that triggers compaction.
+     *
+     * @param threshold The compaction threshold (0.0-1.0).
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setCompactionThreshold(threshold: Double): PumpStation
+    {
+        this.compactionThreshold = threshold
+        return this
+    }
+
+    /**
+     * Sets the maximum number of harness turns before forced exit.
+     *
+     * @param max The maximum harness turns.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxHarnessTurns(max: Int): PumpStation
+    {
+        this.maxHarnessTurns = max
+        return this
+    }
+
+    /**
+     * Sets the alternate loop-guard maximum turns value. Currently mirrors
+     * [setMaxHarnessTurns] in effect but is preserved as a distinct field.
+     *
+     * @param max The maximum number of turns.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxTurns(max: Int): PumpStation
+    {
+        this.maxTurns = max
+        return this
+    }
+
+    /**
+     * Sets the maximum number of consecutive turns on the same path before the
+     * loop guard fires.
+     *
+     * @param max The maximum consecutive turns, or null to disable the guard.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxConsecutiveSamePath(max: Int?): PumpStation
+    {
+        this.maxConsecutiveSamePath = max
+        return this
+    }
+
+    /**
+     * Sets the maximum total invocations allowed per path name.
+     *
+     * @param max The maximum total calls per path, or null to disable the guard.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxTotalPathCallsPerPath(max: Int?): PumpStation
+    {
+        this.maxTotalPathCallsPerPath = max
+        return this
+    }
+
+    /**
+     * Sets the maximum number of [ConverseHistory] elements allowed in the turn history.
+     *
+     * @param max The maximum turn history size.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxTurnHistorySize(max: Int): PumpStation
+    {
+        this.maxTurnHistorySize = max
+        return this
+    }
+
+    /**
+     * Sets whether the harness should immediately stop when the dispatch agent
+     * generates invalid JSON for a path request.
+     *
+     * @param stop true to stop on invalid JSON; false to attempt recovery.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setStopHarnessOnInvalidPathRequest(stop: Boolean): PumpStation
+    {
+        this.stopHarnessOnInvalidPathRequest = stop
+        return this
+    }
+
+    /**
+     * Sets the maximum number of concurrent background agents.
+     *
+     * @param max The maximum concurrent background agents.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxConcurrentBackgroundAgents(max: Int): PumpStation
+    {
+        this.maxConcurrentBackgroundAgents = max
+        return this
+    }
+
+    /**
+     * Sets the maximum number of concurrent foreground agents.
+     *
+     * @param max The maximum concurrent foreground agents.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxConcurrentForegroundAgents(max: Int): PumpStation
+    {
+        this.maxConcurrentForegroundAgents = max
+        return this
+    }
+
+    /**
+     * Sets the number of turns to wait before firing foreground agents.
+     *
+     * @param interval The foreground turn interval.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setForegroundTurnInterval(interval: Int): PumpStation
+    {
+        this.foregroundTurnInterval = interval
+        return this
+    }
+
+    /**
+     * Sets the number of turns to wait before firing background agents.
+     *
+     * @param interval The background turn interval.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setBackgroundTurnInterval(interval: Int): PumpStation
+    {
+        this.backgroundTurnInterval = interval
+        return this
+    }
+
+//---------------------------------------Health Probe Setters-------------------------------------------------------
+
+    /**
+     * Sets the number of turns between health-agent firings. null disables interval-based firing.
+     *
+     * @param interval The turn interval, or null to disable.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setHealthAgentTurnInterval(interval: Int?): PumpStation
+    {
+        this.healthAgentTurnInterval = interval
+        return this
+    }
+
+    /**
+     * Sets the error-ratio threshold at which the health agent fires. null disables ratio-based firing.
+     *
+     * @param threshold The error ratio (0.0-1.0), or null to disable.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setHealthAgentErrorRatioThreshold(threshold: Double?): PumpStation
+    {
+        this.healthAgentErrorRatioThreshold = threshold
+        return this
+    }
+
+    /**
+     * Sets the concurrency mode for health-agent execution. null lets the harness default behavior run.
+     *
+     * @param mode The health agent concurrency mode, or null to disable.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setHealthAgentConcurrencyMode(mode: PumpStationConcurrencyMode?): PumpStation
+    {
+        this.healthAgentConcurrencyMode = mode
+        return this
+    }
+
+//---------------------------------------Prompts and Metadata------------------------------------------------------
+
+    /**
+     * Sets the personality / persona string. Forces agents to take on the persona
+     * and prioritize it above every other instruction.
+     *
+     * @param personality The personality text.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPersonality(personality: String): PumpStation
+    {
+        this.personality = personality
+        return this
+    }
+
+    /**
+     * Sets the system task string - the harness "system prompt" injected after the
+     * built-in harness system instructions.
+     *
+     * @param task The system task text.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSystemTask(task: String): PumpStation
+    {
+        this.systemTask = task
+        return this
+    }
+
+    /**
+     * Sets the user guidelines - secondary after [systemTask]. Traditional
+     * "skills" would be injected here.
+     *
+     * @param guidelines The user guidelines text.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setUserGuidelines(guidelines: String): PumpStation
+    {
+        this.userGuidelines = guidelines
+        return this
+    }
+
+    /**
+     * Sets the entry user prompt - the third-tier initial user prompt sent to the harness.
+     *
+     * @param prompt The entry user prompt text.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setEntryUserPrompt(prompt: String): PumpStation
+    {
+        this.entryUserPrompt = prompt
+        return this
+    }
+
+//---------------------------------------DITL Function Setters-----------------------------------------------------
+
+    /**
+     * Sets the DITL function invoked at the very beginning of harness runtime.
+     *
+     * @param func The pre-init function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPreInitFunction(func: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)?): PumpStation
+    {
+        this.preInitFunction = func
+        return this
+    }
+
+    /**
+     * Sets the pre-validation DITL function for the judge agent.
+     *
+     * @param func The pre-validation judge function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPreValidationJudgeFunction(func: (suspend (MultimodalContent, MiniBank, PumpStation) -> MiniBank)?): PumpStation
+    {
+        this.preValidationJudgeFunction = func
+        return this
+    }
+
+    /**
+     * Sets the post-judge DITL function. Runs immediately after the judge agent exits.
+     *
+     * @param func The post-judge function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPostJudgeFunction(func: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)?): PumpStation
+    {
+        this.postJudgeFunction = func
+        return this
+    }
+
+    /**
+     * Sets the pre-validation DITL function for the dispatch agent.
+     *
+     * @param func The pre-validation dispatch function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPreValidationDispatchFunction(func: (suspend (MultimodalContent, ContextWindow, MiniBank, PumpStation) -> MiniBank)?): PumpStation
+    {
+        this.preValidationDispatchFunction = func
+        return this
+    }
+
+    /**
+     * Sets the DITL function invoked just prior to the judge agent. Returning false
+     * can shut down the harness loop.
+     *
+     * @param func The pre-invoke function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPreInvokeFunction(func: (suspend (ContextWindow, MiniBank, PumpStation) -> Boolean)?): PumpStation
+    {
+        this.preInvokeFunction = func
+        return this
+    }
+
+    /**
+     * Sets the DITL function invoked to check path safety on a high-risk path call.
+     *
+     * @param func The path-safety function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPathSafetyFunction(func: (suspend (PathObject, String, PumpStation) -> Boolean)?): PumpStation
+    {
+        this.pathSafetyFunction = func
+        return this
+    }
+
+    /**
+     * Sets the DITL function invoked after the dispatch agent has generated its path output.
+     *
+     * @param func The post-generate function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPostGenerateFunction(func: (suspend (MultimodalContent, PumpStation) -> P2PInterface)?): PumpStation
+    {
+        this.postGenerateFunction = func
+        return this
+    }
+
+    /**
+     * Sets the DITL function invoked after the path has fully executed. If false,
+     * an error is raised and the branch failure recovery is attempted.
+     *
+     * @param func The path-validation function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPathValidationFunction(func: (suspend (MultimodalContent, PumpStation) -> Boolean)?): PumpStation
+    {
+        this.pathValidationFunction = func
+        return this
+    }
+
+    /**
+     * Sets the DITL function for content transformation after a path executes
+     * and just before results are injected into the harness history.
+     *
+     * @param func The path-transformation function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPathTransformationFunction(func: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)?): PumpStation
+    {
+        this.pathTransformationFunction = func
+        return this
+    }
+
+    /**
+     * Sets the DITL function that executes after memory agents complete a memory update task.
+     *
+     * @param func The post-memory function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPostMemoryFunction(func: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)?): PumpStation
+    {
+        this.postMemoryFunction = func
+        return this
+    }
+
+    /**
+     * Sets the DITL function that fires when a memory blowout has been detected.
+     *
+     * @param func The pre-compaction function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPreCompactionFunction(func: (suspend (MultimodalContent, ConverseData, ConverseHistory, PumpStation) -> MultimodalContent)?): PumpStation
+    {
+        this.preCompactionFunction = func
+        return this
+    }
+
+    /**
+     * Sets the DITL function that fires after a TPipe emergency compaction/memory event happens.
+     *
+     * @param func The post-compaction function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPostCompactionFunction(func: (suspend (MultimodalContent, ConverseHistory, PumpStation) -> MultimodalContent)?): PumpStation
+    {
+        this.postCompactionFunction = func
+        return this
+    }
+
+    /**
+     * Sets the function that fires any time an agent has an internal context truncation
+     * due to token budgeting.
+     *
+     * @param func The on-context-truncated function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setOnContextTruncated(func: (suspend (wasTruncated: Boolean, remainingFreeSpace: Int) -> Unit)?): PumpStation
+    {
+        this.onContextTruncated = func
+        return this
+    }
+
+//---------------------------------------Misc Setters--------------------------------------------------------------
+
+    /**
+     * Sets the DITL function invoked when [maxTotalPathCallsPerPath] is exceeded.
+     * Allows dynamic runtime policy instead of static [PathLimitExceededPolicy].
+     *
+     * @param func The path-limit-exceeded function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPathLimitExceededFunction(func: (suspend (PathObject, String, PumpStation) -> PathLimitExceededResult)?): PumpStation
+    {
+        this.pathLimitExceededFunction = func
+        return this
+    }
+
+    /**
+     * Sets the failure recovery policy controlling dispatch JSON repair, stash behavior,
+     * and intervention triggers.
+     *
+     * @param policy The failure policy.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setFailurePolicy(policy: PumpStationFailurePolicy): PumpStation
+    {
+        // failurePolicy is a public val on this class, so we copy the fields of the
+        // incoming policy into the existing instance rather than reassigning.
+        this.failurePolicy.repairInvalidDispatchJson = policy.repairInvalidDispatchJson
+        this.failurePolicy.maxDispatchRepairAttempts = policy.maxDispatchRepairAttempts
+        this.failurePolicy.stashOversizedOutputs = policy.stashOversizedOutputs
+        this.failurePolicy.callInterventionOnPathFailure = policy.callInterventionOnPathFailure
+        this.failurePolicy.stopHarnessOnInvalidPathRequest = policy.stopHarnessOnInvalidPathRequest
+        return this
+    }
+
+//---------------------------------------Harness Agent List Setters------------------------------------------------
+
+    /**
+     * Appends an additional harness agent. Each agent is invoked between the dispatch
+     * output and the return to the judge agent, in the order added.
+     *
+     * @param agent The harness agent to add.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun addHarnessAgent(agent: P2PInterface): PumpStation
+    {
+        this.additionalHarnessAgents.add(agent)
+        return this
+    }
+
+    /**
+     * Appends an additional harness agent builder function. Each builder is invoked
+     * between the dispatch output and the return to the judge agent, in the order added.
+     * When set, this list overrides [additionalHarnessAgents] at runtime.
+     *
+     * @param fn The builder function to add.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun addHarnessAgentBuilder(fn: (suspend (harness: PumpStation) -> P2PInterface)): PumpStation
+    {
+        if (this.additionalHarnessAgentBuilderFuncList == null)
+        {
+        this.additionalHarnessAgentBuilderFuncList = mutableListOf()
+        }
+        this.additionalHarnessAgentBuilderFuncList!!.add(fn)
+        return this
+    }
+
+    /**
+     * Clears the additional harness agents list.
+     *
+     * @return This PumpStation instance for method chaining.
+     */
+    fun clearHarnessAgents(): PumpStation
+    {
+        this.additionalHarnessAgents.clear()
+        return this
+    }
+
+    /**
+     * Clears the additional harness agent builder function list.
+     *
+     * @return This PumpStation instance for method chaining.
+     */
+    fun clearHarnessAgentBuilders(): PumpStation
+    {
+        this.additionalHarnessAgentBuilderFuncList?.clear()
+        return this
+    }
+
+//---------------------------------------Reserve Path Mutator-------------------------------------------------------
+
+    /**
+     * Adds a path to the reserve list. The path's parent is set to this station.
+     * Reserve paths are only visible to the dispatch agent when their [PathObject.revealWhen]
+     * predicate returns true.
+     *
+     * @param path The PathObject to add to reserve.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun addReservePath(path: PathObject): PumpStation
+    {
+        path.setParentInterface(this)
+        reservePaths[path.pathName] = path
+        return this
     }
 
 }

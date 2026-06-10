@@ -2,6 +2,7 @@ package com.TTT.Pipeline
 
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
+import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
@@ -27,114 +28,6 @@ sealed class PumpStationStage
     object HasPaths : PumpStationStage()
     object Ready      : PumpStationStage()
 }
-
-//=========================================PathObject Extension Properties============================================
-// These extension properties will be backed by internal state in PathObject once phase 3 adds them.
-// For now, we store them in a companion object map on PathObject and the actual wiring
-// to the real properties happens in phase 3 when PumpStation infrastructure is complete.
-
-/**
- * Extension property to set dispatchHint on PathObject.
- * Stored in a thread-safe map until PathObject.dispatchHint is added in phase 3.
- */
-var PathObject.dispatchHint: String
-    get() = _dispatchHintState.getOrDefault(this, "")
-    set(value) { _dispatchHintState[this] = value }
-
-/**
- * Extension property to set revealWhen predicate on PathObject.
- * Stored in a thread-safe map until PathObject.revealWhen is added in phase 3.
- */
-var PathObject.revealWhen: ReservePathRevealPredicate?
-    get() = _revealWhenState[this]
-    set(value) { _revealWhenState[this] = value }
-
-// Internal state storage for extension properties
-private val _dispatchHintState = mutableMapOf<PathObject, String>()
-private val _revealWhenState = mutableMapOf<PathObject, ReservePathRevealPredicate?>()
-
-//=========================================PumpStation Deferred Wiring===============================================
-// In phase 3, PumpStation will have setters for all properties and addPath/addReservePath methods.
-// For now, we store the configuration in a separate object and the build() method creates
-// a placeholder that will be wired up properly in phase 3.
-
-/**
- * Internal configuration holder for PumpStation properties that are private.
- * This is used by the DSL to capture configuration and then transfer it to
- * PumpStation in phase 3 when the proper setters are added.
- */
-class PumpStationDslConfig
-{
-    var judgeAgent: P2PInterface? = null
-    var dispatchAgent: Pipeline? = null
-    var interventionAgent: P2PInterface? = null
-    var healthAgent: P2PInterface? = null
-    var healthAgentBuilderFunction: (suspend (com.TTT.Pipeline.PumpStation) -> P2PInterface)? = null
-    var healthAgentTurnInterval: Int? = null
-    var healthAgentErrorRatioThreshold: Double? = null
-    var healthAgentConcurrencyMode: PumpStationConcurrencyMode? = null
-    var lorebookAgent: P2PInterface? = null
-    var summaryAgent: P2PInterface? = null
-    var goalAgent: P2PInterface? = null
-    var preInitAgent: P2PInterface? = null
-    var pathSafetyAgent: P2PInterface? = null
-    val additionalHarnessAgents: MutableList<P2PInterface> = mutableListOf()
-
-    var systemTask: String = ""
-    var userGuidelines: String = ""
-    var entryUserPrompt: String = ""
-    var maxHarnessTurns: Int = 50
-    var maxConcurrentBackgroundAgents: Int = 3
-    var maxConcurrentForegroundAgents: Int = 3
-    var foregroundTurnInterval: Int = 0
-    var backgroundTurnInterval: Int = 5
-    var memoryManagementMode: PumpStationMemoryManagementMode = PumpStationMemoryManagementMode.Compaction
-    var compactionThreshold: Double = 0.8
-    var compactionStrategy: PumpStationCompactionStrategy = PumpStationCompactionStrategy.Whole
-    var maxTurnHistorySize: Int = 50
-    var stopHarnessOnInvalidPathRequest: Boolean = false
-    var failurePolicy: PumpStationFailurePolicy = PumpStationFailurePolicy()
-
-    var maxConsecutiveSamePath: Int = 3
-    var maxTotalPathCallsPerPath: Int? = null
-    var pathLimitExceededPolicy: PathLimitExceededPolicy = PathLimitExceededPolicy.Skip
-    var pathLimitExceededFunction: (suspend (PathObject, String, PumpStation) -> PathLimitExceededResult)? = null
-
-    var externalContextProvider: ((PumpStationTaskState) -> MutableMap<String, Any>)? = null
-
-    val pauseAtPhases: MutableSet<PumpStationPausePhase> = mutableSetOf()
-
-    var preInitFunction: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)? = null
-    var preValidationJudgeFunction: (suspend (MultimodalContent, MiniBank, PumpStation) -> MiniBank)? = null
-    var preValidationDispatchFunction: (suspend (MultimodalContent, MiniBank, PumpStation) -> MiniBank)? = null
-    var preInvokeFunction: (suspend (MiniBank, PumpStation) -> Boolean)? = null
-    var pathSafetyFunction: (suspend (PathObject, String, PumpStation) -> Boolean)? = null
-    var postGenerateFunction: (suspend (MultimodalContent, PumpStation) -> P2PInterface)? = null
-    var pathValidationFunction: (suspend (MultimodalContent, PumpStation) -> Boolean)? = null
-    var pathTransformationFunction: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)? = null
-    var postMemoryFunction: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)? = null
-    var preCompactionFunction: (suspend (MultimodalContent, ConverseData, ConverseHistory, PumpStation) -> MultimodalContent)? = null
-    var postCompactionFunction: (suspend (MultimodalContent, ConverseHistory, PumpStation) -> MultimodalContent)? = null
-
-    val pathObjects: MutableMap<String, PathObject> = mutableMapOf()
-    val reservePaths: MutableMap<String, PathObject> = mutableMapOf()
-    val dispatcherRules: MutableList<DispatcherRule> = mutableListOf()
-
-    /**
-     * Transfer all configuration to a PumpStation instance.
-     * This method uses reflection or direct access depending on what PumpStation exposes in phase 3.
-     * For now, it stores the config in a transient property on PumpStation.
-     */
-    fun wireTo(station: PumpStation) {
-        // Store config in a transient holder on station for phase 3 wiring
-        station._pendingDslConfig = this
-    }
-}
-
-// Add transient property to PumpStation for DSL configuration storage
-var PumpStation._pendingDslConfig: PumpStationDslConfig?
-    get() = null
-    set(value) { }
 
 //=========================================PumpStationBuilder========================================================
 
@@ -373,13 +266,13 @@ class PumpStationBuilder(val name: String)
      * Pre-validation DITL call for the dispatch agent.
      * Invoked prior to running the dispatch agent.
      */
-    var preValidationDispatchFunction: (suspend (MultimodalContent, MiniBank, PumpStation) -> MiniBank)? = null
+    var preValidationDispatchFunction: (suspend (MultimodalContent, ContextWindow, MiniBank, PumpStation) -> MiniBank)? = null
 
     /**
      * DITL function invoked just prior to the judge agent.
      * Allows developer to decide to shut down and end the harness loop based on logic.
      */
-    var preInvokeFunction: (suspend (MiniBank, PumpStation) -> Boolean)? = null
+    var preInvokeFunction: (suspend (ContextWindow, MiniBank, PumpStation) -> Boolean)? = null
 
     /**
      * DITL function invoked when a path request is made to a high risk path
@@ -494,73 +387,98 @@ class PumpStationBuilder(val name: String)
 
         val station = PumpStation()
 
-        // Create configuration holder and defer wiring to phase 3
-        val config = PumpStationDslConfig()
+        // Apply all configuration to the station using the public fluent setters.
+        station
+            .setJudgeAgent(judgeAgent as? Pipeline)
+            .setDispatchAgent(dispatchAgent as? Pipeline)
+            .setInterventionAgent(interventionAgent)
+            .setHealthAgent(healthAgent)
+            .setHealthAgentBuilderFunction(healthAgentBuilderFunction)
+            .setHealthAgentTurnInterval(healthAgentTurnInterval)
+            .setHealthAgentErrorRatioThreshold(healthAgentErrorRatioThreshold)
+            .setHealthAgentConcurrencyMode(healthAgentConcurrencyMode)
+            .setLorebookAgent(lorebookAgent)
+            .setSummaryAgent(summaryAgent)
+            .setGoalAgent(goalAgent)
+            .setPreInitAgent(preInitAgent)
+            .setPathSafetyAgent(pathSafetyAgent)
 
-        // Wire up all agent assignments
-        config.judgeAgent = judgeAgent
-        config.dispatchAgent = dispatchAgent as Pipeline
-        config.interventionAgent = interventionAgent
-        config.healthAgent = healthAgent
-        config.healthAgentBuilderFunction = healthAgentBuilderFunction
-        config.healthAgentTurnInterval = healthAgentTurnInterval
-        config.healthAgentErrorRatioThreshold = healthAgentErrorRatioThreshold
-        config.healthAgentConcurrencyMode = healthAgentConcurrencyMode
-        config.lorebookAgent = lorebookAgent
-        config.summaryAgent = summaryAgent
-        config.goalAgent = goalAgent
-        config.preInitAgent = preInitAgent
-        config.pathSafetyAgent = pathSafetyAgent
-        config.additionalHarnessAgents.addAll(additionalHarnessAgents)
+        // Additional harness agents (append each entry directly)
+        for (agent in additionalHarnessAgents)
+        {
+            station.addHarnessAgent(agent)
+        }
 
-        // Wire up configuration
-        config.systemTask = systemTask
-        config.userGuidelines = userGuidelines
-        config.entryUserPrompt = entryUserPrompt
-        config.maxHarnessTurns = maxHarnessTurns
-        config.maxConcurrentBackgroundAgents = maxConcurrentBackgroundAgents
-        config.maxConcurrentForegroundAgents = maxConcurrentForegroundAgents
-        config.foregroundTurnInterval = foregroundTurnInterval
-        config.backgroundTurnInterval = backgroundTurnInterval
-        config.memoryManagementMode = memoryManagementMode
-        config.compactionThreshold = compactionThreshold
-        config.compactionStrategy = compactionStrategy
-        config.maxTurnHistorySize = maxTurnHistorySize
-        config.stopHarnessOnInvalidPathRequest = stopHarnessOnInvalidPathRequest
-        config.failurePolicy = failurePolicy
+        // Prompts and metadata
+        station
+            .setSystemTask(systemTask)
+            .setUserGuidelines(userGuidelines)
+            .setEntryUserPrompt(entryUserPrompt)
 
-        // Wire up loop guards
-        config.maxConsecutiveSamePath = maxConsecutiveSamePath
-        config.maxTotalPathCallsPerPath = maxTotalPathCallsPerPath
-        config.pathLimitExceededPolicy = pathLimitExceededPolicy
-        config.pathLimitExceededFunction = pathLimitExceededFunction
+        // Loop / concurrency / memory knobs
+        station
+            .setMaxHarnessTurns(maxHarnessTurns)
+            .setMaxConcurrentBackgroundAgents(maxConcurrentBackgroundAgents)
+            .setMaxConcurrentForegroundAgents(maxConcurrentForegroundAgents)
+            .setForegroundTurnInterval(foregroundTurnInterval)
+            .setBackgroundTurnInterval(backgroundTurnInterval)
+            .setMemoryManagementMode(memoryManagementMode)
+            .setCompactionThreshold(compactionThreshold)
+            .setCompactionStrategy(compactionStrategy)
+            .setMaxTurnHistorySize(maxTurnHistorySize)
+            .setStopHarnessOnInvalidPathRequest(stopHarnessOnInvalidPathRequest)
+            .setFailurePolicy(failurePolicy)
 
-        // Wire up external context provider
-        config.externalContextProvider = externalContextProvider
+        // Loop guards
+        station
+            .setMaxConsecutiveSamePath(maxConsecutiveSamePath)
+            .setMaxTotalPathCallsPerPath(maxTotalPathCallsPerPath)
+            .setPathLimitExceededFunction(pathLimitExceededFunction)
 
-        // Wire up pause phases
-        config.pauseAtPhases.addAll(pauseAtPhases)
+        // pathLimitExceededPolicy is a public var on PumpStation
+        station.pathLimitExceededPolicy = pathLimitExceededPolicy
 
-        // Wire up DITL hooks
-        config.preInitFunction = preInitFunction
-        config.preValidationJudgeFunction = preValidationJudgeFunction
-        config.preValidationDispatchFunction = preValidationDispatchFunction
-        config.preInvokeFunction = preInvokeFunction
-        config.pathSafetyFunction = pathSafetyFunction
-        config.postGenerateFunction = postGenerateFunction
-        config.pathValidationFunction = pathValidationFunction
-        config.pathTransformationFunction = pathTransformationFunction
-        config.postMemoryFunction = postMemoryFunction
-        config.preCompactionFunction = preCompactionFunction
-        config.postCompactionFunction = postCompactionFunction
+        // External context provider (signature on PumpStation takes no arguments)
+        if (externalContextProvider != null)
+        {
+            station.externalContextProvider = { -> externalContextProvider!!.invoke(station.getTaskState()) }
+        }
 
-        // Add paths and reserve paths to config
-        config.pathObjects.putAll(pathObjects)
-        config.reservePaths.putAll(reservePaths)
-        config.dispatcherRules.addAll(dispatcherRules)
+        // Pause phases - map onto the existing pauseAt(vararg) method
+        if (pauseAtPhases.isNotEmpty())
+        {
+            station.pauseAt(*pauseAtPhases.toTypedArray())
+        }
 
-        // Defer wiring to station - phase 3 will wire this properly
-        config.wireTo(station)
+        // DITL hooks
+        station
+            .setPreInitFunction(preInitFunction)
+            .setPreValidationJudgeFunction(preValidationJudgeFunction)
+            .setPreValidationDispatchFunction(preValidationDispatchFunction)
+            .setPreInvokeFunction(preInvokeFunction)
+            .setPathSafetyFunction(pathSafetyFunction)
+            .setPostGenerateFunction(postGenerateFunction)
+            .setPathValidationFunction(pathValidationFunction)
+            .setPathTransformationFunction(pathTransformationFunction)
+            .setPostMemoryFunction(postMemoryFunction)
+            .setPreCompactionFunction(preCompactionFunction)
+            .setPostCompactionFunction(postCompactionFunction)
+
+        // Paths - add each entry to the station directly
+        for ((_, path) in pathObjects)
+        {
+            station.addPath(path)
+        }
+        for ((_, path) in reservePaths)
+        {
+            station.addReservePath(path)
+        }
+
+        // Dispatcher rules - add each entry directly
+        for (rule in dispatcherRules)
+        {
+            station.addDispatcherRule(rule)
+        }
 
         return station
     }
@@ -644,6 +562,15 @@ class PathBlock(private val pathName: String, private val builder: PumpStationBu
     var dispatchHint: String
         get() = pathObject.dispatchHint
         set(value) { pathObject.dispatchHint = value }
+
+    /**
+     * Mark this path as one that runs in the background. When true, the harness
+     * is expected to launch the path on its background scheduler rather than
+     * awaiting the result inline.
+     */
+    var runsInBackground: Boolean
+        get() = pathObject.isRunsInBackground
+        set(value) { pathObject.setRunsInBackground(value) }
 
     /**
      * Bind a Kotlin function to this path, registering it in [FunctionRegistry]
