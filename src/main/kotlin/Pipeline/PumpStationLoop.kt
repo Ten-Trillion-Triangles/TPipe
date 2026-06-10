@@ -68,7 +68,8 @@ internal fun PumpStation.refreshPipelinesPrompts()
 {
     applyPromptsToPipeline(judgeAgent, buildJudgeSystemPrompt(), buildJudgeFooter())
     applyPromptsToPipeline(dispatchAgent, buildDispatchSystemPrompt(), buildDispatchFooter())
-    if (goalAgent is Pipeline) {
+    if (goalAgent is Pipeline)
+{
         applyPromptsToPipeline(goalAgent as Pipeline, buildGoalSystemPrompt(), null)
     }
 }
@@ -81,7 +82,8 @@ internal fun PumpStation.applyPromptsToPipeline(
 {
     if (agent == null) return
     val pipes = agent.getPipes()
-    for (pipe in pipes) {
+    for (pipe in pipes)
+{
         val prompt = customPrompt ?: defaultPromptFor(agent)
         val footer = customFooter ?: defaultFooterFor(agent)
         pipe.setSystemPrompt(prompt)
@@ -93,7 +95,8 @@ internal fun PumpStation.applyPromptsToPipeline(
 
 internal fun PumpStation.defaultPromptFor(agent: P2PInterface): String
 {
-    return when (agent) {
+    return when (agent)
+{
         judgeAgent -> DEFAULT_JUDGE_PROMPT
         dispatchAgent -> DEFAULT_DISPATCH_PROMPT
         goalAgent -> DEFAULT_GOAL_PROMPT
@@ -103,7 +106,8 @@ internal fun PumpStation.defaultPromptFor(agent: P2PInterface): String
 
 internal fun PumpStation.defaultFooterFor(agent: P2PInterface): String
 {
-    return when (agent) {
+    return when (agent)
+{
         judgeAgent -> DEFAULT_JUDGE_FOOTER
         dispatchAgent -> DEFAULT_DISPATCH_FOOTER
         else -> ""
@@ -117,11 +121,13 @@ internal fun PumpStation.defaultFooterFor(agent: P2PInterface): String
 internal suspend fun PumpStation.checkPauseGuards(phase: PumpStationPausePhase): Boolean
 {
     // KillSwitch check
-    if (killSwitch != null && taskState.exitReason == PumpStationExitReason.KillSwitchTripped) {
+    if (killSwitch != null && taskState.exitReason == PumpStationExitReason.KillSwitchTripped)
+{
         return false
     }
     if (taskState.exitReason != null) return false
-    if (taskState.isPaused && phase in taskState.pausedAt) {
+    if (taskState.isPaused && phase in taskState.pausedAt)
+{
         emitEventInternal(HarnessSuspended(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
@@ -158,9 +164,11 @@ internal suspend fun <T> withDitlWrap(
     postHook: (suspend (T) -> T)?
 ): T
 {
-    if (preHook != null) {
+    if (preHook != null)
+{
         val preResult = preHook()
-        if (preResult != null) {
+        if (preResult != null)
+{
             val result = operation()
             return postHook?.invoke(result) ?: result
         }
@@ -193,7 +201,8 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
     ))
 
     // Pre-invoke gate
-    if (preInvokeFunctionInternal?.invoke(contextWindow, miniBank, this) == false) {
+    if (preInvokeFunctionInternal?.invoke(contextWindow, miniBank, this) == false)
+{
         return JudgeVerdict(
             shouldHalt = true,
             reason = PumpStationExitReason.InterventionTerminated
@@ -246,7 +255,8 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
     // If the dispatch agent signaled halt on its response, we don't fire the
     // post-generate hook — the harness needs to see the halt signal first.
     val dispatchFlags = checkMultimodalFlags(result, "Dispatch")
-    if (dispatchFlags.shouldHalt) {
+    if (dispatchFlags.shouldHalt)
+{
         taskState.lastError = PumpStationError.P2PRequestInvalid
         return null
     }
@@ -262,14 +272,17 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
 
     var repairAttempts = 0
 
-    while (repairAttempts <= failurePolicy.maxDispatchRepairAttempts) {
+    while (repairAttempts <= failurePolicy.maxDispatchRepairAttempts)
+{
         val flags = checkMultimodalFlags(result, "Dispatch")
-        if (flags.shouldHalt) {
+        if (flags.shouldHalt)
+{
             taskState.lastError = PumpStationError.P2PRequestInvalid
             return null
         }
         val pathRequest = parseDispatchOutput(result)
-        if (pathRequest != null) {
+        if (pathRequest != null)
+{
             emitEventInternal(DispatchCompleted(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
@@ -303,7 +316,8 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
         error = PumpStationError.DispatchJsonRepairFailed,
         errorMessage = "Repair exhausted after $repairAttempts attempts"
     ))
-    if (failurePolicy.stopHarnessOnInvalidPathRequest) {
+    if (failurePolicy.stopHarnessOnInvalidPathRequest)
+{
         taskState.lastError = PumpStationError.DispatchJsonRepairFailed
     }
     return null
@@ -334,7 +348,8 @@ Please retry with a valid PathRequest JSON object. The schema is:
 internal suspend fun PumpStation.runPathFlow(request: PathRequest)
 {
     val path = resolvePath(request.pathName)
-    if (path == null) {
+    if (path == null)
+{
         emitEventInternal(PathFailed(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
@@ -514,16 +529,19 @@ internal suspend fun PumpStation.runMemoryUpdatePhase()
     // replaces it. Allows the developer to scrub secrets, normalize output,
     // or annotate the content before the next phase.
     val currentContent = taskState.latestContent
-    if (currentContent != null) {
+    if (currentContent != null)
+{
         // Flag check at the DITL hook point: if the memory agents (or the
         // path that produced latestContent) signaled halt on the content,
         // surface it through lastError and skip the hook.
         val memFlags = checkMultimodalFlags(currentContent, "Memory")
-        if (memFlags.shouldHalt) {
+        if (memFlags.shouldHalt)
+{
             taskState.lastError = PumpStationError.P2PRequestInvalid
             return
         }
-        if (!memFlags.shouldPass) {
+        if (!memFlags.shouldPass)
+{
             postMemoryFunctionInternal?.invoke(currentContent, this)?.let { transformed ->
                 taskState.latestContent = transformed
             }
@@ -629,7 +647,8 @@ internal suspend fun PumpStation.updateLorebook()
         // if the agent set terminatePipeline on its response, the harness
         // needs to see that even if the JSON is otherwise valid.
         val flags = checkMultimodalFlags(response, "Lorebook")
-        if (flags.shouldHalt) {
+        if (flags.shouldHalt)
+{
             taskState.lastError = PumpStationError.P2PRequestInvalid
             taskState.latestContent = response
             return
@@ -653,12 +672,15 @@ internal fun PumpStation.applyLorebookUpdates(response: MultimodalContent)
         ?: return
 
     val map = contextWindow.loreBookKeys
-    for (entry in updates) {
+    for (entry in updates)
+{
         if (entry.key.isEmpty()) continue
         val existing = map[entry.key]
-        if (existing != null) {
+        if (existing != null)
+{
             existing.combineValue(entry)
-        } else {
+        } else
+        {
             map[entry.key] = entry
         }
     }
@@ -679,7 +701,8 @@ internal suspend fun PumpStation.updateSummary()
         // If the agent's response is marked terminate, we surface that
         // through lastError and skip the summary update.
         val flags = checkMultimodalFlags(summaryResult, "Summary")
-        if (flags.shouldHalt) {
+        if (flags.shouldHalt)
+{
             taskState.lastError = PumpStationError.P2PRequestInvalid
             return
         }
@@ -740,7 +763,8 @@ internal suspend fun PumpStation.runForegroundAgentsPhase()
     if (foregroundTurnIntervalInternal == 0) return
     if (taskState.turnIndex % foregroundTurnIntervalInternal != 0) return
 
-    for (slot in additionalHarnessAgentSlotsInternal) {
+    for (slot in additionalHarnessAgentSlotsInternal)
+{
         if (slot.concurrency != PumpStationConcurrencyMode.Blocking) continue
         val agent = slot.builderFunction?.invoke(this) ?: slot.agent ?: continue
         agent.setParentInterface(this)
@@ -765,18 +789,23 @@ internal suspend fun PumpStation.runBackgroundAgentsPhase()
     if (backgroundTurnIntervalInternal == 0) return
     if (taskState.turnIndex % backgroundTurnIntervalInternal != 0) return
 
-    for (slot in additionalHarnessAgentSlotsInternal) {
+    for (slot in additionalHarnessAgentSlotsInternal)
+{
         if (slot.concurrency != PumpStationConcurrencyMode.Async) continue
         backgroundMutex.withLock {
             backgroundJobs += GlobalScope.launch {
-                try {
+                try
+                {
                     val agent = slot.builderFunction?.invoke(this@runBackgroundAgentsPhase) ?: slot.agent
-                    if (agent != null) {
+                    if (agent != null)
+                    {
                         agent.setParentInterface(this@runBackgroundAgentsPhase)
                         agent.P2PInit()
                         agent.executeLocal(this@runBackgroundAgentsPhase.buildTurnContent())
                     }
-                } catch (e: Exception) {
+                }
+                catch (e: Exception)
+                {
                     // Isolate failures
                 }
             }
@@ -800,7 +829,8 @@ internal suspend fun PumpStation.detectAndHandleContextBlowout(afterPhase: PumpS
     if (fillRatio <= blowoutThresholdInternal) return false
 
     // BLOWOUT DETECTED
-    if (failurePolicy.stashOversizedOutputs) {
+    if (failurePolicy.stashOversizedOutputs)
+{
         val stashId = generateStashId()
         val currentContent = taskState.latestContent ?: MultimodalContent()
         stashInternal[stashId] = ConverseData(role = ConverseRole.assistant, content = currentContent)
@@ -859,10 +889,12 @@ internal suspend fun PumpStation.detectAndHandleContextBlowout(afterPhase: PumpS
  */
 internal suspend fun PumpStation.runExitFlow(): TurnResult
 {
-    if (!checkPauseGuards(PumpStationPausePhase.BeforeGoalValidation)) {
+    if (!checkPauseGuards(PumpStationPausePhase.BeforeGoalValidation))
+{
         return TurnResult.Halt(PumpStationExitReason.KillSwitchTripped)
     }
-    if (goalAgent == null) {
+    if (goalAgent == null)
+{
         return TurnResult.Halt(PumpStationExitReason.JudgeComplete)
     }
 
@@ -885,10 +917,12 @@ internal suspend fun PumpStation.runExitFlow(): TurnResult
         reason = if (!passed) result.text else null
     ))
 
-    if (!passed) {
+    if (!passed)
+{
         turnHistory.add(ConverseData(role = ConverseRole.assistant, content = result))
         taskState.goalFailCount++
-        if (taskState.goalFailCount > maxGoalFailAttemptsInternal) {
+        if (taskState.goalFailCount > maxGoalFailAttemptsInternal)
+{
             return TurnResult.Halt(PumpStationExitReason.GoalValidationFailed)
         }
         return TurnResult.Continue
@@ -924,11 +958,13 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
     refreshSettingsPropagation()
 
     val initAgent = preInitAgentInternal
-    if (initAgent != null) {
+    if (initAgent != null)
+{
         taskState.latestContent = initAgent.executeLocal(content)
     }
     val initFunction = preInitFunctionInternal
-    if (initFunction != null) {
+    if (initFunction != null)
+{
         taskState.latestContent = initFunction.invoke(content, this)
     }
 
@@ -950,16 +986,19 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
  */
 internal suspend fun PumpStation.runHarnessLoop()
 {
-    while (taskState.turnIndex < maxHarnessTurnsInternal && taskState.status == PumpStationStatus.Running) {
+    while (taskState.turnIndex < maxHarnessTurnsInternal && taskState.status == PumpStationStatus.Running)
+{
         if (!checkPauseGuards(PumpStationPausePhase.BeforeJudge)) break
         val result = runTurn()
-        if (result is TurnResult.Halt) {
+        if (result is TurnResult.Halt)
+{
             taskState.exitReason = result.reason
             break
         }
         taskState.turnIndex++
     }
-    if (taskState.turnIndex >= maxHarnessTurnsInternal && taskState.lastError == null) {
+    if (taskState.turnIndex >= maxHarnessTurnsInternal && taskState.lastError == null)
+{
         taskState.lastError = PumpStationError.MaxTurnsExceeded
         taskState.exitReason = PumpStationExitReason.MaxTurnsHit
     }
@@ -984,7 +1023,8 @@ internal suspend fun PumpStation.runTurn(): TurnResult
 
     val judgeVerdict = runJudgePhase()
     detectAndHandleContextBlowout(PumpStationPhase.Judge)
-    if (judgeVerdict.shouldHalt) {
+    if (judgeVerdict.shouldHalt)
+{
         return TurnResult.Halt(judgeVerdict.reason ?: PumpStationExitReason.TerminateSignal)
     }
     if (judgeVerdict.isComplete) return runExitFlow()
@@ -993,7 +1033,8 @@ internal suspend fun PumpStation.runTurn(): TurnResult
     detectAndHandleContextBlowout(PumpStationPhase.Dispatch)
     if (pathRequest.pathName.isBlank()) return TurnResult.Continue
 
-    if (!checkPauseGuards(PumpStationPausePhase.BeforePathExecution)) {
+    if (!checkPauseGuards(PumpStationPausePhase.BeforePathExecution))
+{
         return TurnResult.Halt(PumpStationExitReason.KillSwitchTripped)
     }
     runPathFlow(pathRequest)
@@ -1018,7 +1059,8 @@ internal suspend fun PumpStation.runTurn(): TurnResult
  */
 internal suspend fun PumpStation.pruneTurnHistory()
 {
-    while (turnHistory.history.size > maxTurnHistorySizeInternal) {
+    while (turnHistory.history.size > maxTurnHistorySizeInternal)
+{
         val popped = turnHistory.history.take(turnHistory.history.size - maxTurnHistorySizeInternal + 1)
         turnHistory.history.removeAll(popped.toSet())
         val summary = summarizePoppedEntries(popped)
@@ -1046,7 +1088,8 @@ internal fun PumpStation.summarizePoppedEntries(popped: List<ConverseData>): Con
 internal fun PumpStation.pruneRawTurnHistory()
 {
     val maxSize = maxRawTurnHistorySizeInternal ?: return
-    while (rawTurnHistory.history.size > maxSize) {
+    while (rawTurnHistory.history.size > maxSize)
+{
         rawTurnHistory.history.removeAt(0)
     }
 }
@@ -1068,7 +1111,8 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
     }
     backgroundJobs.clear()
 
-    if (contextFillRatio() > compactionThresholdInternal) {
+    if (contextFillRatio() > compactionThresholdInternal)
+{
         runCompactionPhase()
     }
 
@@ -1079,7 +1123,8 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
         PumpStationError.InitNotCalled
     )
 
-    if (isFailure) {
+    if (isFailure)
+{
         emitEventInternal(HarnessFailed(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
@@ -1088,7 +1133,8 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
             exitReason = taskState.exitReason ?: PumpStationExitReason.Error
         ))
         taskState.status = PumpStationStatus.Failed
-    } else {
+    } else
+    {
         emitEventInternal(HarnessCompleted(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
@@ -1112,11 +1158,14 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
 internal fun PumpStation.drainBackgroundEventQueue()
 {
     val observer = eventObserverInternal ?: return
-    while (true) {
+    while (true)
+{
         val result = backgroundEventQueueInternal.tryReceive()
-        if (result.isSuccess) {
+        if (result.isSuccess)
+{
             observer(result.getOrThrow())
-        } else {
+        } else
+        {
             break
         }
     }

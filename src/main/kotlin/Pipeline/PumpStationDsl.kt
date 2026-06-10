@@ -360,7 +360,8 @@ class PumpStationBuilder(val name: String)
     /**
      * Configure memory management settings.
      */
-    fun memory(block: MemoryBlock.() -> Unit) {
+    fun memory(block: MemoryBlock.() -> Unit)
+    {
         val mb = MemoryBlock(this)
         mb.block()
     }
@@ -371,7 +372,8 @@ class PumpStationBuilder(val name: String)
      * @param pathName Unique name for this path.
      * @param block Builder block that configures the path.
      */
-    fun path(pathName: String, block: PathBlock.() -> Unit) {
+    fun path(pathName: String, block: PathBlock.() -> Unit)
+    {
         val pb = PathBlock(pathName, this)
         pb.block()
         pb.build()
@@ -383,7 +385,8 @@ class PumpStationBuilder(val name: String)
      * @param pathName Unique name for this reserve path.
      * @param block Builder block that configures the reserve path.
      */
-    fun reservePath(pathName: String, block: ReservePathBlock.() -> Unit) {
+    fun reservePath(pathName: String, block: ReservePathBlock.() -> Unit)
+    {
         val rpb = ReservePathBlock(pathName, this)
         rpb.block()
         rpb.build()
@@ -394,7 +397,8 @@ class PumpStationBuilder(val name: String)
      *
      * @param block Builder block that configures dispatcher rules.
      */
-    fun dispatcherRules(block: DispatcherRulesBlock.() -> Unit) {
+    fun dispatcherRules(block: DispatcherRulesBlock.() -> Unit)
+    {
         val drb = DispatcherRulesBlock(this)
         drb.block()
     }
@@ -547,7 +551,8 @@ class PumpStationBuilder(val name: String)
         /**
          * Push a builder onto the stack.
          */
-        internal fun pushBuilder(builder: PumpStationBuilder) {
+        internal fun pushBuilder(builder: PumpStationBuilder)
+        {
             builderStack.get().add(builder)
         }
 
@@ -629,7 +634,8 @@ class PathBlock(private val pathName: String, private val builder: PumpStationBu
      *
      * @param function The KFunction to bind.
      */
-    fun bindFunction(function: KFunction<*>) {
+    fun bindFunction(function: KFunction<*>)
+    {
         pathObject.bindFunction(function.name, function)
     }
 
@@ -637,26 +643,29 @@ class PathBlock(private val pathName: String, private val builder: PumpStationBu
      * Set an internal agent to execute this path.
      * When assigned, the agent builder function is skipped at execution time.
      *
-     * @param agent The P2PInterface agent to set as the internal agent.
+     * @param agent The P2PInterface agent to set.
      */
-    fun setInternalAgent(agent: P2PInterface) {
+    fun setInternalAgent(agent: P2PInterface)
+    {
         pathObject.setInternalAgent(agent)
     }
 
     /**
      * Set the raw execution function for this path.
-     * Used as fallback when no internal agent or agent builder is present.
+     * This is the fallback when no internal agent or agent builder is present.
      *
      * @param function The suspend function to invoke when this path is called.
      */
-    fun setExecutionFunction(function: (suspend (MultimodalContent, PumpStation, ConverseHistory?, String) -> MultimodalContent)?) {
+    fun setExecutionFunction(function: (suspend (MultimodalContent, PumpStation, ConverseHistory?, String) -> MultimodalContent)?)
+    {
         pathObject.setExecutionFunction(function)
     }
 
     /**
      * Configure the path schema for non-PCP path invocation.
      */
-    fun schema(schema: String) {
+    fun schema(schema: String)
+    {
         pathObject.pathSchema = schema
     }
 
@@ -692,7 +701,8 @@ class ReservePathBlock(private val pathName: String, private val builder: PumpSt
      *
      * @param function The KFunction to bind.
      */
-    fun bindFunction(function: KFunction<*>) {
+    fun bindFunction(function: KFunction<*>)
+    {
         pathObject.bindFunction(function.name, function)
     }
 
@@ -701,7 +711,8 @@ class ReservePathBlock(private val pathName: String, private val builder: PumpSt
      *
      * @param agent The P2PInterface agent to set.
      */
-    fun setInternalAgent(agent: P2PInterface) {
+    fun setInternalAgent(agent: P2PInterface)
+    {
         pathObject.setInternalAgent(agent)
     }
 
@@ -711,7 +722,8 @@ class ReservePathBlock(private val pathName: String, private val builder: PumpSt
      * @param predicate Function that receives task state and external context,
      *                  returns true if path should be revealed.
      */
-    fun revealWhen(predicate: (PumpStationTaskState, MutableMap<String, Any>) -> Boolean) {
+    fun revealWhen(predicate: (PumpStationTaskState, MutableMap<String, Any>) -> Boolean)
+    {
         pathObject.revealWhen = predicate
     }
 
@@ -736,7 +748,8 @@ class DispatcherRulesBlock(private val builder: PumpStationBuilder)
      * @param pathName Name of the path to limit.
      * @param count Maximum consecutive turns allowed.
      */
-    fun maxConsecutive(pathName: String, count: Int) {
+    fun maxConsecutive(pathName: String, count: Int)
+    {
         builder.dispatcherRules.add(MaxConsecutiveRule(pathName, count))
     }
 
@@ -747,7 +760,8 @@ class DispatcherRulesBlock(private val builder: PumpStationBuilder)
      * @param pathName Name of the path that has prerequisites.
      * @param requireAny List of path names that must have been executed first.
      */
-    fun before(pathName: String, requireAny: List<String>) {
+    fun before(pathName: String, requireAny: List<String>)
+    {
         builder.dispatcherRules.add(BeforeRule(pathName, requireAny))
     }
 
@@ -757,7 +771,8 @@ class DispatcherRulesBlock(private val builder: PumpStationBuilder)
      * @param pathName Name of the path that triggers the suggestion.
      * @param suggest Name of the path to suggest after completion.
      */
-    fun after(pathName: String, suggest: String) {
+    fun after(pathName: String, suggest: String)
+    {
         builder.dispatcherRules.add(AfterRule(pathName, suggest))
     }
 

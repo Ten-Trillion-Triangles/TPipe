@@ -34,14 +34,17 @@ internal fun checkMultimodalFlags(content: MultimodalContent, source: String): F
  */
 internal fun PumpStation.parseJudgeVerdict(content: MultimodalContent): JudgeVerdict
 {
-    return try {
+    return try
+    {
         val json = Json.parseToJsonElement(content.text) as? JsonObject
             ?: return JudgeVerdict.empty()
         JudgeVerdict(
             isComplete = json["isComplete"]?.jsonPrimitive?.boolean ?: false,
             shouldTerminate = json["shouldTerminate"]?.jsonPrimitive?.boolean ?: false
         )
-    } catch (e: Exception) {
+    }
+    catch (e: Exception)
+    {
         JudgeVerdict.empty()
     }
 }
@@ -53,11 +56,16 @@ internal fun PumpStation.parseJudgeVerdict(content: MultimodalContent): JudgeVer
 internal fun JudgeVerdict.withFlagCheck(content: MultimodalContent): JudgeVerdict
 {
     val flags = checkMultimodalFlags(content, "Judge")
-    return if (flags.shouldHalt) {
+    return if (flags.shouldHalt)
+    {
         copy(shouldHalt = true, reason = PumpStationExitReason.TerminateSignal)
-    } else if (flags.shouldPass) {
+    }
+    else if (flags.shouldPass)
+    {
         copy(isComplete = true, shouldHalt = false)
-    } else {
+    }
+    else
+    {
         this
     }
 }
@@ -68,13 +76,16 @@ internal fun JudgeVerdict.withFlagCheck(content: MultimodalContent): JudgeVerdic
  */
 internal fun PumpStation.parseDispatchOutput(content: MultimodalContent): PathRequest?
 {
-    return try {
+    return try
+    {
         val json = Json.parseToJsonElement(content.text) as? JsonObject
             ?: return null
         val name = json["pathName"]?.jsonPrimitive?.content ?: ""
         val schema = json["pathSchema"]?.jsonPrimitive?.content ?: ""
         if (name.isEmpty()) null else PathRequest(pathName = name, pathSchema = schema)
-    } catch (e: Exception) {
+    }
+    catch (e: Exception)
+    {
         null
     }
 }
@@ -208,7 +219,8 @@ internal fun PumpStation.buildTurnContent(): MultimodalContent
 internal fun PumpStation.buildUserMessageForTurn(): String
 {
     val summaryPrefix = if (turnSummary.isNotBlank()) "$turnSummary\n\n" else ""
-    val phaseQuestion = when (taskState.phase) {
+    val phaseQuestion = when (taskState.phase)
+    {
         PumpStationPhase.Judge -> "Is the task complete? Decide based on the conversation history."
         PumpStationPhase.Dispatch -> "Select the next path to invoke."
         PumpStationPhase.GoalValidation -> "Verify the work was done."
@@ -243,7 +255,8 @@ internal fun PumpStation.buildLlmErrorMessage(
     details: Map<String, Any>
 ): String
 {
-    return when (error) {
+    return when (error)
+    {
         PumpStationError.InvalidPathRequest -> buildInvalidPathRequestMessage(details)
         PumpStationError.UnknownPath -> buildUnknownPathMessage(details)
         PumpStationError.DispatchJsonRepairFailed -> buildRepairFailedMessage(details)
