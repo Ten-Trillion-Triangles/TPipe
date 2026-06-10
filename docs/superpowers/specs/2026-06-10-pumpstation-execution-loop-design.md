@@ -575,7 +575,7 @@ Estimated: ~25 new test files, ~150-200 new test cases.
 ### New Data Classes
 1. `JudgeVerdict(isComplete, shouldTerminate, shouldHalt, reason)` — typed parser output
 2. `TurnResult` sealed class — `Continue | Halt(reason)`
-3. `MemorySnapshot` — captured memory agent state
+3. `MemorySnapshot` — captured in-progress state of memory agents (used by `saveSnapshot()` to record lorebook and summary mid-flight values, so a rollback can restore without losing work)
 4. `DispatchOutput(pathRequest, repairAttempts, parseError)`
 5. `HarnessAgentSlot(agent, concurrency, builderFunction)` — replaces `additionalHarnessAgents: MutableList<P2PInterface>`
 6. `FlagCheckResult(shouldHalt, shouldPass, shouldInterrupt, haltReason)` — for `checkMultimodalFlags()`
