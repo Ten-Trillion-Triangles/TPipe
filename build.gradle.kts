@@ -1,4 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.gradle.api.GradleException
+import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.authentication.http.BasicAuthentication
 
 /**
  * Support for GraalVM  Native is planned but not yet implemented. This will allow us to deploy this library
@@ -91,4 +94,44 @@ dependencies {
 
 tasks.test {
     jvmArgs("-Xmx512m")
+}
+
+// =====================================================================
+// CodeArtifact publishing — overrides internal group/version for the
+// published artifact. Internal `com.TTT:1.0.0` stays for inter-module
+// resolution. Consumer-facing published coord is `com.github.ten-trillion-triangles:TPipe:<version>`.
+// =====================================================================
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            groupId = "com.github.ten-trillion-triangles"
+            artifactId = "TPipe"
+            version = (project.findProperty("publishVersion") as String?) ?: project.version.toString()
+            pom {
+                name.set("TPipe (Community)")
+                description.set("TPipe - Agent Operating Environment for LLM orchestration - Community/AGPL tier")
+            }
+            from(components["java"])
+            artifact(tasks.named("licenseJar"))
+        }
+    }
+    repositories {
+        maven {
+            name = "CodeArtifact"
+            val repoUrl = (project.findProperty("codeArtifactRepoUrl") as String?)
+                ?: "https://tpipe-521369004927.d.codeartifact.us-east-1.amazonaws.com/maven/tpipe-community-maven/"
+            url = uri(repoUrl)
+            authentication {
+                create<BasicAuthentication>("basic")
+            }
+            credentials {
+                username = "aws"
+                // Lazy resolution — password is only read at publish time, not at config time.
+                password = providers.environmentVariable("CODEARTIFACT_AUTH_TOKEN")
+                    .orElse(providers.gradleProperty("codeArtifactAuthToken"))
+                    .getOrElse("")
+            }
+        }
+    }
 }
