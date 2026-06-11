@@ -243,6 +243,11 @@ data class JudgeStarted(
 
 /**
  * Judge phase completed with completion and termination signals.
+ *
+ * [result] carries the judge's [MultimodalContent] response so the visualizer can render the
+ * judge's reasoning and full text in the turn-detail view. The [inputTokens] / [outputTokens] /
+ * [totalTokens] fields expose the judge's token usage; any of them may be null when the agent
+ * does not track usage (e.g. a non-Pipe P2PInterface implementation).
  */
 @kotlinx.serialization.Serializable
 data class JudgeCompleted(
@@ -251,7 +256,11 @@ data class JudgeCompleted(
     override val timestamp: Long = System.currentTimeMillis(),
     override val phase: PumpStationPhase = PumpStationPhase.Judge,
     val isComplete: Boolean,
-    val shouldTerminate: Boolean
+    val shouldTerminate: Boolean,
+    val result: MultimodalContent? = null,
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null,
+    val totalTokens: Int? = null
 ) : PumpStationEvent
 
 /**
@@ -285,6 +294,11 @@ data class DispatchStarted(
 
 /**
  * Dispatch phase completed with selected path information.
+ *
+ * [result] carries the dispatch agent's raw [MultimodalContent] response; the visualizer uses
+ * this to render the dispatcher's reasoning. The [inputTokens] / [outputTokens] / [totalTokens]
+ * fields expose the dispatcher's token usage; any of them may be null when the agent does not
+ * track usage.
  */
 @kotlinx.serialization.Serializable
 data class DispatchCompleted(
@@ -293,7 +307,11 @@ data class DispatchCompleted(
     override val timestamp: Long = System.currentTimeMillis(),
     override val phase: PumpStationPhase = PumpStationPhase.Dispatch,
     val selectedPathName: String?,
-    val pathRequest: PathRequest?
+    val pathRequest: PathRequest?,
+    val result: MultimodalContent? = null,
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null,
+    val totalTokens: Int? = null
 ) : PumpStationEvent
 
 /**
@@ -352,6 +370,11 @@ data class PathStarted(
 
 /**
  * Path execution completed successfully.
+ *
+ * [result] carries the path's [MultimodalContent] output; the visualizer renders this in a
+ * collapsible panel so developers can see what the path produced. The [inputTokens] /
+ * [outputTokens] / [totalTokens] fields expose the path's token usage; any of them may be
+ * null when the path does not track usage (e.g. a non-Pipe P2PInterface implementation).
  */
 @kotlinx.serialization.Serializable
 data class PathCompleted(
@@ -362,7 +385,9 @@ data class PathCompleted(
     val pathName: String,
     val riskLevel: PathRiskLevel,
     val result: MultimodalContent?,
-    val tokensUsed: Int?
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null,
+    val totalTokens: Int? = null
 ) : PumpStationEvent
 
 /**
@@ -422,6 +447,10 @@ data class PathValidationCompleted(
 
 /**
  * Intervention phase completed.
+ *
+ * [result] carries the intervention agent's [MultimodalContent] response. The
+ * [inputTokens] / [outputTokens] / [totalTokens] fields expose the intervention agent's
+ * token usage; any of them may be null when the agent does not track usage.
  */
 @kotlinx.serialization.Serializable
 data class InterventionCompleted(
@@ -430,7 +459,11 @@ data class InterventionCompleted(
     override val timestamp: Long = System.currentTimeMillis(),
     override val phase: PumpStationPhase = PumpStationPhase.Intervention,
     val nudges: Int,
-    val shouldContinue: Boolean
+    val shouldContinue: Boolean,
+    val result: MultimodalContent? = null,
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null,
+    val totalTokens: Int? = null
 ) : PumpStationEvent
 
 /**
@@ -460,6 +493,10 @@ data class HealthCheckStarted(
 
 /**
  * Foreground agent completed execution.
+ *
+ * [result] carries the foreground agent's [MultimodalContent] response; the visualizer renders
+ * this in a collapsible panel. The [inputTokens] / [outputTokens] / [totalTokens] fields expose
+ * the agent's token usage; any of them may be null when the agent does not track usage.
  */
 @kotlinx.serialization.Serializable
 data class ForegroundAgentCompleted(
@@ -468,7 +505,10 @@ data class ForegroundAgentCompleted(
     override val timestamp: Long = System.currentTimeMillis(),
     override val phase: PumpStationPhase = PumpStationPhase.ForegroundAgents,
     val agentName: String,
-    val result: MultimodalContent?
+    val result: MultimodalContent?,
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null,
+    val totalTokens: Int? = null
 ) : PumpStationEvent
 
 /**
@@ -612,6 +652,91 @@ data class HarnessResumed(
     override val turnIndex: Int,
     override val timestamp: Long = System.currentTimeMillis(),
     override val phase: PumpStationPhase = PumpStationPhase.Exit
+) : PumpStationEvent
+
+/**
+ * A reserve path's reveal predicate evaluated to true, making the path visible to the
+ * dispatch agent. Sticky — once revealed, the path stays visible until the harness resets.
+ */
+@kotlinx.serialization.Serializable
+data class ReservePathRevealed(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Dispatch,
+    val pathName: String,
+    val reservePathNames: List<String>
+) : PumpStationEvent
+
+/**
+ * A loop guard fired and altered dispatch behavior. Examples: max consecutive same path,
+ * max total calls per path, or the per-path limit exceeded policy (Skip / Halt / Continue).
+ */
+@kotlinx.serialization.Serializable
+data class LoopGuardTripped(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.PathExecution,
+    val guard: String,
+    val pathName: String,
+    val detail: String
+) : PumpStationEvent
+
+/**
+ * Context window fill ratio exceeded the configured [com.TTT.Pipeline.PumpStation.blowoutThreshold]
+ * during the harness loop. The harness responds by stashing oversized content and triggering
+ * compaction per the failure recovery policy.
+ */
+@kotlinx.serialization.Serializable
+data class ContextBlowoutDetected(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.MemoryUpdate,
+    val fillRatio: Double,
+    val threshold: Double,
+    val afterPhase: PumpStationPhase
+) : PumpStationEvent
+
+/**
+ * A nested P2P request — `executeP2PRequest(...)` was invoked from within a path — completed.
+ *
+ * Nested P2P calls happen when a path internally dispatches to a child agent (e.g. a research
+ * sub-path or a helper LLM) via the P2P surface. The harness records the child call's
+ * [MultimodalContent] response and token usage here so the visualizer can render the nested
+ * call as a sub-entry under the parent path's content panel. [pathName] is the name of the
+ * path that issued the nested call, sourced from [PumpStationTaskState.currentPathName];
+ * null when the call did not originate from a path.
+ *
+ * The [inputTokens] / [outputTokens] / [totalTokens] fields expose the nested agent's token
+ * usage; any of them may be null when the agent does not track usage.
+ */
+@kotlinx.serialization.Serializable
+data class NestedP2PCompleted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.PathExecution,
+    val pathName: String?,
+    val agentName: String,
+    val response: MultimodalContent?,
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null,
+    val totalTokens: Int? = null
+) : PumpStationEvent
+
+/**
+ * A background (Async concurrency) harness agent was queued for asynchronous execution. The
+ * actual completion will be reported by a separate event when the agent finishes.
+ */
+@kotlinx.serialization.Serializable
+data class BackgroundAgentQueued(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.ForegroundAgents,
+    val agentName: String
 ) : PumpStationEvent
 
 //=========================================Turn Control============================================================
@@ -758,6 +883,9 @@ data class PumpStationTaskState(
     var lastError: PumpStationError?,
     var exitReason: PumpStationExitReason?,
     @Contextual var memoryActionResult: MemoryActionResult?,
+    // Path execution context — set while a path is being executed, used to annotate
+    // nested P2P events that originate from inside the path with the path's name.
+    var currentPathName: String? = null,
     // Pause state
     var isPaused: Boolean = false,
     var pausedAt: Set<PumpStationPausePhase> = emptySet(),

@@ -4,6 +4,9 @@ import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
+import com.TTT.Debug.TraceConfig
+import com.TTT.Debug.TraceDetailLevel
+import com.TTT.Debug.TraceFormat
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import kotlin.reflect.KFunction
@@ -39,6 +42,14 @@ sealed class PumpStationStage
 @PumpStationDslMarker
 class PumpStationBuilder(val name: String)
 {
+//=========================================Tracing Configuration===================================================
+
+    /**
+     * Optional tracing configuration. Set via the `tracing { }` DSL block; applied to the built
+     * station in [PumpStationBuilder.build]. Null when the user did not configure tracing.
+     */
+    var tracingConfiguration: TraceConfig? = null
+
 //=========================================Agent Assignments=========================================================
 
     /**
@@ -403,6 +414,26 @@ class PumpStationBuilder(val name: String)
         drb.block()
     }
 
+    /**
+     * Configure tracing for the harness. The captured configuration is applied to the built station
+     * via [PumpStation.enableTracing] so every emitted [PumpStationEvent] is mirrored into the
+     * global [com.TTT.Debug.PipeTracer] for export and visualization.
+     *
+     * @param block Builder block that enables tracing and configures its detail level, format, and
+     *              auto-export behavior.
+     * @return This builder for method chaining.
+     */
+    fun tracing(block: PumpStationTracingDsl.() -> Unit): PumpStationBuilder
+    {
+        require(tracingConfiguration == null) {
+            "Tracing has already been configured for this PumpStation DSL."
+        }
+        val dsl = PumpStationTracingDsl()
+        dsl.block()
+        tracingConfiguration = dsl.build()
+        return this
+    }
+
 //=========================================Build====================================================================
 
     /**
@@ -483,6 +514,9 @@ class PumpStationBuilder(val name: String)
             .setMaxRepairPromptTokens(maxRepairPromptTokens)
             .setStopHarnessOnInvalidPathRequest(stopHarnessOnInvalidPathRequest)
             .setFailurePolicy(failurePolicy)
+
+        // Tracing
+        tracingConfiguration?.let { station.enableTracing(it) }
 
         // Loop guards
         station
@@ -830,4 +864,105 @@ fun pumpStation(name: String, block: PumpStationBuilder.() -> Unit): PumpStation
     builder.block()
     PumpStationBuilder.popBuilder()
     return builder.build()
+}
+
+//=========================================Tracing DSL================================================================
+
+/**
+ * Nested DSL block for configuring [PumpStation] tracing. Mirrors the Manifold/Junction tracing
+ * patterns. Usage:
+ *
+ * ```
+ * pumpStation("MyAgent") {
+ *     tracing {
+ *         enabled()
+ *         detailLevel(TraceDetailLevel.VERBOSE)
+ *         outputFormat(TraceFormat.HTML)
+ *         autoExport(enabled = true, path = "~/.my-traces/")
+ *     }
+ *     // ... agents, paths, etc.
+ * }
+ * ```
+ */
+@PumpStationDslMarker
+class PumpStationTracingDsl
+{
+    private var config = TraceConfig(enabled = true)
+
+    /**
+     * Enable (or explicitly disable) tracing. Defaults to enabling.
+     */
+    fun enabled(enabled: Boolean = true): PumpStationTracingDsl
+    {
+        config = config.copy(enabled = enabled)
+        return this
+    }
+
+    /**
+     * Set the maximum number of trace events retained per trace.
+     */
+    fun maxHistory(count: Int): PumpStationTracingDsl
+    {
+        config = config.copy(maxHistory = count)
+        return this
+    }
+
+    /**
+     * Set the trace output format. Used by [PumpStation.getTraceReport] when no format is supplied.
+     */
+    fun outputFormat(format: TraceFormat): PumpStationTracingDsl
+    {
+        config = config.copy(outputFormat = format)
+        return this
+    }
+
+    /**
+     * Set the detail level. Lower levels gate out DETAILED/INTERNAL events.
+     */
+    fun detailLevel(level: TraceDetailLevel): PumpStationTracingDsl
+    {
+        config = config.copy(detailLevel = level)
+        return this
+    }
+
+    /**
+     * Enable automatic file export after each run.
+     */
+    fun autoExport(enabled: Boolean = true, path: String = "~/.TPipe-Debug/traces/"): PumpStationTracingDsl
+    {
+        config = config.copy(autoExport = enabled, exportPath = path)
+        return this
+    }
+
+    /**
+     * Include the context snapshot on every event (slightly larger trace, more replayable).
+     */
+    fun includeContext(include: Boolean = true): PumpStationTracingDsl
+    {
+        config = config.copy(includeContext = include)
+        return this
+    }
+
+    /**
+     * Include event metadata (path names, risk levels, fill ratios, etc.) in the trace.
+     */
+    fun includeMetadata(include: Boolean = true): PumpStationTracingDsl
+    {
+        config = config.copy(includeMetadata = include)
+        return this
+    }
+
+    /**
+     * Replace the entire configuration with a pre-built [TraceConfig].
+     */
+    fun config(configuration: TraceConfig): PumpStationTracingDsl
+    {
+        config = configuration
+        return this
+    }
+
+    /**
+     * Build the immutable [TraceConfig] captured by this DSL block.
+     */
+    fun build(): TraceConfig = config
 }

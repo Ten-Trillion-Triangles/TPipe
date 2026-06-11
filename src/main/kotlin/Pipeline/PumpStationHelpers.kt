@@ -1,12 +1,380 @@
 package com.TTT.Pipeline
 
 import com.TTT.Context.ContextWindow
+import com.TTT.Debug.PipeTracer
+import com.TTT.Debug.TraceEvent
+import com.TTT.Debug.TraceEventType
+import com.TTT.Debug.TracePhase
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.PcPRequest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonPrimitive
+
+/**
+ * Inline-content preview length for the visualizer. Content longer than this gets truncated
+ * in the metadata previews and the visualizer's collapsibles surface a "show full" toggle.
+ */
+private const val CONTENT_PREVIEW_MAX = 8 * 1024
+
+/**
+ * String used to mark a clipped preview. Avoids non-ASCII characters in trace event strings
+ * to keep the JSON serializer happy on all platforms.
+ */
+private const val ELLIPSIS = "..."
+
+/**
+ * Extract a string preview from a [MultimodalContent] suitable for stuffing into a metadata map.
+ * Returns a tuple of (preview, totalLength). Previews are clipped to [CONTENT_PREVIEW_MAX] chars
+ * to keep the trace event size reasonable.
+ */
+private fun contentPreview(content: MultimodalContent?): Pair<String, Int>
+{
+    if (content == null) return "" to 0
+    val text = content.text
+    val reasoning = content.modelReasoning
+    val binaryCount = content.binaryContent.size
+    val combined = buildString {
+        if (text.isNotEmpty())
+        {
+            append("text=")
+            append(if (text.length > CONTENT_PREVIEW_MAX) text.substring(0, CONTENT_PREVIEW_MAX) + ELLIPSIS else text)
+        }
+        if (reasoning.isNotEmpty())
+        {
+            if (isNotEmpty()) append("\n")
+            append("reasoning=")
+            append(if (reasoning.length > CONTENT_PREVIEW_MAX) reasoning.substring(0, CONTENT_PREVIEW_MAX) + ELLIPSIS else reasoning)
+        }
+        if (binaryCount > 0)
+        {
+            if (isNotEmpty()) append("\n")
+            append("binary=")
+            append(binaryCount)
+            append(" item(s)")
+        }
+    }
+    return combined to (text.length + reasoning.length)
+}
+
+//=========================================Trace Funnel============================================================
+
+/**
+ * Mirror a [PumpStationEvent] into the global [PipeTracer] when tracing is enabled. The funnel
+ * performs the [PumpStationEvent] → [TraceEvent] conversion (mapping each sealed subtype to its
+ * PUMP_STATION_* event type and extracting relevant fields into metadata) and is the single entry
+ * point for trace emission. The visualizer reads its `turnIndex` from the trace event metadata,
+ * so each event carries a consistent `turnIndex` regardless of where it was emitted.
+ *
+ * This helper does NOT replace the in-process `backgroundEventQueue` emission — it runs in
+ * addition to it, so test observers and the live UI both keep working.
+ */
+internal fun PumpStation.tracePumpStationEvent(event: PumpStationEvent)
+{
+    if(!tracingEnabledInternal) return
+    val traceId = taskState.runId.takeIf { it.isNotBlank() } ?: return
+
+    val traceEvent = convertPumpStationEvent(event) ?: return
+    PipeTracer.addEvent(traceId, traceEvent)
+}
+
+/**
+ * Convert a [PumpStationEvent] to a [TraceEvent] for visualization. Returns null for events that
+ * have no trace representation (currently none, but the safety net keeps the funnel total).
+ *
+ * The mapping is exhaustive over the [PumpStationEvent] sealed interface. Each branch carries the
+ * most useful fields in the metadata map so the visualizer can render rich detail panels without
+ * having to deserialize the original sealed type.
+ */
+private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceEvent?
+{
+    val pipeId = taskState.runId
+    val pipeName = "PumpStation"
+    val baseMetadata: MutableMap<String, Any> = mutableMapOf(
+        "turnIndex" to event.turnIndex,
+        "phase" to event.phase.name,
+        "runId" to event.runId
+    )
+
+    val eventType: TraceEventType
+    var agentContent: MultimodalContent? = null
+    when (event)
+    {
+        is HarnessStarted -> eventType = TraceEventType.PUMP_STATION_STARTED
+        is PreInitCompleted -> eventType = TraceEventType.PUMP_STATION_STARTED
+        is HarnessCompleted -> eventType = TraceEventType.PUMP_STATION_COMPLETED
+        is HarnessFailed ->
+        {
+            eventType = TraceEventType.PUMP_STATION_FAILED
+            baseMetadata["error"] = event.error.name
+            baseMetadata["errorMessage"] = event.errorMessage ?: ""
+            baseMetadata["exitReason"] = event.exitReason.name
+        }
+        is HarnessSuspended ->
+        {
+            eventType = TraceEventType.PUMP_STATION_SUSPENDED
+            baseMetadata["pausedAt"] = event.pausedAt.map { it.name }
+            baseMetadata["reason"] = event.reason ?: ""
+        }
+        is HarnessResumed -> eventType = TraceEventType.PUMP_STATION_RESUMED
+
+        is HealthCheckStarted -> eventType = TraceEventType.PUMP_STATION_HEALTH_CHECK_STARTED
+        is HealthCheckCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_HEALTH_CHECK_COMPLETED
+            baseMetadata["status"] = event.status.name
+            baseMetadata["warnings"] = event.warnings
+            baseMetadata["terminateHarness"] = event.terminateHarness
+        }
+        is JudgeStarted -> eventType = TraceEventType.PUMP_STATION_JUDGE_STARTED
+        is JudgeCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_JUDGE_COMPLETED
+            baseMetadata["isComplete"] = event.isComplete
+            baseMetadata["shouldTerminate"] = event.shouldTerminate
+            agentContent = event.result
+            val (preview, len) = contentPreview(event.result)
+            if (preview.isNotEmpty()) baseMetadata["contentPreview"] = preview
+            if (len > 0) baseMetadata["contentLength"] = len
+            if (event.result?.modelReasoning?.isNotEmpty() == true)
+            {
+                baseMetadata["modelReasoning"] = event.result!!.modelReasoning
+                baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
+            }
+            if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+        }
+        is DispatchStarted -> eventType = TraceEventType.PUMP_STATION_DISPATCH_STARTED
+        is DispatchCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_DISPATCH_COMPLETED
+            baseMetadata["selectedPathName"] = event.selectedPathName ?: ""
+            baseMetadata["pathRequest"] = event.pathRequest?.toString() ?: ""
+            agentContent = event.result
+            val (preview, len) = contentPreview(event.result)
+            if (preview.isNotEmpty()) baseMetadata["contentPreview"] = preview
+            if (len > 0) baseMetadata["contentLength"] = len
+            if (event.result?.modelReasoning?.isNotEmpty() == true)
+            {
+                baseMetadata["modelReasoning"] = event.result!!.modelReasoning
+                baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
+            }
+            if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+        }
+        is PathSelected ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_SELECTED
+            baseMetadata["pathName"] = event.pathName
+            baseMetadata["riskLevel"] = event.riskLevel.name
+        }
+        is PathSafetyStarted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_SAFETY_STARTED
+            baseMetadata["pathName"] = event.pathName
+            baseMetadata["riskLevel"] = event.riskLevel.name
+        }
+        is PathSafetyCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_SAFETY_COMPLETED
+            baseMetadata["pathName"] = event.pathName
+            baseMetadata["riskLevel"] = event.riskLevel.name
+            baseMetadata["approved"] = event.approved
+            baseMetadata["reason"] = event.reason ?: ""
+        }
+        is PathStarted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_STARTED
+            baseMetadata["pathName"] = event.pathName
+            baseMetadata["riskLevel"] = event.riskLevel.name
+        }
+        is PathCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_COMPLETED
+            baseMetadata["pathName"] = event.pathName
+            baseMetadata["riskLevel"] = event.riskLevel.name
+            agentContent = event.result
+            val (preview, len) = contentPreview(event.result)
+            if (preview.isNotEmpty()) baseMetadata["contentPreview"] = preview
+            if (len > 0) baseMetadata["contentLength"] = len
+            if (event.result?.modelReasoning?.isNotEmpty() == true)
+            {
+                baseMetadata["modelReasoning"] = event.result!!.modelReasoning
+                baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
+            }
+            if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+        }
+        is PathFailed ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_FAILED
+            baseMetadata["pathName"] = event.pathName
+            baseMetadata["riskLevel"] = event.riskLevel.name
+            baseMetadata["error"] = event.error.name
+            baseMetadata["errorMessage"] = event.errorMessage ?: ""
+        }
+        is PathHidden ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_HIDDEN
+            baseMetadata["pathName"] = event.pathName
+            baseMetadata["reason"] = event.reason
+        }
+        is PathValidationCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_VALIDATION_COMPLETED
+            baseMetadata["pathName"] = event.pathName
+            baseMetadata["approved"] = event.approved
+            baseMetadata["reason"] = event.reason ?: ""
+        }
+        is InterventionStarted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_INTERVENTION_STARTED
+            baseMetadata["pathName"] = event.pathName
+            baseMetadata["trigger"] = event.trigger.name
+        }
+        is InterventionCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_INTERVENTION_COMPLETED
+            baseMetadata["nudges"] = event.nudges
+            baseMetadata["shouldContinue"] = event.shouldContinue
+            agentContent = event.result
+            val (preview, len) = contentPreview(event.result)
+            if (preview.isNotEmpty()) baseMetadata["contentPreview"] = preview
+            if (len > 0) baseMetadata["contentLength"] = len
+            if (event.result?.modelReasoning?.isNotEmpty() == true)
+            {
+                baseMetadata["modelReasoning"] = event.result!!.modelReasoning
+                baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
+            }
+            if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+        }
+        is ForegroundAgentCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_FOREGROUND_AGENT_COMPLETED
+            baseMetadata["agentName"] = event.agentName
+            agentContent = event.result
+            val (preview, len) = contentPreview(event.result)
+            if (preview.isNotEmpty()) baseMetadata["contentPreview"] = preview
+            if (len > 0) baseMetadata["contentLength"] = len
+            if (event.result?.modelReasoning?.isNotEmpty() == true)
+            {
+                baseMetadata["modelReasoning"] = event.result!!.modelReasoning
+                baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
+            }
+            if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+        }
+        is MemoryUpdateStarted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_MEMORY_UPDATE_STARTED
+            baseMetadata["memoryMode"] = event.memoryMode.name
+        }
+        is MemoryUpdateCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED
+            baseMetadata["memoryMode"] = event.memoryMode.name
+            baseMetadata["compactionPercent"] = event.result.compactionPercent
+            baseMetadata["loreBookActive"] = event.result.loreBookActive
+            baseMetadata["summaryActive"] = event.result.summaryActive
+        }
+        is StashCreated ->
+        {
+            eventType = TraceEventType.PUMP_STATION_STASH_CREATED
+            baseMetadata["stashId"] = event.stashId
+            baseMetadata["sourcePath"] = event.sourcePath ?: ""
+            baseMetadata["reason"] = event.reason.name
+            baseMetadata["tokenEstimate"] = event.tokenEstimate ?: -1
+        }
+        is CompactionStarted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_COMPACTION_STARTED
+            baseMetadata["strategy"] = event.strategy.name
+            baseMetadata["memoryMode"] = event.memoryMode.name
+        }
+        is CompactionCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_COMPACTION_COMPLETED
+            baseMetadata["strategy"] = event.strategy.name
+            baseMetadata["memoryMode"] = event.memoryMode.name
+            baseMetadata["previousHistorySize"] = event.previousHistorySize
+            baseMetadata["newHistorySize"] = event.newHistorySize
+        }
+        is GoalValidationStarted -> eventType = TraceEventType.PUMP_STATION_GOAL_VALIDATION_STARTED
+        is GoalValidationCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED
+            baseMetadata["passed"] = event.passed
+            baseMetadata["reason"] = event.reason ?: ""
+        }
+        is ReservePathRevealed ->
+        {
+            eventType = TraceEventType.PUMP_STATION_RESERVE_PATH_REVEALED
+            baseMetadata["pathName"] = event.pathName
+            baseMetadata["reservePathNames"] = event.reservePathNames
+        }
+        is LoopGuardTripped ->
+        {
+            eventType = TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED
+            baseMetadata["guard"] = event.guard
+            baseMetadata["pathName"] = event.pathName
+            baseMetadata["detail"] = event.detail
+        }
+        is ContextBlowoutDetected ->
+        {
+            eventType = TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED
+            baseMetadata["fillRatio"] = event.fillRatio
+            baseMetadata["threshold"] = event.threshold
+            baseMetadata["afterPhase"] = event.afterPhase.name
+        }
+        is BackgroundAgentQueued ->
+        {
+            eventType = TraceEventType.PUMP_STATION_BACKGROUND_AGENT_QUEUED
+            baseMetadata["agentName"] = event.agentName
+        }
+        is NestedP2PCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_NESTED_P2P_COMPLETED
+            baseMetadata["pathName"] = event.pathName ?: ""
+            baseMetadata["agentName"] = event.agentName
+            agentContent = event.response
+            val (preview, len) = contentPreview(event.response)
+            if (preview.isNotEmpty()) baseMetadata["contentPreview"] = preview
+            if (len > 0) baseMetadata["contentLength"] = len
+            if (event.response?.modelReasoning?.isNotEmpty() == true)
+            {
+                baseMetadata["modelReasoning"] = event.response!!.modelReasoning
+                baseMetadata["modelReasoningLen"] = event.response!!.modelReasoning.length
+            }
+            if (event.response?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.response!!.binaryContent.size
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+        }
+    }
+
+    return TraceEvent(
+        timestamp = event.timestamp,
+        pipeId = pipeId,
+        pipeName = pipeName,
+        eventType = eventType,
+        phase = TracePhase.valueOf(event.phase.name),
+        content = agentContent,
+        contextSnapshot = null,
+        metadata = baseMetadata
+    )
+}
 
 //=========================================Flag Check============================================================
 

@@ -45,11 +45,16 @@ object TraceNodeMapper
      * @param event The trace event whose node key should be derived.
      * @return The node grouping key used by the visualizer.
      */
-    fun resolveNodeKey(event: TraceEvent): String 
+    fun resolveNodeKey(event: TraceEvent): String
     {
         // Junction and other harness events intentionally get their own node key suffix so their trace nodes
         // do not collapse into the generic pipe node while still staying grouped by the owning harness.
         return when {
+            // PumpStation events are turn-keyed so the visualizer can group them into turn cards. Goal
+            // validation events get a nested sub-loop key so the visualizer can render them as a sub-loop
+            // within the turn card. Reserve path reveals cluster by path name so the same path revealed
+            // across multiple turns groups cleanly.
+            event.eventType.name.startsWith("PUMP_STATION_") -> resolvePumpStationNodeKey(event)
             event.eventType.name.startsWith("SPLITTER_") -> "${event.pipeName}-${event.eventType.name}"
             event.eventType.name.startsWith("MANIFOLD_") -> "${event.pipeName}-${event.eventType.name}"
             event.eventType.name.startsWith("JUNCTION_") -> "${event.pipeName}-${event.eventType.name}"
@@ -87,12 +92,35 @@ object TraceNodeMapper
         }
     }
     
-    private fun determineNodeStatus(events: List<TraceEvent>): NodeStatus 
+    private fun determineNodeStatus(events: List<TraceEvent>): NodeStatus
     {
         return when {
             events.any { it.eventType.name.contains("FAILURE") } -> NodeStatus.FAILURE
             events.any { it.eventType.name.contains("SUCCESS") } -> NodeStatus.SUCCESS
             else -> NodeStatus.INFO
+        }
+    }
+
+    /**
+     * Resolve the grouping key for a PumpStation event. Turn index is sourced from the event metadata
+     * (populated by the PumpStation → TraceEvent conversion helper in PumpStationHelpers.kt). Goal
+     * validation events get a nested sub-loop key, and reserve path reveals cluster by path name.
+     */
+    private fun resolvePumpStationNodeKey(event: TraceEvent): String
+    {
+        val turnIndex = event.metadata["turnIndex"]?.toString()?.toIntOrNull() ?: -1
+        val isGoalEvent = event.eventType.name.startsWith("PUMP_STATION_GOAL_VALIDATION_")
+        val isReserveReveal = event.eventType == TraceEventType.PUMP_STATION_RESERVE_PATH_REVEALED
+
+        return when
+        {
+            isReserveReveal ->
+            {
+                val pathName = event.metadata["pathName"]?.toString()?.takeIf { it.isNotBlank() } ?: "unknown"
+                "RESERVE_REVEAL-$pathName-${event.eventType.name}"
+            }
+            isGoalEvent -> "TURN_$turnIndex-GOAL_SUBLOOP-${event.eventType.name}"
+            else -> "TURN_$turnIndex-${event.eventType.name}"
         }
     }
 }

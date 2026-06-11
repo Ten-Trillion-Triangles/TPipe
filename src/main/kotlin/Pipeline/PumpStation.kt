@@ -18,7 +18,13 @@ import com.TTT.Structs.PipeSettings
 import com.TTT.PipeContextProtocol.FunctionRegistry
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.PipeContextProtocol.PcpExecutionDispatcher
+import com.TTT.Debug.FailureAnalysis
+import com.TTT.Debug.PipeTracer
+import com.TTT.Debug.TraceConfig
+import com.TTT.Debug.TraceEvent
+import com.TTT.Debug.TraceFormat
 import com.TTT.Util.serialize
+import com.TTT.Util.writeStringToFile
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
@@ -181,6 +187,21 @@ data class PathRequest(
  * encapsulates the concept of a turn in a traditional agent harness and fully encloses the complexities that would
  * otherwise make the harness pattern inefficient.
  */
+/**
+ * Internal mirror of the [agentTokenUsage] helper from PumpStationLoop — duplicated here
+ * because PumpStation.kt does not have visibility into the loop module. Returns null when
+ * the agent is not a [Pipeline] or its token usage is zero.
+ */
+private fun agentTokenUsageInternal(agent: P2PInterface?): Pair<Int, Pair<Int, Int>>?
+{
+    val pipeline = agent as? Pipeline ?: return null
+    val usage = pipeline.getTokenUsage()
+    val input = usage.totalInputTokens.takeIf { it > 0 } ?: return null
+    val output = usage.totalOutputTokens.takeIf { it > 0 } ?: 0
+    val total = if (input > 0 || output > 0) input + output else 0
+    return input to (output to total)
+}
+
 class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
 {
 
@@ -273,6 +294,22 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      * Returns true if an execution function has been set on this path.
      */
     val isExecutionFunctionSet: Boolean get() = executionFunction != null
+
+    /**
+     * Read the path's [com.TTT.Pipe.TokenUsage] when the [internalAgent] is a [Pipeline]. Returns
+     * null for paths backed by an opaque [executionFunction] or a [P2PInterface] we do not know
+     * how to inspect. Used by the harness to record per-path token usage in
+     * [com.TTT.Pipeline.PumpStationEvent.PathCompleted] events.
+     */
+    fun getPathTokenUsage(): com.TTT.Pipe.TokenUsage?
+    {
+        val agent = internalAgent ?: return null
+        return when (agent)
+        {
+            is Pipeline -> agent.getTokenUsage()
+            else -> null
+        }
+    }
 
     /**
      * Returns true if this path is configured to run in background.
@@ -952,6 +989,18 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var eventObserver: ((PumpStationEvent) -> Unit)? = null
 
     /**
+     * When true, the harness emits events to the global [PipeTracer] (in addition to the in-process
+     * event queue and observer hook) so a trace can be exported via [getTraceReport] and visualized
+     * by [com.TTT.Debug.TraceVisualizer].
+     */
+    private var tracingEnabled: Boolean = false
+
+    /**
+     * Tracing configuration in effect when [tracingEnabled] is true.
+     */
+    private var traceConfig: TraceConfig = TraceConfig(enabled = true)
+
+    /**
      * Manifest of stashed content entries. Mirrors the [stash] map with richer metadata
      * so agents and DITL tooling can reason about what was stashed without loading content.
      */
@@ -1375,7 +1424,17 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
             val shouldReveal = path.revealWhen.invoke(taskState, externalContext)
             if (shouldReveal)
             {
+                val firstReveal = path.pathName !in revealedReservePaths
                 revealedReservePaths.add(path.pathName)
+                if(firstReveal)
+                {
+                    emitEvent(ReservePathRevealed(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        pathName = path.pathName,
+                        reservePathNames = reservePaths.keys.toList()
+                    ))
+                }
             }
             if (revealedReservePaths.contains(path.pathName))
             {
@@ -1425,15 +1484,36 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
 
     /**
      * Executes a P2P request by wrapping the harness loop with P2P requirements validation.
-     * For now, delegates to [executeLocal] with the request's prompt.
+     * Delegates to [executeLocal] with the request's prompt and emits a [NestedP2PCompleted]
+     * event so the visualizer can render the nested call as a sub-entry under the parent
+     * path's content panel.
      */
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {
         // Extract input content from request
         val content = request.prompt
+        val parentPathName = taskState.currentPathName
 
         // Execute via harness
         val result = executeLocal(content)
+
+        // Emit a nested P2P completion event so the visualizer can render this call as a
+        // sub-entry under the parent path's content panel. The token usage is read from the
+        // result's metadata where the harness records it.
+        val nestedUsage = agentTokenUsageInternal(this)
+        val nestedInput = nestedUsage?.first
+        val nestedOutput = nestedUsage?.second?.first
+        val nestedTotal = nestedUsage?.second?.second
+        backgroundEventQueue.trySend(NestedP2PCompleted(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            pathName = parentPathName,
+            agentName = "(nested-p2p)",  // P2PRequest does not carry an agent name
+            response = result,
+            inputTokens = nestedInput,
+            outputTokens = nestedOutput,
+            totalTokens = nestedTotal
+        ))
 
         return P2PResponse(
             output = result,
@@ -1479,6 +1559,10 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     {
         backgroundEventQueue.trySend(event)
         eventObserver?.invoke(event)
+        // Mirror to the global PipeTracer when tracing is enabled. The funnel is implemented
+        // in PumpStationHelpers.kt and is no-op when tracingEnabled is false, so the cost is a
+        // single null check on the hot path.
+        tracePumpStationEvent(event)
     }
 
     /**
@@ -1545,6 +1629,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     internal val consecutivePathCountInternal: Int
         get() = consecutivePathCount
     internal val lastSelectedPathNameInternal get() = lastSelectedPathName
+
+    //=====================================Tracing Accessors================================================
+    // Internal accessors so PumpStationHelpers.kt and PumpStationLoop.kt extension functions can read
+    // the private [tracingEnabled] field when deciding whether to mirror PumpStationEvents into the
+    // global PipeTracer. The helper does its own null checks; we only need to expose the flag.
+
+    internal val tracingEnabledInternal get() = tracingEnabled
 
     //=====================================Group L accessors======================================================
     // Internal accessor for the private [maxGoalFailAttempts] field so that
@@ -1642,6 +1733,85 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         this.eventObserver = observer
         return this
     }
+
+    /**
+     * Enables tracing for this PumpStation with the specified configuration. When enabled, every
+     * [PumpStationEvent] emitted by the loop is mirrored into the global [PipeTracer] so the trace
+     * can be exported via [getTraceReport] and visualized by [com.TTT.Debug.TraceVisualizer].
+     *
+     * The PumpStation trace is keyed by [taskState.runId] (generated in [P2PInit]). Calling
+     * [enableTracing] before [executeLocal] ensures the trace stream is created at the start of
+     * the first run.
+     *
+     * @param config The tracing configuration to use.
+     * @return This PumpStation for method chaining.
+     */
+    fun enableTracing(config: TraceConfig = TraceConfig(enabled = true)): PumpStation
+    {
+        this.tracingEnabled = true
+        this.traceConfig = config
+        PipeTracer.enable()
+        PipeTracer.setMaxHistory(config.maxHistory)
+        return this
+    }
+
+    /**
+     * Returns the trace report for this PumpStation in the specified format. The report is rendered
+     * by [com.TTT.Debug.TraceVisualizer] with the custom turn-centric layout when the trace contains
+     * PUMP_STATION_* events.
+     *
+     * @param format The output format. Defaults to [traceConfig.outputFormat].
+     * @return The formatted trace report as a string, or an explanatory message if tracing was not
+     *         enabled before the run.
+     */
+    fun getTraceReport(format: TraceFormat = traceConfig.outputFormat): String
+    {
+        val traceId = taskState.runId.takeIf { it.isNotBlank() }
+            ?: return "(PumpStation trace unavailable: harness has not been started. Call executeLocal() first.)"
+
+        return try
+        {
+            val report = PipeTracer.exportTrace(traceId, format)
+
+            if(traceConfig.autoExport)
+            {
+                val extension = when(format)
+                {
+                    TraceFormat.HTML -> "html"
+                    TraceFormat.JSON -> "json"
+                    TraceFormat.MARKDOWN -> "md"
+                    TraceFormat.CONSOLE -> "txt"
+                }
+                val filename = "pumpstation-${traceId.take(12)}.$extension"
+                val exportPath = traceConfig.exportPath.trimEnd('/') + "/" + filename
+                writeStringToFile(exportPath, report)
+            }
+
+            report
+        }
+        catch (e: Exception)
+        {
+            "(PumpStation trace export failed: ${e.message})"
+        }
+    }
+
+    /**
+     * Returns a [FailureAnalysis] for this PumpStation if tracing is enabled.
+     *
+     * @return A FailureAnalysis object or null if tracing is disabled or the harness has not run.
+     */
+    fun getFailureAnalysis(): FailureAnalysis?
+    {
+        if(!tracingEnabled) return null
+        val traceId = taskState.runId.takeIf { it.isNotBlank() } ?: return null
+        return PipeTracer.getFailureAnalysis(traceId)
+    }
+
+    /**
+     * Returns the trace ID for this PumpStation, or null if the harness has not been started.
+     * The trace ID is the [taskState.runId] generated during [P2PInit].
+     */
+    fun getTraceId(): String? = taskState.runId.takeIf { it.isNotBlank() }
 
     /**
      * Returns the current stash manifest (rich metadata about stashed content)
@@ -1815,7 +1985,14 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
                 consecutivePathCount++
                 if (consecutivePathCount >= maxConsecutiveSamePath!!)
                 {
-                    // Loop guard triggered — emit PathFailed, then call interventionAgent if set
+                    // Loop guard triggered — emit PathFailed + LoopGuardTripped, then call interventionAgent if set
+                    backgroundEventQueue.trySend(LoopGuardTripped(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        guard = "maxConsecutiveSamePath",
+                        pathName = pathName,
+                        detail = "consecutive=$consecutivePathCount, limit=${maxConsecutiveSamePath!!}"
+                    ))
                     backgroundEventQueue.trySend(PathFailed(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
@@ -1834,13 +2011,18 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
                         pathName = pathName
                     ))
 
-                    interventionAgent?.executeLocal(taskState.latestContent ?: MultimodalContent())
+                    val interventionResult = interventionAgent?.executeLocal(taskState.latestContent ?: MultimodalContent())
+                    val interventionUsage = agentTokenUsageInternal(interventionAgent)
 
                     backgroundEventQueue.trySend(InterventionCompleted(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         nudges = 0,
-                        shouldContinue = true
+                        shouldContinue = true,
+                        result = interventionResult,
+                        inputTokens = interventionUsage?.first,
+                        outputTokens = interventionUsage?.second?.first,
+                        totalTokens = interventionUsage?.second?.second
                     ))
                 }
             }
@@ -1856,6 +2038,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         pathCallCounts[pathName] = callCount
         if (maxTotalPathCallsPerPath != null && callCount > maxTotalPathCallsPerPath!!)
         {
+            backgroundEventQueue.trySend(LoopGuardTripped(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                guard = "maxTotalPathCallsPerPath",
+                pathName = pathName,
+                detail = "count=$callCount, limit=${maxTotalPathCallsPerPath!!}"
+            ))
             val limitResult = pathLimitExceededFunction?.invoke(
                 path,
                 "maxTotalPathCallsPerPath exceeded",
@@ -1950,6 +2139,12 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         ))
 
         // --- Execute the path ---
+        //
+        // Set taskState.currentPathName so nested P2P calls inside the path (via executeP2PRequest)
+        // can annotate themselves with the parent path. Cleared in the finally block to avoid
+        // leaking the path name into subsequent operations.
+        val priorPathName = taskState.currentPathName
+        taskState.currentPathName = pathName
         val result = try
         {
             path.execute(input, this, turnHistory, turnSummary)
@@ -1965,10 +2160,22 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
                 errorMessage = e.message
             ))
             taskState.lastError = PumpStationError.PathExecutionException
+            taskState.currentPathName = priorPathName
             return input
+        }
+        finally
+        {
+            // Restore the prior path name even on success — the next operation should not see
+            // this path's name as the ambient context.
+            taskState.currentPathName = priorPathName
         }
 
         // --- Emit PathCompleted event ---
+        val pathUsage = path.getPathTokenUsage()
+        val pathInputTokens = pathUsage?.totalInputTokens?.takeIf { it > 0 }
+        val pathOutputTokens = pathUsage?.totalOutputTokens?.takeIf { it > 0 }
+        val pathTotalTokens = if (pathInputTokens != null && pathOutputTokens != null)
+            pathInputTokens + pathOutputTokens else pathUsage?.let { it.totalInputTokens + it.totalOutputTokens }?.takeIf { it > 0 }
         backgroundEventQueue.trySend(PathCompleted(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
@@ -1976,7 +2183,9 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
             pathName = pathName,
             riskLevel = riskLevel,
             result = result,
-            tokensUsed = null
+            inputTokens = pathInputTokens,
+            outputTokens = pathOutputTokens,
+            totalTokens = pathTotalTokens
         ))
 
         taskState.lastPathResult = result

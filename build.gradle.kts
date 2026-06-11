@@ -86,9 +86,13 @@ dependencies {
 
     // Testing
     testImplementation(libs.ktor.server.test.host)
-    testImplementation(libs.kotlin.test.junit)
+    testImplementation(kotlin("test"))
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+    testImplementation("org.junit.platform:junit-platform-launcher:1.11.4")
 }
 
 tasks.test {
+    useJUnitPlatform()
     jvmArgs("-Xmx512m")
 }

@@ -271,6 +271,7 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
     }
 
     var repairAttempts = 0
+    val dispatchUsage = agentTokenUsage(dispatchAgent)
 
     while (repairAttempts <= failurePolicy.maxDispatchRepairAttempts)
 {
@@ -287,7 +288,11 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
                 selectedPathName = pathRequest.pathName,
-                pathRequest = pathRequest
+                pathRequest = pathRequest,
+                result = result,
+                inputTokens = dispatchUsage?.first,
+                outputTokens = dispatchUsage?.second?.first,
+                totalTokens = dispatchUsage?.second?.second
             ))
             return pathRequest
         }
@@ -306,7 +311,11 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
         runId = taskState.runId,
         turnIndex = taskState.turnIndex,
         selectedPathName = null,
-        pathRequest = null
+        pathRequest = null,
+        result = result,
+        inputTokens = dispatchUsage?.first,
+        outputTokens = dispatchUsage?.second?.first,
+        totalTokens = dispatchUsage?.second?.second
     ))
     emitEventInternal(PathFailed(
         runId = taskState.runId,
@@ -771,11 +780,15 @@ internal suspend fun PumpStation.runForegroundAgentsPhase()
         agent.P2PInit()
         val result = agent.executeLocal(buildTurnContent())
         taskState.latestContent = result
+        val fgUsage = agentTokenUsage(agent)
         emitEventInternal(ForegroundAgentCompleted(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
             agentName = agent::class.simpleName ?: "Unknown",
-            result = result
+            result = result,
+            inputTokens = fgUsage?.first,
+            outputTokens = fgUsage?.second?.first,
+            totalTokens = fgUsage?.second?.second
         ))
     }
 }
@@ -829,6 +842,13 @@ internal suspend fun PumpStation.detectAndHandleContextBlowout(afterPhase: PumpS
     if (fillRatio <= blowoutThresholdInternal) return false
 
     // BLOWOUT DETECTED
+    emitEventInternal(ContextBlowoutDetected(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex,
+        fillRatio = fillRatio,
+        threshold = blowoutThresholdInternal,
+        afterPhase = afterPhase
+    ))
     if (failurePolicy.stashOversizedOutputs)
 {
         val stashId = generateStashId()
@@ -952,6 +972,14 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
     taskState.latestContent = content
     taskState.status = PumpStationStatus.Running
     taskState.phase = PumpStationPhase.PreInit
+
+    // Initialize the global PipeTracer stream for this run when tracing is enabled. Doing
+    // it here (after P2PInit has set taskState.runId) ensures the trace ID matches the
+    // harness's runId and the visualization report can correlate by it.
+    if(tracingEnabledInternal && taskState.runId.isNotBlank())
+    {
+        com.TTT.Debug.PipeTracer.startTrace(taskState.runId)
+    }
 
     refreshAgentInstances()
     refreshPipelinesPrompts()
@@ -1169,4 +1197,23 @@ internal fun PumpStation.drainBackgroundEventQueue()
             break
         }
     }
+}
+
+
+/**
+ * Read token usage from a [P2PInterface] when it is a [Pipeline]. Returns null for opaque
+ * P2PInterface implementations. When non-null, the returned pair's first element is the
+ * input token count and the second is a (outputTokens, totalTokens) pair.
+ *
+ * Used by Judge/Dispatch/Foreground agent emission sites to record per-agent token usage
+ * without forcing every harness agent to be a Pipeline.
+ */
+internal fun agentTokenUsage(agent: P2PInterface?): Pair<Int, Pair<Int, Int>>?
+{
+    val pipeline = agent as? Pipeline ?: return null
+    val usage = pipeline.getTokenUsage()
+    val input = usage.totalInputTokens.takeIf { it > 0 } ?: return null
+    val output = usage.totalOutputTokens.takeIf { it > 0 } ?: 0
+    val total = if (input > 0 || output > 0) input + output else 0
+    return input to (output to total)
 }
