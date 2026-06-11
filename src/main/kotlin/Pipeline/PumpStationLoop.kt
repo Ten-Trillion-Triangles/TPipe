@@ -195,6 +195,27 @@ internal suspend fun PumpStation.runAgent(agent: Pipeline?, input: MultimodalCon
 internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
 {
     taskState.phase = PumpStationPhase.Judge
+
+    // FlagTriggered mode: honor the one-shot requestJudgeNextTurn flag. When the flag is false the
+    // judge phase is skipped (no LLM call, no JudgeStarted/JudgeCompleted) and a JudgeSkipped event
+    // is emitted in their place so the trace/visualizer can show what happened. The flag is
+    // automatically cleared after the judge consumes it on the next run.
+    if (judgeRunModeInternal == PumpStationJudgeRunMode.FlagTriggered)
+    {
+        if (!taskState.requestJudgeNextTurn)
+        {
+            emitEventInternal(JudgeSkipped(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                reason = "no_flag_set",
+                judgeRunMode = PumpStationJudgeRunMode.FlagTriggered
+            ))
+            return JudgeVerdict.empty()
+        }
+        // Flag is set: clear it (one-shot) and fall through to the normal judge flow.
+        taskState.requestJudgeNextTurn = false
+    }
+
     emitEventInternal(JudgeStarted(
         runId = taskState.runId,
         turnIndex = taskState.turnIndex

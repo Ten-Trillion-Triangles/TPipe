@@ -172,6 +172,7 @@ object EventPriorityMapper
             TraceEventType.PUMP_STATION_HEALTH_CHECK_STARTED,
             TraceEventType.PUMP_STATION_JUDGE_STARTED,
             TraceEventType.PUMP_STATION_DISPATCH_STARTED,
+            TraceEventType.PUMP_STATION_JUDGE_SKIPPED,
             TraceEventType.PUMP_STATION_PATH_SAFETY_STARTED,
             TraceEventType.PUMP_STATION_PATH_SAFETY_COMPLETED,
             TraceEventType.PUMP_STATION_PATH_VALIDATION_COMPLETED,

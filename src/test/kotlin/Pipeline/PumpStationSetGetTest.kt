@@ -19,6 +19,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.assertSame
 
 /**
  * Minimal no-op [P2PInterface] used to populate agent slots on a [PumpStation]
@@ -412,6 +413,44 @@ class PumpStationSetGetTest
             val visible = station.getVisiblePathNames()
             assertFalse("secret_path" in visible,
                 "Reserve path should not be visible until its revealWhen returns true")
+        }
+    }
+
+    // ---- Judge run mode ----
+
+    /**
+     * Verifies that setJudgeRunMode(FlagTriggered) round-trips and the default is Always.
+     * requestJudgeNextTurn() must flip the taskState flag.
+     */
+    @Test
+    fun testJudgeRunModeSetterAndRequestFlag()
+    {
+        runBlocking {
+            val station = PumpStation()
+
+            // Default is Always
+            assertEquals(PumpStationJudgeRunMode.Always, station.getJudgeRunMode())
+
+            // Setter must return the same station for chaining
+            val returned = station.setJudgeRunMode(PumpStationJudgeRunMode.FlagTriggered)
+            assertSame(station, returned, "setJudgeRunMode must return this for chaining")
+            assertEquals(PumpStationJudgeRunMode.FlagTriggered, station.getJudgeRunMode())
+
+            // The task state flag starts false
+            assertFalse(station.getTaskState().requestJudgeNextTurn,
+                "requestJudgeNextTurn must default to false")
+
+            // Calling requestJudgeNextTurn() flips the flag and returns the station
+            val returned2 = station.requestJudgeNextTurn()
+            assertSame(station, returned2, "requestJudgeNextTurn must return this for chaining")
+            assertTrue(station.getTaskState().requestJudgeNextTurn,
+                "requestJudgeNextTurn must flip the flag to true")
+
+            // Setting back to Always preserves the flag value (the field is independent)
+            station.setJudgeRunMode(PumpStationJudgeRunMode.Always)
+            assertEquals(PumpStationJudgeRunMode.Always, station.getJudgeRunMode())
+            assertTrue(station.getTaskState().requestJudgeNextTurn,
+                "Mode change must not clear the flag - it is consumed by the judge phase")
         }
     }
 }

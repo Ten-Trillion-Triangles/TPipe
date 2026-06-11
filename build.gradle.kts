@@ -90,6 +90,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testImplementation("org.junit.platform:junit-platform-launcher:1.11.4")
+    testImplementation("org.junit.vintage:junit-vintage-engine:5.11.4")
 }
 
 tasks.test {

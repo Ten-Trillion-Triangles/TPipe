@@ -264,6 +264,26 @@ data class JudgeCompleted(
 ) : PumpStationEvent
 
 /**
+ * Judge phase was skipped because the harness was in [PumpStationJudgeRunMode.FlagTriggered] mode
+ * and the [PumpStationTaskState.requestJudgeNextTurn] flag was not set at the top of the judge
+ * phase. Emitted in place of [JudgeStarted] / [JudgeCompleted] so the trace / visualizer can
+ * show when the judge was bypassed to save tokens.
+ *
+ * [reason] is a short code describing why the judge was skipped (currently always `"no_flag_set"`).
+ * [judgeRunMode] carries the active mode so the visualizer can render the skip-row with the
+ * correct context.
+ */
+@kotlinx.serialization.Serializable
+data class JudgeSkipped(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Judge,
+    val reason: String,
+    val judgeRunMode: PumpStationJudgeRunMode
+) : PumpStationEvent
+
+/**
  * Typed parser output for the judge agent's response. Encodes the LLM's
  * verdict on task completion plus the MultimodalContent flags for loop control.
  */
@@ -890,4 +910,10 @@ data class PumpStationTaskState(
     var isPaused: Boolean = false,
     var pausedAt: Set<PumpStationPausePhase> = emptySet(),
     var pauseReason: String? = null
+    ,
+    // Judge-trigger flag (PumpStationJudgeRunMode.FlagTriggered only). When true, the next turn's judge
+    // phase runs as normal and then the flag is cleared. Set by [PumpStation.requestJudgeNextTurn] - typically
+    // from a path's setExecutionFunction when the dispatch agent believes the task is done. Default false
+    // preserves legacy behavior (judge runs every turn).
+    var requestJudgeNextTurn: Boolean = false
 )

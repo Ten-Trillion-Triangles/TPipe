@@ -6198,7 +6198,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 }
                 catch(e: Exception)
                 {
-                    trace(TraceEventType.PIPE_FAILURE, TracePhase.VALIDATION, generatedContent, error = e)
+                    trace(TraceEventType.VALIDATION_FAILURE, TracePhase.VALIDATION, generatedContent,
+                          metadata = mapOf(
+                              "reason" to "Validator pipe threw an exception",
+                              "exceptionType" to (e::class.simpleName ?: "Unknown")
+                          ),
+                          error = e)
                     validatorPipeContent = generatedContent
                 }
             }
@@ -6387,7 +6392,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
             //Execute branch pipe if provided.
             if(branchPipe != null)
             {
-                    trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.POST_PROCESSING)
+                    trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.POST_PROCESSING,
+                          metadata = mapOf(
+                              "branchModel" to (branchPipe?.model ?: "not_set"),
+                              "branchProvider" to (branchPipe?.provider?.name ?: "unknown"),
+                              "branchPipeName" to (branchPipe?.pipeName ?: "unknown")
+                          ))
                     try {
                         // Initialize and setup branch pipe
                         if(tracingEnabled)

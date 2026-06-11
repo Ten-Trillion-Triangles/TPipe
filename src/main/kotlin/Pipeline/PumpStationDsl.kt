@@ -158,6 +158,17 @@ class PumpStationBuilder(val name: String)
     var maxHarnessTurns: Int = 50
 
     /**
+     * Controls when the judge agent runs. Defaults to [PumpStationJudgeRunMode.Always] (judge fires
+     * every turn). Set to [PumpStationJudgeRunMode.FlagTriggered] to skip the judge except on turns
+     * where the dispatch agent (or any code holding a [PumpStation] reference) has called
+     * [PumpStation.requestJudgeNextTurn].
+     *
+     * Trade-off: in `FlagTriggered` mode, [maxHarnessTurns] is the only safety net if the dispatch
+     * never signals — set it conservatively.
+     */
+    var judgeRunMode: PumpStationJudgeRunMode = PumpStationJudgeRunMode.Always
+
+    /**
      * Maximum number of concurrent background agents.
      * Excess requests are queued and batched.
      */
@@ -498,6 +509,7 @@ class PumpStationBuilder(val name: String)
         // Loop / concurrency / memory knobs
         station
             .setMaxHarnessTurns(maxHarnessTurns)
+            .setJudgeRunMode(judgeRunMode)
             .setMaxConcurrentBackgroundAgents(maxConcurrentBackgroundAgents)
             .setMaxConcurrentForegroundAgents(maxConcurrentForegroundAgents)
             .setForegroundTurnInterval(foregroundTurnInterval)

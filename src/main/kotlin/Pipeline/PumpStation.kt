@@ -96,6 +96,25 @@ enum class PumpStationCompactionStrategy
 }
 
 /**
+ * Controls when the judge agent runs inside the [PumpStation] harness loop.
+ */
+enum class PumpStationJudgeRunMode {
+    /** Judge runs every turn (default; current behavior). */
+    Always,
+
+    /**
+     * Judge runs only when [PumpStationTaskState.requestJudgeNextTurn] is true at the top of the judge phase.
+     * The flag is one-shot: it is automatically cleared after the judge consumes it. The typical pattern is
+     * a path the dispatch agent selects whose [PathObject.setExecutionFunction] calls
+     * [PumpStation.requestJudgeNextTurn] when it believes the task is done.
+     *
+     * In this mode, [PumpStation.setMaxHarnessTurns] is the only safety net if the dispatch agent never
+     * signals — set it conservatively.
+     */
+    FlagTriggered
+}
+
+/**
  * Defines risk level for path. This determines if an attempt to call path requires a validator agent to
  * kick on, or additional code to validate the safety of whatever the dispatcher agent is trying to call.
  * Breaks down to three levels:
@@ -793,6 +812,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * exploding token costs.
      */
     private var maxHarnessTurns = 50
+
+    /**
+     * Controls when the judge agent runs inside the harness loop. See [PumpStationJudgeRunMode]
+     * for the semantics. Defaults to [PumpStationJudgeRunMode.Always] (legacy behavior).
+     * Mutation goes through [setJudgeRunMode] so the fluent API is preserved.
+     */
+    internal var judgeRunModeInternal: PumpStationJudgeRunMode = PumpStationJudgeRunMode.Always
 
     /**
      * Defines the maximum number of concurrent background agents that can be spawned at any given time.
@@ -1550,6 +1576,30 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * Returns the current task state for inspection.
      */
     fun getTaskState(): PumpStationTaskState = taskState
+
+    /**
+     * Flag the judge agent to run on the next turn. One-shot: cleared automatically after the
+     * judge consumes it. No-op when [getJudgeRunMode] is [PumpStationJudgeRunMode.Always] (the
+     * judge already runs every turn).
+     *
+     * The typical usage pattern is a path the dispatch agent selects whose
+     * [PathObject.setExecutionFunction] calls this method when it believes the task is complete,
+     * for example:
+     *
+     *     path("signalDone") {
+     *         setExecutionFunction { _, pumpStation, _, _ ->
+     *             pumpStation.requestJudgeNextTurn()
+     *             MultimodalContent(text = "done")
+     *         }
+     *     }
+     *
+     * @return This PumpStation instance for method chaining.
+     */
+    fun requestJudgeNextTurn(): PumpStation
+    {
+        taskState.requestJudgeNextTurn = true
+        return this
+    }
 
     /**
      * Emits a PumpStation event. Called by inner PathObject to emit events
@@ -2508,6 +2558,24 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         this.maxHarnessTurns = max
         return this
     }
+
+    /**
+     * Sets the judge run mode for this PumpStation. See [PumpStationJudgeRunMode] for semantics.
+     * Default is [PumpStationJudgeRunMode.Always] (judge fires every turn).
+     *
+     * @param mode The judge run mode.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setJudgeRunMode(mode: PumpStationJudgeRunMode): PumpStation
+    {
+        this.judgeRunModeInternal = mode
+        return this
+    }
+
+    /**
+     * Returns the active judge run mode. See [PumpStationJudgeRunMode] for semantics.
+     */
+    fun getJudgeRunMode(): PumpStationJudgeRunMode = judgeRunModeInternal
 
     /**
      * Sets the alternate loop-guard maximum turns value. Currently mirrors

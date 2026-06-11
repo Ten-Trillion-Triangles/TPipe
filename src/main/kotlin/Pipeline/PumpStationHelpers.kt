@@ -128,6 +128,12 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["terminateHarness"] = event.terminateHarness
         }
         is JudgeStarted -> eventType = TraceEventType.PUMP_STATION_JUDGE_STARTED
+        is JudgeSkipped ->
+        {
+            eventType = TraceEventType.PUMP_STATION_JUDGE_SKIPPED
+            baseMetadata["reason"] = event.reason
+            baseMetadata["judgeRunMode"] = event.judgeRunMode.name
+        }
         is JudgeCompleted ->
         {
             eventType = TraceEventType.PUMP_STATION_JUDGE_COMPLETED

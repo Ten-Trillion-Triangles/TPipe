@@ -41,6 +41,10 @@ The current turn history is in the conversation history below.
 A summary of older turns is provided as a prefix.
 
 The available paths will be auto-injected below. Return a PathRequest JSON object as specified.
+
+If the harness is running in FlagTriggered judge mode, selecting a path whose execution function
+calls requestJudgeNextTurn() (e.g. a "signal-done" path) will let the judge evaluate the task on
+the next turn without paying the judge LLM cost on every turn.
 """
 
 internal const val DEFAULT_GOAL_PROMPT = """
