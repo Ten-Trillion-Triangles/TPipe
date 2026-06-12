@@ -8,6 +8,7 @@
         :root {
             --bg-dark: #0f111a;
             --bg-panel: #1a1d27;
+            --bg-input: #0f111a;
             --text-main: #e2e8f0;
             --text-muted: #94a3b8;
             --accent-blue: #38bdf8;
@@ -15,7 +16,11 @@
             --accent-red: #f87171;
             --accent-amber: #fbbf24;
             --border-color: #2e3344;
+            --border-strong: #3a4055;
         }
+
+        *, *::before, *::after { box-sizing: border-box; }
+        [hidden] { display: none !important; }
 
         body, html {
             margin: 0;
@@ -39,6 +44,7 @@
             justify-content: space-between;
             padding: 0 20px;
             z-index: 10;
+            flex-shrink: 0;
         }
 
         .logo {
@@ -59,6 +65,12 @@
             -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>') no-repeat center;
         }
 
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
         .status-container {
             display: flex;
             align-items: center;
@@ -67,13 +79,26 @@
             color: var(--text-muted);
         }
 
-        .live-indicator {
+        .status-container .live-indicator {
             width: 8px;
             height: 8px;
             border-radius: 50%;
+            background-color: var(--accent-amber);
+            box-shadow: 0 0 8px var(--accent-amber);
+            animation: pulse 2s infinite;
+        }
+
+        .status-container.is-live .live-indicator {
+            background-color: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+        }
+        .status-container.is-disconnected .live-indicator {
             background-color: var(--accent-red);
             box-shadow: 0 0 8px var(--accent-red);
-            animation: pulse 2s infinite;
+        }
+        .status-container.is-reconnecting .live-indicator {
+            background-color: var(--accent-amber);
+            box-shadow: 0 0 8px var(--accent-amber);
         }
 
         @keyframes pulse {
@@ -81,22 +106,48 @@
             70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(248, 113, 113, 0); }
             100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
         }
+        .status-container.is-live .live-indicator { animation: none; }
+
+        .icon-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 5px 8px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s ease;
+            font-family: inherit;
+        }
+        .icon-btn:hover {
+            color: var(--text-main);
+            border-color: var(--border-strong);
+            background-color: rgba(255, 255, 255, 0.04);
+        }
+        .icon-btn:active { transform: translateY(1px); }
+        .icon-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+        .icon-btn.is-busy svg { animation: spin 0.8s linear infinite; }
+        @keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 
         /* Main Container */
         .container {
             display: flex;
             flex: 1;
-            height: calc(100% - 50px);
+            min-height: 0;
         }
 
         /* Sidebar */
         .sidebar {
-            width: 300px;
+            width: 320px;
             background-color: var(--bg-panel);
             border-right: 1px solid var(--border-color);
             display: flex;
             flex-direction: column;
-            overflow-y: auto;
+            overflow: hidden;
+            flex-shrink: 0;
         }
 
         .sidebar-header {
@@ -112,62 +163,216 @@
             align-items: center;
         }
 
+        .sidebar-header .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .trace-count-pill {
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            border-radius: 999px;
+            padding: 2px 8px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            letter-spacing: 0;
+        }
+        .trace-count-pill.filtered { color: var(--accent-blue); border-color: rgba(56,189,248,0.4); }
+
+        .filter-bar {
+            padding: 8px 15px 10px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .search-row {
+            position: relative;
+        }
+
+        .search-row .search-input {
+            width: 100%;
+            padding: 8px 28px 8px 30px;
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        .search-row .search-input:focus { border-color: var(--accent-blue); }
+        .search-row .search-input::placeholder { color: var(--text-muted); }
+
+        .search-icon {
+            position: absolute;
+            left: 9px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 14px;
+            height: 14px;
+            color: var(--text-muted);
+            pointer-events: none;
+        }
+        .search-clear {
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 3px;
+            display: none;
+            font-size: 1rem;
+            line-height: 1;
+        }
+        .search-clear:hover { color: var(--text-main); background-color: rgba(255,255,255,0.05); }
+        .search-row.has-value .search-clear { display: inline-flex; }
+
+        .filter-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .chip {
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            border-radius: 999px;
+            padding: 3px 10px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            font-family: inherit;
+        }
+        .chip:hover { color: var(--text-main); border-color: var(--border-strong); }
+        .chip.active { color: var(--text-main); border-color: currentColor; }
+        .chip.all.active { color: var(--accent-blue); }
+        .chip.success.active { color: var(--accent-green); }
+        .chip.failure.active { color: var(--accent-red); }
+        .chip.pending.active { color: var(--accent-amber); }
+
+        .trace-list-container {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
         .trace-item {
             padding: 12px 15px;
             border-bottom: 1px solid var(--border-color);
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: background-color 0.15s;
             display: flex;
             flex-direction: column;
             gap: 5px;
+            position: relative;
         }
-
-        .trace-item:hover {
-            background-color: rgba(255, 255, 255, 0.05);
-        }
-
+        .trace-item:hover { background-color: rgba(255, 255, 255, 0.04); }
         .trace-item.active {
             background-color: rgba(56, 189, 248, 0.1);
             border-left: 3px solid var(--accent-blue);
+            padding-left: 12px;
         }
 
         .trace-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 8px;
+            padding-right: 24px;
         }
-
         .trace-name {
             font-weight: 600;
             font-size: 0.95rem;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: 180px;
+            flex: 1;
+            min-width: 0;
         }
-
         .trace-status {
-            font-size: 0.75rem;
-            padding: 2px 6px;
+            font-size: 0.7rem;
+            padding: 2px 7px;
             border-radius: 4px;
-            font-weight: 500;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
         }
-
         .status-SUCCESS { background-color: rgba(52, 211, 153, 0.15); color: var(--accent-green); border: 1px solid rgba(52, 211, 153, 0.3); }
         .status-FAILURE { background-color: rgba(248, 113, 113, 0.15); color: var(--accent-red); border: 1px solid rgba(248, 113, 113, 0.3); }
         .status-PENDING { background-color: rgba(251, 191, 36, 0.15); color: var(--accent-amber); border: 1px solid rgba(251, 191, 36, 0.3); }
+        .status-UNKNOWN { background-color: rgba(148, 163, 184, 0.15); color: var(--text-muted); border: 1px solid rgba(148, 163, 184, 0.3); }
 
         .trace-meta {
             display: flex;
             justify-content: space-between;
-            font-size: 0.75rem;
+            font-size: 0.72rem;
             color: var(--text-muted);
             font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
         }
+        .trace-id { color: #64748b; }
 
-        .trace-id {
-            color: #64748b;
+        .trace-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 2px;
         }
+        .trace-tag {
+            font-size: 0.65rem;
+            padding: 1px 6px;
+            border-radius: 3px;
+            background-color: rgba(56,189,248,0.1);
+            color: var(--accent-blue);
+            border: 1px solid rgba(56,189,248,0.2);
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        }
+
+        .trace-delete {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 22px;
+            height: 22px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background-color: rgba(248, 113, 113, 0.0);
+            color: var(--text-muted);
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 1rem;
+            line-height: 1;
+            padding: 0;
+            transition: all 0.15s;
+        }
+        .trace-item:hover .trace-delete { display: flex; }
+        .trace-delete:hover {
+            background-color: rgba(248, 113, 113, 0.2);
+            color: var(--accent-red);
+        }
+
+        .empty-message {
+            padding: 24px 20px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+        .empty-message .empty-emoji { font-size: 32px; opacity: 0.4; margin-bottom: 8px; }
 
         /* Main Content */
         .content {
@@ -177,25 +382,47 @@
             overflow: hidden;
             display: flex;
             flex-direction: column;
+            min-width: 0;
         }
 
         .content-header {
-            height: 40px;
+            min-height: 40px;
             background-color: var(--bg-panel);
             border-bottom: 1px solid var(--border-color);
             display: flex;
             align-items: center;
-            padding: 0 20px;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 20px;
             font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
             font-size: 0.85rem;
             color: var(--accent-blue);
+            flex-shrink: 0;
+        }
+        .content-header > span:first-child {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .content-header .header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+        .content-header .icon-btn { white-space: nowrap; }
+        .active-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            padding: 4px 20px 6px;
+            background-color: var(--bg-panel);
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.7rem;
         }
 
         #trace-frame {
             width: 100%;
             height: 100%;
             border: none;
-            background-color: white; /* Trace HTML often expects white bg */
+            background-color: white;
             flex: 1;
         }
 
@@ -210,17 +437,20 @@
             flex-direction: column;
             align-items: center;
             gap: 15px;
+            padding: 20px;
         }
 
-        .empty-icon {
-            font-size: 48px;
-            opacity: 0.5;
-        }
+        .empty-icon { font-size: 48px; opacity: 0.5; }
+        .empty-state .empty-actions { display: flex; gap: 10px; margin-top: 5px; }
 
+        .empty-state .error-text { color: var(--accent-red); max-width: 400px; word-break: break-word; }
+
+        /* Auth overlay */
         .auth-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background-color: rgba(15, 17, 26, 0.95);
+            background-color: rgba(8, 10, 16, 0.92);
+            backdrop-filter: blur(2px);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -232,9 +462,12 @@
             padding: 30px;
             border-radius: 8px;
             border: 1px solid var(--border-color);
-            width: 300px;
+            width: 320px;
+            max-width: 90vw;
             text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
         }
+        .auth-box h2 { margin-top: 0; color: var(--accent-blue); font-size: 1.25rem; }
 
         .auth-tabs {
             display: flex;
@@ -251,20 +484,13 @@
             cursor: pointer;
             font-weight: 600;
             border-bottom: 2px solid transparent;
+            font-family: inherit;
+            font-size: 0.9rem;
         }
+        .auth-tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
 
-        .auth-tab.active {
-            color: var(--accent-blue);
-            border-bottom-color: var(--accent-blue);
-        }
-
-        .auth-view {
-            display: none;
-        }
-
-        .auth-view.active {
-            display: block;
-        }
+        .auth-view { display: none; }
+        .auth-view.active { display: block; }
 
         .auth-input-group {
             display: flex;
@@ -272,22 +498,24 @@
             gap: 10px;
             margin: 15px 0;
         }
-
-        .auth-input-group .auth-input {
-            margin: 0;
-            flex: 1;
-        }
+        .auth-input-group .auth-input { margin: 0; flex: 1; }
 
         .auth-input {
             width: 100%;
-            padding: 10px;
+            padding: 10px 12px;
             margin: 15px 0;
             background-color: var(--bg-dark);
             border: 1px solid var(--border-color);
-            color: white;
+            color: var(--text-main);
             border-radius: 4px;
             box-sizing: border-box;
+            font-family: inherit;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.15s;
         }
+        .auth-input:focus { border-color: var(--accent-blue); }
+        .auth-input::placeholder { color: var(--text-muted); }
 
         .auth-file-btn {
             width: 40px;
@@ -300,14 +528,13 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 1.5rem;
+            font-size: 1.4rem;
             font-weight: bold;
-            transition: background-color 0.2s;
+            transition: background-color 0.15s;
+            padding: 0;
+            flex-shrink: 0;
         }
-
-        .auth-file-btn:hover {
-            background-color: rgba(56, 189, 248, 0.1);
-        }
+        .auth-file-btn:hover { background-color: rgba(56, 189, 248, 0.1); }
 
         .auth-btn {
             background-color: var(--accent-blue);
@@ -318,45 +545,90 @@
             cursor: pointer;
             font-weight: 600;
             width: 100%;
+            font-family: inherit;
+            font-size: 0.9rem;
+            transition: background-color 0.15s;
+        }
+        .auth-btn:hover { background-color: #7dd3fc; }
+        .auth-btn:active { transform: translateY(1px); }
+        .auth-btn[disabled] { opacity: 0.6; cursor: not-allowed; }
+
+        .auth-error {
+            background-color: rgba(248, 113, 113, 0.1);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            color: var(--accent-red);
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 10px 0 0;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        .auth-hint {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 12px;
+        }
+
+        /* Scrollbar polish */
+        .trace-list-container::-webkit-scrollbar { width: 8px; }
+        .trace-list-container::-webkit-scrollbar-thumb { background-color: var(--border-color); border-radius: 4px; }
+        .trace-list-container::-webkit-scrollbar-thumb:hover { background-color: var(--border-strong); }
+
+        /* Responsive */
+        @media (max-width: 700px) {
+            .sidebar { width: 260px; }
+            .topbar { padding: 0 12px; }
+            .logo { font-size: 1.05rem; }
+            .content-header { padding: 8px 12px; font-size: 0.8rem; }
+            .content-header .icon-btn { padding: 4px 6px; font-size: 0.75rem; }
+            .content-header .icon-btn span:not([aria-hidden]) { display: none; }
         }
     </style>
 </head>
 <body>
 
-    <div id="authOverlay" class="auth-overlay">
+    <div id="authOverlay" class="auth-overlay" hidden>
         <div class="auth-box">
-            <h2 style="margin-top:0;color:var(--accent-blue);">Authentication Required</h2>
+            <h2>Authentication Required</h2>
 
             <div id="authTabsContainer" class="auth-tabs" style="display: none;">
-                <button id="tabKey" class="auth-tab active" onclick="app.switchAuthTab('key')">Key</button>
-                <button id="tabCredentials" class="auth-tab" onclick="app.switchAuthTab('credentials')">Credentials</button>
+                <button id="tabKey" type="button" class="auth-tab active" onclick="app.switchAuthTab('key')">Key</button>
+                <button id="tabCredentials" type="button" class="auth-tab" onclick="app.switchAuthTab('credentials')">Credentials</button>
             </div>
 
             <div id="authKeyView" class="auth-view active">
                 <div class="auth-input-group">
-                    <input type="password" id="authKey" class="auth-input" placeholder="Enter Authorization Key" />
-                    <button class="auth-file-btn" onclick="document.getElementById('authFileInput').click()">+</button>
+                    <input type="password" id="authKey" class="auth-input" placeholder="Enter Authorization Key" autocomplete="off" />
+                    <button type="button" class="auth-file-btn" onclick="document.getElementById('authFileInput').click()" aria-label="Load key from file" title="Load key from file">+</button>
                     <input type="file" id="authFileInput" style="display: none;" accept=".txt,.key,text/plain" onchange="app.handleFileUpload(event)" />
                 </div>
             </div>
 
             <div id="authCredentialsView" class="auth-view">
-                <input type="text" id="authUsername" class="auth-input" placeholder="Username" style="margin-bottom: 10px;" />
-                <input type="password" id="authPassword" class="auth-input" placeholder="Password" style="margin-top: 0; margin-bottom: 15px;" />
+                <input type="text" id="authUsername" class="auth-input" placeholder="Username" autocomplete="username" />
+                <input type="password" id="authPassword" class="auth-input" placeholder="Password" autocomplete="current-password" />
             </div>
 
-            <button class="auth-btn" onclick="app.login()">Connect</button>
+            <button id="authSubmitBtn" type="button" class="auth-btn" onclick="app.login()">Connect</button>
+            <div id="authError" class="auth-error" role="alert" hidden></div>
+            <div id="authHint" class="auth-hint" hidden></div>
         </div>
     </div>
 
     <div class="topbar">
         <div class="logo">
-            <div class="logo-icon"></div>
+            <div class="logo-icon" aria-hidden="true"></div>
             TPipe TraceServer
         </div>
-        <div class="status-container">
-            <span id="connectionStatusText">Connecting...</span>
-            <div id="liveIndicator" class="live-indicator" style="background-color: var(--accent-amber); box-shadow: 0 0 8px var(--accent-amber);"></div>
+        <div class="topbar-actions">
+            <div id="statusContainer" class="status-container is-reconnecting">
+                <span id="connectionStatusText">Connecting...</span>
+                <div class="live-indicator" aria-hidden="true"></div>
+            </div>
+            <button id="logoutBtn" type="button" class="icon-btn" onclick="app.logout()" hidden title="Disconnect">
+                <span aria-hidden="true">⏻</span> Logout
+            </button>
         </div>
     </div>
 
@@ -364,23 +636,58 @@
         <div class="sidebar">
             <div class="sidebar-header">
                 <span>Recent Traces</span>
-                <span id="traceCount">0</span>
+                <div class="header-actions">
+                    <span id="traceCount" class="trace-count-pill" title="Visible / total traces">0 / 0</span>
+                    <button id="refreshBtn" type="button" class="icon-btn" onclick="app.refresh()" title="Refresh trace list" aria-label="Refresh trace list">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <polyline points="1 20 1 14 7 14"></polyline>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                        </svg>
+                    </button>
+                </div>
             </div>
-            <div style="padding: 10px 15px; border-bottom: 1px solid var(--border-color);">
-                <input type="text" id="searchInput" placeholder="Search traces..." style="width: 100%; padding: 8px; background-color: var(--bg-dark); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 4px; box-sizing: border-box; font-family: inherit;">
+
+            <div class="filter-bar">
+                <div class="search-row" id="searchRow">
+                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" id="searchInput" class="search-input" placeholder="Search traces by name, id, or status..." />
+                    <button type="button" class="search-clear" onclick="app.clearSearch()" aria-label="Clear search" title="Clear">×</button>
+                </div>
+                <div class="filter-chips" id="filterChips" role="group" aria-label="Filter by status">
+                    <button type="button" class="chip all active" data-status="" onclick="app.setStatusFilter('')">All</button>
+                    <button type="button" class="chip success" data-status="SUCCESS" onclick="app.setStatusFilter('SUCCESS')">Success</button>
+                    <button type="button" class="chip failure" data-status="FAILURE" onclick="app.setStatusFilter('FAILURE')">Failure</button>
+                    <button type="button" class="chip pending" data-status="PENDING" onclick="app.setStatusFilter('PENDING')">Pending</button>
+                </div>
             </div>
-            <div id="traceList">
+
+            <div id="traceList" class="trace-list-container">
                 <!-- Trace items injected here -->
             </div>
         </div>
 
         <div class="content">
-            <div class="content-header" id="contentHeader">Select a trace to view details</div>
+            <div class="content-header">
+                <span id="contentHeader">Select a trace to view details</span>
+                <div class="header-actions">
+                    <button id="openRawBtn" type="button" class="icon-btn" onclick="app.openTraceInNewTab()" hidden title="Open in new tab">
+                        <span aria-hidden="true">↗</span> Open
+                    </button>
+                    <button id="deleteTraceBtn" type="button" class="icon-btn" onclick="app.deleteActiveTrace()" hidden title="Delete this trace">
+                        <span aria-hidden="true">🗑</span> Delete
+                    </button>
+                </div>
+            </div>
             <div id="emptyState" class="empty-state">
                 <div class="empty-icon">📊</div>
-                <div>Waiting for trace executions...</div>
+                <div>Select a trace from the sidebar to view details</div>
+                <button type="button" class="icon-btn" onclick="app.refresh()">Refresh list</button>
             </div>
-            <iframe id="trace-frame" style="display:none;"></iframe>
+            <iframe id="trace-frame" sandbox="allow-same-origin" style="display:none;" title="Trace visualization"></iframe>
         </div>
     </div>
 

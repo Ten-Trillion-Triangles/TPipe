@@ -1,64 +1,162 @@
+/**
+ * TPipe Trace Dashboard.
+ *
+ * Responsibilities:
+ *   - Authenticate the dashboard user via the v2 `/api/auth/login` endpoint
+ *     (and refresh via `/api/auth/refresh` when the access token expires).
+ *   - Fetch the trace summary list, render it, and live-update it via the
+ *     `/ws/traces` WebSocket channel.
+ *   - Load the full trace payload on click and render it inside the sandboxed
+ *     iframe.
+ *   - Provide search, status filtering, manual refresh, and per-trace delete.
+ *
+ * v2 wire format reference (see TraceServer.kt for the authoritative shape):
+ *   - GET /api/traces -> { items: TraceSummary[], total, limit, offset }
+ *   - GET /api/traces/{id} -> TracePayload { pipelineId, htmlContent, name, status, tags }
+ *   - DELETE /api/traces/{id} -> 204 No Content on success, 404 otherwise.
+ */
 class TraceDashboard {
     constructor() {
         this.traces = [];
+        this.totalTraces = 0;
+        this.unfilteredTotalTraces = 0; // size of the current fetch (server `total`)
+        this.unfilteredTotalTraces = 0; // size of the most recent unfiltered fetch
         this.activeTraceId = null;
+        this.activeTraceName = null;
         this.ws = null;
         this.sessionToken = localStorage.getItem('tpipe_session') || '';
+        this.refreshToken = localStorage.getItem('tpipe_refresh') || '';
         this.baseUrl = window.location.origin;
         this.isConnected = false;
         this.searchQuery = '';
-        this.authMode = 'KEY'; // Default
+        this.statusFilter = '';
+        this.authMode = 'KEY';
         this.activeAuthTab = 'key';
+        this.reconnectAttempts = 0;
+        this.reconnectTimer = null;
+        this.isFetching = false;
+        this.isLoggingIn = false;
 
         this.elements = {
             authOverlay: document.getElementById('authOverlay'),
             authInput: document.getElementById('authKey'),
             authUsername: document.getElementById('authUsername'),
             authPassword: document.getElementById('authPassword'),
+            authError: document.getElementById('authError'),
+            authHint: document.getElementById('authHint'),
+            authSubmitBtn: document.getElementById('authSubmitBtn'),
             searchInput: document.getElementById('searchInput'),
+            searchRow: document.getElementById('searchRow'),
+            searchClear: document.querySelector('.search-clear'),
             traceList: document.getElementById('traceList'),
             traceCount: document.getElementById('traceCount'),
             traceFrame: document.getElementById('trace-frame'),
             contentHeader: document.getElementById('contentHeader'),
             emptyState: document.getElementById('emptyState'),
-            liveIndicator: document.getElementById('liveIndicator'),
-            statusText: document.getElementById('connectionStatusText')
+            statusContainer: document.getElementById('statusContainer'),
+            statusText: document.getElementById('connectionStatusText'),
+            logoutBtn: document.getElementById('logoutBtn'),
+            refreshBtn: document.getElementById('refreshBtn'),
+            deleteTraceBtn: document.getElementById('deleteTraceBtn'),
+            openRawBtn: document.getElementById('openRawBtn'),
+            filterChips: document.getElementById('filterChips')
         };
 
-        if (this.elements.searchInput) {
-            this.elements.searchInput.addEventListener('input', (e) => {
-                this.searchQuery = e.target.value.toLowerCase();
-                this.renderTraceList();
-            });
-        }
+        this._wireEvents();
+        this._applyFilterChipState();
 
         if (this.sessionToken) {
-            // Delay auth test to ensure DOM is ready
+            // Defer so the DOM is fully ready before we paint anything.
             setTimeout(() => {
                 this.fetchAuthConfig();
                 this.fetchTraces();
-            }, 100);
+            }, 50);
         } else {
-            this.elements.authOverlay.style.display = 'flex';
+            this.showAuthOverlay();
             this.fetchAuthConfig();
         }
     }
 
-    fetchAuthConfig() {
-        fetch(`${this.baseUrl}/api/auth/config`)
-            .then(res => res.json())
-            .then(data => {
-                this.authMode = data.mode;
-                this.configureAuthUI();
-            })
-            .catch(err => console.error('Failed to fetch auth config:', err));
+    _wireEvents() {
+        const search = this.elements.searchInput;
+        if (search) {
+            search.addEventListener('input', (e) => {
+                this.searchQuery = e.target.value.trim().toLowerCase();
+                this._updateSearchClearVisibility();
+                this.renderTraceList();
+            });
+        }
+
+        // Enter inside any auth input submits the form.
+        for (const id of ['authKey', 'authUsername', 'authPassword']) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.login();
+                    }
+                });
+            }
+        }
+    }
+
+    // ----------------------- Auth UI helpers -----------------------
+
+    showAuthOverlay() {
+        this.elements.authOverlay.hidden = false;
+        // Reset the inline style we used to set in v1; the new code relies on
+        // the `hidden` attribute so the CSS `.auth-overlay[hidden]` rule
+        // takes effect.
+        this.elements.authOverlay.style.display = '';
+        // Focus the first visible input so the user can type immediately.
+        setTimeout(() => {
+            const visibleInput = this.activeAuthTab === 'key'
+                ? this.elements.authInput
+                : this.elements.authUsername;
+            if (visibleInput) visibleInput.focus();
+        }, 30);
+    }
+
+    hideAuthOverlay() {
+        this.elements.authOverlay.hidden = true;
+        this.elements.authOverlay.style.display = 'none';
+        this.elements.logoutBtn.hidden = false;
+        this.clearAuthError();
+    }
+
+    showAuthError(message) {
+        this.elements.authError.textContent = message;
+        this.elements.authError.hidden = false;
+    }
+
+    clearAuthError() {
+        this.elements.authError.textContent = '';
+        this.elements.authError.hidden = true;
+    }
+
+    setAuthBusy(busy) {
+        this.isLoggingIn = busy;
+        this.elements.authSubmitBtn.disabled = busy;
+        this.elements.authSubmitBtn.textContent = busy ? 'Connecting...' : 'Connect';
+    }
+
+    // ----------------------- Network: auth -----------------------
+
+    async fetchAuthConfig() {
+        try {
+            const res = await fetch(`${this.baseUrl}/api/auth/config`);
+            if (!res.ok) return;
+            const data = await res.json();
+            this.authMode = data.mode || 'KEY';
+            this.configureAuthUI();
+        } catch (err) {
+            console.error('Failed to fetch auth config:', err);
+        }
     }
 
     configureAuthUI() {
         const tabsContainer = document.getElementById('authTabsContainer');
-        const keyView = document.getElementById('authKeyView');
-        const credentialsView = document.getElementById('authCredentialsView');
-
         if (this.authMode === 'BOTH') {
             tabsContainer.style.display = 'flex';
             this.switchAuthTab('key');
@@ -66,9 +164,20 @@ class TraceDashboard {
             tabsContainer.style.display = 'none';
             this.switchAuthTab('credentials');
         } else {
-            // Default KEY
             tabsContainer.style.display = 'none';
             this.switchAuthTab('key');
+        }
+        this._updateAuthHint();
+    }
+
+    _updateAuthHint() {
+        const hint = this.elements.authHint;
+        if (!hint) return;
+        if (this.authMode === 'CREDENTIALS') {
+            hint.textContent = 'Sign in with your TPipe account credentials.';
+            hint.hidden = false;
+        } else {
+            hint.hidden = true;
         }
     }
 
@@ -84,7 +193,7 @@ class TraceDashboard {
             credentialsView.classList.remove('active');
             if (tabKey) tabKey.classList.add('active');
             if (tabCredentials) tabCredentials.classList.remove('active');
-        } else if (tab === 'credentials') {
+        } else {
             credentialsView.classList.add('active');
             keyView.classList.remove('active');
             if (tabCredentials) tabCredentials.classList.add('active');
@@ -97,219 +206,664 @@ class TraceDashboard {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
-            const contents = e.target.result;
-            this.elements.authInput.value = contents.trim();
+            const contents = (e.target.result || '').trim();
+            this.elements.authInput.value = contents;
+            this.elements.authInput.focus();
         };
         reader.readAsText(file);
     }
 
-    login() {
+    async login() {
+        if (this.isLoggingIn) return;
+        this.clearAuthError();
+
         let payload;
         if (this.activeAuthTab === 'key') {
-            payload = { key: this.elements.authInput.value };
+            const key = this.elements.authInput.value.trim();
+            if (!key) {
+                this.showAuthError('Please enter an authorization key.');
+                return;
+            }
+            payload = { key };
         } else {
-            payload = {
-                username: this.elements.authUsername.value,
-                password: this.elements.authPassword.value
-            };
+            const username = this.elements.authUsername.value.trim();
+            const password = this.elements.authPassword.value;
+            if (!username || !password) {
+                this.showAuthError('Please enter both username and password.');
+                return;
+            }
+            payload = { username, password };
         }
 
-        fetch(`${this.baseUrl}/api/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        })
-        .then(res => {
-            if (!res.ok) throw new Error('Invalid credentials');
-            return res.json();
-        })
-        .then(data => {
+        this.setAuthBusy(true);
+        try {
+            const res = await fetch(`${this.baseUrl}/api/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) {
+                let message = 'Invalid credentials';
+                try {
+                    const body = await res.json();
+                    if (body && body.message) message = body.message;
+                } catch (_) { /* fall back to default */ }
+                throw new Error(message);
+            }
+            const data = await res.json();
             this.sessionToken = data.token;
             localStorage.setItem('tpipe_session', this.sessionToken);
-            this.elements.authOverlay.style.display = 'none';
-            this.fetchTraces();
-        })
-        .catch(err => {
+            if (data.refreshToken) {
+                this.refreshToken = data.refreshToken;
+                localStorage.setItem('tpipe_refresh', this.refreshToken);
+            } else {
+                this.refreshToken = '';
+                localStorage.removeItem('tpipe_refresh');
+            }
+            this.hideAuthOverlay();
+            await this.fetchTraces();
+        } catch (err) {
             console.error('Login failed:', err);
-            alert('Login Failed: ' + err.message);
-        });
-    }
-
-    fetchTraces() {
-        fetch(`${this.baseUrl}/api/traces`, {
-            headers: { 'Authorization': `Bearer ${this.sessionToken}` }
-        })
-        .then(res => {
-            if (res.status === 401) {
-                this.logout();
-                throw new Error('Unauthorized');
-            }
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return res.json();
-        })
-        .then(data => {
-            this.elements.authOverlay.style.display = 'none';
-            this.traces = data;
-            this.renderTraceList();
-            this.connectWebSocket();
-        })
-        .catch(err => {
-            console.error('Fetch traces failed:', err);
-            if (err.message !== 'Unauthorized') {
-                this.updateStatus('Disconnected', 'var(--accent-red)');
-            }
-        });
+            this.showAuthError(err.message || 'Login failed.');
+        } finally {
+            this.setAuthBusy(false);
+        }
     }
 
     logout() {
         this.sessionToken = '';
+        this.refreshToken = '';
         localStorage.removeItem('tpipe_session');
-        this.elements.authOverlay.style.display = 'flex';
-        this.updateStatus('Disconnected', 'var(--accent-red)');
+        localStorage.removeItem('tpipe_refresh');
+        this.traces = [];
+        this.totalTraces = 0; // size of the current fetch (server `total`)
+        this.unfilteredTotalTraces = 0; // size of the most recent unfiltered fetch
+        this.activeTraceId = null;
+        this.activeTraceName = null;
+        this.reconnectAttempts = 0;
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
         if (this.ws) {
-            this.ws.close();
+            try { this.ws.close(); } catch (_) {}
             this.ws = null;
+        }
+        this.elements.logoutBtn.hidden = true;
+        this.elements.deleteTraceBtn.hidden = true;
+        this.elements.openRawBtn.hidden = true;
+        this.elements.traceFrame.style.display = 'none';
+        this.elements.contentHeader.textContent = 'Select a trace to view details';
+        this._renderActiveTags(null);
+        this.renderTraceList();
+        this._renderEmptyState({
+            icon: '📊',
+            message: 'Select a trace from the sidebar to view details'
+        });
+        this.setStatus('Disconnected', 'disconnected');
+        this.showAuthOverlay();
+    }
+
+    // ----------------------- Network: traces -----------------------
+
+    _buildTracesUrl() {
+        const params = new URLSearchParams();
+        params.set('limit', '200');
+        if (this.statusFilter) params.set('status', this.statusFilter);
+        if (this.searchQuery) params.set('q', this.searchQuery);
+        return `${this.baseUrl}/api/traces?${params.toString()}`;
+    }
+
+    async fetchTraces() {
+        if (this.isFetching) return;
+        this.isFetching = true;
+        this._setRefreshBusy(true);
+        try {
+            const res = await fetch(this._buildTracesUrl(), {
+                headers: { 'Authorization': `Bearer ${this.sessionToken}` }
+            });
+            if (res.status === 401) {
+                this.logout();
+                return;
+            }
+            if (!res.ok) {
+                throw new Error(`Failed to load traces (HTTP ${res.status})`);
+            }
+            const data = await res.json();
+            // BUG FIX: the v2 endpoint returns `{items, total, limit, offset}`,
+            // not a bare array. v1 code assigned `data` directly to `this.traces`
+            // which caused `.filter` to throw and broke the entire UI on first
+            // load (no traces rendered, WebSocket never connected).
+            this.traces = Array.isArray(data.items) ? data.items : [];
+            this.totalTraces = typeof data.total === 'number' ? data.total : this.traces.length;
+            if (!this.statusFilter && !this.searchQuery) {
+                this.unfilteredTotalTraces = this.totalTraces;
+            }
+            this.renderTraceList();
+            this._connectWebSocketWithBackoff();
+            // If the active trace was deleted on the server, clear the panel.
+            if (this.activeTraceId && !this.traces.some(t => t.id === this.activeTraceId)) {
+                this._clearActiveTrace();
+            }
+        } catch (err) {
+            console.error('Fetch traces failed:', err);
+            this.setStatus('Disconnected', 'disconnected');
+            this._renderEmptyState({
+                icon: '⚠️',
+                message: err.message || 'Could not load traces',
+                error: true,
+                action: { label: 'Retry', onClick: () => this.fetchTraces() }
+            });
+        } finally {
+            this.isFetching = false;
+            this._setRefreshBusy(false);
         }
     }
 
-    connectWebSocket() {
-        if (this.ws) {
-            this.ws.close();
+    refresh() {
+        return this.fetchTraces();
+    }
+
+    async deleteTraceById(id) {
+        if (!id) return;
+        const trace = this.traces.find(t => t.id === id);
+        const label = trace ? trace.name : id;
+        if (!confirm(`Delete trace "${label}"? This cannot be undone.`)) return;
+        try {
+            const res = await fetch(`${this.baseUrl}/api/traces/${encodeURIComponent(id)}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${this.sessionToken}` }
+            });
+            if (res.status === 401) {
+                this.logout();
+                return;
+            }
+            if (res.status === 404) {
+                // Already gone on the server; treat as success locally.
+            } else if (!res.ok) {
+                throw new Error(`Delete failed (HTTP ${res.status})`);
+            }
+            this.traces = this.traces.filter(t => t.id !== id);
+            this.totalTraces = Math.max(0, this.totalTraces - 1);
+            this.unfilteredTotalTraces = Math.max(0, this.unfilteredTotalTraces - 1);
+            if (this.activeTraceId === id) {
+                this._clearActiveTrace();
+            }
+            this.renderTraceList();
+        } catch (err) {
+            console.error('Delete failed:', err);
+            // Surface the error in the content area so the user keeps
+            // their context (the auth overlay is gone, no need for an
+            // alert() that blocks the dashboard).
+            this.elements.contentHeader.textContent = `Error deleting trace`;
+            this._renderEmptyState({
+                icon: '⚠️',
+                message: err.message || 'Could not delete trace',
+                error: true
+            });
         }
+    }
 
+    deleteActiveTrace() {
+        if (this.activeTraceId) {
+            this.deleteTraceById(this.activeTraceId);
+        }
+    }
+
+    openTraceInNewTab() {
+        if (!this.activeTraceId) return;
+        const url = `${this.baseUrl}/api/traces/${encodeURIComponent(this.activeTraceId)}`;
+        // Open the JSON payload directly in a new tab; useful for inspecting
+        // raw trace data or saving it to disk.
+        window.open(url, '_blank', 'noopener');
+    }
+
+    // ----------------------- Network: WebSocket -----------------------
+
+    _connectWebSocketWithBackoff() {
+        if (!this.sessionToken) return;
+        if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+        this.connectWebSocket();
+    }
+
+    connectWebSocket() {
+        if (!this.sessionToken) return;
+        if (this.ws) {
+            try { this.ws.close(); } catch (_) {}
+            this.ws = null;
+        }
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        this.ws = new WebSocket(`${protocol}//${window.location.host}/ws/traces?token=${this.sessionToken}`);
+        this.setStatus('Reconnecting...', 'reconnecting');
+        let ws;
+        try {
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/traces?token=${encodeURIComponent(this.sessionToken)}`);
+        } catch (err) {
+            console.error('WebSocket construction failed:', err);
+            this._scheduleReconnect();
+            return;
+        }
+        this.ws = ws;
 
-        this.ws.onopen = () => {
+        ws.onopen = () => {
             this.isConnected = true;
-            this.updateStatus('Live', 'var(--accent-green)');
+            this.reconnectAttempts = 0;
+            this.setStatus('Live', 'live');
         };
 
-        this.ws.onmessage = (event) => {
+        ws.onmessage = (event) => {
             try {
-                const newTrace = JSON.parse(event.data);
-                this.traces.unshift(newTrace);
-                this.renderTraceList();
+                const payload = JSON.parse(event.data);
+                this._handleWsMessage(payload);
             } catch (e) {
                 console.error('Failed to parse WS message', e);
             }
         };
 
-        this.ws.onclose = (event) => {
+        ws.onclose = (event) => {
             this.isConnected = false;
-            this.updateStatus('Disconnected', 'var(--accent-red)');
-
-            if (event.code === 1008) { // Policy Violation (Unauthorized)
-                 this.logout();
-                 return;
+            this.ws = null;
+            if (event.code === 1008) {
+                // Policy violation = auth failure; bounce the user back to the
+                // login screen.
+                this.logout();
+                return;
             }
-
-            // Attempt reconnect after 3s
-            setTimeout(() => {
-                if(this.sessionToken && this.elements.authOverlay.style.display === 'none') {
-                    this.connectWebSocket();
-                }
-            }, 3000);
+            this.setStatus('Disconnected', 'disconnected');
+            this._scheduleReconnect();
         };
 
-        this.ws.onerror = (err) => {
-            console.error('WebSocket Error', err);
+        ws.onerror = (err) => {
+            console.error('WebSocket error', err);
         };
     }
 
-    updateStatus(text, color) {
+    _scheduleReconnect() {
+        if (!this.sessionToken) return;
+        if (this.elements.authOverlay && !this.elements.authOverlay.hidden) return;
+        if (this.reconnectTimer) return;
+        this.reconnectAttempts += 1;
+        // Exponential backoff with jitter, capped at 30s.
+        const base = Math.min(30_000, 1_000 * Math.pow(2, this.reconnectAttempts - 1));
+        const delay = base + Math.floor(Math.random() * 500);
+        this.setStatus('Reconnecting...', 'reconnecting');
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this.connectWebSocket();
+        }, delay);
+    }
+
+    _handleWsMessage(payload) {
+        if (!payload || typeof payload !== 'object') return;
+        // v1 wire: bare TraceSummary object.
+        // v2 wire: WebSocketEnvelope with `op` discriminator.
+        if (payload.op) {
+            if (payload.op === 'summary' && payload.id) {
+                this._upsertSummary(payload);
+            }
+            // Other ops (event, ack, error) are for future live streaming
+            // consumers and are ignored by the dashboard for now.
+            return;
+        }
+        if (payload.id && payload.status) {
+            this._upsertSummary(payload);
+        }
+    }
+
+    _upsertSummary(summary) {
+        const idx = this.traces.findIndex(t => t.id === summary.id);
+        if (idx === -1) {
+            this.traces.unshift(summary);
+            this.totalTraces += 1;
+            this.unfilteredTotalTraces += 1;
+        } else {
+            this.traces[idx] = { ...this.traces[idx], ...summary };
+        }
+        this.renderTraceList();
+    }
+
+    // ----------------------- UI state -----------------------
+
+    setStatus(text, kind) {
         this.elements.statusText.textContent = text;
-        this.elements.liveIndicator.style.backgroundColor = color;
-        this.elements.liveIndicator.style.boxShadow = `0 0 8px ${color}`;
+        const cls = this.elements.statusContainer.classList;
+        cls.remove('is-live', 'is-disconnected', 'is-reconnecting');
+        if (kind === 'live') cls.add('is-live');
+        else if (kind === 'disconnected') cls.add('is-disconnected');
+        else cls.add('is-reconnecting');
     }
+
+    _setRefreshBusy(busy) {
+        const btn = this.elements.refreshBtn;
+        if (!btn) return;
+        btn.disabled = busy;
+        btn.classList.toggle('is-busy', busy);
+    }
+
+    _renderEmptyState({ icon, message, error = false, action = null }) {
+        const el = this.elements.emptyState;
+        el.innerHTML = '';
+        const iconEl = document.createElement('div');
+        iconEl.className = 'empty-icon';
+        iconEl.textContent = icon || '📊';
+        const msgEl = document.createElement('div');
+        if (error) msgEl.classList.add('error-text');
+        msgEl.textContent = message || '';
+        el.appendChild(iconEl);
+        el.appendChild(msgEl);
+        if (action) {
+            const wrap = document.createElement('div');
+            wrap.className = 'empty-actions';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'icon-btn';
+            btn.textContent = action.label;
+            btn.addEventListener('click', action.onClick);
+            wrap.appendChild(btn);
+            el.appendChild(wrap);
+        }
+        el.style.display = 'flex';
+    }
+
+    _clearActiveTrace() {
+        this.activeTraceId = null;
+        this.activeTraceName = null;
+        this.elements.contentHeader.textContent = 'Select a trace to view details';
+        this.elements.traceFrame.style.display = 'none';
+        this.elements.deleteTraceBtn.hidden = true;
+        this.elements.openRawBtn.hidden = true;
+        this._renderActiveTags(null);
+        this._renderEmptyState({
+            icon: '📊',
+            message: 'Select a trace from the sidebar to view details'
+        });
+    }
+
+    _updateSearchClearVisibility() {
+        const hasValue = this.searchQuery.length > 0;
+        this.elements.searchRow.classList.toggle('has-value', hasValue);
+    }
+
+    clearSearch() {
+        this.elements.searchInput.value = '';
+        this.searchQuery = '';
+        this._updateSearchClearVisibility();
+        this.renderTraceList();
+    }
+
+    setStatusFilter(status) {
+        this.statusFilter = status || '';
+        this._applyFilterChipState();
+        this.fetchTraces();
+    }
+
+    _applyFilterChipState() {
+        const chips = this.elements.filterChips.querySelectorAll('.chip');
+        chips.forEach(chip => {
+            const isActive = (chip.dataset.status || '') === this.statusFilter;
+            chip.classList.toggle('active', isActive);
+        });
+    }
+
+    // ----------------------- Render -----------------------
 
     formatTime(timestamp) {
-        return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (!timestamp) return '';
+        const date = new Date(timestamp);
+        if (isNaN(date.getTime())) return '';
+        const now = new Date();
+        const deltaSec = Math.max(0, Math.floor((now - date) / 1000));
+        if (deltaSec < 5) return 'just now';
+        if (deltaSec < 60) return deltaSec + 's ago';
+        const deltaMin = Math.floor(deltaSec / 60);
+        if (deltaMin < 60) return deltaMin + 'm ago';
+        const sameDay = date.toDateString() === now.toDateString();
+        if (sameDay) {
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        const yesterday = new Date(now);
+        yesterday.setDate(now.getDate() - 1);
+        if (date.toDateString() === yesterday.toDateString()) {
+            return 'Yesterday ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        const ageDays = (now - date) / (1000 * 60 * 60 * 24);
+        if (ageDays < 7) {
+            return date.toLocaleDateString([], { weekday: 'short' }) + ' ' +
+                   date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        return date.toLocaleString([], {
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+    }
+
+    /**
+     * Escapes a string so it is safe to drop into HTML (attribute or text).
+     * The dashboard's `trace.id`, `trace.name`, and `trace.tags` come from a
+     * remote agent and must never be trusted as already-encoded.
+     */
+    escapeHtml(value) {
+        if (value == null) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
     renderTraceList() {
-        const filteredTraces = this.traces.filter(trace => {
+        const filtered = this.traces.filter(trace => {
             if (!this.searchQuery) return true;
-            return trace.name.toLowerCase().includes(this.searchQuery) ||
-                   trace.id.toLowerCase().includes(this.searchQuery) ||
-                   trace.status.toLowerCase().includes(this.searchQuery);
+            const haystack = [
+                trace.name, trace.id, trace.status, trace.pipelineId
+            ].filter(Boolean).join(' ').toLowerCase();
+            return haystack.includes(this.searchQuery);
         });
 
-        this.elements.traceCount.textContent = filteredTraces.length;
+        const pill = this.elements.traceCount;
+        const filterActive = Boolean(this.searchQuery || this.statusFilter);
+        const visible = filtered.length;
+        // `unfilteredTotalTraces` is the most recent count of every trace in
+        // the tenant, which is what users expect to see in the denominator
+        // when a filter is active. We never render the server's `total` here
+        // directly because it is scoped to the current filter query.
+        const total = this.unfilteredTotalTraces || this.totalTraces;
+        if (filterActive && visible !== total) {
+            pill.textContent = `${visible} / ${total}`;
+            pill.classList.add('filtered');
+        } else {
+            pill.textContent = String(visible);
+            pill.classList.remove('filtered');
+        }
 
-        if (filteredTraces.length === 0) {
-            this.elements.traceList.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted); font-size: 0.85rem;">No traces found</div>';
+        if (filtered.length === 0) {
+            const noFilter = this.traces.length === 0;
+            this.elements.traceList.innerHTML = `
+                <div class="empty-message">
+                    <div class="empty-emoji">${noFilter ? '📭' : '🔍'}</div>
+                    <div>${noFilter ? 'No traces have been recorded yet.' : 'No traces match the current filters.'}</div>
+                </div>
+            `;
             return;
         }
 
-        let html = '';
-        for(const trace of filteredTraces) {
-            const shortId = trace.id.substring(0, 8);
-            let statusClass = 'status-PENDING';
-            if (trace.status === 'SUCCESS') statusClass = 'status-SUCCESS';
-            if (trace.status === 'FAILURE') statusClass = 'status-FAILURE';
-
-            const isActive = this.activeTraceId === trace.id ? 'active' : '';
-
-            html += `
-                <div class="trace-item ${isActive}" onclick="app.loadTrace('${trace.id}')">
-                    <div class="trace-header">
-                        <span class="trace-name" title="${trace.name}">${trace.name}</span>
-                        <span class="trace-status ${statusClass}">${trace.status}</span>
-                    </div>
-                    <div class="trace-meta">
-                        <span class="trace-id">#${shortId}</span>
-                        <span>${this.formatTime(trace.timestamp)}</span>
-                    </div>
-                </div>
-            `;
-        }
+        const html = filtered.map(trace => this._renderTraceItem(trace)).join('');
         this.elements.traceList.innerHTML = html;
     }
 
-    loadTrace(id) {
-        this.activeTraceId = id;
-        this.renderTraceList(); // Update active highlight
+    _renderTraceItem(trace) {
+        const id = this.escapeHtml(trace.id);
+        const name = this.escapeHtml(trace.name || '(unnamed)');
+        const titleAttr = this.escapeHtml(trace.name || trace.id);
+        const rawStatus = (trace.status || 'UNKNOWN').toUpperCase();
+        const statusClass = `status-${['SUCCESS', 'FAILURE', 'PENDING'].includes(rawStatus) ? rawStatus : 'UNKNOWN'}`;
+        const shortId = (trace.id || '').substring(0, 8);
+        const tagsHtml = this._renderTraceTags(trace.tags);
+        const isActive = this.activeTraceId === trace.id ? 'active' : '';
 
+        return `
+            <div class="trace-item ${isActive}" data-trace-id="${id}">
+                <div class="trace-header">
+                    <span class="trace-name" title="${titleAttr}">${name}</span>
+                    <span class="trace-status ${statusClass}">${this.escapeHtml(rawStatus)}</span>
+                </div>
+                <div class="trace-meta">
+                    <span class="trace-id">#${this.escapeHtml(shortId)}</span>
+                    <span>${this.escapeHtml(this.formatTime(trace.timestamp))}</span>
+                </div>
+                ${tagsHtml}
+                <button type="button" class="trace-delete" data-action="delete" data-trace-id="${id}" aria-label="Delete trace ${titleAttr}" title="Delete trace">×</button>
+            </div>
+        `;
+    }
+
+    _renderTraceTags(tags) {
+        if (!tags || typeof tags !== 'object') return '';
+        const entries = Object.entries(tags);
+        if (entries.length === 0) return '';
+        const items = entries.map(([k, v]) => {
+            const key = this.escapeHtml(k);
+            const val = this.escapeHtml(v);
+            return `<span class="trace-tag">${key}:${val}</span>`;
+        }).join('');
+        return `<div class="trace-tags">${items}</div>`;
+    }
+
+    // ----------------------- Click delegation -----------------------
+
+    // The trace list HTML is regenerated on every render, so instead of
+    // attaching a fresh onclick handler per item we delegate clicks from
+    // the list container. This also dodges the XSS risk of interpolating
+    // untrusted `trace.id` into an `onclick="..."` string.
+    bindTraceListClicks() {
+        // (Re)bound once during construction; the list element is stable.
+    }
+
+    handleTraceListClick(event) {
+        const deleteBtn = event.target.closest('[data-action="delete"]');
+        if (deleteBtn) {
+            event.stopPropagation();
+            const id = deleteBtn.dataset.traceId;
+            if (id) this.deleteTraceById(id);
+            return;
+        }
+        const item = event.target.closest('.trace-item');
+        if (item) {
+            const id = item.dataset.traceId;
+            if (id) this.loadTrace(id);
+        }
+    }
+
+    async loadTrace(id) {
+        if (!id) return;
+        this.activeTraceId = id;
+        this.renderTraceList();
         this.elements.emptyState.style.display = 'none';
         this.elements.contentHeader.textContent = `Loading trace ${id}...`;
+        this.elements.deleteTraceBtn.hidden = false;
+        this.elements.openRawBtn.hidden = false;
+        this._renderActiveTags(null);
 
-        fetch(`${this.baseUrl}/api/traces/${id}`, {
-            headers: { 'Authorization': `Bearer ${this.sessionToken}` }
-        })
-        .then(res => {
+        try {
+            const res = await fetch(`${this.baseUrl}/api/traces/${encodeURIComponent(id)}`, {
+                headers: { 'Authorization': `Bearer ${this.sessionToken}` }
+            });
             if (res.status === 401) {
                 this.logout();
-                throw new Error('Unauthorized');
+                return;
             }
-            if (!res.ok) throw new Error('Trace not found');
-            return res.json();
-        })
-        .then(trace => {
-            this.elements.contentHeader.textContent = `Trace: ${trace.name} [${trace.pipelineId}]`;
-
+            if (res.status === 404) {
+                throw new Error('Trace not found');
+            }
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+            const trace = await res.json();
+            this.activeTraceId = trace.pipelineId || id;
+            this.activeTraceName = trace.name || trace.pipelineId;
+            this.elements.contentHeader.textContent = `Trace: ${trace.name || trace.pipelineId}  [${trace.pipelineId}]`;
+            this._renderActiveTags(trace.tags);
             this.elements.traceFrame.style.display = 'block';
 
+            const html = trace.htmlContent && trace.htmlContent.trim().length > 0
+                ? trace.htmlContent
+                : this._emptyTraceHtml(trace);
+
             if ('srcdoc' in this.elements.traceFrame) {
-                this.elements.traceFrame.srcdoc = trace.htmlContent;
+                this.elements.traceFrame.srcdoc = html;
             } else {
                 const frameDoc = this.elements.traceFrame.contentDocument || this.elements.traceFrame.contentWindow.document;
                 frameDoc.open();
-                frameDoc.write(trace.htmlContent);
+                frameDoc.write(html);
                 frameDoc.close();
             }
-        })
-        .catch(err => {
+        } catch (err) {
             console.error('Failed to load trace:', err);
-            this.elements.contentHeader.textContent = `Error: ${err.message}`;
+            this.elements.contentHeader.textContent = `Error loading trace`;
             this.elements.traceFrame.style.display = 'none';
-            this.elements.emptyState.style.display = 'flex';
-            this.elements.emptyState.innerHTML = `<div class="empty-icon">❌</div><div>${err.message}</div>`;
-        });
+            this._renderEmptyState({
+                icon: '⚠️',
+                message: err.message || 'Could not load trace',
+                error: true,
+                action: { label: 'Retry', onClick: () => this.loadTrace(id) }
+            });
+        }
+    }
+
+    _renderActiveTags(tags) {
+        // Reuse the trace-tag styling for the active-trace header so users
+        // can see the assigned metadata without opening the JSON.
+        const headerEl = this.elements.contentHeader;
+        const headerBar = headerEl.parentNode; // the .content-header <div>
+        const contentArea = headerBar.parentNode; // the .content <div>
+        // Remove the previous tags row if any.
+        const old = contentArea.querySelector('.active-tags');
+        if (old) old.remove();
+        if (!tags || typeof tags !== 'object') return;
+        const entries = Object.entries(tags);
+        if (entries.length === 0) return;
+        const row = document.createElement('div');
+        row.className = 'active-tags';
+        for (const [k, v] of entries) {
+            const chip = document.createElement('span');
+            chip.className = 'trace-tag';
+            chip.textContent = `${k}:${v}`;
+            row.appendChild(chip);
+        }
+        // Insert the row between the header bar and the iframe/empty-state
+        // so it lives in the .content flex column and doesn't break the
+        // header's own internal flex layout.
+        contentArea.insertBefore(row, headerBar.nextSibling);
+    }
+
+    _emptyTraceHtml(trace) {
+        const name = this.escapeHtml(trace && trace.name ? trace.name : '(unnamed)');
+        const status = this.escapeHtml(trace && trace.status ? trace.status : 'UNKNOWN');
+        return `<!doctype html><html><head><meta charset="utf-8"><title>Empty trace</title>
+<style>
+body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f111a; color: #e2e8f0; display: flex; align-items: center; justify-content: center; height: 100vh; }
+.box { text-align: center; max-width: 360px; padding: 24px; }
+h1 { font-size: 1.1rem; color: #94a3b8; margin: 0 0 8px; }
+p { font-size: 0.9rem; color: #64748b; margin: 0; }
+</style></head><body>
+<div class="box">
+<h1>No visualization payload</h1>
+<p>Trace <strong>${name}</strong> has status <strong>${status}</strong> but no <code>htmlContent</code> was provided.</p>
+</div>
+</body></html>`;
     }
 }
 
+// Single global instance used by the inline `onclick` handlers and for
+// cross-frame debugging.
 let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new TraceDashboard();
+    // Click delegation for the trace list. Safe to bind once: the list
+    // container is stable, only its inner HTML changes on re-render.
+    const list = document.getElementById('traceList');
+    if (list) {
+        list.addEventListener('click', (e) => app.handleTraceListClick(e));
+    }
 });
