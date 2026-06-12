@@ -12,6 +12,9 @@ import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Util.deserialize
 import com.TTT.Util.extractJson
+import com.TTT.Debug.PipeTracer
+import com.TTT.Debug.RemoteTraceConfig
+import com.TTT.Debug.TraceFormat
 import com.TTT.Util.serialize
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
@@ -1776,6 +1779,34 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
         turnIndex = 0,
         originalInput = content
     ))
+
+    // No-exit-signal advisory: emit a HarnessWarning when the developer has configured
+    // NONE of the three legitimate exit mechanisms. Respects intentional configurations
+    // (FlagTriggered + path-bound requestJudgeNextTurn, or a single-turn maxTurns budget).
+    val hasJudge = judgeAgent != null || judgeAgentBuilderFunction != null
+    val isFlagTriggered = judgeRunModeInternal == PumpStationJudgeRunMode.FlagTriggered
+    val allowsLongRun = maxHarnessTurnsInternal > 1
+    if (!hasJudge && !isFlagTriggered && allowsLongRun)
+    {
+        emitEventInternal(HarnessWarning(
+            runId = taskState.runId,
+            turnIndex = 0,
+            code = WarningCode.NoExitSignalConfigured,
+            message = "No exit signal configured. Harness will run until maxHarnessTurns " +
+                "and fail with MaxTurnsExceeded. Configure one of: " +
+                "(1) judge agent, " +
+                "(2) requestJudgeNextTurn() bound to a path with judgeRunMode = FlagTriggered, " +
+                "(3) passPipeline = true on a path result for success exit, " +
+                "(4) terminatePipeline = true for failure exit.",
+            mechanisms = listOf(
+                ExitMechanism.JudgeAlways,
+                ExitMechanism.JudgeFlagTriggered,
+                ExitMechanism.PathPassPipeline,
+                ExitMechanism.PathTerminatePipeline
+            )
+        ))
+    }
+
     taskState.phase = PumpStationPhase.Judge
 }
 
@@ -1948,7 +1979,11 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
         PumpStationError.MaxTurnsExceeded,
         PumpStationError.KillSwitchTripped,
         PumpStationError.P2PRequestInvalid,
-        PumpStationError.InitNotCalled
+        PumpStationError.InitNotCalled,
+        // v3: CompactionInflated is set by handOffToTruncation when the retry budget is exhausted.
+        // Treat it as a failure so callers see status=Failed (not Completed) when a mid-loop
+        // compaction blowout happened.
+        PumpStationError.CompactionInflated
     )
 
     if (isFailure)
@@ -1970,6 +2005,15 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
             finalOutput = taskState.latestContent
         ))
         taskState.status = PumpStationStatus.Completed
+    }
+
+    // v3: auto-dispatch the trace to the TPipe-TraceServer when both tracing and
+    // RemoteTraceConfig.dispatchAutomatically are enabled. PipeTracer.exportTrace
+    // already gates on dispatchAutomatically at Debug/PipeTracer.kt:132 and catches
+    // HTTP failures internally; the outer `tracingEnabledInternal` check avoids the
+    // export call when the developer never opted into tracing.
+    if (tracingEnabledInternal && RemoteTraceConfig.dispatchAutomatically) {
+        PipeTracer.exportTrace(taskState.runId, com.TTT.Debug.TraceFormat.HTML)
     }
 
     return taskState.latestContent ?: MultimodalContent()

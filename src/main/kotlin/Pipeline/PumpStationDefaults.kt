@@ -8,9 +8,16 @@ package com.TTT.Pipeline
  * The {personality}, {systemTask}, {userGuidelines}, {entryUserPrompt}
  * placeholders are filled in by buildXxxSystemPrompt() from the harness's
  * configured values (which may be empty strings).
+ *
+ * [DEFAULT_JUDGE_PROMPT] and [DEFAULT_DISPATCH_PROMPT] are also referenced by the
+ * `PumpStationDefaults.withOpenRouter` factory in `TPipe-Defaults` to build a pre-wired
+ * station out of the box — see `TPipe-Defaults/src/main/kotlin/Defaults/PumpStationDefaults.kt`.
+ *
+ * @see com.TTT.Pipeline.PumpStation
+ * @see TPipe-Defaults PumpStationDefaults
  */
 
-internal const val DEFAULT_JUDGE_PROMPT = """
+const val DEFAULT_JUDGE_PROMPT = """
 You are the judge in an agentic harness. Your job is to determine if the task is complete.
 
 The original task is: {entryUserPrompt}
@@ -29,7 +36,7 @@ shouldTerminate: true if the harness should halt (e.g., unrecoverable error).
 reason: brief explanation.
 """
 
-internal const val DEFAULT_DISPATCH_PROMPT = """
+const val DEFAULT_DISPATCH_PROMPT = """
 You are the dispatcher in an agentic harness. Your job is to select the next path to invoke.
 
 {personality}

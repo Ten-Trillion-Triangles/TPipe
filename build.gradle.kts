@@ -91,6 +91,12 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testImplementation("org.junit.platform:junit-platform-launcher:1.11.4")
     testImplementation("org.junit.vintage:junit-vintage-engine:5.11.4")
+
+    // Live-LLM test dependencies (only used by PumpStationLiveLLMTest when TPIPE_LIVE_LLM_TEST=true)
+    testImplementation(project(":TPipe-Defaults"))
+    testImplementation(project(":TPipe-OpenRouter"))
+    testImplementation(project(":TPipe-Ollama"))
+    testImplementation(project(":TPipe-Bedrock"))
 }
 
 tasks.test {

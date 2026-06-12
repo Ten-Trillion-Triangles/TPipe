@@ -613,6 +613,55 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
  * Includes full dsl support.
  *
  * Is also a p2p interface so a harness can be part of the path of another harness.
+ *
+ * ## Minimal viable station
+ *
+ * The smallest harness that runs a single-turn task end-to-end. This example uses the
+ * Always-on judge (exit mechanism 1 of 3):
+ *
+ * ```kotlin
+ * val station = pumpStation("hello") {
+ *     setJudgeAgent(Pipeline().apply { add(OpenRouterPipe().apply {
+ *         setModel("openai/gpt-4o-mini")
+ *         setApiKey(System.getenv("OPENROUTER_API_KEY") ?: "")
+ *     }}) })
+ *
+ *     setDispatchAgent(Pipeline().apply { add(OpenRouterPipe().apply {
+ *         setModel("openai/gpt-4o-mini")
+ *         setApiKey(System.getenv("OPENROUTER_API_KEY") ?: "")
+ *     }}) })
+ *
+ *     path("answer") {
+ *         pathDescription = "Responds to the user with a one-sentence answer."
+ *         setExecutionFunction { content, _, _, _ ->
+ *             MultimodalContent(text = "hello, world", passPipeline = true)
+ *         }
+ *     }
+ *
+ *     setKillSwitch(KillSwitch().apply { inputTokenLimit = 50_000 })
+ * }
+ *
+ * val result = station.executeLocal(MultimodalContent(text = "say hello"))
+ * // result.text == "hello, world"
+ * ```
+ *
+ * Three exit mechanisms are supported (use the one that fits your domain):
+ *
+ * - **Always-on judge** (default): judge evaluates `isComplete` every turn.
+ * - **FlagTriggered judge**: paths opt-in via `pumpStation.requestJudgeNextTurn()`;
+ *   judge skips other turns. Configure with `setJudgeRunMode(PumpStationJudgeRunMode.FlagTriggered)`.
+ * - **Path-terminated**: paths return `MultimodalContent.terminatePipeline = true` (failure)
+ *   or `passPipeline = true` (success) on their result.
+ *
+ * A `HarnessWarning` event is emitted in `runPreInitPhase` when NONE of these mechanisms
+ * are configured — see `HarnessWarning.code == WarningCode.NoExitSignalConfigured`. The
+ * advisory is non-blocking; the harness continues and the developer sees the message in
+ * the event log + trace.
+ *
+ * For a copy-paste-runnable example covering all three mechanisms, see
+ * `TPipe-Defaults/src/main/kotlin/examples/pumpstation/PumpStationOpenRouterExample.kt`.
+ * For a one-call factory that wires judge + dispatch + killSwitch + memory defaults,
+ * see `Defaults.PumpStationDefaults.withOpenRouter(config)`.
  */
 class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
 {
@@ -2991,6 +3040,28 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      * Returns the active judge run mode. See [PumpStationJudgeRunMode] for semantics.
      */
     fun getJudgeRunMode(): PumpStationJudgeRunMode = judgeRunModeInternal
+
+    /**
+     * Returns the configured judge agent pipeline, or `null` if no judge has been wired.
+     * Public accessor for the [judgeAgent] field; useful in defaults factories and integration
+     * tests that need to verify the slot was filled.
+     */
+    fun getJudgeAgent(): Pipeline? = judgeAgent
+
+    /**
+     * Returns the configured dispatch agent pipeline, or `null` if no dispatch agent has been wired.
+     * Public accessor for the [dispatchAgent] field; useful in defaults factories and integration
+     * tests that need to verify the slot was filled.
+     */
+    fun getDispatchAgent(): Pipeline? = dispatchAgent
+
+    /**
+     * Returns the configured kill switch instance, or `null` if no kill switch has been wired.
+     * Public accessor with a non-conflicting name (the [killSwitch] property auto-generates
+     * `getKillSwitch()` on the JVM, so this is named to disambiguate); useful in defaults
+     * factories and integration tests that need to verify the slot was filled.
+     */
+    fun getConfiguredKillSwitch(): com.TTT.P2P.KillSwitch? = killSwitch
 
     /**
      * Sets the alternate loop-guard maximum turns value. Currently mirrors

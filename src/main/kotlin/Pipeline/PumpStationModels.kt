@@ -1001,3 +1001,70 @@ data class PumpStationTaskState(
     // [LorebookCursor].
     var lorebookCursor: LorebookCursor? = null
 )
+
+/**
+ * Warning category for a [HarnessWarning] event. The v3 advisory only emits
+ * [NoExitSignalConfigured]; future advisory codes slot in here.
+ */
+@kotlinx.serialization.Serializable
+enum class WarningCode
+{
+    /**
+     * The harness has been configured with no exit signal. Specifically, no judge agent
+     * is wired AND [PumpStationJudgeRunMode] is not [PumpStationJudgeRunMode.FlagTriggered]
+     * AND no path is expected to return [MultimodalContent.passPipeline] or
+     * [MultimodalContent.terminatePipeline]. The harness will run until
+     * [PumpStationTaskState.maxHarnessTurns] is exhausted and fail with
+     * [PumpStationError.MaxTurnsExceeded].
+     *
+     * Advisory only — not a `require()`. The developer may have intentionally configured
+     * a no-judge station that relies on paths calling `pumpStation.requestJudgeNextTurn()`
+     * or returning `passPipeline = true`; in that case the advisory is harmless.
+     */
+    NoExitSignalConfigured
+}
+
+/**
+ * The three legitimate exit mechanisms a PumpStation can be configured with.
+ * Listed in a [HarnessWarning] payload so a visualizer can render the advisory with
+ * concrete next-step hints.
+ */
+@kotlinx.serialization.Serializable
+enum class ExitMechanism
+{
+    /** Judge agent evaluates `isComplete` or `shouldTerminate` every turn. */
+    JudgeAlways,
+
+    /** Path-bound `requestJudgeNextTurn()` plus [PumpStationJudgeRunMode.FlagTriggered]. */
+    JudgeFlagTriggered,
+
+    /** Path returns [MultimodalContent.passPipeline] = true to signal success. */
+    PathPassPipeline,
+
+    /** Path returns [MultimodalContent.terminatePipeline] = true to signal failure. */
+    PathTerminatePipeline
+}
+
+/**
+ * Advisory event emitted by the harness when it detects a configuration that the
+ * developer is likely to want to know about. Carries a [code] and a list of
+ * [mechanisms] the developer can use to resolve the advisory.
+ *
+ * Currently the only advisory is [WarningCode.NoExitSignalConfigured] — the harness
+ * has no judge, no FlagTriggered path, and no path-bound exit signal. The harness
+ * will run to [PumpStationTaskState.maxHarnessTurns] and fail with
+ * [PumpStationError.MaxTurnsExceeded] in that case.
+ *
+ * Advisory events are non-blocking. The harness continues normally. A visualizer or
+ * DITL hook may choose to surface the advisory to the developer.
+ */
+@kotlinx.serialization.Serializable
+data class HarnessWarning(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.PreInit,
+    val code: WarningCode,
+    val message: String,
+    val mechanisms: List<ExitMechanism> = emptyList()
+) : PumpStationEvent
