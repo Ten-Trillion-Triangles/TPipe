@@ -66,7 +66,14 @@ enum class PumpStationError
     MaxTurnsExceeded,
     LoopGuardTriggered,
     P2PRequestInvalid,
-    InitNotCalled
+    InitNotCalled,
+    // v3: compaction produced more tokens than it consumed; orchestrator handed off to
+    // truncation. Distinct from MemoryBlowout (which is a hard context-overflow signal).
+    CompactionInflated,
+    // v3: rollback DITL hook elected to halt the harness on rollback. Default behavior
+    // is to retry with smaller scope; this variant only appears when the developer chose
+    // to surface a halt via taskState.lastError.
+    CompactionRolledBack
 }
 
 /**
@@ -596,7 +603,76 @@ data class CompactionCompleted(
     val strategy: PumpStationCompactionStrategy,
     val memoryMode: PumpStationMemoryManagementMode,
     val previousHistorySize: Int,
-    val newHistorySize: Int
+    val newHistorySize: Int,
+    // v3: the final CompactionResult of the attempt loop. Optional for backward
+    // compat with serialized traces from v2.
+    val result: CompactionResult? = null
+) : PumpStationEvent
+
+/**
+ * v3: emitted after a single compaction attempt, regardless of outcome. Lets the
+ * visualizer show the per-attempt journey (e.g. "attempt 1: Inflated, attempt 2:
+ * Chunked-Parallel, Applied"). Distinct from [CompactionCompleted] which marks the end of
+ * the whole [runCompactionPhase] attempt loop.
+ */
+@kotlinx.serialization.Serializable
+data class CompactionAttemptCompleted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Compaction,
+    val attempt: Int,
+    val strategy: PumpStationCompactionStrategy,
+    val fanout: ChunkFanoutMode?,
+    val result: CompactionResult
+) : PumpStationEvent
+
+/**
+ * v3: emitted when a compaction attempt produced a summary whose estimated token count
+ * was greater than the input's. The orchestrator will retry with smaller scope unless
+ * the retry budget is exhausted, in which case the run is handed off to truncation.
+ */
+@kotlinx.serialization.Serializable
+data class CompactionInflated(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Compaction,
+    val inputTokens: Int,
+    val outputTokens: Int,
+    val attempt: Int,
+    val willRetry: Boolean
+) : PumpStationEvent
+
+/**
+ * v3: emitted when a [CompactionBackup] is restored to the [PumpStation]. Either the
+ * DITL hook returned a replacement backup, or the orchestrator restored the most-recent
+ * one as part of an [CompactionResult.Inflated] retry.
+ */
+@kotlinx.serialization.Serializable
+data class CompactionRolledBack(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Compaction,
+    val backupGeneration: Long,
+    val reason: String
+) : PumpStationEvent
+
+/**
+ * v3: emitted when the compaction retry budget is exhausted and the orchestrator has
+ * handed off to the existing `failurePolicy`-driven truncation path. The harness
+ * continues; the kill switch is NOT tripped (kill switch is an independent cost-control
+ * system).
+ */
+@kotlinx.serialization.Serializable
+data class CompactionHandedOffToTruncation(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Compaction,
+    val contextWindowBefore: Int,
+    val contextWindowAfter: Int
 ) : PumpStationEvent
 
 /**
@@ -915,5 +991,13 @@ data class PumpStationTaskState(
     // phase runs as normal and then the flag is cleared. Set by [PumpStation.requestJudgeNextTurn] - typically
     // from a path's setExecutionFunction when the dispatch agent believes the task is done. Default false
     // preserves legacy behavior (judge runs every turn).
-    var requestJudgeNextTurn: Boolean = false
+    var requestJudgeNextTurn: Boolean = false,
+    // v3: generation + turn-index cursor for the compaction pipeline. Lets an arriving
+    // compaction detect that an ahead compaction already covered the work and discard its
+    // own attempt. See [CompactionCursor].
+    var compactionCursor: CompactionCursor? = null,
+    // v3: turn-index cursor for the lorebook pipeline. Lets the lorebook agent detect
+    // that an ahead update already covered the work and discard its own output. See
+    // [LorebookCursor].
+    var lorebookCursor: LorebookCursor? = null
 )

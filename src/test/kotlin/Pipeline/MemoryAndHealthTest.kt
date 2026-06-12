@@ -3,6 +3,7 @@ package com.TTT.Pipeline
 import com.TTT.Pipe.MultimodalContent
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class MemoryAndHealthTest
@@ -58,5 +59,43 @@ class MemoryAndHealthTest
 
         // No CompactionStarted event expected since ratio < threshold
         assertTrue(events.none { it is CompactionStarted }, "CompactionStarted should NOT be emitted below threshold")
+    }
+
+    @Test
+    fun testCompactionEmitsInflatedEventWhenOutputExceedsInput()
+    {
+        // Summary agent returns a much larger string than the input. The orchestrator
+        // should emit a CompactionInflated event before retrying or handing off.
+        val station = PumpStation().setDispatchAgent(Pipeline())
+        repeat(10) { station.turnHistory.add(com.TTT.Context.ConverseData(role = com.TTT.Context.ConverseRole.user, content = com.TTT.Pipe.MultimodalContent(text = "a".repeat(40)))) }
+        station.setSummaryAgent(MockP2PAgent(script = listOf(com.TTT.Pipe.MultimodalContent(text = "x".repeat(2000)))))
+        station.setCompactionThreshold(0.0)
+        station.setMaxCompactionAttempts(1)
+
+        val events = mutableListOf<PumpStationEvent>()
+        station.setEventObserver(events::add)
+        runBlocking { station.runCompactionPhase() }
+
+        val inflated = events.filterIsInstance<CompactionInflated>()
+        assertTrue(inflated.isNotEmpty(), "expected CompactionInflated event, got $events")
+        assertEquals(false, inflated.first().willRetry)
+    }
+
+    @Test
+    fun testCompactionEmitsHandedOffEventOnFinalFailure()
+    {
+        // After the retry budget is exhausted, the orchestrator hands off to truncation
+        // and emits a CompactionHandedOffToTruncation event.
+        val station = PumpStation().setDispatchAgent(Pipeline())
+        repeat(10) { station.turnHistory.add(com.TTT.Context.ConverseData(role = com.TTT.Context.ConverseRole.user, content = com.TTT.Pipe.MultimodalContent(text = "a".repeat(40)))) }
+        station.setSummaryAgent(MockP2PAgent(script = listOf(com.TTT.Pipe.MultimodalContent(text = "x".repeat(2000)))))
+        station.setCompactionThreshold(0.0)
+        station.setMaxCompactionAttempts(1)
+
+        val events = mutableListOf<PumpStationEvent>()
+        station.setEventObserver(events::add)
+        runBlocking { station.runCompactionPhase() }
+
+        assertTrue(events.any { it is CompactionHandedOffToTruncation }, "expected CompactionHandedOffToTruncation event")
     }
 }

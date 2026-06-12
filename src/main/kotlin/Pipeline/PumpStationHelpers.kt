@@ -316,6 +316,38 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["memoryMode"] = event.memoryMode.name
             baseMetadata["previousHistorySize"] = event.previousHistorySize
             baseMetadata["newHistorySize"] = event.newHistorySize
+            event.result?.let { baseMetadata["result"] = it::class.simpleName ?: "Unknown" }
+        }
+        is CompactionAttemptCompleted ->
+        {
+            // v3: per-attempt event. Uses the same event type as the legacy
+            // COMPACTION_COMPLETED slot for visualizer compatibility; metadata
+            // includes the attempt index and outcome class name.
+            eventType = TraceEventType.PUMP_STATION_COMPACTION_COMPLETED
+            baseMetadata["attempt"] = event.attempt
+            baseMetadata["strategy"] = event.strategy.name
+            baseMetadata["fanout"] = event.fanout?.name ?: "None"
+            baseMetadata["result"] = event.result::class.simpleName ?: "Unknown"
+        }
+        is CompactionInflated ->
+        {
+            eventType = TraceEventType.PUMP_STATION_COMPACTION_INFLATED
+            baseMetadata["inputTokens"] = event.inputTokens
+            baseMetadata["outputTokens"] = event.outputTokens
+            baseMetadata["attempt"] = event.attempt
+            baseMetadata["willRetry"] = event.willRetry
+        }
+        is CompactionRolledBack ->
+        {
+            eventType = TraceEventType.PUMP_STATION_COMPACTION_ROLLED_BACK
+            baseMetadata["backupGeneration"] = event.backupGeneration
+            baseMetadata["reason"] = event.reason
+        }
+        is CompactionHandedOffToTruncation ->
+        {
+            eventType = TraceEventType.PUMP_STATION_COMPACTION_HANDED_OFF
+            baseMetadata["contextWindowBefore"] = event.contextWindowBefore
+            baseMetadata["contextWindowAfter"] = event.contextWindowAfter
         }
         is GoalValidationStarted -> eventType = TraceEventType.PUMP_STATION_GOAL_VALIDATION_STARTED
         is GoalValidationCompleted ->

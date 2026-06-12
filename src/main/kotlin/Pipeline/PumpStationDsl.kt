@@ -7,6 +7,8 @@ import com.TTT.Context.MiniBank
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Debug.TraceFormat
+import com.TTT.P2P.KillSwitch
+import com.TTT.P2P.KillSwitchContext
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import kotlin.reflect.KFunction
@@ -49,6 +51,22 @@ class PumpStationBuilder(val name: String)
      * station in [PumpStationBuilder.build]. Null when the user did not configure tracing.
      */
     var tracingConfiguration: TraceConfig? = null
+
+    /**
+     * Optional kill switch configuration. Set via the `killSwitch { }` DSL block; applied to
+     * the built station in [PumpStationBuilder.build] (before path registration so propagation
+     * to [com.TTT.Pipeline.PathObject] happens up front). Null when the user did not configure
+     * a kill switch.
+     */
+    var killSwitchConfiguration: KillSwitch? = null
+
+    /**
+     * Optional compaction configuration. Set via the `compaction { }` DSL block;
+     * applied to the built station in [build] (after the station is constructed
+     * but before path registration, so per-path compaction settings see the
+     * configured values). Null when the developer did not configure compaction.
+     */
+    var compactionConfiguration: CompactionBlock? = null
 
 //=========================================Agent Assignments=========================================================
 
@@ -445,6 +463,45 @@ class PumpStationBuilder(val name: String)
         return this
     }
 
+    /**
+     * Configure a [KillSwitch] on the built [PumpStation]. The switch auto-enforces the
+     * configured [KillSwitchBlock.inputTokenLimit] / [KillSwitchBlock.outputTokenLimit] in the
+     * harness loop (mirrors [com.TTT.Pipeline.Manifold.checkKillSwitch]) and propagates to
+     * every [com.TTT.Pipeline.PathObject] the station owns.
+     *
+     * @param block DSL block that configures limits and an optional trip callback.
+     * @return This builder for method chaining.
+     * @throws IllegalArgumentException if a kill switch has already been configured.
+     */
+    fun killSwitch(block: KillSwitchBlock.() -> Unit): PumpStationBuilder
+    {
+        require(killSwitchConfiguration == null) {
+            "KillSwitch has already been configured for this PumpStation DSL."
+        }
+        val dsl = KillSwitchBlock()
+        dsl.block()
+        killSwitchConfiguration = dsl.build()
+        return this
+    }
+
+    /**
+     * Configure compaction for the harness. The captured configuration is applied
+     * to the built station via [build] so the per-attempt orchestrator picks up
+     * the developer-chosen strategy, fan-out mode, retry budget, chunk budget, and
+     * the pre-prune / rollback DITL hooks. Mirrors the [tracing] / [killSwitch]
+     * block shape.
+     */
+    fun compaction(block: CompactionBlock.() -> Unit): PumpStationBuilder
+    {
+        require(compactionConfiguration == null) {
+            "compaction { } block already configured on this builder"
+        }
+        val dsl = CompactionBlock()
+        dsl.block()
+        compactionConfiguration = dsl
+        return this
+    }
+
 //=========================================Build====================================================================
 
     /**
@@ -564,6 +621,26 @@ class PumpStationBuilder(val name: String)
             .setPostMemoryFunction(postMemoryFunction)
             .setPreCompactionFunction(preCompactionFunction)
             .setPostCompactionFunction(postCompactionFunction)
+
+        // Compaction configuration - applied before path registration so the
+        // per-path settings see the configured values on the first addPath call.
+        compactionConfiguration?.let { cfg ->
+            cfg.strategy?.let { station.setCompactionStrategy(it) }
+            cfg.fanout?.let { station.setCompactionFanoutMode(it) }
+            cfg.threshold?.let { station.setCompactionThreshold(it) }
+            cfg.maxAttempts?.let { station.setMaxCompactionAttempts(it) }
+            cfg.chunkTokenBudget?.let { station.setChunkTokenBudget(it) }
+            cfg.maxChunks?.let { station.setMaxChunks(it) }
+            cfg.maxParallelChunks?.let { station.setMaxParallelChunks(it) }
+            cfg.maxBackups?.let { station.setMaxCompactionBackups(it) }
+            cfg.hybridWholeHeadroom?.let { station.setHybridWholeHeadroom(it) }
+            cfg.prePruneTransform?.let { station.setPrePruneTransform(it) }
+            cfg.rolledBackFunction?.let { station.setCompactionRolledBackFunction(it) }
+        }
+
+        // Kill switch - assign before path registration so the propagation in
+        // PumpStation.addPath picks up the configured switch on the first path added.
+        killSwitchConfiguration?.let { station.killSwitch = it }
 
         // Paths - add each entry to the station directly
         for ((_, path) in pathObjects)
@@ -977,4 +1054,156 @@ class PumpStationTracingDsl
      * Build the immutable [TraceConfig] captured by this DSL block.
      */
     fun build(): TraceConfig = config
+}
+
+//=========================================KillSwitch Block========================================================
+
+/**
+ * DSL block for configuring a [KillSwitch] on a [PumpStationBuilder]. Captures the
+ * input/output token limits and an optional trip callback, then produces an immutable
+ * [KillSwitch] via [build]. Mirrors the block style used by [PumpStationTracingDsl].
+ *
+ * Example:
+ * ```
+ * pumpStation("my-station") {
+ *     killSwitch {
+ *         inputTokenLimit = 100_000
+ *         outputTokenLimit = 50_000
+ *         onTripped = { ctx ->
+ *             logger.error("Kill switch tripped: ${ctx.reason}")
+ *             throw KillSwitchException(ctx)
+ *         }
+ *     }
+ * }
+ * ```
+ */
+@PumpStationDslMarker
+class KillSwitchBlock
+{
+    /** Maximum tokens allowed for input (prompt + context). null = no limit. */
+    var inputTokenLimit: Int? = null
+
+    /** Maximum tokens allowed for output (response + reasoning). null = no limit. */
+    var outputTokenLimit: Int? = null
+
+    /**
+     * Callback invoked when the kill switch trips. Default throws [com.TTT.P2P.KillSwitchException].
+     * Typed as `(KillSwitchContext) -> Unit` in the DSL to allow custom handlers (e.g. logging
+     * before re-throwing). When null, the built [KillSwitch] uses the package default
+     * `onTripped` which throws [com.TTT.P2P.KillSwitchException].
+     */
+    var onTripped: ((KillSwitchContext) -> Unit)? = null
+
+    /**
+     * Build the immutable [KillSwitch] captured by this DSL block. When [onTripped] is null,
+     * the default throwing callback is used so the harness loop's [com.TTT.P2P.KillSwitchException]
+     * catch can transition the run to a [com.TTT.Pipeline.PumpStationError.KillSwitchTripped] state.
+     */
+    fun build(): KillSwitch
+    {
+        val handler = onTripped
+        return if (handler == null)
+        {
+            KillSwitch(
+                inputTokenLimit = inputTokenLimit,
+                outputTokenLimit = outputTokenLimit
+            )
+        }
+        else
+        {
+            KillSwitch(
+                inputTokenLimit = inputTokenLimit,
+                outputTokenLimit = outputTokenLimit,
+                onTripped = { ctx ->
+                    handler(ctx)
+                    // If the user's callback returns without throwing, fall through to the
+                    // default behavior so the harness still gets a deterministic termination
+                    // signal. This matches the contract of (KillSwitchContext) -> Nothing but
+                    // surfaces the user's handler result through the standard failure path.
+                    throw com.TTT.P2P.KillSwitchException(ctx)
+                }
+            )
+        }
+    }
+}
+
+//=========================================Compaction Block=========================================================
+
+/**
+ * DSL block for configuring the PumpStation v3 compaction orchestrator. Captures the
+ * strategy, threshold, fan-out mode, retry budget, chunk budgets, and the pre-prune /
+ * rollback DITL hooks, then applies them to the built station via [PumpStationBuilder.build].
+ *
+ * Mirrors the block style used by [PumpStationTracingDsl] and [KillSwitchBlock]. Every
+ * field is optional; unset fields fall back to the [PumpStation] defaults
+ * (Whole strategy, 0.8 threshold, Sequential fan-out, 2 attempts, etc.).
+ *
+ * Example:
+ * ```
+ * pumpStation("my-station") {
+ *     compaction {
+ *         strategy = PumpStationCompactionStrategy.Hybrid
+ *         fanout = ChunkFanoutMode.Parallel
+ *         maxAttempts = 2
+ *         chunkTokenBudget = 1500
+ *         maxBackups = 3
+ *         prePrune { turns, _ -> turns.filter { it.content.text.isNotBlank() } }
+ *         onRolledBack { backup, reason, _ -> null }
+ *     }
+ * }
+ * ```
+ */
+@PumpStationDslMarker
+class CompactionBlock
+{
+    /** Compaction strategy. Null = leave the [PumpStation] default. */
+    var strategy: PumpStationCompactionStrategy? = null
+
+    /** Context fill ratio that triggers compaction. Null = leave the default. */
+    var threshold: Double? = null
+
+    /** Chunk fan-out mode for the [PumpStationCompactionStrategy.Chunked] strategy. */
+    var fanout: ChunkFanoutMode? = null
+
+    /** Maximum number of compaction attempts before handing off to truncation. */
+    var maxAttempts: Int? = null
+
+    /** Token budget per chunk for the Chunked strategy. */
+    var chunkTokenBudget: Int? = null
+
+    /** Hard cap on the number of chunks produced by a single attempt. */
+    var maxChunks: Int? = null
+
+    /** Semaphore permit count for the [ChunkFanoutMode.Parallel] strategy. */
+    var maxParallelChunks: Int? = null
+
+    /** Maximum number of [CompactionBackup] snapshots retained. */
+    var maxBackups: Int? = null
+
+    /** Headroom threshold for Hybrid -> Whole. */
+    var hybridWholeHeadroom: Double? = null
+
+    /** Replace the default pre-prune transform. */
+    var prePruneTransform: (suspend (List<ConverseData>, PumpStation) -> List<ConverseData>)? = null
+
+    /** DITL hook fired when a [CompactionBackup] is restored. */
+    var rolledBackFunction: (suspend (CompactionBackup, String, PumpStation) -> CompactionBackup?)? = null
+
+    /**
+     * Register a pre-prune transform. Convenience for the most common use case.
+     * Equivalent to setting [prePruneTransform] directly.
+     */
+    fun prePrune(transform: suspend (List<ConverseData>, PumpStation) -> List<ConverseData>)
+    {
+        prePruneTransform = transform
+    }
+
+    /**
+     * Register a rollback DITL hook. Convenience for the most common use case.
+     * Equivalent to setting [rolledBackFunction] directly.
+     */
+    fun onRolledBack(handler: suspend (CompactionBackup, String, PumpStation) -> CompactionBackup?)
+    {
+        rolledBackFunction = handler
+    }
 }

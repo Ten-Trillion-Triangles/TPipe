@@ -3,6 +3,9 @@ package com.TTT.Pipeline
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseRole
 import com.TTT.Context.LoreBook
+import com.TTT.P2P.KillSwitch
+import com.TTT.P2P.KillSwitchContext
+import com.TTT.P2P.KillSwitchException
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.Pipe
@@ -17,6 +20,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.plus
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -251,6 +262,7 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
         isComplete = verdict.isComplete,
         shouldTerminate = verdict.shouldTerminate
     ))
+    recordAndCheckKillSwitch(judgeAgent)
     return verdict
 }
 
@@ -293,6 +305,7 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
 
     var repairAttempts = 0
     val dispatchUsage = agentTokenUsage(dispatchAgent)
+    recordAndCheckKillSwitch(dispatchAgent)
 
     while (repairAttempts <= failurePolicy.maxDispatchRepairAttempts)
 {
@@ -432,40 +445,476 @@ internal val backgroundMutex: Mutex = Mutex()
 internal fun PumpStation.shouldCompact(): Boolean =
     contextFillRatio() > compactionThresholdInternal
 
+//=========================================v3: Pre-prune==========================================================
+
 /**
- * Whole-strategy compaction: summarize the entire turn history into a single
- * assistant message and clear the previous history. Requires [summaryAgent] to
- * be configured; returns silently if it is not.
+ * Pre-prune step applied to the raw [turnHistory] before it reaches the summary agent.
+ * Pure-Kotlin transforms that drop noise the LLM doesn't need to see, so the LLM cost
+ * of compaction is paid on the smallest possible input. The default implementation is
+ * the chain in [defaultPrePruneForCompaction]; the developer can replace it via
+ * [PumpStation.setPrePruneTransform] or extend it via
+ * [PumpStation.appendPrePruneTransform].
  */
-internal fun PumpStation.compactWhole()
+internal suspend fun PumpStation.prePruneForCompaction(rawTurns: List<ConverseData>): List<ConverseData>
 {
-    if (summaryAgentInternal == null) return
-    runBlocking {
-        val summaryContent = MultimodalContent(text = turnHistory.toString())
-        val summaryResult = summaryAgentInternal!!.executeLocal(summaryContent)
-        turnHistory.history.clear()
-        turnHistory.add(ConverseData(role = ConverseRole.assistant, content = summaryResult))
+    val custom = prePruneTransformInternal
+    val baseList = if (custom != null)
+    {
+        custom.invoke(rawTurns, this)
+    }
+    else
+    {
+        defaultPrePruneForCompaction(rawTurns)
+    }
+    var result = baseList
+    for (extra in extraPrePruneTransformsInternal)
+    {
+        result = extra.invoke(result, this)
+    }
+    return result
+}
+
+/**
+ * Default pre-prune transform. The eight rules run in order; each drops or rewrites
+ * a specific kind of noise:
+ *  1. Drop blank turns (no text, no binary, no context).
+ *  2. Drop stash placeholders (the full content is already in `stashInternal`).
+ *  3. Keep only the most-recent system message.
+ *  4. Drop pure echo turns (text exactly equal to the previous turn's text).
+ *  5. Collapse adjacent tool-call/result pairs.
+ *  6. Strip excess metadata keys (keep only the allowlist).
+ *  7. Normalize whitespace (collapse runs of newlines, trim per turn).
+ *  8. Drop turns already in [turnSummary] (case-insensitive contains check).
+ */
+internal fun PumpStation.defaultPrePruneForCompaction(rawTurns: List<ConverseData>): List<ConverseData>
+{
+    val turnSummaryLower = turnSummary.lowercase()
+
+    // Rule 1: drop blank
+    var turns = rawTurns.filter { turn ->
+        turn.content.text.isNotBlank() || turn.content.binaryContent.isNotEmpty()
+    }
+
+    // Rule 2: drop stash placeholders
+    turns = turns.filter { it.content.metadata["stashId"] == null }
+
+    // Rule 3: keep only the most-recent system message
+    val lastSystemIndex = turns.indexOfLast { it.role == ConverseRole.system }
+    turns = turns.filterIndexed { i, turn ->
+        turn.role != ConverseRole.system || i == lastSystemIndex
+    }
+
+    // Rule 4: drop pure echoes (text exactly equal to previous turn's text after trim)
+    turns = turns.fold(mutableListOf<ConverseData>()) { acc, turn ->
+        val last = acc.lastOrNull()
+        if (last != null && last.content.text.trim() == turn.content.text.trim())
+        {
+            acc  // drop this echo
+        }
+        else
+        {
+            acc.add(turn)
+            acc
+        }
+    }.toList()
+
+    // Rule 5: collapse adjacent tool-call/result pairs into a single summary turn.
+    // Heuristic: a ConverseRole.tool_response turn followed by a ConverseRole.assistant turn
+    // whose text is JSON containing a "name" field that names the same tool. Best
+    // effort; drops the pair and inserts a single assistant turn noting the call.
+    val collapsed = mutableListOf<ConverseData>()
+    var i = 0
+    while (i < turns.size)
+    {
+        val current = turns[i]
+        val next = turns.getOrNull(i + 1)
+        if (current.role == ConverseRole.tool_response && next != null && next.role == ConverseRole.assistant)
+        {
+            collapsed.add(ConverseData(
+                role = ConverseRole.assistant,
+                content = MultimodalContent(text = "[tool-call: ${current.content.text.take(120)}]")
+            ))
+            i += 2
+        }
+        else
+        {
+            collapsed.add(current)
+            i += 1
+        }
+    }
+    turns = collapsed
+
+    // Rule 6: strip excess metadata (keep only the allowlist).
+    val allowedMeta = setOf("stashId", "pathName", "toolName", "tokenCount")
+    turns = turns.map { turn ->
+        if (turn.content.metadata.isEmpty()) turn
+        else
+        {
+            val kept = turn.content.metadata.filterKeys { it in allowedMeta }
+            if (kept.size == turn.content.metadata.size) turn
+            else
+            {
+                val c = turn.content.copy()
+                c.metadata.clear()
+                c.metadata.putAll(kept)
+                ConverseData(role = turn.role, content = c)
+            }
+        }
+    }
+
+    // Rule 7: normalize whitespace per turn.
+    turns = turns.map { turn ->
+        val normalized = turn.content.text.replace(Regex("\n{3,}"), "\n\n").trim()
+        if (normalized == turn.content.text) turn
+        else
+        {
+            val c = turn.content.copy()
+            c.text = normalized
+            ConverseData(role = turn.role, content = c)
+        }
+    }
+
+    // Rule 8: drop turns already in turnSummary (case-insensitive contains).
+    if (turnSummaryLower.isNotBlank())
+    {
+        turns = turns.filter { turn ->
+            val text = turn.content.text.lowercase()
+            !turnSummaryLower.contains(text)
+        }
+    }
+
+    return turns
+}
+
+//=========================================v3: Strategy implementations=============================================
+
+/**
+ * Estimated token count for a list of [ConverseData] entries. Used by the [Inflated]
+ * check in every strategy: the output's estimated tokens must not exceed the input's.
+ * The estimate is a rough character-based heuristic matching the existing
+ * [contextFillRatio] math (4 chars per token).
+ */
+internal fun estimateTokensForCompaction(turns: List<ConverseData>): Int
+{
+    return turns.sumOf { it.content.text.length } / 4
+}
+
+/**
+ * Whole-strategy compaction. Summarizes the entire pre-pruned turn history into a
+ * single assistant message and clears the previous history.
+ *
+ * The function takes the pre-pruned turn list and a [capturedGeneration] so the
+ * orchestrator owns the cursor. The summary agent is invoked under
+ * [summaryMutex][com.TTT.Pipeline.PumpStation.summaryMutex] so concurrent async
+ * summary updates serialize against this call. The CAS check on return drops the
+ * result if the cursor has moved in the meantime (a concurrent compaction committed
+ * first).
+ */
+internal suspend fun PumpStation.compactWholeWithCapturedState(
+    prePrunedTurns: List<ConverseData>,
+    capturedGeneration: Long
+): CompactionResult
+{
+    if (summaryAgentInternal == null) return CompactionResult.SkippedNoAgent
+
+    val inputTokens = estimateTokensForCompaction(prePrunedTurns)
+    val summaryContent = MultimodalContent(text = prePrunedTurns.joinToString("\n") { "[${it.role}] ${it.content.text}" })
+
+    val summary = summaryMutex.withLock {
+        // Re-check the CAS inside the lock so we don't waste an LLM call if a concurrent
+        // compaction committed between our entry and our summary-agent invocation.
+        if (compactionCursorWrite.generation != capturedGeneration) return@withLock null
+        summaryAgentInternal!!.executeLocal(summaryContent)
+    } ?: return CompactionResult.DiscardedPreEmpted(
+        observedGeneration = capturedGeneration,
+        currentGeneration = compactionCursorWrite.generation
+    )
+
+    val outputTokens = summary.text.length / 4
+    if (outputTokens > inputTokens)
+    {
+        return CompactionResult.Inflated(inputTokens, outputTokens, attempt = 1)
+    }
+
+    // CAS apply
+    return if (compactionCursorWrite.generation == capturedGeneration)
+    {
+        applyCompactionResult(summary, prePrunedTurns.size, capturedGeneration, inputTokens, outputTokens, null)
+    }
+    else
+    {
+        CompactionResult.DiscardedPreEmpted(capturedGeneration, compactionCursorWrite.generation)
     }
 }
 
 /**
- * Chunked-strategy compaction. Currently a thin wrapper around [compactWhole];
- * a full chunked implementation will partition turn history by token budget and
- * summarize each chunk independently.
+ * Sequential chunked strategy. Partitions the pre-pruned turns into roughly equal
+ * contiguous chunks, then summarizes each in order, carrying the running summary
+ * forward as context for the next chunk. Causal ordering is preserved.
  */
-internal fun PumpStation.compactChunked()
+internal suspend fun PumpStation.compactChunkedSequentialWithCapturedState(
+    prePrunedTurns: List<ConverseData>,
+    capturedGeneration: Long
+): CompactionResult
 {
-    compactWhole()
+    if (summaryAgentInternal == null) return CompactionResult.SkippedNoAgent
+
+    val inputTokens = estimateTokensForCompaction(prePrunedTurns)
+    val chunkCount = computeChunkCount(inputTokens, prePrunedTurns.size)
+    val chunks = prePrunedTurns.chunkRounded(chunkCount)
+
+    var runningSummary: String? = null
+    for ((index, chunk) in chunks.withIndex())
+    {
+        // Pre-check CAS: bail if a concurrent compaction committed.
+        if (compactionCursorWrite.generation != capturedGeneration)
+        {
+            return CompactionResult.DiscardedPreEmpted(capturedGeneration, compactionCursorWrite.generation)
+        }
+        val prompt = if (runningSummary == null)
+        {
+            MultimodalContent(text = chunk.joinToString("\n") { "[${it.role}] ${it.content.text}" })
+        }
+        else
+        {
+            MultimodalContent(
+                text = "PREVIOUS SUMMARY:\n${runningSummary}\n\nNEW TURNS TO INCORPORATE:\n${
+                    chunk.joinToString("\n") { "[${it.role}] ${it.content.text}" }
+                }"
+            )
+        }
+        val chunkSummary = summaryMutex.withLock {
+            if (compactionCursorWrite.generation != capturedGeneration) null
+            else summaryAgentInternal!!.executeLocal(prompt)
+        } ?: return CompactionResult.DiscardedPreEmpted(capturedGeneration, compactionCursorWrite.generation)
+        runningSummary = chunkSummary.text
+    }
+
+    val finalText = runningSummary ?: return CompactionResult.SkippedBelowThreshold
+    val finalContent = MultimodalContent(text = finalText)
+    val outputTokens = finalText.length / 4
+    if (outputTokens > inputTokens)
+    {
+        return CompactionResult.Inflated(inputTokens, outputTokens, attempt = 1)
+    }
+    return if (compactionCursorWrite.generation == capturedGeneration)
+    {
+        applyCompactionResult(finalContent, prePrunedTurns.size, capturedGeneration, inputTokens, outputTokens, ChunkFanoutMode.Sequential)
+    }
+    else
+    {
+        CompactionResult.DiscardedPreEmpted(capturedGeneration, compactionCursorWrite.generation)
+    }
 }
 
 /**
- * Hybrid-strategy compaction: choose whole vs. chunked based on remaining
- * headroom. Skips entirely if there is no current memory pressure.
+ * Parallel chunked strategy. Partitions the pre-pruned turns into roughly equal
+ * chunks, summarizes each concurrently with bounded concurrency (semaphore permit
+ * count = [PumpStation.maxParallelChunksInternal]), then folds the per-chunk
+ * summaries into one final summary via a second summary-agent call.
+ *
+ * Cancellation propagates through the [coroutineScope]: if the kill switch trips or
+ * the scope is cancelled, in-flight chunk coroutines throw [CancellationException]
+ * and the fold is skipped.
  */
-internal fun PumpStation.compactHybrid()
+internal suspend fun PumpStation.compactChunkedParallelWithCapturedState(
+    prePrunedTurns: List<ConverseData>,
+    capturedGeneration: Long
+): CompactionResult
 {
-    if (contextFillRatio() < compactionThresholdInternal) return
-    compactWhole()
+    if (summaryAgentInternal == null) return CompactionResult.SkippedNoAgent
+
+    val inputTokens = estimateTokensForCompaction(prePrunedTurns)
+    val chunkCount = computeChunkCount(inputTokens, prePrunedTurns.size)
+    val chunks = prePrunedTurns.chunkRounded(chunkCount)
+    val permits = maxParallelChunksInternal.coerceAtLeast(1)
+    val semaphore = Semaphore(permits = permits)
+
+    val perChunkSummaries: List<MultimodalContent?> = coroutineScope {
+        chunks.mapIndexed { idx, chunk ->
+            async(Dispatchers.IO) {
+                semaphore.withPermit {
+                    summaryMutex.withLock {
+                        if (compactionCursorWrite.generation != capturedGeneration) null
+                        else
+                        {
+                            val prompt = MultimodalContent(
+                                text = chunk.joinToString("\n") { "[${it.role}] ${it.content.text}" }
+                            )
+                            summaryAgentInternal!!.executeLocal(prompt)
+                        }
+                    }
+                }
+            }
+        }.awaitAll()
+    }
+
+    // If any chunk saw a moved cursor, the fold is invalid.
+    if (perChunkSummaries.any { it == null })
+    {
+        return CompactionResult.DiscardedPreEmpted(capturedGeneration, compactionCursorWrite.generation)
+    }
+
+    // Fold the per-chunk summaries into one final summary.
+    val foldInput = perChunkSummaries
+        .filterNotNull()
+        .joinToString("\n\n=== Chunk Boundary ===\n\n") { it.text }
+    val folded = summaryMutex.withLock {
+        if (compactionCursorWrite.generation != capturedGeneration) null
+        else summaryAgentInternal!!.executeLocal(MultimodalContent(text = foldInput))
+    } ?: return CompactionResult.DiscardedPreEmpted(capturedGeneration, compactionCursorWrite.generation)
+
+    val outputTokens = folded.text.length / 4
+    if (outputTokens > inputTokens)
+    {
+        return CompactionResult.Inflated(inputTokens, outputTokens, attempt = 1)
+    }
+    return if (compactionCursorWrite.generation == capturedGeneration)
+    {
+        applyCompactionResult(folded, prePrunedTurns.size, capturedGeneration, inputTokens, outputTokens, ChunkFanoutMode.Parallel)
+    }
+    else
+    {
+        CompactionResult.DiscardedPreEmpted(capturedGeneration, compactionCursorWrite.generation)
+    }
+}
+
+/**
+ * Hybrid strategy. Picks Whole if there is enough headroom, otherwise Chunked
+ * (with the configured fan-out mode). Skips entirely if there is no current memory
+ * pressure.
+ */
+internal suspend fun PumpStation.compactHybridWithCapturedState(
+    prePrunedTurns: List<ConverseData>,
+    capturedGeneration: Long,
+    attempt: Int
+): CompactionResult
+{
+    val headroom = 1.0 - contextFillRatio()
+    return if (headroom >= hybridWholeHeadroomInternal)
+    {
+        compactWholeWithCapturedState(prePrunedTurns, capturedGeneration)
+    }
+    else
+    {
+        if (compactionFanoutModeInternal == ChunkFanoutMode.Parallel)
+        {
+            compactChunkedParallelWithCapturedState(prePrunedTurns, capturedGeneration)
+        }
+        else
+        {
+            compactChunkedSequentialWithCapturedState(prePrunedTurns, capturedGeneration)
+        }
+    }
+}
+
+//=========================================v3: Backup ring + restore==============================================
+
+/**
+ * Push a [CompactionBackup] onto the ring buffer. Drops the oldest backup if the
+ * buffer exceeds [PumpStation.maxCompactionBackupsInternal].
+ */
+internal fun PumpStation.pushCompactionBackup(backup: CompactionBackup)
+{
+    val ring = compactionBackupsInternal
+    ring.addLast(backup)
+    while (ring.size > maxCompactionBackupsInternal)
+    {
+        ring.removeFirst()
+    }
+}
+
+/**
+ * Restore the most-recent [CompactionBackup] to the harness. Emits
+ * [CompactionRolledBack] so observability can see the rollback. Returns the
+ * restored backup so the orchestrator can continue with the retry or handoff.
+ *
+ * If the DITL [PumpStation.compactionRolledBackFunction] is bound, it runs first
+ * and may return a replacement backup that is used instead of the rolled-back one.
+ */
+internal suspend fun PumpStation.restoreFromBackup(
+    backup: CompactionBackup,
+    reason: String
+): CompactionBackup?
+{
+    emitEventInternal(CompactionRolledBack(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex,
+        backupGeneration = backup.generation,
+        reason = reason
+    ))
+
+    val ditl = compactionRolledBackFunctionInternal
+    val effective = if (ditl != null) ditl.invoke(backup, reason, this) else null
+
+    val apply = effective ?: backup
+    turnHistory.history.clear()
+    turnHistory.history.addAll(apply.turnHistory)
+    taskState.latestContent = apply.latestContent
+    contextWindow.loreBookKeys.clear()
+    contextWindow.loreBookKeys.putAll(apply.contextWindow.loreBookKeys)
+    // MiniBank is a small map; replace wholesale.
+    miniBank.contextMap.clear()
+    miniBank.contextMap.putAll(apply.miniBank.contextMap)
+
+    // Roll the cursor back so the next attempt can re-claim the slot.
+    compactionCursorWrite = compactionCursorWrite.copy(generation = backup.generation)
+
+    return apply
+}
+
+/**
+ * Compute the number of chunks to use for the Chunked strategy. Returns at least 1,
+ * capped by [PumpStation.maxChunksInternal].
+ */
+internal fun PumpStation.computeChunkCount(inputTokens: Int, turnsCount: Int): Int
+{
+    if (turnsCount <= 1) return 1
+    val byBudget = if (chunkTokenBudgetInternal <= 0) 1 else maxOf(1, inputTokens / chunkTokenBudgetInternal)
+    val byTurns = turnsCount
+    val raw = minOf(byBudget, byTurns, maxChunksInternal)
+    return maxOf(1, raw)
+}
+
+/**
+ * Partition a list into [chunkCount] roughly-equal contiguous slices. Used by the
+ * Chunked strategies. Always returns at least one chunk (the input itself if
+ * chunkCount is 1 or the list is small).
+ */
+internal fun <T> List<T>.chunkRounded(chunkCount: Int): List<List<T>>
+{
+    if (chunkCount <= 1 || size <= 1) return listOf(this)
+    val n = minOf(chunkCount, size)
+    val chunkSize = (size + n - 1) / n  // ceil
+    return this.chunked(chunkSize)
+}
+
+/**
+ * Apply a successful compaction result. Replaces [turnHistory] with a single
+ * assistant message containing the summary, then advances the [compactionCursor].
+ * Returns [CompactionResult.Applied].
+ */
+internal fun PumpStation.applyCompactionResult(
+    summary: MultimodalContent,
+    previousHistorySize: Int,
+    generation: Long,
+    inputTokens: Int,
+    outputTokens: Int,
+    fanout: ChunkFanoutMode?
+): CompactionResult.Applied
+{
+    turnHistory.history.clear()
+    turnHistory.add(ConverseData(role = ConverseRole.assistant, content = summary))
+    compactionCursorWrite = CompactionCursor(
+        generation = generation,
+        lastCompactedTurnIndex = taskState.turnIndex,
+        lastCompactionStrategy = compactionStrategyInternal,
+        lastCompactionInputTokens = inputTokens,
+        lastCompactionOutputTokens = outputTokens,
+        lastCompactionTimestamp = System.currentTimeMillis(),
+        lastFanoutMode = fanout
+    )
+    return CompactionResult.Applied(inputTokens, outputTokens, generation, fanout)
 }
 
 /**
@@ -587,25 +1036,39 @@ internal suspend fun PumpStation.runMemoryUpdatePhase()
 }
 
 /**
- * Run compaction strategy if memory pressure or scheduled. Uses the
- * [preCompactionFunction] and [postCompactionFunction] DITL hooks to allow the
- * developer to inspect and transform state before and after compaction.
+ * v3: Run the compaction strategy with multi-attempt retry and pre-emption detection.
+ *
+ * The phase is split into a [runCompactionAttempt] per-attempt function (which the
+ * orchestrator calls in a loop) and this top-level function (which owns the
+ * pre/post-DITL hooks and the event emissions). The attempt loop runs up to
+ * [PumpStation.maxCompactionAttemptsInternal] times; on [CompactionResult.Inflated]
+ * or [CompactionResult.RolledBack], the orchestrator restores the most-recent
+ * [CompactionBackup] and retries with a smaller scope. If the retry budget is
+ * exhausted, the harness hands off to the existing truncation path. The kill
+ * switch is not part of this cascade.
  */
-internal suspend fun PumpStation.runCompactionPhase()
+internal suspend fun PumpStation.runCompactionPhase(): CompactionResult
 {
-    if (compactionStrategyInternal == PumpStationCompactionStrategy.Whole && !shouldCompact()) return
-    if (compactionStrategyInternal == PumpStationCompactionStrategy.Chunked && !shouldCompact()) return
-    if (compactionStrategyInternal == PumpStationCompactionStrategy.Hybrid)
+    val initialStrategy = compactionStrategyInternal
+    val initialMemoryMode = memoryManagementModeInternal
+
+    // Pre-attempt gate: bail before emitting CompactionStarted so observability does
+    // not see a started event for an attempt that was never going to run. Mirrors
+    // the pre-v3 behavior: no event when below threshold or no summary agent.
+    if (!shouldAttemptCompaction(initialStrategy))
     {
-        val headroom = contextFillRatio() < compactionThresholdInternal
-        if (headroom) return
+        return CompactionResult.SkippedBelowThreshold
+    }
+    if (summaryAgentInternal == null)
+    {
+        return CompactionResult.SkippedNoAgent
     }
 
     emitEventInternal(CompactionStarted(
         runId = taskState.runId,
         turnIndex = taskState.turnIndex,
-        strategy = compactionStrategyInternal,
-        memoryMode = memoryManagementModeInternal
+        strategy = initialStrategy,
+        memoryMode = initialMemoryMode
     ))
 
     preCompactionFunctionInternal?.invoke(
@@ -615,14 +1078,85 @@ internal suspend fun PumpStation.runCompactionPhase()
         this
     )
 
-    when (compactionStrategyInternal)
+    val beforeSize = turnHistory.history.size
+    var workingStrategy: PumpStationCompactionStrategy = initialStrategy
+    var workingChunkBudget: Int = chunkTokenBudgetInternal
+    var lastResult: CompactionResult = CompactionResult.SkippedBelowThreshold
+    var attemptsUsed = 0
+
+    while (attemptsUsed < maxCompactionAttemptsInternal)
     {
-        PumpStationCompactionStrategy.Whole -> compactWhole()
-        PumpStationCompactionStrategy.Chunked -> compactChunked()
-        PumpStationCompactionStrategy.Hybrid -> compactHybrid()
+        attemptsUsed += 1
+
+        // Pre-attempt gate: bail if the strategy is below its threshold.
+        if (!shouldAttemptCompaction(workingStrategy))
+        {
+            lastResult = CompactionResult.SkippedBelowThreshold
+            break
+        }
+        if (summaryAgentInternal == null)
+        {
+            lastResult = CompactionResult.SkippedNoAgent
+            break
+        }
+
+        val result = runCompactionAttempt(workingStrategy, attemptsUsed, workingChunkBudget)
+        lastResult = result
+
+        when (result)
+        {
+            is CompactionResult.Applied,
+            is CompactionResult.DiscardedPreEmpted,
+            is CompactionResult.SkippedBelowThreshold,
+            is CompactionResult.SkippedNoAgent,
+            is CompactionResult.SkippedCursorAlreadyAdvanced,
+            is CompactionResult.HandedOffToTruncation -> break
+
+            is CompactionResult.Inflated ->
+            {
+                emitEventInternal(CompactionInflated(
+                    runId = taskState.runId,
+                    turnIndex = taskState.turnIndex,
+                    inputTokens = result.inputTokens,
+                    outputTokens = result.outputTokens,
+                    attempt = result.attempt,
+                    willRetry = attemptsUsed < maxCompactionAttemptsInternal
+                ))
+
+                val mostRecent = compactionBackupsInternal.lastOrNull()
+                if (mostRecent != null)
+                {
+                    restoreFromBackup(mostRecent, reason = "Inflated (attempt ${result.attempt})")
+                }
+
+                if (attemptsUsed >= maxCompactionAttemptsInternal)
+                {
+                    lastResult = handOffToTruncation()
+                    break
+                }
+
+                // Downgrade scope for the next attempt.
+                workingStrategy = when (workingStrategy)
+                {
+                    PumpStationCompactionStrategy.Whole -> PumpStationCompactionStrategy.Chunked
+                    PumpStationCompactionStrategy.Chunked -> PumpStationCompactionStrategy.Chunked
+                    PumpStationCompactionStrategy.Hybrid -> PumpStationCompactionStrategy.Chunked
+                }
+                workingChunkBudget = maxOf(1, workingChunkBudget / 2)
+            }
+
+            is CompactionResult.RolledBack ->
+            {
+                if (attemptsUsed >= maxCompactionAttemptsInternal)
+                {
+                    lastResult = handOffToTruncation()
+                    break
+                }
+                // Strategy stays the same; the rollback is the retry trigger.
+            }
+        }
     }
 
-    val beforeSize = turnHistory.history.size
     val afterSize = turnHistory.history.size
 
     postCompactionFunctionInternal?.invoke(
@@ -634,59 +1168,279 @@ internal suspend fun PumpStation.runCompactionPhase()
     emitEventInternal(CompactionCompleted(
         runId = taskState.runId,
         turnIndex = taskState.turnIndex,
-        strategy = compactionStrategyInternal,
-        memoryMode = memoryManagementModeInternal,
+        strategy = initialStrategy,
+        memoryMode = initialMemoryMode,
         previousHistorySize = beforeSize,
-        newHistorySize = afterSize
+        newHistorySize = afterSize,
+        result = lastResult
     ))
+
+    return lastResult
+}
+
+/**
+ * v3: Per-attempt orchestrator. Captures a [CompactionBackup], advances the cursor
+ * optimistically, runs the pre-prune + strategy, and emits a [CompactionAttemptCompleted]
+ * event. The strategy is parameterized by the working [PumpStationCompactionStrategy]
+ * and the working chunk token budget so retry-with-smaller-scope can shrink the input.
+ */
+internal suspend fun PumpStation.runCompactionAttempt(
+    strategy: PumpStationCompactionStrategy,
+    attempt: Int,
+    chunkBudget: Int
+): CompactionResult
+{
+    if (summaryAgentInternal == null) return CompactionResult.SkippedNoAgent
+
+    val capturedGeneration = compactionCursorWrite.generation + 1
+    val capturedTurnIndex = taskState.turnIndex
+    val rawTurns = turnHistory.history.toList()
+
+    // Capture backup before doing anything irreversible.
+    val backup = CompactionBackup(
+        generation = capturedGeneration,
+        turnIndex = capturedTurnIndex,
+        turnHistory = rawTurns,
+        latestContent = taskState.latestContent,
+        contextWindow = contextWindow.copy(),
+        miniBank = miniBank.copy()
+    )
+    pushCompactionBackup(backup)
+
+    // Optimistic cursor advance.
+    compactionCursorWrite = compactionCursorWrite.copy(
+        generation = capturedGeneration,
+        lastCompactedTurnIndex = capturedTurnIndex,
+        lastCompactionStrategy = strategy
+    )
+
+    val prePrunedTurns = prePruneForCompaction(rawTurns)
+
+    // Honor the working chunk budget passed in by the orchestrator.
+    val savedChunkBudget = chunkTokenBudget
+    chunkTokenBudget = chunkBudget
+    try
+    {
+        val result = when (strategy)
+        {
+            PumpStationCompactionStrategy.Whole -> compactWholeWithCapturedState(prePrunedTurns, capturedGeneration)
+            PumpStationCompactionStrategy.Chunked ->
+            {
+                if (compactionFanoutModeInternal == ChunkFanoutMode.Parallel)
+                {
+                    compactChunkedParallelWithCapturedState(prePrunedTurns, capturedGeneration)
+                }
+                else
+                {
+                    compactChunkedSequentialWithCapturedState(prePrunedTurns, capturedGeneration)
+                }
+            }
+            PumpStationCompactionStrategy.Hybrid -> compactHybridWithCapturedState(prePrunedTurns, capturedGeneration, attempt)
+        }
+
+        emitEventInternal(CompactionAttemptCompleted(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            attempt = attempt,
+            strategy = strategy,
+            fanout = compactionFanoutModeInternal.takeIf { strategy == PumpStationCompactionStrategy.Chunked },
+            result = result
+        ))
+
+        return result
+    }
+    finally
+    {
+        chunkTokenBudget = savedChunkBudget
+    }
+}
+
+/**
+ * v3: True if the strategy is configured to fire at the current fill ratio. Mirrors
+ * the pre-v3 `shouldCompact()` behavior for the per-strategy case and adds
+ * [PumpStationCompactionStrategy.Hybrid] headroom handling.
+ */
+internal fun PumpStation.shouldAttemptCompaction(strategy: PumpStationCompactionStrategy): Boolean
+{
+    return when (strategy)
+    {
+        PumpStationCompactionStrategy.Whole -> shouldCompact()
+        PumpStationCompactionStrategy.Chunked -> shouldCompact()
+        PumpStationCompactionStrategy.Hybrid -> contextFillRatio() >= compactionThresholdInternal
+    }
+}
+
+/**
+ * v3: Final handoff. Sets the failure state, emits the [CompactionHandedOffToTruncation]
+ * event, and returns [CompactionResult.HandedOffToTruncation]. The harness continues;
+ * the kill switch is NOT tripped (kill switch is an independent cost-control system).
+ */
+internal fun PumpStation.handOffToTruncation(): CompactionResult.HandedOffToTruncation
+{
+    val before = estimateTokensForCompaction(turnHistory.history)
+    taskState.lastError = PumpStationError.CompactionInflated
+    // Truncate oldest 50% of turn history as the emergency cut. The lorebook holds
+    // the canonical facts per the user's design intent; this is just a memory shape fix.
+    if (turnHistory.history.isNotEmpty())
+    {
+        val dropCount = turnHistory.history.size / 2
+        repeat(dropCount) { turnHistory.history.removeAt(0) }
+    }
+    val after = estimateTokensForCompaction(turnHistory.history)
+    emitEventInternal(CompactionHandedOffToTruncation(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex,
+        contextWindowBefore = before,
+        contextWindowAfter = after
+    ))
+    return CompactionResult.HandedOffToTruncation(before, after)
 }
 
 /**
  * Background lorebook update. Locks on [lorebookMutex] so concurrent turns
- * queue their updates in chronological order.
+ * queue their updates in chronological order. v3: tries to parse the agent's
+ * response as the typed [LorebookAgentOutput] envelope first; falls back to the
+ * legacy free-form JSON path if the typed parse fails. Discards outputs whose
+ * [LorebookAgentOutput.compactedThroughTurn] is `<= lorebookCursor.lastUpdatedTurnIndex`
+ * (the work has been subsumed by a later update).
  *
- * The lorebook agent is expected to return a JSON object of the form:
- * ```
- * {
- *   "updates": [
- *     {
- *       "key": "string",
- *       "value": "string",
- *       "weight": 0,
- *       "linkedKeys": ["..."],
- *       "aliasKeys": ["..."],
- *       "requiredKeys": ["..."]
- *     }
- *   ]
- * }
- * ```
- * For each update, if the key already exists in [ContextWindow.loreBookKeys] the
- * new value is merged with the existing entry via [LoreBook.combineValue]; otherwise
- * a fresh entry is created. Parse failures are silently ignored — the caller
- * already isolates exceptions, and a malformed response should never crash a turn.
+ * The legacy free-form JSON contract is preserved (see [applyLorebookUpdates]).
  */
 internal suspend fun PumpStation.updateLorebook()
 {
     if (lorebookAgentInternal == null) return
     lorebookMutex.withLock {
-        val content = taskState.latestContent ?: MultimodalContent()
-        val response = lorebookAgentInternal!!.executeLocal(content)
+        val input = buildLorebookAgentInput()
+        val response = lorebookAgentInternal!!.executeLocal(MultimodalContent(text = serialize(input, false)))
 
-        // Flag check: the lorebook agent signals halt/pass via the universal
-        // loop-control flags. These take precedence over the JSON payload —
-        // if the agent set terminatePipeline on its response, the harness
-        // needs to see that even if the JSON is otherwise valid.
         val flags = checkMultimodalFlags(response, "Lorebook")
         if (flags.shouldHalt)
-{
+        {
             taskState.lastError = PumpStationError.P2PRequestInvalid
             taskState.latestContent = response
             return
         }
         if (flags.shouldPass) return
 
-        applyLorebookUpdates(response)
+        // Try the typed envelope first.
+        val typed = extractJson<LorebookAgentOutput>(response.text)
+        if (typed != null)
+        {
+            applyTypedLorebookUpdates(typed)
+        }
+        else
+        {
+            // Fall back to the legacy free-form JSON path.
+            applyLorebookUpdates(response)
+        }
     }
+}
+
+/**
+ * Build the [LorebookAgentInput] the lorebook agent sees. Slices
+ * `turnHistory.history` by the cursor so the agent only gets the fresh turns.
+ * The pre-prune step is applied first, so blank turns, stash placeholders, etc.
+ * are not passed through.
+ */
+internal suspend fun PumpStation.buildLorebookAgentInput(): LorebookAgentInput
+{
+    val cursor = lorebookCursorInternal
+    val freshTurns = prePruneForCompaction(turnHistory.history.toList())
+    return LorebookAgentInput(
+        turnsSinceLastUpdate = freshTurns,
+        lastLorebookUpdateTurnIndex = cursor.lastUpdatedTurnIndex,
+        currentLorebook = contextWindow.loreBookKeys.values.toList(),
+        taskContext = LorebookTaskContext(
+            task = entryUserPrompt,
+            persona = personality,
+            systemTask = systemTask,
+            userGuidelines = userGuidelines
+        ),
+        harnessGeneration = compactionCursorInternal.generation
+    )
+}
+
+/**
+ * Construct a fresh [LoreBook] from a [LorebookUpdate]. Helper kept as a top-level
+ * function (not an extension on [LoreBook]) because [LoreBook] is a `data class` whose
+ * primary constructor parameter is marked `@Transient`, and Kotlin's parser can
+ * confuse an `LoreBook().also { ... }` chain with an unresolved expression. Centralizing
+ * construction here keeps the apply path short and unambiguous.
+ */
+internal fun newLoreBookFromUpdate(update: LorebookUpdate): LoreBook
+{
+    val fresh = LoreBook(false)
+    fresh.key = update.key
+    fresh.value = update.value
+    fresh.weight = update.weight
+    fresh.linkedKeys.addAll(update.linkedKeys)
+    fresh.aliasKeys.addAll(update.aliasKeys)
+    fresh.requiredKeys.addAll(update.requiredKeys)
+    return fresh
+}
+
+/**
+ * Apply a [LorebookAgentOutput] from the typed envelope. Discards outputs whose
+ * [LorebookAgentOutput.compactedThroughTurn] is not strictly greater than the
+ * current cursor (work has been subsumed). Applies deletions before updates so
+ * an update + delete on the same key resolves to "no entry". Advances the
+ * [lorebookCursor] on success.
+ */
+internal fun PumpStation.applyTypedLorebookUpdates(output: LorebookAgentOutput)
+{
+    val cursor = lorebookCursorInternal
+    if (output.compactedThroughTurn <= cursor.lastUpdatedTurnIndex)
+    {
+        return
+    }
+
+    val map = contextWindow.loreBookKeys
+
+    // Deletions first.
+    for (key in output.deletions)
+    {
+        if (key.isNotEmpty()) map.remove(key)
+    }
+
+    // Then updates.
+    for (update in output.updates)
+    {
+        if (update.key.isEmpty()) continue
+        val existing = map[update.key]
+        if (existing == null)
+        {
+            val fresh = newLoreBookFromUpdate(update)
+            map[update.key] = fresh
+        }
+        else
+        {
+            when (update.operation)
+            {
+                LorebookOperation.Merge ->
+                {
+                    val incoming = newLoreBookFromUpdate(update)
+                    existing.combineValue(incoming)
+                }
+                LorebookOperation.Replace ->
+                {
+                    existing.value = update.value
+                    existing.weight = update.weight
+                    existing.linkedKeys.clear()
+                    existing.linkedKeys.addAll(update.linkedKeys)
+                    existing.aliasKeys.clear()
+                    existing.aliasKeys.addAll(update.aliasKeys)
+                    existing.requiredKeys.clear()
+                    existing.requiredKeys.addAll(update.requiredKeys)
+                }
+            }
+        }
+    }
+
+    lorebookCursorWrite = cursor.copy(
+        lastUpdatedTurnIndex = output.compactedThroughTurn,
+        lastUpdateTimestamp = System.currentTimeMillis(),
+        lastUpdateGeneration = compactionCursorInternal.generation
+    )
 }
 
 /**
@@ -1033,12 +1787,36 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
  * Sets [PumpStationTaskState.lastError] and [PumpStationTaskState.exitReason]
  * when max turns is hit so the finalization phase emits a failure event.
  */
-internal suspend fun PumpStation.runHarnessLoop()
+/**
+ * Drive the harness turn loop. Returns a [KillSwitchException] (re-thrown by the caller after
+ * [runFinalizationPhase] has emitted the standard failure event) when the auto-enforcement
+ * path trips the switch on token limits. Returns null for normal exit (max turns, halt signal,
+ * or no trip).
+ *
+ * The catch sits at the loop boundary so the harness can transition cleanly: it sets
+ * [PumpStationTaskState.lastError] and [PumpStationTaskState.exitReason] to the
+ * [PumpStationError.KillSwitchTripped] / [PumpStationExitReason.KillSwitchTripped] pair
+ * before breaking out of the loop. The exception itself is returned (not re-thrown) so that
+ * [runFinalizationPhase] can still run and emit the [HarnessFailed] event for downstream
+ * observers (the visualizer, the trace logger, etc.) before the caller sees the throw.
+ */
+internal suspend fun PumpStation.runHarnessLoop(): KillSwitchException?
 {
+    var tripException: KillSwitchException? = null
     while (taskState.turnIndex < maxHarnessTurnsInternal && taskState.status == PumpStationStatus.Running)
 {
         if (!checkPauseGuards(PumpStationPausePhase.BeforeJudge)) break
-        val result = runTurn()
+        val result = try
+        {
+            runTurn()
+        }
+        catch (e: KillSwitchException)
+        {
+            taskState.lastError = PumpStationError.KillSwitchTripped
+            taskState.exitReason = PumpStationExitReason.KillSwitchTripped
+            tripException = e
+            break
+        }
         if (result is TurnResult.Halt)
 {
             taskState.exitReason = result.reason
@@ -1051,6 +1829,7 @@ internal suspend fun PumpStation.runHarnessLoop()
         taskState.lastError = PumpStationError.MaxTurnsExceeded
         taskState.exitReason = PumpStationExitReason.MaxTurnsHit
     }
+    return tripException
 }
 
 //=========================================Single Turn=============================================================
@@ -1233,8 +2012,88 @@ internal fun agentTokenUsage(agent: P2PInterface?): Pair<Int, Pair<Int, Int>>?
 {
     val pipeline = agent as? Pipeline ?: return null
     val usage = pipeline.getTokenUsage()
-    val input = usage.totalInputTokens.takeIf { it > 0 } ?: return null
-    val output = usage.totalOutputTokens.takeIf { it > 0 } ?: 0
-    val total = if (input > 0 || output > 0) input + output else 0
+    val input = usage.totalInputTokens
+    val output = usage.totalOutputTokens
+    if (input <= 0 && output <= 0) return null
+    val total = input + output
     return input to (output to total)
+}
+
+/**
+ * Auto-enforce a [P2PInterface]'s attached [KillSwitch]. Mirrors [com.TTT.Pipeline.Manifold.checkKillSwitch].
+ *
+ * If the switch has an [KillSwitch.inputTokenLimit] or [KillSwitch.outputTokenLimit] configured
+ * and the supplied counts exceed them, the switch's [KillSwitch.onTripped] callback is invoked
+ * synchronously. The default callback throws [KillSwitchException] (see
+ * [com.TTT.P2P.KillSwitchException]); the harness loop catches that at the [runHarnessLoop]
+ * boundary and transitions the run to a [PumpStationError.KillSwitchTripped] state.
+ *
+ * The supplied [runStartElapsedMs] is used to populate [KillSwitchContext.elapsedMs]. When zero
+ * (e.g. before [PumpStation.P2PInitInternal] has run) elapsedMs defaults to 0.
+ *
+ * @param inputTokens  The current accumulated input token count for the caller's scope.
+ * @param outputTokens The current accumulated output token count for the caller's scope.
+ * @param runStartElapsedMs Wall-clock millis when the harness run started.
+ * @throws KillSwitchException via the default [KillSwitch.onTripped] when any limit is exceeded.
+ */
+internal fun P2PInterface.checkKillSwitch(
+    inputTokens: Int,
+    outputTokens: Int,
+    runStartElapsedMs: Long
+)
+{
+    val ks = killSwitch ?: return
+    val inputLimit = ks.inputTokenLimit
+    val outputLimit = ks.outputTokenLimit
+    val inputExceeded = inputLimit != null && inputTokens > inputLimit
+    val outputExceeded = outputLimit != null && outputTokens > outputLimit
+    if (!inputExceeded && !outputExceeded) return
+
+    val elapsedMs = if (runStartElapsedMs > 0) System.currentTimeMillis() - runStartElapsedMs else 0L
+    val reason = when
+    {
+        inputExceeded -> "input_exceeded"
+        outputExceeded -> "output_exceeded"
+        else -> return
+    }
+    ks.onTripped(KillSwitchContext(
+        p2pInterface = this,
+        inputTokensSpent = inputTokens,
+        outputTokensSpent = outputTokens,
+        elapsedMs = elapsedMs,
+        reason = reason,
+        accumulatedInputTokens = inputTokens,
+        accumulatedOutputTokens = outputTokens
+    ))
+}
+
+/**
+ * Record the token usage from a single agent call into the station-level accumulator and
+ * auto-enforce the station's [PumpStation.killSwitch] against the running total. Returns
+ * silently when [agent] is null or not a [Pipeline] (no token usage available).
+ *
+ * Called from the harness loop after each phase that produces a [Pipeline] response — judge,
+ * and dispatch. The path phase uses [PathObject.checkKillSwitch] directly against the
+ * path's own per-path usage and additionally calls [PumpStation.addTokenUsage] to fold the
+ * path's tokens into the station total.
+ *
+ * Uses the legacy [Pipeline.inputTokensSpent] / [Pipeline.outputTokensSpent] fields rather
+ * than the comprehensive [com.TTT.Pipe.TokenUsage.totalInputTokens] because the latter is
+ * reset by [Pipeline.execute] at the start of each agent call. The legacy fields are only
+ * overwritten by the comprehensive tracking path, so when a test or a custom agent does not
+ * enable comprehensive token tracking, the values survive across calls — which is what the
+ * station-level kill switch wants (it tracks the *cumulative* total across all agents).
+ */
+internal fun PumpStation.recordAndCheckKillSwitch(agent: P2PInterface?)
+{
+    val pipeline = agent as? Pipeline ?: return
+    val inputTokens = pipeline.inputTokensSpent
+    val outputTokens = pipeline.outputTokensSpent
+    if (inputTokens <= 0 && outputTokens <= 0) return
+    addTokenUsage(inputTokens, outputTokens)
+    checkKillSwitch(
+        accumulatedInputTokensInternal,
+        accumulatedOutputTokensInternal,
+        runStartElapsedMsInternal
+    )
 }

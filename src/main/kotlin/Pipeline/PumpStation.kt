@@ -331,6 +331,25 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Read the path's [Pipeline.inputTokensSpent] / [Pipeline.outputTokensSpent] (the legacy
+     * fields) when the [internalAgent] is a [Pipeline]. Returns a (0, 0) pair for paths backed
+     * by an opaque [P2PInterface] or for paths without an internal agent. Unlike
+     * [getPathTokenUsage] this does not require comprehensive token tracking to be enabled on
+     * the path's pipe; the legacy fields are populated by the pipe's [countTokens] call during
+     * normal execution. Used by the per-path kill switch enforcement to compare against the
+     * path's own [PathObject.killSwitch] limits.
+     */
+    fun getPathLegacyTokenUsage(): Pair<Int, Int>
+    {
+        val agent = internalAgent ?: return 0 to 0
+        return when (agent)
+        {
+            is Pipeline -> agent.inputTokensSpent to agent.outputTokensSpent
+            else -> 0 to 0
+        }
+    }
+
+    /**
      * Returns true if this path is configured to run in background.
      */
     val isRunsInBackground: Boolean get() = _runsInBackground
@@ -580,7 +599,14 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
  *
  * Supports multiple memory management tactics like truncation, compaction, amnesia, and hybrid models.
  *
- * Includes killswitch, turn limits, and token budgeting for cost control.
+ * Includes a [KillSwitch] for cost control. The switch can be manually tripped via
+ * [tripKillSwitch] (soft halt that lets the current turn finish) or auto-enforced: when an
+ * [KillSwitch.inputTokenLimit] or [KillSwitch.outputTokenLimit] is configured, the harness loop
+ * checks the running token total after each judge, dispatch, and path phase, and trips when the
+ * limit is exceeded. The default [KillSwitch.onTripped] callback throws [KillSwitchException],
+ * which the loop catches at the [runHarnessLoop] boundary so [runFinalizationPhase] can emit
+ * the standard [HarnessFailed] event. The switch propagates to every [PathObject] registered
+ * with the station so per-path limits are honored independently.
  *
  * Is able to automate its own config and apply core defaults internally.
  *
@@ -588,8 +614,36 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
  *
  * Is also a p2p interface so a harness can be part of the path of another harness.
  */
-class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
+class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
 {
+    //=====================================KillSwitch (Group O)========================================================
+    /**
+     * Backing field for the [P2PInterface.killSwitch] override. The custom setter propagates the
+     * switch to every [PathObject] in [pathList] and [reservePaths] so per-path enforcement and
+     * per-path DSL settings stay in sync with the station's switch. This mirrors the propagation
+     * pattern already used by [Manifold], [Splitter], [Junction], [Connector], [MultiConnector],
+     * and [DistributionGrid].
+     */
+    private var _killSwitch: KillSwitch? = killSwitch
+
+    /**
+     * Kill switch attached to this PumpStation. The default [KillSwitch.onTripped] callback throws
+     * [KillSwitchException]; the harness loop catches it at the [runHarnessLoop] boundary so
+     * [runFinalizationPhase] can emit the standard failure event.
+     *
+     * Assigning a value propagates the switch to every registered [PathObject] (both
+     * [pathList] and [reservePaths]). New paths added via [addPath] / [addReservePath] after the
+     * switch is set will also receive the current switch automatically.
+     */
+    override var killSwitch: KillSwitch?
+        get() = _killSwitch
+        set(value)
+        {
+            _killSwitch = value
+            pathList.values.forEach { it.killSwitch = value }
+            reservePaths.values.forEach { it.killSwitch = value }
+        }
+
 //======================================Properties======================================================================
 
 //---------------------------------------------Core Agents--------------------------------------------------------------
@@ -898,6 +952,44 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     private var harnessIsReady = false
 
+    //=====================================Group O: Token Accumulator (Kill Switch Input)==============================
+    /**
+     * Tracks total input/output tokens consumed by agents across the harness run, so the
+     * [checkKillSwitch] enforcement can compare against [KillSwitch.inputTokenLimit] and
+     * [KillSwitch.outputTokenLimit]. Reset in [P2PInitInternal]. Updated by
+     * [addTokenUsage] after each agent call so the check sees a running total.
+     *
+     * @property runStartElapsedMs Wall-clock millis when the current harness run started, used to
+     *     populate [KillSwitchContext.elapsedMs]. Zero before [P2PInitInternal] has run.
+     */
+    private var runStartElapsedMs: Long = 0
+
+    /**
+     * Total input tokens consumed by all agents in this run. Monotonically increasing.
+     * Reset to 0 at the start of each [executeLocal] call.
+     */
+    private var accumulatedInputTokens: Int = 0
+
+    /**
+     * Total output tokens produced by all agents in this run. Monotonically increasing.
+     * Reset to 0 at the start of each [executeLocal] call.
+     */
+    private var accumulatedOutputTokens: Int = 0
+
+    /**
+     * Accumulate token usage from a single agent call into the station-level running total.
+     * Called from the harness loop after each [agentTokenUsage] read so [checkKillSwitch] can
+     * compare the running total against the kill switch limits.
+     *
+     * @param input  Number of input tokens the agent consumed on this call.
+     * @param output Number of output tokens the agent produced on this call.
+     */
+    internal fun addTokenUsage(input: Int, output: Int)
+    {
+        if (input > 0) accumulatedInputTokens += input
+        if (output > 0) accumulatedOutputTokens += output
+    }
+
     /**
      * Descriptors produced from initializing each path. This is required to pass onward to the dispatch
      * agent's internal systems to allow it to call a given path. The general expectation is that the dispatch agent
@@ -982,6 +1074,95 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         exitReason = null,
         memoryActionResult = null
     )
+
+    //=====================================v3: Compaction state and backups==========================================
+
+    /**
+     * Per-PumpStation compaction cursor. Read/written by the compaction orchestrator. The
+     * cursor lives both on the [taskState] (for snapshot/replay) and on this backing field
+     * (for fast internal access in the orchestrator hot path). They are kept in sync by the
+     * [compactionCursorInternal] getter/setter below.
+     */
+    internal var compactionCursor: CompactionCursor = CompactionCursor()
+
+    /**
+     * Per-PumpStation lorebook cursor. Same dual-location pattern as [compactionCursor].
+     */
+    internal var lorebookCursor: LorebookCursor = LorebookCursor()
+
+    /**
+     * In-memory ring buffer of [CompactionBackup] snapshots. Captured before every
+     * compaction attempt; used by [restoreFromBackup] to roll back inflated or pre-empted
+     * attempts. Bounded by [maxCompactionBackups] (default 3, configurable).
+     */
+    private val compactionBackups: ArrayDeque<CompactionBackup> = ArrayDeque()
+
+    /**
+     * Developer-supplied pre-prune transform. Applied to the raw [turnHistory] before it
+     * reaches the summary agent. When null, the default pruner (drop blank, drop stash
+     * placeholder, collapse duplicate system messages, drop pure echoes, collapse
+     * tool-call/result pairs, strip excess metadata, normalize whitespace, drop turns
+     * already in [turnSummary]) runs instead.
+     */
+    private var prePruneTransform: (suspend (List<ConverseData>, PumpStation) -> List<ConverseData>)? = null
+
+    /**
+     * Developer-supplied extra pruner that wraps the default. Applied after the default
+     * pruner. Multiple extra pruners can be registered; they run in registration order.
+     */
+    private val extraPrePruneTransforms: MutableList<suspend (List<ConverseData>, PumpStation) -> List<ConverseData>> = mutableListOf()
+
+    /**
+     * DITL hook that fires when a [CompactionBackup] is restored. Receives the backup
+     * being restored, a human-readable reason, and the harness. May return a replacement
+     * backup (e.g. with patched state) or null to use the restored one as-is. Throwing
+     * from this hook converts the orchestrator's retry to a handoff-to-truncation.
+     */
+    private var compactionRolledBackFunction: (suspend (CompactionBackup, String, PumpStation) -> CompactionBackup?)? = null
+
+    /**
+     * Number of pre-prune + summarize + fold iterations the orchestrator will attempt
+     * before handing off to truncation. Configurable via [setMaxCompactionAttempts].
+     */
+    internal var maxCompactionAttempts: Int = 2
+
+    /**
+     * Token budget per chunk when the Chunked strategy is used. Each chunk's estimated
+     * input token count must fit under this budget; the orchestrator partitions
+     * [turnHistory] into `max(1, tokens / chunkTokenBudget)` chunks.
+     */
+    internal var chunkTokenBudget: Int = 2000
+
+    /**
+     * Hard cap on the number of chunks produced by a single Chunked strategy attempt.
+     * Prevents pathological partitioning of very large turn histories.
+     */
+    internal var maxChunks: Int = 16
+
+    /**
+     * Semaphore permit count for the [ChunkFanoutMode.Parallel] strategy. Bounds the
+     * number of concurrent chunk-summarize calls to the summary agent.
+     */
+    internal var maxParallelChunks: Int = 4
+
+    /**
+     * Maximum number of [CompactionBackup] snapshots retained in the ring buffer.
+     */
+    internal var maxCompactionBackups: Int = 3
+
+    /**
+     * Chunk fan-out mode for the [PumpStationCompactionStrategy.Chunked] strategy.
+     * Sequential is the default (causal ordering preserved, single-mutex contract);
+     * Parallel requires an explicit opt-in via [setCompactionFanoutMode] or the
+     * `compaction { fanout = Parallel }` DSL block.
+     */
+    internal var compactionFanoutMode: ChunkFanoutMode = ChunkFanoutMode.Sequential
+
+    /**
+     * Headroom threshold (0.0-1.0) below which the [PumpStationCompactionStrategy.Hybrid]
+     * strategy downgrades to Chunked. Above this headroom, Hybrid delegates to Whole.
+     */
+    internal var hybridWholeHeadroom: Double = 0.3
 
     /**
      * Token budget settings for this PumpStation. Stored so it can be propagated
@@ -1263,6 +1444,12 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         taskState.runId = runId
         taskState.status = PumpStationStatus.Running
 
+        // Reset kill-switch token accumulator. The enforcement call needs a clean baseline so
+        // the checkKillSwitch running total reflects only this run's token usage.
+        runStartElapsedMs = System.currentTimeMillis()
+        accumulatedInputTokens = 0
+        accumulatedOutputTokens = 0
+
         // Validate dispatch agent is a Pipeline (hard constraint per design)
         require(dispatchAgent is Pipeline) {
             "PumpStation.init() failed: dispatchAgent must be a Pipeline. " +
@@ -1499,13 +1686,22 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
 
     /**
      * Primary developer entry point. Executes the PumpStation harness on the given input.
+     *
+     * If the kill switch's auto-enforcement path trips on token limits, the loop catches the
+     * [com.TTT.P2P.KillSwitchException], sets the harness state to the
+     * [PumpStationError.KillSwitchTripped] failure class, and [runFinalizationPhase] still
+     * runs to emit the standard [HarnessFailed] event for downstream observers. After
+     * finalization the exception is re-thrown to the caller so the [com.TTT.Pipeline.Manifold]
+     * throw semantics are preserved end-to-end.
      */
     override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
     {
         if (!harnessIsReady) P2PInit()
         runPreInitPhase(content)
-        runHarnessLoop()
-        return runFinalizationPhase()
+        val trip = runHarnessLoop()
+        val result = runFinalizationPhase()
+        if (trip != null) throw trip
+        return result
     }
 
     /**
@@ -1675,6 +1871,60 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     internal val compactionThresholdInternal get() = compactionThreshold
     internal val compactionStrategyInternal get() = compactionStrategy
     internal val memoryManagementModeInternal get() = memoryManagementMode
+
+    //=====================================v3: compaction / lorebook accessors====================================
+    // Mirrors the existing Group I accessor pattern. Reads and writes to the v3 state
+    // live alongside the existing per-turn fields so the orchestrator in PumpStationLoop.kt
+    // can keep its call sites short and consistent.
+
+    /** Internal read of the v3 compaction cursor. */
+    internal val compactionCursorInternal: CompactionCursor
+        get() = compactionCursor
+
+    /**
+     * Internal write of the v3 compaction cursor. The setter also propagates the new
+     * value into [taskState.compactionCursor] so the snapshot and replay path sees the
+     * same state the orchestrator is working with.
+     */
+    internal var compactionCursorWrite: CompactionCursor
+        get() = compactionCursor
+        set(value)
+        {
+            compactionCursor = value
+            taskState.compactionCursor = value
+        }
+
+    /** Internal read of the v3 lorebook cursor. */
+    internal val lorebookCursorInternal: LorebookCursor
+        get() = lorebookCursor
+
+    /**
+     * Internal write of the v3 lorebook cursor. Mirrors the [compactionCursorWrite] pattern.
+     */
+    internal var lorebookCursorWrite: LorebookCursor
+        get() = lorebookCursor
+        set(value)
+        {
+            lorebookCursor = value
+            taskState.lorebookCursor = value
+        }
+
+    /** Ring buffer of compaction backups (read-only for orchestrator). */
+    internal val compactionBackupsInternal: ArrayDeque<CompactionBackup>
+        get() = compactionBackups
+
+    internal val prePruneTransformInternal get() = prePruneTransform
+    internal val extraPrePruneTransformsInternal: List<suspend (List<ConverseData>, PumpStation) -> List<ConverseData>>
+        get() = extraPrePruneTransforms
+
+    internal val compactionRolledBackFunctionInternal get() = compactionRolledBackFunction
+    internal val maxCompactionAttemptsInternal get() = maxCompactionAttempts
+    internal val chunkTokenBudgetInternal get() = chunkTokenBudget
+    internal val maxChunksInternal get() = maxChunks
+    internal val maxParallelChunksInternal get() = maxParallelChunks
+    internal val maxCompactionBackupsInternal get() = maxCompactionBackups
+    internal val compactionFanoutModeInternal get() = compactionFanoutMode
+    internal val hybridWholeHeadroomInternal get() = hybridWholeHeadroom
     internal val memoryUpdateTimeoutMsInternal get() = memoryUpdateTimeoutMs
     internal val consecutivePathCountInternal: Int
         get() = consecutivePathCount
@@ -1714,6 +1964,20 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
 
     internal val maxTurnHistorySizeInternal get() = maxTurnHistorySize
     internal val maxRawTurnHistorySizeInternal get() = maxRawTurnHistorySize
+
+    //=====================================Group O: KillSwitch Accessors==============================================
+    /**
+     * Internal accessors so [PumpStationLoop.kt] extension functions (Group O: kill switch
+     * auto-enforcement) can read the private token-accumulator fields. [addTokenUsage] is
+     * also exposed as an internal function so the loop can update the running total.
+     *
+     * @property runStartElapsedMsInternal Exposes [runStartElapsedMs] to the loop.
+     * @property accumulatedInputTokensInternal Exposes [accumulatedInputTokens] to the loop.
+     * @property accumulatedOutputTokensInternal Exposes [accumulatedOutputTokens] to the loop.
+     */
+    internal val runStartElapsedMsInternal get() = runStartElapsedMs
+    internal val accumulatedInputTokensInternal get() = accumulatedInputTokens
+    internal val accumulatedOutputTokensInternal get() = accumulatedOutputTokens
 
     //=====================================Group O: Emergency Halt====================================================
     // Trip/force-halt methods so the PumpStationLoop can be safely interrupted
@@ -1881,11 +2145,14 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     fun getPath(name: String): PathObject? = pathList[name] ?: reservePaths[name]
 
     /**
-     * Adds a path to the normal path list (not reserve). The path's parent is set to this station.
+     * Adds a path to the normal path list (not reserve). The path's parent is set to this station,
+     * and the station's current [killSwitch] (if any) is propagated to the new path so per-path
+     * enforcement stays in sync without requiring the caller to re-assign the switch.
      */
     fun addPath(path: PathObject)
     {
         path.setParentInterface(this)
+        path.killSwitch = _killSwitch
         pathList[path.pathName] = path
     }
 
@@ -2221,11 +2488,14 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         }
 
         // --- Emit PathCompleted event ---
-        val pathUsage = path.getPathTokenUsage()
-        val pathInputTokens = pathUsage?.totalInputTokens?.takeIf { it > 0 }
-        val pathOutputTokens = pathUsage?.totalOutputTokens?.takeIf { it > 0 }
-        val pathTotalTokens = if (pathInputTokens != null && pathOutputTokens != null)
-            pathInputTokens + pathOutputTokens else pathUsage?.let { it.totalInputTokens + it.totalOutputTokens }?.takeIf { it > 0 }
+        // Read the path's token usage. The legacy-fields helper is preferred over the
+        // comprehensive-tracking TokenUsage because the base Pipe.countTokens call always
+        // populates the legacy fields on every execution, whereas the comprehensive totals
+        // require the pipe to opt in. See PathObject.getPathLegacyTokenUsage for the full
+        // rationale. The PathCompleted event mirrors the same numbers back to listeners.
+        val (pathInputTokens, pathOutputTokens) = path.getPathLegacyTokenUsage()
+        val pathTotalTokens = if (pathInputTokens > 0 || pathOutputTokens > 0)
+            pathInputTokens + pathOutputTokens else 0
         backgroundEventQueue.trySend(PathCompleted(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
@@ -2233,10 +2503,25 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
             pathName = pathName,
             riskLevel = riskLevel,
             result = result,
-            inputTokens = pathInputTokens,
-            outputTokens = pathOutputTokens,
-            totalTokens = pathTotalTokens
+            inputTokens = pathInputTokens.takeIf { it > 0 },
+            outputTokens = pathOutputTokens.takeIf { it > 0 },
+            totalTokens = pathTotalTokens.takeIf { it > 0 }
         ))
+
+        // Per-path kill switch enforcement. The path's own killSwitch is checked against the
+        // path's own token usage (not the station's accumulated total). A path can carry a
+        // stricter limit than the station, and the propagation from PumpStation.addPath /
+        // PumpStation.killSwitch setter ensures the slot is populated. The default
+        // KillSwitch.onTripped throws KillSwitchException which propagates up through
+        // runHarnessLoop's catch and transitions the run to a PumpStationError.KillSwitchTripped
+        // failure state.
+        if (pathInputTokens > 0 || pathOutputTokens > 0)
+        {
+            // Station accumulator: per-path tokens also count toward the station total so the
+            // station-level check can trip on cumulative usage as well.
+            addTokenUsage(pathInputTokens, pathOutputTokens)
+            path.checkKillSwitch(pathInputTokens, pathOutputTokens, runStartElapsedMs)
+        }
 
         taskState.lastPathResult = result
         taskState.latestContent = result
@@ -2544,6 +2829,136 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     fun setCompactionThreshold(threshold: Double): PumpStation
     {
         this.compactionThreshold = threshold
+        return this
+    }
+
+    //=====================================v3: Compaction setters=================================================
+
+    /**
+     * Sets the chunk fan-out mode for the [PumpStationCompactionStrategy.Chunked] strategy.
+     * Default is [ChunkFanoutMode.Sequential]. Switching to [ChunkFanoutMode.Parallel]
+     * requires a maxParallelChunks value (configurable via [setMaxParallelChunks]).
+     *
+     * @param mode The fan-out mode.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setCompactionFanoutMode(mode: ChunkFanoutMode): PumpStation
+    {
+        this.compactionFanoutMode = mode
+        return this
+    }
+
+    /**
+     * Sets the maximum number of compaction attempts (pre-prune + summarize + fold) the
+     * orchestrator will run before handing off to truncation. Default is 2.
+     *
+     * @param value The maximum attempts; must be >= 1.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxCompactionAttempts(value: Int): PumpStation
+    {
+        require(value >= 1) { "maxCompactionAttempts must be >= 1, got $value" }
+        this.maxCompactionAttempts = value
+        return this
+    }
+
+    /**
+     * Sets the token budget per chunk for the Chunked strategy. The orchestrator partitions
+     * `turnHistory` into `max(1, tokens / chunkTokenBudget)` chunks (capped by
+     * [setMaxChunks]). Default 2000.
+     */
+    fun setChunkTokenBudget(value: Int): PumpStation
+    {
+        require(value >= 1) { "chunkTokenBudget must be >= 1, got $value" }
+        this.chunkTokenBudget = value
+        return this
+    }
+
+    /**
+     * Sets the hard cap on the number of chunks the Chunked strategy produces from a
+     * single attempt. Default 16. Prevents pathological partitioning of very large
+     * histories.
+     */
+    fun setMaxChunks(value: Int): PumpStation
+    {
+        require(value >= 1) { "maxChunks must be >= 1, got $value" }
+        this.maxChunks = value
+        return this
+    }
+
+    /**
+     * Sets the semaphore permit count for the [ChunkFanoutMode.Parallel] strategy. Default
+     * 4. Bounds the number of concurrent chunk-summarize calls to the summary agent.
+     */
+    fun setMaxParallelChunks(value: Int): PumpStation
+    {
+        require(value >= 1) { "maxParallelChunks must be >= 1, got $value" }
+        this.maxParallelChunks = value
+        return this
+    }
+
+    /**
+     * Sets the maximum number of [CompactionBackup] snapshots retained in the ring buffer.
+     * Default 3. Older backups are dropped when the buffer overflows.
+     */
+    fun setMaxCompactionBackups(value: Int): PumpStation
+    {
+        require(value >= 1) { "maxCompactionBackups must be >= 1, got $value" }
+        this.maxCompactionBackups = value
+        return this
+    }
+
+    /**
+     * Sets the headroom threshold (0.0-1.0) below which the
+     * [PumpStationCompactionStrategy.Hybrid] strategy downgrades to Chunked. Above this
+     * headroom, Hybrid delegates to Whole. Default 0.3.
+     */
+    fun setHybridWholeHeadroom(value: Double): PumpStation
+    {
+        require(value in 0.0..1.0) { "hybridWholeHeadroom must be in [0,1], got $value" }
+        this.hybridWholeHeadroom = value
+        return this
+    }
+
+    /**
+     * Replaces the default pre-prune transform entirely. The transform is applied to
+     * the raw [turnHistory] before it reaches the summary agent, allowing the developer
+     * to drop application-specific noise (e.g. their own marker tokens) without paying
+     * LLM cost. Pass null to restore the default pruner.
+     */
+    fun setPrePruneTransform(
+        transform: (suspend (List<ConverseData>, PumpStation) -> List<ConverseData>)?
+    ): PumpStation
+    {
+        this.prePruneTransform = transform
+        return this
+    }
+
+    /**
+     * Adds an extra pre-prune transform that runs *after* the default pruner. Multiple
+     * extra pruners can be registered; they run in registration order. Returns the
+     * registration index so the developer can later remove the transform if needed.
+     */
+    fun appendPrePruneTransform(
+        transform: suspend (List<ConverseData>, PumpStation) -> List<ConverseData>
+    ): Int
+    {
+        extraPrePruneTransforms.add(transform)
+        return extraPrePruneTransforms.size - 1
+    }
+
+    /**
+     * Sets the DITL function that fires when a [CompactionBackup] is restored. The function
+     * receives the backup, a human-readable reason, and the harness. It may return a
+     * replacement backup (which will be applied) or null to use the restored one as-is.
+     * Throwing from this hook converts the orchestrator's retry to a handoff-to-truncation.
+     * Pass null to clear the binding.
+     */
+    fun setCompactionRolledBackFunction(
+        func: (suspend (CompactionBackup, String, PumpStation) -> CompactionBackup?)?
+    ): PumpStation
+    {
+        this.compactionRolledBackFunction = func
         return this
     }
 
@@ -3159,6 +3574,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     fun addReservePath(path: PathObject): PumpStation
     {
         path.setParentInterface(this)
+        path.killSwitch = _killSwitch
         reservePaths[path.pathName] = path
         return this
     }

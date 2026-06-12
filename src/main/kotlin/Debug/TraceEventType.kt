@@ -199,6 +199,11 @@ enum class TraceEventType {
     PUMP_STATION_MEMORY_UPDATE_COMPLETED,
     PUMP_STATION_COMPACTION_STARTED,
     PUMP_STATION_COMPACTION_COMPLETED,
+    // v3: per-attempt / failure / handoff events for the new orchestrator. CompactionCompleted
+    // is reused for the v3 per-attempt event (see PumpStationHelpers.kt) for visualizer compat.
+    PUMP_STATION_COMPACTION_INFLATED,
+    PUMP_STATION_COMPACTION_ROLLED_BACK,
+    PUMP_STATION_COMPACTION_HANDED_OFF,
     PUMP_STATION_GOAL_VALIDATION_STARTED,
     PUMP_STATION_GOAL_VALIDATION_COMPLETED,
 
