@@ -542,6 +542,17 @@ class PumpStationMiniMaxLiveTest
     {
         val subdir = File(traceDir(), testName)
         if (!subdir.exists()) subdir.mkdirs()
+        // Clean stale pumpstation-*.html files from prior runs of this test.
+        // Without this, the per-test subdir accumulates files (verified: 2-7
+        // per subdir across runs), wasting disk and making it harder to find
+        // the current run\'s artifacts. The pump station HTML is keyed by
+        // `pumpstation-<runId12>.html` where runId is unique per harness
+        // invocation, so collisions are unlikely but the autoExport still
+        // reuses the same filename within a run. The agent-*.html files are
+        // keyed by pipeName which is stable across runs, so we leave those
+        // alone — the latest is always the most recent.
+        subdir.listFiles { f -> f.name.startsWith("pumpstation-") && f.name.endsWith(".html") }
+            ?.forEach { it.delete() }
         return TraceConfig(
             enabled = true,
             maxHistory = 5000,
@@ -1212,7 +1223,15 @@ class PumpStationMiniMaxLiveTest
             {
                 memoryManagementMode = memoryMode
                 compactionStrategy = PumpStationCompactionStrategy.Hybrid
-                compactionThreshold = 0.7
+                // 0.7 is the production default, but in tests the context fill
+                // ratio stays at ~0.03-0.04 with M2.7\'s small responses, so
+                // compaction would never fire (verified: the previous threshold
+                // of 0.7 made this a fake test that never exercised the
+                // compaction code path). Lower it to 0.01 so the orchestrator
+                // actually fires the Compaction phase every turn. The stub and
+                // live tests both verify the compaction events are emitted and
+                // handled.
+                compactionThreshold = 0.01
             }
 
             if (killSwitch != null)
