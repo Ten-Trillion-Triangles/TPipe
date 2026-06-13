@@ -658,12 +658,21 @@ class PumpStationMiniMaxLiveTest
         }
 
         // The pump station HTML auto-exports to the per-test subdir (see traceConfigFor).
+        // Verify the file\'s runId prefix matches the current run\'s runId — this catches
+        // both missing traces and stale traces from prior runs that escaped the
+        // traceConfigFor cleanup. Also enforce a minimum size (>5KB) so an empty
+        // or stub HTML file (which would indicate a harness that crashed before
+        // emitting events) fails the test loudly.
         val subdir = traceSubdir(testName)
-        val pumpHtmls = subdir.listFiles { f -> f.name.startsWith("pumpstation-") && f.name.endsWith(".html") }
-            ?: emptyArray()
-        assert(pumpHtmls.isNotEmpty() && pumpHtmls.all { it.length() > 0 }) {
-            "$testName: pump station HTML trace not found in $subdir " +
-                "(autoExport should have written it)"
+        val expectedRunIdPrefix = runId!!.take(12)
+        val pumpHtmls = subdir.listFiles { f ->
+            f.name.startsWith("pumpstation-") &&
+                f.name.endsWith(".html") &&
+                f.name.contains("-$expectedRunIdPrefix.")
+        } ?: emptyArray()
+        assert(pumpHtmls.isNotEmpty() && pumpHtmls.all { it.length() > 5000 }) {
+            "$testName: pump station HTML trace not found for runId=$expectedRunIdPrefix in $subdir " +
+                "(looked for pumpstation-*$expectedRunIdPrefix*.html with size > 5KB)"
         }
 
         // Per-agent HTML files are produced when the agent pipelines have tracing
