@@ -99,3 +99,15 @@ class MemoryAndHealthTest
         assertTrue(events.any { it is CompactionHandedOffToTruncation }, "expected CompactionHandedOffToTruncation event")
     }
 }
+
+/**
+ * Regression test for the v3 CompactionInflated isFailure fix.
+ *
+ * Before the fix: `runFinalizationPhase` did not include `CompactionInflated` in its
+ * `isFailure` list, so a harness that completed a task but tripped `handOffToTruncation`
+ * mid-loop ended with `status=Completed` AND `lastError=CompactionInflated`. The TaskState
+ * signaled failure while the harness signaled success — a confusing state.
+ *
+ * After the fix: `taskState.status = PumpStationStatus.Failed` and
+ * `taskState.lastError = PumpStationError.CompactionInflated` are consistent.
+ */

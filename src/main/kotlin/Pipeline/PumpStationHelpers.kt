@@ -413,11 +413,38 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
         pipeId = pipeId,
         pipeName = pipeName,
         eventType = eventType,
-        phase = TracePhase.valueOf(event.phase.name),
+        phase = mapPumpStationPhaseToTracePhase(event.phase),
         content = agentContent,
         contextSnapshot = null,
         metadata = baseMetadata
     )
+}
+
+/**
+ * Map a [PumpStationPhase] to the closest [TracePhase] value. The two enums are
+ * not in 1:1 correspondence (TracePhase is a general-purpose phase vocabulary;
+ * PumpStationPhase is harness-specific), so we need an explicit mapping rather
+ * than `TracePhase.valueOf(event.phase.name)`, which would throw on every event.
+ *
+ * Returns the closest semantic match. The original [PumpStationPhase] is also
+ * preserved in the event's `metadata["phase"]` so the visualizer can render
+ * the harness-specific label even when the TracePhase is a more generic bucket.
+ */
+internal fun mapPumpStationPhaseToTracePhase(phase: PumpStationPhase): TracePhase = when (phase)
+{
+    PumpStationPhase.PreInit -> TracePhase.INITIALIZATION
+    PumpStationPhase.HealthCheck -> TracePhase.MONITORING
+    PumpStationPhase.Judge -> TracePhase.VALIDATION
+    PumpStationPhase.Dispatch -> TracePhase.ORCHESTRATION
+    PumpStationPhase.PathSafety -> TracePhase.VALIDATION
+    PumpStationPhase.PathExecution -> TracePhase.EXECUTION
+    PumpStationPhase.PathValidation -> TracePhase.VALIDATION
+    PumpStationPhase.Intervention -> TracePhase.EXECUTION
+    PumpStationPhase.ForegroundAgents -> TracePhase.AGENT_COMMUNICATION
+    PumpStationPhase.MemoryUpdate -> TracePhase.CONTEXT_PREPARATION
+    PumpStationPhase.Compaction -> TracePhase.CONTEXT_PREPARATION
+    PumpStationPhase.GoalValidation -> TracePhase.VALIDATION
+    PumpStationPhase.Exit -> TracePhase.CLEANUP
 }
 
 //=========================================Flag Check============================================================

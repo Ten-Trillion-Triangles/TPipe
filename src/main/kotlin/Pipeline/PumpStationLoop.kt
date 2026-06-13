@@ -391,7 +391,17 @@ Please retry with a valid PathRequest JSON object. The schema is:
  * Resolve the path and call invokePath(). On unknown path, emit PathFailed
  * and replace latestContent with an LLM-targeted error message.
  */
-internal suspend fun PumpStation.runPathFlow(request: PathRequest)
+/**
+ * Resolve the path and call invokePath(). On unknown path, emit PathFailed
+ * and replace latestContent with an LLM-targeted error message.
+ *
+ * Returns the [MultimodalContent] produced by the path, so the caller
+ * ([runTurn]) can inspect `passPipeline` / `terminatePipeline` flags and act on
+ * them (e.g. trigger [PumpStationExitReason.PassSignal] or halt with
+ * [PumpStationError.PathExecutionException]). Returns null when the path is
+ * not found.
+ */
+internal suspend fun PumpStation.runPathFlow(request: PathRequest): MultimodalContent?
 {
     val path = resolvePath(request.pathName)
     if (path == null)
@@ -410,10 +420,10 @@ internal suspend fun PumpStation.runPathFlow(request: PathRequest)
                 mapOf("pathName" to request.pathName, "availablePaths" to getVisiblePathNames())
             )
         )
-        return
+        return null
     }
     val input = buildPathInput(path, request)
-    invokePathInternal(path, input)
+    return invokePathInternal(path, input)
 }
 
 /**
@@ -422,7 +432,15 @@ internal suspend fun PumpStation.runPathFlow(request: PathRequest)
 internal fun PumpStation.buildPathInput(path: PathObject, request: PathRequest): MultimodalContent
 {
     val base = buildTurnContent()
-    base.text = request.pathSchema.ifEmpty { path.pathSchema }
+    // Prefer the dispatch LLM's [PathRequest.pathSchema] (the model can pass structured
+    // input data through this field). Fall back to the path's static schema. If both
+    // are blank, fall back to the harness\'s original input so the path pipe always
+    // receives a non-empty user prompt — otherwise the pipe\'s empty-prompt guard
+    // trips with "Empty user prompt" before the LLM is even called (verified: this
+    // was a real-world failure when a real LLM returned a path request with no
+    // pathSchema field).
+    val effectiveSchema = request.pathSchema.ifEmpty { path.pathSchema }
+    base.text = effectiveSchema.ifEmpty { taskState.originalInput?.text ?: base.text }
     base.metadata.putAll(
         mutableMapOf<Any, Any>(
             "selectedPath" to path.pathName,
@@ -1896,8 +1914,42 @@ internal suspend fun PumpStation.runTurn(): TurnResult
 {
         return TurnResult.Halt(PumpStationExitReason.KillSwitchTripped)
     }
-    runPathFlow(pathRequest)
+    val pathResult = runPathFlow(pathRequest)
     detectAndHandleContextBlowout(PumpStationPhase.PathExecution)
+    // Capture the path's output as [taskState.latestContent] so:
+    //   1. The next phase (memory update, foreground agents, etc.) sees the
+    //      path's actual output, not the previous phase's stale value.
+    //   2. The final [runFinalizationPhase] result — what [executeLocal] returns
+    //      to its caller — is the path's output (the "deliverable" of the harness),
+    //      not the dispatch's path request or the judge's verdict.
+    //   3. Halt-via-passPipeline / terminatePipeline still works because we check
+    //      those flags *before* the latestContent assignment can be observed by
+    //      runFinalizationPhase (we return immediately on the halt path).
+    //
+    // Without this, the harness's result is always the judge's last LLM call,
+    // which means caller-visible state silently drops the work each path did.
+    if (pathResult != null)
+    {
+        taskState.latestContent = pathResult
+        if (pathResult.passPipeline)
+        {
+            // If a goal agent is configured, run the standard exit flow (goal validation).
+            // Otherwise exit directly with PassSignal — the path's flag is the exit
+            // signal, not a judge verdict.
+            return if (goalAgent == null)
+            {
+                TurnResult.Halt(PumpStationExitReason.PassSignal)
+            }
+            else
+            {
+                runExitFlow()
+            }
+        }
+        if (pathResult.terminatePipeline)
+        {
+            return TurnResult.Halt(PumpStationExitReason.TerminateSignal)
+        }
+    }
     pruneTurnHistory()
     pruneRawTurnHistory()
 
@@ -2016,7 +2068,14 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
         PipeTracer.exportTrace(taskState.runId, com.TTT.Debug.TraceFormat.HTML)
     }
 
-    return taskState.latestContent ?: MultimodalContent()
+    // Prefer the path's actual output (lastPathResult) as the deliverable. The harness's
+    // contract is "do the work and return the result" — for a code-generation or research
+    // harness, the result is the last path's output, not the judge\'s verdict or the
+    // dispatch\'s path-request. latestContent is the "current turn state" used to build
+    // prompts; lastPathResult is the "what the harness produced" surface. Falling back to
+    // latestContent preserves backward compatibility for harnesses that never set
+    // lastPathResult (e.g. tests that wire paths without going through invokePath).
+    return taskState.lastPathResult ?: (taskState.latestContent ?: MultimodalContent())
 }
 
 //=========================================Background Event Drain=================================================

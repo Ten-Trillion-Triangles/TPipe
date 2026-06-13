@@ -1273,6 +1273,21 @@ class Pipeline : P2PInterface
      */
     suspend fun execute(initialContent: MultimodalContent): MultimodalContent = executeMultimodal(initialContent)
 
+    /**
+     * P2PInterface compliance: when the harness (or any other P2PInterface consumer) holds
+     * a [Pipeline] reference and invokes it via [executeLocal], the [P2PInterface] default
+     * implementation returns the input unchanged — which silently swallows every LLM call.
+     * This override delegates to [execute], so a pipeline used as a P2PInterface (e.g. as a
+     * path's [com.TTT.Pipeline.PathObject.internalAgent] or [setParentInterface] target) actually
+     * runs its pipes instead of acting as a no-op pass-through.
+     *
+     * Single-owner constraint still applies — do not share a pipeline across concurrent top-level
+     * calls. The harness's [runAgent] helper already calls [execute] directly for known-Pipeline
+     * agents (judge/dispatch/goal/summary/lorebook/pathSafety); this override covers the remaining
+     * sites that go through the generic [P2PInterface.executeLocal] funnel.
+     */
+    override suspend fun executeLocal(content: MultimodalContent): MultimodalContent = execute(content)
+
 
     
     /**

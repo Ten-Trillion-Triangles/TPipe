@@ -1610,10 +1610,19 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
 
         val budget = tokenBudgetSettings
         val settings = pipeSettings
+        val traceCfg = traceConfig
         for (agent in allAgents)
         {
             budget?.let { agent.setTokenBudgetRecursive(it) }
             settings?.let { agent.setPipeSettingsRecursively(it) }
+            // Propagate tracing to child agent pipelines so each one records its own LLM
+            // IO into the global PipeTracer under its own pipelineId. Without this, only
+            // the pump station's own runId stream is populated and the per-agent HTML
+            // exports come out empty (verified: agent-*.html was 0 bytes until this).
+            if (tracingEnabled)
+            {
+                (agent as? Pipeline)?.enableTracing(traceCfg)
+            }
         }
     }
 
