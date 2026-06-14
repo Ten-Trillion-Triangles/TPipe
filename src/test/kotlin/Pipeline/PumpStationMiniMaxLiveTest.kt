@@ -207,19 +207,24 @@ class PumpStationMiniMaxLiveTest
 //=========================================Shared helpers===========================================================
 
     /**
-     * Returns the API key if the live test gate is open and the env var is set, otherwise null.
+     * Returns the API key if the env gate is open and a key is set, otherwise null.
      * Each test calls this at the top — if it returns null the test silently returns
      * (no failure, no red bar) so developers without credentials aren't broken.
      *
-     * Stub keys (the `sk-stub*` prefix) return null so the live tests skip in stub mode.
-     * Without this gate, a stub key (e.g. `sk-stub-test`) would pass the env check and
-     * the live tests would attempt to call the real MiniMax endpoint with the stub key,
-     * getting a 1004 "login fail" error (verified: the live tests failed with
-     * `P2PException: OpenAI Responses error: login fail` when run with the stub key
-     * in the env). Stub tests work because they use their own StubOpenAIServer on a
-     * random port and ignore the env key entirely.
+     * Accepts any non-blank API key. The stub_* tests use this gate (their LLM
+     * traffic is served by [StubOpenAIServer] on a random localhost port and never
+     * reaches the real MiniMax endpoint). The live *_researchSucceeds tests use
+     * [liveGateOrSkip] which is stricter (rejects stub keys).
      */
-    private fun envGateOrSkip(): String? = apiKeyCache?.takeUnless { it.startsWith("sk-stub") }
+    private fun envGateOrSkip(): String? = apiKeyCache
+
+    /**
+     * Stricter gate for live tests. Returns null when the API key starts with
+     * `sk-stub` so the live tests skip in stub mode (they would otherwise attempt
+     * to call the real MiniMax endpoint with the stub key and fail with a
+     * `1004 login fail` P2PException).
+     */
+    private fun liveGateOrSkip(): String? = apiKeyCache?.takeUnless { it.startsWith("sk-stub") }
 
     /**
      * Looks up the MiniMax MCP server entry in `~/.claude.json` and runs the JSON-RPC
@@ -855,7 +860,7 @@ class PumpStationMiniMaxLiveTest
     @Test
     fun alwaysOnJudge_researchSucceeds() = runBlocking<Unit>
     {
-        if (envGateOrSkip() == null) return@runBlocking
+        if (liveGateOrSkip() == null) return@runBlocking
         runResearchHarness(
             testName = "01-always-on-judge",
             useMcpGather = false,
@@ -876,7 +881,7 @@ class PumpStationMiniMaxLiveTest
     @Test
     fun flagTriggeredJudge_researchSucceeds() = runBlocking<Unit>
     {
-        if (envGateOrSkip() == null) return@runBlocking
+        if (liveGateOrSkip() == null) return@runBlocking
         runResearchHarness(
             testName = "02-flag-triggered-judge",
             useMcpGather = false,
@@ -896,7 +901,7 @@ class PumpStationMiniMaxLiveTest
     @Test
     fun compactionMemory_researchSucceeds() = runBlocking<Unit>
     {
-        if (envGateOrSkip() == null) return@runBlocking
+        if (liveGateOrSkip() == null) return@runBlocking
         runResearchHarness(
             testName = "03-compaction-memory",
             useMcpGather = false,
@@ -916,7 +921,7 @@ class PumpStationMiniMaxLiveTest
     @Test
     fun killSwitchTrip_researchHalted() = runBlocking<Unit>
     {
-        if (envGateOrSkip() == null) return@runBlocking
+        if (liveGateOrSkip() == null) return@runBlocking
         // The pump station\'s kill switch trips via KillSwitchException (matching
         // Manifold\'s throw semantics). Real LLM calls always have a larger system
         // prompt than the stub\'s, so we use a slightly higher input limit (1500
@@ -950,7 +955,7 @@ class PumpStationMiniMaxLiveTest
     @Test
     fun singlePathPassPipeline_researchFinishes() = runBlocking<Unit>
     {
-        if (envGateOrSkip() == null) return@runBlocking
+        if (liveGateOrSkip() == null) return@runBlocking
         runResearchHarness(
             testName = "05-single-path-pass-pipeline",
             useMcpGather = false,
@@ -971,7 +976,7 @@ class PumpStationMiniMaxLiveTest
     @Test
     fun multiPathRiskLevels_researchSucceeds() = runBlocking<Unit>
     {
-        if (envGateOrSkip() == null) return@runBlocking
+        if (liveGateOrSkip() == null) return@runBlocking
         runResearchHarness(
             testName = "06-multi-path-risk-levels",
             useMcpGather = mcpRequestCache != null,
@@ -1161,6 +1166,51 @@ class PumpStationMiniMaxLiveTest
         {
             runResearchHarness(
                 testName = "stub-06-multi-path-risk-levels",
+                useMcpGather = false,
+                useFlagTriggeredJudge = false,
+                memoryMode = null,
+                useRiskLevels = true,
+                killSwitch = null,
+                useSinglePathPassPipeline = false,
+                stub = stub
+            )
+        }
+        finally { stub.stop() }
+    }
+
+    /**
+     * Regression test for the path-safety JSON verdict fix (Bug 11 / commit 65ebee36).
+     *
+     * The path-safety agent is configured to return `{"safe": false, ...}`. The
+     * harness has useRiskLevels=true so the report path is High risk, which triggers
+     * the path-safety check. The assertion is that the path is REJECTED — without
+     * the parsePathSafetyVerdict fix, the harness used a degenerate flag-based check
+     * that approved every path.
+     *
+     * Queue override: queueForConfiguration's defaults for useRiskLevels=true
+     * enqueue pathSafetyResponse(safe=true). We need safe=false to exercise the
+     * rejection path. Stub directly here, using a custom testName that the stub's
+     * queueForConfiguration doesn't know about — but the stub's start() doesn't
+     * validate the testName, so we can enqueue manually.
+     */
+    @Test
+    fun stub_07_pathSafetyRejectionHonored() = runBlocking<Unit>
+    {
+        if (envGateOrSkip() == null) return@runBlocking
+        val stub = StubOpenAIServer()
+        stub.start()
+        try
+        {
+            // Hand-queue a safe=false response for the path-safety agent.
+            stub.enqueueFor("judge", StubOpenAIServer.judgeResponse(isComplete = false))
+            stub.enqueueFor("dispatch", StubOpenAIServer.dispatchResponse("report"))
+            stub.enqueueFor("pathSafety", StubOpenAIServer.pathSafetyResponse(
+                safe = false,
+                reason = "stub rejected — verifying path safety JSON verdict is honored"
+            ))
+            stub.enqueueFor("judge", StubOpenAIServer.judgeResponse(isComplete = true))
+            runResearchHarness(
+                testName = "stub-07-path-safety-rejection",
                 useMcpGather = false,
                 useFlagTriggeredJudge = false,
                 memoryMode = null,
