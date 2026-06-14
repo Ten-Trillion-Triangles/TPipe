@@ -609,6 +609,26 @@ abstract class Pipe : P2PInterface, ProviderInterface
     var pipeName: String = ""
 
     /**
+     * Marks this pipe as the "decision pipe" of its pipeline. The pump station uses this
+     * (along with [com.TTT.Pipeline.Pipeline.decisionPipeName] and
+     * [com.TTT.Structs.PipeSettings.pipeRole]) to figure out which pipe in an agent pipeline
+     * is the one whose output is the actual decision and should be returned to the caller.
+     *
+     * Most pipes are NOT the decision pipe (default `false`); only the LLM call that produces
+     * the agent's verdict is. Override to `true` in subclasses that represent the decision.
+     */
+    open val isDecisionPipe: Boolean = false
+
+    /**
+     * Declared role of this pipe within the pipeline. Used by the pump station
+     * as one of the signals when picking the decision pipe. Mirrors
+     * [com.TTT.Structs.PipeSettings.pipeRole] for runtime use. `null` means
+     * "not configured"; see [com.TTT.Enums.PipeRole] for the full set of
+     * declared roles.
+     */
+    var pipeRole: com.TTT.Enums.PipeRole? = null
+
+    /**
      * Timeout value for the pipe class. Defaults to 5 mins. When timeouts are enabled, the pipe
      * will be cut off if it has not exited by that point. The result can be handled by an automatic
      * retry, failure, or custom handler.
@@ -5522,7 +5542,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * @param content Multimodal content containing text and/or binary data.
      * @return The multimodal result of the AI api call.
      */
-    suspend fun execute(content: MultimodalContent): MultimodalContent = coroutineScope {
+    open suspend fun execute(content: MultimodalContent): MultimodalContent = coroutineScope {
         var result = executeMultimodal(content)
         while(result.repeatPipe)
         {

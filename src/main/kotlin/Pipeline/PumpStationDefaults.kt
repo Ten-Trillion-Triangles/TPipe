@@ -79,3 +79,76 @@ The conversation history below shows every turn. Recent turns are at the end.
 A summary of older turns (if any) is provided as a prefix in the user message.
 Select the next path to invoke based on the current state of the task.
 """
+
+/**
+ * Default prompt injected into the path-safety agent's decision pipe when the
+ * developer has not supplied a custom prompt. Documents the path-safety JSON
+ * contract ({"safe": bool}) AND the MultimodalContent flag fallback.
+ *
+ * The agent can drive the path-safety verdict with EITHER:
+ *   - the JSON contract: return {"safe": false} to reject, {"safe": true} to approve
+ *   - MultimodalContent flags: terminatePipeline = true to reject, passPipeline = true to approve
+ *
+ * Both are honored by the harness — flags are the universal safety net.
+ */
+const val DEFAULT_PATH_SAFETY_PROMPT = """
+You are the path-safety gate in an agentic harness. Your job is to decide whether
+the selected path is safe to execute.
+
+{entryUserPrompt}
+
+The path's name, description, schema, and risk level are provided in the
+conversation history below. Use this information to assess the path's risk.
+
+Respond with JSON matching this schema:
+{
+  "safe": boolean,
+  "reason": string
+}
+
+safe: true if the path is safe to execute, false if it should be rejected.
+reason: brief explanation of your decision.
+
+You may also set these MultimodalContent flags on your response to drive the
+harness directly (these always take precedence over the JSON contract):
+  - terminatePipeline = true   (reject the path)
+  - passPipeline = true        (approve the path)
+"""
+
+/**
+ * Default prompt injected into the health agent's decision pipe. Documents
+ * the HealthReport contract.
+ */
+const val DEFAULT_HEALTH_PROMPT = """
+You are the health monitor in an agentic harness. Your job is to assess the
+harness's current health and report any issues.
+
+{entryUserPrompt}
+
+The harness's current state, recent event log, and token usage are provided
+in the conversation history below.
+
+Respond with a HealthReport JSON object containing:
+  - status: "healthy" | "degraded" | "unhealthy"
+  - issues: list of detected issues (empty if healthy)
+  - recommendations: list of suggested fixes (empty if healthy)
+"""
+
+/**
+ * Default prompt injected into the lorebook agent's decision pipe. Documents
+ * the LorebookAgentOutput envelope.
+ */
+const val DEFAULT_LOREBOOK_PROMPT = """
+You are the lorebook curator in an agentic harness. Your job is to manage
+the lorebook entries that should be active for the current task.
+
+{entryUserPrompt}
+
+The current lorebook, the harness's recent context, and the path being
+processed are provided in the conversation history below.
+
+Respond with a LorebookAgentOutput JSON object containing:
+  - entriesToAdd: list of new lorebook entries to add
+  - entriesToUpdate: list of existing lorebook entries to update (matched by id)
+  - entriesToRemove: list of lorebook entry ids to remove
+"""

@@ -4,6 +4,7 @@ import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Enums.PromptMode
+import com.TTT.Enums.PipeRole
 import com.TTT.Enums.ProviderName
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenBudgetSettings
@@ -64,7 +65,8 @@ data class PipeSettings(
     var tracingEnabled: Boolean? = null,
     var pipeId: String? = null,
     var currentPipelineId: String? = null,
-    var tokenBudgetSettings: TokenBudgetSettings? = null
+    var tokenBudgetSettings: TokenBudgetSettings? = null,
+    var pipeRole: PipeRole? = null
 )
 
 //Todo: Add pipe settings for bedrock pipe class, and ollama.

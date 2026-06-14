@@ -255,8 +255,14 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
     // Post-judge hook
     val postResult = postJudgeFunctionInternal?.invoke(result, this) ?: result
 
-    // Parse verdict + flag check
-    val verdict = parseJudgeVerdict(postResult).withFlagCheck(postResult)
+    // Parse verdict + flag check.
+    // When the judge contract is disabled (judgeExpectsJsonContract = false), the
+    // JSON parser is skipped and the verdict comes solely from the flag check on
+    // the agent's MultimodalContent. This matches the canonical loop-control
+    // pattern documented on checkMultimodalFlags: "agents signal via flags, not
+    // via magic contracts."
+    val parsed = if (judgeExpectsJsonContract) parseJudgeVerdict(postResult) else JudgeVerdict.empty()
+    val verdict = parsed.withFlagCheck(postResult)
 
     taskState.latestContent = postResult
     emitEventInternal(JudgeCompleted(

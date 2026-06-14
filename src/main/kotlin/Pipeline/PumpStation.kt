@@ -12,6 +12,7 @@ import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PResponse
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipe.TruncationSettings
 import com.TTT.Structs.PipeSettings
@@ -735,6 +736,65 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     internal var judgeAgentBuilderFunction: (suspend (harness: PumpStation) -> Pipeline)? = null
 
     /**
+     * Whether the judge agent's output is expected to follow the JSON contract
+     * documented in [DEFAULT_JUDGE_PROMPT] (a JSON object with `isComplete` and
+     * `shouldTerminate` fields). When true (the default), the harness parses the
+     * agent's text via [parseJudgeVerdict] and the flag-based [withFlagCheck] runs
+     * after. When false, the JSON parser is skipped entirely and the verdict
+     * comes solely from MultimodalContent flags (terminatePipeline, passPipeline).
+     *
+     * Set to false via [setJudgeJsonContractEnabled] when wiring in a custom judge
+     * agent that drives the loop with flags rather than JSON.
+     */
+    internal var judgeExpectsJsonContract: Boolean = true
+
+    /**
+     * Optional custom system prompt for the judge agent. When non-null, the
+     * pump station injects this prompt into the decision pipe of the agent's
+     * pipeline instead of the default [DEFAULT_JUDGE_PROMPT]. Setting a custom
+     * prompt also disables the JSON contract (the agent drives the verdict via
+     * MultimodalContent flags only). Set back to null to re-enable the default
+     * contract.
+     */
+    internal var customJudgeSystemPrompt: String? = null
+
+    /**
+     * Optional custom system prompt for the dispatch agent. When non-null, the
+     * pump station injects this prompt into the decision pipe of the agent's
+     * pipeline instead of the default [DEFAULT_DISPATCH_PROMPT].
+     */
+    internal var customDispatchSystemPrompt: String? = null
+
+    /**
+     * Optional custom system prompt for the path-safety agent. When non-null,
+     * the pump station injects this prompt into the decision pipe of the
+     * agent's pipeline instead of the default [DEFAULT_PATH_SAFETY_PROMPT].
+     * Setting a custom prompt also disables the JSON contract.
+     */
+    internal var customPathSafetySystemPrompt: String? = null
+
+    /**
+     * Optional custom system prompt for the health agent. When non-null, the
+     * pump station injects this prompt into the decision pipe of the agent's
+     * pipeline instead of the default [DEFAULT_HEALTH_PROMPT].
+     */
+    internal var customHealthSystemPrompt: String? = null
+
+    /**
+     * Optional custom system prompt for the lorebook agent. When non-null, the
+     * pump station injects this prompt into the decision pipe of the agent's
+     * pipeline instead of the default [DEFAULT_LOREBOOK_PROMPT].
+     */
+    internal var customLorebookSystemPrompt: String? = null
+
+    /**
+     * Optional custom system prompt for the goal agent. When non-null, the
+     * pump station injects this prompt into the decision pipe of the agent's
+     * pipeline instead of the default [DEFAULT_GOAL_PROMPT].
+     */
+    internal var customGoalSystemPrompt: String? = null
+
+    /**
      * REQUIRED: This agent evaluates what the next steps in the harness needs to be, and dispatches the to the
      * next path. (Equal to a tool call, or turn in traditional agent harnesses.) If null, or if a [Splitter] has
      * been assigned to this an illegal argument exception will be thrown.
@@ -1428,6 +1488,20 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      * keep the task safe, following governance rules, and on track.
      */
     private var pathSafetyFunction: (suspend (targetPath: PathObject, schemaIn: String, harness: PumpStation) -> Boolean)? = null
+
+    /**
+     * Whether the path-safety agent's output is expected to follow the JSON
+     * contract documented in [DEFAULT_JUDGE_PROMPT] style (a JSON object with a
+     * `safe` boolean field). When true (the default), the harness parses the
+     * agent's text via [parsePathSafetyVerdict] and falls back to a
+     * MultimodalContent flag check if parsing returns null. When false, the
+     * JSON parser is skipped entirely and the safety verdict comes solely from
+     * the flag check on the agent's MultimodalContent.
+     *
+     * Set to false via [setPathSafetyJsonContractEnabled] when wiring in a custom
+     * safety agent that drives the verdict with flags rather than JSON.
+     */
+    internal var pathSafetyExpectsJsonContract: Boolean = true
 
     /**
      * DITL function invoked after the dispatch agent has generated its path output.
@@ -2338,6 +2412,31 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      * @param input The [MultimodalContent] input to the path
      * @return [MultimodalContent] result from path execution
      */
+    /**
+     * Path-safety gate. Returns true if the path is approved to run, false if
+     * it should be rejected. The result is computed from (in priority order):
+     *   1. The custom [pathSafetyFunction] if set, OR
+     *   2. The [pathSafetyAgent] if set, with the verdict extracted via
+     *      [parsePathSafetyVerdict] when [pathSafetyExpectsJsonContract] is true,
+     *      and from MultimodalContent flags (terminatePipeline / passPipeline)
+     *      when it is false, OR
+     *   3. true (default approve) when neither function nor agent is set.
+     *
+     * The safety gate runs for any path with [PathRiskLevel] greater than Low
+     * (i.e. Medium or High). Extracted from [invokePathInternal] as a separate
+     * method so the gating behavior is testable in isolation.
+     */
+    suspend fun checkPathSafety(path: PathObject, input: MultimodalContent): Boolean
+    {
+        pathSafetyFunction?.let { fn ->
+            return fn(path, path.pathSchema, this)
+        }
+        val agent = pathSafetyAgent ?: return true
+        val result = agent.executeLocal(input)
+        val parsed = if (pathSafetyExpectsJsonContract) parsePathSafetyVerdict(result.text) else null
+        return parsed ?: !(result.terminatePipeline || result.passPipeline)
+    }
+
     private suspend fun invokePath(path: PathObject, input: MultimodalContent): MultimodalContent
     {
         val pathName = path.pathName
@@ -2492,13 +2591,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
             // Previously the flag check was the only gate, which made the safety check a
             // degenerate always-approve (LLMs don't normally set terminatePipeline on a
             // safety verdict response).
-            val approved = pathSafetyFunction?.invoke(path, path.pathSchema, this)
-                ?: pathSafetyAgent?.let { agent ->
-                    val result = agent.executeLocal(input)
-                    parsePathSafetyVerdict(result.text)
-                        ?: !(result.terminatePipeline || result.passPipeline)
-                }
-                ?: true
+            val approved = checkPathSafety(path, input)
 
             emitEventInternal(PathSafetyCompleted(
                 runId = taskState.runId,
@@ -2649,6 +2742,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     fun setJudgeAgent(agent: Pipeline?): PumpStation
     {
         this.judgeAgent = agent
+        if(agent != null) autoInjectDefaultPrompt(agent, customJudgeSystemPrompt, DEFAULT_JUDGE_PROMPT)
         return this
     }
 
@@ -2662,6 +2756,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     fun setDispatchAgent(agent: Pipeline?): PumpStation
     {
         this.dispatchAgent = agent
+        if(agent != null) autoInjectDefaultPrompt(agent, customDispatchSystemPrompt, DEFAULT_DISPATCH_PROMPT)
         return this
     }
 
@@ -3250,6 +3345,216 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     {
         this.stopHarnessOnInvalidPathRequest = stop
         return this
+    }
+
+    /**
+     * Sets whether the judge phase parses the agent's text output as a JSON
+     * JudgeVerdict. Default is true (the contract documented in
+     * [DEFAULT_JUDGE_PROMPT] is honored). Set to false to drive the judge
+     * verdict purely via MultimodalContent flags (terminatePipeline /
+     * passPipeline), which is the canonical loop-control pattern documented on
+     * [checkMultimodalFlags] and matches the harness's design philosophy of
+     * "agents signal via flags, not via magic contracts."
+     *
+     * @param enabled true to parse the JSON contract, false to skip it.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setJudgeJsonContractEnabled(enabled: Boolean): PumpStation
+    {
+        this.judgeExpectsJsonContract = enabled
+        return this
+    }
+
+    /**
+     * Sets whether the path-safety phase parses the agent's text output as a
+     * JSON verdict. Default is true (the contract documented in
+     * [parsePathSafetyVerdict] is honored). Set to false to drive the safety
+     * verdict purely via MultimodalContent flags (terminatePipeline means
+     * reject, no flag means approve), matching the canonical flag-driven
+     * pattern.
+     *
+     * @param enabled true to parse the JSON contract, false to skip it.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPathSafetyJsonContractEnabled(enabled: Boolean): PumpStation
+    {
+        this.pathSafetyExpectsJsonContract = enabled
+        return this
+    }
+
+    //==================================================================
+    //  setXxxSystemPrompt — the single developer-facing API for opting
+    //  in or out of the auto-injected contract prompts. Setting a
+    //  non-null custom prompt switches the agent to flag-driven control
+    //  (the JSON contract is skipped). Setting null re-enables the
+    //  default prompt + contract.
+    //==================================================================
+
+    /**
+     * Sets a custom system prompt for the judge agent. When non-null, the
+     * pump station injects this prompt into the decision pipe of the judge's
+     * pipeline and disables the JSON contract (the agent drives the verdict
+     * via MultimodalContent flags only).
+     *
+     * Setting null re-enables the default [DEFAULT_JUDGE_PROMPT] and the
+     * JSON contract.
+     */
+    fun setJudgeSystemPrompt(prompt: String?): PumpStation
+    {
+        this.customJudgeSystemPrompt = prompt
+        this.judgeExpectsJsonContract = (prompt == null)
+        applyCustomPromptToAgent(this.judgeAgent, prompt)
+        return this
+    }
+
+    /**
+     * Sets a custom system prompt for the dispatch agent.
+     */
+    fun setDispatchSystemPrompt(prompt: String?): PumpStation
+    {
+        this.customDispatchSystemPrompt = prompt
+        applyCustomPromptToAgent(this.dispatchAgent, prompt)
+        return this
+    }
+
+    /**
+     * Sets a custom system prompt for the path-safety agent.
+     */
+    fun setPathSafetySystemPrompt(prompt: String?): PumpStation
+    {
+        this.customPathSafetySystemPrompt = prompt
+        this.pathSafetyExpectsJsonContract = (prompt == null)
+        applyCustomPromptToAgent(this.pathSafetyAgent, prompt)
+        return this
+    }
+
+    /**
+     * Sets a custom system prompt for the health agent.
+     */
+    fun setHealthSystemPrompt(prompt: String?): PumpStation
+    {
+        this.customHealthSystemPrompt = prompt
+        applyCustomPromptToAgent(this.healthAgent, prompt)
+        return this
+    }
+
+    /**
+     * Sets a custom system prompt for the lorebook agent.
+     */
+    fun setLorebookSystemPrompt(prompt: String?): PumpStation
+    {
+        this.customLorebookSystemPrompt = prompt
+        applyCustomPromptToAgent(this.lorebookAgent, prompt)
+        return this
+    }
+
+    /**
+     * Sets a custom system prompt for the goal agent.
+     */
+    fun setGoalSystemPrompt(prompt: String?): PumpStation
+    {
+        this.customGoalSystemPrompt = prompt
+        applyCustomPromptToAgent(this.goalAgent, prompt)
+        return this
+    }
+
+    /**
+     * Apply a custom system prompt to the decision pipe of an agent's
+     * pipeline. If [prompt] is null, the call is a no-op (the default
+     * prompt is injected at [setXxxAgent] time, not here).
+     */
+    /**
+     * Apply a custom system prompt to the decision pipe of an agent's
+     * pipeline. If [prompt] is null, the call is a no-op (the default
+     * prompt is injected at [setXxxAgent] time, not here).
+     */
+    private fun applyCustomPromptToAgent(agent: P2PInterface?, prompt: String?)
+    {
+        if(prompt == null) return
+        val pipeline = agent as? Pipeline ?: return
+        val decisionPipe = resolveDecisionPipeForInjection(pipeline) ?: return
+        decisionPipe.setSystemPrompt(prompt)
+    }
+
+    /**
+     * Resolve the pipe in [pipeline] that should receive the contract prompt.
+     * Uses the same layered resolution as [Pipeline.execute]: manual
+     * `decisionPipeName` first, then [com.TTT.Pipe.Pipe.isDecisionPipe], then
+     * [com.TTT.Enums.PipeRole.Decision], then heuristic scoring. Returns null
+     * if no decision pipe can be resolved.
+     */
+    private fun resolveDecisionPipeForInjection(pipeline: Pipeline): Pipe?
+    {
+        // 1. Manual override
+        val manual = pipeline.decisionPipeName
+        if(manual != null)
+        {
+            val (idx, pipe) = pipeline.getPipeByName(manual)
+            if(idx >= 0 && pipe != null) return pipe
+        }
+        // 2. isDecisionPipe flag
+        for(pipe in pipeline.getPipes())
+        {
+            if(pipe.isDecisionPipe) return pipe
+        }
+        // 3. pipeRole == Decision
+        for(pipe in pipeline.getPipes())
+        {
+            if(pipe.pipeRole == com.TTT.Enums.PipeRole.Decision) return pipe
+        }
+        // 4. Heuristic scoring fallback (only returns a pipe if it has
+        // a strong LLM signal — see [Pipeline.scoreDecisionPipeCandidates])
+        val pipes = pipeline.getPipes()
+        if(pipes.isNotEmpty())
+        {
+            var bestPipe: Pipe? = null
+            var bestScore = 0
+            val namePattern = Regex("(?i)(decision|judge|dispatch|output|final)")
+            for(pipe in pipes)
+            {
+                val s = pipe.toPipeSettings()
+                var score = 0
+                if(s.provider != null && !s.model.isNullOrEmpty()) score += 10
+                if(!s.jsonOutput.isNullOrEmpty()) score += 5
+                if(!s.systemPrompt.isNullOrEmpty()) score += 3
+                if(namePattern.containsMatchIn(pipe.pipeName)) score += 1
+                if(score > bestScore || (score == bestScore && score > 0 && bestPipe != null))
+                {
+                    bestPipe = pipe
+                    bestScore = score
+                }
+            }
+            if(bestScore >= 10) return bestPipe
+        }
+        // 5. Last-pipe fallback: in a single-pipe pipeline, the only pipe
+        // IS the decision pipe by definition. For multi-pipe pipelines
+        // without signals, we use the last pipe as a best-effort default.
+        return pipes.lastOrNull()
+    }
+
+    /**
+     * Auto-injection helper. Called at [setXxxAgent] time: if the developer
+     * has not supplied a custom prompt, inject the default into the decision
+     * pipe of the agent's pipeline. If the developer HAS supplied a custom
+     * prompt (via [setXxxSystemPrompt]), inject THAT instead.
+     *
+     * If the pipe already has a system prompt set, the auto-injection is
+     * skipped — the developer's manual configuration takes precedence.
+     */
+    private fun autoInjectDefaultPrompt(agent: Pipeline, customPrompt: String?, defaultPrompt: String)
+    {
+        val decisionPipe = resolveDecisionPipeForInjection(agent) ?: return
+        // Read the existing system prompt via toPipeSettings() to avoid
+        // touching the protected `systemPrompt` field directly.
+        val existing = decisionPipe.toPipeSettings().systemPrompt
+        if(existing != null && existing.isNotEmpty())
+        {
+            // The developer already configured a prompt on this pipe.
+            // Respect their choice and don't overwrite.
+            return
+        }
+        val promptToInject = customPrompt ?: defaultPrompt
+        decisionPipe.setSystemPrompt(promptToInject)
     }
 
     /**

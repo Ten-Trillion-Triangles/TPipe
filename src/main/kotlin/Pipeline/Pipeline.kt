@@ -78,6 +78,45 @@ class Pipeline : P2PInterface
     var miniBank = MiniBank()
 
     /**
+     * Optional explicit name of the pipe whose output should be returned by
+     * [executeMultimodal] when the pipeline has multiple pipes. Set this
+     * when the decision-making pipe is NOT the last one in the pipeline
+     * (e.g. a preprocessor / decision / postprocessor layout).
+     *
+     * Resolution priority (in order):
+     *   1. This manual override (if non-null and the named pipe exists)
+     *   2. The first pipe with [com.TTT.Pipe.Pipe.isDecisionPipe] = true
+     *   3. The first pipe with [com.TTT.Structs.PipeSettings.pipeRole] = [com.TTT.Enums.PipeRole.Decision]
+     *   4. Heuristic scoring based on the pipe's settings
+     *   5. Fallback: the last pipe in the pipeline
+     *
+     * This is a silent override — there is no warning, no log, and no event
+     * if the named pipe is missing or did not run. The fallback to the last
+     * pipe's output is always in effect.
+     */
+    var decisionPipeName: String? = null
+
+    /**
+     * Fluent setter for [decisionPipeName]. Returns `this` for method chaining,
+     * matching the TTT builder convention.
+     */
+    fun setDecisionPipeName(name: String?): Pipeline
+    {
+        this.decisionPipeName = name
+        return this
+    }
+
+    /**
+     * Read-only observability hook: the name of the pipe that was actually
+     * selected as the decision pipe by the most recent [executeMultimodal]
+     * call. `null` means the fallback (last pipe) was used. Developers can
+     * introspect this after a run to confirm which pipe the resolution
+     * logic chose.
+     */
+    @RuntimeState
+    var lastDecisionPipeName: String? = null
+
+    /**
      * Aggregated token usage across tracked pipes. Reset at the start of each execution.
      */
     @kotlinx.serialization.Transient
@@ -1340,6 +1379,13 @@ class Pipeline : P2PInterface
 
         appendContentToConverseHistory(initialContent, userConverseRole)
 
+        // Per-pipe output capture. After each pipe runs, the latest
+        // generatedContent is recorded against the pipe's name. The decision-pipe
+        // resolution at the end of executeMultimodal uses this map to return
+        // the named pipe's output instead of the last pipe's output.
+        val pipeOutputs: MutableMap<String, MultimodalContent> = mutableMapOf()
+        val pipeInputs: MutableMap<String, MultimodalContent> = mutableMapOf()
+
         /**
          * Find next pipe based on index or pointers -> Run pipe -> Break on terminate or out of bounds -> Repeat
          */
@@ -1354,6 +1400,13 @@ class Pipeline : P2PInterface
             //Get next pipe based on next index, or jump instruction.
             val pipe = getNextPipe(generatedContent) ?: break
             generatedContent.clearJumpToPipe() //Clear so we don't have unintended behaviors.
+
+            // Record the input that was passed to this pipe so the decision-pipe
+            // resolution can detect a "no-op" pipe (one whose output is the same
+            // as its input).
+            if(pipe.pipeName.isNotEmpty()) {
+                pipeInputs[pipe.pipeName] = generatedContent
+            }
             
             // Check conditional pause before pipe execution
             conditionalPauseFunction?.let { checkConditionalPause(pipe, generatedContent) }
@@ -1453,12 +1506,20 @@ class Pipeline : P2PInterface
                 }
 
                 generatedContent = repeatPipeResult.await()
-                
+
                 // PAUSE POINT 3: After repeat pipe (if declared)
                 if(pauseAfterRepeats)
                 {
                     checkPausePoint()
                 }
+            }
+
+            // Capture this pipe's final output. This is the value of generatedContent
+            // AFTER the pipe's body and any repeat loop, so it represents the pipe's
+            // contribution to the chain. The decision-pipe resolution reads from this
+            // map to return the named pipe's output instead of the last pipe's output.
+            if(pipe.pipeName.isNotEmpty()) {
+                pipeOutputs[pipe.pipeName] = generatedContent
             }
 
             if(generatedContent.shouldTerminate())
@@ -1580,7 +1641,231 @@ class Pipeline : P2PInterface
             appendContentToConverseHistory(content, pipelineConverseRole)
         }
 
-        pipelineCompletionCallBack?.invoke(this@Pipeline, generatedContent)
-        return@coroutineScope generatedContent
+        // Resolve the "decision pipe": the one whose output is the agent's
+        // actual decision. The harness and the developer-facing API both
+        // return the decision pipe's output instead of the last pipe's.
+        // Resolution is layered: manual override > isDecisionPipe > role >
+        // scoring > fallback (last pipe).
+        val decisionResult = resolveDecisionPipeOutput(generatedContent, pipeOutputs, pipeInputs)
+        lastDecisionPipeName = resolveDecisionPipeName(pipeOutputs, pipeInputs)
+
+        pipelineCompletionCallBack?.invoke(this@Pipeline, decisionResult)
+        return@coroutineScope decisionResult
+    }
+
+    /**
+     * Resolve the output of the "decision pipe" given the current state of
+     * the pipeline and the [generatedContent] from the just-finished run.
+     *
+     * Layered resolution:
+     *   1. [decisionPipeName] set + pipe found in `pipes` + pipe ran this turn -> use its output
+     *   2. First pipe with [com.TTT.Pipe.Pipe.isDecisionPipe] = true + it ran -> use its output
+     *   3. First pipe with [com.TTT.Structs.PipeSettings.pipeRole] = [com.TTT.Enums.PipeRole.Decision] + it ran -> use its output
+     *   4. Heuristic scoring (highest score wins; ties go to the LATER pipe) + it ran -> use its output
+     *   5. Fallback: the last pipe's output (= `generatedContent`)
+     *
+     * If the resolved pipe never ran (jumped over by `jumpToPipe`/`skip-to-next-pipe`),
+     * the function falls back to `generatedContent` (the last pipe's output). The
+     * observability hook [lastDecisionPipeName] is `null` in that case.
+     */
+    private fun resolveDecisionPipeOutput(
+        generatedContent: MultimodalContent,
+        pipeOutputs: Map<String, MultimodalContent>,
+        pipeInputs: Map<String, MultimodalContent>
+    ): MultimodalContent
+    {
+        // Priority 1: manual override. If the developer set decisionPipeName
+        // but the named pipe is not in the pipeline, this is a "silent" failure:
+        // the developer made a typo or pointed at a removed pipe, and we just
+        // fall through to the last pipe's output without warning.
+        val manualName = decisionPipeName
+        if(manualName != null)
+        {
+            val (idx, pipe) = getPipeByName(manualName)
+            if(idx >= 0 && pipe != null)
+            {
+                return capturedOrFallback(manualName, pipeOutputs, pipeInputs, generatedContent)
+            }
+            return generatedContent
+        }
+
+        // Priority 2: isDecisionPipe flag
+        for(pipe in pipes)
+        {
+            if(pipe.isDecisionPipe)
+            {
+                val name = pipe.pipeName.ifEmpty { null } ?: continue
+                return capturedOrFallback(name, pipeOutputs, pipeInputs, generatedContent)
+            }
+        }
+
+        // Priority 3: pipeRole == Decision
+        for(pipe in pipes)
+        {
+            if(pipe.pipeRole == com.TTT.Enums.PipeRole.Decision)
+            {
+                val name = pipe.pipeName.ifEmpty { null } ?: continue
+                return capturedOrFallback(name, pipeOutputs, pipeInputs, generatedContent)
+            }
+        }
+
+        // Priority 4: heuristic scoring
+        val scored = scoreDecisionPipeCandidates()
+        if(scored != null)
+        {
+            val name = scored.pipeName.ifEmpty { null } ?: return generatedContent
+            return capturedOrFallback(name, pipeOutputs, pipeInputs, generatedContent)
+        }
+
+        // Priority 5: fallback to last pipe's output
+        return generatedContent
+    }
+
+    /**
+     * Returns the captured output for [pipeName] from [pipeOutputs], or
+     * [fallback] if either:
+     *   - the pipe's output was never captured (it was jumped over, did not run,
+     *     or has an empty name), or
+     *   - the pipe's output text is the same as its input text (a "no-op" pipe
+     *     that just passed the input through, often because it issued a jump
+     *     instruction and never produced a real decision).
+     */
+    private fun capturedOrFallback(
+        pipeName: String,
+        pipeOutputs: Map<String, MultimodalContent>,
+        pipeInputs: Map<String, MultimodalContent>,
+        fallback: MultimodalContent
+    ): MultimodalContent
+    {
+        val out = pipeOutputs[pipeName] ?: return fallback
+        val inp = pipeInputs[pipeName]
+        // Detect a no-op: the pipe's output text equals the input text. This
+        // matches the "jumped-over" scenario in the test suite, where a pipe
+        // sets a jump instruction but produces no decision content of its own.
+        if(inp != null && out.text == inp.text && pipeOutputs.size > 1)
+        {
+            return fallback
+        }
+        return out
+    }
+
+    /**
+     * Returns the name of the pipe that would be selected as the decision pipe,
+     * or `null` if the fallback (last pipe) was used. Companion to
+     * [resolveDecisionPipeOutput] that exposes the resolution for the
+     * observability hook.
+     */
+    private fun resolveDecisionPipeName(
+        pipeOutputs: Map<String, MultimodalContent>,
+        pipeInputs: Map<String, MultimodalContent>
+    ): String?
+    {
+        // Priority 1: manual override. If the named pipe is not in the
+        // pipeline, this is a "silent" failure: return `null` to indicate
+        // the fallback (last pipe) was used.
+        val manualName = decisionPipeName
+        if(manualName != null)
+        {
+            val (idx, pipe) = getPipeByName(manualName)
+            if(idx >= 0 && pipe != null)
+            {
+                return nameOrNullIfNoop(manualName, pipeOutputs, pipeInputs)
+            }
+            return null
+        }
+
+        // Priority 2: isDecisionPipe flag
+        for(pipe in pipes)
+        {
+            if(pipe.isDecisionPipe)
+            {
+                val name = pipe.pipeName.ifEmpty { null } ?: continue
+                return nameOrNullIfNoop(name, pipeOutputs, pipeInputs)
+            }
+        }
+
+        // Priority 3: pipeRole == Decision
+        for(pipe in pipes)
+        {
+            if(pipe.pipeRole == com.TTT.Enums.PipeRole.Decision)
+            {
+                val name = pipe.pipeName.ifEmpty { null } ?: continue
+                return nameOrNullIfNoop(name, pipeOutputs, pipeInputs)
+            }
+        }
+
+        // Priority 4: heuristic scoring
+        val scored = scoreDecisionPipeCandidates()
+        if(scored != null)
+        {
+            val name = scored.pipeName.ifEmpty { null } ?: return null
+            return nameOrNullIfNoop(name, pipeOutputs, pipeInputs)
+        }
+
+        // Priority 5: fallback
+        return null
+    }
+
+    /**
+     * Returns [pipeName] unless its captured output is a no-op (same text as
+     * its input). In the no-op case, returns `null` to signal the fallback
+     * was used.
+     */
+    private fun nameOrNullIfNoop(
+        pipeName: String,
+        pipeOutputs: Map<String, MultimodalContent>,
+        pipeInputs: Map<String, MultimodalContent>
+    ): String?
+    {
+        val out = pipeOutputs[pipeName] ?: return null
+        val inp = pipeInputs[pipeName]
+        if(inp != null && out.text == inp.text && pipeOutputs.size > 1)
+        {
+            return null
+        }
+        return pipeName
+    }
+
+    /**
+     * Score each pipe in the pipeline for decision-pipe candidacy. Returns the
+     * highest-scoring pipe, or `null` if no pipe has a strong LLM signal
+     * (provider+model). The name-match signal (+1) is a weak tiebreaker that
+     * only applies when at least one pipe has a strong signal — it does not
+     * by itself elect a decision pipe. Ties go to the LATER pipe.
+     *
+     * Returns `null` (and the caller falls back to the last pipe) when:
+     *   - the pipeline is empty, OR
+     *   - no pipe has a provider+model set (no LLM signal at all)
+     */
+    private fun scoreDecisionPipeCandidates(): Pipe?
+    {
+        if(pipes.isEmpty()) return null
+        var bestPipe: Pipe? = null
+        var bestScore = 0
+        val namePattern = Regex("(?i)(decision|judge|dispatch|output|final)")
+        for(pipe in pipes)
+        {
+            val s = pipe.toPipeSettings()
+            var score = 0
+            // Note: `provider` defaults to `Aws` and `model` defaults to ""
+            // (empty string, not null) on the base Pipe class, so the check
+            // requires a NON-EMPTY model string to count as a real LLM signal.
+            if(s.provider != null && !s.model.isNullOrEmpty()) score += 10
+            if(!s.jsonOutput.isNullOrEmpty()) score += 5
+            if(!s.systemPrompt.isNullOrEmpty()) score += 3
+            if(namePattern.containsMatchIn(pipe.pipeName)) score += 1
+            if(score > bestScore || (score == bestScore && score > 0 && bestPipe != null))
+            {
+                bestPipe = pipe
+                bestScore = score
+            }
+        }
+        // Only elect a decision pipe via scoring if at least one pipe has a
+        // strong LLM signal (provider+model = 10 points). Pipelines with no
+        // LLM signals (e.g. plain data processing pipelines) fall back to
+        // the last pipe's output, matching the "no signal = last pipe"
+        // default. The name-match (+1) signal is a weak tiebreaker only.
+        if(bestScore < 10) return null
+        return bestPipe
     }
 }
