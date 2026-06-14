@@ -1436,19 +1436,66 @@ class PumpStationMiniMaxLiveTest
 
 /**
  * Local HTTP stub for the OpenAI Responses API. Each instance listens on its
- * own port and serves canned responses in FIFO order, classified by role
- * (judge / dispatch / gather / report / pathSafety) via keyword matching on
- * the request's `instructions` field.
+ * own port and serves canned responses, classified by role
+ * (judge / dispatch / gather / report / pathSafety / summary) via keyword
+ * matching on the request's `instructions` field.
+ *
+ * # Why per-role queues (not a single FIFO)?
+ *
+ * The harness's LLM call order is role-driven (judge → dispatch → path-LLM
+ * → optional compaction-summary) but the *number* of calls per role depends
+ * on runtime conditions (compaction threshold, judge verdict, max-turn
+ * budget). A single FIFO queue would force the test to know the exact call
+ * sequence ahead of time and would silently misalign when the harness
+ * changes the number of turns (e.g. compaction fires earlier or later than
+ * expected). Per-role queues let each role's queue be sized independently
+ * and consumed in the order the harness actually requests them.
+ *
+ * Queue behavior:
+ *  - Each role has its own [java.util.concurrent.ConcurrentLinkedQueue].
+ *  - On request, the role is detected from the request body and the next
+ *    response is dequeued from that role's queue.
+ *  - If a role's queue is empty, the stub fails loudly with the role name
+ *    and a sample of the request body for debugging.
+ *  - An "unknown" role (no keyword match) also fails loudly — better to
+ *    catch a missing detector keyword than to silently serve the wrong response.
  */
 private class StubOpenAIServer
 {
-    private val responses: java.util.concurrent.ConcurrentLinkedQueue<String> = java.util.concurrent.ConcurrentLinkedQueue()
+    // Per-role FIFO queues. Each role's queue is independent so the harness
+    // can call each role any number of times without starving another role.
+    // ConcurrentLinkedQueue is thread-safe; the HTTP server handler runs on
+    // its own thread but the harness's LLM calls are also coroutine-dispatched
+    // so we use concurrent types defensively.
+    private val responsesByRole: MutableMap<String, java.util.concurrent.ConcurrentLinkedQueue<String>> =
+        java.util.concurrent.ConcurrentHashMap()
     private val callLog: java.util.concurrent.ConcurrentLinkedQueue<String> = java.util.concurrent.ConcurrentLinkedQueue()
     private var server: com.sun.net.httpserver.HttpServer? = null
     var port: Int = 0
         private set
 
-    fun enqueue(responseJson: String) { responses.add(responseJson) }
+    init
+    {
+        // Initialize all known role queues so we can detect "unknown" vs "empty".
+        for (role in listOf("judge", "dispatch", "gather", "report", "pathSafety", "summary"))
+        {
+            responsesByRole[role] = java.util.concurrent.ConcurrentLinkedQueue()
+        }
+    }
+
+    /** Enqueue a response on the default ("any") queue. Prefer [enqueueFor]. */
+    fun enqueue(responseJson: String) { responsesByRole.getValue("any").add(responseJson) }
+
+    /**
+     * Enqueue a response on a specific role's queue. The harness will
+     * receive this response the next time it asks for a request classified
+     * as [role].
+     */
+    fun enqueueFor(role: String, responseJson: String)
+    {
+        val queue = responsesByRole[role] ?: error("Unknown role: $role. Known: ${responsesByRole.keys}")
+        queue.add(responseJson)
+    }
 
     fun start()
     {
@@ -1457,8 +1504,13 @@ private class StubOpenAIServer
             val body = exchange.requestBody.readBytes().toString(Charsets.UTF_8)
             val role = detectRole(body)
             callLog.add(role)
-            val response = responses.poll() ?: throw IllegalStateException(
-                "StubOpenAIServer: no canned response queued for this request. Role: $role"
+            // Prefer the role-specific queue, then the "any" fallback. The
+            // fallback lets queueForConfiguration() pre-populate one bucket
+            // when the test doesn't care about role classification.
+            val queue = responsesByRole[role] ?: responsesByRole.getValue("any")
+            val response = queue.poll() ?: throw IllegalStateException(
+                "StubOpenAIServer: no canned response queued for role='$role'. " +
+                "Body prefix: ${body.take(200)}"
             )
             val bytes = response.toByteArray(Charsets.UTF_8)
             exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
@@ -1501,66 +1553,93 @@ private class StubOpenAIServer
         useSinglePathPassPipeline: Boolean
     )
     {
-        // Per-config response queue. Each `responsesBody(...)` adds one response
-        // served in FIFO order. detectRole() classifies the request by keyword
-        // matching on the request's instructions field, so the queue order must
-        // match the harness's actual LLM call order.
+        // Per-role response queues. Each role is independent so the harness can
+        // call any role any number of times without starving the others. The
+        // old single-FIFO design had a brittle "must match the LLM call order
+        // exactly" contract that broke down as soon as the harness deviated
+        // (e.g. when compaction fires on a turn where the test expected a
+        // judge call, the judge LLM got a summary response and the JSON
+        // parse failed silently). Per-role queues eliminate the ordering
+        // constraint — each role's queue just needs to be deep enough to
+        // cover the worst-case number of LLM calls for that role in the
+        // configuration under test.
         //
-        // Calls per turn for each configuration (judge+dispatch+path LLM, etc):
-        //   1. alwaysOnJudge:        judge(false), dispatch, report, judge(true)
-        //   2. flagTriggeredJudge:   dispatch, report+requestJudge, judge(true)
-        //   3. compactionMemory:     judge(false), dispatch, report, judge(true)
-        //                            (compaction may add more calls if it fires)
-        //   4. killSwitch:           judge(false), dispatch, report(usage high)
-        //   5. singlePathPassPipeline: dispatch, report (passPipeline=true)
-        //   6. multiPathRiskLevels:  judge(false), dispatch, pathSafety, report, judge(true)
+        // Calls per role for each configuration:
+        //   1. alwaysOnJudge:         judge x2, dispatch x1, report x1
+        //   2. flagTriggeredJudge:    judge x1, dispatch x1, report x1
+        //   3. compactionMemory:      judge x2, dispatch x?, report x?,
+        //                             summary x? (compaction may fire each turn)
+        //   4. killSwitch:            judge x1, dispatch x1, report x1 (kill
+        //                             switch trips on report's high output)
+        //   5. singlePathPassPipeline: judge x0, dispatch x1, report x1
+        //   6. multiPathRiskLevels:   judge x2, dispatch x1, pathSafety x1,
+        //                             report x1
+        // Each "?" role gets a few extra entries pre-queued to handle the
+        // case where the harness runs more turns than the minimum (e.g. when
+        // the judge keeps returning isComplete=false and the loop iterates).
         when (testName)
         {
             "01-always-on-judge" -> {
-                enqueue(judgeResponse(isComplete = false))
-                enqueue(dispatchResponse("report"))
-                enqueue(responsesBody(REPORT_BRIEF))
-                enqueue(judgeResponse(isComplete = true))
+                enqueueFor("judge", judgeResponse(isComplete = false))
+                enqueueFor("judge", judgeResponse(isComplete = true))
+                enqueueFor("dispatch", dispatchResponse("report"))
+                enqueueFor("report", responsesBody(REPORT_BRIEF))
             }
             "02-flag-triggered-judge" -> {
-                enqueue(dispatchResponse("report"))
-                enqueue(responsesBody(REPORT_BRIEF))
-                enqueue(judgeResponse(isComplete = true))
+                // Judge only fires when the report path calls
+                // requestJudgeNextTurn(). The dispatch LLM still runs every turn
+                // to pick the next path; we pre-queue 2 in case the harness
+                // runs multiple turns before the flag is set.
+                enqueueFor("judge", judgeResponse(isComplete = true))
+                repeat(2) { enqueueFor("dispatch", dispatchResponse("report")) }
+                repeat(2) { enqueueFor("report", responsesBody(REPORT_BRIEF)) }
             }
             "03-compaction-memory" -> {
-                enqueue(judgeResponse(isComplete = false))
-                enqueue(dispatchResponse("report"))
-                enqueue(responsesBody(REPORT_BRIEF))
-                // Compaction fires (threshold=0.01) and the summaryAgent LLM call
-                // is invoked. The harness can run multiple turns and call the
-                // summary agent each time, so we pre-queue several summary
-                // responses (the stub fails loudly if the queue is empty
-                // mid-test). Each summary response is identical — the
-                // compaction orchestrator only cares that a string is returned.
-                repeat(8) { enqueue(summaryResponse()) }
-                enqueue(judgeResponse(isComplete = true))
+                // Judge runs every turn (alwaysOnJudge default). We pre-queue
+                // 4 judge responses because the compaction test runs up to
+                // maxHarnessTurns=6 turns.
+                repeat(4) { enqueueFor("judge", judgeResponse(isComplete = false)) }
+                enqueueFor("judge", judgeResponse(isComplete = true))
+                // Dispatch + report can run each turn too (compaction fires
+                // the summary LLM but doesn't skip dispatch/report).
+                repeat(4) { enqueueFor("dispatch", dispatchResponse("report")) }
+                repeat(4) { enqueueFor("report", responsesBody(REPORT_BRIEF)) }
+                // The compaction orchestrator calls the summaryAgent LLM each
+                // time it fires. Threshold=0.01 means it fires on every turn
+                // (context is always ≥ 1% of the budget). Pre-queue enough to
+                // cover maxHarnessTurns=6 turns (6 base + 4 buffer for
+                // memory-update summary calls and any re-compaction cycles
+                // triggered by post-update context checks).
+                repeat(10) { enqueueFor("summary", summaryResponse()) }
             }
             "04-kill-switch-trip" -> {
-                enqueue(judgeResponse(isComplete = false))
-                enqueue(dispatchResponse("report"))
-                // High output_tokens so the kill switch (outputTokenLimit=100) trips
-                // on the very first LLM call.
-                enqueue(responsesBody(REPORT_BRIEF, outputTokens = 500, inputTokens = 50))
+                enqueueFor("judge", judgeResponse(isComplete = false))
+                enqueueFor("dispatch", dispatchResponse("report"))
+                // High output_tokens so the kill switch (outputTokenLimit=100)
+                // trips on the very first LLM call.
+                enqueueFor("report", responsesBody(REPORT_BRIEF, outputTokens = 500, inputTokens = 50))
             }
             "05-single-path-pass-pipeline" -> {
-                enqueue(dispatchResponse("report"))
-                enqueue(responsesBody(REPORT_BRIEF))
+                // No judge (judgeAgent=null in this config). Pre-queue extras
+                // in case the harness runs multiple turns.
+                repeat(2) { enqueueFor("dispatch", dispatchResponse("report")) }
+                repeat(2) { enqueueFor("report", responsesBody(REPORT_BRIEF)) }
             }
             "06-multi-path-risk-levels" -> {
-                enqueue(judgeResponse(isComplete = false))
-                enqueue(dispatchResponse("report"))
-                enqueue(pathSafetyResponse(safe = true))
-                enqueue(responsesBody(REPORT_BRIEF))
-                enqueue(judgeResponse(isComplete = true))
+                enqueueFor("judge", judgeResponse(isComplete = false))
+                enqueueFor("judge", judgeResponse(isComplete = true))
+                // pathSafety runs for every Medium/High risk path. Gather is
+                // Low so no pathSafety for it. Report is Low too in the test
+                // config (useRiskLevels=true makes gather=Low, analyze=Medium,
+                // report=High — but the test currently only runs gather+report
+                // in singlePath; for riskLevels the test uses 3 paths so
+                // analyze also gets a pathSafety check).
+                repeat(3) { enqueueFor("dispatch", dispatchResponse("report")) }
+                repeat(3) { enqueueFor("pathSafety", pathSafetyResponse(safe = true)) }
+                repeat(3) { enqueueFor("report", responsesBody(REPORT_BRIEF)) }
             }
             else -> error("Unknown testName: $testName")
         }
-        check(responses.isNotEmpty()) { "Stub queue is empty for $testName" }
     }
 
     companion object

@@ -9,7 +9,9 @@ import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.PcPRequest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -522,6 +524,52 @@ internal fun PumpStation.parseDispatchOutput(content: MultimodalContent): PathRe
         val name = json["pathName"]?.jsonPrimitive?.content ?: ""
         val schema = json["pathSchema"]?.jsonPrimitive?.content ?: ""
         if (name.isEmpty()) null else PathRequest(pathName = name, pathSchema = schema)
+    }
+    catch (e: Exception)
+    {
+        null
+    }
+}
+
+/**
+ * Parse the path-safety agent's text output as a structured verdict.
+ *
+ * The default path-safety system prompt asks the agent to reply with JSON like
+ * `{"safe": boolean, "reason": string}`. Previously the harness only checked the
+ * `terminatePipeline` / `passPipeline` flags on the agent's [MultimodalContent]
+ * (see [PumpStation.invokePathInternal] around the path-safety block) — the agent's
+ * actual `{"safe": false}` JSON was completely ignored, so the safety check was a
+ * degenerate "always approve" that only failed when the LLM happened to set one of
+ * the special flags. This parser reads the structured verdict.
+ *
+ * Returns `null` when the text is not parseable as a path-safety JSON object. The
+ * caller is expected to fall back to the legacy flag-based check in that case so
+ * custom agents that don't follow the JSON convention still work.
+ *
+ * The parser is intentionally strict on the `safe` field:
+ *  - The field must be a JSON boolean literal (true / false).
+ *  - Strings like "true", numbers, and null are all rejected → caller falls back.
+ *  - Missing `safe` returns null.
+ *  - The text is trimmed but otherwise parsed as-is; no markdown fence stripping
+ *    is performed here because path-safety verdicts are tiny and a strict parse
+ *    keeps the failure mode obvious. The [PumpStation.invokePathInternal] call
+ *    site can call [com.TTT.Util.repairJsonString] upstream if needed.
+ */
+internal fun parsePathSafetyVerdict(text: String): Boolean?
+{
+    if (text.isBlank()) return null
+    val trimmed = text.trim()
+    return try
+    {
+        val element = Json.parseToJsonElement(trimmed)
+        val obj = element as? JsonObject ?: return null
+        val safeField = obj["safe"] ?: return null
+        // booleanOrNull is defined on JsonPrimitive (returns null for non-boolean
+        // values). Use a JsonPrimitive cast so a non-conforming agent (string
+        // "true", number 1) returns null and falls back to the legacy flag check
+        // instead of being silently coerced.
+        val safePrim = safeField as? JsonPrimitive ?: return null
+        safePrim.booleanOrNull
     }
     catch (e: Exception)
     {

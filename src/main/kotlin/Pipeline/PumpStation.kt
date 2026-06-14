@@ -2344,7 +2344,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         val riskLevel = path.riskLevel
 
         // Emit PathSelected event
-        backgroundEventQueue.trySend(PathSelected(
+        emitEventInternal(PathSelected(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
             phase = PumpStationPhase.Dispatch,
@@ -2361,14 +2361,14 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                 if (consecutivePathCount >= maxConsecutiveSamePath!!)
                 {
                     // Loop guard triggered — emit PathFailed + LoopGuardTripped, then call interventionAgent if set
-                    backgroundEventQueue.trySend(LoopGuardTripped(
+                    emitEventInternal(LoopGuardTripped(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         guard = "maxConsecutiveSamePath",
                         pathName = pathName,
                         detail = "consecutive=$consecutivePathCount, limit=${maxConsecutiveSamePath!!}"
                     ))
-                    backgroundEventQueue.trySend(PathFailed(
+                    emitEventInternal(PathFailed(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         phase = PumpStationPhase.PathExecution,
@@ -2379,7 +2379,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                     ))
 
                     // Emit InterventionStarted, invoke interventionAgent if configured, then emit InterventionCompleted
-                    backgroundEventQueue.trySend(InterventionStarted(
+                    emitEventInternal(InterventionStarted(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         trigger = PumpStationError.LoopGuardTriggered,
@@ -2389,7 +2389,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                     val interventionResult = interventionAgent?.executeLocal(taskState.latestContent ?: MultimodalContent())
                     val interventionUsage = agentTokenUsageInternal(interventionAgent)
 
-                    backgroundEventQueue.trySend(InterventionCompleted(
+                    emitEventInternal(InterventionCompleted(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         nudges = 0,
@@ -2413,7 +2413,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         pathCallCounts[pathName] = callCount
         if (maxTotalPathCallsPerPath != null && callCount > maxTotalPathCallsPerPath!!)
         {
-            backgroundEventQueue.trySend(LoopGuardTripped(
+            emitEventInternal(LoopGuardTripped(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
                 guard = "maxTotalPathCallsPerPath",
@@ -2433,7 +2433,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
             {
                 PathLimitExceededPolicy.Skip ->
                 {
-                    backgroundEventQueue.trySend(PathHidden(
+                    emitEventInternal(PathHidden(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         pathName = pathName,
@@ -2445,7 +2445,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                 {
                     taskState.latestContent?.terminatePipeline = true
                     taskState.lastError = PumpStationError.MaxTurnsExceeded
-                    backgroundEventQueue.trySend(PathFailed(
+                    emitEventInternal(PathFailed(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         phase = PumpStationPhase.PathExecution,
@@ -2458,7 +2458,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                 }
                 PathLimitExceededPolicy.Continue ->
                 {
-                    backgroundEventQueue.trySend(PathFailed(
+                    emitEventInternal(PathFailed(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         phase = PumpStationPhase.PathExecution,
@@ -2475,22 +2475,32 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         if (riskLevel != PathRiskLevel.Low)
         {
             // Emit PathSafetyStarted event
-            backgroundEventQueue.trySend(PathSafetyStarted(
+            emitEventInternal(PathSafetyStarted(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
                 pathName = pathName,
                 riskLevel = riskLevel
             ))
 
-            // Call path safety function or agent — function OR agent, first to return true approves
+            // Call path safety function or agent — function OR agent, first to return true approves.
+            //
+            // The agent's verdict is parsed as a structured `{"safe": bool, ...}` JSON object
+            // (see [parsePathSafetyVerdict]). The legacy flag-based check
+            // (`!result.terminatePipeline && !result.passPipeline`) is kept as a fallback
+            // so custom agents that don't follow the JSON convention still work — but a
+            // real path-safety LLM that returns `{"safe": false}` is now actually consulted.
+            // Previously the flag check was the only gate, which made the safety check a
+            // degenerate always-approve (LLMs don't normally set terminatePipeline on a
+            // safety verdict response).
             val approved = pathSafetyFunction?.invoke(path, path.pathSchema, this)
                 ?: pathSafetyAgent?.let { agent ->
                     val result = agent.executeLocal(input)
-                    !(result.terminatePipeline || result.passPipeline)
+                    parsePathSafetyVerdict(result.text)
+                        ?: !(result.terminatePipeline || result.passPipeline)
                 }
                 ?: true
 
-            backgroundEventQueue.trySend(PathSafetyCompleted(
+            emitEventInternal(PathSafetyCompleted(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
                 pathName = pathName,
@@ -2506,7 +2516,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         }
 
         // --- Emit PathStarted event ---
-        backgroundEventQueue.trySend(PathStarted(
+        emitEventInternal(PathStarted(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
             pathName = pathName,
@@ -2526,7 +2536,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         }
         catch(e: Exception)
         {
-            backgroundEventQueue.trySend(PathFailed(
+            emitEventInternal(PathFailed(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
                 pathName = pathName,
@@ -2554,7 +2564,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         val (pathInputTokens, pathOutputTokens) = path.getPathLegacyTokenUsage()
         val pathTotalTokens = if (pathInputTokens > 0 || pathOutputTokens > 0)
             pathInputTokens + pathOutputTokens else 0
-        backgroundEventQueue.trySend(PathCompleted(
+        emitEventInternal(PathCompleted(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
             phase = PumpStationPhase.PathExecution,
@@ -2588,7 +2598,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         if (pathValidationFunction != null)
         {
             val validated = pathValidationFunction!!.invoke(result, this)
-            backgroundEventQueue.trySend(PathValidationCompleted(
+            emitEventInternal(PathValidationCompleted(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
                 pathName = pathName,
