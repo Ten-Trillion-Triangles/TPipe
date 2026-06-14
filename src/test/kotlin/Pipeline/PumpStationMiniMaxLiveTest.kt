@@ -1340,6 +1340,30 @@ class PumpStationMiniMaxLiveTest
                     "$testName: expected exit reason in $acceptedExits, got $actualExit"
                 )
             }
+            // For flagTriggeredJudge, additionally verify the judge actually fired
+            // at least once. Without this check, the test would pass with MaxTurnsHit
+            // even if the report path never called requestJudgeNextTurn() (e.g. because
+            // the dispatch kept selecting gather, which doesn\'t set the flag). The
+            // flag plumbing was the whole point of the test.
+            if (useFlagTriggeredJudge)
+            {
+                val traceSubdir = traceSubdir(testName)
+                val pumpHtml = traceSubdir.listFiles { f ->
+                    f.name.startsWith("pumpstation-") && f.name.endsWith(".html")
+                }?.firstOrNull()
+                if (pumpHtml != null)
+                {
+                    val text = pumpHtml.readText()
+                    val judgeStartedCount = Regex("PUMP_STATION_JUDGE_STARTED").findAll(text).count()
+                    assert(judgeStartedCount >= 1) {
+                        "$testName: FlagTriggered mode produced no judge runs (judgeStartedCount=$judgeStartedCount) " +
+                            "— the report path never called requestJudgeNextTurn(). " +
+                            "Either the dispatch never selected the report path, or the " +
+                            "report path\'s executionFunction skipped the flag call. " +
+                            "This is a false positive — the test should fail."
+                    }
+                }
+            }
             // For tests that should produce a brief, verify it. Skip if the harness
             // hit MaxTurnsHit: the last path may not have produced a deliverable
             // (e.g. the report path was called with a degenerate "report"-only
