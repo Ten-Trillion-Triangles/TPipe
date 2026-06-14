@@ -1384,11 +1384,19 @@ class PumpStationMiniMaxLiveTest
         catch (e: Exception)
         {
             // Always export whatever traces we have, even on failure, so the artifact
-            // directory isn't empty. Calls getTraceReport so the pump station's
+            // directory isn\'t empty. Calls getTraceReport so the pump station\'s
             // autoExport fires (autoExport only writes the file when getTraceReport
-            // is invoked, not on every event).
-            try { station.getTraceReport(TraceFormat.HTML) } catch (_: Exception) {}
-            exportAgentTraces(testName)
+            // is invoked, not on every event). Each cleanup step is wrapped in its
+            // own try/catch so a failure in one cleanup (e.g. an IO error writing the
+            // per-agent HTML) doesn\'t mask the original harness exception `e`. The
+            // test should still fail with the ORIGINAL exception so the developer
+            // sees the real cause, not the cleanup noise.
+            try { station.getTraceReport(TraceFormat.HTML) } catch (cleanupEx: Exception) {
+                println("$testName: getTraceReport failed during cleanup: ${cleanupEx.message}")
+            }
+            try { exportAgentTraces(testName) } catch (cleanupEx: Exception) {
+                println("$testName: exportAgentTraces failed during cleanup: ${cleanupEx.message}")
+            }
             try
             {
                 assertRunProducedTraces(station, expectedExit, testName)
