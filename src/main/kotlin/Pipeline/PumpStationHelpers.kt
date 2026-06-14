@@ -564,11 +564,14 @@ internal fun parsePathSafetyVerdict(text: String): Boolean?
         val element = Json.parseToJsonElement(trimmed)
         val obj = element as? JsonObject ?: return null
         val safeField = obj["safe"] ?: return null
-        // booleanOrNull is defined on JsonPrimitive (returns null for non-boolean
-        // values). Use a JsonPrimitive cast so a non-conforming agent (string
-        // "true", number 1) returns null and falls back to the legacy flag check
-        // instead of being silently coerced.
+        // Require a JSON boolean LITERAL (true / false). The kotlinx-serialization
+        // [JsonPrimitive.booleanOrNull] is lenient — it accepts the strings "true" /
+        // "false" and parses them as booleans. For a structured safety verdict we
+        // want strictness: a non-conforming agent (returns "true" as a string,
+        // returns 1, returns null) should fall back to the legacy flag check rather
+        // than being silently coerced. Reject string-typed primitives explicitly.
         val safePrim = safeField as? JsonPrimitive ?: return null
+        if (safePrim.isString) return null
         safePrim.booleanOrNull
     }
     catch (e: Exception)
