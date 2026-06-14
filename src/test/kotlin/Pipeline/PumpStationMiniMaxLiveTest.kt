@@ -210,8 +210,16 @@ class PumpStationMiniMaxLiveTest
      * Returns the API key if the live test gate is open and the env var is set, otherwise null.
      * Each test calls this at the top — if it returns null the test silently returns
      * (no failure, no red bar) so developers without credentials aren't broken.
+     *
+     * Stub keys (the `sk-stub*` prefix) return null so the live tests skip in stub mode.
+     * Without this gate, a stub key (e.g. `sk-stub-test`) would pass the env check and
+     * the live tests would attempt to call the real MiniMax endpoint with the stub key,
+     * getting a 1004 "login fail" error (verified: the live tests failed with
+     * `P2PException: OpenAI Responses error: login fail` when run with the stub key
+     * in the env). Stub tests work because they use their own StubOpenAIServer on a
+     * random port and ignore the env key entirely.
      */
-    private fun envGateOrSkip(): String? = apiKeyCache
+    private fun envGateOrSkip(): String? = apiKeyCache?.takeUnless { it.startsWith("sk-stub") }
 
     /**
      * Looks up the MiniMax MCP server entry in `~/.claude.json` and runs the JSON-RPC
