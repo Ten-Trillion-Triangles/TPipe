@@ -1241,6 +1241,23 @@ class PumpStationMiniMaxLiveTest
                 // live tests both verify the compaction events are emitted and
                 // handled.
                 compactionThreshold = 0.01
+                // The compaction phase has an early-return gate at line 1085 of
+                // PumpStationLoop.kt: if summaryAgent is null, the phase
+                // returns CompactionResult.SkippedNoAgent without doing any
+                // work. Configure a real summaryAgent (LLM-backed) so the
+                // orchestrator actually invokes the summary pipeline and the
+                // compaction code path is exercised end-to-end. Without this,
+                // the test would still be fake (verified: even with threshold
+                // 0.01, the compaction phase is a no-op).
+                summaryAgent = createAgentPipeline(
+                    pipeName = "summary",
+                    systemPrompt = "You are a summarizer. Compress the provided " +
+                        "conversation history into a concise summary, preserving " +
+                        "key technical details and conclusions. Aim for 100-200 " +
+                        "words.",
+                    baseUrl = baseUrl,
+                    traceConfig = traceCfg
+                )
             }
 
             if (killSwitch != null)
@@ -1440,6 +1457,7 @@ private class StubOpenAIServer
             "research gatherer" in lower -> "gather"
             "technical writer" in lower -> "report"
             "path-safety validator" in lower -> "pathSafety"
+            "you are a summarizer" in lower -> "summary"
             else -> "unknown"
         }
     }
@@ -1481,6 +1499,13 @@ private class StubOpenAIServer
                 enqueue(judgeResponse(isComplete = false))
                 enqueue(dispatchResponse("report"))
                 enqueue(responsesBody(REPORT_BRIEF))
+                // Compaction fires (threshold=0.01) and the summaryAgent LLM call
+                // is invoked. The harness can run multiple turns and call the
+                // summary agent each time, so we pre-queue several summary
+                // responses (the stub fails loudly if the queue is empty
+                // mid-test). Each summary response is identical — the
+                // compaction orchestrator only cares that a string is returned.
+                repeat(8) { enqueue(summaryResponse()) }
                 enqueue(judgeResponse(isComplete = true))
             }
             "04-kill-switch-trip" -> {
@@ -1542,6 +1567,13 @@ private class StubOpenAIServer
         /** Canned path-safety verdict. */
         fun pathSafetyResponse(safe: Boolean, reason: String = "stub approved"): String =
             responsesBody("""{"safe": $safe, "reason": "$reason"}""")
+
+        /** Canned summary compression. Short, so the stub proves the agent fired. */
+        fun summaryResponse(): String =
+            responsesBody(
+                "Summary: the gather path produced research findings on the topic; " +
+                "the report path synthesized a structured brief with section headers."
+            )
     }
 }
 
