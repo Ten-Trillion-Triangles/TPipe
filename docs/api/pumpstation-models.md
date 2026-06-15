@@ -391,6 +391,7 @@ The full event taxonomy is documented below. Each event has a corresponding `Tra
 |-------|------|-------|-------------|
 | `ForegroundAgentCompleted` | `agentName: String`, `result: MultimodalContent?`, `inputTokens: Int?`, `outputTokens: Int?`, `totalTokens: Int?` | `ForegroundAgents` | Emitted when a foreground (Blocking) agent finishes. |
 | `BackgroundAgentQueued` | `agentName: String` | `ForegroundAgents` | Emitted when a background (Async) agent is queued. |
+| `AsyncTurnAppended` | `source: String`, `pathName: String?`, `agentName: String?`, `seq: Long`, `content: MultimodalContent?` | `PathExecution` | Emitted when an async path or async harness agent result is merged into `turnHistory` by the foreground drain. Observers can correlate the merge back to the dispatch via `seq` and `pathName` / `agentName`. |
 
 ### Memory and Compaction Events
 
@@ -467,11 +468,14 @@ sealed class TurnResult {
 data class HarnessAgentSlot(
     val agent: P2PInterface?,
     val concurrency: PumpStationConcurrencyMode,
-    val builderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+    val builderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null,
+    val appendsToTurnHistory: Boolean = false
 )
 ```
 
 `concurrency = Blocking` fires synchronously during the foreground phase. `concurrency = Async` queues the agent as a coroutine during the background phase.
+
+`appendsToTurnHistory` (default `false`) is honoured only when `concurrency = Async`. When `true`, the agent's result is captured into a `PendingTurnEntry` and merged into `turnHistory` by the foreground drain at the next safe phase boundary. When `false`, the result is discarded, preserving the historical fire-and-forget semantics. The station-wide `asyncAgentsAppendToTurnHistory` flag can be used as an umbrella default; per-slot flags override the station default.
 
 ### FlagCheckResult
 
@@ -540,6 +544,63 @@ data class JudgeVerdict(
 `isComplete` and `shouldTerminate` come from the JSON parser. `shouldHalt` and `reason` are set later by `withFlagCheck(content)` based on the source `MultimodalContent`'s flags.
 
 
+## Async Substrate Models
+
+### PendingTurnEntry
+
+`Pipeline/PumpStationModels.kt:863` — A turn entry produced by an async path or async harness agent. Held in the station's `pendingAsyncResults` channel and merged into `turnHistory` in monotonic `seq` order during a foreground drain.
+
+```kotlin
+data class PendingTurnEntry(
+    val seq: Long,
+    val turnIndex: Int,
+    val pathName: String?,
+    val agentName: String?,
+    val source: String,
+    val result: MultimodalContent,
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null,
+    val totalTokens: Int? = null,
+    val passPipeline: Boolean = false,
+    val terminatePipeline: Boolean = false
+)
+```
+
+| Field | Description |
+|-------|-------------|
+| `seq` | Monotonic id assigned at enqueue time by an `AtomicLong` counter. The foreground drain sorts pending entries by `seq` so out-of-order async completions still produce a deterministic merge order from the LLM's perspective. |
+| `turnIndex` | Snapshot of `taskState.turnIndex` at the time the entry was enqueued. Used by observers to correlate the entry back to the originating turn. |
+| `pathName` | Name of the path that produced the result, or `null` for harness-agent-originated entries. |
+| `agentName` | Simple class name of the agent that produced the result, or `null` for path-originated entries. |
+| `source` | Short producer identifier (e.g. `"asyncPath"`, `"asyncHarnessAgent"`). |
+| `result` | The async producer's `MultimodalContent` output. |
+| `inputTokens`, `outputTokens`, `totalTokens` | Optional token usage captured from the producer's response. |
+| `passPipeline`, `terminatePipeline` | Control flags lifted from the result's `MultimodalContent`. The foreground drain carries them forward for the existing loop-control path. |
+
+`PendingTurnEntry` is the queue payload. The merged-into-history event is `AsyncTurnAppended`.
+
+### AsyncTurnAppended (event)
+
+`Pipeline/PumpStationModels.kt:885` — An async path or async harness agent result was merged into `turnHistory` by the foreground drain.
+
+```kotlin
+@kotlinx.serialization.Serializable
+data class AsyncTurnAppended(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.PathExecution,
+    val source: String,
+    val pathName: String?,
+    val agentName: String?,
+    val seq: Long,
+    val content: MultimodalContent?
+) : PumpStationEvent
+```
+
+Observers can correlate the merge back to the dispatch via `seq` and `pathName` / `agentName`. The trace funnel maps this event to `TraceEventType.PUMP_STATION_ASYNC_TURN_APPENDED`.
+
+
 ## Type Aliases
 
 `Pipeline/PumpStationModels.kt:959`:
@@ -570,6 +631,7 @@ The `revealWhen` predicate on a `PathObject` is typed as this alias. The receive
 | `PumpStationTaskState` | `Pipeline/PumpStationModels.kt` |
 | `PumpStationFailurePolicy`, `PumpStationSnapshot`, `StashEntry`, `PathLimitExceededResult` | `Pipeline/PumpStationModels.kt` |
 | `TurnResult`, `HarnessAgentSlot`, `FlagCheckResult`, `MemorySnapshot`, `DispatchOutput`, `JudgeVerdict` | `Pipeline/PumpStationModels.kt` |
+| `PendingTurnEntry`, `AsyncTurnAppended` | `Pipeline/PumpStationModels.kt` |
 | `WarningCode`, `ExitMechanism`, `ReservePathRevealPredicate` | `Pipeline/PumpStationModels.kt` |
 | `ChunkFanoutMode`, `CompactionCursor`, `LorebookCursor`, `CompactionBackup`, `CompactionResult` | `Pipeline/PumpStationV3Models.kt` |
 | `LorebookAgentInput`, `LorebookTaskContext`, `LorebookAgentOutput`, `LorebookUpdate`, `LorebookOperation` | `Pipeline/LorebookAgentModels.kt` |

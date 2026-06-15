@@ -27,6 +27,7 @@
 - [Path Risk Levels](#path-risk-levels)
 - [Loop Guards](#loop-guards)
 - [Reserve Paths](#reserve-paths)
+- [Async Substrate](#async-substrate)
 - [Stash, Snapshots, and Pause/Resume](#stash-snapshots-and-pauseresume)
 - [Tracing Support](#tracing-support)
 - [Kill Switch Integration](#kill-switch-integration)
@@ -113,10 +114,12 @@ Per-turn, the harness (in order):
 17. Checks `passPipeline` / `terminatePipeline` flags on the path's result
 18. Prunes turn history if it exceeds `maxTurnHistorySize`
 19. Runs the foreground (Blocking) harness agent slots
-20. Queues background (Async) harness agent slots via `GlobalScope.launch`
+20. Queues background (Async) harness agent slots on the station-scoped `asyncScope` (coroutine scope owned by the harness; cancelled by `cancelAsyncJobs` at finalization)
 21. Runs the memory update phase (queues lorebook + summary if interval hit or fill pressure)
 22. Runs the compaction phase
 23. Returns `Continue`
+
+On the next turn, the judge phase starts by calling `drainPendingAsyncResults()`, which merges any `PendingTurnEntry` items produced by async paths or async harness agents during the previous turn into `turnHistory` in monotonic `seq` order, then emits one `AsyncTurnAppended` event per merged entry. The finalization phase performs a second drain immediately before cancelling `asyncScope`.
 
 Context blowout detection runs at every phase boundary. The kill switch check runs after each judge, dispatch, and path phase.
 
@@ -587,6 +590,10 @@ The `pumpStation { }` builder supports these top-level blocks and setters.
 | `maxConsecutiveSamePath` | `Int`                                      | `3`     | Loop guard on consecutive same-path dispatch. |
 | `maxTotalPathCallsPerPath` | `Int?`                                   | `null`  | Loop guard on total calls per path; null disables. |
 | `pathLimitExceededPolicy` | `PathLimitExceededPolicy`                 | `Skip`  | `Skip`, `Halt`, or `Continue` when the per-path limit is hit. |
+| `asyncPathsAppendToTurnHistory` | `Boolean`                             | `true`  | Station-wide default for whether async paths append their result to `turnHistory` on completion. Per-path opt-out via `suppressHistoryEmit` on the path block. |
+| `asyncAgentsAppendToTurnHistory` | `Boolean`                            | `false` | Station-wide default for whether async harness agents append their result to `turnHistory` on completion. Per-slot opt-in via `HarnessAgentSlot.appendsToTurnHistory`. |
+| `asyncJobGracePeriodMs` | `Long?`                                     | `null`  | Optional millisecond grace period given to in-flight async coroutines after finalization before `cancelAsyncJobs` cancels the `asyncScope`. `null` (the default) is unbounded. See [Async Substrate](#async-substrate) below. |
+| `asyncJobsScopedToStation` | `Boolean`                                | `true`  | When `true`, async work runs on the station-scoped `asyncScope`; when `false`, async work runs on `GlobalScope` (the pre-substrate fire-and-forget behavior). |
 
 ### Agent Setters
 
@@ -616,7 +623,8 @@ Registers a `PathObject` in `pathList`. The block exposes:
 | `description`                | `String`                | Human-readable description; injected into the dispatch prompt. |
 | `risk`                       | `PathRiskLevel`         | `Low`, `Medium`, or `High`. Triggers path-safety gate at Medium+. |
 | `dispatchHint`               | `String`                | Soft guidance surfaced in the dispatch prompt as `"Hint: ..."`. |
-| `runsInBackground`           | `Boolean`               | When true, the path runs in the background scheduler. |
+| `runsInBackground`           | `Boolean`               | When true, the path runs on the station's `asyncScope` instead of the foreground path flow. |
+| `suppressHistoryEmit`        | `Boolean`               | When true (and `runsInBackground` is also true), the path's `PathCompleted` event is still emitted, but the foreground drain skips merging the result into `turnHistory`. |
 | `schema`                     | `String`                | Free-form JSON schema for the path's input. |
 | `pcpSchema`                  | `PcpContext?`           | Pre-built PCP context for PCP-bound paths. |
 | `pathMetadata`               | `MutableMap<Any, Any>`  | Advisory metadata; travels with the path object. |
@@ -693,7 +701,7 @@ Register additional agents that fire during the foreground or background phase. 
 | `concurrency` | `PumpStationConcurrencyMode` | `Blocking` (foreground) or `Async` (background). |
 | `interval` | `Int` | Turns between firings. |
 
-The blocking slots fire synchronously during the foreground phase. The async slots are queued and run as coroutines during the background phase.
+The blocking slots fire synchronously during the foreground phase. The async slots are queued and launched on the station's `asyncScope`; the result is captured into `turnHistory` when the slot's `appendsToTurnHistory` field is `true` OR the station-wide `asyncAgentsAppendToTurnHistory` is `true`. See [Async Substrate](#async-substrate) below.
 
 ### `memory { }` Block
 
@@ -870,13 +878,13 @@ The judge saying `isComplete: true` is **not** a terminal signal. It is a transi
 
 ### Finalization: `runFinalizationPhase`
 
-After the while loop exits, `runFinalizationPhase` runs once. It drains background events, awaits in-flight background jobs (bounded by `memoryUpdateTimeoutMs`), runs a final compaction if the fill ratio is still above `compactionThreshold`, emits either `HarnessCompleted` or `HarnessFailed`, and returns the harness's deliverable.
+After the while loop exits, `runFinalizationPhase` runs once. It drains any pending async results (merging them into `turnHistory` with `AsyncTurnAppended` events), then cancels the station's `asyncScope` so async coroutines cannot outlive `executeLocal`, then drains background events, runs a final compaction if the fill ratio is still above `compactionThreshold`, emits either `HarnessCompleted` or `HarnessFailed`, and returns the harness's deliverable.
 
 ```kotlin
 internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent {
+    drainPendingAsyncResults()
+    cancelAsyncJobs(asyncJobGracePeriodMs)
     drainBackgroundEventQueue()
-    withTimeoutOrNull(memoryUpdateTimeoutMs) { backgroundJobs.forEach { it.join() } }
-    backgroundJobs.clear()
     if (contextFillRatio() > compactionThreshold) runCompactionPhase()
 
     val isFailure = taskState.lastError in listOf(
@@ -1056,12 +1064,15 @@ Only some harness agents can run as `Async`. The path-safety, judge, dispatch, g
 data class HarnessAgentSlot(
     val agent: P2PInterface?,
     val concurrency: PumpStationConcurrencyMode,
-    val builderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+    val builderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null,
+    val appendsToTurnHistory: Boolean = false
 )
 ```
 
 - **Blocking slots** fire synchronously during the foreground phase, in registration order. The harness awaits each result.
-- **Async slots** are queued via `backgroundMutex` and launched on `GlobalScope`. The harness continues to the next phase. Failures are isolated.
+- **Async slots** are queued via `backgroundMutex` and launched on the station-scoped `asyncScope` (`SupervisorJob() + Dispatchers.Default`). The harness continues to the next phase. Failures are isolated. The scope is cancelled by `cancelAsyncJobs` at the end of `executeLocal`, so async coroutines cannot outlive the harness run.
+
+`appendsToTurnHistory` (default `false`) is honoured only for `concurrency = Async` slots. When `true`, the agent's result is captured into a `PendingTurnEntry` and merged into `turnHistory` by the foreground drain at the next safe phase boundary; when `false`, the result is discarded (historical fire-and-forget). The station-wide `asyncAgentsAppendToTurnHistory` flag acts as an umbrella default; per-slot flags override the station default. See [Async Substrate](#async-substrate) below for the full contract.
 
 Both slot types respect `interval` — a slot with `interval = 5` only fires every 5 turns (modulo). The `foregroundTurnInterval` and `backgroundTurnInterval` builder fields are shorthand for setting intervals on the default slot list.
 
@@ -1206,6 +1217,74 @@ Once a reserve path is revealed, it stays visible for the remainder of the run (
 A `ReservePathRevealed` event is emitted on the first turn a reserve path becomes visible, with `pathName` and the full list of reserve paths.
 
 
+## Async Substrate
+
+Async work in `PumpStation` comes from two sources: paths marked with `isRunsInBackground = true`, and additional harness agent slots configured with `concurrency = PumpStationConcurrencyMode.Async`. Both sources run as coroutines outside the foreground turn loop, and both need a way to land their results back into the harness conversation without corrupting it. The async substrate is the thread-safe interface that makes that possible.
+
+### State and Lifetime
+
+The substrate is anchored by four pieces of state, all declared on `PumpStation`:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `asyncScope` | `CoroutineScope` (`SupervisorJob() + Dispatchers.Default`) | The scope backing every async coroutine launched by the harness. Replaces the pre-substrate `GlobalScope.launch` calls so async work cannot outlive `executeLocal`. |
+| `pendingAsyncResults` | `Channel<PendingTurnEntry>` (`UNLIMITED`) | Queue of async-produced turn entries awaiting foreground drain. Bounded by `maxConcurrentBackgroundAgents` in practice. |
+| `historyMutex` | `Mutex` | Serializes async-origin writes to `turnHistory`, `rawTurnHistory`, `turnSummary`, `contextWindow`, and `taskState`. Foreground code paths keep their single-coroutine funnel and do not need to acquire this mutex. |
+| `asyncSeqCounter` | `AtomicLong` | Monotonic id assigned to every `PendingTurnEntry` at enqueue time. The foreground drain sorts pending entries by `seq` so out-of-order async completions still produce a deterministic merge order from the LLM's perspective. |
+
+`ConverseHistory` is a plain data class with no internal lock, so direct mutation of `turnHistory` from async code is NOT safe. The single thread-safe access point is `appendTurnEntryAsync(entry, source)` (and its batch sibling `appendTurnEntriesAsync`), which acquires `historyMutex`, appends the entry, and emits an `AsyncTurnAppended` event.
+
+### Drain Ordering
+
+The foreground calls `drainPendingAsyncResults()` at two safe phase boundaries:
+
+1. **Start of `runJudgePhase`** — so the judge sees async completions from prior turns
+2. **Start of `runFinalizationPhase`** — so any final-turn async work lands before finalization completes
+
+The drain batch-pulls everything currently buffered in `pendingAsyncResults`, sorts by `seq`, and merges into `turnHistory` (and `rawTurnHistory`) under `historyMutex`. Producers may continue to enqueue after the drain returns; the next drain picks them up. Per-path opt-out via `PathObject.setSuppressHistoryEmit` is honoured during the merge.
+
+The `seq`-based ordering is chosen over wall-clock completion order because, from the LLM's perspective inside the harness, intent order (the order producers declared their work) is more stable than completion order under concurrent completions. A `Channel` preserves submission order naturally; sorting by `seq` makes the property explicit and observable.
+
+### Per-Producer Opt-In and Opt-Out
+
+Four flags govern whether an async result is captured into `turnHistory`:
+
+| Flag | Default | Scope | Effect |
+|------|---------|-------|--------|
+| `asyncPathsAppendToTurnHistory` (station) | `true` | All async paths | Umbrella switch. When `false`, the drain returns 0 regardless of per-path opt-out. |
+| `PathObject.setSuppressHistoryEmit` (per-path) | `false` | One async path | Per-path override. When `true`, the path's `PathCompleted` event still fires, but the drain skips the history merge. |
+| `asyncAgentsAppendToTurnHistory` (station) | `false` | All async harness agents | Umbrella switch. When `false`, async agents run fire-and-forget (results discarded). |
+| `HarnessAgentSlot.appendsToTurnHistory` (per-slot) | `false` | One async agent | Per-slot override. The slot's value OR-ed with the station default. When true, the result is captured into a `PendingTurnEntry` and merged. |
+
+### Cancellation Lifecycle
+
+`runFinalizationPhase` calls `drainPendingAsyncResults()` first, then `cancelAsyncJobs()`, then `drainBackgroundEventQueue()` last (so trace events fired during cancellation still flush). `cancelAsyncJobs` honors `asyncJobGracePeriodMs`:
+
+- **`null` (the default)**: the wait is unbounded. `cancelAsyncJobs` yields once so any in-flight suspend point can make progress, then cancels `asyncScope`. Long-running async paths (e.g. an async path that wraps a multi-minute LLM call) are not artificially timeboxed.
+- **A millisecond value**: the wait is bounded by `withTimeoutOrNull(gracePeriodMs) { yield() }`. Coroutines that do not finish within the window are cancelled; their partial results are NOT merged into `turnHistory`.
+
+The default is `null` because TPipe intentionally does not impose arbitrary timeouts on user work. Developers who need a hard upper bound should set this to a value that matches their worst-case LLM round-trip plus safety margin (e.g. 30 minutes for production agent harnesses).
+
+`asyncJobsScopedToStation` defaults to `true` so async coroutines cannot outlive `executeLocal`. Setting it to `false` restores the pre-substrate `GlobalScope.launch` behavior, which is preserved for back-compat but should be considered legacy.
+
+### Pushing From Custom Async Agents
+
+Custom async harness agents and DITL hooks running on `asyncScope` should use `appendTurnEntryAsync` (or `appendTurnEntriesAsync` for batches) to land results in the conversation. The corresponding `AsyncTurnAppended` event carries the `source` identifier and the `seq` so observers can correlate the merge back to the dispatch. Direct mutation of `turnHistory` from async code is unsafe because `ConverseHistory` is a plain data class with no internal lock.
+
+```kotlin
+pumpStation("research") {
+    asyncAgentsAppendToTurnHistory = true
+    asyncJobGracePeriodMs = 30 * 60 * 1000L  // 30 minutes
+
+    harnessAgentBuilder({ station ->
+        MyAsyncResearchAgent(station)
+    }, concurrency = PumpStationConcurrencyMode.Async)
+}
+```
+
+The full public API surface (setters, getters, drain internals) is documented in **[PumpStation API Reference](../api/pumpstation.md#async-substrate)**.
+
+
 ## Stash, Snapshots, and Pause/Resume
 
 ### Stash
@@ -1320,6 +1399,7 @@ Trace events emitted by PumpStation:
 | `PUMP_STATION_LOOP_GUARD_TRIPPED` | `LoopGuardTripped` | guard, pathName, detail |
 | `PUMP_STATION_CONTEXT_BLOWOUT_DETECTED` | `ContextBlowoutDetected` | fillRatio, threshold, afterPhase |
 | `PUMP_STATION_BACKGROUND_AGENT_QUEUED` | `BackgroundAgentQueued` | agentName |
+| `PUMP_STATION_ASYNC_TURN_APPENDED` | `AsyncTurnAppended` | source, pathName, agentName, seq, contentPreview |
 | `PUMP_STATION_NESTED_P2P_COMPLETED` | `NestedP2PCompleted` | pathName, agentName, contentPreview, token usage |
 
 Enable tracing:

@@ -41,6 +41,7 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
 | `isInternalAgentSet` | `Boolean` (getter) | `false` | True if an internal agent is configured. |
 | `isExecutionFunctionSet` | `Boolean` (getter) | `false` | True if an execution function is bound. |
 | `isRunsInBackground` | `Boolean` (getter) | `false` | True if the path runs in background. |
+| `isSuppressHistoryEmit` | `Boolean` (getter) | `false` | True if the async path's completion is suppressed from being merged into `turnHistory`. Only takes effect when `isRunsInBackground` is also true. |
 | `killSwitch` | `KillSwitch?` (override) | `null` | Per-path token cap. Propagated by the station. |
 
 ### PathObject Public Functions
@@ -50,6 +51,7 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
 | `setInternalAgent(agent: P2PInterface)` | Sets the internal agent. Overrides any agent builder. |
 | `setExecutionFunction(function: (suspend (MultimodalContent, PumpStation, ConverseHistory?, String) -> MultimodalContent)?)` | Sets the execution function. |
 | `setRunsInBackground(value: Boolean)` | Marks the path as background. |
+| `setSuppressHistoryEmit(value: Boolean)` | When `true`, an async path's `PathCompleted` event is still emitted, but the foreground drain skips merging the result into `turnHistory`. Only meaningful when the path is also `isRunsInBackground = true`. |
 | `P2PInit()` (suspend, override) | Delegates to `init()`. |
 | `init(): PathDescriptionData` (suspend) | Validates configuration and returns the `PathDescriptionData` record. |
 | `getPathTokenUsage(): com.TTT.Pipe.TokenUsage?` | Reads the path's token usage when the internal agent is a `Pipeline`. |
@@ -133,6 +135,7 @@ pumpStation("name") {
         schema = "{}"
         pcpSchema = PcpContext()
         runsInBackground = false
+        suppressHistoryEmit = false
         dispatchHint = "..."
         pathMetadata = mutableMapOf<Any, Any>()
         setInternalAgent(pipeline())
@@ -241,6 +244,12 @@ pumpStation("name") {
         includeMetadata(true)
     }
 
+    // Async substrate (paths that opt into runsInBackground; background harness agents)
+    asyncPathsAppendToTurnHistory = true
+    asyncAgentsAppendToTurnHistory = false
+    asyncJobGracePeriodMs = null
+    asyncJobsScopedToStation = true
+
     // Pause phases
     pause { phase(PumpStationPausePhase.BeforeJudge) }
     pause { phase(PumpStationPausePhase.BeforePathExecution) }
@@ -254,6 +263,57 @@ pumpStation("name") {
 ```
 
 The `pumpStation("name") { ... }` function returns a fully built `PumpStation`. There is also `pumpStationBuilder("name")` for callers who want to build the builder separately and call `build()` explicitly.
+
+
+## Async Substrate
+
+`PumpStation` exposes a thread-safe substrate for code that runs outside the foreground turn loop. Async paths (`isRunsInBackground = true`) and async harness agents (`HarnessAgentSlot` with `concurrency = Async`) launch coroutines on a station-scoped `CoroutineScope` and need a way to land their results into the harness conversation history without corrupting it. The async substrate is that interface.
+
+The full design — what the substrate guarantees, why the default grace period is `null`, and the rationale for monotonic `seq` ordering — is documented in **[PumpStation Container Doc](../containers/pumpstation.md#async-substrate)**. This section is the public API surface.
+
+### Async Substrate Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `asyncScope` | `kotlinx.coroutines.CoroutineScope` | station-scoped `SupervisorJob() + Dispatchers.Default` | The scope backing every async coroutine launched by the harness. Cancelled by `cancelAsyncJobs()` at the end of `executeLocal`. |
+
+### Async Substrate Public Functions
+
+| Function | Description |
+|----------|-------------|
+| `appendTurnEntryAsync(entry: ConverseData, source: String = "agent")` (suspend) | The single thread-safe access point for async producers to push a `ConverseData` into `turnHistory`. Acquires the harness history mutex, appends to `turnHistory` and `rawTurnHistory`, and emits an `AsyncTurnAppended` event. Direct mutation of `turnHistory` from async code is NOT safe; always use this method. |
+| `appendTurnEntriesAsync(entries: List<ConverseData>, source: String = "agent")` (suspend) | Batch version of `appendTurnEntryAsync`. Acquires the history mutex once and emits a single trailing `AsyncTurnAppended` event for the last entry. |
+| `cancelAsyncJobs(gracePeriodMs: Long? = asyncJobGracePeriodMs)` | Cancel in-flight async coroutines. When `gracePeriodMs` is `null` (the default), the wait is unbounded — the harness yields once and then cancels. When set, coroutines that do not finish within the window are cancelled. Safe to call multiple times. Called automatically by `runFinalizationPhase` before `executeLocal` returns. |
+| `isAsyncScopeActive(): Boolean` | Returns `true` if `asyncScope` is still active (not yet cancelled). Useful for tests and DITL tooling. |
+| `setAsyncPathsAppendToTurnHistory(value: Boolean): PumpStation` | Station-wide default for whether async paths append their result to `turnHistory` on completion. Default `true`. Per-path opt-out via `PathObject.setSuppressHistoryEmit`. |
+| `isAsyncPathsAppendToTurnHistory(): Boolean` | Returns the current default. |
+| `setAsyncAgentsAppendToTurnHistory(value: Boolean): PumpStation` | Station-wide default for whether async harness agents append their result to `turnHistory` on completion. Default `false` (fire-and-forget). Per-slot opt-in via `HarnessAgentSlot.appendsToTurnHistory`. |
+| `isAsyncAgentsAppendToTurnHistory(): Boolean` | Returns the current default. |
+| `setAsyncJobGracePeriodMs(ms: Long?): PumpStation` | Optional millisecond grace period given to in-flight async coroutines after `runFinalizationPhase` before `cancelAsyncJobs` cancels `asyncScope`. When `null` (the default), the cancel is unbounded. TPipe intentionally does not impose arbitrary timeouts on user work; developers who need a hard upper bound should set this to a value that matches their worst-case LLM round-trip plus safety margin. |
+| `getAsyncJobGracePeriodMs(): Long?` | Returns the current grace period, or `null` if the cancel is unbounded. |
+| `setAsyncJobsScopedToStation(value: Boolean): PumpStation` | When `true` (the default), async work runs on the station-scoped `asyncScope` so `cancelAsyncJobs` can guarantee no coroutine outlives `executeLocal`. When `false`, async work runs on `GlobalScope` (the pre-substrate fire-and-forget behavior). |
+| `isAsyncJobsScopedToStation(): Boolean` | Returns whether async work runs on the station-scoped `asyncScope`. |
+
+### Drain Ordering
+
+The foreground calls `drainPendingAsyncResults()` at safe phase boundaries (start of judge, start of finalization). The drain merges pending entries into `turnHistory` in monotonic `seq` order, where `seq` is assigned at enqueue time by an `AtomicLong` counter. Out-of-order async completions still produce a deterministic merge order from the LLM's perspective.
+
+Per-path opt-out via `PathObject.setSuppressHistoryEmit` is honoured during the drain. Per-slot opt-in via `HarnessAgentSlot.appendsToTurnHistory` is honoured at enqueue time. The two station-wide defaults (`asyncPathsAppendToTurnHistory`, `asyncAgentsAppendToTurnHistory`) act as the umbrella switches; the per-path / per-slot flags override the station defaults.
+
+### Pushing From Custom Async Agents
+
+Custom async harness agents and DITL hooks running on `asyncScope` should use `appendTurnEntryAsync` (or `appendTurnEntriesAsync` for batches) to land results in the conversation. The corresponding `AsyncTurnAppended` event carries the `source` identifier and the `seq` so observers can correlate the merge back to the dispatch. Direct mutation of `turnHistory` from async code is unsafe because `ConverseHistory` is a plain data class with no internal lock.
+
+```kotlin
+pumpStation("research") {
+    asyncAgentsAppendToTurnHistory = true
+    asyncJobGracePeriodMs = 30 * 60 * 1000L  // 30 minutes
+
+    harnessAgentBuilder({ station ->
+        MyAsyncResearchAgent(station)
+    }, concurrency = PumpStationConcurrencyMode.Async)
+}
+```
 
 
 ## Enums
@@ -284,6 +344,7 @@ Default prompts are documented in **[PumpStation Magic Contracts](../core-concep
 ## Cross-References
 
 - **[PumpStation Container Doc](../containers/pumpstation.md)** — Architecture, execution flow, design philosophy
+- **[PumpStation Async Substrate](../containers/pumpstation.md#async-substrate)** — Thread-safety guarantees, drain ordering, cancellation lifecycle for async paths and agents
 - **[PumpStation Magic Contracts](../core-concepts/pumpstation-magic-contracts.md)** — JSON schemas, parsers, default prompts
 - **[PumpStation Models API](pumpstation-models.md)** — Sealed events, enums, data classes
 - **[TPipe-Defaults Package](tpipe-defaults-package.md#pumpstationdefaults)** — `PumpStationDefaults.withOpenRouter` factory
