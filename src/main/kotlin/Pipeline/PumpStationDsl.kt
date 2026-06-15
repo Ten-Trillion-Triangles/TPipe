@@ -237,6 +237,37 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var maxConcurrentBackgroundAgents: Int = 3
 
     /**
+     * When true, async paths are appended to turnHistory on completion. The
+     * default is true. Per-path opt-out is available via the path builder's
+     *  property.
+     */
+    var asyncPathsAppendToTurnHistory: Boolean = true
+
+    /**
+     * When true, async harness agents are appended to turnHistory on
+     * completion. The default is false (fire-and-forget). Per-slot opt-in is
+     * available via the harness agent builder's  property.
+     */
+    var asyncAgentsAppendToTurnHistory: Boolean = false
+
+    /**
+     * Optional grace period (milliseconds) given to in-flight async coroutines
+     * after runFinalizationPhase before the station cancels its async scope.
+     * When null (the default), the cancel is unbounded and long-running async
+     * work is not artificially timeboxed. Set this to a value that matches the
+     * worst-case LLM round-trip plus safety margin when a hard upper bound is
+     * required.
+     */
+    var asyncJobGracePeriodMs: Long? = null
+
+    /**
+     * When true, async work runs on a station-scoped CoroutineScope that is
+     * cancelled at the end of executeLocal. The default is true. Set to false
+     * to fall back to the pre-substrate GlobalScope fire-and-forget behavior.
+     */
+    var asyncJobsScopedToStation: Boolean = true
+
+    /**
      * Maximum number of concurrent foreground agents spawned by path calls
      * or by the dispatch agent.
      */
@@ -923,6 +954,10 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setJudgeRunMode(judgeRunMode)
             .setMaxConcurrentBackgroundAgents(maxConcurrentBackgroundAgents)
             .setMaxConcurrentForegroundAgents(maxConcurrentForegroundAgents)
+            .setAsyncPathsAppendToTurnHistory(asyncPathsAppendToTurnHistory)
+            .setAsyncAgentsAppendToTurnHistory(asyncAgentsAppendToTurnHistory)
+            .setAsyncJobGracePeriodMs(asyncJobGracePeriodMs)
+            .setAsyncJobsScopedToStation(asyncJobsScopedToStation)
             .setForegroundTurnInterval(foregroundTurnInterval)
             .setBackgroundTurnInterval(backgroundTurnInterval)
             .setMemoryManagementMode(memoryManagementMode)
@@ -1118,6 +1153,16 @@ class PathBlock(private val pathName: String, private val builder: PumpStationBu
     var runsInBackground: Boolean
         get() = pathObject.isRunsInBackground
         set(value) { pathObject.setRunsInBackground(value) }
+
+    /**
+     * When true, an async path will NOT append its result to turnHistory on
+     * completion. The path still fires the PathCompleted event so observers
+     * can see the result, but the foreground drain will skip the history
+     * merge. Only takes effect when runsInBackground is also true.
+     */
+    var suppressHistoryEmit: Boolean
+        get() = pathObject.isSuppressHistoryEmit
+        set(value) { pathObject.setSuppressHistoryEmit(value) }
 
     /**
      * JSON schema used by the dispatch agent when this path is not bound to a

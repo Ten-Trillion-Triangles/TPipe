@@ -27,9 +27,23 @@ import com.TTT.Debug.TraceFormat
 import com.TTT.Util.serialize
 import com.TTT.Util.writeStringToFile
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
+import kotlinx.coroutines.plus
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Contextual
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Defines concurrency mode harness background tasks, and memory management.
@@ -287,6 +301,16 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var _runsInBackground = false
 
     /**
+     * When true, an async path will NOT append its result to the harness
+     * [turnHistory] on completion. The path still fires the [PathCompleted]
+     * event so observers can see the result, but the foreground drain will
+     * skip the merge. Useful for fire-and-forget paths that emit side-effect
+     * events without producing textual content the LLM should see in the
+     * conversation (e.g. a ping path that triggers a webhook).
+     */
+    private var _suppressHistoryEmit = false
+
+    /**
      * Must be set, or pulled from the parent [PumpStation]. This required for us to calculate if we're about to
      * blow out a context window.
      */
@@ -497,6 +521,26 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     {
         this._runsInBackground = value
     }
+
+    /**
+     * Controls whether an async path's completion result is appended to the
+     * harness [turnHistory]. When true, [PathCompleted] is still emitted for
+     * observers, but the foreground drain skips the history merge. Only takes
+     * effect when [isRunsInBackground] is also true.
+     *
+     * @param value true to suppress history emission, false to allow it.
+     */
+    fun setSuppressHistoryEmit(value: Boolean)
+    {
+        this._suppressHistoryEmit = value
+    }
+
+    /**
+     * True if this path suppresses its async result from being appended to
+     * the harness [turnHistory]. Mirrors the mutable [setSuppressHistoryEmit]
+     * setting.
+     */
+    val isSuppressHistoryEmit: Boolean get() = _suppressHistoryEmit
 
     /**
      * P2PInterface required init function. Delegates to [init] for path initialization.
@@ -1301,6 +1345,88 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     private val backgroundEventQueue = Channel<PumpStationEvent>(Channel.UNLIMITED)
 
     /**
+     * Monotonic sequence counter assigned to every [PendingTurnEntry] at enqueue time.
+     * Async paths and async harness agents pull a [seq] from this counter, so the
+     * foreground drain can sort pending entries by [seq] even when out-of-order
+     * completions arrive. The counter is a [java.util.concurrent.atomic.AtomicLong]
+     * because the async fire site (which is a coroutine) is the only writer.
+     */
+    private val asyncSeqCounter = java.util.concurrent.atomic.AtomicLong(0L)
+
+    /**
+     * Queue of pending turn entries produced by async paths and async harness agents.
+     * Each entry carries the [PendingTurnEntry.seq] assigned at enqueue. The foreground
+     * drain pulls entries from this channel in batches and merges them into
+     * [turnHistory] in [seq] order. Backed by [Channel.UNLIMITED] so async producers
+     * never block on a full queue; the harness's [maxConcurrentBackgroundAgents]
+     * [Semaphore] is the real flow-control surface.
+     */
+    private val pendingAsyncResults = Channel<PendingTurnEntry>(Channel.UNLIMITED)
+
+    /**
+     * Mutex held by all async-origin writes to harness state. The [ConverseHistory]
+     * data class does not have its own internal lock, so async coroutines
+     * ([appendTurnEntryAsync], [appendTurnEntriesAsync]) must acquire this mutex
+     * before touching [turnHistory], [rawTurnHistory], [turnSummary],
+     * [contextWindow], or [taskState]. Foreground code paths retain the existing
+     * single-coroutine funnel and do not need to take this mutex.
+     */
+    private val historyMutex = Mutex()
+
+    /**
+     * Station-scoped [CoroutineScope] backing every async coroutine launched by the
+     * harness. Replaces the previous  so async work cannot
+     * outlive [executeLocal] (closed by [cancelAsyncJobs] in [runFinalizationPhase])
+     * and so the harness can enforce a single cancellation boundary.
+     */
+    val asyncScope: kotlinx.coroutines.CoroutineScope =
+        kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() +
+                kotlinx.coroutines.Dispatchers.Default
+        )
+
+    /**
+     * When true, async paths are appended to [turnHistory] by the foreground drain
+     * on completion. The default is true because the typical use case for an async
+     * path is to land its result back into the conversation. Per-path opt-out is
+     * available via [PathObject.setSuppressHistoryEmit].
+     */
+    private var asyncPathsAppendToTurnHistory: Boolean = true
+
+    /**
+     * When true, async harness agents (slots added with [PumpStationConcurrencyMode.Async])
+     * are appended to [turnHistory] by the foreground drain on completion. The default
+     * is false to preserve the historical fire-and-forget semantics of async harness
+     * agents. Per-slot opt-in is available via [HarnessAgentSlot.appendsToTurnHistory]
+     * and the matching DSL knob.
+     */
+    private var asyncAgentsAppendToTurnHistory: Boolean = false
+
+    /**
+     * Optional grace period (milliseconds) given to in-flight async coroutines
+     * after [runFinalizationPhase] before [cancelAsyncJobs] cancels the
+     * [asyncScope]. When null (the default), the cancel is off — [cancelAsyncJobs]
+     * does not enforce a timeout and instead yields once before the cancel, so
+     * long-running async paths (e.g. an async path that wraps a multi-minute LLM
+     * call) are not artificially timeboxed. When set, coroutines that do not
+     * finish within the window are cancelled; their partial results are NOT
+     * merged into [turnHistory].
+     *
+     * The default is null because TPipe intentionally does not impose arbitrary
+     * timeouts on user work. Developers who need a hard upper bound should set
+     * this to a value that matches their worst-case LLM round-trip plus safety
+     * margin (e.g. 30 minutes for production agent harnesses).
+     */
+    private var asyncJobGracePeriodMs: Long? = null
+
+    /**
+     * When true, async work is launched on [asyncScope]; when false, async
+     * work is launched on [GlobalScope] (the pre-substrate behavior). Defaults
+     * to true so async coroutines cannot outlive [executeLocal].
+     */
+    private var asyncJobsScopedToStation: Boolean = true
+
+    /**
      * Optional test observability hook. When set, every [PumpStationEvent] emitted via [emitEvent]
      * is also dispatched synchronously to this observer. Used by tests to assert on event flow
      * without having to drain the [backgroundEventQueue] channel.
@@ -1999,6 +2125,10 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     internal val lorebookAgentInternal get() = lorebookAgent
     internal val summaryAgentInternal get() = summaryAgent
     internal val backgroundTurnIntervalInternal get() = backgroundTurnInterval
+    internal val maxConcurrentBackgroundAgentsInternal get() = maxConcurrentBackgroundAgents
+    internal val asyncJobsScopedToStationInternal get() = asyncJobsScopedToStation
+    internal val asyncAgentsAppendToTurnHistoryInternal get() = asyncAgentsAppendToTurnHistory
+    internal val asyncPathsAppendToTurnHistoryInternal get() = asyncPathsAppendToTurnHistory
     internal val foregroundTurnIntervalInternal get() = foregroundTurnInterval
     internal val additionalHarnessAgentSlotsInternal get() = additionalHarnessAgentSlots
     internal val compactionThresholdInternal get() = compactionThreshold
@@ -3661,6 +3791,300 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         this.backgroundTurnInterval = interval
         return this
     }
+
+    //---------------------------------------Async Substrate Setters----------------------------------------------------
+
+    /**
+     * Sets the station-wide default for whether async paths are appended to
+     * [turnHistory] on completion. The default is true. Per-path opt-out is
+     * available via [PathObject.setSuppressHistoryEmit].
+     *
+     * @param value true to auto-append async path results, false to suppress.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setAsyncPathsAppendToTurnHistory(value: Boolean): PumpStation
+    {
+        this.asyncPathsAppendToTurnHistory = value
+        return this
+    }
+
+    /**
+     * Returns the current default for async-path history append behavior.
+     */
+    fun isAsyncPathsAppendToTurnHistory(): Boolean = asyncPathsAppendToTurnHistory
+
+    /**
+     * Sets the station-wide default for whether async harness agents are appended
+     * to [turnHistory] on completion. The default is false (fire-and-forget).
+     * Per-slot opt-in is available via the [HarnessAgentSlot.appendsToTurnHistory]
+     * field and the matching DSL knob.
+     *
+     * @param value true to auto-append async agent results, false to suppress.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setAsyncAgentsAppendToTurnHistory(value: Boolean): PumpStation
+    {
+        this.asyncAgentsAppendToTurnHistory = value
+        return this
+    }
+
+    /**
+     * Returns the current default for async-agent history append behavior.
+     */
+    fun isAsyncAgentsAppendToTurnHistory(): Boolean = asyncAgentsAppendToTurnHistory
+
+    /**
+     * Sets the grace period (milliseconds) given to in-flight async coroutines
+     * after [runFinalizationPhase] before [cancelAsyncJobs] cancels the
+     * [asyncScope]. Pass null to disable the timeout (the default) and let
+     * in-flight work run until the scope is cancelled. When set, coroutines
+     * that do not finish within the window are cancelled; their partial
+     * results are NOT merged into [turnHistory].
+     *
+     * @param ms Grace period in milliseconds, or null to disable.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setAsyncJobGracePeriodMs(ms: Long?): PumpStation
+    {
+        this.asyncJobGracePeriodMs = ms
+        return this
+    }
+
+    /**
+     * Returns the current async job grace period (milliseconds), or null if
+     * the cancel is unbounded.
+     */
+    fun getAsyncJobGracePeriodMs(): Long? = asyncJobGracePeriodMs
+
+    /**
+     * Toggles whether async work runs on a station-scoped [CoroutineScope]
+     * (the default) or on [GlobalScope]. The station-scoped behavior is the
+     * recommended path because [cancelAsyncJobs] can guarantee that no async
+     * coroutine outlives [executeLocal]. Setting this to false restores the
+     * pre-substrate fire-and-forget behavior.
+     *
+     * @param value true to use [asyncScope], false to use [GlobalScope].
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setAsyncJobsScopedToStation(value: Boolean): PumpStation
+    {
+        this.asyncJobsScopedToStation = value
+        return this
+    }
+
+    /**
+     * Returns whether async work runs on the station-scoped [CoroutineScope].
+     */
+    fun isAsyncJobsScopedToStation(): Boolean = asyncJobsScopedToStation
+
+    //---------------------------------------Async Substrate Public API-----------------------------------------------
+
+    /**
+     * Append a single [ConverseData] entry to [turnHistory] from a coroutine
+     * running on [asyncScope] (or anywhere outside the foreground path). This
+     * is the single thread-safe access point for async producers that want to
+     * push into the harness conversation.
+     *
+     * Direct mutation of [turnHistory] from async code is NOT safe because
+     * [ConverseHistory] is a plain data class with no internal lock. Always
+     * call this method instead of  from async code.
+     *
+     * @param entry The turn entry to append.
+     * @param source A short identifier for the producer (e.g. agent class name).
+     */
+    suspend fun appendTurnEntryAsync(entry: ConverseData, source: String = "agent")
+    {
+        historyMutex.withLock {
+            turnHistory.add(entry)
+            rawTurnHistory.add(entry)
+        }
+        emitEventInternal(AsyncTurnAppended(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            phase = PumpStationPhase.PathExecution,
+            source = source,
+            pathName = null,
+            agentName = source,
+            seq = asyncSeqCounter.get(),
+            content = entry.content
+        ))
+    }
+
+    /**
+     * Batch version of [appendTurnEntryAsync]. Acquires [historyMutex] once
+     * and emits a single trailing [AsyncTurnAppended] event for the last
+     * entry, so observers can correlate.
+     */
+    suspend fun appendTurnEntriesAsync(entries: List<ConverseData>, source: String = "agent")
+    {
+        if (entries.isEmpty()) return
+        historyMutex.withLock {
+            for (entry in entries)
+            {
+                turnHistory.add(entry)
+                rawTurnHistory.add(entry)
+            }
+        }
+        val last = entries.last()
+        emitEventInternal(AsyncTurnAppended(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            phase = PumpStationPhase.PathExecution,
+            source = source,
+            pathName = null,
+            agentName = source,
+            seq = asyncSeqCounter.get(),
+            content = last.content
+        ))
+    }
+
+    /**
+     * Drain all entries currently buffered in [pendingAsyncResults] and merge
+     * them into [turnHistory] in [PendingTurnEntry.seq] order. Returns the
+     * number of entries merged. This is called by the foreground at safe phase
+     * boundaries (start of judge, start of finalization).
+     *
+     * The drain is best-effort and lock-free relative to the producer channel:
+     * it batches entries until the channel reports empty. Producers may
+     * continue to enqueue after the drain returns; the next drain will pick
+     * them up.
+     */
+    internal fun drainPendingAsyncResults(): Int
+    {
+        if (!asyncPathsAppendToTurnHistory) return 0
+        // Batch-pull everything currently buffered. We tolerate the channel
+        // being concurrently appended to by async producers — anything that
+        // arrives after this loop runs is picked up by the next drain.
+        val drained = mutableListOf<PendingTurnEntry>()
+        while (true)
+        {
+            // channelResult is the ChannelResult<PendingTurnEntry> returned by
+            // tryReceive(); isSuccess distinguishes a buffered entry from an
+            // empty channel. We break on the first empty channel to keep the
+            // drain bounded by what is currently buffered.
+            val channelResult = pendingAsyncResults.tryReceive()
+            if (channelResult.isSuccess) drained.add(channelResult.getOrThrow()) else break
+        }
+        if (drained.isEmpty()) return 0
+        // Stable sort by seq. Sequential ids under contention; the
+        // AtomicLong counter guarantees no two entries share a seq.
+        drained.sortBy { it.seq }
+        var merged = 0
+        kotlinx.coroutines.runBlocking {
+            historyMutex.withLock {
+                for (entry in drained)
+                {
+                    // Per-path opt-out check: skip if the originating path
+                    // is configured to suppress history emission. The flag
+                    // is set on the path, not the entry, so we resolve
+                    // pathName -> path object here.
+                    val path = entry.pathName?.let { name -> pathList[name] ?: reservePaths[name] }
+                    val suppressed = path?.isSuppressHistoryEmit == true
+                    if (suppressed) continue
+                    val turnEntry = ConverseData(
+                        role = ConverseRole.assistant,
+                        content = entry.result
+                    )
+                    turnHistory.add(turnEntry)
+                    rawTurnHistory.add(turnEntry)
+                    merged++
+                }
+            }
+        }
+        // Emit one AsyncTurnAppended per merged entry so observers see the
+        // merge at the granularity of a single path / agent completion.
+        for (entry in drained)
+        {
+            val path = entry.pathName?.let { name -> pathList[name] ?: reservePaths[name] }
+            if (path?.isSuppressHistoryEmit == true) continue
+            emitEventInternal(AsyncTurnAppended(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                phase = PumpStationPhase.PathExecution,
+                source = entry.source,
+                pathName = entry.pathName,
+                agentName = entry.agentName,
+                seq = entry.seq,
+                content = entry.result
+            ))
+        }
+        return merged
+    }
+
+    /**
+     * Cancel in-flight async coroutines launched on [asyncScope]. The grace
+     * period is bounded by [asyncJobGracePeriodMs] when set. When null
+     * (the default), the cancel is unbounded — [cancelAsyncJobs] yields once
+     * so any in-flight suspend point can progress, then cancels the scope
+     * without imposing a hard timeout. This is the recommended default
+     * because TPipe intentionally does not impose arbitrary timeouts on
+     * user work; long-running async paths (e.g. an async path that wraps
+     * a multi-minute LLM call) should not be killed by an arbitrary
+     * timebox. Developers who need a hard upper bound should set
+     * [asyncJobGracePeriodMs] to a value that matches their worst-case
+     * LLM round-trip plus safety margin.
+     *
+     * After this call returns, [asyncScope] is in a cancelled state and any
+     * further [appendTurnEntryAsync] calls will still succeed (they write to
+     * the foreground-owned history lists) but the launched coroutines that
+     * produced them have been stopped.
+     *
+     * Called automatically by [runFinalizationPhase] before [executeLocal]
+     * returns. Safe to call multiple times.
+     *
+     * @param gracePeriodMs Optional timeout for the polite-wait phase. When
+     *  null, the wait is unbounded (a single [yield] is performed so any
+     *  in-flight suspend can make progress before the scope is cancelled).
+     */
+    fun cancelAsyncJobs(gracePeriodMs: Long? = asyncJobGracePeriodMs)
+    {
+        val scope = if (asyncJobsScopedToStation) asyncScope else null
+        // Polite-wait phase: give in-flight work a chance to drain history
+        // writes. When gracePeriodMs is null we just yield once and proceed
+        // to cancel; long-running work will be cancelled but its cancel
+        // handlers (the catch(CancellationException) { throw it } in the
+        // launch sites) will be honoured.
+        kotlinx.coroutines.runBlocking {
+            if (gracePeriodMs == null)
+            {
+                kotlinx.coroutines.yield()
+            }
+            else
+            {
+                kotlinx.coroutines.withTimeoutOrNull(gracePeriodMs) {
+                    kotlinx.coroutines.yield()
+                }
+            }
+        }
+        scope?.cancel()
+    }
+
+    /**
+     * Returns true if the [asyncScope] is still active (not yet cancelled).
+     * Useful for tests and DITL tooling that needs to check whether a station
+     * has been torn down.
+     */
+    fun isAsyncScopeActive(): Boolean = asyncScope.isActive
+
+    /**
+     * Internal accessor for [pendingAsyncResults]. Used by the async dispatch
+     * site in [runPathFlow] and by the async harness agent launcher in
+     * [runBackgroundAgentsPhase] to enqueue a [PendingTurnEntry].
+     */
+    internal val pendingAsyncResultsInternal get() = pendingAsyncResults
+
+    /**
+     * Internal accessor for [historyMutex]. Used by the async producer helpers
+     * in this class and exposed to test fixtures.
+     */
+    internal val historyMutexInternal get() = historyMutex
+
+    /**
+     * Internal accessor for the [asyncSeqCounter]. Producers call
+     * [asyncSeqCounterInternal].incrementAndGet() to claim a [seq] for a
+     * pending entry.
+     */
+    internal val asyncSeqCounterInternal get() = asyncSeqCounter
 
 //---------------------------------------Health Probe Setters-------------------------------------------------------
 

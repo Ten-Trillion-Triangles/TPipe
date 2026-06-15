@@ -76,6 +76,7 @@ fun enableTracing(config: TraceConfig = TraceConfig()) {
 - **Manifold**: Manager-worker task coordination
 - **DistributionGrid**: Decentralized remote grid harness with local execution, explicit-peer handoff, trusted registry discovery, runtime hardening, and a Kotlin DSL
 - **Junction**: Democratic discussion, voting, and workflow harness
+- **PumpStation**: Judge / dispatch / path-loop agentic harness with async memory management, DITL hooks, goal validation, v3 compaction, reserve paths, kill switch, and a Kotlin DSL
 
 ## When to Use Containers
 
@@ -100,6 +101,7 @@ fun enableTracing(config: TraceConfig = TraceConfig()) {
 | Manifold | ✅ Complete | ✅ Yes | ✅ Yes | ✅ Yes |
 | DistributionGrid | ✅ Phase 8 shipped | ✅ Yes | ✅ Yes | ✅ Yes |
 | Junction | ✅ Complete | ✅ Yes | ✅ Yes | ✅ Yes |
+| PumpStation | ✅ Complete | ✅ Yes | ✅ Yes (`PUMP_STATION_*` events) | ✅ Yes (with per-path propagation) |
 
 See **[KillSwitch](../core-concepts/killswitch.md)** for token limit enforcement documentation.
 
@@ -125,7 +127,8 @@ class Connector : P2PInterface {
 
 ---
 
-**Next:** [Connector →](connector.md)
+**Next:** [PumpStation →](pumpstation.md)
 ## Next Steps
 
+- [PumpStation - Judge/Dispatch/Path Harness](pumpstation.md) - Runtime agentic harness with judge, dispatch, paths, memory, and goal validation
 - [Manifold - Multi-Agent Orchestration](manifold.md) - Continue into the container that coordinates multiple agents.

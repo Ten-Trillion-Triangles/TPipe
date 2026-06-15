@@ -852,10 +852,60 @@ sealed class TurnResult
  * (Blocking = foreground, runs synchronously; Async = background, runs queued).
  * The agent can be supplied directly or via a builder function for per-turn freshness.
  */
+
+/**
+ * A turn entry produced by an async path or async harness agent. Held in a
+ * station-scoped queue and merged into [com.TTT.Context.ConverseHistory] in
+ * monotonic [seq] order during a foreground drain. The [seq] is assigned at
+ * enqueue time so that out-of-order completions still produce a deterministic
+ * merge order from the LLM's perspective.
+ */
+//=========================================Async Turn Queue=======================================================
+
+data class PendingTurnEntry(
+    val seq: Long,
+    val turnIndex: Int,
+    val pathName: String?,
+    val agentName: String?,
+    val source: String,
+    val result: MultimodalContent,
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null,
+    val totalTokens: Int? = null,
+    val passPipeline: Boolean = false,
+    val terminatePipeline: Boolean = false
+)
+
+/**
+ * An async path or async harness agent result was merged into the harness
+ * [com.TTT.Context.ConverseHistory] by the foreground drain. Observers can
+ * correlate the merge back to the dispatch via [seq] and [pathName] / [agentName].
+ */
+@kotlinx.serialization.Serializable
+data class AsyncTurnAppended(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.PathExecution,
+    val source: String,
+    val pathName: String?,
+    val agentName: String?,
+    val seq: Long,
+    val content: MultimodalContent?
+) : PumpStationEvent
+
+//=========================================Turn Control============================================================
+
+/**
+ * Wrapper for an additional harness agent. Each slot has a concurrency mode
+ * (Blocking = foreground, runs synchronously; Async = background, runs queued).
+ * The agent can be supplied directly or via a builder function for per-turn freshness.
+ */
 data class HarnessAgentSlot(
     val agent: P2PInterface?,
     val concurrency: PumpStationConcurrencyMode,
-    val builderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+    val builderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null,
+    val appendsToTurnHistory: Boolean = false
 )
 
 //=========================================Loop Control Flags======================================================

@@ -208,6 +208,10 @@ internal suspend fun PumpStation.runAgent(agent: Pipeline?, input: MultimodalCon
  */
 internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
 {
+    // Drain any async path or async harness agent results that completed
+    // since the previous drain. The judge LLM will see them merged into
+    // [turnHistory] for this turn's reasoning.
+    drainPendingAsyncResults()
     taskState.phase = PumpStationPhase.Judge
 
     // FlagTriggered mode: honor the one-shot requestJudgeNextTurn flag. When the flag is false the
@@ -429,7 +433,79 @@ internal suspend fun PumpStation.runPathFlow(request: PathRequest): MultimodalCo
         return null
     }
     val input = buildPathInput(path, request)
+
+    // Async path: launch on the station-scoped scope, enqueue a PendingTurnEntry
+    // on completion, and return immediately so the foreground turn continues.
+    // The result lands in turnHistory on the next foreground drain
+    // (start of judge phase or start of finalization).
+    if (path.isRunsInBackground)
+    {
+        launchAsyncPath(path, input)
+        return null
+    }
+
     return invokePathInternal(path, input)
+}
+
+/**
+ * Launch an async path execution on the station's asyncScope. Captures the
+ * path's result into a [PendingTurnEntry] tagged with a monotonic [seq] and
+ * enqueues it for the foreground drain. Exceptions are caught and reported
+ * as [PathFailed] events so they don't escape into the harness's exception
+ * boundary.
+ */
+private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalContent)
+{
+    val pathName = path.pathName
+    val riskLevel = path.riskLevel
+    val seq = asyncSeqCounterInternal.incrementAndGet()
+    val turnIndexSnapshot = taskState.turnIndex
+    val dispatcher = asyncScope
+
+    val launchOn: kotlinx.coroutines.CoroutineScope =
+        if (asyncJobsScopedToStationInternal) dispatcher
+        else kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.GlobalScope.coroutineContext)
+    val semaphore = kotlinx.coroutines.sync.Semaphore(
+        permits = maxConcurrentBackgroundAgentsInternal.coerceAtLeast(1)
+    )
+
+    launchOn.launch {
+        try
+        {
+            val result = semaphore.withPermit { invokePathInternal(path, input) }
+            val entry = PendingTurnEntry(
+                seq = seq,
+                turnIndex = turnIndexSnapshot,
+                pathName = pathName,
+                agentName = null,
+                source = "asyncPath",
+                result = result,
+                inputTokens = null,
+                outputTokens = null,
+                totalTokens = null,
+                passPipeline = result.passPipeline,
+                terminatePipeline = result.terminatePipeline
+            )
+            pendingAsyncResultsInternal.trySend(entry)
+        }
+        catch (e: kotlinx.coroutines.CancellationException)
+        {
+            // Honour cancellation: do not enqueue a partial result.
+            throw e
+        }
+        catch (e: Throwable)
+        {
+            emitEventInternal(PathFailed(
+                runId = taskState.runId,
+                turnIndex = turnIndexSnapshot,
+                phase = PumpStationPhase.PathExecution,
+                pathName = pathName,
+                riskLevel = riskLevel,
+                error = PumpStationError.PathExecutionException,
+                errorMessage = e.message
+            ))
+        }
+    }
 }
 
 /**
@@ -1000,13 +1076,13 @@ internal suspend fun PumpStation.runMemoryUpdatePhase()
         if (lorebookAgentInternal != null)
         {
             backgroundMutex.withLock {
-                backgroundJobs += GlobalScope.launch { updateLorebook() }
+                backgroundJobs += launchAsyncJob { updateLorebook() }
             }
         }
         if (summaryAgentInternal != null)
         {
             backgroundMutex.withLock {
-                backgroundJobs += GlobalScope.launch { updateSummary() }
+                backgroundJobs += launchAsyncJob { updateSummary() }
             }
         }
     }
@@ -1598,17 +1674,54 @@ internal suspend fun PumpStation.runForegroundAgentsPhase()
 /**
  * Queue background (Async) harness agents. They run as coroutines; the harness
  * continues to the next phase.
+ *
+ * Async work is launched on the station-scoped [asyncScope] (not [GlobalScope])
+ * so [cancelAsyncJobs] can guarantee no async coroutine outlives
+ * [executeLocal]. Each launched coroutine respects the per-slot
+ * [HarnessAgentSlot.appendsToTurnHistory] opt-in: when true, the result is
+ * captured into a [PendingTurnEntry] and merged into [turnHistory] by the
+ * foreground drain. When false (the default), the result is discarded, which
+ * preserves the historical fire-and-forget semantics.
  */
+/**
+ * Launch an async memory-update job (lorebook or summary) on the station-scoped
+ * [asyncScope] so [cancelAsyncJobs] can guarantee no async coroutine outlives
+ * [executeLocal]. When the station is configured with
+ * [PumpStation.setAsyncJobsScopedToStation] = false, falls back to
+ * [GlobalScope] (the pre-substrate behavior).
+ */
+private fun PumpStation.launchAsyncJob(block: suspend () -> Unit): kotlinx.coroutines.Job
+{
+    val launchOn: kotlinx.coroutines.CoroutineScope =
+        if (asyncJobsScopedToStationInternal) asyncScope
+        else kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.GlobalScope.coroutineContext)
+    return launchOn.launch { block() }
+}
+
 internal suspend fun PumpStation.runBackgroundAgentsPhase()
 {
     if (backgroundTurnIntervalInternal == 0) return
     if (taskState.turnIndex % backgroundTurnIntervalInternal != 0) return
 
+    val semaphore = kotlinx.coroutines.sync.Semaphore(
+        permits = maxConcurrentBackgroundAgentsInternal.coerceAtLeast(1)
+    )
+    val dispatcher = asyncScope
+
     for (slot in additionalHarnessAgentSlotsInternal)
 {
         if (slot.concurrency != PumpStationConcurrencyMode.Async) continue
+        val appends = slot.appendsToTurnHistory || asyncAgentsAppendToTurnHistoryInternal
+        val seq = if (appends) asyncSeqCounterInternal.incrementAndGet() else -1L
+        val turnIndexSnapshot = taskState.turnIndex
+        val agentNameHint = slot.agent?.let { it::class.simpleName } ?: "HarnessAgent"
+
+        val launchOn: kotlinx.coroutines.CoroutineScope =
+            if (asyncJobsScopedToStationInternal) dispatcher
+            else kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.GlobalScope.coroutineContext)
+
         backgroundMutex.withLock {
-            backgroundJobs += GlobalScope.launch {
+            backgroundJobs += launchOn.launch {
                 try
                 {
                     val agent = slot.builderFunction?.invoke(this@runBackgroundAgentsPhase) ?: slot.agent
@@ -1616,8 +1729,32 @@ internal suspend fun PumpStation.runBackgroundAgentsPhase()
                     {
                         agent.setParentInterface(this@runBackgroundAgentsPhase)
                         agent.P2PInit()
-                        agent.executeLocal(this@runBackgroundAgentsPhase.buildTurnContent())
+                        semaphore.withPermit {
+                            val result = agent.executeLocal(this@runBackgroundAgentsPhase.buildTurnContent())
+                            if (appends)
+                            {
+                                val entry = PendingTurnEntry(
+                                    seq = seq,
+                                    turnIndex = turnIndexSnapshot,
+                                    pathName = null,
+                                    agentName = agentNameHint,
+                                    source = "asyncHarnessAgent",
+                                    result = result,
+                                    inputTokens = null,
+                                    outputTokens = null,
+                                    totalTokens = null,
+                                    passPipeline = result.passPipeline,
+                                    terminatePipeline = result.terminatePipeline
+                                )
+                                pendingAsyncResultsInternal.trySend(entry)
+                            }
+                        }
                     }
+                }
+                catch (e: kotlinx.coroutines.CancellationException)
+                {
+                    // Honour cancellation: do not enqueue a partial result.
+                    throw e
                 }
                 catch (e: Exception)
                 {
@@ -2022,6 +2159,17 @@ internal fun PumpStation.pruneRawTurnHistory()
  */
 internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
 {
+    // 1. Drain async turn results from in-flight async paths / harness
+    //    agents. We do this BEFORE the cancel so any work that has already
+    //    enqueued a PendingTurnEntry gets merged into turnHistory.
+    drainPendingAsyncResults()
+    // 2. Cancel the station-scoped async jobs. cancelAsyncJobs respects
+    //    asyncJobGracePeriodMs and uses the new pathway so coroutines
+    //    cannot outlive executeLocal (closes the orphan-after-timeout
+    //    hazard from the prior analysis). backgroundJobs is still drained
+    //    here for backward compatibility with any pre-substrate callers
+    //    that joined via backgroundJobs.forEach.
+    cancelAsyncJobs()
     drainBackgroundEventQueue()
     withTimeoutOrNull(memoryUpdateTimeoutMsInternal) {
         backgroundJobs.forEach { it.join() }

@@ -60,6 +60,8 @@ Advanced pipeline orchestration and multi-agent systems:
 - [Connector - Pipeline Branching](docs/containers/connector.md) - Conditional pipeline routing
 - [Splitter - Parallel Processing](docs/containers/splitter.md) - Concurrent pipeline execution
 - [Junction - Discussion and Workflow Harness](docs/containers/junction.md) - Multi-agent discussion, voting, and workflow handoff
+- [PumpStation - Judge/Dispatch/Path Harness](docs/containers/pumpstation.md) - Runtime agentic harness with judge, dispatch, paths, memory management, and goal validation
+- [PumpStation Magic Contracts](docs/core-concepts/pumpstation-magic-contracts.md) - LLM JSON contracts (judge, dispatch, path-safety, health, lorebook, goal) and where the data classes live
 - [MultiConnector - Advanced Routing](docs/containers/multiconnector.md) - Complex routing patterns
 - [DistributionGrid - Load Balancing](docs/containers/distributiongrid.md) - Distributed processing
 - [Cross-Cutting Topics](docs/containers/cross-cutting-topics.md) - Shared container concepts

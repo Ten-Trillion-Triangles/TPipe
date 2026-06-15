@@ -60,6 +60,7 @@ JUNCTION_HANDOFF
 | Manifold | ✅ Yes | Built-in tracing |
 | DistributionGrid | ✅ Yes | Phase 8 runtime supports trace configuration, execution/discovery/hardening events, `clearTrace()`, `getTraceReport(...)`, and `getFailureAnalysis()` |
 | Junction | ✅ Yes | `enableTracing(config)` |
+| PumpStation | ✅ Yes | `enableTracing(config)` (per-run `runId`-keyed). Emits `PUMP_STATION_*` event types — see [PumpStation container doc](pumpstation.md#tracing-support) for the full list of 30+ events. |
 
 ### Tracing Events for KillSwitch
 
@@ -105,6 +106,7 @@ KillSwitch provides token limit enforcement across all containers. See the **[Ki
 | Manifold | ✅ Yes | ✅ Yes (default 100) | To manager + workers |
 | DistributionGrid | ✅ Yes | ❌ No | To router + workers |
 | Junction | ✅ Yes | ❌ No | To moderator + participants |
+| PumpStation | ✅ Yes | ✅ Yes (default 50, alias `maxHarnessTurns`) | To judge + dispatch + paths + all child agents |
 
 ### Quick Example
 
@@ -380,6 +382,7 @@ return coroutineScope {
 | **Manifold** | ✅ Complete | `execute()`, manager pipeline required, `setMaxLoopIterations()` | ✅ | ✅ | ✅ (default 100) |
 | **DistributionGrid** | ✅ Phase 8 shipped | `setRouter()`, `setWorker()`, peer registration, discovery/membership APIs, execution entrypoints, hardening helpers, trace export, and `distributionGrid { ... }` | ✅ | ✅ | ❌ |
 | **Junction** | ✅ Complete | `execute()`, `conductDiscussion()` | ✅ | ✅ | ❌ |
+| **PumpStation** | ✅ Complete | `executeLocal()`, judge + dispatch + path agents, `setMaxTurns()` / `setMaxHarnessTurns()`, magic contracts, kill switch, v3 compaction, reserve paths, goal validation, tracing | ✅ | ✅ | ✅ (default 50) |
 
 ## Best Practices Based on Actual APIs
 

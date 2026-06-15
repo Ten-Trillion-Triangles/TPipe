@@ -389,6 +389,18 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             eventType = TraceEventType.PUMP_STATION_BACKGROUND_AGENT_QUEUED
             baseMetadata["agentName"] = event.agentName
         }
+        is AsyncTurnAppended ->
+        {
+            eventType = TraceEventType.PUMP_STATION_ASYNC_TURN_APPENDED
+            baseMetadata["source"] = event.source
+            baseMetadata["pathName"] = event.pathName ?: ""
+            baseMetadata["agentName"] = event.agentName ?: ""
+            baseMetadata["seq"] = event.seq
+            agentContent = event.content
+            val (preview, len) = contentPreview(event.content)
+            if (preview.isNotEmpty()) baseMetadata["contentPreview"] = preview
+            if (len > 0) baseMetadata["contentLength"] = len
+        }
         is NestedP2PCompleted ->
         {
             eventType = TraceEventType.PUMP_STATION_NESTED_P2P_COMPLETED
