@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
  *  2. FlagTriggered judge (judgeRunMode = FlagTriggered + a path that calls requestJudgeNextTurn)
  *  3. Path returns passPipeline or terminatePipeline
  *
- * Plus the [PumpStationTaskState.maxHarnessTurns] must be > 1 (intentional single-turn configs don't warn).
+ * Plus the [PumpStation.maxTurns] must be > 1 (intentional single-turn configs don't warn).
  *
  * The advisory is non-blocking — the harness continues. Tests here just assert presence/absence
  * of the [HarnessWarning] event in the event log.
@@ -53,6 +53,14 @@ class PumpStationWarningTest
         assertEquals(WarningCode.NoExitSignalConfigured, warnings.first().code)
         // All 4 mechanisms should be listed
         assertEquals(4, warnings.first().mechanisms.size)
+        // The message must reference the canonical "maxTurns" name, not the legacy
+        // "maxHarnessTurns" alias (proves the wire-up text is in effect).
+        val firstWarning = warnings.first()
+        val message = firstWarning.message
+        assertTrue(message.contains("maxTurns"),
+            "Warning message must reference 'maxTurns' (canonical loop-guard name); got: $message")
+        assertFalse(message.contains("maxHarnessTurns"),
+            "Warning message must not reference the legacy 'maxHarnessTurns' alias; got: $message")
     }
 
     @Test

@@ -1809,14 +1809,14 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
     // (FlagTriggered + path-bound requestJudgeNextTurn, or a single-turn maxTurns budget).
     val hasJudge = judgeAgent != null || judgeAgentBuilderFunction != null
     val isFlagTriggered = judgeRunModeInternal == PumpStationJudgeRunMode.FlagTriggered
-    val allowsLongRun = maxHarnessTurnsInternal > 1
+    val allowsLongRun = maxTurnsInternal > 1
     if (!hasJudge && !isFlagTriggered && allowsLongRun)
     {
         emitEventInternal(HarnessWarning(
             runId = taskState.runId,
             turnIndex = 0,
             code = WarningCode.NoExitSignalConfigured,
-            message = "No exit signal configured. Harness will run until maxHarnessTurns " +
+            message = "No exit signal configured. Harness will run until maxTurns " +
                 "and fail with MaxTurnsExceeded. Configure one of: " +
                 "(1) judge agent, " +
                 "(2) requestJudgeNextTurn() bound to a path with judgeRunMode = FlagTriggered, " +
@@ -1837,7 +1837,7 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
 //=========================================Harness Loop============================================================
 
 /**
- * Main harness loop. Runs turns until [maxHarnessTurns] is reached, the task
+ * Main harness loop. Runs turns until [maxTurns] is reached, the task
  * is halted by the judge or exit flow, or the harness is suspended/killed.
  * Sets [PumpStationTaskState.lastError] and [PumpStationTaskState.exitReason]
  * when max turns is hit so the finalization phase emits a failure event.
@@ -1858,7 +1858,7 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
 internal suspend fun PumpStation.runHarnessLoop(): KillSwitchException?
 {
     var tripException: KillSwitchException? = null
-    while (taskState.turnIndex < maxHarnessTurnsInternal && taskState.status == PumpStationStatus.Running)
+    while (taskState.turnIndex < maxTurnsInternal && taskState.status == PumpStationStatus.Running)
 {
         if (!checkPauseGuards(PumpStationPausePhase.BeforeJudge)) break
         val result = try
@@ -1879,7 +1879,7 @@ internal suspend fun PumpStation.runHarnessLoop(): KillSwitchException?
         }
         taskState.turnIndex++
     }
-    if (taskState.turnIndex >= maxHarnessTurnsInternal && taskState.lastError == null)
+    if (taskState.turnIndex >= maxTurnsInternal && taskState.lastError == null)
 {
         taskState.lastError = PumpStationError.MaxTurnsExceeded
         taskState.exitReason = PumpStationExitReason.MaxTurnsHit
@@ -2070,7 +2070,8 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
     // already gates on dispatchAutomatically at Debug/PipeTracer.kt:132 and catches
     // HTTP failures internally; the outer `tracingEnabledInternal` check avoids the
     // export call when the developer never opted into tracing.
-    if (tracingEnabledInternal && RemoteTraceConfig.dispatchAutomatically) {
+    if(tracingEnabledInternal && RemoteTraceConfig.dispatchAutomatically)
+    {
         PipeTracer.exportTrace(taskState.runId, com.TTT.Debug.TraceFormat.HTML)
     }
 

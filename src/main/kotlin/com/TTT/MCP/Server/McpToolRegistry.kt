@@ -87,7 +87,8 @@ class McpToolRegistry(private val pcpContext: PcpContext) {
                 val paramSchema = buildParamSchema(param)
                 put(param.name, paramSchema)
 
-                if(!param.isOptional){
+                if(!param.isOptional)
+                {
                     requiredParams.add(param.name)
                 }
             }

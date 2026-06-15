@@ -99,7 +99,8 @@ class McpSessionManager(
                     }
                     val clientInfo = session.clientVersion?.name
                     onConnect(sessionId, clientInfo)
-                    if(concurrencyMode == P2PConcurrencyMode.ISOLATED){
+                    if(concurrencyMode == P2PConcurrencyMode.ISOLATED)
+                    {
                         sessionContexts.getOrPut(sessionId) { createIsolatedContext() }
                     }
                 }

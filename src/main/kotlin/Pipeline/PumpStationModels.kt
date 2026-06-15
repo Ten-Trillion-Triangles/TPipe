@@ -1014,7 +1014,7 @@ enum class WarningCode
      * is wired AND [PumpStationJudgeRunMode] is not [PumpStationJudgeRunMode.FlagTriggered]
      * AND no path is expected to return [MultimodalContent.passPipeline] or
      * [MultimodalContent.terminatePipeline]. The harness will run until
-     * [PumpStationTaskState.maxHarnessTurns] is exhausted and fail with
+     * [PumpStation.maxTurns] is exhausted and fail with
      * [PumpStationError.MaxTurnsExceeded].
      *
      * Advisory only — not a `require()`. The developer may have intentionally configured
@@ -1052,7 +1052,7 @@ enum class ExitMechanism
  *
  * Currently the only advisory is [WarningCode.NoExitSignalConfigured] — the harness
  * has no judge, no FlagTriggered path, and no path-bound exit signal. The harness
- * will run to [PumpStationTaskState.maxHarnessTurns] and fail with
+ * will run to [PumpStation.maxTurns] and fail with
  * [PumpStationError.MaxTurnsExceeded] in that case.
  *
  * Advisory events are non-blocking. The harness continues normally. A visualizer or

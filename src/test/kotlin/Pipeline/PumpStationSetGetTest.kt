@@ -183,6 +183,32 @@ class PumpStationSetGetTest
 
             val state = station.getTaskState()
             assertNotNull(state, "Task state must be queryable after P2PInitInternal")
+
+            // After the maxTurns wire-up, setMaxHarnessTurns(7) then setMaxTurns(13)
+            // means the most-recent write (13) wins. Both getters must report 13,
+            // proving the two setters share a single backing field.
+            assertEquals(13, station.getMaxTurns(), "Most-recent setter (setMaxTurns(13)) must win")
+            assertEquals(13, station.getMaxHarnessTurns(), "Both getters must report the same field")
+        }
+    }
+
+    /**
+     * The [PumpStation.setMaxHarnessTurns] setter is a delegating alias for
+     * [PumpStation.setMaxTurns] after the wire-up. This test proves the alias
+     * works on its own (with no prior setMaxTurns call) and that both getters
+     * report the value.
+     */
+    @Test
+    fun testMaxHarnessTurnsAliasWritesCanonicalField()
+    {
+        runBlocking {
+            val station = PumpStation()
+                .setDispatchAgent(Pipeline())
+                .setMaxHarnessTurns(11)
+            station.P2PInit()
+
+            assertEquals(11, station.getMaxTurns(), "setMaxHarnessTurns must write the canonical maxTurns field")
+            assertEquals(11, station.getMaxHarnessTurns())
         }
     }
 
@@ -260,8 +286,8 @@ class PumpStationSetGetTest
                 goalAgent = SgTestAgent(agentTag = "dsl-goal")
                 preInitAgent = SgTestAgent(agentTag = "dsl-preInit")
                 pathSafetyAgent = SgTestAgent(agentTag = "dsl-pathSafety")
-                additionalHarnessAgentSlots.add(HarnessAgentSlot(agent = SgTestAgent(agentTag = "dsl-extra1"), concurrency = PumpStationConcurrencyMode.Blocking))
-                additionalHarnessAgentSlots.add(HarnessAgentSlot(agent = SgTestAgent(agentTag = "dsl-extra2"), concurrency = PumpStationConcurrencyMode.Blocking))
+                harnessAgent(SgTestAgent(agentTag = "dsl-extra1"), concurrency = PumpStationConcurrencyMode.Blocking) {}
+                harnessAgent(SgTestAgent(agentTag = "dsl-extra2"), concurrency = PumpStationConcurrencyMode.Blocking) {}
 
                 systemTask = "system task text"
                 userGuidelines = "guideline text"

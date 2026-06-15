@@ -365,7 +365,8 @@ class TraceVisualizer
         // Create nodes for each pipe
         nodes.forEachIndexed { index, node ->
             val label = formatNodeLabel(node.pipeName).replace("\n", "<br/>")
-            if (index == 0) {
+            if(index == 0)
+            {
                 graph.append("    ${node.nodeId}{{\"$label\"}}\n")
             } else {
                 graph.append("    ${node.nodeId}[\"$label\"]\n")
@@ -1908,7 +1909,8 @@ class TraceVisualizer
         val nodeMap = nodes.associateBy { it.pipeName }
 
         nodes.forEachIndexed { index, node ->
-            if (index == 0) {
+            if(index == 0)
+            {
                 graph.append("    ${node.nodeId}{{\"${escapeHtml(node.pipeName)}\"}}\n")
             } else {
                 graph.append("    ${node.nodeId}[\"${escapeHtml(node.pipeName)}\"]\n")
@@ -2823,9 +2825,11 @@ class TraceVisualizer
         }
 
         // Add reasoningContent
-        if(reasoningKey != null) {
+        if(reasoningKey != null)
+        {
             val reasoningContent = event.metadata[reasoningKey].toString()
-            if(reasoningContent.isNotBlank() && reasoningContent != "N/A" && reasoningContent != "null") {
+            if(reasoningContent.isNotBlank() && reasoningContent != "N/A" && reasoningContent != "null")
+            {
                 sections.add(createExpandableSection("reasoningContent", reasoningContent, "🧠", "#007bff"))
             }
         }

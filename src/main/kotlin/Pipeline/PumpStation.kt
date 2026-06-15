@@ -971,10 +971,14 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     internal var entryUserPrompt = ""
 
     /**
-     * Exceeding this number will instantly end the harness. Acts as a safety limit to avoid llm loops and
-     * exploding token costs.
+     * Maximum number of harness turns before forced exit. Acts as a safety limit to avoid
+     * llm loops and exploding token costs. The harness loop in
+     * [com.TTT.Pipeline.PumpStationLoop.runHarnessLoop] reads this field via
+     * [maxTurnsInternal] and terminates with [PumpStationError.MaxTurnsExceeded] /
+     * [PumpStationExitReason.MaxTurnsHit] when [com.TTT.Pipeline.PumpStationTaskState.turnIndex]
+     * reaches the cap.
      */
-    private var maxHarnessTurns = 50
+    private var maxTurns = 50
 
     /**
      * Controls when the judge agent runs inside the harness loop. See [PumpStationJudgeRunMode]
@@ -1328,10 +1332,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      */
     var externalContextProvider: (() -> MutableMap<String, Any>)? = null
 
-    /**
-     * Loop guard: maximum number of harness turns before forced exit.
-     */
-    private var maxTurns = 50
+
 
     /**
      * Maximum number of consecutive goal-evaluation failures before giving up
@@ -2079,14 +2080,14 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     //=====================================Group M accessors========================================================
     // Internal accessors so PumpStationLoop.kt extension functions (Group M: main
     // loop wiring) can read the private [preInitAgent], [eventObserver],
-    // [backgroundEventQueue], and [maxHarnessTurns] fields. These fields are read
+    // [backgroundEventQueue], and [maxTurns] fields. These fields are read
     // by runPreInitPhase/runFinalizationPhase/runHarnessLoop/runTurn and
     // drainBackgroundEventQueue.
 
     internal val preInitAgentInternal get() = preInitAgent
     internal val eventObserverInternal get() = eventObserver
     internal val backgroundEventQueueInternal get() = backgroundEventQueue
-    internal val maxHarnessTurnsInternal get() = maxHarnessTurns
+    internal val maxTurnsInternal get() = maxTurns
 
     //=====================================Group O accessors========================================================
     // Internal accessors so PumpStationLoop.kt extension functions (Group O: prune
@@ -2179,6 +2180,25 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         this.eventObserver = observer
         return this
     }
+    /**
+     * Registers a richer [externalContextProvider] that receives the current
+     * [PumpStationTaskState] when invoked. The runtime stores it as a no-arg
+     * supplier; the wrapper captures [taskState] at call time.
+     *
+     * Use this when you need access to the harness task state to make
+     * context decisions (e.g. reading path call counts, the active reserve
+     * path set, or the latest turn index). The simpler no-arg
+     * [externalContextProvider] setter is preserved for direct callers.
+     *
+     * @param provider The external context provider, or null to clear.
+     * @return This [PumpStation] for method chaining.
+     */
+    fun setExternalContextProvider(provider: ((PumpStationTaskState) -> MutableMap<String, Any>)?): PumpStation
+    {
+        this.externalContextProvider = if(provider == null) null else { -> provider.invoke(this.getTaskState()) }
+        return this
+    }
+
 
     /**
      * Enables tracing for this PumpStation with the specified configuration. When enabled, every
@@ -3126,14 +3146,17 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
-     * Sets the maximum number of harness turns before forced exit.
+     * Sets the maximum number of harness turns before forced exit. Delegating alias
+     * for [setMaxTurns]; both setters write the same [maxTurns] backing field that
+     * the harness loop reads. Kept as a top-level setter so existing callers using
+     * `station.setMaxHarnessTurns(N)` continue to work without modification.
      *
      * @param max The maximum harness turns.
      * @return This PumpStation instance for method chaining.
      */
     fun setMaxHarnessTurns(max: Int): PumpStation
     {
-        this.maxHarnessTurns = max
+        this.maxTurns = max
         return this
     }
 
@@ -3178,10 +3201,15 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     fun getConfiguredKillSwitch(): com.TTT.P2P.KillSwitch? = killSwitch
 
     /**
-     * Sets the alternate loop-guard maximum turns value. Currently mirrors
-     * [setMaxHarnessTurns] in effect but is preserved as a distinct field.
+     * Sets the maximum number of harness turns before forced exit. This is the
+     * canonical loop-guard setter; the [com.TTT.Pipeline.PumpStationLoop.runHarnessLoop]
+     * extension reads the value via [maxTurnsInternal] and terminates with
+     * [PumpStationError.MaxTurnsExceeded] / [PumpStationExitReason.MaxTurnsHit]
+     * when [com.TTT.Pipeline.PumpStationTaskState.turnIndex] reaches the cap.
      *
-     * @param max The maximum number of turns.
+     * [setMaxHarnessTurns] is a delegating alias that writes the same field.
+     *
+     * @param max The maximum number of harness turns.
      * @return This PumpStation instance for method chaining.
      */
     fun setMaxTurns(max: Int): PumpStation
@@ -3208,6 +3236,35 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      * before the harness gives up on the current task.
      */
     fun getMaxGoalFailAttempts(): Int = maxGoalFailAttempts
+
+    /**
+     * Returns the maximum number of harness turns. Public mirror of the
+     * private [maxTurns] field; the harness loop enforces this limit via
+     * [com.TTT.Pipeline.PumpStationLoop]. Companion to [getMaxTurns] and
+     * [setMaxHarnessTurns]; both names read the same backing field.
+     */
+    fun getMaxHarnessTurns(): Int = maxTurns
+
+    /**
+     * Returns the maximum number of harness turns configured via [setMaxTurns]
+     * (or its delegating alias [setMaxHarnessTurns]). This is the canonical
+     * loop-guard budget; the harness loop enforces it via
+     * [com.TTT.Pipeline.PumpStationLoop].
+     */
+    fun getMaxTurns(): Int = maxTurns
+
+    /**
+     * Returns whether the judge agent is expected to emit a JSON contract
+     * verdict. Mirrors the [setJudgeJsonContractEnabled] setter.
+     */
+    fun getJudgeJsonContractEnabled(): Boolean = judgeExpectsJsonContract
+
+    /**
+     * Returns whether the path-safety agent is expected to emit a JSON
+     * contract verdict. Mirrors the [setPathSafetyJsonContractEnabled]
+     * setter.
+     */
+    fun getPathSafetyJsonContractEnabled(): Boolean = pathSafetyExpectsJsonContract
 
     /**
      * Sets the maximum number of raw turn history entries to retain.
@@ -3657,6 +3714,13 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         this.personality = personality
         return this
     }
+
+    /**
+     * Returns the personality / persona string. Mirrors the
+     * [setPersonality] setter; primarily intended for tests and
+     * external inspection.
+     */
+    fun getPersonality(): String = personality
 
     /**
      * Sets the system task string - the harness "system prompt" injected after the
