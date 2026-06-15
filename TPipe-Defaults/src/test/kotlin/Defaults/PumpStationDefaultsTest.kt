@@ -24,7 +24,7 @@ class PumpStationDefaultsTest
      * (it requires at least one path). The path returns `passPipeline = true` after one
      * invocation so any real harness that calls it exits cleanly.
      */
-    private fun PumpStationBuilder.addDonePath(name: String = "done")
+    private fun PumpStationBuilder<*>.addDonePath(name: String = "done")
     {
         path(name) {
             description = "Test path that returns a passPipeline flag immediately."
@@ -72,9 +72,12 @@ class PumpStationDefaultsTest
         var overrideCalled = false
         val station = PumpStationDefaults.withOpenRouter(config) {
             overrideCalled = true
-            addDonePath()
             // Override the judge to null so we can prove the builder block runs after defaults.
+            // Must be set BEFORE addDonePath() — path { } promotes the builder to a new
+            // Ready-stage copy, so any field set after path { } lands on the discarded
+            // initial builder and is never seen by the final build().
             judgeAgent = null
+            addDonePath()
         }
         assertTrue(overrideCalled, "builder block must be invoked")
         assertEquals(null, station.getJudgeAgent(), "builder block should override judge to null")

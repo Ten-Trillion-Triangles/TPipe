@@ -751,7 +751,7 @@ class PumpStationMiniMaxLiveTest
      * @param riskLevels If true, gather=Low/analyze=Medium/report=High — used in the
      *        multi-path risk test to exercise [com.TTT.Pipeline.PathRiskLevel] routing.
      */
-    private fun PumpStationBuilder.registerResearchPaths(
+    private fun PumpStationBuilder<*>.registerResearchPaths(
         mcpRequest: McpRequest?,
         requestJudgeOnReport: Boolean,
         riskLevels: Boolean,

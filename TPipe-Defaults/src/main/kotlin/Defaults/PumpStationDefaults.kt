@@ -9,6 +9,7 @@ import com.TTT.Pipeline.Pipeline
 import com.TTT.Pipeline.PumpStation
 import com.TTT.Pipeline.PumpStationBuilder
 import com.TTT.Pipeline.PumpStationMemoryManagementMode
+import com.TTT.Pipeline.PumpStationStage
 import com.TTT.Pipeline.pumpStation
 import openrouterPipe.OpenRouterPipe
 
@@ -78,7 +79,7 @@ object PumpStationDefaults
      */
     fun withOpenRouter(
         configuration: OpenRouterConfiguration,
-        configure: PumpStationBuilder.() -> Unit = {}
+        configure: PumpStationBuilder<PumpStationStage.Initial>.() -> Unit = {}
     ): PumpStation
     {
         require(configuration.validate()) { "Invalid OpenRouter configuration: $configuration" }
