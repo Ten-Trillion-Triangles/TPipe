@@ -50,6 +50,7 @@ reports/
 *.ctxt
 docs/advanced-concepts/pcp-restoration-plan.md
 docs/security-fix-plan.md
+docs/superpowers/plans/
 splitter_comprehensive_trace.html
 standard-pipeline-trace.html
 test_pcp_integration.kt

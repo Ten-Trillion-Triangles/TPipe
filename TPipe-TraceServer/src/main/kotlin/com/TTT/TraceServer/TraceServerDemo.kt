@@ -1,39 +1,50 @@
 package com.TTT.TraceServer
 
-import com.TTT.Debug.TraceEvent
-import com.TTT.Debug.TraceEventType
-import com.TTT.Debug.TracePhase
-import com.TTT.Debug.PipeTracer
-import com.TTT.Debug.RemoteTraceConfig
-import com.TTT.Debug.RemoteTraceDispatcher
+import com.TTT.TraceServer.auth.HashedPassword
+import com.TTT.TraceServer.auth.Pbkdf2PasswordHasher
+import com.TTT.TraceServer.store.FileBackedTraceStore
+import com.TTT.TraceServer.store.InMemoryTraceStore
 import kotlin.concurrent.thread
 
 fun main(args: Array<String>)
 {
-    println("--- Starting TPipe Trace Dashboard Demo ---")
-    println("Setting up Auth Mechanism (Key = demo123)")
+    println("--- Starting TPipe Trace Dashboard Demo (v2) ---")
+    println("Setting up auth: dashboard key = demo123 (legacy lambda)")
 
-    // 1. Setup global auth mechanisms
-    TraceServerRegistry.agentAuthMechanism = { token ->
-        token == "Bearer secret-agent-key"
-    }
-    TraceServerRegistry.clientAuthMechanism = { key ->
-        key == "demo123"
-    }
+    // 1. Auth: keep the v1 key path for the dashboard and add a v2 password
+    //    path for agent users. The password is hashed at boot with the
+    //    default PBKDF2 hasher; pre-computed hashes can be pasted into
+    //    `AuthConfig.expectedHash` instead.
+    val dashboardHasher = Pbkdf2PasswordHasher()
+    TraceServerRegistry.clientAuthMechanism = { key -> key == "demo123" }
+    TraceServerRegistry.agentAuthMechanism = { token -> token == "Bearer secret-agent-key" }
 
-    // 2. Start the remote server in a native Java thread
+    // 2. Parse CLI flags and resolve the persistence + observability config.
+    val parsed = parseArgs(args, TraceServerConfigBridge.legacy())
+    val config = parsed.copy(
+        auth = parsed.auth.copy(
+            passwordHasherEnabled = true,
+            expectedHash = dashboardHasher.hash("demo123-pw")
+        )
+    )
+    TraceServerRegistry.authConfig = config.auth
+    val resolved = config.store.resolveStore()
+    TraceServerRegistry.configureStore(resolved)
+    println("Trace store: ${config.store.type} @ ${config.store.directory} (max=${config.store.maxTraces}, ttl=${config.store.ttl}, quota=${config.store.perTenantQuota})")
+    println("Auth: access TTL=${config.auth.accessTokenTtl}, refresh TTL=${config.auth.refreshTokenTtl}")
+    println("Rate limit: per-IP=${config.rateLimit.perIpWrites}/${config.rateLimit.window} | per-tenant=${config.rateLimit.perTenantWrites}/${config.rateLimit.window}")
+    println("Compression: ${if (config.compression.enabled) "gzip+deflate" else "off"}")
+    println("Metrics: ${if (config.metrics.enabled) "on at ${config.metrics.path}" else "off"}")
+
+    // 3. Start the remote server in a native Java thread.
     thread(start = true, isDaemon = false, name = "Ktor-TraceServer") {
-        startTraceServer(port = 8081, wait = true)
+        startTraceServer(config, wait = true)
     }
 
     // Wait for server to bind
     Thread.sleep(2000)
 
-    // In local run environment Java versions get misaligned between compile/run
-    // We will simulate agent behavior using direct TraceRegistry calls for the demo,
-    // to avoid the Classfile version 68.0 vs 65.0 mismatch on the JVM here
-
-    println("Injecting dummy traces directly to bypass JVM class loader issues in local run...")
+    println("Injecting dummy traces with v2 tags directly to bypass JVM class loader issues in local run...")
 
     // Create HTML template string for demo
     val mockHtml = """
@@ -48,33 +59,39 @@ fun main(args: Array<String>)
         </html>
     """.trimIndent()
 
-    TraceServerRegistry.registerTrace(TracePayload(
+    TraceServerRegistry.store.put(TracePayload(
         pipelineId = "pipeline-sync-user-data-1",
         htmlContent = mockHtml.replace("Mock Trace", "Data Sync"),
         name = "User Data Sync",
-        status = "SUCCESS"
+        status = "SUCCESS",
+        tags = mapOf("team" to "platform", "env" to "staging")
     ))
 
-    TraceServerRegistry.registerTrace(TracePayload(
+    TraceServerRegistry.store.put(TracePayload(
         pipelineId = "pipeline-llm-generate-2",
         htmlContent = mockHtml.replace("Mock Trace", "LLM Failed: Connection Refused"),
         name = "LLM Generation",
-        status = "FAILURE"
+        status = "FAILURE",
+        tags = mapOf("team" to "research", "env" to "prod", "model" to "claude-3")
     ))
 
-    TraceServerRegistry.registerTrace(TracePayload(
+    TraceServerRegistry.store.put(TracePayload(
         pipelineId = "pipeline-image-upload-3",
         htmlContent = mockHtml.replace("Mock Trace", "Uploading fragments..."),
         name = "S3 Image Processing",
-        status = "PENDING"
+        status = "PENDING",
+        tags = mapOf("team" to "platform", "env" to "prod")
     ))
 
     println("================================================================")
     println("Demo running! ")
     println("To view the dashboard, open your browser and navigate to:")
-    println("➡️  http://localhost:8081")
+    println("➡️  http://localhost:${config.port}")
     println("")
     println("🔑 When prompted for an Authentication Key, enter: demo123")
+    println("📜 OpenAPI spec: http://localhost:${config.port}/api/openapi.yaml")
+    println("📊 Prometheus metrics: http://localhost:${config.port}${config.metrics.path}")
+    println("💚 Health: http://localhost:${config.port}/api/health")
     println("================================================================")
 
     while(true)

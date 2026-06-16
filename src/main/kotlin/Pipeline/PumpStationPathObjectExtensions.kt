@@ -1,5 +1,6 @@
 package com.TTT.Pipeline
 
+import com.TTT.Context.ConverseData
 import com.TTT.PipeContextProtocol.FunctionRegistry
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.PipeContextProtocol.TPipeContextOptions
@@ -46,4 +47,14 @@ fun PathObject.bindFunction(name: String, function: KFunction<*>): PathObject
     this.pcpSchema!!.addTPipeOption(tpipeOption)
 
     return this
+}
+
+/**
+ * Retrieve stashed content from the parent PumpStation by stash ID.
+ * Returns null if no station is set or no stash entry exists with that ID.
+ */
+fun PathObject.getStashContent(stashId: String, station: PumpStation?): ConverseData?
+{
+    if (station == null) return null
+    return station.retrieveStash(stashId)
 }

@@ -38,7 +38,14 @@ object EventPriorityMapper
             TraceEventType.JUNCTION_WORKFLOW_FAILURE,
             TraceEventType.DISTRIBUTION_GRID_FAILURE,
             // New Splitter CRITICAL events
-            TraceEventType.SPLITTER_FAILURE -> TraceEventPriority.CRITICAL
+            TraceEventType.SPLITTER_FAILURE,
+            // PumpStation CRITICAL events
+            //
+            // Failure and trip signals are the events a developer needs to see at MINIMAL detail level.
+            TraceEventType.PUMP_STATION_FAILED,
+            TraceEventType.PUMP_STATION_PATH_FAILED,
+            TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED,
+            TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED -> TraceEventPriority.CRITICAL
             
             // Existing STANDARD events
             TraceEventType.PIPE_START,
@@ -92,7 +99,25 @@ object EventPriorityMapper
             TraceEventType.SPLITTER_START,
             TraceEventType.SPLITTER_END,
             TraceEventType.SPLITTER_SUCCESS,
-            TraceEventType.SPLITTER_PIPELINE_COMPLETION -> TraceEventPriority.STANDARD
+            TraceEventType.SPLITTER_PIPELINE_COMPLETION,
+            // PumpStation STANDARD events
+            //
+            // Lifecycle markers and per-turn completion events are visible at NORMAL so the state ribbon
+            // and turn cards always render even with concise logging.
+            TraceEventType.PUMP_STATION_STARTED,
+            TraceEventType.PUMP_STATION_COMPLETED,
+            TraceEventType.PUMP_STATION_SUSPENDED,
+            TraceEventType.PUMP_STATION_RESUMED,
+            TraceEventType.PUMP_STATION_HEALTH_CHECK_COMPLETED,
+            TraceEventType.PUMP_STATION_JUDGE_COMPLETED,
+            TraceEventType.PUMP_STATION_DISPATCH_COMPLETED,
+            TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED,
+            TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED,
+            TraceEventType.PUMP_STATION_PATH_SELECTED,
+            TraceEventType.PUMP_STATION_PATH_STARTED,
+            TraceEventType.PUMP_STATION_PATH_COMPLETED,
+            TraceEventType.PUMP_STATION_PATH_HIDDEN,
+            TraceEventType.PUMP_STATION_RESERVE_PATH_REVEALED -> TraceEventPriority.STANDARD
             
             // Existing DETAILED events
             //
@@ -139,7 +164,28 @@ object EventPriorityMapper
             TraceEventType.SPLITTER_CONTENT_DISTRIBUTION,
             TraceEventType.SPLITTER_PIPELINE_DISPATCH,
             TraceEventType.SPLITTER_PIPELINE_CALLBACK,
-            TraceEventType.SPLITTER_COMPLETION_CALLBACK -> TraceEventPriority.DETAILED
+            TraceEventType.SPLITTER_COMPLETION_CALLBACK,
+            // PumpStation DETAILED events
+            //
+            // Phase-start markers and async/background agent completions are behind VERBOSE — they make the
+            // turn cards precise without flooding MINIMAL/NORMAL views.
+            TraceEventType.PUMP_STATION_HEALTH_CHECK_STARTED,
+            TraceEventType.PUMP_STATION_JUDGE_STARTED,
+            TraceEventType.PUMP_STATION_DISPATCH_STARTED,
+            TraceEventType.PUMP_STATION_JUDGE_SKIPPED,
+            TraceEventType.PUMP_STATION_PATH_SAFETY_STARTED,
+            TraceEventType.PUMP_STATION_PATH_SAFETY_COMPLETED,
+            TraceEventType.PUMP_STATION_PATH_VALIDATION_COMPLETED,
+            TraceEventType.PUMP_STATION_INTERVENTION_STARTED,
+            TraceEventType.PUMP_STATION_INTERVENTION_COMPLETED,
+            TraceEventType.PUMP_STATION_FOREGROUND_AGENT_COMPLETED,
+            TraceEventType.PUMP_STATION_BACKGROUND_AGENT_QUEUED,
+            TraceEventType.PUMP_STATION_NESTED_P2P_COMPLETED,
+            TraceEventType.PUMP_STATION_MEMORY_UPDATE_STARTED,
+            TraceEventType.PUMP_STATION_COMPACTION_STARTED,
+            TraceEventType.PUMP_STATION_COMPACTION_COMPLETED,
+            TraceEventType.PUMP_STATION_GOAL_VALIDATION_STARTED,
+            TraceEventType.PUMP_STATION_STASH_CREATED -> TraceEventPriority.DETAILED
             
             // Existing INTERNAL events
             //

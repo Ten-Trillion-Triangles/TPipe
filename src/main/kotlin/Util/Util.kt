@@ -1137,7 +1137,20 @@ fun getWorkingDirectory() : String
  */
 fun writeStringToFile(filepath: String, content: String)
 {
-    val file = File(filepath)
+    // Expand a leading "~" or "~/" to the user's home directory. Without this,
+    // the File constructor interprets the path literally relative to the process
+    // working directory, so `~/.TPipe-Debug/traces/...` silently ends up in
+    // `<cwd>/~/.TPipe-Debug/traces/...` (verified: trace HTML files were being
+    // written there instead of `$HOME/.TPipe-Debug/traces/...`).
+    val expanded = if (filepath.startsWith("~/") || filepath == "~")
+    {
+        System.getProperty("user.home") + filepath.substring(1)
+    }
+    else
+    {
+        filepath
+    }
+    val file = File(expanded)
     val parentDir = file.parentFile
     if (parentDir != null && !parentDir.exists())
     {

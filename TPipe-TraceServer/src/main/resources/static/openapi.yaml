@@ -1,0 +1,342 @@
+openapi: 3.0.3
+info:
+  title: TPipe TraceServer
+  version: "2.0.0"
+  description: |
+    v2 surface for the TPipe TraceServer. The v1 routes are documented for
+    completeness; the new v2 additions are tagged with `v2: true` in the
+    description block of each operation.
+servers:
+  - url: http://localhost:8081
+    description: Local default
+  - url: https://localhost:8443
+    description: Local TLS
+
+tags:
+  - name: traces
+    description: Trace submission, retrieval, and management
+  - name: auth
+    description: Dashboard authentication
+  - name: events
+    description: Live trace event streaming
+  - name: ops
+    description: Observability and operations
+  - name: ws
+    description: WebSocket sub-protocol
+
+components:
+  schemas:
+    TracePayload:
+      type: object
+      required: [pipelineId, htmlContent, name, status]
+      properties:
+        pipelineId: { type: string, example: pipeline-sync-user-data-1 }
+        htmlContent: { type: string, description: HTML report of the trace }
+        name: { type: string, example: User Data Sync }
+        status: { type: string, enum: [SUCCESS, FAILURE, PENDING, RUNNING] }
+        tags:
+          type: object
+          additionalProperties: { type: string }
+          description: Free-form key->value tags for filterable search (v2)
+    TraceSummary:
+      type: object
+      properties:
+        id: { type: string }
+        timestamp: { type: integer, format: int64 }
+        name: { type: string }
+        status: { type: string }
+    TraceListEnvelope:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/TraceSummary" } }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+    TraceEvent:
+      type: object
+      required: [eventId, type, payload]
+      properties:
+        eventId: { type: string }
+        ts: { type: integer, format: int64, description: Server-stamped wall clock ms }
+        type: { type: string, example: llm_call }
+        payload: { type: object, additionalProperties: true }
+    HealthEnvelope:
+      type: object
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        uptimeMs: { type: integer, format: int64 }
+        traces:
+          type: object
+          properties:
+            total: { type: integer }
+            tenants: { type: integer }
+        version: { type: string }
+        store:
+          type: object
+          description: Active store configuration (v2)
+          properties:
+            type: { type: string, enum: [FILE_BACKED, IN_MEMORY, CUSTOM] }
+            directory: { type: string }
+            maxTraces: { type: integer }
+            ttlMs: { type: integer, format: int64, nullable: true }
+            perTenantQuota: { type: integer, nullable: true }
+        metricsEnabled: { type: boolean }
+    AuthRequest:
+      type: object
+      properties:
+        key: { type: string, description: "Legacy dashboard key (v1)" }
+        username: { type: string }
+        password: { type: string, description: "Cleartext password; hashed server-side (v2)" }
+    AuthResponse:
+      type: object
+      properties:
+        token: { type: string, description: Access token }
+        refreshToken: { type: string, description: Refresh token (v2) }
+        expiresInMs: { type: integer, format: int64, description: Access token TTL (v2) }
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+    RefreshResponse:
+      type: object
+      properties:
+        token: { type: string }
+        refreshToken: { type: string, description: New rotated refresh token (v2) }
+        expiresInMs: { type: integer, format: int64 }
+    ErrorEnvelope:
+      type: object
+      properties:
+        error: { type: string, description: Stable machine code }
+        message: { type: string, description: Human-readable explanation }
+
+  parameters:
+    Tenant:
+      name: X-Tenant
+      in: header
+      schema: { type: string, default: default }
+      description: Tenant key. Falls back to `?tenant=` query, then `default`.
+    AuthHeader:
+      name: Authorization
+      in: header
+      schema: { type: string }
+      description: `Bearer <token>` for dashboard session auth
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: UUID
+    agentBearer:
+      type: http
+      scheme: bearer
+      description: Agent token for `POST /api/traces`
+
+paths:
+  /api/health:
+    get:
+      tags: [ops]
+      summary: Liveness + tenant count + store config
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthEnvelope" }
+  /metrics:
+    get:
+      tags: [ops]
+      summary: Prometheus scrape endpoint
+      responses:
+        "200":
+          description: text/plain Prometheus exposition
+          content:
+            text/plain: { schema: { type: string } }
+  /api/openapi.yaml:
+    get:
+      tags: [ops]
+      summary: This OpenAPI spec
+      responses:
+        "200": { description: YAML }
+        "404": { description: not found }
+  /api/auth/config:
+    get:
+      tags: [auth]
+      summary: Auth mode advertised to the dashboard
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode: { type: string, enum: [KEY, CREDENTIALS, BOTH] }
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Login
+      description: |
+        v2 surface accepts either a legacy `key` (matched against
+        `TraceServerRegistry.clientAuthMechanism`) or a cleartext `password`
+        (verified against `AuthConfig.expectedHash` with PBKDF2). Returns a
+        paired access + refresh token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+  /api/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate a refresh token (v2)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefreshRequest" }
+      responses:
+        "200":
+          description: New paired access + refresh token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RefreshResponse" }
+        "401":
+          description: Refresh token invalid or expired
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+  /api/traces:
+    get:
+      tags: [traces]
+      summary: List trace summaries
+      parameters:
+        - $ref: "#/components/parameters/Tenant"
+        - $ref: "#/components/parameters/AuthHeader"
+        - { name: status, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string }, description: Free-text search }
+        - { name: tag, in: query, schema: { type: string }, description: "v2: `key` or `key:value`" }
+        - { name: since, in: query, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, schema: { type: integer, default: 100, minimum: 1, maximum: 500 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: Envelope
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TraceListEnvelope" }
+        "401":
+          description: Missing or expired session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    post:
+      tags: [traces]
+      summary: Submit a trace (agent auth)
+      parameters:
+        - $ref: "#/components/parameters/Tenant"
+        - $ref: "#/components/parameters/AuthHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TracePayload" }
+      responses:
+        "200": { description: Stored }
+        "400": { description: Validation error }
+        "401": { description: Unauthorized agent }
+        "413": { description: Payload too large }
+        "429": { description: Rate limit exceeded (v2) }
+  /api/traces/{id}:
+    get:
+      tags: [traces]
+      summary: Fetch a trace by pipelineId
+      parameters:
+        - $ref: "#/components/parameters/Tenant"
+        - $ref: "#/components/parameters/AuthHeader"
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TracePayload" }
+        "404": { description: not found }
+    delete:
+      tags: [traces]
+      summary: Delete a trace
+      parameters:
+        - $ref: "#/components/parameters/Tenant"
+        - $ref: "#/components/parameters/AuthHeader"
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "404": { description: not found }
+  /api/traces/{id}/events:
+    get:
+      tags: [events]
+      summary: List persisted events for a trace (v2)
+      parameters:
+        - $ref: "#/components/parameters/Tenant"
+        - $ref: "#/components/parameters/AuthHeader"
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events: { type: array, items: { $ref: "#/components/schemas/TraceEvent" } }
+    post:
+      tags: [events]
+      summary: Append an event to a trace (v2, agent auth)
+      parameters:
+        - $ref: "#/components/parameters/Tenant"
+        - $ref: "#/components/parameters/AuthHeader"
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TraceEvent" }
+      responses:
+        "202": { description: Event accepted and broadcast to subscribers }
+        "401": { description: Unauthorized agent }
+        "413": { description: Payload too large }
+        "429": { description: Rate limit exceeded (v2) }
+
+  /ws/traces:
+    get:
+      tags: [ws]
+      summary: WebSocket sub-protocol (v2)
+      description: |
+        The v2 sub-protocol is additive. Connect with `?token=...&tenant=...`.
+        The server broadcasts new trace summaries as the legacy v1 JSON
+        format. Clients that want live event streaming send:
+
+        ```
+        {"op":"subscribe","pipelineId":"..."}
+        {"op":"unsubscribe","pipelineId":"..."}
+        ```
+
+        and receive:
+
+        ```
+        {"op":"ack","op":"subscribe","pipelineId":"..."}
+        {"op":"event","pipelineId":"...","eventId":"...","ts":...,"type":"...","payload":{...}}
+        ```
+      responses:
+        "101": { description: Switching protocols }
+        "1008": { description: Policy violation (unauthorized) }

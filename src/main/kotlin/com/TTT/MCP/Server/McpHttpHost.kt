@@ -51,7 +51,8 @@ object McpHttpHost {
                     install(Authentication) {
                         bearer("mcp-auth") {
                             authenticate { tokenCredential: io.ktor.server.auth.BearerTokenCredential ->
-                                if (tokenCredential.token == authKey) {
+                                if(tokenCredential.token == authKey)
+                                {
                                     UserIdPrincipal("mcp-client")
                                 } else {
                                     null
@@ -91,7 +92,8 @@ object McpHttpHost {
                     install(Authentication) {
                         bearer("mcp-auth") {
                             authenticate { tokenCredential: io.ktor.server.auth.BearerTokenCredential ->
-                                if (tokenCredential.token == authKey) {
+                                if(tokenCredential.token == authKey)
+                                {
                                     UserIdPrincipal("mcp-client")
                                 } else {
                                     null

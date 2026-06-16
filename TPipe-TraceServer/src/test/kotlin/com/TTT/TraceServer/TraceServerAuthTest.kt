@@ -18,8 +18,22 @@ class TraceServerAuthTest {
     fun tearDown() {
         TraceServerRegistry.agentAuthMechanism = null
         TraceServerRegistry.clientAuthMechanism = null
-        TraceServerRegistry.clientSessions.clear()
-        TraceServerRegistry.traces.clear()
+        TraceServerRegistry.configureStore(com.TTT.TraceServer.store.InMemoryTraceStore())
+        for (tenant in listOf("default", "alpha")) {
+            TraceServerRegistry.sessionsFor(tenant).clear()
+        }
+    }
+
+    private suspend fun loginAndGetToken(client: io.ktor.client.HttpClient, key: String = "dashboard-key"): String {
+        val res = client.post("/api/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"key":"$key"}""")
+        }
+        return Regex(""""token"\s*:\s*"([^"]+)"""")
+            .find(res.bodyAsText())
+            ?.groupValues
+            ?.get(1)
+            .orEmpty()
     }
 
     @Test
@@ -52,16 +66,7 @@ class TraceServerAuthTest {
         val listWithoutSession = client.get("/api/traces")
         assertEquals(HttpStatusCode.Unauthorized, listWithoutSession.status)
 
-        val loginResponse = client.post("/api/auth/login") {
-            contentType(ContentType.Application.Json)
-            setBody("""{"key":"dashboard-key"}""")
-        }
-        assertEquals(HttpStatusCode.OK, loginResponse.status)
-        val token = Regex(""""token"\s*:\s*"([^"]+)"""")
-            .find(loginResponse.bodyAsText())
-            ?.groupValues
-            ?.get(1)
-            .orEmpty()
+        val token = loginAndGetToken(client, "dashboard-key")
         assertTrue(token.isNotBlank())
 
         val listWithSession = client.get("/api/traces") {
@@ -69,5 +74,45 @@ class TraceServerAuthTest {
         }
         assertEquals(HttpStatusCode.OK, listWithSession.status)
         assertTrue(listWithSession.bodyAsText().contains("trace-1"))
+    }
+
+    @Test
+    fun missingAuthHeaderReturns401WhenAuthEnabled() = testApplication {
+        application { traceServerModule() }
+        TraceServerRegistry.clientAuthMechanism = { _ -> true }
+        val res = client.get("/api/traces")
+        assertEquals(HttpStatusCode.Unauthorized, res.status)
+        assertTrue(res.bodyAsText().contains("\"error\"") && res.bodyAsText().contains("\"unauthorized\""))
+    }
+
+    @Test
+    fun expiredSessionReturns401() = testApplication {
+        application { traceServerModule() }
+        TraceServerRegistry.clientAuthMechanism = { _ -> true }
+        val token = "expired-token-123"
+        TraceServerRegistry.clientSessions[token] = System.currentTimeMillis() - 1
+        val res = client.get("/api/traces") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        assertEquals(HttpStatusCode.Unauthorized, res.status)
+    }
+
+    @Test
+    fun deleteRoundTripWithValidSession() = testApplication {
+        application { traceServerModule() }
+        TraceServerRegistry.agentAuthMechanism = { auth -> auth == "Bearer agent-token" }
+        TraceServerRegistry.clientAuthMechanism = { _ -> true }
+        val token = loginAndGetToken(client)
+
+        client.post("/api/traces") {
+            contentType(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer agent-token")
+            setBody("""{"pipelineId":"trace-1","htmlContent":"<x/>","name":"T1","status":"SUCCESS"}""")
+        }
+
+        val del = client.delete("/api/traces/trace-1") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        assertEquals(HttpStatusCode.NoContent, del.status)
     }
 }
