@@ -12,17 +12,38 @@ import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PResponse
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipe.TruncationSettings
 import com.TTT.Structs.PipeSettings
 import com.TTT.PipeContextProtocol.FunctionRegistry
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.PipeContextProtocol.PcpExecutionDispatcher
+import com.TTT.Debug.FailureAnalysis
+import com.TTT.Debug.PipeTracer
+import com.TTT.Debug.TraceConfig
+import com.TTT.Debug.TraceEvent
+import com.TTT.Debug.TraceFormat
 import com.TTT.Util.serialize
+import com.TTT.Util.writeStringToFile
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
+import kotlinx.coroutines.plus
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Contextual
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Defines concurrency mode harness background tasks, and memory management.
@@ -87,6 +108,25 @@ enum class PumpStationCompactionStrategy
     Whole,
     Chunked,
     Hybrid
+}
+
+/**
+ * Controls when the judge agent runs inside the [PumpStation] harness loop.
+ */
+enum class PumpStationJudgeRunMode {
+    /** Judge runs every turn (default; current behavior). */
+    Always,
+
+    /**
+     * Judge runs only when [PumpStationTaskState.requestJudgeNextTurn] is true at the top of the judge phase.
+     * The flag is one-shot: it is automatically cleared after the judge consumes it. The typical pattern is
+     * a path the dispatch agent selects whose [PathObject.setExecutionFunction] calls
+     * [PumpStation.requestJudgeNextTurn] when it believes the task is done.
+     *
+     * In this mode, [PumpStation.setMaxHarnessTurns] is the only safety net if the dispatch agent never
+     * signals — set it conservatively.
+     */
+    FlagTriggered
 }
 
 /**
@@ -181,6 +221,21 @@ data class PathRequest(
  * encapsulates the concept of a turn in a traditional agent harness and fully encloses the complexities that would
  * otherwise make the harness pattern inefficient.
  */
+/**
+ * Internal mirror of the [agentTokenUsage] helper from PumpStationLoop — duplicated here
+ * because PumpStation.kt does not have visibility into the loop module. Returns null when
+ * the agent is not a [Pipeline] or its token usage is zero.
+ */
+private fun agentTokenUsageInternal(agent: P2PInterface?): Pair<Int, Pair<Int, Int>>?
+{
+    val pipeline = agent as? Pipeline ?: return null
+    val usage = pipeline.getTokenUsage()
+    val input = usage.totalInputTokens.takeIf { it > 0 } ?: return null
+    val output = usage.totalOutputTokens.takeIf { it > 0 } ?: 0
+    val total = if (input > 0 || output > 0) input + output else 0
+    return input to (output to total)
+}
+
 class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
 {
 
@@ -246,6 +301,16 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var _runsInBackground = false
 
     /**
+     * When true, an async path will NOT append its result to the harness
+     * [turnHistory] on completion. The path still fires the [PathCompleted]
+     * event so observers can see the result, but the foreground drain will
+     * skip the merge. Useful for fire-and-forget paths that emit side-effect
+     * events without producing textual content the LLM should see in the
+     * conversation (e.g. a ping path that triggers a webhook).
+     */
+    private var _suppressHistoryEmit = false
+
+    /**
      * Must be set, or pulled from the parent [PumpStation]. This required for us to calculate if we're about to
      * blow out a context window.
      */
@@ -273,6 +338,41 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      * Returns true if an execution function has been set on this path.
      */
     val isExecutionFunctionSet: Boolean get() = executionFunction != null
+
+    /**
+     * Read the path's [com.TTT.Pipe.TokenUsage] when the [internalAgent] is a [Pipeline]. Returns
+     * null for paths backed by an opaque [executionFunction] or a [P2PInterface] we do not know
+     * how to inspect. Used by the harness to record per-path token usage in
+     * [com.TTT.Pipeline.PumpStationEvent.PathCompleted] events.
+     */
+    fun getPathTokenUsage(): com.TTT.Pipe.TokenUsage?
+    {
+        val agent = internalAgent ?: return null
+        return when (agent)
+        {
+            is Pipeline -> agent.getTokenUsage()
+            else -> null
+        }
+    }
+
+    /**
+     * Read the path's [Pipeline.inputTokensSpent] / [Pipeline.outputTokensSpent] (the legacy
+     * fields) when the [internalAgent] is a [Pipeline]. Returns a (0, 0) pair for paths backed
+     * by an opaque [P2PInterface] or for paths without an internal agent. Unlike
+     * [getPathTokenUsage] this does not require comprehensive token tracking to be enabled on
+     * the path's pipe; the legacy fields are populated by the pipe's [countTokens] call during
+     * normal execution. Used by the per-path kill switch enforcement to compare against the
+     * path's own [PathObject.killSwitch] limits.
+     */
+    fun getPathLegacyTokenUsage(): Pair<Int, Int>
+    {
+        val agent = internalAgent ?: return 0 to 0
+        return when (agent)
+        {
+            is Pipeline -> agent.inputTokensSpent to agent.outputTokensSpent
+            else -> 0 to 0
+        }
+    }
 
     /**
      * Returns true if this path is configured to run in background.
@@ -423,6 +523,26 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Controls whether an async path's completion result is appended to the
+     * harness [turnHistory]. When true, [PathCompleted] is still emitted for
+     * observers, but the foreground drain skips the history merge. Only takes
+     * effect when [isRunsInBackground] is also true.
+     *
+     * @param value true to suppress history emission, false to allow it.
+     */
+    fun setSuppressHistoryEmit(value: Boolean)
+    {
+        this._suppressHistoryEmit = value
+    }
+
+    /**
+     * True if this path suppresses its async result from being appended to
+     * the harness [turnHistory]. Mirrors the mutable [setSuppressHistoryEmit]
+     * setting.
+     */
+    val isSuppressHistoryEmit: Boolean get() = _suppressHistoryEmit
+
+    /**
      * P2PInterface required init function. Delegates to [init] for path initialization.
      * Present to satisfy the [P2PInterface] contract.
      */
@@ -524,16 +644,100 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
  *
  * Supports multiple memory management tactics like truncation, compaction, amnesia, and hybrid models.
  *
- * Includes killswitch, turn limits, and token budgeting for cost control.
+ * Includes a [KillSwitch] for cost control. The switch can be manually tripped via
+ * [tripKillSwitch] (soft halt that lets the current turn finish) or auto-enforced: when an
+ * [KillSwitch.inputTokenLimit] or [KillSwitch.outputTokenLimit] is configured, the harness loop
+ * checks the running token total after each judge, dispatch, and path phase, and trips when the
+ * limit is exceeded. The default [KillSwitch.onTripped] callback throws [KillSwitchException],
+ * which the loop catches at the [runHarnessLoop] boundary so [runFinalizationPhase] can emit
+ * the standard [HarnessFailed] event. The switch propagates to every [PathObject] registered
+ * with the station so per-path limits are honored independently.
  *
  * Is able to automate its own config and apply core defaults internally.
  *
  * Includes full dsl support.
  *
  * Is also a p2p interface so a harness can be part of the path of another harness.
+ *
+ * ## Minimal viable station
+ *
+ * The smallest harness that runs a single-turn task end-to-end. This example uses the
+ * Always-on judge (exit mechanism 1 of 3):
+ *
+ * ```kotlin
+ * val station = pumpStation("hello") {
+ *     setJudgeAgent(Pipeline().apply { add(OpenRouterPipe().apply {
+ *         setModel("openai/gpt-4o-mini")
+ *         setApiKey(System.getenv("OPENROUTER_API_KEY") ?: "")
+ *     }}) })
+ *
+ *     setDispatchAgent(Pipeline().apply { add(OpenRouterPipe().apply {
+ *         setModel("openai/gpt-4o-mini")
+ *         setApiKey(System.getenv("OPENROUTER_API_KEY") ?: "")
+ *     }}) })
+ *
+ *     path("answer") {
+ *         pathDescription = "Responds to the user with a one-sentence answer."
+ *         setExecutionFunction { content, _, _, _ ->
+ *             MultimodalContent(text = "hello, world", passPipeline = true)
+ *         }
+ *     }
+ *
+ *     setKillSwitch(KillSwitch().apply { inputTokenLimit = 50_000 })
+ * }
+ *
+ * val result = station.executeLocal(MultimodalContent(text = "say hello"))
+ * // result.text == "hello, world"
+ * ```
+ *
+ * Three exit mechanisms are supported (use the one that fits your domain):
+ *
+ * - **Always-on judge** (default): judge evaluates `isComplete` every turn.
+ * - **FlagTriggered judge**: paths opt-in via `pumpStation.requestJudgeNextTurn()`;
+ *   judge skips other turns. Configure with `setJudgeRunMode(PumpStationJudgeRunMode.FlagTriggered)`.
+ * - **Path-terminated**: paths return `MultimodalContent.terminatePipeline = true` (failure)
+ *   or `passPipeline = true` (success) on their result.
+ *
+ * A `HarnessWarning` event is emitted in `runPreInitPhase` when NONE of these mechanisms
+ * are configured — see `HarnessWarning.code == WarningCode.NoExitSignalConfigured`. The
+ * advisory is non-blocking; the harness continues and the developer sees the message in
+ * the event log + trace.
+ *
+ * For a copy-paste-runnable example covering all three mechanisms, see
+ * `TPipe-Defaults/src/main/kotlin/examples/pumpstation/PumpStationOpenRouterExample.kt`.
+ * For a one-call factory that wires judge + dispatch + killSwitch + memory defaults,
+ * see `Defaults.PumpStationDefaults.withOpenRouter(config)`.
  */
-class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
+class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
 {
+    //=====================================KillSwitch (Group O)========================================================
+    /**
+     * Backing field for the [P2PInterface.killSwitch] override. The custom setter propagates the
+     * switch to every [PathObject] in [pathList] and [reservePaths] so per-path enforcement and
+     * per-path DSL settings stay in sync with the station's switch. This mirrors the propagation
+     * pattern already used by [Manifold], [Splitter], [Junction], [Connector], [MultiConnector],
+     * and [DistributionGrid].
+     */
+    private var _killSwitch: KillSwitch? = killSwitch
+
+    /**
+     * Kill switch attached to this PumpStation. The default [KillSwitch.onTripped] callback throws
+     * [KillSwitchException]; the harness loop catches it at the [runHarnessLoop] boundary so
+     * [runFinalizationPhase] can emit the standard failure event.
+     *
+     * Assigning a value propagates the switch to every registered [PathObject] (both
+     * [pathList] and [reservePaths]). New paths added via [addPath] / [addReservePath] after the
+     * switch is set will also receive the current switch automatically.
+     */
+    override var killSwitch: KillSwitch?
+        get() = _killSwitch
+        set(value)
+        {
+            _killSwitch = value
+            pathList.values.forEach { it.killSwitch = value }
+            reservePaths.values.forEach { it.killSwitch = value }
+        }
+
 //======================================Properties======================================================================
 
 //---------------------------------------------Core Agents--------------------------------------------------------------
@@ -567,13 +771,72 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * be resolved, OR token budget settings are not manually set in the PumpStation itself, an exception will be
      * thrown.
      */
-    private var judgeAgent: Pipeline? = null
+    internal var judgeAgent: Pipeline? = null
 
     /**
      * Optional builder function to generate the [judgeAgent] on the fly. When non-null this will completely
      * override whatever is set for judgeAgent.
      */
-    private var judgeAgentBuilderFunction: (suspend (harness: PumpStation) -> Pipeline)? = null
+    internal var judgeAgentBuilderFunction: (suspend (harness: PumpStation) -> Pipeline)? = null
+
+    /**
+     * Whether the judge agent's output is expected to follow the JSON contract
+     * documented in [DEFAULT_JUDGE_PROMPT] (a JSON object with `isComplete` and
+     * `shouldTerminate` fields). When true (the default), the harness parses the
+     * agent's text via [parseJudgeVerdict] and the flag-based [withFlagCheck] runs
+     * after. When false, the JSON parser is skipped entirely and the verdict
+     * comes solely from MultimodalContent flags (terminatePipeline, passPipeline).
+     *
+     * Set to false via [setJudgeJsonContractEnabled] when wiring in a custom judge
+     * agent that drives the loop with flags rather than JSON.
+     */
+    internal var judgeExpectsJsonContract: Boolean = true
+
+    /**
+     * Optional custom system prompt for the judge agent. When non-null, the
+     * pump station injects this prompt into the decision pipe of the agent's
+     * pipeline instead of the default [DEFAULT_JUDGE_PROMPT]. Setting a custom
+     * prompt also disables the JSON contract (the agent drives the verdict via
+     * MultimodalContent flags only). Set back to null to re-enable the default
+     * contract.
+     */
+    internal var customJudgeSystemPrompt: String? = null
+
+    /**
+     * Optional custom system prompt for the dispatch agent. When non-null, the
+     * pump station injects this prompt into the decision pipe of the agent's
+     * pipeline instead of the default [DEFAULT_DISPATCH_PROMPT].
+     */
+    internal var customDispatchSystemPrompt: String? = null
+
+    /**
+     * Optional custom system prompt for the path-safety agent. When non-null,
+     * the pump station injects this prompt into the decision pipe of the
+     * agent's pipeline instead of the default [DEFAULT_PATH_SAFETY_PROMPT].
+     * Setting a custom prompt also disables the JSON contract.
+     */
+    internal var customPathSafetySystemPrompt: String? = null
+
+    /**
+     * Optional custom system prompt for the health agent. When non-null, the
+     * pump station injects this prompt into the decision pipe of the agent's
+     * pipeline instead of the default [DEFAULT_HEALTH_PROMPT].
+     */
+    internal var customHealthSystemPrompt: String? = null
+
+    /**
+     * Optional custom system prompt for the lorebook agent. When non-null, the
+     * pump station injects this prompt into the decision pipe of the agent's
+     * pipeline instead of the default [DEFAULT_LOREBOOK_PROMPT].
+     */
+    internal var customLorebookSystemPrompt: String? = null
+
+    /**
+     * Optional custom system prompt for the goal agent. When non-null, the
+     * pump station injects this prompt into the decision pipe of the agent's
+     * pipeline instead of the default [DEFAULT_GOAL_PROMPT].
+     */
+    internal var customGoalSystemPrompt: String? = null
 
     /**
      * REQUIRED: This agent evaluates what the next steps in the harness needs to be, and dispatches the to the
@@ -587,13 +850,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * be resolved, OR token budget settings are not manually set in the PumpStation itself, an exception will be
      * thrown.
      */
-    private var dispatchAgent: Pipeline? = null
+    internal var dispatchAgent: Pipeline? = null
 
     /**
      * Optional builder function to generate [dispatchAgent] on the fly, overrides any value set to dispatch agent
      * when not null.
      */
-    private var dispatchAgentBuilderFunction: (suspend (harness: PumpStation) -> Pipeline)? = null
+    internal var dispatchAgentBuilderFunction: (suspend (harness: PumpStation) -> Pipeline)? = null
 
 
     /**
@@ -682,15 +945,10 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
 
     /**
      * Allows the user to add additional required agents between the output of dispatch, and the return to the judge
-     * agent. Each agent will be invoked in the order that they are assigned to this list.
+     * agent. Each slot stores either a direct agent reference or a builder function, along with the concurrency
+     * mode that controls whether the agent runs synchronously (Blocking) or fires asynchronously (Async).
      */
-    private var additionalHarnessAgents: MutableList<P2PInterface> = mutableListOf()
-
-    /**
-     * Alternate set of bindable builder functions. When invoked each will be invoked in order.
-     * If this is bound, it will override the [additionalHarnessAgents] variable.
-     */
-    private var additionalHarnessAgentBuilderFuncList: MutableList<(suspend (harness: PumpStation) -> P2PInterface)>? = null
+    private var additionalHarnessAgentSlots: MutableList<HarnessAgentSlot> = mutableListOf()
 
     /**
      * Optional goal agent. This agent can be used to scan the work done by the harness once the harness is in an
@@ -699,28 +957,28 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      *
      * This can be seen as effectively the same as a ralph loop in terms of enforcement.
      */
-    private var goalAgent: P2PInterface? = null
+    internal var goalAgent: P2PInterface? = null
 
 
     /**
      * Optional bindable builder function. Allows for a dynamically generated agent at runtime. If non-null
      * [goalAgent] will be ignored and this will be invoked to generate the valid agent object at runtime.
      */
-    private var goalAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+    internal var goalAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
 
     /**
      * Stored paths on this harness. Each path is mapped by its name from inside the path object, and the
      * reference to the object. Names are normalized to be case-insensitive, and all path calls will normalize
      * to lowercase when calling a path.
      */
-    private val pathList: MutableMap<String, PathObject> = mutableMapOf()
+    internal val pathList: MutableMap<String, PathObject> = mutableMapOf()
 
     /**
      * Paths stored here are placed in "reserve". This allows them to be loaded into the system prompt of the
      * dispatch agent dynamically which is useful for keeping token costs and usage under control. A path cannot
      * exist both in reserve, and in the main [pathList] at the same time.
      */
-    private val reservePaths: MutableMap<String, PathObject> = mutableMapOf()
+    internal val reservePaths: MutableMap<String, PathObject> = mutableMapOf()
 
 
 
@@ -731,21 +989,21 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * applied to any role-play reasoning pipes deployed into pipes and pipelines. Forces the agent to take on the persona
      * and prioritize the persona above every other instruction.
      */
-    private var personality = ""
+    internal var personality = ""
 
     /**
      * Treated as the "system prompt" for the harness. Is injected into the harness after initial backed in harness
      * system instructions that are used to teach the agents how to drive the harness. Treated as highest priority
      * after the harness core guidelines of driving and always present regardless of user instructions.
      */
-    private var systemTask = ""
+    internal var systemTask = ""
 
     /**
      * Secondary after [systemTask] these are user guidelines the judge and dispatch agents should follow as long as they
      * are able to still fully follow their system task. This is where traditional "skills" in other harnesses would
      * be injected.
      */
-    private var userGuidelines = ""
+    internal var userGuidelines = ""
 
     /**
      * Third tier down. This is the initial user prompt sent to this harness via the [MultimodalContent] input or
@@ -754,13 +1012,24 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * aka: "skills" third. This will always be held at the top of the history and made clear to the agent that this
      * is the core task it must complete within its boundaries.
      */
-    private var entryUserPrompt = ""
+    internal var entryUserPrompt = ""
 
     /**
-     * Exceeding this number will instantly end the harness. Acts as a safety limit to avoid llm loops and
-     * exploding token costs.
+     * Maximum number of harness turns before forced exit. Acts as a safety limit to avoid
+     * llm loops and exploding token costs. The harness loop in
+     * [com.TTT.Pipeline.PumpStationLoop.runHarnessLoop] reads this field via
+     * [maxTurnsInternal] and terminates with [PumpStationError.MaxTurnsExceeded] /
+     * [PumpStationExitReason.MaxTurnsHit] when [com.TTT.Pipeline.PumpStationTaskState.turnIndex]
+     * reaches the cap.
      */
-    private var maxHarnessTurns = 50
+    private var maxTurns = 50
+
+    /**
+     * Controls when the judge agent runs inside the harness loop. See [PumpStationJudgeRunMode]
+     * for the semantics. Defaults to [PumpStationJudgeRunMode.Always] (legacy behavior).
+     * Mutation goes through [setJudgeRunMode] so the fluent API is preserved.
+     */
+    internal var judgeRunModeInternal: PumpStationJudgeRunMode = PumpStationJudgeRunMode.Always
 
     /**
      * Defines the maximum number of concurrent background agents that can be spawned at any given time.
@@ -825,7 +1094,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * Generated summary for the harness. This compacts older turn history events with a summary either blocking,
      * or async as turns are stored. Is injected if present, prior to the turn history in the agent's context.
      */
-    private var turnSummary = ""
+    internal var turnSummary = ""
 
     /**
      * If true, and the dispatch agent generates invalid json for a path request, throw an error, and
@@ -839,6 +1108,44 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * Used to track init state and auto-init if the user forgot to invoke init at execution time.
      */
     private var harnessIsReady = false
+
+    //=====================================Group O: Token Accumulator (Kill Switch Input)==============================
+    /**
+     * Tracks total input/output tokens consumed by agents across the harness run, so the
+     * [checkKillSwitch] enforcement can compare against [KillSwitch.inputTokenLimit] and
+     * [KillSwitch.outputTokenLimit]. Reset in [P2PInitInternal]. Updated by
+     * [addTokenUsage] after each agent call so the check sees a running total.
+     *
+     * @property runStartElapsedMs Wall-clock millis when the current harness run started, used to
+     *     populate [KillSwitchContext.elapsedMs]. Zero before [P2PInitInternal] has run.
+     */
+    private var runStartElapsedMs: Long = 0
+
+    /**
+     * Total input tokens consumed by all agents in this run. Monotonically increasing.
+     * Reset to 0 at the start of each [executeLocal] call.
+     */
+    private var accumulatedInputTokens: Int = 0
+
+    /**
+     * Total output tokens produced by all agents in this run. Monotonically increasing.
+     * Reset to 0 at the start of each [executeLocal] call.
+     */
+    private var accumulatedOutputTokens: Int = 0
+
+    /**
+     * Accumulate token usage from a single agent call into the station-level running total.
+     * Called from the harness loop after each [agentTokenUsage] read so [checkKillSwitch] can
+     * compare the running total against the kill switch limits.
+     *
+     * @param input  Number of input tokens the agent consumed on this call.
+     * @param output Number of output tokens the agent produced on this call.
+     */
+    internal fun addTokenUsage(input: Int, output: Int)
+    {
+        if (input > 0) accumulatedInputTokens += input
+        if (output > 0) accumulatedOutputTokens += output
+    }
 
     /**
      * Descriptors produced from initializing each path. This is required to pass onward to the dispatch
@@ -911,7 +1218,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * Internal task state — single source of truth for harness inspection, replay, and resume.
      * Not exposed to developers directly — accessible via public inspection APIs.
      */
-    private val taskState = PumpStationTaskState(
+    internal val taskState = PumpStationTaskState(
         runId = "",
         status = PumpStationStatus.NotStarted,
         phase = PumpStationPhase.PreInit,
@@ -925,11 +1232,100 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         memoryActionResult = null
     )
 
+    //=====================================v3: Compaction state and backups==========================================
+
+    /**
+     * Per-PumpStation compaction cursor. Read/written by the compaction orchestrator. The
+     * cursor lives both on the [taskState] (for snapshot/replay) and on this backing field
+     * (for fast internal access in the orchestrator hot path). They are kept in sync by the
+     * [compactionCursorInternal] getter/setter below.
+     */
+    internal var compactionCursor: CompactionCursor = CompactionCursor()
+
+    /**
+     * Per-PumpStation lorebook cursor. Same dual-location pattern as [compactionCursor].
+     */
+    internal var lorebookCursor: LorebookCursor = LorebookCursor()
+
+    /**
+     * In-memory ring buffer of [CompactionBackup] snapshots. Captured before every
+     * compaction attempt; used by [restoreFromBackup] to roll back inflated or pre-empted
+     * attempts. Bounded by [maxCompactionBackups] (default 3, configurable).
+     */
+    private val compactionBackups: ArrayDeque<CompactionBackup> = ArrayDeque()
+
+    /**
+     * Developer-supplied pre-prune transform. Applied to the raw [turnHistory] before it
+     * reaches the summary agent. When null, the default pruner (drop blank, drop stash
+     * placeholder, collapse duplicate system messages, drop pure echoes, collapse
+     * tool-call/result pairs, strip excess metadata, normalize whitespace, drop turns
+     * already in [turnSummary]) runs instead.
+     */
+    private var prePruneTransform: (suspend (List<ConverseData>, PumpStation) -> List<ConverseData>)? = null
+
+    /**
+     * Developer-supplied extra pruner that wraps the default. Applied after the default
+     * pruner. Multiple extra pruners can be registered; they run in registration order.
+     */
+    private val extraPrePruneTransforms: MutableList<suspend (List<ConverseData>, PumpStation) -> List<ConverseData>> = mutableListOf()
+
+    /**
+     * DITL hook that fires when a [CompactionBackup] is restored. Receives the backup
+     * being restored, a human-readable reason, and the harness. May return a replacement
+     * backup (e.g. with patched state) or null to use the restored one as-is. Throwing
+     * from this hook converts the orchestrator's retry to a handoff-to-truncation.
+     */
+    private var compactionRolledBackFunction: (suspend (CompactionBackup, String, PumpStation) -> CompactionBackup?)? = null
+
+    /**
+     * Number of pre-prune + summarize + fold iterations the orchestrator will attempt
+     * before handing off to truncation. Configurable via [setMaxCompactionAttempts].
+     */
+    internal var maxCompactionAttempts: Int = 2
+
+    /**
+     * Token budget per chunk when the Chunked strategy is used. Each chunk's estimated
+     * input token count must fit under this budget; the orchestrator partitions
+     * [turnHistory] into `max(1, tokens / chunkTokenBudget)` chunks.
+     */
+    internal var chunkTokenBudget: Int = 2000
+
+    /**
+     * Hard cap on the number of chunks produced by a single Chunked strategy attempt.
+     * Prevents pathological partitioning of very large turn histories.
+     */
+    internal var maxChunks: Int = 16
+
+    /**
+     * Semaphore permit count for the [ChunkFanoutMode.Parallel] strategy. Bounds the
+     * number of concurrent chunk-summarize calls to the summary agent.
+     */
+    internal var maxParallelChunks: Int = 4
+
+    /**
+     * Maximum number of [CompactionBackup] snapshots retained in the ring buffer.
+     */
+    internal var maxCompactionBackups: Int = 3
+
+    /**
+     * Chunk fan-out mode for the [PumpStationCompactionStrategy.Chunked] strategy.
+     * Sequential is the default (causal ordering preserved, single-mutex contract);
+     * Parallel requires an explicit opt-in via [setCompactionFanoutMode] or the
+     * `compaction { fanout = Parallel }` DSL block.
+     */
+    internal var compactionFanoutMode: ChunkFanoutMode = ChunkFanoutMode.Sequential
+
+    /**
+     * Headroom threshold (0.0-1.0) below which the [PumpStationCompactionStrategy.Hybrid]
+     * strategy downgrades to Chunked. Above this headroom, Hybrid delegates to Whole.
+     */
+    internal var hybridWholeHeadroom: Double = 0.3
+
     /**
      * Token budget settings for this PumpStation. Stored so it can be propagated
      * to child agents and retrieved via [getTokenBudgetSettings].
      */
-    private var tokenBudgetSettings: TokenBudgetSettings? = null
+    internal var tokenBudgetSettings: TokenBudgetSettings? = null
 
     /**
      * Pipe settings for this PumpStation. Stored so it can be propagated to child agents.
@@ -949,6 +1345,108 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private val backgroundEventQueue = Channel<PumpStationEvent>(Channel.UNLIMITED)
 
     /**
+     * Monotonic sequence counter assigned to every [PendingTurnEntry] at enqueue time.
+     * Async paths and async harness agents pull a [seq] from this counter, so the
+     * foreground drain can sort pending entries by [seq] even when out-of-order
+     * completions arrive. The counter is a [java.util.concurrent.atomic.AtomicLong]
+     * because the async fire site (which is a coroutine) is the only writer.
+     */
+    private val asyncSeqCounter = java.util.concurrent.atomic.AtomicLong(0L)
+
+    /**
+     * Queue of pending turn entries produced by async paths and async harness agents.
+     * Each entry carries the [PendingTurnEntry.seq] assigned at enqueue. The foreground
+     * drain pulls entries from this channel in batches and merges them into
+     * [turnHistory] in [seq] order. Backed by [Channel.UNLIMITED] so async producers
+     * never block on a full queue; the harness's [maxConcurrentBackgroundAgents]
+     * [Semaphore] is the real flow-control surface.
+     */
+    private val pendingAsyncResults = Channel<PendingTurnEntry>(Channel.UNLIMITED)
+
+    /**
+     * Mutex held by all async-origin writes to harness state. The [ConverseHistory]
+     * data class does not have its own internal lock, so async coroutines
+     * ([appendTurnEntryAsync], [appendTurnEntriesAsync]) must acquire this mutex
+     * before touching [turnHistory], [rawTurnHistory], [turnSummary],
+     * [contextWindow], or [taskState]. Foreground code paths retain the existing
+     * single-coroutine funnel and do not need to take this mutex.
+     */
+    private val historyMutex = Mutex()
+
+    /**
+     * Station-scoped [CoroutineScope] backing every async coroutine launched by the
+     * harness. Replaces the previous  so async work cannot
+     * outlive [executeLocal] (closed by [cancelAsyncJobs] in [runFinalizationPhase])
+     * and so the harness can enforce a single cancellation boundary.
+     */
+    val asyncScope: kotlinx.coroutines.CoroutineScope =
+        kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() +
+                kotlinx.coroutines.Dispatchers.Default
+        )
+
+    /**
+     * When true, async paths are appended to [turnHistory] by the foreground drain
+     * on completion. The default is true because the typical use case for an async
+     * path is to land its result back into the conversation. Per-path opt-out is
+     * available via [PathObject.setSuppressHistoryEmit].
+     */
+    private var asyncPathsAppendToTurnHistory: Boolean = true
+
+    /**
+     * When true, async harness agents (slots added with [PumpStationConcurrencyMode.Async])
+     * are appended to [turnHistory] by the foreground drain on completion. The default
+     * is false to preserve the historical fire-and-forget semantics of async harness
+     * agents. Per-slot opt-in is available via [HarnessAgentSlot.appendsToTurnHistory]
+     * and the matching DSL knob.
+     */
+    private var asyncAgentsAppendToTurnHistory: Boolean = false
+
+    /**
+     * Optional grace period (milliseconds) given to in-flight async coroutines
+     * after [runFinalizationPhase] before [cancelAsyncJobs] cancels the
+     * [asyncScope]. When null (the default), the cancel is off — [cancelAsyncJobs]
+     * does not enforce a timeout and instead yields once before the cancel, so
+     * long-running async paths (e.g. an async path that wraps a multi-minute LLM
+     * call) are not artificially timeboxed. When set, coroutines that do not
+     * finish within the window are cancelled; their partial results are NOT
+     * merged into [turnHistory].
+     *
+     * The default is null because TPipe intentionally does not impose arbitrary
+     * timeouts on user work. Developers who need a hard upper bound should set
+     * this to a value that matches their worst-case LLM round-trip plus safety
+     * margin (e.g. 30 minutes for production agent harnesses).
+     */
+    private var asyncJobGracePeriodMs: Long? = null
+
+    /**
+     * When true, async work is launched on [asyncScope]; when false, async
+     * work is launched on [GlobalScope] (the pre-substrate behavior). Defaults
+     * to true so async coroutines cannot outlive [executeLocal].
+     */
+    private var asyncJobsScopedToStation: Boolean = true
+
+    /**
+     * Optional test observability hook. When set, every [PumpStationEvent] emitted via [emitEvent]
+     * is also dispatched synchronously to this observer. Used by tests to assert on event flow
+     * without having to drain the [backgroundEventQueue] channel.
+     */
+    @kotlinx.serialization.Transient
+    private var eventObserver: ((PumpStationEvent) -> Unit)? = null
+
+    /**
+     * When true, the harness emits events to the global [PipeTracer] (in addition to the in-process
+     * event queue and observer hook) so a trace can be exported via [getTraceReport] and visualized
+     * by [com.TTT.Debug.TraceVisualizer].
+     */
+    private var tracingEnabled: Boolean = false
+
+    /**
+     * Tracing configuration in effect when [tracingEnabled] is true.
+     */
+    private var traceConfig: TraceConfig = TraceConfig(enabled = true)
+
+    /**
      * Manifest of stashed content entries. Mirrors the [stash] map with richer metadata
      * so agents and DITL tooling can reason about what was stashed without loading content.
      */
@@ -960,10 +1458,42 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     var externalContextProvider: (() -> MutableMap<String, Any>)? = null
 
+
+
     /**
-     * Loop guard: maximum number of harness turns before forced exit.
+     * Maximum number of consecutive goal-evaluation failures before giving up
+     * on the current task. Defaults to 3.
      */
-    private var maxTurns = 50
+    private var maxGoalFailAttempts: Int = 3
+
+    /**
+     * Maximum number of raw turn history entries to retain, or null to disable
+     * the cap. Distinct from the ConverseHistory turn history cap.
+     */
+    private var maxRawTurnHistorySize: Int? = null
+
+    /**
+     * Threshold (0.0-1.0) of context window utilization that triggers blowout
+     * detection. Defaults to 0.9 (90%).
+     */
+    private var blowoutThreshold: Double = 0.9
+
+    /**
+     * Timeout in milliseconds for memory update operations. Defaults to 30s.
+     */
+    private var memoryUpdateTimeoutMs: Long = 30_000L
+
+    /**
+     * Maximum number of blowout recovery attempts before forced halt.
+     * Defaults to 3.
+     */
+    private var maxBlowoutRecoveries: Int = 3
+
+    /**
+     * Maximum number of tokens allowed in a repair/regeneration prompt.
+     * Defaults to 500.
+     */
+    private var maxRepairPromptTokens: Int = 500
 
     /**
      * Loop guard: maximum consecutive turns on the same path before triggering response.
@@ -995,7 +1525,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     /**
      * Tracks invocation counts per path name for loop guard enforcement.
      */
-    private val pathCallCounts = mutableMapOf<String, Int>()
+    internal val pathCallCounts = mutableMapOf<String, Int>()
 
     /**
      * Counts consecutive turns on the same path for [maxConsecutiveSamePath] enforcement.
@@ -1087,6 +1617,20 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     private var pathSafetyFunction: (suspend (targetPath: PathObject, schemaIn: String, harness: PumpStation) -> Boolean)? = null
 
     /**
+     * Whether the path-safety agent's output is expected to follow the JSON
+     * contract documented in [DEFAULT_JUDGE_PROMPT] style (a JSON object with a
+     * `safe` boolean field). When true (the default), the harness parses the
+     * agent's text via [parsePathSafetyVerdict] and falls back to a
+     * MultimodalContent flag check if parsing returns null. When false, the
+     * JSON parser is skipped entirely and the safety verdict comes solely from
+     * the flag check on the agent's MultimodalContent.
+     *
+     * Set to false via [setPathSafetyJsonContractEnabled] when wiring in a custom
+     * safety agent that drives the verdict with flags rather than JSON.
+     */
+    internal var pathSafetyExpectsJsonContract: Boolean = true
+
+    /**
      * DITL function invoked after the dispatch agent has generated its path output.
      */
     private var postGenerateFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> P2PInterface)? = null
@@ -1150,6 +1694,12 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         taskState.runId = runId
         taskState.status = PumpStationStatus.Running
 
+        // Reset kill-switch token accumulator. The enforcement call needs a clean baseline so
+        // the checkKillSwitch running total reflects only this run's token usage.
+        runStartElapsedMs = System.currentTimeMillis()
+        accumulatedInputTokens = 0
+        accumulatedOutputTokens = 0
+
         // Validate dispatch agent is a Pipeline (hard constraint per design)
         require(dispatchAgent is Pipeline) {
             "PumpStation.init() failed: dispatchAgent must be a Pipeline. " +
@@ -1188,9 +1738,14 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         preInitAgent?.setParentInterface(this)
         pathSafetyAgent?.setParentInterface(this)
         healthAgent?.setParentInterface(this)
-        for (agent in additionalHarnessAgents)
+        for (slot in additionalHarnessAgentSlots)
         {
-            agent.setParentInterface(this)
+            slot.agent?.setParentInterface(this)
+            slot.builderFunction?.let { fn ->
+                val agent = fn(this)
+                agent.setParentInterface(this)
+                additionalHarnessAgentSlots[additionalHarnessAgentSlots.indexOf(slot)] = slot.copy(agent = agent)
+            }
         }
 
         // Initialize all agents
@@ -1203,9 +1758,9 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         goalAgent?.P2PInit()
         preInitAgent?.P2PInit()
         pathSafetyAgent?.P2PInit()
-        for (agent in additionalHarnessAgents)
+        for (slot in additionalHarnessAgentSlots)
         {
-            agent.P2PInit()
+            slot.agent?.P2PInit()
         }
 
         // Propagate settings to all agents
@@ -1224,6 +1779,16 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Per-turn settings refresh (R.3). Re-propagates token budget and pipe
+     * settings to all configured agents so any mid-loop configuration change
+     * (e.g. via setTokenBudgetRecursive) is picked up before the next turn.
+     */
+    internal fun refreshSettingsPropagation()
+    {
+        propagateSettingsToAllAgents()
+    }
+
+    /**
      * Propagates token budget and pipe settings to all agents recursively.
      */
     private fun propagateSettingsToAllAgents()
@@ -1238,15 +1803,27 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
             goalAgent?.let { add(it) }
             preInitAgent?.let { add(it) }
             pathSafetyAgent?.let { add(it) }
-            addAll(additionalHarnessAgents)
+            for (slot in additionalHarnessAgentSlots)
+            {
+                slot.agent?.let { add(it) }
+            }
         }
 
         val budget = tokenBudgetSettings
         val settings = pipeSettings
+        val traceCfg = traceConfig
         for (agent in allAgents)
         {
             budget?.let { agent.setTokenBudgetRecursive(it) }
             settings?.let { agent.setPipeSettingsRecursively(it) }
+            // Propagate tracing to child agent pipelines so each one records its own LLM
+            // IO into the global PipeTracer under its own pipelineId. Without this, only
+            // the pump station's own runId stream is populated and the per-agent HTML
+            // exports come out empty (verified: agent-*.html was 0 bytes until this).
+            if (tracingEnabled)
+            {
+                (agent as? Pipeline)?.enableTracing(traceCfg)
+            }
         }
     }
 
@@ -1256,8 +1833,8 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     override fun getPaths(): String
     {
-        val schema = serialize(pathList)
-        return schema
+        val descriptors = getVisiblePathDescriptorsInternal()
+        return serialize(descriptors, false)
     }
 
     override fun getContextWindowFromInterface(): ContextWindow?
@@ -1319,7 +1896,17 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
             val shouldReveal = path.revealWhen.invoke(taskState, externalContext)
             if (shouldReveal)
             {
+                val firstReveal = path.pathName !in revealedReservePaths
                 revealedReservePaths.add(path.pathName)
+                if(firstReveal)
+                {
+                    emitEvent(ReservePathRevealed(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        pathName = path.pathName,
+                        reservePathNames = reservePaths.keys.toList()
+                    ))
+                }
             }
             if (revealedReservePaths.contains(path.pathName))
             {
@@ -1358,105 +1945,56 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
 
     /**
      * Primary developer entry point. Executes the PumpStation harness on the given input.
+     *
+     * If the kill switch's auto-enforcement path trips on token limits, the loop catches the
+     * [com.TTT.P2P.KillSwitchException], sets the harness state to the
+     * [PumpStationError.KillSwitchTripped] failure class, and [runFinalizationPhase] still
+     * runs to emit the standard [HarnessFailed] event for downstream observers. After
+     * finalization the exception is re-thrown to the caller so the [com.TTT.Pipeline.Manifold]
+     * throw semantics are preserved end-to-end.
      */
     override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
     {
         if (!harnessIsReady) P2PInit()
-
-        taskState.originalInput = content
-        taskState.latestContent = content
-        taskState.status = PumpStationStatus.Running
-        taskState.phase = PumpStationPhase.Judge
-
-        // Emit events for the starting phase
-        backgroundEventQueue.trySend(HarnessStarted(
-            runId = taskState.runId,
-            turnIndex = 0,
-            originalInput = content
-        ))
-
-        // === HealthCheck phase — conditional proactive wellness check ===
-        if (healthAgent != null)
-        {
-            val turnsSinceLastHealth = taskState.turnIndex - lastHealthCheckTurn
-            val errorRatio = if (taskState.turnIndex > lastHealthCheckTurn) {
-                pathCallCounts.values.sum().toDouble() / (taskState.turnIndex - lastHealthCheckTurn)
-            } else 0.0
-
-            val shouldFire = (healthAgentTurnInterval != null && turnsSinceLastHealth >= healthAgentTurnInterval!!) ||
-                (healthAgentErrorRatioThreshold != null && errorRatio >= healthAgentErrorRatioThreshold!!)
-
-            if (shouldFire)
-            {
-                // Build structured HealthContext JSON
-                val healthContextJson = serialize(HealthContext(
-                    runId = taskState.runId,
-                    turnIndex = taskState.turnIndex,
-                    harnessStatus = taskState.status,
-                    lastError = taskState.lastError?.name,
-                    consecutivePathCount = consecutivePathCount,
-                    lastSelectedPathName = lastSelectedPathName,
-                    pathCallCounts = pathCallCounts.toMap(),
-                    visiblePathNames = getVisiblePathNames(),
-                    reservePathNames = getReservePathNames(),
-                    contextFillPercent = 0.0,
-                    turnHistorySummary = turnHistory.history.takeLast(5).mapNotNull { it.content.text },
-                    recentErrors = emptyList()
-                ))
-                val healthContextContent = MultimodalContent(text = healthContextJson)
-
-                // Emit pre-event
-                backgroundEventQueue.trySend(HealthCheckCompleted(
-                    runId = taskState.runId,
-                    turnIndex = taskState.turnIndex,
-                    status = HealthStatus.Unknown,
-                    warnings = 0,
-                    terminateHarness = false
-                ))
-
-                // Execute healthAgent — Blocking mode only; Async is fire-and-forget
-                if (healthAgentConcurrencyMode != PumpStationConcurrencyMode.Async)
-                {
-                    val agent = healthAgentBuilderFunction?.invoke(this) ?: healthAgent
-                    val result = agent?.executeLocal(healthContextContent)
-
-                    // Attempt to parse HealthReport from result text
-                    val healthReport = result?.text?.let { json ->
-                        try { Json.decodeFromString<HealthReport>(json) } catch (e: Exception) { null }
-                    } ?: HealthReport()
-
-                    backgroundEventQueue.trySend(HealthCheckCompleted(
-                        runId = taskState.runId,
-                        turnIndex = taskState.turnIndex,
-                        status = healthReport.status,
-                        warnings = healthReport.warnings.size,
-                        terminateHarness = healthReport.terminateHarness
-                    ))
-                    if (healthReport.terminateHarness)
-                    {
-                        taskState.latestContent?.terminatePipeline = true
-                    }
-                    lastHealthCheckTurn = taskState.turnIndex
-                }
-            }
-        }
-
-        // TODO: Full harness execution loop goes here
-        // For now, return the input as-is as a stub
-        return content
+        runPreInitPhase(content)
+        val trip = runHarnessLoop()
+        val result = runFinalizationPhase()
+        if (trip != null) throw trip
+        return result
     }
 
     /**
      * Executes a P2P request by wrapping the harness loop with P2P requirements validation.
-     * For now, delegates to [executeLocal] with the request's prompt.
+     * Delegates to [executeLocal] with the request's prompt and emits a [NestedP2PCompleted]
+     * event so the visualizer can render the nested call as a sub-entry under the parent
+     * path's content panel.
      */
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {
         // Extract input content from request
         val content = request.prompt
+        val parentPathName = taskState.currentPathName
 
         // Execute via harness
         val result = executeLocal(content)
+
+        // Emit a nested P2P completion event so the visualizer can render this call as a
+        // sub-entry under the parent path's content panel. The token usage is read from the
+        // result's metadata where the harness records it.
+        val nestedUsage = agentTokenUsageInternal(this)
+        val nestedInput = nestedUsage?.first
+        val nestedOutput = nestedUsage?.second?.first
+        val nestedTotal = nestedUsage?.second?.second
+        backgroundEventQueue.trySend(NestedP2PCompleted(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            pathName = parentPathName,
+            agentName = "(nested-p2p)",  // P2PRequest does not carry an agent name
+            response = result,
+            inputTokens = nestedInput,
+            outputTokens = nestedOutput,
+            totalTokens = nestedTotal
+        ))
 
         return P2PResponse(
             output = result,
@@ -1495,13 +2033,381 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     fun getTaskState(): PumpStationTaskState = taskState
 
     /**
+     * Flag the judge agent to run on the next turn. One-shot: cleared automatically after the
+     * judge consumes it. No-op when [getJudgeRunMode] is [PumpStationJudgeRunMode.Always] (the
+     * judge already runs every turn).
+     *
+     * The typical usage pattern is a path the dispatch agent selects whose
+     * [PathObject.setExecutionFunction] calls this method when it believes the task is complete,
+     * for example:
+     *
+     *     path("signalDone") {
+     *         setExecutionFunction { _, pumpStation, _, _ ->
+     *             pumpStation.requestJudgeNextTurn()
+     *             MultimodalContent(text = "done")
+     *         }
+     *     }
+     *
+     * @return This PumpStation instance for method chaining.
+     */
+    fun requestJudgeNextTurn(): PumpStation
+    {
+        taskState.requestJudgeNextTurn = true
+        return this
+    }
+
+    /**
      * Emits a PumpStation event. Called by inner PathObject to emit events
      * from within path execution without needing backgroundEventQueue visibility.
      */
     private fun emitEvent(event: PumpStationEvent)
     {
         backgroundEventQueue.trySend(event)
+        eventObserver?.invoke(event)
+        // Mirror to the global PipeTracer when tracing is enabled. The funnel is implemented
+        // in PumpStationHelpers.kt and is no-op when tracingEnabled is false, so the cost is a
+        // single null check on the hot path.
+        tracePumpStationEvent(event)
     }
+
+    /**
+     * Internal-facing event emit. Used by sibling loop files
+     * (PumpStationLoop.kt) to emit harness events from extension functions.
+     */
+    internal fun emitEventInternal(event: PumpStationEvent)
+    {
+        emitEvent(event)
+    }
+
+    //=====================================Internal DITL accessors==================================================
+    // Internal accessors so PumpStationLoop.kt extension functions can read the
+    // private DITL fields. Each accessor is read-only — mutation must go through
+    // the public setters to preserve the existing fluent API.
+
+    internal val preInvokeFunctionInternal get() = preInvokeFunction
+    internal val preInitFunctionInternal get() = preInitFunction
+    internal val preValidationJudgeFunctionInternal get() = preValidationJudgeFunction
+    internal val preValidationDispatchFunctionInternal get() = preValidationDispatchFunction
+    internal val postJudgeFunctionInternal get() = postJudgeFunction
+    internal val postGenerateFunctionInternal get() = postGenerateFunction
+    internal val pathValidationFunctionInternal get() = pathValidationFunction
+    internal val pathTransformationFunctionInternal get() = pathTransformationFunction
+    internal val postMemoryFunctionInternal get() = postMemoryFunction
+    internal val preCompactionFunctionInternal get() = preCompactionFunction
+    internal val postCompactionFunctionInternal get() = postCompactionFunction
+    internal val pathSafetyFunctionInternal get() = pathSafetyFunction
+    internal val onContextTruncatedInternal get() = onContextTruncated
+    internal val maxRepairPromptTokensInternal get() = maxRepairPromptTokens
+    internal val maxBlowoutRecoveriesInternal get() = maxBlowoutRecoveries
+    internal val blowoutThresholdInternal get() = blowoutThreshold
+
+    //=====================================Group K accessors========================================================
+    // Internal accessors so PumpStationLoop.kt extension functions (Group K: context
+    // blowout detection) can read and mutate the private [stash] and [stashManifest]
+    // collections. Read access to manifest is also exposed via [getStashManifest].
+
+    internal val stashInternal: MutableMap<String, ConverseData> get() = stash
+    internal val stashManifestInternal: MutableList<StashEntry> get() = stashManifest
+
+    //=====================================Group I accessors======================================================
+    // Internal accessors so PumpStationLoop.kt extension functions (Group I: health,
+    // memory update, compaction phases) can read the private backing fields. Each
+    // accessor is read-only — mutation must go through the public setters to
+    // preserve the existing fluent API.
+
+    internal val healthAgentInternal get() = healthAgent
+    internal val healthAgentBuilderFunctionInternal get() = healthAgentBuilderFunction
+    internal val healthAgentTurnIntervalInternal get() = healthAgentTurnInterval
+    internal val healthAgentErrorRatioThresholdInternal get() = healthAgentErrorRatioThreshold
+    internal var lastHealthCheckTurnInternal: Int
+        get() = lastHealthCheckTurn
+        set(value) { lastHealthCheckTurn = value }
+    internal val lorebookAgentInternal get() = lorebookAgent
+    internal val summaryAgentInternal get() = summaryAgent
+    internal val backgroundTurnIntervalInternal get() = backgroundTurnInterval
+    internal val maxConcurrentBackgroundAgentsInternal get() = maxConcurrentBackgroundAgents
+    internal val asyncJobsScopedToStationInternal get() = asyncJobsScopedToStation
+    internal val asyncAgentsAppendToTurnHistoryInternal get() = asyncAgentsAppendToTurnHistory
+    internal val asyncPathsAppendToTurnHistoryInternal get() = asyncPathsAppendToTurnHistory
+    internal val foregroundTurnIntervalInternal get() = foregroundTurnInterval
+    internal val additionalHarnessAgentSlotsInternal get() = additionalHarnessAgentSlots
+    internal val compactionThresholdInternal get() = compactionThreshold
+    internal val compactionStrategyInternal get() = compactionStrategy
+    internal val memoryManagementModeInternal get() = memoryManagementMode
+
+    //=====================================v3: compaction / lorebook accessors====================================
+    // Mirrors the existing Group I accessor pattern. Reads and writes to the v3 state
+    // live alongside the existing per-turn fields so the orchestrator in PumpStationLoop.kt
+    // can keep its call sites short and consistent.
+
+    /** Internal read of the v3 compaction cursor. */
+    internal val compactionCursorInternal: CompactionCursor
+        get() = compactionCursor
+
+    /**
+     * Internal write of the v3 compaction cursor. The setter also propagates the new
+     * value into [taskState.compactionCursor] so the snapshot and replay path sees the
+     * same state the orchestrator is working with.
+     */
+    internal var compactionCursorWrite: CompactionCursor
+        get() = compactionCursor
+        set(value)
+        {
+            compactionCursor = value
+            taskState.compactionCursor = value
+        }
+
+    /** Internal read of the v3 lorebook cursor. */
+    internal val lorebookCursorInternal: LorebookCursor
+        get() = lorebookCursor
+
+    /**
+     * Internal write of the v3 lorebook cursor. Mirrors the [compactionCursorWrite] pattern.
+     */
+    internal var lorebookCursorWrite: LorebookCursor
+        get() = lorebookCursor
+        set(value)
+        {
+            lorebookCursor = value
+            taskState.lorebookCursor = value
+        }
+
+    /** Ring buffer of compaction backups (read-only for orchestrator). */
+    internal val compactionBackupsInternal: ArrayDeque<CompactionBackup>
+        get() = compactionBackups
+
+    internal val prePruneTransformInternal get() = prePruneTransform
+    internal val extraPrePruneTransformsInternal: List<suspend (List<ConverseData>, PumpStation) -> List<ConverseData>>
+        get() = extraPrePruneTransforms
+
+    internal val compactionRolledBackFunctionInternal get() = compactionRolledBackFunction
+    internal val maxCompactionAttemptsInternal get() = maxCompactionAttempts
+    internal val chunkTokenBudgetInternal get() = chunkTokenBudget
+    internal val maxChunksInternal get() = maxChunks
+    internal val maxParallelChunksInternal get() = maxParallelChunks
+    internal val maxCompactionBackupsInternal get() = maxCompactionBackups
+    internal val compactionFanoutModeInternal get() = compactionFanoutMode
+    internal val hybridWholeHeadroomInternal get() = hybridWholeHeadroom
+    internal val memoryUpdateTimeoutMsInternal get() = memoryUpdateTimeoutMs
+    internal val consecutivePathCountInternal: Int
+        get() = consecutivePathCount
+    internal val lastSelectedPathNameInternal get() = lastSelectedPathName
+
+    //=====================================Tracing Accessors================================================
+    // Internal accessors so PumpStationHelpers.kt and PumpStationLoop.kt extension functions can read
+    // the private [tracingEnabled] field when deciding whether to mirror PumpStationEvents into the
+    // global PipeTracer. The helper does its own null checks; we only need to expose the flag.
+
+    internal val tracingEnabledInternal get() = tracingEnabled
+
+    //=====================================Group L accessors======================================================
+    // Internal accessor for the private [maxGoalFailAttempts] field so that
+    // PumpStationLoop.kt extension functions (Group L: exit flow with goal
+    // recursion) can compare it against [PumpStationTaskState.goalFailCount].
+
+    internal val maxGoalFailAttemptsInternal get() = maxGoalFailAttempts
+
+    //=====================================Group M accessors========================================================
+    // Internal accessors so PumpStationLoop.kt extension functions (Group M: main
+    // loop wiring) can read the private [preInitAgent], [eventObserver],
+    // [backgroundEventQueue], and [maxTurns] fields. These fields are read
+    // by runPreInitPhase/runFinalizationPhase/runHarnessLoop/runTurn and
+    // drainBackgroundEventQueue.
+
+    internal val preInitAgentInternal get() = preInitAgent
+    internal val eventObserverInternal get() = eventObserver
+    internal val backgroundEventQueueInternal get() = backgroundEventQueue
+    internal val maxTurnsInternal get() = maxTurns
+
+    //=====================================Group O accessors========================================================
+    // Internal accessors so PumpStationLoop.kt extension functions (Group O: prune
+    // history + emergency halt) can read the private [maxTurnHistorySize] and
+    // [maxRawTurnHistorySize] fields. These are read by pruneTurnHistory and
+    // pruneRawTurnHistory.
+
+    internal val maxTurnHistorySizeInternal get() = maxTurnHistorySize
+    internal val maxRawTurnHistorySizeInternal get() = maxRawTurnHistorySize
+
+    //=====================================Group O: KillSwitch Accessors==============================================
+    /**
+     * Internal accessors so [PumpStationLoop.kt] extension functions (Group O: kill switch
+     * auto-enforcement) can read the private token-accumulator fields. [addTokenUsage] is
+     * also exposed as an internal function so the loop can update the running total.
+     *
+     * @property runStartElapsedMsInternal Exposes [runStartElapsedMs] to the loop.
+     * @property accumulatedInputTokensInternal Exposes [accumulatedInputTokens] to the loop.
+     * @property accumulatedOutputTokensInternal Exposes [accumulatedOutputTokens] to the loop.
+     */
+    internal val runStartElapsedMsInternal get() = runStartElapsedMs
+    internal val accumulatedInputTokensInternal get() = accumulatedInputTokens
+    internal val accumulatedOutputTokensInternal get() = accumulatedOutputTokens
+
+    //=====================================Group O: Emergency Halt====================================================
+    // Trip/force-halt methods so the PumpStationLoop can be safely interrupted
+    // by external observers. tripKillSwitch() marks the harness as tripped and
+    // also sets taskState so the loop exits on the next checkPauseGuards() call.
+    // forceHalt() additionally wakes any suspended loop via notifyResume() and
+    // emits a HarnessFailed event on the background event queue.
+
+    /**
+     * Trip the kill switch. The harness will halt on the next checkPauseGuards() call.
+     * If a [KillSwitch] is attached, invokes its trip callback. Always also sets
+     * [PumpStationTaskState.exitReason] and [PumpStationTaskState.lastError] so the
+     * loop exits deterministically even when no KillSwitch is configured.
+     */
+    fun tripKillSwitch()
+    {
+        killSwitch?.let { ks ->
+            // Invoking the onTripped callback would normally throw, but it has type
+            // (KillSwitchContext) -> Nothing, so we don't invoke it here. We just
+            // record the trip and let the checkPauseGuards halt the loop.
+            ks.toString()
+        }
+        taskState.exitReason = PumpStationExitReason.KillSwitchTripped
+        taskState.lastError = PumpStationError.KillSwitchTripped
+    }
+
+    /**
+     * Force the harness to halt. Use this as an emergency exit from a paused state.
+     * Sets [PumpStationTaskState.exitReason], marks the task as [PumpStationStatus.Failed],
+     * notifies the suspended loop to wake up and exit, and emits a [HarnessFailed] event
+     * on the [backgroundEventQueue].
+     */
+    suspend fun forceHalt(reason: PumpStationExitReason)
+    {
+        taskState.exitReason = reason
+        taskState.status = PumpStationStatus.Failed
+        notifyResume()
+        backgroundEventQueueInternal.trySend(HarnessFailed(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            error = PumpStationError.KillSwitchTripped,
+            errorMessage = reason.name,
+            exitReason = reason
+        ))
+    }
+
+    /**
+     * Internal accessor for the private [invokePath] funnel so that
+     * PumpStationLoop.kt extension functions can call it from the runPathFlow
+     * phase helper. Preserves the existing private visibility for outside callers.
+     */
+    internal suspend fun invokePathInternal(path: PathObject, input: MultimodalContent): MultimodalContent
+    {
+        return invokePath(path, input)
+    }
+
+    /**
+     * Registers a synchronous observer for every [PumpStationEvent] emitted by the harness.
+     * Intended for test observability; the observer is invoked on whichever thread/coroutine
+     * called [emitEvent]. Pass null to clear.
+     *
+     * @param observer Callback invoked with each event, or null to clear the observer.
+     * @return This [PumpStation] for method chaining.
+     */
+    fun setEventObserver(observer: ((PumpStationEvent) -> Unit)?): PumpStation
+    {
+        this.eventObserver = observer
+        return this
+    }
+    /**
+     * Registers a richer [externalContextProvider] that receives the current
+     * [PumpStationTaskState] when invoked. The runtime stores it as a no-arg
+     * supplier; the wrapper captures [taskState] at call time.
+     *
+     * Use this when you need access to the harness task state to make
+     * context decisions (e.g. reading path call counts, the active reserve
+     * path set, or the latest turn index). The simpler no-arg
+     * [externalContextProvider] setter is preserved for direct callers.
+     *
+     * @param provider The external context provider, or null to clear.
+     * @return This [PumpStation] for method chaining.
+     */
+    fun setExternalContextProvider(provider: ((PumpStationTaskState) -> MutableMap<String, Any>)?): PumpStation
+    {
+        this.externalContextProvider = if(provider == null) null else { -> provider.invoke(this.getTaskState()) }
+        return this
+    }
+
+
+    /**
+     * Enables tracing for this PumpStation with the specified configuration. When enabled, every
+     * [PumpStationEvent] emitted by the loop is mirrored into the global [PipeTracer] so the trace
+     * can be exported via [getTraceReport] and visualized by [com.TTT.Debug.TraceVisualizer].
+     *
+     * The PumpStation trace is keyed by [taskState.runId] (generated in [P2PInit]). Calling
+     * [enableTracing] before [executeLocal] ensures the trace stream is created at the start of
+     * the first run.
+     *
+     * @param config The tracing configuration to use.
+     * @return This PumpStation for method chaining.
+     */
+    fun enableTracing(config: TraceConfig = TraceConfig(enabled = true)): PumpStation
+    {
+        this.tracingEnabled = true
+        this.traceConfig = config
+        PipeTracer.enable()
+        PipeTracer.setMaxHistory(config.maxHistory)
+        return this
+    }
+
+    /**
+     * Returns the trace report for this PumpStation in the specified format. The report is rendered
+     * by [com.TTT.Debug.TraceVisualizer] with the custom turn-centric layout when the trace contains
+     * PUMP_STATION_* events.
+     *
+     * @param format The output format. Defaults to [traceConfig.outputFormat].
+     * @return The formatted trace report as a string, or an explanatory message if tracing was not
+     *         enabled before the run.
+     */
+    fun getTraceReport(format: TraceFormat = traceConfig.outputFormat): String
+    {
+        val traceId = taskState.runId.takeIf { it.isNotBlank() }
+            ?: return "(PumpStation trace unavailable: harness has not been started. Call executeLocal() first.)"
+
+        return try
+        {
+            val report = PipeTracer.exportTrace(traceId, format)
+
+            if(traceConfig.autoExport)
+            {
+                val extension = when(format)
+                {
+                    TraceFormat.HTML -> "html"
+                    TraceFormat.JSON -> "json"
+                    TraceFormat.MARKDOWN -> "md"
+                    TraceFormat.CONSOLE -> "txt"
+                }
+                val filename = "pumpstation-${traceId.take(12)}.$extension"
+                val exportPath = traceConfig.exportPath.trimEnd('/') + "/" + filename
+                writeStringToFile(exportPath, report)
+            }
+
+            report
+        }
+        catch (e: Exception)
+        {
+            "(PumpStation trace export failed: ${e.message})"
+        }
+    }
+
+    /**
+     * Returns a [FailureAnalysis] for this PumpStation if tracing is enabled.
+     *
+     * @return A FailureAnalysis object or null if tracing is disabled or the harness has not run.
+     */
+    fun getFailureAnalysis(): FailureAnalysis?
+    {
+        if(!tracingEnabled) return null
+        val traceId = taskState.runId.takeIf { it.isNotBlank() } ?: return null
+        return PipeTracer.getFailureAnalysis(traceId)
+    }
+
+    /**
+     * Returns the trace ID for this PumpStation, or null if the harness has not been started.
+     * The trace ID is the [taskState.runId] generated during [P2PInit].
+     */
+    fun getTraceId(): String? = taskState.runId.takeIf { it.isNotBlank() }
 
     /**
      * Returns the current stash manifest (rich metadata about stashed content)
@@ -1510,16 +2416,25 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     fun getStashManifest(): List<StashEntry> = stashManifest.toList()
 
     /**
+     * Retrieves a stashed ConverseData entry by its stash ID.
+     * Returns null if no entry exists with that ID.
+     */
+    fun retrieveStash(stashId: String): ConverseData? = stash[stashId]
+
+    /**
      * Returns a path by name, searching both normal and reserve paths.
      */
     fun getPath(name: String): PathObject? = pathList[name] ?: reservePaths[name]
 
     /**
-     * Adds a path to the normal path list (not reserve). The path's parent is set to this station.
+     * Adds a path to the normal path list (not reserve). The path's parent is set to this station,
+     * and the station's current [killSwitch] (if any) is propagated to the new path so per-path
+     * enforcement stays in sync without requiring the caller to re-assign the switch.
      */
     fun addPath(path: PathObject)
     {
         path.setParentInterface(this)
+        path.killSwitch = _killSwitch
         pathList[path.pathName] = path
     }
 
@@ -1632,6 +2547,9 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
             turnIndex = taskState.turnIndex,
             phase = taskState.phase
         ))
+
+        // Wake up any suspended checkPauseGuards call in the loop.
+        notifyResume()
     }
 
     /**
@@ -1644,13 +2562,38 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * @param input The [MultimodalContent] input to the path
      * @return [MultimodalContent] result from path execution
      */
+    /**
+     * Path-safety gate. Returns true if the path is approved to run, false if
+     * it should be rejected. The result is computed from (in priority order):
+     *   1. The custom [pathSafetyFunction] if set, OR
+     *   2. The [pathSafetyAgent] if set, with the verdict extracted via
+     *      [parsePathSafetyVerdict] when [pathSafetyExpectsJsonContract] is true,
+     *      and from MultimodalContent flags (terminatePipeline / passPipeline)
+     *      when it is false, OR
+     *   3. true (default approve) when neither function nor agent is set.
+     *
+     * The safety gate runs for any path with [PathRiskLevel] greater than Low
+     * (i.e. Medium or High). Extracted from [invokePathInternal] as a separate
+     * method so the gating behavior is testable in isolation.
+     */
+    suspend fun checkPathSafety(path: PathObject, input: MultimodalContent): Boolean
+    {
+        pathSafetyFunction?.let { fn ->
+            return fn(path, path.pathSchema, this)
+        }
+        val agent = pathSafetyAgent ?: return true
+        val result = agent.executeLocal(input)
+        val parsed = if (pathSafetyExpectsJsonContract) parsePathSafetyVerdict(result.text) else null
+        return parsed ?: !(result.terminatePipeline || result.passPipeline)
+    }
+
     private suspend fun invokePath(path: PathObject, input: MultimodalContent): MultimodalContent
     {
         val pathName = path.pathName
         val riskLevel = path.riskLevel
 
         // Emit PathSelected event
-        backgroundEventQueue.trySend(PathSelected(
+        emitEventInternal(PathSelected(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
             phase = PumpStationPhase.Dispatch,
@@ -1666,8 +2609,15 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
                 consecutivePathCount++
                 if (consecutivePathCount >= maxConsecutiveSamePath!!)
                 {
-                    // Loop guard triggered — emit PathFailed, then call interventionAgent if set
-                    backgroundEventQueue.trySend(PathFailed(
+                    // Loop guard triggered — emit PathFailed + LoopGuardTripped, then call interventionAgent if set
+                    emitEventInternal(LoopGuardTripped(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        guard = "maxConsecutiveSamePath",
+                        pathName = pathName,
+                        detail = "consecutive=$consecutivePathCount, limit=${maxConsecutiveSamePath!!}"
+                    ))
+                    emitEventInternal(PathFailed(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         phase = PumpStationPhase.PathExecution,
@@ -1678,20 +2628,25 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
                     ))
 
                     // Emit InterventionStarted, invoke interventionAgent if configured, then emit InterventionCompleted
-                    backgroundEventQueue.trySend(InterventionStarted(
+                    emitEventInternal(InterventionStarted(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         trigger = PumpStationError.LoopGuardTriggered,
                         pathName = pathName
                     ))
 
-                    interventionAgent?.executeLocal(taskState.latestContent ?: MultimodalContent())
+                    val interventionResult = interventionAgent?.executeLocal(taskState.latestContent ?: MultimodalContent())
+                    val interventionUsage = agentTokenUsageInternal(interventionAgent)
 
-                    backgroundEventQueue.trySend(InterventionCompleted(
+                    emitEventInternal(InterventionCompleted(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         nudges = 0,
-                        shouldContinue = true
+                        shouldContinue = true,
+                        result = interventionResult,
+                        inputTokens = interventionUsage?.first,
+                        outputTokens = interventionUsage?.second?.first,
+                        totalTokens = interventionUsage?.second?.second
                     ))
                 }
             }
@@ -1707,6 +2662,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         pathCallCounts[pathName] = callCount
         if (maxTotalPathCallsPerPath != null && callCount > maxTotalPathCallsPerPath!!)
         {
+            emitEventInternal(LoopGuardTripped(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                guard = "maxTotalPathCallsPerPath",
+                pathName = pathName,
+                detail = "count=$callCount, limit=${maxTotalPathCallsPerPath!!}"
+            ))
             val limitResult = pathLimitExceededFunction?.invoke(
                 path,
                 "maxTotalPathCallsPerPath exceeded",
@@ -1720,7 +2682,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
             {
                 PathLimitExceededPolicy.Skip ->
                 {
-                    backgroundEventQueue.trySend(PathHidden(
+                    emitEventInternal(PathHidden(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         pathName = pathName,
@@ -1732,7 +2694,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
                 {
                     taskState.latestContent?.terminatePipeline = true
                     taskState.lastError = PumpStationError.MaxTurnsExceeded
-                    backgroundEventQueue.trySend(PathFailed(
+                    emitEventInternal(PathFailed(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         phase = PumpStationPhase.PathExecution,
@@ -1745,7 +2707,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
                 }
                 PathLimitExceededPolicy.Continue ->
                 {
-                    backgroundEventQueue.trySend(PathFailed(
+                    emitEventInternal(PathFailed(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         phase = PumpStationPhase.PathExecution,
@@ -1762,22 +2724,26 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         if (riskLevel != PathRiskLevel.Low)
         {
             // Emit PathSafetyStarted event
-            backgroundEventQueue.trySend(PathSafetyStarted(
+            emitEventInternal(PathSafetyStarted(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
                 pathName = pathName,
                 riskLevel = riskLevel
             ))
 
-            // Call path safety function or agent — function OR agent, first to return true approves
-            val approved = pathSafetyFunction?.invoke(path, path.pathSchema, this)
-                ?: pathSafetyAgent?.let { agent ->
-                    val result = agent.executeLocal(input)
-                    !(result.terminatePipeline || result.passPipeline)
-                }
-                ?: true
+            // Call path safety function or agent — function OR agent, first to return true approves.
+            //
+            // The agent's verdict is parsed as a structured `{"safe": bool, ...}` JSON object
+            // (see [parsePathSafetyVerdict]). The legacy flag-based check
+            // (`!result.terminatePipeline && !result.passPipeline`) is kept as a fallback
+            // so custom agents that don't follow the JSON convention still work — but a
+            // real path-safety LLM that returns `{"safe": false}` is now actually consulted.
+            // Previously the flag check was the only gate, which made the safety check a
+            // degenerate always-approve (LLMs don't normally set terminatePipeline on a
+            // safety verdict response).
+            val approved = checkPathSafety(path, input)
 
-            backgroundEventQueue.trySend(PathSafetyCompleted(
+            emitEventInternal(PathSafetyCompleted(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
                 pathName = pathName,
@@ -1793,7 +2759,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         }
 
         // --- Emit PathStarted event ---
-        backgroundEventQueue.trySend(PathStarted(
+        emitEventInternal(PathStarted(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
             pathName = pathName,
@@ -1801,13 +2767,19 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         ))
 
         // --- Execute the path ---
+        //
+        // Set taskState.currentPathName so nested P2P calls inside the path (via executeP2PRequest)
+        // can annotate themselves with the parent path. Cleared in the finally block to avoid
+        // leaking the path name into subsequent operations.
+        val priorPathName = taskState.currentPathName
+        taskState.currentPathName = pathName
         val result = try
         {
             path.execute(input, this, turnHistory, turnSummary)
         }
         catch(e: Exception)
         {
-            backgroundEventQueue.trySend(PathFailed(
+            emitEventInternal(PathFailed(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
                 pathName = pathName,
@@ -1816,19 +2788,51 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
                 errorMessage = e.message
             ))
             taskState.lastError = PumpStationError.PathExecutionException
+            taskState.currentPathName = priorPathName
             return input
+        }
+        finally
+        {
+            // Restore the prior path name even on success — the next operation should not see
+            // this path's name as the ambient context.
+            taskState.currentPathName = priorPathName
         }
 
         // --- Emit PathCompleted event ---
-        backgroundEventQueue.trySend(PathCompleted(
+        // Read the path's token usage. The legacy-fields helper is preferred over the
+        // comprehensive-tracking TokenUsage because the base Pipe.countTokens call always
+        // populates the legacy fields on every execution, whereas the comprehensive totals
+        // require the pipe to opt in. See PathObject.getPathLegacyTokenUsage for the full
+        // rationale. The PathCompleted event mirrors the same numbers back to listeners.
+        val (pathInputTokens, pathOutputTokens) = path.getPathLegacyTokenUsage()
+        val pathTotalTokens = if (pathInputTokens > 0 || pathOutputTokens > 0)
+            pathInputTokens + pathOutputTokens else 0
+        emitEventInternal(PathCompleted(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
             phase = PumpStationPhase.PathExecution,
             pathName = pathName,
             riskLevel = riskLevel,
             result = result,
-            tokensUsed = null
+            inputTokens = pathInputTokens.takeIf { it > 0 },
+            outputTokens = pathOutputTokens.takeIf { it > 0 },
+            totalTokens = pathTotalTokens.takeIf { it > 0 }
         ))
+
+        // Per-path kill switch enforcement. The path's own killSwitch is checked against the
+        // path's own token usage (not the station's accumulated total). A path can carry a
+        // stricter limit than the station, and the propagation from PumpStation.addPath /
+        // PumpStation.killSwitch setter ensures the slot is populated. The default
+        // KillSwitch.onTripped throws KillSwitchException which propagates up through
+        // runHarnessLoop's catch and transitions the run to a PumpStationError.KillSwitchTripped
+        // failure state.
+        if (pathInputTokens > 0 || pathOutputTokens > 0)
+        {
+            // Station accumulator: per-path tokens also count toward the station total so the
+            // station-level check can trip on cumulative usage as well.
+            addTokenUsage(pathInputTokens, pathOutputTokens)
+            path.checkKillSwitch(pathInputTokens, pathOutputTokens, runStartElapsedMs)
+        }
 
         taskState.lastPathResult = result
         taskState.latestContent = result
@@ -1837,7 +2841,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         if (pathValidationFunction != null)
         {
             val validated = pathValidationFunction!!.invoke(result, this)
-            backgroundEventQueue.trySend(PathValidationCompleted(
+            emitEventInternal(PathValidationCompleted(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
                 pathName = pathName,
@@ -1888,6 +2892,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     fun setJudgeAgent(agent: Pipeline?): PumpStation
     {
         this.judgeAgent = agent
+        if(agent != null) autoInjectDefaultPrompt(agent, customJudgeSystemPrompt, DEFAULT_JUDGE_PROMPT)
         return this
     }
 
@@ -1901,6 +2906,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     fun setDispatchAgent(agent: Pipeline?): PumpStation
     {
         this.dispatchAgent = agent
+        if(agent != null) autoInjectDefaultPrompt(agent, customDispatchSystemPrompt, DEFAULT_DISPATCH_PROMPT)
         return this
     }
 
@@ -2139,23 +3145,201 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         return this
     }
 
+    //=====================================v3: Compaction setters=================================================
+
     /**
-     * Sets the maximum number of harness turns before forced exit.
+     * Sets the chunk fan-out mode for the [PumpStationCompactionStrategy.Chunked] strategy.
+     * Default is [ChunkFanoutMode.Sequential]. Switching to [ChunkFanoutMode.Parallel]
+     * requires a maxParallelChunks value (configurable via [setMaxParallelChunks]).
+     *
+     * @param mode The fan-out mode.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setCompactionFanoutMode(mode: ChunkFanoutMode): PumpStation
+    {
+        this.compactionFanoutMode = mode
+        return this
+    }
+
+    /**
+     * Sets the maximum number of compaction attempts (pre-prune + summarize + fold) the
+     * orchestrator will run before handing off to truncation. Default is 2.
+     *
+     * @param value The maximum attempts; must be >= 1.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxCompactionAttempts(value: Int): PumpStation
+    {
+        require(value >= 1) { "maxCompactionAttempts must be >= 1, got $value" }
+        this.maxCompactionAttempts = value
+        return this
+    }
+
+    /**
+     * Sets the token budget per chunk for the Chunked strategy. The orchestrator partitions
+     * `turnHistory` into `max(1, tokens / chunkTokenBudget)` chunks (capped by
+     * [setMaxChunks]). Default 2000.
+     */
+    fun setChunkTokenBudget(value: Int): PumpStation
+    {
+        require(value >= 1) { "chunkTokenBudget must be >= 1, got $value" }
+        this.chunkTokenBudget = value
+        return this
+    }
+
+    /**
+     * Sets the hard cap on the number of chunks the Chunked strategy produces from a
+     * single attempt. Default 16. Prevents pathological partitioning of very large
+     * histories.
+     */
+    fun setMaxChunks(value: Int): PumpStation
+    {
+        require(value >= 1) { "maxChunks must be >= 1, got $value" }
+        this.maxChunks = value
+        return this
+    }
+
+    /**
+     * Sets the semaphore permit count for the [ChunkFanoutMode.Parallel] strategy. Default
+     * 4. Bounds the number of concurrent chunk-summarize calls to the summary agent.
+     */
+    fun setMaxParallelChunks(value: Int): PumpStation
+    {
+        require(value >= 1) { "maxParallelChunks must be >= 1, got $value" }
+        this.maxParallelChunks = value
+        return this
+    }
+
+    /**
+     * Sets the maximum number of [CompactionBackup] snapshots retained in the ring buffer.
+     * Default 3. Older backups are dropped when the buffer overflows.
+     */
+    fun setMaxCompactionBackups(value: Int): PumpStation
+    {
+        require(value >= 1) { "maxCompactionBackups must be >= 1, got $value" }
+        this.maxCompactionBackups = value
+        return this
+    }
+
+    /**
+     * Sets the headroom threshold (0.0-1.0) below which the
+     * [PumpStationCompactionStrategy.Hybrid] strategy downgrades to Chunked. Above this
+     * headroom, Hybrid delegates to Whole. Default 0.3.
+     */
+    fun setHybridWholeHeadroom(value: Double): PumpStation
+    {
+        require(value in 0.0..1.0) { "hybridWholeHeadroom must be in [0,1], got $value" }
+        this.hybridWholeHeadroom = value
+        return this
+    }
+
+    /**
+     * Replaces the default pre-prune transform entirely. The transform is applied to
+     * the raw [turnHistory] before it reaches the summary agent, allowing the developer
+     * to drop application-specific noise (e.g. their own marker tokens) without paying
+     * LLM cost. Pass null to restore the default pruner.
+     */
+    fun setPrePruneTransform(
+        transform: (suspend (List<ConverseData>, PumpStation) -> List<ConverseData>)?
+    ): PumpStation
+    {
+        this.prePruneTransform = transform
+        return this
+    }
+
+    /**
+     * Adds an extra pre-prune transform that runs *after* the default pruner. Multiple
+     * extra pruners can be registered; they run in registration order. Returns the
+     * registration index so the developer can later remove the transform if needed.
+     */
+    fun appendPrePruneTransform(
+        transform: suspend (List<ConverseData>, PumpStation) -> List<ConverseData>
+    ): Int
+    {
+        extraPrePruneTransforms.add(transform)
+        return extraPrePruneTransforms.size - 1
+    }
+
+    /**
+     * Sets the DITL function that fires when a [CompactionBackup] is restored. The function
+     * receives the backup, a human-readable reason, and the harness. It may return a
+     * replacement backup (which will be applied) or null to use the restored one as-is.
+     * Throwing from this hook converts the orchestrator's retry to a handoff-to-truncation.
+     * Pass null to clear the binding.
+     */
+    fun setCompactionRolledBackFunction(
+        func: (suspend (CompactionBackup, String, PumpStation) -> CompactionBackup?)?
+    ): PumpStation
+    {
+        this.compactionRolledBackFunction = func
+        return this
+    }
+
+    /**
+     * Sets the maximum number of harness turns before forced exit. Delegating alias
+     * for [setMaxTurns]; both setters write the same [maxTurns] backing field that
+     * the harness loop reads. Kept as a top-level setter so existing callers using
+     * `station.setMaxHarnessTurns(N)` continue to work without modification.
      *
      * @param max The maximum harness turns.
      * @return This PumpStation instance for method chaining.
      */
     fun setMaxHarnessTurns(max: Int): PumpStation
     {
-        this.maxHarnessTurns = max
+        this.maxTurns = max
         return this
     }
 
     /**
-     * Sets the alternate loop-guard maximum turns value. Currently mirrors
-     * [setMaxHarnessTurns] in effect but is preserved as a distinct field.
+     * Sets the judge run mode for this PumpStation. See [PumpStationJudgeRunMode] for semantics.
+     * Default is [PumpStationJudgeRunMode.Always] (judge fires every turn).
      *
-     * @param max The maximum number of turns.
+     * @param mode The judge run mode.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setJudgeRunMode(mode: PumpStationJudgeRunMode): PumpStation
+    {
+        this.judgeRunModeInternal = mode
+        return this
+    }
+
+    /**
+     * Returns the active judge run mode. See [PumpStationJudgeRunMode] for semantics.
+     */
+    fun getJudgeRunMode(): PumpStationJudgeRunMode = judgeRunModeInternal
+
+    /**
+     * Returns the configured judge agent pipeline, or `null` if no judge has been wired.
+     * Public accessor for the [judgeAgent] field; useful in defaults factories and integration
+     * tests that need to verify the slot was filled.
+     */
+    fun getJudgeAgent(): Pipeline? = judgeAgent
+
+    /**
+     * Returns the configured dispatch agent pipeline, or `null` if no dispatch agent has been wired.
+     * Public accessor for the [dispatchAgent] field; useful in defaults factories and integration
+     * tests that need to verify the slot was filled.
+     */
+    fun getDispatchAgent(): Pipeline? = dispatchAgent
+
+    /**
+     * Returns the configured kill switch instance, or `null` if no kill switch has been wired.
+     * Public accessor with a non-conflicting name (the [killSwitch] property auto-generates
+     * `getKillSwitch()` on the JVM, so this is named to disambiguate); useful in defaults
+     * factories and integration tests that need to verify the slot was filled.
+     */
+    fun getConfiguredKillSwitch(): com.TTT.P2P.KillSwitch? = killSwitch
+
+    /**
+     * Sets the maximum number of harness turns before forced exit. This is the
+     * canonical loop-guard setter; the [com.TTT.Pipeline.PumpStationLoop.runHarnessLoop]
+     * extension reads the value via [maxTurnsInternal] and terminates with
+     * [PumpStationError.MaxTurnsExceeded] / [PumpStationExitReason.MaxTurnsHit]
+     * when [com.TTT.Pipeline.PumpStationTaskState.turnIndex] reaches the cap.
+     *
+     * [setMaxHarnessTurns] is a delegating alias that writes the same field.
+     *
+     * @param max The maximum number of harness turns.
      * @return This PumpStation instance for method chaining.
      */
     fun setMaxTurns(max: Int): PumpStation
@@ -2163,6 +3347,142 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         this.maxTurns = max
         return this
     }
+
+    /**
+     * Sets the maximum number of consecutive goal-evaluation failures before
+     * the harness gives up on the current task.
+     *
+     * @param value The maximum goal-fail attempts.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxGoalFailAttempts(value: Int): PumpStation
+    {
+        this.maxGoalFailAttempts = value
+        return this
+    }
+
+    /**
+     * Returns the maximum number of consecutive goal-evaluation failures
+     * before the harness gives up on the current task.
+     */
+    fun getMaxGoalFailAttempts(): Int = maxGoalFailAttempts
+
+    /**
+     * Returns the maximum number of harness turns. Public mirror of the
+     * private [maxTurns] field; the harness loop enforces this limit via
+     * [com.TTT.Pipeline.PumpStationLoop]. Companion to [getMaxTurns] and
+     * [setMaxHarnessTurns]; both names read the same backing field.
+     */
+    fun getMaxHarnessTurns(): Int = maxTurns
+
+    /**
+     * Returns the maximum number of harness turns configured via [setMaxTurns]
+     * (or its delegating alias [setMaxHarnessTurns]). This is the canonical
+     * loop-guard budget; the harness loop enforces it via
+     * [com.TTT.Pipeline.PumpStationLoop].
+     */
+    fun getMaxTurns(): Int = maxTurns
+
+    /**
+     * Returns whether the judge agent is expected to emit a JSON contract
+     * verdict. Mirrors the [setJudgeJsonContractEnabled] setter.
+     */
+    fun getJudgeJsonContractEnabled(): Boolean = judgeExpectsJsonContract
+
+    /**
+     * Returns whether the path-safety agent is expected to emit a JSON
+     * contract verdict. Mirrors the [setPathSafetyJsonContractEnabled]
+     * setter.
+     */
+    fun getPathSafetyJsonContractEnabled(): Boolean = pathSafetyExpectsJsonContract
+
+    /**
+     * Sets the maximum number of raw turn history entries to retain.
+     *
+     * @param value The maximum raw turn history size, or null to disable the cap.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxRawTurnHistorySize(value: Int?): PumpStation
+    {
+        this.maxRawTurnHistorySize = value
+        return this
+    }
+
+    /**
+     * Returns the maximum number of raw turn history entries to retain, or
+     * null if no cap is enforced.
+     */
+    fun getMaxRawTurnHistorySize(): Int? = maxRawTurnHistorySize
+
+    /**
+     * Sets the context-blowout threshold (0.0-1.0). When the context window
+     * utilization exceeds this fraction, blowout detection fires.
+     *
+     * @param value The blowout threshold fraction.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setBlowoutThreshold(value: Double): PumpStation
+    {
+        this.blowoutThreshold = value
+        return this
+    }
+
+    /**
+     * Returns the context-blowout threshold (0.0-1.0).
+     */
+    fun getBlowoutThreshold(): Double = blowoutThreshold
+
+    /**
+     * Sets the timeout in milliseconds for memory update operations.
+     *
+     * @param value The memory-update timeout in milliseconds.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMemoryUpdateTimeoutMs(value: Long): PumpStation
+    {
+        this.memoryUpdateTimeoutMs = value
+        return this
+    }
+
+    /**
+     * Returns the memory-update timeout in milliseconds.
+     */
+    fun getMemoryUpdateTimeoutMs(): Long = memoryUpdateTimeoutMs
+
+    /**
+     * Sets the maximum number of blowout recovery attempts before forced halt.
+     *
+     * @param value The maximum blowout recoveries.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxBlowoutRecoveries(value: Int): PumpStation
+    {
+        this.maxBlowoutRecoveries = value
+        return this
+    }
+
+    /**
+     * Returns the maximum number of blowout recovery attempts.
+     */
+    fun getMaxBlowoutRecoveries(): Int = maxBlowoutRecoveries
+
+    /**
+     * Sets the maximum number of tokens allowed in a repair/regeneration prompt.
+     *
+     * @param value The maximum repair-prompt tokens.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxRepairPromptTokens(value: Int): PumpStation
+    {
+        this.maxRepairPromptTokens = value
+        return this
+    }
+
+    /**
+     * Returns the maximum number of tokens allowed in a repair/regeneration
+     * prompt.
+     */
+    fun getMaxRepairPromptTokens(): Int = maxRepairPromptTokens
 
     /**
      * Sets the maximum number of consecutive turns on the same path before the
@@ -2215,6 +3535,216 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Sets whether the judge phase parses the agent's text output as a JSON
+     * JudgeVerdict. Default is true (the contract documented in
+     * [DEFAULT_JUDGE_PROMPT] is honored). Set to false to drive the judge
+     * verdict purely via MultimodalContent flags (terminatePipeline /
+     * passPipeline), which is the canonical loop-control pattern documented on
+     * [checkMultimodalFlags] and matches the harness's design philosophy of
+     * "agents signal via flags, not via magic contracts."
+     *
+     * @param enabled true to parse the JSON contract, false to skip it.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setJudgeJsonContractEnabled(enabled: Boolean): PumpStation
+    {
+        this.judgeExpectsJsonContract = enabled
+        return this
+    }
+
+    /**
+     * Sets whether the path-safety phase parses the agent's text output as a
+     * JSON verdict. Default is true (the contract documented in
+     * [parsePathSafetyVerdict] is honored). Set to false to drive the safety
+     * verdict purely via MultimodalContent flags (terminatePipeline means
+     * reject, no flag means approve), matching the canonical flag-driven
+     * pattern.
+     *
+     * @param enabled true to parse the JSON contract, false to skip it.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPathSafetyJsonContractEnabled(enabled: Boolean): PumpStation
+    {
+        this.pathSafetyExpectsJsonContract = enabled
+        return this
+    }
+
+    //==================================================================
+    //  setXxxSystemPrompt — the single developer-facing API for opting
+    //  in or out of the auto-injected contract prompts. Setting a
+    //  non-null custom prompt switches the agent to flag-driven control
+    //  (the JSON contract is skipped). Setting null re-enables the
+    //  default prompt + contract.
+    //==================================================================
+
+    /**
+     * Sets a custom system prompt for the judge agent. When non-null, the
+     * pump station injects this prompt into the decision pipe of the judge's
+     * pipeline and disables the JSON contract (the agent drives the verdict
+     * via MultimodalContent flags only).
+     *
+     * Setting null re-enables the default [DEFAULT_JUDGE_PROMPT] and the
+     * JSON contract.
+     */
+    fun setJudgeSystemPrompt(prompt: String?): PumpStation
+    {
+        this.customJudgeSystemPrompt = prompt
+        this.judgeExpectsJsonContract = (prompt == null)
+        applyCustomPromptToAgent(this.judgeAgent, prompt)
+        return this
+    }
+
+    /**
+     * Sets a custom system prompt for the dispatch agent.
+     */
+    fun setDispatchSystemPrompt(prompt: String?): PumpStation
+    {
+        this.customDispatchSystemPrompt = prompt
+        applyCustomPromptToAgent(this.dispatchAgent, prompt)
+        return this
+    }
+
+    /**
+     * Sets a custom system prompt for the path-safety agent.
+     */
+    fun setPathSafetySystemPrompt(prompt: String?): PumpStation
+    {
+        this.customPathSafetySystemPrompt = prompt
+        this.pathSafetyExpectsJsonContract = (prompt == null)
+        applyCustomPromptToAgent(this.pathSafetyAgent, prompt)
+        return this
+    }
+
+    /**
+     * Sets a custom system prompt for the health agent.
+     */
+    fun setHealthSystemPrompt(prompt: String?): PumpStation
+    {
+        this.customHealthSystemPrompt = prompt
+        applyCustomPromptToAgent(this.healthAgent, prompt)
+        return this
+    }
+
+    /**
+     * Sets a custom system prompt for the lorebook agent.
+     */
+    fun setLorebookSystemPrompt(prompt: String?): PumpStation
+    {
+        this.customLorebookSystemPrompt = prompt
+        applyCustomPromptToAgent(this.lorebookAgent, prompt)
+        return this
+    }
+
+    /**
+     * Sets a custom system prompt for the goal agent.
+     */
+    fun setGoalSystemPrompt(prompt: String?): PumpStation
+    {
+        this.customGoalSystemPrompt = prompt
+        applyCustomPromptToAgent(this.goalAgent, prompt)
+        return this
+    }
+
+    /**
+     * Apply a custom system prompt to the decision pipe of an agent's
+     * pipeline. If [prompt] is null, the call is a no-op (the default
+     * prompt is injected at [setXxxAgent] time, not here).
+     */
+    /**
+     * Apply a custom system prompt to the decision pipe of an agent's
+     * pipeline. If [prompt] is null, the call is a no-op (the default
+     * prompt is injected at [setXxxAgent] time, not here).
+     */
+    private fun applyCustomPromptToAgent(agent: P2PInterface?, prompt: String?)
+    {
+        if(prompt == null) return
+        val pipeline = agent as? Pipeline ?: return
+        val decisionPipe = resolveDecisionPipeForInjection(pipeline) ?: return
+        decisionPipe.setSystemPrompt(prompt)
+    }
+
+    /**
+     * Resolve the pipe in [pipeline] that should receive the contract prompt.
+     * Uses the same layered resolution as [Pipeline.execute]: manual
+     * `decisionPipeName` first, then [com.TTT.Pipe.Pipe.isDecisionPipe], then
+     * [com.TTT.Enums.PipeRole.Decision], then heuristic scoring. Returns null
+     * if no decision pipe can be resolved.
+     */
+    private fun resolveDecisionPipeForInjection(pipeline: Pipeline): Pipe?
+    {
+        // 1. Manual override
+        val manual = pipeline.decisionPipeName
+        if(manual != null)
+        {
+            val (idx, pipe) = pipeline.getPipeByName(manual)
+            if(idx >= 0 && pipe != null) return pipe
+        }
+        // 2. isDecisionPipe flag
+        for(pipe in pipeline.getPipes())
+        {
+            if(pipe.isDecisionPipe) return pipe
+        }
+        // 3. pipeRole == Decision
+        for(pipe in pipeline.getPipes())
+        {
+            if(pipe.pipeRole == com.TTT.Enums.PipeRole.Decision) return pipe
+        }
+        // 4. Heuristic scoring fallback (only returns a pipe if it has
+        // a strong LLM signal — see [Pipeline.scoreDecisionPipeCandidates])
+        val pipes = pipeline.getPipes()
+        if(pipes.isNotEmpty())
+        {
+            var bestPipe: Pipe? = null
+            var bestScore = 0
+            val namePattern = Regex("(?i)(decision|judge|dispatch|output|final)")
+            for(pipe in pipes)
+            {
+                val s = pipe.toPipeSettings()
+                var score = 0
+                if(s.provider != null && !s.model.isNullOrEmpty()) score += 10
+                if(!s.jsonOutput.isNullOrEmpty()) score += 5
+                if(!s.systemPrompt.isNullOrEmpty()) score += 3
+                if(namePattern.containsMatchIn(pipe.pipeName)) score += 1
+                if(score > bestScore || (score == bestScore && score > 0 && bestPipe != null))
+                {
+                    bestPipe = pipe
+                    bestScore = score
+                }
+            }
+            if(bestScore >= 10) return bestPipe
+        }
+        // 5. Last-pipe fallback: in a single-pipe pipeline, the only pipe
+        // IS the decision pipe by definition. For multi-pipe pipelines
+        // without signals, we use the last pipe as a best-effort default.
+        return pipes.lastOrNull()
+    }
+
+    /**
+     * Auto-injection helper. Called at [setXxxAgent] time: if the developer
+     * has not supplied a custom prompt, inject the default into the decision
+     * pipe of the agent's pipeline. If the developer HAS supplied a custom
+     * prompt (via [setXxxSystemPrompt]), inject THAT instead.
+     *
+     * If the pipe already has a system prompt set, the auto-injection is
+     * skipped — the developer's manual configuration takes precedence.
+     */
+    private fun autoInjectDefaultPrompt(agent: Pipeline, customPrompt: String?, defaultPrompt: String)
+    {
+        val decisionPipe = resolveDecisionPipeForInjection(agent) ?: return
+        // Read the existing system prompt via toPipeSettings() to avoid
+        // touching the protected `systemPrompt` field directly.
+        val existing = decisionPipe.toPipeSettings().systemPrompt
+        if(existing != null && existing.isNotEmpty())
+        {
+            // The developer already configured a prompt on this pipe.
+            // Respect their choice and don't overwrite.
+            return
+        }
+        val promptToInject = customPrompt ?: defaultPrompt
+        decisionPipe.setSystemPrompt(promptToInject)
+    }
+
+    /**
      * Sets the maximum number of concurrent background agents.
      *
      * @param max The maximum concurrent background agents.
@@ -2261,6 +3791,300 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         this.backgroundTurnInterval = interval
         return this
     }
+
+    //---------------------------------------Async Substrate Setters----------------------------------------------------
+
+    /**
+     * Sets the station-wide default for whether async paths are appended to
+     * [turnHistory] on completion. The default is true. Per-path opt-out is
+     * available via [PathObject.setSuppressHistoryEmit].
+     *
+     * @param value true to auto-append async path results, false to suppress.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setAsyncPathsAppendToTurnHistory(value: Boolean): PumpStation
+    {
+        this.asyncPathsAppendToTurnHistory = value
+        return this
+    }
+
+    /**
+     * Returns the current default for async-path history append behavior.
+     */
+    fun isAsyncPathsAppendToTurnHistory(): Boolean = asyncPathsAppendToTurnHistory
+
+    /**
+     * Sets the station-wide default for whether async harness agents are appended
+     * to [turnHistory] on completion. The default is false (fire-and-forget).
+     * Per-slot opt-in is available via the [HarnessAgentSlot.appendsToTurnHistory]
+     * field and the matching DSL knob.
+     *
+     * @param value true to auto-append async agent results, false to suppress.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setAsyncAgentsAppendToTurnHistory(value: Boolean): PumpStation
+    {
+        this.asyncAgentsAppendToTurnHistory = value
+        return this
+    }
+
+    /**
+     * Returns the current default for async-agent history append behavior.
+     */
+    fun isAsyncAgentsAppendToTurnHistory(): Boolean = asyncAgentsAppendToTurnHistory
+
+    /**
+     * Sets the grace period (milliseconds) given to in-flight async coroutines
+     * after [runFinalizationPhase] before [cancelAsyncJobs] cancels the
+     * [asyncScope]. Pass null to disable the timeout (the default) and let
+     * in-flight work run until the scope is cancelled. When set, coroutines
+     * that do not finish within the window are cancelled; their partial
+     * results are NOT merged into [turnHistory].
+     *
+     * @param ms Grace period in milliseconds, or null to disable.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setAsyncJobGracePeriodMs(ms: Long?): PumpStation
+    {
+        this.asyncJobGracePeriodMs = ms
+        return this
+    }
+
+    /**
+     * Returns the current async job grace period (milliseconds), or null if
+     * the cancel is unbounded.
+     */
+    fun getAsyncJobGracePeriodMs(): Long? = asyncJobGracePeriodMs
+
+    /**
+     * Toggles whether async work runs on a station-scoped [CoroutineScope]
+     * (the default) or on [GlobalScope]. The station-scoped behavior is the
+     * recommended path because [cancelAsyncJobs] can guarantee that no async
+     * coroutine outlives [executeLocal]. Setting this to false restores the
+     * pre-substrate fire-and-forget behavior.
+     *
+     * @param value true to use [asyncScope], false to use [GlobalScope].
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setAsyncJobsScopedToStation(value: Boolean): PumpStation
+    {
+        this.asyncJobsScopedToStation = value
+        return this
+    }
+
+    /**
+     * Returns whether async work runs on the station-scoped [CoroutineScope].
+     */
+    fun isAsyncJobsScopedToStation(): Boolean = asyncJobsScopedToStation
+
+    //---------------------------------------Async Substrate Public API-----------------------------------------------
+
+    /**
+     * Append a single [ConverseData] entry to [turnHistory] from a coroutine
+     * running on [asyncScope] (or anywhere outside the foreground path). This
+     * is the single thread-safe access point for async producers that want to
+     * push into the harness conversation.
+     *
+     * Direct mutation of [turnHistory] from async code is NOT safe because
+     * [ConverseHistory] is a plain data class with no internal lock. Always
+     * call this method instead of  from async code.
+     *
+     * @param entry The turn entry to append.
+     * @param source A short identifier for the producer (e.g. agent class name).
+     */
+    suspend fun appendTurnEntryAsync(entry: ConverseData, source: String = "agent")
+    {
+        historyMutex.withLock {
+            turnHistory.add(entry)
+            rawTurnHistory.add(entry)
+        }
+        emitEventInternal(AsyncTurnAppended(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            phase = PumpStationPhase.PathExecution,
+            source = source,
+            pathName = null,
+            agentName = source,
+            seq = asyncSeqCounter.get(),
+            content = entry.content
+        ))
+    }
+
+    /**
+     * Batch version of [appendTurnEntryAsync]. Acquires [historyMutex] once
+     * and emits a single trailing [AsyncTurnAppended] event for the last
+     * entry, so observers can correlate.
+     */
+    suspend fun appendTurnEntriesAsync(entries: List<ConverseData>, source: String = "agent")
+    {
+        if (entries.isEmpty()) return
+        historyMutex.withLock {
+            for (entry in entries)
+            {
+                turnHistory.add(entry)
+                rawTurnHistory.add(entry)
+            }
+        }
+        val last = entries.last()
+        emitEventInternal(AsyncTurnAppended(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            phase = PumpStationPhase.PathExecution,
+            source = source,
+            pathName = null,
+            agentName = source,
+            seq = asyncSeqCounter.get(),
+            content = last.content
+        ))
+    }
+
+    /**
+     * Drain all entries currently buffered in [pendingAsyncResults] and merge
+     * them into [turnHistory] in [PendingTurnEntry.seq] order. Returns the
+     * number of entries merged. This is called by the foreground at safe phase
+     * boundaries (start of judge, start of finalization).
+     *
+     * The drain is best-effort and lock-free relative to the producer channel:
+     * it batches entries until the channel reports empty. Producers may
+     * continue to enqueue after the drain returns; the next drain will pick
+     * them up.
+     */
+    internal fun drainPendingAsyncResults(): Int
+    {
+        if (!asyncPathsAppendToTurnHistory) return 0
+        // Batch-pull everything currently buffered. We tolerate the channel
+        // being concurrently appended to by async producers — anything that
+        // arrives after this loop runs is picked up by the next drain.
+        val drained = mutableListOf<PendingTurnEntry>()
+        while (true)
+        {
+            // channelResult is the ChannelResult<PendingTurnEntry> returned by
+            // tryReceive(); isSuccess distinguishes a buffered entry from an
+            // empty channel. We break on the first empty channel to keep the
+            // drain bounded by what is currently buffered.
+            val channelResult = pendingAsyncResults.tryReceive()
+            if (channelResult.isSuccess) drained.add(channelResult.getOrThrow()) else break
+        }
+        if (drained.isEmpty()) return 0
+        // Stable sort by seq. Sequential ids under contention; the
+        // AtomicLong counter guarantees no two entries share a seq.
+        drained.sortBy { it.seq }
+        var merged = 0
+        kotlinx.coroutines.runBlocking {
+            historyMutex.withLock {
+                for (entry in drained)
+                {
+                    // Per-path opt-out check: skip if the originating path
+                    // is configured to suppress history emission. The flag
+                    // is set on the path, not the entry, so we resolve
+                    // pathName -> path object here.
+                    val path = entry.pathName?.let { name -> pathList[name] ?: reservePaths[name] }
+                    val suppressed = path?.isSuppressHistoryEmit == true
+                    if (suppressed) continue
+                    val turnEntry = ConverseData(
+                        role = ConverseRole.assistant,
+                        content = entry.result
+                    )
+                    turnHistory.add(turnEntry)
+                    rawTurnHistory.add(turnEntry)
+                    merged++
+                }
+            }
+        }
+        // Emit one AsyncTurnAppended per merged entry so observers see the
+        // merge at the granularity of a single path / agent completion.
+        for (entry in drained)
+        {
+            val path = entry.pathName?.let { name -> pathList[name] ?: reservePaths[name] }
+            if (path?.isSuppressHistoryEmit == true) continue
+            emitEventInternal(AsyncTurnAppended(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                phase = PumpStationPhase.PathExecution,
+                source = entry.source,
+                pathName = entry.pathName,
+                agentName = entry.agentName,
+                seq = entry.seq,
+                content = entry.result
+            ))
+        }
+        return merged
+    }
+
+    /**
+     * Cancel in-flight async coroutines launched on [asyncScope]. The grace
+     * period is bounded by [asyncJobGracePeriodMs] when set. When null
+     * (the default), the cancel is unbounded — [cancelAsyncJobs] yields once
+     * so any in-flight suspend point can progress, then cancels the scope
+     * without imposing a hard timeout. This is the recommended default
+     * because TPipe intentionally does not impose arbitrary timeouts on
+     * user work; long-running async paths (e.g. an async path that wraps
+     * a multi-minute LLM call) should not be killed by an arbitrary
+     * timebox. Developers who need a hard upper bound should set
+     * [asyncJobGracePeriodMs] to a value that matches their worst-case
+     * LLM round-trip plus safety margin.
+     *
+     * After this call returns, [asyncScope] is in a cancelled state and any
+     * further [appendTurnEntryAsync] calls will still succeed (they write to
+     * the foreground-owned history lists) but the launched coroutines that
+     * produced them have been stopped.
+     *
+     * Called automatically by [runFinalizationPhase] before [executeLocal]
+     * returns. Safe to call multiple times.
+     *
+     * @param gracePeriodMs Optional timeout for the polite-wait phase. When
+     *  null, the wait is unbounded (a single [yield] is performed so any
+     *  in-flight suspend can make progress before the scope is cancelled).
+     */
+    fun cancelAsyncJobs(gracePeriodMs: Long? = asyncJobGracePeriodMs)
+    {
+        val scope = if (asyncJobsScopedToStation) asyncScope else null
+        // Polite-wait phase: give in-flight work a chance to drain history
+        // writes. When gracePeriodMs is null we just yield once and proceed
+        // to cancel; long-running work will be cancelled but its cancel
+        // handlers (the catch(CancellationException) { throw it } in the
+        // launch sites) will be honoured.
+        kotlinx.coroutines.runBlocking {
+            if (gracePeriodMs == null)
+            {
+                kotlinx.coroutines.yield()
+            }
+            else
+            {
+                kotlinx.coroutines.withTimeoutOrNull(gracePeriodMs) {
+                    kotlinx.coroutines.yield()
+                }
+            }
+        }
+        scope?.cancel()
+    }
+
+    /**
+     * Returns true if the [asyncScope] is still active (not yet cancelled).
+     * Useful for tests and DITL tooling that needs to check whether a station
+     * has been torn down.
+     */
+    fun isAsyncScopeActive(): Boolean = asyncScope.isActive
+
+    /**
+     * Internal accessor for [pendingAsyncResults]. Used by the async dispatch
+     * site in [runPathFlow] and by the async harness agent launcher in
+     * [runBackgroundAgentsPhase] to enqueue a [PendingTurnEntry].
+     */
+    internal val pendingAsyncResultsInternal get() = pendingAsyncResults
+
+    /**
+     * Internal accessor for [historyMutex]. Used by the async producer helpers
+     * in this class and exposed to test fixtures.
+     */
+    internal val historyMutexInternal get() = historyMutex
+
+    /**
+     * Internal accessor for the [asyncSeqCounter]. Producers call
+     * [asyncSeqCounterInternal].incrementAndGet() to claim a [seq] for a
+     * pending entry.
+     */
+    internal val asyncSeqCounterInternal get() = asyncSeqCounter
 
 //---------------------------------------Health Probe Setters-------------------------------------------------------
 
@@ -2314,6 +4138,13 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
         this.personality = personality
         return this
     }
+
+    /**
+     * Returns the personality / persona string. Mirrors the
+     * [setPersonality] setter; primarily intended for tests and
+     * external inspection.
+     */
+    fun getPersonality(): String = personality
 
     /**
      * Sets the system task string - the harness "system prompt" injected after the
@@ -2556,53 +4387,62 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
      * output and the return to the judge agent, in the order added.
      *
      * @param agent The harness agent to add.
+     * @param concurrency The concurrency mode (Blocking by default).
      * @return This PumpStation instance for method chaining.
      */
-    fun addHarnessAgent(agent: P2PInterface): PumpStation
+    fun addHarnessAgent(agent: P2PInterface, concurrency: PumpStationConcurrencyMode = PumpStationConcurrencyMode.Blocking): PumpStation
     {
-        this.additionalHarnessAgents.add(agent)
+        this.additionalHarnessAgentSlots.add(HarnessAgentSlot(agent = agent, concurrency = concurrency))
         return this
     }
 
     /**
      * Appends an additional harness agent builder function. Each builder is invoked
      * between the dispatch output and the return to the judge agent, in the order added.
-     * When set, this list overrides [additionalHarnessAgents] at runtime.
+     * When invoked at runtime, the produced agent is stored in the slot and then initialized.
      *
      * @param fn The builder function to add.
+     * @param concurrency The concurrency mode (Async by default).
      * @return This PumpStation instance for method chaining.
      */
-    fun addHarnessAgentBuilder(fn: (suspend (harness: PumpStation) -> P2PInterface)): PumpStation
+    fun addHarnessAgentBuilder(
+        fn: (suspend (harness: PumpStation) -> P2PInterface),
+        concurrency: PumpStationConcurrencyMode = PumpStationConcurrencyMode.Async
+    ): PumpStation
     {
-        if (this.additionalHarnessAgentBuilderFuncList == null)
-        {
-        this.additionalHarnessAgentBuilderFuncList = mutableListOf()
-        }
-        this.additionalHarnessAgentBuilderFuncList!!.add(fn)
+        this.additionalHarnessAgentSlots.add(
+            HarnessAgentSlot(agent = null, concurrency = concurrency, builderFunction = fn)
+        )
         return this
     }
 
     /**
-     * Clears the additional harness agents list.
+     * Clears all additional harness agent slots (both direct agents and builder slots).
      *
      * @return This PumpStation instance for method chaining.
      */
     fun clearHarnessAgents(): PumpStation
     {
-        this.additionalHarnessAgents.clear()
+        this.additionalHarnessAgentSlots.clear()
         return this
     }
 
     /**
-     * Clears the additional harness agent builder function list.
+     * Removes only those additional harness agent slots that contain a builder function,
+     * leaving slots that were added via [addHarnessAgent] intact.
      *
      * @return This PumpStation instance for method chaining.
      */
     fun clearHarnessAgentBuilders(): PumpStation
     {
-        this.additionalHarnessAgentBuilderFuncList?.clear()
+        this.additionalHarnessAgentSlots.removeAll { it.builderFunction != null }
         return this
     }
+
+    /**
+     * Returns an immutable snapshot of the additional harness agent slots.
+     */
+    fun getAdditionalHarnessAgentSlots(): List<HarnessAgentSlot> = additionalHarnessAgentSlots.toList()
 
 //---------------------------------------Reserve Path Mutator-------------------------------------------------------
 
@@ -2617,6 +4457,7 @@ class PumpStation(override var killSwitch: KillSwitch? = null) : P2PInterface
     fun addReservePath(path: PathObject): PumpStation
     {
         path.setParentInterface(this)
+        path.killSwitch = _killSwitch
         reservePaths[path.pathName] = path
         return this
     }

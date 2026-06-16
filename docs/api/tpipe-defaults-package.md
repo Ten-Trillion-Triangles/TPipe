@@ -249,6 +249,130 @@ Creates fully configured OllamaPipe.
 
 ---
 
+### PumpStationDefaults
+
+Central factory for creating pre-configured `PumpStation` instances with provider-specific defaults. Mirrors the shape of `ManifoldDefaults` but targets the `PumpStation` runtime-harness class. Each `with*` entry point returns a fully-wired station ready to receive `executeLocal` calls; the caller may further customize the result by passing a `configure: PumpStationBuilder.() -> Unit` block.
+
+The recommended `recommendedMemoryConfig()` default is `(Truncation, 0.85)` so a first live run is cheap to debug. Developers who want the v3 compaction path can assign `memoryManagementMode = PumpStationMemoryManagementMode.Compaction` in the builder block.
+
+Cross-reference: the prompt strings used as the judge/dispatch defaults live in `Pipeline/PumpStationDefaults.kt` (made public for this purpose).
+
+```kotlin
+object PumpStationDefaults
+```
+
+#### Public Properties
+
+None — `PumpStationDefaults` exposes only functions.
+
+#### Public Functions
+
+**`recommendedMemoryConfig(): Pair<PumpStationMemoryManagementMode, Double>`**
+
+Returns the recommended memory configuration for a first live run. Defaults to `(Truncation, 0.85)`. Truncation is the pre-v3 path that has shipped in the codebase the longest and is cheaper to debug on a first run. Developers who want the v3 compaction default can assign `memoryManagementMode = Compaction` in the builder block, or override this entire pair via the DSL.
+
+**`recommendedKillSwitchConfig(): KillSwitchConfig`**
+
+Returns the recommended kill-switch configuration: a 50K input-token cap and a 10K output-token cap. Generous enough for a 10-turn multi-path task on a small model, tight enough to halt a runaway loop before the operator has to `kill -9` the JVM.
+
+**`withOpenRouter(configuration: OpenRouterConfiguration, configure: PumpStationBuilder.() -> Unit = {}): PumpStation`**
+
+Creates a `PumpStation` configured for OpenRouter with optimized defaults. The returned station has:
+
+- `judgeAgent` = a single `OpenRouterPipe` pipeline with `DEFAULT_JUDGE_PROMPT`
+- `dispatchAgent` = a single `OpenRouterPipe` pipeline with `DEFAULT_DISPATCH_PROMPT`
+- `killSwitch` = the result of `recommendedKillSwitchConfig()`
+- `memoryManagementMode` = the first element of `recommendedMemoryConfig()`
+- `compactionThreshold` = the second element of `recommendedMemoryConfig()`
+- `tracingEnabled` = true (the developer can disable via the builder block by setting `tracingConfiguration = null` or to a disabled config)
+
+Note: the factory itself does **not** register any paths — `PumpStationBuilder.build()` requires at least one path. The caller **must** register at least one path either in the `configure` block or by calling `addPath` / `addReservePath` on the returned station before `executeLocal`.
+
+```kotlin
+import Defaults.OpenRouterConfiguration
+import Defaults.PumpStationDefaults
+import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipeline.PumpStation
+import com.TTT.Pipeline.PumpStationJudgeRunMode
+
+fun buildResearchStation(apiKey: String): PumpStation
+{
+    val config = OpenRouterConfiguration(
+        model = "openai/gpt-4o-mini",
+        apiKey = apiKey,
+        pipeCount = 1
+    )
+
+    return PumpStationDefaults.withOpenRouter(config) {
+        // Override the recommended kill switch for a tighter run
+        killSwitchConfiguration = com.TTT.P2P.KillSwitch(
+            inputTokenLimit = 100_000,
+            outputTokenLimit = 20_000
+        )
+
+        // Path with execution function
+        path("answer") {
+            description = "Produces a one-sentence answer and signals pass-pipeline."
+            setExecutionFunction { content, _, _, _ ->
+                MultimodalContent(text = "ok: ${content.text}").apply {
+                    passPipeline = true
+                }
+            }
+        }
+    }
+}
+```
+
+The `configure` block runs after the defaults are wired, so any setting the developer assigns overrides the factory's defaults. The block has the same surface as the top-level `pumpStation { }` builder — see [PumpStation API Reference](pumpstation.md#pumpstationbuilder-class) for the full builder block reference.
+
+Throws `IllegalArgumentException` if the OpenRouter configuration is invalid, or `RuntimeException` (wrapping the original cause) if the station cannot be built.
+
+### KillSwitchConfig
+
+Data carrier for `PumpStationDefaults.recommendedKillSwitchConfig`. Plain `data class` so the values can be unpacked into the `KillSwitch` constructor at the call site.
+
+```kotlin
+data class KillSwitchConfig(
+    val inputTokenLimit: Int? = 50_000,
+    val outputTokenLimit: Int? = 10_000
+)
+```
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `inputTokenLimit` | `Int?` | `50_000` | Maximum input tokens (prompt + context). `null` disables the input limit. |
+| `outputTokenLimit` | `Int?` | `10_000` | Maximum output tokens (response + reasoning). `null` disables the output limit. |
+
+### Default Prompts
+
+`PumpStationDefaults` does not own the prompt strings — they live in `Pipeline/PumpStationDefaults.kt` and are public so the factory can reference them. The full text of every default prompt is documented in [PumpStation Magic Contracts](../core-concepts/pumpstation-magic-contracts.md):
+
+- `DEFAULT_JUDGE_PROMPT` — judge agent system prompt
+- `DEFAULT_DISPATCH_PROMPT` — dispatch agent system prompt
+- `DEFAULT_GOAL_PROMPT` — goal agent system prompt (`internal`)
+- `DEFAULT_PATH_SAFETY_PROMPT` — path-safety agent system prompt
+- `DEFAULT_HEALTH_PROMPT` — health agent system prompt
+- `DEFAULT_LOREBOOK_PROMPT` — lorebook agent system prompt
+- `DEFAULT_JUDGE_FOOTER` — judge agent footer prompt (`internal`)
+- `DEFAULT_DISPATCH_FOOTER` — dispatch agent footer prompt (`internal`)
+
+The placeholders in the prompts (`{personality}`, `{systemTask}`, `{userGuidelines}`, `{entryUserPrompt}`) are filled in by the harness's prompt builders at runtime — see `buildJudgeSystemPrompt`, `buildDispatchSystemPrompt`, and `buildGoalSystemPrompt` in `Pipeline/PumpStationHelpers.kt`.
+
+### Live Example
+
+`TPipe-Defaults/src/main/kotlin/examples/pumpstation/PumpStationOpenRouterExample.kt` contains a runnable `main()` that demonstrates all four exit mechanisms (always-on judge, FlagTriggered judge, path `passPipeline`, kill switch trip) against a live OpenRouter model.
+
+To run:
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...
+./gradlew :TPipe-Defaults:run --args="pumpStationOpenRouter"
+```
+
+The example prints `OK` on success and the `exitReason` from `taskState`.
+
+---
+
 ## Reasoning System
 
 ### ReasoningBuilder

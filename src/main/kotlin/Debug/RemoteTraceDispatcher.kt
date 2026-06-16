@@ -31,7 +31,8 @@ object RemoteTraceDispatcher {
 
         val htmlContent = try {
             PipeTracer.exportTraceWithoutDispatch(pipelineId, TraceFormat.HTML)
-        } catch(e: Exception) {
+        }catch(e: Exception)
+        {
             e.printStackTrace()
             return
         }
@@ -66,7 +67,8 @@ object RemoteTraceDispatcher {
                 {
                     println("Failed to dispatch trace $pipelineId to remote server. Status code: $responseCode")
                 }
-            } catch(e: Exception) {
+            }catch(e: Exception)
+            {
                 println("Error dispatching trace $pipelineId: ${e.message}")
             }
         }

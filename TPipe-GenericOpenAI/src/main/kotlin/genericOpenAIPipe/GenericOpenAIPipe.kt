@@ -235,7 +235,18 @@ class GenericOpenAIPipe : Pipe()
     fun setBaseUrl(url: String): GenericOpenAIPipe
     {
         require(url.isNotBlank()) { "baseUrl cannot be blank" }
-        require(url.startsWith("https://")) { "baseUrl must use HTTPS for security" }
+        // HTTPS-only by default. Set TPIPE_ALLOW_INSECURE_BASEURL=true to allow http://
+        // — intended for in-process stub servers used by tests. Production callers
+        // should never set this flag.
+        val allowInsecure = System.getenv("TPIPE_ALLOW_INSECURE_BASEURL") == "true" ||
+            System.getProperty("tpipe.allowInsecureBaseUrl") == "true"
+        val isHttps = url.startsWith("https://")
+        val isAllowedHttp = allowInsecure && url.startsWith("http://")
+        require(isHttps || isAllowedHttp) {
+            "baseUrl must use HTTPS for security (got: $url). " +
+                "Set TPIPE_ALLOW_INSECURE_BASEURL=true (or the tpipe.allowInsecureBaseUrl " +
+                "system property) to allow http:// — test-only flag, never use in production."
+        }
         baseUrl = url.trimEnd('/')
         return this
     }

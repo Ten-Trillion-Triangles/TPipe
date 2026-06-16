@@ -4,8 +4,14 @@ import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
+import com.TTT.Debug.TraceConfig
+import com.TTT.Debug.TraceDetailLevel
+import com.TTT.Debug.TraceFormat
+import com.TTT.P2P.KillSwitch
+import com.TTT.P2P.KillSwitchContext
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.PipeContextProtocol.PcpContext
 import kotlin.reflect.KFunction
 
 /**
@@ -32,13 +38,39 @@ sealed class PumpStationStage
 //=========================================PumpStationBuilder========================================================
 
 /**
- * Root PumpStation DSL builder.
+ * Root PumpStation DSL builder. Generic over the current configuration stage so
+ * [build] can only be called once at least one path has been declared. Mirrors
+ * [com.TTT.Pipeline.ManifoldBuilder]'s pattern from [ManifoldDsl.kt].
  *
  * @param name Unique name for this PumpStation instance.
  */
 @PumpStationDslMarker
-class PumpStationBuilder(val name: String)
+class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructor(val name: String)
 {
+//=========================================Tracing Configuration===================================================
+
+    /**
+     * Optional tracing configuration. Set via the `tracing { }` DSL block; applied to the built
+     * station in [PumpStationBuilder.build]. Null when the user did not configure tracing.
+     */
+    var tracingConfiguration: TraceConfig? = null
+
+    /**
+     * Optional kill switch configuration. Set via the `killSwitch { }` DSL block; applied to
+     * the built station in [build] (before path registration so propagation
+     * to [com.TTT.Pipeline.PathObject] happens up front). Null when the user did not configure
+     * a kill switch.
+     */
+    var killSwitchConfiguration: KillSwitch? = null
+
+    /**
+     * Optional compaction configuration. Set via the `compaction { }` DSL block;
+     * applied to the built station in [build] (after the station is constructed
+     * but before path registration, so per-path compaction settings see the
+     * configured values). Null when the developer did not configure compaction.
+     */
+    var compactionConfiguration: CompactionBlock? = null
+
 //=========================================Agent Assignments=========================================================
 
     /**
@@ -95,7 +127,37 @@ class PumpStationBuilder(val name: String)
     var healthAgent: P2PInterface? = null
 
     /**
-     * Builder function for healthAgent — creates fresh instance each invocation.
+     * Builder function for [judgeAgent] - creates a fresh instance per harness invocation.
+     */
+    var judgeAgentBuilderFunction: (suspend (PumpStation) -> Pipeline)? = null
+
+    /**
+     * Builder function for [dispatchAgent] - creates a fresh instance per harness invocation.
+     */
+    var dispatchAgentBuilderFunction: (suspend (PumpStation) -> Pipeline)? = null
+
+    /**
+     * Builder function for [interventionAgent] - creates a fresh instance per harness invocation.
+     */
+    var interventionAgentBuilderFunction: (suspend (PumpStation) -> P2PInterface)? = null
+
+    /**
+     * Builder function for [lorebookAgent] - creates a fresh instance per harness invocation.
+     */
+    var lorebookAgentBuilderFunction: (suspend (PumpStation) -> P2PInterface)? = null
+
+    /**
+     * Builder function for [summaryAgent] - creates a fresh instance per harness invocation.
+     */
+    var summaryAgentBuilderFunction: (suspend (PumpStation) -> P2PInterface)? = null
+
+    /**
+     * Builder function for [goalAgent] - creates a fresh instance per harness invocation.
+     */
+    var goalAgentBuilderFunction: (suspend (PumpStation) -> P2PInterface)? = null
+
+    /**
+     * Builder function for healthAgent - creates fresh instance each invocation.
      */
     var healthAgentBuilderFunction: (suspend (PumpStation) -> P2PInterface)? = null
 
@@ -115,12 +177,18 @@ class PumpStationBuilder(val name: String)
     var healthAgentConcurrencyMode: PumpStationConcurrencyMode? = null
 
     /**
-     * Additional harness agents invoked between dispatch output and return to judge agent.
-     * Each agent is invoked in the order assigned.
+     * Harness agent slots. The DSL `harnessAgent { }` and `harnessAgentBuilder { }`
+     * blocks append to this list. Captured here, applied to the station in [build].
      */
-    val additionalHarnessAgents: MutableList<P2PInterface> = mutableListOf()
+    internal val harnessAgentSlots: MutableList<HarnessAgentSlot> = mutableListOf()
 
 //=========================================Configuration============================================================
+
+    /**
+     * Persona / personality string. Injected into the judge and dispatch system prompts
+     * ahead of every other instruction so the agent prioritises the persona.
+     */
+    var personality: String = ""
 
     /**
      * Treated as the "system prompt" for the harness.
@@ -141,15 +209,63 @@ class PumpStationBuilder(val name: String)
     var entryUserPrompt: String = ""
 
     /**
-     * Maximum harness turns before forced exit. Safety limit to avoid loops.
+     * Maximum harness turns before forced exit. Delegating alias for
+     * [maxTurns]; the harness loop reads the canonical [maxTurns] field,
+     * so writing this var has the same effect as writing [maxTurns].
+     * Kept as a top-level DSL var so existing pumpStation blocks using
+     * `maxHarnessTurns = N` continue to work.
      */
-    var maxHarnessTurns: Int = 50
+    var maxHarnessTurns: Int
+        get() = maxTurns
+        set(value) { maxTurns = value }
+
+    /**
+     * Controls when the judge agent runs. Defaults to [PumpStationJudgeRunMode.Always] (judge fires
+     * every turn). Set to [PumpStationJudgeRunMode.FlagTriggered] to skip the judge except on turns
+     * where the dispatch agent (or any code holding a [PumpStation] reference) has called
+     * [PumpStation.requestJudgeNextTurn].
+     *
+     * Trade-off: in `FlagTriggered` mode, [maxTurns] is the only safety net if the dispatch
+     * never signals - set it conservatively.
+     */
+    var judgeRunMode: PumpStationJudgeRunMode = PumpStationJudgeRunMode.Always
 
     /**
      * Maximum number of concurrent background agents.
      * Excess requests are queued and batched.
      */
     var maxConcurrentBackgroundAgents: Int = 3
+
+    /**
+     * When true, async paths are appended to turnHistory on completion. The
+     * default is true. Per-path opt-out is available via the path builder's
+     *  property.
+     */
+    var asyncPathsAppendToTurnHistory: Boolean = true
+
+    /**
+     * When true, async harness agents are appended to turnHistory on
+     * completion. The default is false (fire-and-forget). Per-slot opt-in is
+     * available via the harness agent builder's  property.
+     */
+    var asyncAgentsAppendToTurnHistory: Boolean = false
+
+    /**
+     * Optional grace period (milliseconds) given to in-flight async coroutines
+     * after runFinalizationPhase before the station cancels its async scope.
+     * When null (the default), the cancel is unbounded and long-running async
+     * work is not artificially timeboxed. Set this to a value that matches the
+     * worst-case LLM round-trip plus safety margin when a hard upper bound is
+     * required.
+     */
+    var asyncJobGracePeriodMs: Long? = null
+
+    /**
+     * When true, async work runs on a station-scoped CoroutineScope that is
+     * cancelled at the end of executeLocal. The default is true. Set to false
+     * to fall back to the pre-substrate GlobalScope fire-and-forget behavior.
+     */
+    var asyncJobsScopedToStation: Boolean = true
 
     /**
      * Maximum number of concurrent foreground agents spawned by path calls
@@ -191,6 +307,57 @@ class PumpStationBuilder(val name: String)
     var maxTurnHistorySize: Int = 50
 
     /**
+     * Maximum number of turns the harness loop will run end-to-end. This is
+     * the canonical loop-guard setter; the harness loop in
+     * [com.TTT.Pipeline.PumpStationLoop.runHarnessLoop] reads the corresponding
+     * [PumpStation.maxTurnsInternal] and terminates with
+     * [PumpStationError.MaxTurnsExceeded] / [PumpStationExitReason.MaxTurnsHit]
+     * when the cap is hit. [maxHarnessTurns] is a delegating alias for symmetry.
+     */
+    var maxTurns: Int = 50
+
+    /**
+     * Overall concurrency mode applied across the harness's spawn decisions.
+     * Mirrors [PumpStation.setConcurrencyMode].
+     */
+    var concurrencyMode: PumpStationConcurrencyMode? = null
+
+    /**
+     * Maximum number of consecutive goal-evaluation failures before the
+     * harness gives up on the current task. Defaults to 3.
+     */
+    var maxGoalFailAttempts: Int = 3
+
+    /**
+     * Maximum number of raw turn history entries to retain, or null to
+     * disable the cap. Distinct from the ConverseHistory turn history cap.
+     */
+    var maxRawTurnHistorySize: Int? = null
+
+    /**
+     * Threshold (0.0-1.0) of context window utilization that triggers
+     * blowout detection. Defaults to 0.9 (90%).
+     */
+    var blowoutThreshold: Double = 0.9
+
+    /**
+     * Timeout in milliseconds for memory update operations. Defaults to 30s.
+     */
+    var memoryUpdateTimeoutMs: Long = 30_000L
+
+    /**
+     * Maximum number of blowout recovery attempts before forced halt.
+     * Defaults to 3.
+     */
+    var maxBlowoutRecoveries: Int = 3
+
+    /**
+     * Maximum number of tokens allowed in a repair/regeneration prompt.
+     * Defaults to 500.
+     */
+    var maxRepairPromptTokens: Int = 500
+
+    /**
      * If true, throw error and exit PumpStation when dispatch agent generates invalid JSON
      * for a path request.
      */
@@ -226,6 +393,18 @@ class PumpStationBuilder(val name: String)
      */
     var pathLimitExceededFunction: (suspend (PathObject, String, PumpStation) -> PathLimitExceededResult)? = null
 
+    /**
+     * When false, the harness will not auto-inject the JSON-contract wrapper around
+     * the judge agent's system prompt. Defaults to true.
+     */
+    var judgeJsonContractEnabled: Boolean = true
+
+    /**
+     * When false, the harness will not require a JSON contract verdict from the
+     * path safety agent. Defaults to true.
+     */
+    var pathSafetyJsonContractEnabled: Boolean = true
+
 //=========================================Reserve Paths & External Context=========================================
 
     /**
@@ -244,8 +423,53 @@ class PumpStationBuilder(val name: String)
 
     /**
      * Phase boundaries at which the harness can pause for external inspection/intervention.
+     * Populated by the `pause { }` DSL block; applied in [build] via
+     * [PumpStation.pauseAt].
      */
-    val pauseAtPhases: MutableSet<PumpStationPausePhase> = mutableSetOf()
+    internal val pausePhases: MutableSet<PumpStationPausePhase> = mutableSetOf()
+
+//=========================================System Prompts==========================================================
+
+    /**
+     * Custom judge system prompt. When set, replaces the harness default
+     * judge prompt and disables the auto-injected JSON contract wrapper.
+     */
+    var judgeSystemPrompt: String? = null
+
+    /**
+     * Custom dispatch system prompt. When set, replaces the harness default
+     * dispatch prompt.
+     */
+    var dispatchSystemPrompt: String? = null
+
+    /**
+     * Custom path-safety system prompt. When set, replaces the harness default
+     * path-safety prompt and disables the auto-injected JSON contract wrapper.
+     */
+    var pathSafetySystemPrompt: String? = null
+
+    /**
+     * Custom health-agent system prompt.
+     */
+    var healthSystemPrompt: String? = null
+
+    /**
+     * Custom lorebook-agent system prompt.
+     */
+    var lorebookSystemPrompt: String? = null
+
+    /**
+     * Custom goal-agent system prompt.
+     */
+    var goalSystemPrompt: String? = null
+
+//=========================================Event Observers=========================================================
+
+    /**
+     * Synchronous observer for every [PumpStationEvent] emitted by the harness.
+     * Primarily intended for test observability.
+     */
+    var eventObserver: ((PumpStationEvent) -> Unit)? = null
 
 //=========================================DITL Hooks===============================================================
 
@@ -261,6 +485,13 @@ class PumpStationBuilder(val name: String)
      * Allows context adjustment prior to the LLM call.
      */
     var preValidationJudgeFunction: (suspend (MultimodalContent, MiniBank, PumpStation) -> MiniBank)? = null
+
+    /**
+     * DITL function invoked just after the judge agent returns. Allows the
+     * developer to transform the verdict (or replace it) before the harness loop
+     * decides what to do next.
+     */
+    var postJudgeFunction: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)? = null
 
     /**
      * Pre-validation DITL call for the dispatch agent.
@@ -314,6 +545,12 @@ class PumpStationBuilder(val name: String)
      */
     var postCompactionFunction: (suspend (MultimodalContent, ConverseHistory, PumpStation) -> MultimodalContent)? = null
 
+    /**
+     * DITL function fired when the context window is truncated to make room.
+     * Allows the developer to react before the harness loop continues.
+     */
+    var onContextTruncated: (suspend (wasTruncated: Boolean, remainingFreeSpace: Int) -> Unit)? = null
+
 //=========================================Nested Blocks Storage====================================================
 
     internal val pathObjects: MutableMap<String, PathObject> = mutableMapOf()
@@ -324,7 +561,8 @@ class PumpStationBuilder(val name: String)
     /**
      * Configure memory management settings.
      */
-    fun memory(block: MemoryBlock.() -> Unit) {
+    fun memory(block: MemoryBlock.() -> Unit)
+    {
         val mb = MemoryBlock(this)
         mb.block()
     }
@@ -334,10 +572,15 @@ class PumpStationBuilder(val name: String)
      *
      * @param pathName Unique name for this path.
      * @param block Builder block that configures the path.
+     * @return A [PumpStationBuilder] in the [PumpStationStage.Ready] stage - the
+     *         stage the [build] call is gated to.
      */
-    fun path(pathName: String, block: PathBlock.() -> Unit) {
+    fun path(pathName: String, block: PathBlock.() -> Unit): PumpStationBuilder<PumpStationStage.Ready>
+    {
         val pb = PathBlock(pathName, this)
         pb.block()
+        pb.build()
+        return promote()
     }
 
     /**
@@ -345,30 +588,281 @@ class PumpStationBuilder(val name: String)
      *
      * @param pathName Unique name for this reserve path.
      * @param block Builder block that configures the reserve path.
+     * @return A [PumpStationBuilder] in the [PumpStationStage.Ready] stage - the
+     *         stage the [build] call is gated to.
      */
-    fun reservePath(pathName: String, block: ReservePathBlock.() -> Unit) {
+    fun reservePath(pathName: String, block: ReservePathBlock.() -> Unit): PumpStationBuilder<PumpStationStage.Ready>
+    {
         val rpb = ReservePathBlock(pathName, this)
         rpb.block()
+        rpb.build()
+        return promote()
     }
 
     /**
      * Configure dispatcher rules that govern path selection constraints.
      *
      * @param block Builder block that configures dispatcher rules.
+     * @return This builder for method chaining.
      */
-    fun dispatcherRules(block: DispatcherRulesBlock.() -> Unit) {
-        val drb = DispatcherRulesBlock(this)
+    fun dispatcherRules(block: DispatcherRulesBlock.() -> Unit): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        val drb = DispatcherRulesBlock(targetBuilder)
         drb.block()
+        return this
+    }
+
+    /**
+     * Configure tracing for the harness. The captured configuration is applied to the built station
+     * via [build] so every emitted [PumpStationEvent] is mirrored into the
+     * global [com.TTT.Debug.PipeTracer] for export and visualization.
+     *
+     * @param block Builder block that enables tracing and configures its detail level, format, and
+     *              auto-export behavior.
+     * @return This builder for method chaining.
+     */
+    fun tracing(block: PumpStationTracingDsl.() -> Unit): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        require(targetBuilder.tracingConfiguration == null) {
+            "Tracing has already been configured for this PumpStation DSL."
+        }
+        val dsl = PumpStationTracingDsl()
+        dsl.block()
+        targetBuilder.tracingConfiguration = dsl.build()
+        return this
+    }
+
+    /**
+     * Configure a [KillSwitch] on the built [PumpStation]. The switch auto-enforces the
+     * configured [KillSwitchBlock.inputTokenLimit] / [KillSwitchBlock.outputTokenLimit] in the
+     * harness loop (mirrors [com.TTT.Pipeline.Manifold.checkKillSwitch]) and propagates to
+     * every [com.TTT.Pipeline.PathObject] the station owns.
+     *
+     * @param block DSL block that configures limits and an optional trip callback.
+     * @return This builder for method chaining.
+     * @throws IllegalArgumentException if a kill switch has already been configured.
+     */
+    fun killSwitch(block: KillSwitchBlock.() -> Unit): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        require(targetBuilder.killSwitchConfiguration == null) {
+            "KillSwitch has already been configured for this PumpStation DSL."
+        }
+        val dsl = KillSwitchBlock()
+        dsl.block()
+        targetBuilder.killSwitchConfiguration = dsl.build()
+        return this
+    }
+
+    /**
+     * Configure compaction for the harness. The captured configuration is applied
+     * to the built station via [build] so the per-attempt orchestrator picks up
+     * the developer-chosen strategy, fan-out mode, retry budget, chunk budget, and
+     * the pre-prune / rollback DITL hooks. Mirrors the [tracing] / [killSwitch]
+     * block shape.
+     */
+    fun compaction(block: CompactionBlock.() -> Unit): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        require(targetBuilder.compactionConfiguration == null) {
+            "compaction { } block already configured on this builder"
+        }
+        val dsl = CompactionBlock()
+        dsl.block()
+        targetBuilder.compactionConfiguration = dsl
+        return this
+    }
+
+    /**
+     * Configure pause phases for the harness. Each `add(phase)` call appends
+     * to the built station via [PumpStation.pauseAt].
+     *
+     * @param block Builder block that adds phases to the pause set.
+     * @return This builder for method chaining.
+     */
+    fun pause(block: PauseBlock.() -> Unit): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        val pb = PauseBlock(targetBuilder)
+        pb.block()
+        return this
+    }
+
+    /**
+     * Add a static additional harness agent. The block body is unused - the
+     * slot is built from the agent / concurrency args. The block exists only
+     * for shape symmetry with the rest of the DSL.
+     */
+    fun harnessAgent(
+        agent: P2PInterface,
+        concurrency: PumpStationConcurrencyMode = PumpStationConcurrencyMode.Blocking,
+        block: (HarnessAgentSlotDsl.() -> Unit) = {}
+    ): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        val dsl = HarnessAgentSlotDsl()
+        dsl.block()
+        targetBuilder.harnessAgentSlots.add(
+            HarnessAgentSlot(agent = agent, concurrency = concurrency, builderFunction = null)
+        )
+        return this
+    }
+
+    /**
+     * Add a builder-function additional harness agent. The block body is unused.
+     */
+    fun harnessAgentBuilder(
+        fn: suspend (PumpStation) -> P2PInterface,
+        concurrency: PumpStationConcurrencyMode = PumpStationConcurrencyMode.Async,
+        block: (HarnessAgentSlotDsl.() -> Unit) = {}
+    ): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        val dsl = HarnessAgentSlotDsl()
+        dsl.block()
+        targetBuilder.harnessAgentSlots.add(
+            HarnessAgentSlot(agent = null, concurrency = concurrency, builderFunction = fn)
+        )
+        return this
+    }
+
+    /**
+     * Resolve the builder that nested block methods should write their
+     * configuration into. Mirrors [ManifoldDsl]'s `peekBuilder` pattern: if a
+     * [path] or [reservePath] call has promoted the builder to
+     * [PumpStationStage.Ready], the promoted builder is on the stack and
+     * becomes the target. Otherwise the active `this` builder is the target.
+     */
+    @PublishedApi
+    internal fun resolveActiveBuilder(): PumpStationBuilder<*>
+    {
+        val stackBuilder = PumpStationBuilder.peekBuilder()
+        return if(stackBuilder != null && stackBuilder !== this)
+        {
+            @Suppress("UNCHECKED_CAST")
+            stackBuilder as PumpStationBuilder<*>
+        }
+        else
+        {
+            this
+        }
+    }
+
+    /**
+     * Promote the active builder to [PumpStationStage.Ready] by creating a new
+     * builder that copies the parent's configuration and pushing it onto the
+     * stack. The original `this` builder is no longer the active one; the
+     * top-level `pumpStation` entry function will pop the final ready-stage
+     * builder and call [build] on it.
+     */
+    @PublishedApi
+    internal fun promote(): PumpStationBuilder<PumpStationStage.Ready>
+    {
+        val promoted = PumpStationBuilder<PumpStationStage.Ready>(name).copyFrom(this)
+        @Suppress("UNCHECKED_CAST")
+        PumpStationBuilder.pushBuilder(promoted as PumpStationBuilder<*>)
+        @Suppress("UNCHECKED_CAST")
+        return promoted as PumpStationBuilder<PumpStationStage.Ready>
+    }
+
+    /**
+     * Copy every captured configuration field from [source] into this builder.
+     * Used by [promote] to carry over the Initial-stage configuration into the
+     * Ready-stage builder.
+     */
+    @PublishedApi
+    internal fun copyFrom(source: PumpStationBuilder<*>): PumpStationBuilder<*>
+    {
+        tracingConfiguration = source.tracingConfiguration
+        killSwitchConfiguration = source.killSwitchConfiguration
+        compactionConfiguration = source.compactionConfiguration
+        judgeAgent = source.judgeAgent
+        dispatchAgent = source.dispatchAgent
+        interventionAgent = source.interventionAgent
+        lorebookAgent = source.lorebookAgent
+        summaryAgent = source.summaryAgent
+        goalAgent = source.goalAgent
+        preInitAgent = source.preInitAgent
+        pathSafetyAgent = source.pathSafetyAgent
+        healthAgent = source.healthAgent
+        judgeAgentBuilderFunction = source.judgeAgentBuilderFunction
+        dispatchAgentBuilderFunction = source.dispatchAgentBuilderFunction
+        interventionAgentBuilderFunction = source.interventionAgentBuilderFunction
+        lorebookAgentBuilderFunction = source.lorebookAgentBuilderFunction
+        summaryAgentBuilderFunction = source.summaryAgentBuilderFunction
+        goalAgentBuilderFunction = source.goalAgentBuilderFunction
+        healthAgentBuilderFunction = source.healthAgentBuilderFunction
+        healthAgentTurnInterval = source.healthAgentTurnInterval
+        healthAgentErrorRatioThreshold = source.healthAgentErrorRatioThreshold
+        healthAgentConcurrencyMode = source.healthAgentConcurrencyMode
+        harnessAgentSlots.addAll(source.harnessAgentSlots)
+        personality = source.personality
+        systemTask = source.systemTask
+        userGuidelines = source.userGuidelines
+        entryUserPrompt = source.entryUserPrompt
+        judgeRunMode = source.judgeRunMode
+        maxConcurrentBackgroundAgents = source.maxConcurrentBackgroundAgents
+        maxConcurrentForegroundAgents = source.maxConcurrentForegroundAgents
+        foregroundTurnInterval = source.foregroundTurnInterval
+        backgroundTurnInterval = source.backgroundTurnInterval
+        memoryManagementMode = source.memoryManagementMode
+        compactionThreshold = source.compactionThreshold
+        compactionStrategy = source.compactionStrategy
+        maxTurnHistorySize = source.maxTurnHistorySize
+        maxTurns = source.maxTurns
+        concurrencyMode = source.concurrencyMode
+        maxGoalFailAttempts = source.maxGoalFailAttempts
+        maxRawTurnHistorySize = source.maxRawTurnHistorySize
+        blowoutThreshold = source.blowoutThreshold
+        memoryUpdateTimeoutMs = source.memoryUpdateTimeoutMs
+        maxBlowoutRecoveries = source.maxBlowoutRecoveries
+        maxRepairPromptTokens = source.maxRepairPromptTokens
+        stopHarnessOnInvalidPathRequest = source.stopHarnessOnInvalidPathRequest
+        failurePolicy = source.failurePolicy
+        maxConsecutiveSamePath = source.maxConsecutiveSamePath
+        maxTotalPathCallsPerPath = source.maxTotalPathCallsPerPath
+        pathLimitExceededPolicy = source.pathLimitExceededPolicy
+        pathLimitExceededFunction = source.pathLimitExceededFunction
+        judgeJsonContractEnabled = source.judgeJsonContractEnabled
+        pathSafetyJsonContractEnabled = source.pathSafetyJsonContractEnabled
+        reservePaths.putAll(source.reservePaths)
+        externalContextProvider = source.externalContextProvider
+        pausePhases.addAll(source.pausePhases)
+        judgeSystemPrompt = source.judgeSystemPrompt
+        dispatchSystemPrompt = source.dispatchSystemPrompt
+        pathSafetySystemPrompt = source.pathSafetySystemPrompt
+        healthSystemPrompt = source.healthSystemPrompt
+        lorebookSystemPrompt = source.lorebookSystemPrompt
+        goalSystemPrompt = source.goalSystemPrompt
+        eventObserver = source.eventObserver
+        preInitFunction = source.preInitFunction
+        preValidationJudgeFunction = source.preValidationJudgeFunction
+        postJudgeFunction = source.postJudgeFunction
+        preValidationDispatchFunction = source.preValidationDispatchFunction
+        preInvokeFunction = source.preInvokeFunction
+        pathSafetyFunction = source.pathSafetyFunction
+        postGenerateFunction = source.postGenerateFunction
+        pathValidationFunction = source.pathValidationFunction
+        pathTransformationFunction = source.pathTransformationFunction
+        postMemoryFunction = source.postMemoryFunction
+        preCompactionFunction = source.preCompactionFunction
+        postCompactionFunction = source.postCompactionFunction
+        onContextTruncated = source.onContextTruncated
+        pathObjects.putAll(source.pathObjects)
+        dispatcherRules.addAll(source.dispatcherRules)
+        return this
     }
 
 //=========================================Build====================================================================
 
     /**
-     * Build and return the configured [PumpStation].
-     *
-     * Note: This method defers wiring to the PumpStation instance until phase 3
-     * when PumpStation infrastructure is complete. The DSL structure is complete
-     * and correct; actual property wiring happens in phase 3.
+     * Build and return the configured [PumpStation]. This call is only type-safe
+     * on a [PumpStationBuilder] in the [PumpStationStage.Ready] stage; the entry
+     * function [pumpStation] handles the promotion. The runtime checks below
+     * are kept as a safety net in case a caller manually crafts a Ready-stage
+     * builder.
      *
      * @return Fully configured PumpStation ready for initialization.
      * @throws IllegalArgumentException if required configuration is missing.
@@ -403,10 +897,49 @@ class PumpStationBuilder(val name: String)
             .setPreInitAgent(preInitAgent)
             .setPathSafetyAgent(pathSafetyAgent)
 
+        // Agent builder functions
+        station
+            .setJudgeAgentBuilderFunction(judgeAgentBuilderFunction)
+            .setDispatchAgentBuilderFunction(dispatchAgentBuilderFunction)
+            .setInterventionAgentBuilderFunction(interventionAgentBuilderFunction)
+            .setLorebookAgentBuilderFunction(lorebookAgentBuilderFunction)
+            .setSummaryAgentBuilderFunction(summaryAgentBuilderFunction)
+            .setGoalAgentBuilderFunction(goalAgentBuilderFunction)
+
+        // Magic-contract toggles
+        station
+            .setJudgeJsonContractEnabled(judgeJsonContractEnabled)
+            .setPathSafetyJsonContractEnabled(pathSafetyJsonContractEnabled)
+
+        // Custom system prompts
+        station
+            .setJudgeSystemPrompt(judgeSystemPrompt)
+            .setDispatchSystemPrompt(dispatchSystemPrompt)
+            .setPathSafetySystemPrompt(pathSafetySystemPrompt)
+            .setHealthSystemPrompt(healthSystemPrompt)
+            .setLorebookSystemPrompt(lorebookSystemPrompt)
+            .setGoalSystemPrompt(goalSystemPrompt)
+
+        // Event observer
+        eventObserver?.let { station.setEventObserver(it) }
+
+        // Concurrency / max-turns parity
+        concurrencyMode?.let { station.setConcurrencyMode(it) }
+
+        // Personality
+        station.setPersonality(personality)
+
         // Additional harness agents (append each entry directly)
-        for (agent in additionalHarnessAgents)
+        for (slot in harnessAgentSlots)
         {
-            station.addHarnessAgent(agent)
+            if (slot.builderFunction != null)
+            {
+                station.addHarnessAgentBuilder(slot.builderFunction!!, slot.concurrency)
+            }
+            else if (slot.agent != null)
+            {
+                station.addHarnessAgent(slot.agent!!, slot.concurrency)
+            }
         }
 
         // Prompts and metadata
@@ -417,17 +950,31 @@ class PumpStationBuilder(val name: String)
 
         // Loop / concurrency / memory knobs
         station
-            .setMaxHarnessTurns(maxHarnessTurns)
+            .setMaxTurns(maxTurns)
+            .setJudgeRunMode(judgeRunMode)
             .setMaxConcurrentBackgroundAgents(maxConcurrentBackgroundAgents)
             .setMaxConcurrentForegroundAgents(maxConcurrentForegroundAgents)
+            .setAsyncPathsAppendToTurnHistory(asyncPathsAppendToTurnHistory)
+            .setAsyncAgentsAppendToTurnHistory(asyncAgentsAppendToTurnHistory)
+            .setAsyncJobGracePeriodMs(asyncJobGracePeriodMs)
+            .setAsyncJobsScopedToStation(asyncJobsScopedToStation)
             .setForegroundTurnInterval(foregroundTurnInterval)
             .setBackgroundTurnInterval(backgroundTurnInterval)
             .setMemoryManagementMode(memoryManagementMode)
             .setCompactionThreshold(compactionThreshold)
             .setCompactionStrategy(compactionStrategy)
             .setMaxTurnHistorySize(maxTurnHistorySize)
+            .setMaxGoalFailAttempts(maxGoalFailAttempts)
+            .setMaxRawTurnHistorySize(maxRawTurnHistorySize)
+            .setBlowoutThreshold(blowoutThreshold)
+            .setMemoryUpdateTimeoutMs(memoryUpdateTimeoutMs)
+            .setMaxBlowoutRecoveries(maxBlowoutRecoveries)
+            .setMaxRepairPromptTokens(maxRepairPromptTokens)
             .setStopHarnessOnInvalidPathRequest(stopHarnessOnInvalidPathRequest)
             .setFailurePolicy(failurePolicy)
+
+        // Tracing
+        tracingConfiguration?.let { station.enableTracing(it) }
 
         // Loop guards
         station
@@ -438,16 +985,13 @@ class PumpStationBuilder(val name: String)
         // pathLimitExceededPolicy is a public var on PumpStation
         station.pathLimitExceededPolicy = pathLimitExceededPolicy
 
-        // External context provider (signature on PumpStation takes no arguments)
-        if (externalContextProvider != null)
-        {
-            station.externalContextProvider = { -> externalContextProvider!!.invoke(station.getTaskState()) }
-        }
+        // External context provider
+        externalContextProvider?.let { station.setExternalContextProvider(it) }
 
-        // Pause phases - map onto the existing pauseAt(vararg) method
-        if (pauseAtPhases.isNotEmpty())
+        // Pause phases
+        if (pausePhases.isNotEmpty())
         {
-            station.pauseAt(*pauseAtPhases.toTypedArray())
+            station.pauseAt(*pausePhases.toTypedArray())
         }
 
         // DITL hooks
@@ -463,6 +1007,28 @@ class PumpStationBuilder(val name: String)
             .setPostMemoryFunction(postMemoryFunction)
             .setPreCompactionFunction(preCompactionFunction)
             .setPostCompactionFunction(postCompactionFunction)
+            .setPostJudgeFunction(postJudgeFunction)
+            .setOnContextTruncated(onContextTruncated)
+
+        // Compaction configuration - applied before path registration so the
+        // per-path settings see the configured values on the first addPath call.
+        compactionConfiguration?.let { cfg ->
+            cfg.strategy?.let { station.setCompactionStrategy(it) }
+            cfg.fanout?.let { station.setCompactionFanoutMode(it) }
+            cfg.threshold?.let { station.setCompactionThreshold(it) }
+            cfg.maxAttempts?.let { station.setMaxCompactionAttempts(it) }
+            cfg.chunkTokenBudget?.let { station.setChunkTokenBudget(it) }
+            cfg.maxChunks?.let { station.setMaxChunks(it) }
+            cfg.maxParallelChunks?.let { station.setMaxParallelChunks(it) }
+            cfg.maxBackups?.let { station.setMaxCompactionBackups(it) }
+            cfg.hybridWholeHeadroom?.let { station.setHybridWholeHeadroom(it) }
+            cfg.prePruneTransform?.let { station.setPrePruneTransform(it) }
+            cfg.rolledBackFunction?.let { station.setCompactionRolledBackFunction(it) }
+        }
+
+        // Kill switch - assign before path registration so the propagation in
+        // PumpStation.addPath picks up the configured switch on the first path added.
+        killSwitchConfiguration?.let { station.killSwitch = it }
 
         // Paths - add each entry to the station directly
         for ((_, path) in pathObjects)
@@ -488,22 +1054,29 @@ class PumpStationBuilder(val name: String)
     companion object {
         /**
          * Thread-local stack to track builder instances during DSL execution.
-         * When nested blocks are called, they push the builder onto the stack
-         * so parent context can be accessed.
+         * When a `path { }` or `reservePath { }` call promotes the builder to
+         * [PumpStationStage.Ready], the new builder is pushed onto the stack so
+         * subsequent configuration methods (`tracing { }`, `killSwitch { }`,
+         * `pause { }`, `harnessAgent { }`, etc.) can find the right builder to
+         * attach their configuration to. The entry function [pumpStation] pops
+         * the final builder and calls [build] on it.
          */
-        private val builderStack = ThreadLocal.withInitial { mutableListOf<PumpStationBuilder>() }
+        private val builderStack = ThreadLocal.withInitial { mutableListOf<PumpStationBuilder<*>>() }
 
         /**
          * Push a builder onto the stack.
          */
-        internal fun pushBuilder(builder: PumpStationBuilder) {
+        @PublishedApi
+        internal fun pushBuilder(builder: PumpStationBuilder<*>)
+        {
             builderStack.get().add(builder)
         }
 
         /**
          * Pop a builder from the stack.
          */
-        internal fun popBuilder(): PumpStationBuilder? {
+        @PublishedApi
+        internal fun popBuilder(): PumpStationBuilder<*>? {
             return if(builderStack.get().isNotEmpty()) {
                 builderStack.get().removeAt(builderStack.get().size - 1)
             }
@@ -513,11 +1086,20 @@ class PumpStationBuilder(val name: String)
         /**
          * Peek at the top of the stack without removing it.
          */
-        fun currentBuilder(): PumpStationBuilder? {
+        @PublishedApi
+        internal fun peekBuilder(): PumpStationBuilder<*>? {
             return if(builderStack.get().isNotEmpty()) {
                 builderStack.get().last()
             }
             else null
+        }
+
+        /**
+         * Peek at the top of the stack from outside the package. Public for
+         * advanced callers; the canonical use is internal configuration flow.
+         */
+        fun currentBuilder(): PumpStationBuilder<*>? {
+            return peekBuilder()
         }
     }
 }
@@ -526,7 +1108,7 @@ class PumpStationBuilder(val name: String)
  * Builder for memory management configuration.
  */
 @PumpStationDslMarker
-class MemoryBlock(private val builder: PumpStationBuilder)
+class MemoryBlock(private val builder: PumpStationBuilder<*>)
 {
     var mode: PumpStationMemoryManagementMode
         get() = builder.memoryManagementMode
@@ -545,7 +1127,7 @@ class MemoryBlock(private val builder: PumpStationBuilder)
  * Builder for path configuration.
  */
 @PumpStationDslMarker
-class PathBlock(private val pathName: String, private val builder: PumpStationBuilder)
+class PathBlock(private val pathName: String, private val builder: PumpStationBuilder<*>)
 {
     val pathObject = PathObject()
 
@@ -573,40 +1155,91 @@ class PathBlock(private val pathName: String, private val builder: PumpStationBu
         set(value) { pathObject.setRunsInBackground(value) }
 
     /**
+     * When true, an async path will NOT append its result to turnHistory on
+     * completion. The path still fires the PathCompleted event so observers
+     * can see the result, but the foreground drain will skip the history
+     * merge. Only takes effect when runsInBackground is also true.
+     */
+    var suppressHistoryEmit: Boolean
+        get() = pathObject.isSuppressHistoryEmit
+        set(value) { pathObject.setSuppressHistoryEmit(value) }
+
+    /**
+     * JSON schema used by the dispatch agent when this path is not bound to a
+     * PCP function. Mirrors [PathObject.pathSchema].
+     */
+    var schema: String
+        get() = pathObject.pathSchema
+        set(value) { pathObject.pathSchema = value }
+
+    /**
+     * Optional pre-built PCP schema. If the developer wants full control over
+     * the [PcpContext] (e.g. to merge external tools or pre-load options), set
+     * this directly. The [bindFunction] helper appends to whatever schema is
+     * already set, so binding a function after this assignment is additive.
+     */
+    var pcpSchema: PcpContext?
+        get() = pathObject.pcpSchema
+        set(value) { pathObject.pcpSchema = value }
+
+    /**
+     * Developer-supplied metadata map. Travels with the [PathObject] into the
+     * built station and can be read by the path's own execution closure or by
+     * DITL hooks. Currently advisory - there is no built-in runtime consumer
+     * of the map - but it is a public field on [PathObject] and we surface it
+     * here to keep the door open.
+     */
+    var pathMetadata: MutableMap<Any, Any>
+        get() = pathObject.pathMetadata
+        set(value) { pathObject.pathMetadata.clear(); pathObject.pathMetadata.putAll(value) }
+
+    /**
      * Bind a Kotlin function to this path, registering it in [FunctionRegistry]
-     * and populating the PCP schema.
+     * and populating the PCP schema under the function's own name.
      *
      * @param function The KFunction to bind.
      */
-    fun bindFunction(function: KFunction<*>) {
+    fun bindFunction(function: KFunction<*>)
+    {
         pathObject.bindFunction(function.name, function)
+    }
+
+    /**
+     * Bind a Kotlin function to this path under an explicit name. Use this
+     * overload when the registered PCP function name should differ from
+     * [KFunction.name] (e.g. to namespace, or to support a developer-chosen
+     * schema name).
+     *
+     * @param name The name to register the function under. Must match the
+     *             functionName the dispatch agent will emit when requesting
+     *             this path.
+     * @param function The KFunction to bind.
+     */
+    fun bindFunction(name: String, function: KFunction<*>)
+    {
+        pathObject.bindFunction(name, function)
     }
 
     /**
      * Set an internal agent to execute this path.
      * When assigned, the agent builder function is skipped at execution time.
      *
-     * @param agent The P2PInterface agent to set as the internal agent.
+     * @param agent The P2PInterface agent to set.
      */
-    fun setInternalAgent(agent: P2PInterface) {
+    fun setInternalAgent(agent: P2PInterface)
+    {
         pathObject.setInternalAgent(agent)
     }
 
     /**
      * Set the raw execution function for this path.
-     * Used as fallback when no internal agent or agent builder is present.
+     * This is the fallback when no internal agent or agent builder is present.
      *
      * @param function The suspend function to invoke when this path is called.
      */
-    fun setExecutionFunction(function: (suspend (MultimodalContent, PumpStation, ConverseHistory?, String) -> MultimodalContent)?) {
+    fun setExecutionFunction(function: (suspend (MultimodalContent, PumpStation, ConverseHistory?, String) -> MultimodalContent)?)
+    {
         pathObject.setExecutionFunction(function)
-    }
-
-    /**
-     * Configure the path schema for non-PCP path invocation.
-     */
-    fun schema(schema: String) {
-        pathObject.pathSchema = schema
     }
 
     /**
@@ -622,7 +1255,7 @@ class PathBlock(private val pathName: String, private val builder: PumpStationBu
  * Builder for reserve path configuration.
  */
 @PumpStationDslMarker
-class ReservePathBlock(private val pathName: String, private val builder: PumpStationBuilder)
+class ReservePathBlock(private val pathName: String, private val builder: PumpStationBuilder<*>)
 {
     val pathObject = PathObject()
 
@@ -636,13 +1269,28 @@ class ReservePathBlock(private val pathName: String, private val builder: PumpSt
         get() = pathObject.riskLevel
         set(value) { pathObject.riskLevel = value }
 
+    var pcpSchema: PcpContext?
+        get() = pathObject.pcpSchema
+        set(value) { pathObject.pcpSchema = value }
+
+    var pathMetadata: MutableMap<Any, Any>
+        get() = pathObject.pathMetadata
+        set(value) { pathObject.pathMetadata.clear(); pathObject.pathMetadata.putAll(value) }
+
     /**
-     * Bind a Kotlin function to this reserve path.
-     *
-     * @param function The KFunction to bind.
+     * Bind a Kotlin function to this reserve path under its own name.
      */
-    fun bindFunction(function: KFunction<*>) {
+    fun bindFunction(function: KFunction<*>)
+    {
         pathObject.bindFunction(function.name, function)
+    }
+
+    /**
+     * Bind a Kotlin function to this reserve path under an explicit name.
+     */
+    fun bindFunction(name: String, function: KFunction<*>)
+    {
+        pathObject.bindFunction(name, function)
     }
 
     /**
@@ -650,7 +1298,8 @@ class ReservePathBlock(private val pathName: String, private val builder: PumpSt
      *
      * @param agent The P2PInterface agent to set.
      */
-    fun setInternalAgent(agent: P2PInterface) {
+    fun setInternalAgent(agent: P2PInterface)
+    {
         pathObject.setInternalAgent(agent)
     }
 
@@ -660,7 +1309,8 @@ class ReservePathBlock(private val pathName: String, private val builder: PumpSt
      * @param predicate Function that receives task state and external context,
      *                  returns true if path should be revealed.
      */
-    fun revealWhen(predicate: (PumpStationTaskState, MutableMap<String, Any>) -> Boolean) {
+    fun revealWhen(predicate: (PumpStationTaskState, MutableMap<String, Any>) -> Boolean)
+    {
         pathObject.revealWhen = predicate
     }
 
@@ -677,7 +1327,7 @@ class ReservePathBlock(private val pathName: String, private val builder: PumpSt
  * Builder for dispatcher rules configuration.
  */
 @PumpStationDslMarker
-class DispatcherRulesBlock(private val builder: PumpStationBuilder)
+class DispatcherRulesBlock(private val builder: PumpStationBuilder<*>)
 {
     /**
      * Set maximum consecutive dispatch turns that can select a specific path.
@@ -685,7 +1335,8 @@ class DispatcherRulesBlock(private val builder: PumpStationBuilder)
      * @param pathName Name of the path to limit.
      * @param count Maximum consecutive turns allowed.
      */
-    fun maxConsecutive(pathName: String, count: Int) {
+    fun maxConsecutive(pathName: String, count: Int)
+    {
         builder.dispatcherRules.add(MaxConsecutiveRule(pathName, count))
     }
 
@@ -696,7 +1347,8 @@ class DispatcherRulesBlock(private val builder: PumpStationBuilder)
      * @param pathName Name of the path that has prerequisites.
      * @param requireAny List of path names that must have been executed first.
      */
-    fun before(pathName: String, requireAny: List<String>) {
+    fun before(pathName: String, requireAny: List<String>)
+    {
         builder.dispatcherRules.add(BeforeRule(pathName, requireAny))
     }
 
@@ -706,7 +1358,8 @@ class DispatcherRulesBlock(private val builder: PumpStationBuilder)
      * @param pathName Name of the path that triggers the suggestion.
      * @param suggest Name of the path to suggest after completion.
      */
-    fun after(pathName: String, suggest: String) {
+    fun after(pathName: String, suggest: String)
+    {
         builder.dispatcherRules.add(AfterRule(pathName, suggest))
     }
 
@@ -748,6 +1401,49 @@ data class AfterRule(
     val suggest: String
 ) : DispatcherRule()
 
+/**
+ * Builder for pause phases. Each `add(phase)` call appends to the parent
+ * builder's pause set; the build step forwards to
+ * [PumpStation.pauseAt].
+ */
+@PumpStationDslMarker
+class PauseBlock(private val builder: PumpStationBuilder<*>)
+{
+    /**
+     * Add a single phase to the pause set.
+     */
+    fun add(phase: PumpStationPausePhase)
+    {
+        builder.pausePhases.add(phase)
+    }
+
+    /**
+     * Add a vararg list of phases to the pause set.
+     */
+    fun addAll(phases: Iterable<PumpStationPausePhase>)
+    {
+        builder.pausePhases.addAll(phases)
+    }
+
+    /**
+     * Read-only view of the captured phases. Mutate via [add] / [addAll].
+     */
+    val phases: Set<PumpStationPausePhase> get() = builder.pausePhases
+}
+
+/**
+ * Optional body for `harnessAgent { }` / `harnessAgentBuilder { }` blocks.
+ * Currently a no-op container - the harness agent slot is built from the
+ * function args alone. Kept as a typed hook for future per-slot
+ * configuration (priority, weight, conditional attachment, etc.).
+ */
+@PumpStationDslMarker
+class HarnessAgentSlotDsl
+{
+    // Reserved for future per-slot configuration. Intentionally empty so the
+    // call-site shape matches the rest of the DSL.
+}
+
 //=========================================Entry Point=============================================================
 
 /**
@@ -757,11 +1453,277 @@ data class AfterRule(
  * @param block Builder block that configures the PumpStation.
  * @return Fully configured PumpStation ready for initialization.
  */
-fun pumpStation(name: String, block: PumpStationBuilder.() -> Unit): PumpStation
+fun pumpStation(name: String, block: PumpStationBuilder<PumpStationStage.Initial>.() -> Unit): PumpStation
 {
-    val builder = PumpStationBuilder(name)
-    PumpStationBuilder.pushBuilder(builder)
-    builder.block()
-    PumpStationBuilder.popBuilder()
-    return builder.build()
+    val initialBuilder = PumpStationBuilder<PumpStationStage.Initial>(name)
+    PumpStationBuilder.pushBuilder(initialBuilder)
+    initialBuilder.block()
+    // After the block runs, the top-of-stack is either the initial builder
+    // (no path/reservePath was called - but we have a runtime require() for
+    // that) or the most-recently-promoted Ready-stage builder.
+    val finalBuilder = PumpStationBuilder.popBuilder() ?: initialBuilder
+    return finalBuilder.build()
+}
+
+/**
+ * Factory function to create the initial [PumpStationBuilder] in the
+ * [PumpStationStage.Initial] stage. Mirrors [manifoldBuilder] from
+ * [ManifoldDsl].
+ */
+fun pumpStationBuilder(name: String): PumpStationBuilder<PumpStationStage.Initial>
+{
+    return PumpStationBuilder<PumpStationStage.Initial>(name)
+}
+
+//=========================================Tracing DSL================================================================
+
+/**
+ * Nested DSL block for configuring [PumpStation] tracing. Mirrors the Manifold/Junction tracing
+ * patterns. Usage:
+ *
+ * ```
+ * pumpStation("MyAgent") {
+ *     tracing {
+ *         enabled()
+ *         detailLevel(TraceDetailLevel.VERBOSE)
+ *         outputFormat(TraceFormat.HTML)
+ *         autoExport(enabled = true, path = "~/.my-traces/")
+ *     }
+ *     // ... agents, paths, etc.
+ * }
+ * ```
+ */
+@PumpStationDslMarker
+class PumpStationTracingDsl
+{
+    private var config = TraceConfig(enabled = true)
+
+    /**
+     * Enable (or explicitly disable) tracing. Defaults to enabling.
+     */
+    fun enabled(enabled: Boolean = true): PumpStationTracingDsl
+    {
+        config = config.copy(enabled = enabled)
+        return this
+    }
+
+    /**
+     * Set the maximum number of trace events retained per trace.
+     */
+    fun maxHistory(count: Int): PumpStationTracingDsl
+    {
+        config = config.copy(maxHistory = count)
+        return this
+    }
+
+    /**
+     * Set the trace output format. Used by [PumpStation.getTraceReport] when no format is supplied.
+     */
+    fun outputFormat(format: TraceFormat): PumpStationTracingDsl
+    {
+        config = config.copy(outputFormat = format)
+        return this
+    }
+
+    /**
+     * Set the detail level. Lower levels gate out DETAILED/INTERNAL events.
+     */
+    fun detailLevel(level: TraceDetailLevel): PumpStationTracingDsl
+    {
+        config = config.copy(detailLevel = level)
+        return this
+    }
+
+    /**
+     * Enable automatic file export after each run.
+     */
+    fun autoExport(enabled: Boolean = true, path: String = "~/.TPipe-Debug/traces/"): PumpStationTracingDsl
+    {
+        config = config.copy(autoExport = enabled, exportPath = path)
+        return this
+    }
+
+    /**
+     * Include the context snapshot on every event (slightly larger trace, more replayable).
+     */
+    fun includeContext(include: Boolean = true): PumpStationTracingDsl
+    {
+        config = config.copy(includeContext = include)
+        return this
+    }
+
+    /**
+     * Include event metadata (path names, risk levels, fill ratios, etc.) in the trace.
+     */
+    fun includeMetadata(include: Boolean = true): PumpStationTracingDsl
+    {
+        config = config.copy(includeMetadata = include)
+        return this
+    }
+
+    /**
+     * Replace the entire configuration with a pre-built [TraceConfig].
+     */
+    fun config(configuration: TraceConfig): PumpStationTracingDsl
+    {
+        config = configuration
+        return this
+    }
+
+    /**
+     * Build the immutable [TraceConfig] captured by this DSL block.
+     */
+    fun build(): TraceConfig = config
+}
+
+//=========================================KillSwitch Block========================================================
+
+/**
+ * DSL block for configuring a [KillSwitch] on a [PumpStationBuilder]. Captures the
+ * input/output token limits and an optional trip callback, then produces an immutable
+ * [KillSwitch] via [build]. Mirrors the block style used by [PumpStationTracingDsl].
+ *
+ * Example:
+ * ```
+ * pumpStation("my-station") {
+ *     killSwitch {
+ *         inputTokenLimit = 100_000
+ *         outputTokenLimit = 50_000
+ *         onTripped = { ctx ->
+ *             logger.error("Kill switch tripped: ${ctx.reason}")
+ *             throw KillSwitchException(ctx)
+ *         }
+ *     }
+ * }
+ * ```
+ */
+@PumpStationDslMarker
+class KillSwitchBlock
+{
+    /** Maximum tokens allowed for input (prompt + context). null = no limit. */
+    var inputTokenLimit: Int? = null
+
+    /** Maximum tokens allowed for output (response + reasoning). null = no limit. */
+    var outputTokenLimit: Int? = null
+
+    /**
+     * Callback invoked when the kill switch trips. Default throws [com.TTT.P2P.KillSwitchException].
+     * Typed as `(KillSwitchContext) -> Unit` in the DSL to allow custom handlers (e.g. logging
+     * before re-throwing). When null, the built [KillSwitch] uses the package default
+     * `onTripped` which throws [com.TTT.P2P.KillSwitchException].
+     */
+    var onTripped: ((KillSwitchContext) -> Unit)? = null
+
+    /**
+     * Build the immutable [KillSwitch] captured by this DSL block. When [onTripped] is null,
+     * the default throwing callback is used so the harness loop's [com.TTT.P2P.KillSwitchException]
+     * catch can transition the run to a [com.TTT.Pipeline.PumpStationError.KillSwitchTripped] state.
+     */
+    fun build(): KillSwitch
+    {
+        val handler = onTripped
+        return if (handler == null)
+        {
+            KillSwitch(
+                inputTokenLimit = inputTokenLimit,
+                outputTokenLimit = outputTokenLimit
+            )
+        }
+        else
+        {
+            KillSwitch(
+                inputTokenLimit = inputTokenLimit,
+                outputTokenLimit = outputTokenLimit,
+                onTripped = { ctx ->
+                    handler(ctx)
+                    // If the user's callback returns without throwing, fall through to the
+                    // default behavior so the harness still gets a deterministic termination
+                    // signal. This matches the contract of (KillSwitchContext) -> Nothing but
+                    // surfaces the user's handler result through the standard failure path.
+                    throw com.TTT.P2P.KillSwitchException(ctx)
+                }
+            )
+        }
+    }
+}
+
+//=========================================Compaction Block=========================================================
+
+/**
+ * DSL block for configuring the PumpStation v3 compaction orchestrator. Captures the
+ * strategy, threshold, fan-out mode, retry budget, chunk budgets, and the pre-prune /
+ * rollback DITL hooks, then applies them to the built station via [PumpStationBuilder.build].
+ *
+ * Mirrors the block style used by [PumpStationTracingDsl] and [KillSwitchBlock]. Every
+ * field is optional; unset fields fall back to the [PumpStation] defaults
+ * (Whole strategy, 0.8 threshold, Sequential fan-out, 2 attempts, etc.).
+ *
+ * Example:
+ * ```
+ * pumpStation("my-station") {
+ *     compaction {
+ *         strategy = PumpStationCompactionStrategy.Hybrid
+ *         fanout = ChunkFanoutMode.Parallel
+ *         maxAttempts = 2
+ *         chunkTokenBudget = 1500
+ *         maxBackups = 3
+ *         prePrune { turns, _ -> turns.filter { it.content.text.isNotBlank() } }
+ *         onRolledBack { backup, reason, _ -> null }
+ *     }
+ * }
+ * ```
+ */
+@PumpStationDslMarker
+class CompactionBlock
+{
+    /** Compaction strategy. Null = leave the [PumpStation] default. */
+    var strategy: PumpStationCompactionStrategy? = null
+
+    /** Context fill ratio that triggers compaction. Null = leave the default. */
+    var threshold: Double? = null
+
+    /** Chunk fan-out mode for the [PumpStationCompactionStrategy.Chunked] strategy. */
+    var fanout: ChunkFanoutMode? = null
+
+    /** Maximum number of compaction attempts before handing off to truncation. */
+    var maxAttempts: Int? = null
+
+    /** Token budget per chunk for the Chunked strategy. */
+    var chunkTokenBudget: Int? = null
+
+    /** Hard cap on the number of chunks produced by a single attempt. */
+    var maxChunks: Int? = null
+
+    /** Semaphore permit count for the [ChunkFanoutMode.Parallel] strategy. */
+    var maxParallelChunks: Int? = null
+
+    /** Maximum number of [CompactionBackup] snapshots retained. */
+    var maxBackups: Int? = null
+
+    /** Headroom threshold for Hybrid -> Whole. */
+    var hybridWholeHeadroom: Double? = null
+
+    /** Replace the default pre-prune transform. */
+    var prePruneTransform: (suspend (List<ConverseData>, PumpStation) -> List<ConverseData>)? = null
+
+    /** DITL hook fired when a [CompactionBackup] is restored. */
+    var rolledBackFunction: (suspend (CompactionBackup, String, PumpStation) -> CompactionBackup?)? = null
+
+    /**
+     * Register a pre-prune transform. Convenience for the most common use case.
+     * Equivalent to setting [prePruneTransform] directly.
+     */
+    fun prePrune(transform: suspend (List<ConverseData>, PumpStation) -> List<ConverseData>)
+    {
+        prePruneTransform = transform
+    }
+
+    /**
+     * Register a rollback DITL hook. Convenience for the most common use case.
+     * Equivalent to setting [rolledBackFunction] directly.
+     */
+    fun onRolledBack(handler: suspend (CompactionBackup, String, PumpStation) -> CompactionBackup?)
+    {
+        rolledBackFunction = handler
+    }
 }

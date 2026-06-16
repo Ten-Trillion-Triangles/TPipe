@@ -92,7 +92,8 @@ fun module() : Application.() -> Unit = {
 
 private fun extractMcpHttpPort(args: Array<String>): Int {
     val portArg = args.find { it.startsWith("--mcp-http-port=") }
-    if(portArg != null) {
+    if(portArg != null)
+    {
         return portArg.substringAfter("=").toIntOrNull() ?: 8090
     }
     return System.getenv("TPIPE_MCP_HTTP_PORT")?.toIntOrNull() ?: 8090
@@ -100,7 +101,8 @@ private fun extractMcpHttpPort(args: Array<String>): Int {
 
 private fun extractMcpHttpAuthKey(args: Array<String>): String? {
     val authKeyArg = args.find { it.startsWith("--mcp-http-auth-key=") }
-    if(authKeyArg != null) {
+    if(authKeyArg != null)
+    {
         return authKeyArg.substringAfter("=").ifEmpty { null }
     }
     return System.getenv("TPIPE_MCP_HTTP_AUTH_KEY")
@@ -108,7 +110,8 @@ private fun extractMcpHttpAuthKey(args: Array<String>): String? {
 
 private fun extractMcpHttpBindAddress(args: Array<String>): String {
     val bindArg = args.find { it.startsWith("--mcp-http-bind=") }
-    if(bindArg != null) {
+    if(bindArg != null)
+    {
         return bindArg.substringAfter("=").ifEmpty { "127.0.0.1" }
     }
     return System.getenv("TPIPE_MCP_HTTP_BIND") ?: "127.0.0.1"
@@ -116,7 +119,8 @@ private fun extractMcpHttpBindAddress(args: Array<String>): String {
 
 private fun extractMcpBridgeHttpPort(args: Array<String>): Int {
     val portArg = args.find { it.startsWith("--mcp-bridge-http-port=") }
-    if(portArg != null) {
+    if(portArg != null)
+    {
         return portArg.substringAfter("=").toIntOrNull() ?: 9090
     }
     return System.getenv("TPIPE_MCP_BRIDGE_HTTP_PORT")?.toIntOrNull() ?: 9090
@@ -124,7 +128,8 @@ private fun extractMcpBridgeHttpPort(args: Array<String>): Int {
 
 private fun extractMcpBridgeHttpAuthKey(args: Array<String>): String? {
     val authKeyArg = args.find { it.startsWith("--mcp-bridge-http-auth-key=") }
-    if(authKeyArg != null) {
+    if(authKeyArg != null)
+    {
         return authKeyArg.substringAfter("=").ifEmpty { null }
     }
     return System.getenv("TPIPE_MCP_BRIDGE_HTTP_AUTH_KEY")
@@ -132,7 +137,8 @@ private fun extractMcpBridgeHttpAuthKey(args: Array<String>): String? {
 
 private fun extractMcpBridgeHttpBindAddress(args: Array<String>): String {
     val bindArg = args.find { it.startsWith("--mcp-bridge-http-bind=") }
-    if(bindArg != null) {
+    if(bindArg != null)
+    {
         return bindArg.substringAfter("=").ifEmpty { "127.0.0.1" }
     }
     return System.getenv("TPIPE_MCP_BRIDGE_HTTP_BIND") ?: "127.0.0.1"

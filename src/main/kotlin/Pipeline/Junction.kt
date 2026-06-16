@@ -161,7 +161,8 @@ class Junction : P2PInterface
         val outputExceeded = outputLimit != null && outputTokens > outputLimit
 
         // Emit KILLSWITCH_CHECK event on every token check when tracing is enabled
-        if(tracingEnabled) {
+        if(tracingEnabled)
+        {
             trace(
                 eventType = TraceEventType.KILLSWITCH_CHECK,
                 phase = TracePhase.MONITORING,
@@ -189,7 +190,8 @@ class Junction : P2PInterface
             if(reason != null)
             {
                 // Emit KILLSWITCH_TRIPPED event when limits are exceeded
-                if(tracingEnabled) {
+                if(tracingEnabled)
+                {
                     trace(
                         eventType = TraceEventType.KILLSWITCH_TRIPPED,
                         phase = TracePhase.ERROR,

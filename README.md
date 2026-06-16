@@ -2,6 +2,8 @@
 
 **Built by [Ten Trillion Triangles](https://tentrilliontriangles.com)**
 
+TPipe is an Agent Operating Environment designed for engineering robust, deterministic AI systems that can be embedded anywhere. Think of it as **Municipal Plumbing** for your LLMs: data flows through **Pipes** (Valves), gets routed along **Pipelines** (Mainlines), and pools into your ContextWindow and ContextBank (Reservoirs). Built on Kotlin and GraalVM, it provides strict resource accounting, secure sandboxing, and structured reasoning for production-grade multi-agent swarms.
+
 **TPipe is the Agent Operating Environment**
 
 TPipe provides the managed substrate for AI agents, moving beyond simple library wrappers into a production-grade runtime. It treats LLM interactions as data flowing through a managed plumbing system: **Pipes** (Valves) transport data, **Pipelines** (Mainlines) route it, and **ContextWindow**/**ContextBank** (Reservoirs) provide persistent state. Built on Kotlin and GraalVM, it provides strict resource accounting, secure sandboxing, and structured reasoning for production-grade autonomous systems.
@@ -52,10 +54,16 @@ Explore how TPipe is used in the field for high-stakes automation:
 ## Documentation
 
 ### 🚀 Getting Started
+
+Start here for installation and your first TPipe application:
+
 - [Installation and Setup](docs/getting-started/installation-and-setup.md) - Requirements, installation, and environment setup
 - [First Steps](docs/getting-started/first-steps.md) - Your first pipe and pipeline
 
 ### 🧠 Core Concepts
+
+Essential TPipe features organized by complexity:
+
 #### Fundamentals
 - [Why TPipe? Architectural Deep Dive](docs/core-concepts/why-tpipe.md) - The paradigm shift from libraries to substrates
 - [Pipe Class - Core Concepts](docs/core-concepts/pipe-class.md) - Understanding the fundamental Pipe class
@@ -85,20 +93,31 @@ Explore how TPipe is used in the field for high-stakes automation:
 - [Pipeline Flow Control](docs/core-concepts/pipeline-flow-control.md) - Dynamic routing and conditional execution
 - [Error Handling and Propagation](docs/core-concepts/error-handling.md) - Programmatic error capture and debugging
 - [Tracing and Debugging](docs/core-concepts/tracing-and-debugging.md) - Monitoring and troubleshooting
+- [KillSwitch - Token Limit Enforcement](docs/core-concepts/killswitch.md) - Emergency safety mechanism for token exceedance
+- [Merged PCP + JSON Output Mode](docs/core-concepts/merged-pcp-json-output.md) - Simultaneous structured JSON and PCP tool calling
+- [Timeout and Retry System](docs/core-concepts/timeout-and-retry.md) - Pressure relief valves for transient failures
 
 ### 🏗️ Container Architecture
+
+Advanced pipeline orchestration and multi-agent systems:
+
 - [Container Overview](docs/containers/container-overview.md) - Introduction to TPipe containers
 - [Manifold - Multi-Agent Orchestration](docs/containers/manifold.md) - Coordinating multiple AI agents
 - [Manifold DSL Builder](docs/containers/manifold.md#dsl-builder) - Build and initialize manifolds in one Kotlin DSL block
 - [Manifold Setup Checklist](docs/containers/manifold.md#startup-checklist) - Required manager, worker, memory, and `init()` steps before startup
 - [Connector - Pipeline Branching](docs/containers/connector.md) - Conditional pipeline routing
 - [Splitter - Parallel Processing](docs/containers/splitter.md) - Concurrent pipeline execution
-- [Junction - Discussion and Workflow Harness](docs/containers/junction.md) - Collaborative discussion, voting, and workflow handoff
+- [Junction - Discussion and Workflow Harness](docs/containers/junction.md) - Multi-agent discussion, voting, and workflow handoff
+- [PumpStation - Judge/Dispatch/Path Harness](docs/containers/pumpstation.md) - Runtime agentic harness with judge, dispatch, paths, memory management, and goal validation
+- [PumpStation Magic Contracts](docs/core-concepts/pumpstation-magic-contracts.md) - LLM JSON contracts (judge, dispatch, path-safety, health, lorebook, goal) and where the data classes live
 - [MultiConnector - Advanced Routing](docs/containers/multiconnector.md) - Complex routing patterns
-- [DistributionGrid - Distributed Node Grid](docs/containers/distributiongrid.md) - Distributed node routing, discovery, and remote handoff
+- [DistributionGrid - Load Balancing](docs/containers/distributiongrid.md) - Distributed processing
 - [Cross-Cutting Topics](docs/containers/cross-cutting-topics.md) - Shared container concepts
 
 ### 🔧 Advanced Concepts
+
+Complex features and protocol integration:
+
 #### Pipe Context Protocol (PCP)
 - [Pipe Context Protocol Overview](docs/advanced-concepts/pipe-context-protocol.md) - TPipe's native tool protocol
 - [Basic PCP Usage](docs/advanced-concepts/basic-pcp-usage.md) - Getting started with PCP
@@ -122,12 +141,32 @@ Explore how TPipe is used in the field for high-stakes automation:
 - [P2P Requirements and Validation](docs/advanced-concepts/p2p/p2p-requirements-and-validation.md) - Security and validation
 
 ### ☁️ Provider Integration
-- [AWS Bedrock Getting Started](docs/bedrock/getting-started.md) - Setup, configuration, and first steps
+
+Integration guides for different AI providers:
+
+#### AWS Bedrock
+- [Getting Started with TPipe-Bedrock](docs/bedrock/getting-started.md) - Setup, configuration, and first steps
 - [AWS Bedrock Inference Binding](docs/bedrock/inference-binding.md) - Cross-region model access and configuration
 - [AWS Bedrock Guardrails](docs/bedrock/guardrails.md) - Content safety and moderation with Guardrails
-- [Ollama Getting Started](docs/ollama/getting-started.md) - Running TPipe with local models
+
+#### Ollama
+- [Getting Started with TPipe-Ollama](docs/ollama/getting-started.md) - Local model setup and configuration
+
+#### OpenRouter
+- [Getting Started with TPipe-OpenRouter](docs/openrouter/getting-started.md) - Unified API access to 300+ models
+
+### 📚 Case Studies
+
+Real-world patterns and comparisons:
+
+- [Grounded Case Studies](docs/case-studies/grounded-case-studies.md) - TPipe as an operating environment for advanced systems
+- [Headless Use-Cases](docs/case-studies/headless-use-cases.md) - TPipe in autonomous, headless-first deployments
+- [TPipe vs Apache Camel](docs/comparison/TPipe-vs-Apache-Camel-Comparison.md) - Complete feature comparison
 
 ### 📚 API Reference
+
+Complete API documentation for all TPipe components:
+
 #### Core APIs
 - [Pipe Class API](docs/api/pipe.md) - Complete Pipe class reference
 - [Pipeline Class API](docs/api/pipeline.md) - Pipeline orchestration methods
@@ -143,6 +182,11 @@ Explore how TPipe is used in the field for high-stakes automation:
 - [Dictionary API](docs/api/dictionary.md) - Token counting and truncation
 - [Lorebook API](docs/api/lorebook.md) - Knowledge base management
 
+#### Provider Pipe APIs
+- [GenericOpenAI Pipe API](docs/api/generic-openai-pipe.md) - Generic OpenAI-compatible provider interface
+- [Ollama Pipe API](docs/api/ollama-pipe.md) - Local Ollama model interface
+- [OpenRouter Pipe API](docs/api/openrouter-pipe.md) - OpenRouter unified API interface
+
 #### Advanced APIs
 - [Debug Package API](docs/api/debug-package.md) - Tracing and monitoring tools
 - [P2P Interface API](docs/api/p2p-interface.md) - Agent communication interface
@@ -152,7 +196,7 @@ Explore how TPipe is used in the field for high-stakes automation:
 - [Util Package API](docs/api/util-package.md) - Utility functions and helpers
 
 #### Extension APIs
-- [TPipe-MCP Package API](docs/api/tpipe-mcp-package.md) - Model Context Protocol bridge and server hosting
+- [TPipe-MCP Package API](docs/api/tpipe-mcp-package.md) - Model Context Protocol bridge
 - [TPipe-Defaults API](docs/api/tpipe-defaults-package.md) - Pre-configured components and reasoning
 
 ## Quick Start
@@ -170,10 +214,34 @@ val result = pipe.execute("What is artificial intelligence?")
 println(result.text)
 ```
 
+## Key Features
+
+- **Multi-stage AI workflows** with sophisticated error handling
+- **Timeout and retry system** with automatic recovery from transient failures and hanging LLM calls
+- **Pipeline pause/resume control** with declarative pause points and developer-in-the-loop workflows
+- **Global context sharing** across applications via ContextBank
+- **Remote memory hosting** for distributed agent systems with MemoryServer and MemoryClient
+- **Memory introspection** for autonomous agents with controlled memory access
+- **Retrieval functions** for lazy-loading context from databases and APIs
+- **Context access control** with ContextLock enforcement for secure lorebook and page management
+- **Developer-in-the-loop integration** with code and AI-powered validation
+- **Chain-of-thought reasoning** with multiple strategies and focus points
+- **Multi-provider AI support** (AWS Bedrock, Ollama, OpenRouter, extensible architecture)
+- **Kotlin and JavaScript scripting** in PCP alongside Python and native functions
+- **Comprehensive debugging** with detailed tracing and monitoring
+- **Remote trace dashboard** with TraceServer for centralized real-time trace viewing
+- **Multi-Stream and Independent Tracing** for parallel pipelines and complex orchestration
+- **Unified authentication** with AuthRegistry for automatic credential injection across remote services
+- **Cross-region inference** with automatic profile binding for AWS Bedrock
+- **Service tier optimization** for AWS Bedrock (Reserved, Priority, Standard, Flex)
+- **Content safety with AWS Bedrock Guardrails** for automatic content moderation and policy enforcement
+- **Enhanced security** with DNS rebinding protection, AST-based Python validation, and UUID session IDs
+- **Merged PCP + JSON mode** for simultaneous structured output and tool calling in a single response
+
 ## Requirements
 
 - **Java 24** or higher (GraalVM CE 24 recommended)
-- **Kotlin 2.0.21** or higher
+- **Kotlin 2.2.20** or higher
 - **Gradle** with Kotlin DSL
 
 ## Installation

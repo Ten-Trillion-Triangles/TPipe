@@ -1,0 +1,281 @@
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>TPipe Splitter Execution Flow</title>
+                <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+                <style>
+                    body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #f5f5f5; }
+                    .container { max-width: 1400px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                    h1 { color: #333; text-align: center; margin-bottom: 30px; }
+                    h1 span { color: #6366f1; }
+                    .flow-section { margin-bottom: 40px; }
+                    .details-section { margin-top: 40px; }
+                    .instruction { text-align: center; color: #666; font-style: italic; margin-bottom: 20px; }
+                    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+                    th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+                    th { background-color: #6366f1; color: white; font-weight: 600; }
+                    tr:nth-child(even) { background-color: #f8f9fa; }
+                    .mermaid { text-align: center; background: white; padding: 20px; border-radius: 8px; }
+                    .trace-item.highlighted { background-color: #fff3cd !important; border-left: 4px solid #ffc107; }
+                    .flash-highlight { animation: flashEffect 2s ease-in-out; }
+                    @keyframes flashEffect { 0%, 100% { background-color: inherit; } 50% { background-color: #ffeb3b; } }
+                    .trace-item { transition: background-color 0.3s ease; cursor: pointer; }
+                    .trace-item:hover { background-color: #f8f9fa; }
+                    #trace-details-table { scroll-margin-top: 20px; }
+                    .node rect { cursor: pointer; transition: stroke-width 0.2s ease; }
+                    .node:hover rect { stroke-width: 3px !important; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1><span>&#9660;</span> TPipe Splitter Execution Flow</h1>
+
+                    <div class="flow-section">
+                        <h2>&#128202; Interactive Flow Graph</h2>
+                        <p class="instruction">&#128161; Click on any node to jump to its events in the table below</p>
+                        <div class="mermaid">graph TD
+    node-363745143{{"Splitter-2keys<br/>START"}}
+    click node-363745143 scrollToEvent
+    node-163448021["Splitter-2keys<br/>CONTENT DISTRIBUTION"]
+    click node-163448021 scrollToEvent
+    node-1454590859["Splitter-2keys<br/>PARALLEL START"]
+    click node-1454590859 scrollToEvent
+    node-1359217364["Splitter-2keys<br/>PIPELINE DISPATCH"]
+    click node-1359217364 scrollToEvent
+    node-133510158["Splitter-2keys<br/>PIPELINE COMPLETION"]
+    click node-133510158 scrollToEvent
+    node-1816209161["Splitter-2keys<br/>PIPELINE CALLBACK"]
+    click node-1816209161 scrollToEvent
+    node-1471125143["Splitter-2keys<br/>PARALLEL AWAIT"]
+    click node-1471125143 scrollToEvent
+    node-979842123["Splitter-2keys<br/>RESULT COLLECTION"]
+    click node-979842123 scrollToEvent
+    node-1821821885["Splitter-2keys<br/>COMPLETION CALLBACK"]
+    click node-1821821885 scrollToEvent
+    node-1696749016["Splitter-2keys<br/>SUCCESS"]
+    click node-1696749016 scrollToEvent
+    node-326621488["Splitter-2keys<br/>END"]
+    click node-326621488 scrollToEvent
+    node-363745143:::info
+    node-363745143 --> node-163448021
+    node-163448021:::info
+    node-163448021 --> node-1454590859
+    node-1454590859:::info
+    node-1454590859 --> node-1359217364
+    node-1359217364:::info
+    node-1359217364:::info
+    node-1359217364:::info
+    node-1359217364 --> node-133510158
+    node-133510158:::info
+    node-133510158 --> node-1816209161
+    node-1816209161:::info
+    node-1816209161 --> node-133510158
+    node-133510158:::info
+    node-133510158 --> node-1816209161
+    node-1816209161:::info
+    node-1816209161 --> node-133510158
+    node-133510158:::info
+    node-133510158 --> node-1816209161
+    node-1816209161:::info
+    node-1816209161 --> node-1471125143
+    node-1471125143:::info
+    node-1471125143 --> node-979842123
+    node-979842123:::info
+    node-979842123 --> node-1821821885
+    node-1821821885:::info
+    node-1821821885 --> node-1696749016
+    node-1696749016:::info
+    node-1696749016 --> node-326621488
+    node-326621488:::info
+
+    classDef success fill:#d4edda,stroke:#28a745,stroke-width:2px
+    classDef failure fill:#f8d7da,stroke:#dc3545,stroke-width:2px
+    classDef info fill:#d1ecf1,stroke:#007bff,stroke-width:2px
+</div>
+                    </div>
+
+                    <div class="details-section">
+                        <h2>&#128203; Execution Details</h2>
+                        <table id="trace-details-table">
+    <tr>
+        <th>⏱️ Time</th>
+        <th>🔧 Pipe</th>
+        <th>📝 Event</th>
+        <th>🔄 Phase</th>
+        <th>✅ Status</th>
+        <th>📊 Metadata</th>
+    </tr><tr id="trace-event-221" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_START">
+    <td>+0ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_START</td>
+    <td>INITIALIZATION</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>activatorKeyCount:</strong> 2<br><strong>totalPipelines:</strong> 3<br><strong>splitterClass:</strong> com.TTT.Pipeline.Splitter</td>
+</tr><tr id="trace-event-222" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_CONTENT_DISTRIBUTION">
+    <td>+10ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_CONTENT_DISTRIBUTION</td>
+    <td>INITIALIZATION</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>activatorKey:</strong> analysis<br><strong>pipelineCount:</strong> 2<br><strong>contentSize:</strong> 32</td>
+</tr><tr id="trace-event-223" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_PARALLEL_START">
+    <td>+21ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_PARALLEL_START</td>
+    <td>EXECUTION</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>totalJobs:</strong> 3</td>
+</tr><tr id="trace-event-224" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_PIPELINE_DISPATCH">
+    <td>+31ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_PIPELINE_DISPATCH</td>
+    <td>EXECUTION</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>activatorKey:</strong> analysis<br><strong>pipelineName:</strong> TestPipeline1</td>
+</tr><tr id="trace-event-225" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_PIPELINE_DISPATCH">
+    <td>+36ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_PIPELINE_DISPATCH</td>
+    <td>EXECUTION</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>activatorKey:</strong> analysis<br><strong>pipelineName:</strong> TestPipeline2</td>
+</tr><tr id="trace-event-226" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_PIPELINE_DISPATCH">
+    <td>+41ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_PIPELINE_DISPATCH</td>
+    <td>EXECUTION</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>activatorKey:</strong> summary<br><strong>pipelineName:</strong> TestPipeline3</td>
+</tr><tr id="trace-event-227" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_PIPELINE_COMPLETION">
+    <td>+97ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_PIPELINE_COMPLETION</td>
+    <td>EXECUTION</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>pipelineName:</strong> TestPipeline1<br><strong>success:</strong> true<br><strong>resultSize:</strong> 25</td>
+</tr><tr id="trace-event-228" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_PIPELINE_CALLBACK">
+    <td>+97ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_PIPELINE_CALLBACK</td>
+    <td>POST_PROCESSING</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>pipelineName:</strong> TestPipeline1</td>
+</tr><tr id="trace-event-229" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_PIPELINE_COMPLETION">
+    <td>+147ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_PIPELINE_COMPLETION</td>
+    <td>EXECUTION</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>pipelineName:</strong> TestPipeline2<br><strong>success:</strong> true<br><strong>resultSize:</strong> 25</td>
+</tr><tr id="trace-event-230" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_PIPELINE_CALLBACK">
+    <td>+147ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_PIPELINE_CALLBACK</td>
+    <td>POST_PROCESSING</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>pipelineName:</strong> TestPipeline2</td>
+</tr><tr id="trace-event-231" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_PIPELINE_COMPLETION">
+    <td>+197ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_PIPELINE_COMPLETION</td>
+    <td>EXECUTION</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>pipelineName:</strong> TestPipeline3<br><strong>success:</strong> true<br><strong>resultSize:</strong> 25</td>
+</tr><tr id="trace-event-232" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_PIPELINE_CALLBACK">
+    <td>+197ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_PIPELINE_CALLBACK</td>
+    <td>POST_PROCESSING</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>pipelineName:</strong> TestPipeline3</td>
+</tr><tr id="trace-event-233" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_PARALLEL_AWAIT">
+    <td>+207ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_PARALLEL_AWAIT</td>
+    <td>POST_PROCESSING</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>jobCount:</strong> 3</td>
+</tr><tr id="trace-event-234" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_RESULT_COLLECTION">
+    <td>+217ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_RESULT_COLLECTION</td>
+    <td>POST_PROCESSING</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>resultCount:</strong> 3<br><strong>totalJobs:</strong> 3</td>
+</tr><tr id="trace-event-235" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_COMPLETION_CALLBACK">
+    <td>+228ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_COMPLETION_CALLBACK</td>
+    <td>CLEANUP</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>resultCount:</strong> 3</td>
+</tr><tr id="trace-event-236" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_SUCCESS">
+    <td>+238ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_SUCCESS</td>
+    <td>CLEANUP</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata"><strong>totalResults:</strong> 3<br><strong>successfulPipelines:</strong> 3<br><strong>totalPipelines:</strong> 3</td>
+</tr><tr id="trace-event-237" class="trace-item" data-pipe="Splitter-2keys-SPLITTER_END">
+    <td>+248ms</td>
+    <td>Splitter-2keys</td>
+    <td>SPLITTER_END</td>
+    <td>CLEANUP</td>
+    <td class="info">ℹ️ INFO</td>
+    <td class="metadata">-</td>
+</tr></table>
+                    </div>
+                </div>
+
+                <script>
+    window.scrollToEvent = function() {
+        const nodeId = arguments[0] || 'unknown';
+        const pipeName = getNodePipeName(nodeId);
+        const firstEventRow = document.querySelector(`.event-card[data-pipe="${pipeName}"]`) 
+            || document.querySelector(`.trace-item[data-pipe="${pipeName}"]`);
+        
+        if(firstEventRow)
+        {
+            highlightPipeEvents(pipeName);
+            firstEventRow.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'center' 
+            });
+            flashHighlight(firstEventRow);
+        }
+    }
+    
+    window.getNodePipeName = function(nodeId) {
+        const nodeMap = {"node-363745143": "Splitter-2keys-SPLITTER_START","node-163448021": "Splitter-2keys-SPLITTER_CONTENT_DISTRIBUTION","node-1454590859": "Splitter-2keys-SPLITTER_PARALLEL_START","node-1359217364": "Splitter-2keys-SPLITTER_PIPELINE_DISPATCH","node-133510158": "Splitter-2keys-SPLITTER_PIPELINE_COMPLETION","node-1816209161": "Splitter-2keys-SPLITTER_PIPELINE_CALLBACK","node-1471125143": "Splitter-2keys-SPLITTER_PARALLEL_AWAIT","node-979842123": "Splitter-2keys-SPLITTER_RESULT_COLLECTION","node-1821821885": "Splitter-2keys-SPLITTER_COMPLETION_CALLBACK","node-1696749016": "Splitter-2keys-SPLITTER_SUCCESS","node-326621488": "Splitter-2keys-SPLITTER_END"};
+        return nodeMap[nodeId] || '';
+    }
+    
+    window.highlightPipeEvents = function(pipeName) {
+        document.querySelectorAll('.trace-item').forEach(element => {
+            element.classList.remove('highlighted');
+        });
+        
+        document.querySelectorAll(`.trace-item[data-pipe="${pipeName}"]`).forEach(element => {
+            element.classList.add('highlighted');
+        });
+    }
+    
+    window.flashHighlight = function(element) {
+        element.classList.add('flash-highlight');
+        setTimeout(() => {
+            element.classList.remove('flash-highlight');
+        }, 2000);
+    }
+    
+    mermaid.initialize({ 
+        startOnLoad: true,
+        theme: 'default',
+        flowchart: { 
+            useMaxWidth: true, 
+            htmlLabels: true 
+        },
+        securityLevel: 'loose'
+    });
+</script>
+            </body>
+            </html>

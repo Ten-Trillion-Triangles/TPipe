@@ -17,14 +17,19 @@ class TraceVisualizer
      */
     fun generateFlowChart(trace: List<TraceEvent>): String {
         val flowChart = StringBuilder()
-        
+
         // Detect whether the trace belongs to a container harness so the visualizer can pick the correct
         // heading && event symbols for Junction's discussion/workflow lifecycle.
+        val isPumpStationTrace = trace.any { it.eventType.name.startsWith("PUMP_STATION_") }
         val isManifoldTrace = trace.any { it.eventType.name.startsWith("MANIFOLD_") }
         val isJunctionTrace = trace.any { it.eventType.name.startsWith("JUNCTION_") }
         val isDistributionGridTrace = trace.any { it.eventType.name.startsWith("DISTRIBUTION_GRID_") }
 
-        if(isDistributionGridTrace)
+        if(isPumpStationTrace)
+        {
+            flowChart.append("=== PumpStation Orchestration Flow ===\n")
+        }
+        else if(isDistributionGridTrace)
         {
             flowChart.append("=== DistributionGrid Orchestration Flow ===\n")
         }
@@ -129,7 +134,46 @@ class TraceVisualizer
                 // Task management events
                 TraceEventType.TASK_PROGRESS_UPDATE -> "📊"
                 TraceEventType.CONVERSE_HISTORY_UPDATE -> "💬"
-                
+
+                // PumpStation orchestration events
+                TraceEventType.PUMP_STATION_STARTED -> "⛽"
+                TraceEventType.PUMP_STATION_COMPLETED -> "🏁"
+                TraceEventType.PUMP_STATION_FAILED -> "❌"
+                TraceEventType.PUMP_STATION_SUSPENDED -> "⏸"
+                TraceEventType.PUMP_STATION_RESUMED -> "▶"
+                TraceEventType.PUMP_STATION_HEALTH_CHECK_STARTED -> "💓"
+                TraceEventType.PUMP_STATION_HEALTH_CHECK_COMPLETED -> "🩺"
+                TraceEventType.PUMP_STATION_JUDGE_STARTED -> "⚖"
+                TraceEventType.PUMP_STATION_JUDGE_COMPLETED -> "✅"
+                TraceEventType.PUMP_STATION_JUDGE_SKIPPED -> "⏭"
+                TraceEventType.PUMP_STATION_DISPATCH_STARTED -> "🧭"
+                TraceEventType.PUMP_STATION_DISPATCH_COMPLETED -> "🛤"
+                TraceEventType.PUMP_STATION_PATH_SAFETY_STARTED -> "🛡"
+                TraceEventType.PUMP_STATION_PATH_SAFETY_COMPLETED -> "🛡"
+                TraceEventType.PUMP_STATION_PATH_VALIDATION_COMPLETED -> "✔"
+                TraceEventType.PUMP_STATION_INTERVENTION_STARTED -> "🆘"
+                TraceEventType.PUMP_STATION_INTERVENTION_COMPLETED -> "🆘"
+                TraceEventType.PUMP_STATION_FOREGROUND_AGENT_COMPLETED -> "👤"
+                TraceEventType.PUMP_STATION_BACKGROUND_AGENT_QUEUED -> "👥"
+                TraceEventType.PUMP_STATION_MEMORY_UPDATE_STARTED -> "🧠"
+                TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED -> "🧠"
+                TraceEventType.PUMP_STATION_COMPACTION_STARTED -> "🗜"
+                TraceEventType.PUMP_STATION_COMPACTION_COMPLETED -> "🗜"
+                TraceEventType.PUMP_STATION_COMPACTION_INFLATED -> "⚠"
+                TraceEventType.PUMP_STATION_COMPACTION_ROLLED_BACK -> "↩"
+                TraceEventType.PUMP_STATION_COMPACTION_HANDED_OFF -> "⤵"
+                TraceEventType.PUMP_STATION_GOAL_VALIDATION_STARTED -> "🎯"
+                TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED -> "🎯"
+                TraceEventType.PUMP_STATION_PATH_SELECTED -> "👆"
+                TraceEventType.PUMP_STATION_PATH_STARTED -> "▶"
+                TraceEventType.PUMP_STATION_PATH_COMPLETED -> "✅"
+                TraceEventType.PUMP_STATION_PATH_FAILED -> "❌"
+                TraceEventType.PUMP_STATION_PATH_HIDDEN -> "🚫"
+                TraceEventType.PUMP_STATION_RESERVE_PATH_REVEALED -> "🔓"
+                TraceEventType.PUMP_STATION_STASH_CREATED -> "📦"
+                TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED -> "💥"
+                TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED -> "⚠"
+
                 else -> "ℹ️"
             }
             
@@ -148,6 +192,7 @@ class TraceVisualizer
     fun generateTimeline(trace: List<TraceEvent>): String {
         val timeline = StringBuilder()
         val heading = when {
+            trace.any { it.eventType.name.startsWith("PUMP_STATION_") } -> "=== PumpStation Timeline ===\n"
             trace.any { it.eventType.name.startsWith("DISTRIBUTION_GRID_") } -> "=== DistributionGrid Timeline ===\n"
             trace.any { it.eventType.name.startsWith("JUNCTION_") } -> "=== Junction Timeline ===\n"
             trace.any { it.eventType.name.startsWith("MANIFOLD_") } -> "=== Manifold Timeline ===\n"
@@ -156,10 +201,11 @@ class TraceVisualizer
         timeline.append(heading)
         
         val startTime = trace.firstOrNull()?.timestamp ?: 0L
-        
+
         trace.forEach { event ->
             val elapsed = event.timestamp - startTime
             val label = when {
+                event.eventType.name.startsWith("PUMP_STATION_") -> mapPumpStationNodeName(event)
                 event.eventType.name.startsWith("DISTRIBUTION_GRID_") -> mapDistributionGridNodeName(event)
                 event.eventType.name.startsWith("JUNCTION_") -> mapJunctionNodeName(event)
                 event.eventType.name.startsWith("MANIFOLD_") ||
@@ -168,13 +214,13 @@ class TraceVisualizer
                 else -> event.pipeName
             }
             timeline.append("[${elapsed}ms] ${label}: ${event.eventType} (${event.phase})\n")
-            
+
             if(event.error != null)
             {
                 timeline.append("    ERROR: ${event.error.message}\n")
             }
         }
-        
+
         return timeline.toString()
     }
     
@@ -187,21 +233,29 @@ class TraceVisualizer
     fun generateConsoleOutput(trace: List<TraceEvent>): String {
         val output = StringBuilder()
         val heading = when {
+            trace.any { it.eventType.name.startsWith("PUMP_STATION_") } -> "=== TPipe PumpStation Trace ===\n"
             trace.any { it.eventType.name.startsWith("DISTRIBUTION_GRID_") } -> "=== TPipe DistributionGrid Trace ===\n"
             trace.any { it.eventType.name.startsWith("JUNCTION_") } -> "=== TPipe Junction Trace ===\n"
             trace.any { it.eventType.name.startsWith("MANIFOLD_") } -> "=== TPipe Manifold Trace ===\n"
             else -> "=== TPipe Execution Trace ===\n"
         }
         output.append(heading)
-        
+
         trace.forEach { event ->
             val status = when(event.eventType) {
-                TraceEventType.PIPE_SUCCESS, TraceEventType.API_CALL_SUCCESS, TraceEventType.VALIDATION_SUCCESS -> "[SUCCESS]"
-                TraceEventType.PIPE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE -> "[FAILURE]"
+                TraceEventType.PIPE_SUCCESS, TraceEventType.API_CALL_SUCCESS, TraceEventType.VALIDATION_SUCCESS,
+                TraceEventType.PUMP_STATION_COMPLETED, TraceEventType.PUMP_STATION_PATH_COMPLETED,
+                TraceEventType.PUMP_STATION_JUDGE_COMPLETED, TraceEventType.PUMP_STATION_DISPATCH_COMPLETED,
+                TraceEventType.PUMP_STATION_HEALTH_CHECK_COMPLETED, TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED,
+                TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED -> "[SUCCESS]"
+                TraceEventType.PIPE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE,
+                TraceEventType.PUMP_STATION_FAILED, TraceEventType.PUMP_STATION_PATH_FAILED,
+                TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED, TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED -> "[FAILURE]"
                 else -> "[INFO]"
             }
-            
+
             val label = when {
+                event.eventType.name.startsWith("PUMP_STATION_") -> mapPumpStationNodeName(event)
                 event.eventType.name.startsWith("DISTRIBUTION_GRID_") -> mapDistributionGridNodeName(event)
                 event.eventType.name.startsWith("JUNCTION_") -> mapJunctionNodeName(event)
                 event.eventType.name.startsWith("MANIFOLD_") ||
@@ -231,6 +285,7 @@ class TraceVisualizer
      */
     fun generateMarkdownOutput(trace: List<TraceEvent>): String {
         val heading = when {
+            trace.any { it.eventType.name.startsWith("PUMP_STATION_") } -> "# TPipe PumpStation Trace Report\n\n"
             trace.any { it.eventType.name.startsWith("DISTRIBUTION_GRID_") } -> "# TPipe DistributionGrid Trace Report\n\n"
             trace.any { it.eventType.name.startsWith("JUNCTION_") } -> "# TPipe Junction Trace Report\n\n"
             trace.any { it.eventType.name.startsWith("MANIFOLD_") } -> "# TPipe Manifold Trace Report\n\n"
@@ -242,6 +297,7 @@ class TraceVisualizer
 
         trace.forEach { event ->
             val label = when {
+                event.eventType.name.startsWith("PUMP_STATION_") -> mapPumpStationNodeName(event)
                 event.eventType.name.startsWith("DISTRIBUTION_GRID_") -> mapDistributionGridNodeName(event)
                 event.eventType.name.startsWith("JUNCTION_") -> mapJunctionNodeName(event)
                 event.eventType.name.startsWith("MANIFOLD_") ||
@@ -277,6 +333,7 @@ class TraceVisualizer
         val isManifoldTrace = trace.any { it.eventType.name.startsWith("MANIFOLD_") }
         val isDistributionGridTrace = trace.any { it.eventType.name.startsWith("DISTRIBUTION_GRID_") }
         val isSplitterTrace = trace.any { it.eventType.name.startsWith("SPLITTER_") }
+        val isPumpStationTrace = trace.any { it.eventType.name.startsWith("PUMP_STATION_") }
 
         return if(isSplitterTrace) {
             generateSplitterHtmlReport(trace)
@@ -289,6 +346,9 @@ class TraceVisualizer
         }
         else if(isManifoldTrace) {
             generateManifoldHtmlReport(trace)
+        }
+        else if(isPumpStationTrace) {
+            generatePumpStationHtmlReport(trace)
         }
         else
         {
@@ -305,7 +365,8 @@ class TraceVisualizer
         // Create nodes for each pipe
         nodes.forEachIndexed { index, node ->
             val label = formatNodeLabel(node.pipeName).replace("\n", "<br/>")
-            if (index == 0) {
+            if(index == 0)
+            {
                 graph.append("    ${node.nodeId}{{\"$label\"}}\n")
             } else {
                 graph.append("    ${node.nodeId}[\"$label\"]\n")
@@ -954,11 +1015,849 @@ class TraceVisualizer
         """.trimIndent()
     }
 
-    
+    //======================================================================================================
+    // PumpStation Custom Report
+    //
+    // Designed from the ground up for the harness's turn-state-machine nature. NOT a copy of any
+    // other container's report. Vertical scroll of turn cards, each with a horizontal phase ribbon
+    // showing the per-turn progression: HealthCheck → Judge → Dispatch → Path → Foreground →
+    // Background → Memory → Compaction. Background/parallel activity is interleaved chronologically
+    // within each turn card with a distinct visual marker. State ribbon at top shows 6 KPIs.
+    //======================================================================================================
+
+    /**
+     * Derive the harness's overall status from a PumpStation trace. Returns "completed" if the trace
+     * ends with PUMP_STATION_COMPLETED, "failed" if it ends with PUMP_STATION_FAILED, "suspended"
+     * if the last signal is PUMP_STATION_SUSPENDED, and "running" otherwise (trace still open).
+     */
+    private fun derivePumpStationStatus(trace: List<TraceEvent>): String
+    {
+        val lastLifecycle = trace.lastOrNull { event ->
+            event.eventType in listOf(
+                TraceEventType.PUMP_STATION_COMPLETED,
+                TraceEventType.PUMP_STATION_FAILED,
+                TraceEventType.PUMP_STATION_SUSPENDED
+            )
+        } ?: return "running"
+        return when (lastLifecycle.eventType)
+        {
+            TraceEventType.PUMP_STATION_COMPLETED -> "completed"
+            TraceEventType.PUMP_STATION_FAILED -> "failed"
+            TraceEventType.PUMP_STATION_SUSPENDED -> "suspended"
+            else -> "running"
+        }
+    }
+
+    /**
+     * Compute the harness's total wall-clock duration from the first to the last event timestamp.
+     * Returns the duration in milliseconds. Zero when the trace is empty.
+     */
+    private fun pumpStationDurationMs(trace: List<TraceEvent>): Long
+    {
+        if (trace.isEmpty()) return 0L
+        val first = trace.first().timestamp
+        val last = trace.last().timestamp
+        return (last - first).coerceAtLeast(0L)
+    }
+
+    /**
+     * Build the six state-ribbon KPI cards. Each card shows: turn counter, goal state, memory
+     * fill ratio, paths visible/hidden, error count, lorebook size.
+     */
+    private fun buildPumpStationStateRibbon(trace: List<TraceEvent>): String
+    {
+        val distinctTurns = trace.mapNotNull { it.metadata["turnIndex"]?.toString()?.toIntOrNull() }.distinct().sorted()
+        val turnCounter = if (distinctTurns.isEmpty()) "0" else "${distinctTurns.size}"
+
+        val goalEvents = trace.filter { it.eventType == TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED }
+        val goalPassed = goalEvents.count { it.metadata["passed"] == true }
+        val goalFailed = goalEvents.size - goalPassed
+        val goalCard = when
+        {
+            goalFailed > 0 -> "<span class='ps-kpi-value ps-status-failed'>✗ $goalFailed fail</span><span class='ps-kpi-sub'>${goalPassed} passed</span>"
+            goalPassed > 0 -> "<span class='ps-kpi-value ps-status-completed'>✓ Pass</span><span class='ps-kpi-sub'>${goalPassed} goal checks</span>"
+            else -> "<span class='ps-kpi-value'>—</span><span class='ps-kpi-sub'>no goal</span>"
+        }
+
+        val lastMemUpdate = trace.lastOrNull { it.eventType == TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED }
+        val memPercent = (lastMemUpdate?.metadata?.get("compactionPercent") as? Number)?.toDouble()
+        val memCard = if (memPercent != null)
+        {
+            val pct = (memPercent * 100).toInt().coerceIn(0, 100)
+            "<span class='ps-kpi-value'>${pct}%</span>" +
+                "<div class='ps-mem-bar'><div class='ps-mem-bar-fill' style='width:${pct}%'></div></div>"
+        }
+        else
+        {
+            "<span class='ps-kpi-value'>—</span><span class='ps-kpi-sub'>no mem updates</span>"
+        }
+
+        val selectedPaths = trace.filter { it.eventType == TraceEventType.PUMP_STATION_PATH_SELECTED }
+            .mapNotNull { it.metadata["pathName"]?.toString() }.toSet()
+        val hiddenPaths = trace.filter { it.eventType == TraceEventType.PUMP_STATION_PATH_HIDDEN }
+            .mapNotNull { it.metadata["pathName"]?.toString() }.toSet()
+        val visibleCount = (selectedPaths - hiddenPaths).size
+        val hiddenCount = hiddenPaths.size
+        val pathsCard = "<span class='ps-kpi-value'>${visibleCount}/${selectedPaths.size}</span>" +
+            "<span class='ps-kpi-sub'>${hiddenCount} hidden</span>"
+
+        val errorEvents = trace.filter {
+            it.eventType == TraceEventType.PUMP_STATION_FAILED ||
+            it.eventType == TraceEventType.PUMP_STATION_PATH_FAILED ||
+            it.eventType == TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED ||
+            it.eventType == TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED
+        }
+        val errorCount = errorEvents.size
+        val lastErrorType = errorEvents.lastOrNull()?.eventType?.name?.removePrefix("PUMP_STATION_") ?: "None"
+        val errorsCard = "<span class='ps-kpi-value'>${errorCount}</span>" +
+            "<span class='ps-kpi-sub'>${lastErrorType}</span>"
+
+        val loreCard = "<span class='ps-kpi-value'>${goalPassed + goalFailed}</span>" +
+            "<span class='ps-kpi-sub'>goal evals</span>"
+
+        return """
+            <div class="ps-ribbon">
+                <div class="ps-ribbon-card"><h3>Turn</h3>${turnCounter}</div>
+                <div class="ps-ribbon-card"><h3>Goal</h3>${goalCard}</div>
+                <div class="ps-ribbon-card"><h3>Memory</h3>${memCard}</div>
+                <div class="ps-ribbon-card"><h3>Paths</h3>${pathsCard}</div>
+                <div class="ps-ribbon-card"><h3>Errors</h3>${errorsCard}</div>
+                <div class="ps-ribbon-card"><h3>Goal Evals</h3>${loreCard}</div>
+            </div>
+        """.trimIndent()
+    }
+
+    /**
+     * Build the SVG memory-pressure sparkline. One bar per turn, height proportional to fill ratio.
+     * Threshold line drawn across the top of the chart at the configured blowout threshold.
+     */
+    private fun buildPumpStationSparkline(trace: List<TraceEvent>): String
+    {
+        val memByTurn = trace.filter { it.eventType == TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED }
+            .associateBy(
+                { it.metadata["turnIndex"]?.toString()?.toIntOrNull() ?: -1 },
+                { (it.metadata["compactionPercent"] as? Number)?.toDouble() ?: 0.0 }
+            )
+        if (memByTurn.isEmpty()) return ""
+
+        val sortedTurns = memByTurn.keys.sorted()
+        val barWidth = 24
+        val gap = 4
+        val chartHeight = 80
+        val chartWidth = sortedTurns.size * (barWidth + gap) + 20
+        val threshold = 0.9
+
+        val bars = sortedTurns.mapIndexed { index, turn ->
+            val ratio = memByTurn[turn] ?: 0.0
+            val barHeight = (ratio * chartHeight).toInt().coerceAtLeast(2)
+            val x = 10 + index * (barWidth + gap)
+            val y = chartHeight - barHeight + 10
+            val color = when
+            {
+                ratio >= threshold -> "#ef4444"
+                ratio >= 0.7 -> "#f59e0b"
+                else -> "#10b981"
+            }
+            "<rect x='$x' y='$y' width='$barWidth' height='$barHeight' fill='$color' rx='2'>" +
+                "<title>Turn $turn: ${(ratio * 100).toInt()}%</title></rect>" +
+                "<text x='${x + barWidth / 2}' y='${chartHeight + 22}' font-size='9' fill='#64748b' text-anchor='middle'>$turn</text>"
+        }.joinToString("")
+
+        val thresholdY = chartHeight - (threshold * chartHeight).toInt() + 10
+        val thresholdLine = "<line x1='0' y1='$thresholdY' x2='$chartWidth' y2='$thresholdY' " +
+            "stroke='#ef4444' stroke-dasharray='4,3' stroke-width='1'/>" +
+            "<text x='${chartWidth - 4}' y='${thresholdY - 4}' font-size='9' fill='#ef4444' text-anchor='end'>blowout ${(threshold * 100).toInt()}%</text>"
+
+        return """
+            <div class="ps-sparkline-section">
+                <h2>Memory pressure by turn</h2>
+                <div class="ps-sparkline-wrap">
+                    <svg width="$chartWidth" height="${chartHeight + 30}" class="ps-sparkline">
+                        $bars
+                        $thresholdLine
+                    </svg>
+                </div>
+            </div>
+        """.trimIndent()
+    }
+
+    /**
+     * Build the two-column path inventory. Active paths on the left (with call count, last risk,
+     * last status), reserve paths on the right (revealed or not).
+     */
+    private fun buildPumpStationPathInventory(trace: List<TraceEvent>): String
+    {
+        val pathEvents = trace.filter {
+            it.eventType in listOf(
+                TraceEventType.PUMP_STATION_PATH_SELECTED,
+                TraceEventType.PUMP_STATION_PATH_COMPLETED,
+                TraceEventType.PUMP_STATION_PATH_FAILED,
+                TraceEventType.PUMP_STATION_PATH_HIDDEN
+            )
+        }
+        val activePaths = pathEvents
+            .filter { it.eventType == TraceEventType.PUMP_STATION_PATH_SELECTED }
+            .mapNotNull { it.metadata["pathName"]?.toString() }
+            .toSet()
+        val hiddenPaths = pathEvents
+            .filter { it.eventType == TraceEventType.PUMP_STATION_PATH_HIDDEN }
+            .mapNotNull { it.metadata["pathName"]?.toString() }
+            .toSet()
+        val reserveReveals = trace.filter { it.eventType == TraceEventType.PUMP_STATION_RESERVE_PATH_REVEALED }
+            .mapNotNull { it.metadata["pathName"]?.toString() }.toSet()
+
+        val activeCards = activePaths.map { pathName ->
+            val calls = pathEvents.count {
+                it.eventType == TraceEventType.PUMP_STATION_PATH_SELECTED &&
+                it.metadata["pathName"]?.toString() == pathName
+            }
+            val lastRisk = pathEvents.lastOrNull {
+                it.metadata["pathName"]?.toString() == pathName &&
+                (it.eventType == TraceEventType.PUMP_STATION_PATH_SELECTED ||
+                 it.eventType == TraceEventType.PUMP_STATION_PATH_STARTED)
+            }?.metadata?.get("riskLevel")?.toString() ?: "?"
+            val isHidden = pathName in hiddenPaths
+            val statusClass = if (isHidden) "ps-path-hidden" else "ps-path-active"
+            val riskClass = "ps-risk-${lastRisk.lowercase()}"
+            "<div class='ps-path-card $statusClass'>" +
+                "<div class='ps-path-name'>$pathName</div>" +
+                "<div class='ps-path-meta'>" +
+                "<span class='ps-badge $riskClass'>$lastRisk</span>" +
+                "<span class='ps-call-count'>$calls calls</span>" +
+                (if (isHidden) "<span class='ps-badge ps-hidden-badge'>HIDDEN</span>" else "") +
+                "</div></div>"
+        }.joinToString("")
+
+        val reserveNames = reserveReveals.joinToString("<br>") { "✓ $it" }.ifEmpty { "<em>none revealed</em>" }
+
+        return """
+            <div class="ps-paths-section">
+                <div class="ps-paths-col">
+                    <h2>Active paths (${activePaths.size})</h2>
+                    ${activeCards.ifEmpty { "<em>none</em>" }}
+                </div>
+                <div class="ps-paths-col">
+                    <h2>Reserve reveals</h2>
+                    <div class="ps-reserve-list">$reserveNames</div>
+                </div>
+            </div>
+        """.trimIndent()
+    }
+
+    /**
+     * Group events by turnIndex and produce one card per turn in chronological order. Each card
+     * shows the phase ribbon, key facts (judge verdict, selected path, path outcome), the
+     * background activity strip, and an expandable details panel with all per-event content.
+     */
+    private fun buildPumpStationTurnTimeline(trace: List<TraceEvent>): String
+    {
+        val byTurn = trace.groupBy { it.metadata["turnIndex"]?.toString()?.toIntOrNull() ?: -1 }
+            .filterKeys { it >= 0 }
+            .toSortedMap()
+        if (byTurn.isEmpty()) return "<div class='ps-empty'>No turn-keyed events found in trace.</div>"
+
+        val cards = byTurn.entries.mapIndexed { index, (turn, events) ->
+            buildPumpStationTurnCard(turn, events, index == 0)
+        }
+        return """
+            <div class="ps-turns-section">
+                <h2>Turn timeline (${byTurn.size} turns)</h2>
+                ${cards.joinToString("\n")}
+            </div>
+        """.trimIndent()
+    }
+
+    /**
+     * Build a single turn card. The phase ribbon shows which phases fired and their outcome.
+     * The key-facts line shows the most important facts (judge verdict, path call, etc). The
+     * background activity strip interleaves async events. The details panel is expandable.
+     */
+    private fun buildPumpStationTurnCard(turnIndex: Int, events: List<TraceEvent>, expanded: Boolean): String
+    {
+        val phasePills = buildPumpStationPhaseRibbon(events)
+        val keyFacts = buildPumpStationKeyFacts(events)
+        val backgroundStrip = buildPumpStationBackgroundStrip(events)
+        val details = buildPumpStationTurnDetails(events)
+        val tokenSummary = buildPumpStationTokenSummary(events)
+        val nestedP2P = buildPumpStationNestedP2PBlock(events)
+        val openAttr = if (expanded) " open" else ""
+
+        return """
+            <details class="ps-turn-card"$openAttr>
+                <summary class="ps-turn-summary">
+                    <span class="ps-turn-num">Turn $turnIndex</span>
+                    <span class="ps-turn-phases">$phasePills</span>
+                </summary>
+                <div class="ps-turn-body">
+                    <div class="ps-turn-facts">$keyFacts</div>
+                    $tokenSummary
+                    <div class="ps-turn-bg">$backgroundStrip</div>
+                    $nestedP2P
+                    <div class="ps-turn-details">$details</div>
+                </div>
+            </details>
+        """.trimIndent()
+    }
+
+    /**
+     * Build the horizontal phase ribbon: pills for each phase that fired this turn, color-coded by
+     * success/failure/info. Each pill's label is the short event name (e.g. "Judge✓", "Path→search").
+     */
+    private fun buildPumpStationPhaseRibbon(events: List<TraceEvent>): String
+    {
+        val phaseEvents = events.filter {
+            it.eventType.name.startsWith("PUMP_STATION_") &&
+            it.eventType !in listOf(
+                TraceEventType.PUMP_STATION_STARTED,
+                TraceEventType.PUMP_STATION_COMPLETED,
+                TraceEventType.PUMP_STATION_FAILED,
+                TraceEventType.PUMP_STATION_SUSPENDED,
+                TraceEventType.PUMP_STATION_RESUMED
+            ) && !it.eventType.name.contains("BACKGROUND") && !it.eventType.name.contains("STASH") &&
+            !it.eventType.name.contains("BLOWOUT") && !it.eventType.name.contains("RESERVE")
+        }
+        return phaseEvents.joinToString(" ") { event ->
+            val label = phaseShortName(event.eventType)
+            val detail = event.metadata["selectedPathName"]?.toString()?.takeIf { it.isNotBlank() }
+                ?: event.metadata["pathName"]?.toString()?.takeIf { it.isNotBlank() } ?: ""
+            val fullLabel = if (detail.isNotBlank()) "$label→$detail" else label
+            val statusClass = when
+            {
+                event.eventType.name.contains("FAILED") || event.eventType.name.contains("TRIPPED") -> "ps-phase-failed"
+                event.eventType.name.contains("COMPLETED") -> "ps-phase-success"
+                else -> "ps-phase-info"
+            }
+            "<span class='ps-phase-pill $statusClass'>$fullLabel</span>"
+        }
+    }
+
+    /**
+     * Build the "key facts" line for a turn. Surfaces the most important events: judge verdict,
+     * dispatch result, path call summary, intervention outcome, stash events, and errors.
+     */
+    private fun buildPumpStationKeyFacts(events: List<TraceEvent>): String
+    {
+        val facts = mutableListOf<String>()
+
+        events.firstOrNull { it.eventType == TraceEventType.PUMP_STATION_JUDGE_COMPLETED }?.let { e ->
+            val complete = e.metadata["isComplete"] ?: "?"
+            val term = e.metadata["shouldTerminate"] ?: "?"
+            val cls = if (complete == true) "ps-fact-success" else "ps-fact-info"
+            facts += "<div class='ps-fact $cls'>" +
+                "<span class='ps-fact-label'>Judge:</span>" +
+                "<span class='ps-fact-value'>isComplete=$complete, terminate=$term</span></div>"
+        }
+
+        events.firstOrNull { it.eventType == TraceEventType.PUMP_STATION_DISPATCH_COMPLETED }?.let { e ->
+            val path = e.metadata["selectedPathName"]?.toString()?.ifBlank { "(none)" } ?: "(none)"
+            facts += "<div class='ps-fact ps-fact-info'>" +
+                "<span class='ps-fact-label'>Dispatch:</span>" +
+                "<span class='ps-fact-value'>→ $path</span></div>"
+        }
+
+        events.firstOrNull { it.eventType == TraceEventType.PUMP_STATION_PATH_COMPLETED }?.let { e ->
+            val name = e.metadata["pathName"] ?: "?"
+            val risk = e.metadata["riskLevel"] ?: "?"
+            facts += "<div class='ps-fact ps-fact-success'>" +
+                "<span class='ps-fact-label'>Path ✓</span>" +
+                "<span class='ps-fact-value'>$name [$risk]</span></div>"
+        }
+
+        events.firstOrNull { it.eventType == TraceEventType.PUMP_STATION_PATH_FAILED }?.let { e ->
+            val name = e.metadata["pathName"] ?: "?"
+            val err = e.metadata["errorMessage"] ?: ""
+            facts += "<div class='ps-fact ps-fact-failed'>" +
+                "<span class='ps-fact-label'>Path ✗</span>" +
+                "<span class='ps-fact-value'>$name — $err</span></div>"
+        }
+
+        events.firstOrNull { it.eventType == TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED }?.let { e ->
+            val guard = e.metadata["guard"] ?: "?"
+            val path = e.metadata["pathName"] ?: "?"
+            facts += "<div class='ps-fact ps-fact-warning'>" +
+                "<span class='ps-fact-label'>⚠ Loop guard</span>" +
+                "<span class='ps-fact-value'>$guard on $path</span></div>"
+        }
+
+        return if (facts.isEmpty()) "<em>No key facts recorded for this turn.</em>"
+        else facts.joinToString("")
+    }
+
+    /**
+     * Build the background-activity strip. Lists async/background events that fired this turn
+     * (memory updates, foreground agents, background agents, intervention, stash, blowouts, compactions)
+     * with a distinct background color so they don't visually merge with the main flow.
+     */
+    private fun buildPumpStationBackgroundStrip(events: List<TraceEvent>): String
+    {
+        val backgroundEvents = events.filter {
+            it.eventType in listOf(
+                TraceEventType.PUMP_STATION_FOREGROUND_AGENT_COMPLETED,
+                TraceEventType.PUMP_STATION_BACKGROUND_AGENT_QUEUED,
+                TraceEventType.PUMP_STATION_MEMORY_UPDATE_STARTED,
+                TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED,
+                TraceEventType.PUMP_STATION_COMPACTION_STARTED,
+                TraceEventType.PUMP_STATION_COMPACTION_COMPLETED,
+                TraceEventType.PUMP_STATION_INTERVENTION_STARTED,
+                TraceEventType.PUMP_STATION_INTERVENTION_COMPLETED,
+                TraceEventType.PUMP_STATION_STASH_CREATED,
+                TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED,
+                TraceEventType.PUMP_STATION_HEALTH_CHECK_STARTED,
+                TraceEventType.PUMP_STATION_HEALTH_CHECK_COMPLETED
+            )
+        }
+        if (backgroundEvents.isEmpty()) return ""
+
+        val pills = backgroundEvents.joinToString(" ") { event ->
+            val label = phaseShortName(event.eventType)
+            val detail = when (event.eventType)
+            {
+                TraceEventType.PUMP_STATION_FOREGROUND_AGENT_COMPLETED,
+                TraceEventType.PUMP_STATION_BACKGROUND_AGENT_QUEUED ->
+                    event.metadata["agentName"]?.toString() ?: ""
+                TraceEventType.PUMP_STATION_STASH_CREATED ->
+                    event.metadata["stashId"]?.toString() ?: ""
+                TraceEventType.PUMP_STATION_INTERVENTION_STARTED,
+                TraceEventType.PUMP_STATION_INTERVENTION_COMPLETED ->
+                    event.metadata["pathName"]?.toString() ?: ""
+                TraceEventType.PUMP_STATION_HEALTH_CHECK_COMPLETED ->
+                    "status=${event.metadata["status"] ?: "?"}"
+                else -> ""
+            }
+            val fullLabel = if (detail.isNotBlank()) "$label $detail" else label
+            val statusClass = when
+            {
+                event.eventType == TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED -> "ps-bg-blowout"
+                event.eventType == TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED -> "ps-bg-warning"
+                event.eventType.name.contains("FAILED") -> "ps-bg-failed"
+                else -> "ps-bg-info"
+            }
+            "<span class='ps-bg-pill $statusClass'>$fullLabel</span>"
+        }
+
+        return "<div class='ps-bg-strip'><span class='ps-bg-label'>Background:</span> $pills</div>"
+    }
+
+    /**
+     * Build the expandable details panel for a turn card. Lists each event with its full
+     * metadata as key/value rows, indented under the event label. Content-bearing events
+     * (Path / Judge / Dispatch / ForegroundAgent / Intervention / NestedP2P) get an
+     * additional [buildPumpStationEventExtras] block that surfaces the agent's text
+     * content, model reasoning, and token-usage chips inside a `<details>` toggle.
+     */
+    private fun buildPumpStationTurnDetails(events: List<TraceEvent>): String
+    {
+        val rows = events.joinToString("") { event ->
+            val label = phaseShortName(event.eventType)
+            val metaRows = event.metadata.entries
+                .filter { it.key != "turnIndex" && it.key != "phase" && it.key != "runId" }
+                .joinToString("") { (k, v) ->
+                    "<div class='ps-meta-row'><span class='ps-meta-key'>$k:</span>" +
+                        "<span class='ps-meta-val'>${escapeHtml(v.toString())}</span></div>"
+                }
+            val extras = buildPumpStationEventExtras(event)
+            "<div class='ps-detail-row'>" +
+                "<div class='ps-detail-label'>$label <span class='ps-detail-type'>(${event.eventType.name})</span></div>" +
+                "<div class='ps-detail-meta'>$metaRows</div>" +
+                extras +
+                "</div>"
+        }
+        return "<div class='ps-details-table'>$rows</div>"
+    }
+
+    /**
+     * Build the per-turn content / token-extras block. Returns a `<details>` toggle for any
+     * content-bearing event (Path / Judge / Dispatch / ForegroundAgent / Intervention /
+     * NestedP2P) so the harness agent's [MultimodalContent] is visible without dumping it
+     * into the inline metadata stream. The block contains:
+     *  - a row of token-usage chips ("in 1,240" / "out 412" / "total 1,652"), only when at
+     *    least one token field is non-null
+     *  - a `<pre>` block with the agent's text content (HTML-escaped to defang XSS)
+     *  - a nested `<details>` for model reasoning when present
+     *  - a "binary content (N items)" note when binary content is present
+     *
+     * Returns an empty string for events that do not carry a content payload.
+     */
+    private fun buildPumpStationEventExtras(event: TraceEvent): String
+    {
+        if (!isPumpStationContentEvent(event.eventType)) return ""
+        val meta = event.metadata
+        val contentPreview = meta["contentPreview"]?.toString()
+        val contentLength = meta["contentLength"]?.toString()?.toIntOrNull() ?: 0
+        val modelReasoning = meta["modelReasoning"]?.toString()
+        val modelReasoningLen = meta["modelReasoningLen"]?.toString()?.toIntOrNull() ?: 0
+        val binaryCount = meta["binaryCount"]?.toString()?.toIntOrNull() ?: 0
+        val inputTokens = readTokenField(meta, "inputTokens")
+        val outputTokens = readTokenField(meta, "outputTokens")
+        val totalTokens = readTokenField(meta, "totalTokens")
+        val hasTokens = inputTokens != null || outputTokens != null || totalTokens != null
+        val hasContent = !contentPreview.isNullOrEmpty() || !modelReasoning.isNullOrEmpty() || binaryCount > 0
+        if (!hasTokens && !hasContent) return ""
+
+        val summary = "View content" + when
+        {
+            contentLength > 0 && modelReasoningLen > 0 -> " (${formatCount(contentLength)} chars + ${formatCount(modelReasoningLen)} reasoning)"
+            contentLength > 0 -> " (${formatCount(contentLength)} chars)"
+            modelReasoningLen > 0 -> " (${formatCount(modelReasoningLen)} reasoning chars)"
+            binaryCount > 0 -> " ($binaryCount binary item(s))"
+            else -> ""
+        }
+
+        val tokenChips = if (hasTokens) buildTokenChips(inputTokens, outputTokens, totalTokens) else ""
+        val textBlock = if (!contentPreview.isNullOrEmpty()) buildTextBlock(contentPreview) else ""
+        val reasoningBlock = if (!modelReasoning.isNullOrEmpty()) buildReasoningBlock(modelReasoning, modelReasoningLen) else ""
+        val binaryNote = if (binaryCount > 0)
+            "<div class='ps-binary-note'>binary content: $binaryCount item(s) (descriptors only — not inlined)</div>"
+        else ""
+
+        return """
+            <details class="ps-event-extras">
+                <summary class="ps-event-extras-summary">$summary</summary>
+                <div class="ps-event-extras-body">
+                    $tokenChips
+                    $textBlock
+                    $reasoningBlock
+                    $binaryNote
+                </div>
+            </details>
+        """.trimIndent()
+    }
+
+    /**
+     * Build the per-turn nested P2P block. Surfaces all [PUMP_STATION_NESTED_P2P_COMPLETED]
+     * events for the turn as a numbered sub-list with the same per-event extras treatment.
+     * Returns an empty string when no nested P2P calls fired in the turn.
+     */
+    private fun buildPumpStationNestedP2PBlock(events: List<TraceEvent>): String
+    {
+        val nested = events.filter { it.eventType == TraceEventType.PUMP_STATION_NESTED_P2P_COMPLETED }
+        if (nested.isEmpty()) return ""
+        val rows = nested.mapIndexed { idx, ev ->
+            val path = ev.metadata["pathName"]?.toString().orEmpty()
+            val agent = ev.metadata["agentName"]?.toString() ?: "(unknown)"
+            val label = if (path.isNotEmpty()) "path=$path, agent=$agent" else "agent=$agent"
+            "<li class='ps-nested-p2p-item'>" +
+                "<div class='ps-nested-p2p-label'>${idx + 1}. $label</div>" +
+                buildPumpStationEventExtras(ev) +
+                "</li>"
+        }.joinToString("")
+        return """
+            <div class="ps-nested-p2p">
+                <div class="ps-nested-p2p-header">Nested P2P calls (${nested.size})</div>
+                <ol class="ps-nested-p2p-list">$rows</ol>
+            </div>
+        """.trimIndent()
+    }
+
+    /**
+     * Build the per-turn token summary row. Sums input/output/total across the turn's
+     * content-bearing events and renders three aggregate pills. Returns an empty string
+     * when no content-bearing event in the turn carries any token data.
+     */
+    private fun buildPumpStationTokenSummary(events: List<TraceEvent>): String
+    {
+        var input = 0; var output = 0; var total = 0
+        var sawAny = false
+        for (e in events)
+        {
+            if (!isPumpStationContentEvent(e.eventType)) continue
+            val inT = readTokenField(e.metadata, "inputTokens")
+            val outT = readTokenField(e.metadata, "outputTokens")
+            val totT = readTokenField(e.metadata, "totalTokens")
+            if (inT != null || outT != null || totT != null) sawAny = true
+            if (inT != null) input += inT
+            if (outT != null) output += outT
+            if (totT != null) total += totT
+        }
+        if (!sawAny) return ""
+        val inputStr = if (input > 0) formatCount(input) else "—"
+        val outputStr = if (output > 0) formatCount(output) else "—"
+        val totalStr = if (total > 0) formatCount(total) else "—"
+        return """
+            <div class="ps-token-summary">
+                <span class="ps-token-summary-label">Turn tokens:</span>
+                <span class="ps-token-chip ps-token-chip-in">in $inputStr</span>
+                <span class="ps-token-chip ps-token-chip-out">out $outputStr</span>
+                <span class="ps-token-chip ps-token-chip-total">total $totalStr</span>
+            </div>
+        """.trimIndent()
+    }
+
+    /**
+     * Render the three small token-usage pills used by both per-event extras and the per-turn
+     * summary. Pills whose value is null are omitted.
+     */
+    private fun buildTokenChips(input: Int?, output: Int?, total: Int?): String
+    {
+        val chips = mutableListOf<String>()
+        if (input != null) chips += "<span class='ps-token-chip ps-token-chip-in'>in ${formatCount(input)}</span>"
+        if (output != null) chips += "<span class='ps-token-chip ps-token-chip-out'>out ${formatCount(output)}</span>"
+        if (total != null) chips += "<span class='ps-token-chip ps-token-chip-total'>total ${formatCount(total)}</span>"
+        if (chips.isEmpty()) return ""
+        return "<div class='ps-token-row'>${chips.joinToString("")}</div>"
+    }
+
+    /**
+     * Render the text content block. Escapes HTML to defang XSS. When the preview is shorter
+     * than the recorded length, surfaces a "(truncated; full content in trace JSON)" hint so
+     * developers know there is more in the raw trace.
+     */
+    private fun buildTextBlock(preview: String): String
+    {
+        val escaped = escapeHtml(preview)
+        val truncationHint = if (preview.endsWith("...")) "<div class='ps-text-truncated'>truncated for preview — see raw trace for full content</div>" else ""
+        return "<pre class='ps-event-text'>$escaped</pre>$truncationHint"
+    }
+
+    /**
+     * Render the model-reasoning nested block when the agent produced reasoning text.
+     */
+    private fun buildReasoningBlock(reasoning: String, totalLen: Int): String
+    {
+        val escaped = escapeHtml(reasoning)
+        val summary = if (totalLen > reasoning.length)
+            "Model reasoning (${formatCount(reasoning.length)} of ${formatCount(totalLen)} chars shown)"
+        else
+            "Model reasoning (${formatCount(totalLen)} chars)"
+        val truncationHint = if (reasoning.endsWith("...")) "<div class='ps-text-truncated'>truncated for preview</div>" else ""
+        return "<details class='ps-event-reasoning'><summary class='ps-event-reasoning-summary'>$summary</summary><pre class='ps-event-text ps-event-reasoning-text'>$escaped</pre>$truncationHint</details>"
+    }
+
+    /**
+     * True if the event type carries a [MultimodalContent] payload worth rendering as a
+     * collapsible extras block.
+     */
+    private fun isPumpStationContentEvent(type: TraceEventType): Boolean
+    {
+        return when (type)
+        {
+            TraceEventType.PUMP_STATION_PATH_COMPLETED,
+            TraceEventType.PUMP_STATION_JUDGE_COMPLETED,
+            TraceEventType.PUMP_STATION_DISPATCH_COMPLETED,
+            TraceEventType.PUMP_STATION_FOREGROUND_AGENT_COMPLETED,
+            TraceEventType.PUMP_STATION_INTERVENTION_COMPLETED,
+            TraceEventType.PUMP_STATION_NESTED_P2P_COMPLETED -> true
+            else -> false
+        }
+    }
+
+    /**
+     * Read a token field from the metadata map. Sentinel value -1 means "not tracked" (the
+     * funnel writes -1 when the upstream event had a null token field). Returns null in that
+     * case so the visualizer can hide the chip rather than show a misleading zero.
+     */
+    private fun readTokenField(meta: Map<String, Any>, key: String): Int?
+    {
+        val raw = meta[key]?.toString()?.toIntOrNull() ?: return null
+        return if (raw < 0) null else raw
+    }
+
+    /**
+     * Format a token count with thousands separators.
+     */
+    private fun formatCount(n: Int): String
+    {
+        if (n < 1000) return n.toString()
+        return "%,d".format(n)
+    }
+
+    /**
+     * Build the outcome panel: status, exit reason, last successful turn, failure summary.
+     */
+    private fun buildPumpStationOutcomePanel(trace: List<TraceEvent>, status: String): String
+    {
+        val distinctTurns = trace.mapNotNull { it.metadata["turnIndex"]?.toString()?.toIntOrNull() }.distinct().sorted()
+        val lastTurn = distinctTurns.lastOrNull() ?: 0
+        val totalEvents = trace.size
+
+        val failedEvent = trace.lastOrNull { it.eventType == TraceEventType.PUMP_STATION_FAILED }
+        val exitReason = failedEvent?.metadata?.get("exitReason")?.toString() ?: "—"
+        val lastError = failedEvent?.metadata?.get("errorMessage")?.toString() ?: "—"
+        val errorType = failedEvent?.metadata?.get("error")?.toString() ?: "—"
+
+        val lastSuccess = trace.lastOrNull { it.eventType == TraceEventType.PUMP_STATION_PATH_COMPLETED }
+        val lastSuccessPath = lastSuccess?.metadata?.get("pathName")?.toString() ?: "—"
+
+        return """
+            <div class="ps-outcome">
+                <h2>Outcome</h2>
+                <div class="ps-outcome-grid">
+                    <div><span class="ps-outcome-label">Status:</span> <span class="ps-status-$status">${status.uppercase()}</span></div>
+                    <div><span class="ps-outcome-label">Last turn:</span> $lastTurn</div>
+                    <div><span class="ps-outcome-label">Total events:</span> $totalEvents</div>
+                    <div><span class="ps-outcome-label">Exit reason:</span> $exitReason</div>
+                    <div><span class="ps-outcome-label">Error type:</span> $errorType</div>
+                    <div><span class="ps-outcome-label">Last error:</span> ${escapeHtml(lastError)}</div>
+                    <div><span class="ps-outcome-label">Last successful path:</span> $lastSuccessPath</div>
+                </div>
+            </div>
+        """.trimIndent()
+    }
+
+    /**
+     * CSS for the PumpStation report. Reuses the visual language of other TPipe reports
+     * (rounded cards, subtle shadows, indigo accents) while introducing custom classes for
+     * turn cards, phase ribbons, and the memory bar.
+     */
+    private fun generatePumpStationCSS(): String = """
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 24px; background: #f1f5f9; color: #1e293b; }
+        .ps-container { max-width: 1200px; margin: 0 auto; background: white; padding: 28px; border-radius: 14px; box-shadow: 0 22px 50px rgba(15,23,42,0.16); }
+        .ps-header { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 24px; padding-bottom: 18px; border-bottom: 1px solid #e2e8f0; }
+        .ps-title { font-size: 1.4rem; font-weight: 700; color: #0f172a; }
+        .ps-status { padding: 6px 14px; border-radius: 999px; font-weight: 600; font-size: 0.85rem; }
+        .ps-status-completed { background: rgba(220,252,231,0.9); color: #166534; }
+        .ps-status-failed { background: rgba(254,226,226,0.9); color: #991b1b; }
+        .ps-status-suspended { background: rgba(254,243,199,0.9); color: #92400e; }
+        .ps-status-running { background: rgba(224,231,255,0.95); color: #3730a3; }
+        .ps-run-id { font-family: 'JetBrains Mono', monospace; color: #64748b; font-size: 0.85rem; }
+        .ps-duration { margin-left: auto; color: #64748b; font-size: 0.9rem; }
+        .ps-ribbon { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 28px; }
+        .ps-ribbon-card { background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%); border: 1px solid rgba(99,102,241,0.18); border-radius: 12px; padding: 14px 16px; }
+        .ps-ribbon-card h3 { margin: 0 0 8px; font-size: 0.72rem; letter-spacing: 0.12em; color: #475569; text-transform: uppercase; }
+        .ps-kpi-value { display: block; font-size: 1.5rem; font-weight: 600; color: #0f172a; }
+        .ps-kpi-sub { display: block; font-size: 0.8rem; color: #64748b; margin-top: 4px; }
+        .ps-mem-bar { height: 6px; background: rgba(99,102,241,0.15); border-radius: 999px; margin-top: 6px; overflow: hidden; }
+        .ps-mem-bar-fill { height: 100%; background: linear-gradient(90deg, #10b981, #6366f1); }
+        .ps-sparkline-section { margin-bottom: 28px; padding: 18px; background: #f8fafc; border-radius: 12px; }
+        .ps-sparkline-section h2 { margin-top: 0; font-size: 1rem; color: #475569; }
+        .ps-sparkline-wrap { overflow-x: auto; }
+        .ps-paths-section { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 28px; }
+        .ps-paths-col { padding: 16px; background: #f8fafc; border-radius: 12px; }
+        .ps-paths-col h2 { margin-top: 0; font-size: 0.95rem; color: #475569; }
+        .ps-path-card { padding: 10px 12px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 8px; }
+        .ps-path-hidden { opacity: 0.6; }
+        .ps-path-name { font-weight: 600; font-size: 0.9rem; }
+        .ps-path-meta { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+        .ps-badge { padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
+        .ps-risk-low { background: rgba(220,252,231,0.9); color: #166534; }
+        .ps-risk-medium { background: rgba(254,243,199,0.9); color: #92400e; }
+        .ps-risk-high { background: rgba(254,226,226,0.9); color: #991b1b; }
+        .ps-hidden-badge { background: #1e293b; color: white; }
+        .ps-call-count { font-size: 0.75rem; color: #64748b; }
+        .ps-reserve-list { font-size: 0.85rem; color: #475569; }
+        .ps-turns-section { margin-bottom: 28px; }
+        .ps-turns-section h2 { font-size: 1.05rem; color: #1e293b; margin-bottom: 14px; }
+        .ps-turn-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+        .ps-turn-card[open] { box-shadow: 0 8px 18px rgba(15,23,42,0.08); }
+        .ps-turn-summary { cursor: pointer; padding: 14px 18px; display: flex; align-items: center; gap: 16px; background: #f8fafc; list-style: none; }
+        .ps-turn-summary::-webkit-details-marker { display: none; }
+        .ps-turn-num { font-weight: 700; color: #1e293b; font-size: 0.95rem; }
+        .ps-turn-phases { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+        .ps-phase-pill { padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 500; }
+        .ps-phase-success { background: rgba(220,252,231,0.9); color: #166534; }
+        .ps-phase-failed { background: rgba(254,226,226,0.9); color: #991b1b; }
+        .ps-phase-info { background: rgba(224,231,255,0.95); color: #3730a3; }
+        .ps-turn-body { padding: 16px 18px; }
+        .ps-turn-facts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+        .ps-fact { padding: 8px 12px; border-radius: 8px; border-left: 3px solid; font-size: 0.88rem; }
+        .ps-fact-success { background: rgba(220,252,231,0.4); border-color: #10b981; }
+        .ps-fact-failed { background: rgba(254,226,226,0.4); border-color: #ef4444; }
+        .ps-fact-warning { background: rgba(254,243,199,0.4); border-color: #f59e0b; }
+        .ps-fact-info { background: rgba(241,245,249,0.6); border-color: #6366f1; }
+        .ps-fact-label { font-weight: 600; color: #475569; margin-right: 8px; }
+        .ps-turn-bg { padding: 10px 12px; background: #f1f5f9; border-radius: 8px; margin-bottom: 14px; }
+        .ps-bg-label { font-size: 0.75rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-right: 8px; }
+        .ps-bg-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; margin-right: 4px; }
+        .ps-bg-info { background: rgba(224,231,255,0.95); color: #3730a3; }
+        .ps-bg-warning { background: rgba(254,243,199,0.9); color: #92400e; }
+        .ps-bg-failed { background: rgba(254,226,226,0.9); color: #991b1b; }
+        .ps-bg-blowout { background: #1e293b; color: white; }
+        .ps-turn-details { background: #f8fafc; padding: 12px; border-radius: 8px; }
+        .ps-detail-row { padding: 6px 0; border-bottom: 1px dashed #e2e8f0; }
+        .ps-detail-row:last-child { border-bottom: none; }
+        .ps-detail-label { font-weight: 600; font-size: 0.82rem; color: #1e293b; }
+        .ps-detail-type { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: #64748b; }
+        .ps-detail-meta { margin-top: 4px; padding-left: 12px; }
+        .ps-meta-row { font-size: 0.78rem; }
+        .ps-meta-key { color: #64748b; font-weight: 500; }
+        .ps-meta-val { color: #0f172a; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; }
+        .ps-outcome { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: white; padding: 22px; border-radius: 12px; }
+        .ps-outcome h2 { margin-top: 0; font-size: 1.1rem; }
+        .ps-outcome-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+        .ps-outcome-label { color: #94a3b8; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; margin-right: 6px; }
+        .ps-empty { padding: 20px; text-align: center; color: #94a3b8; font-style: italic; }
+        /* Per-event content extras — collapsible block for path/judge/dispatch/FG/intervention/nested P2P */
+        .ps-event-extras { margin-top: 8px; margin-bottom: 4px; background: white; border: 1px solid #e2e8f0; border-radius: 8px; }
+        .ps-event-extras[open] { box-shadow: inset 0 0 0 1px rgba(99,102,241,0.18); }
+        .ps-event-extras-summary { cursor: pointer; padding: 6px 12px; font-size: 0.78rem; color: #475569; list-style: none; }
+        .ps-event-extras-summary::-webkit-details-marker { display: none; }
+        .ps-event-extras-summary::before { content: "▶ "; font-size: 0.6rem; color: #6366f1; }
+        .ps-event-extras[open] .ps-event-extras-summary::before { content: "▼ "; }
+        .ps-event-extras-body { padding: 8px 12px 12px; border-top: 1px dashed #e2e8f0; }
+        .ps-event-text { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; line-height: 1.5; color: #0f172a; max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+        .ps-text-truncated { font-size: 0.7rem; color: #94a3b8; font-style: italic; margin-top: 4px; }
+        .ps-event-reasoning { margin-top: 6px; }
+        .ps-event-reasoning-summary { cursor: pointer; padding: 4px 8px; font-size: 0.72rem; color: #6366f1; list-style: none; }
+        .ps-event-reasoning-summary::-webkit-details-marker { display: none; }
+        .ps-event-reasoning-text { background: #eef2ff; border-color: rgba(99,102,241,0.18); }
+        .ps-binary-note { font-size: 0.72rem; color: #475569; margin-top: 6px; font-style: italic; }
+        /* Token chip row — per-event usage */
+        .ps-token-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+        .ps-token-chip { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+        .ps-token-chip-in { background: rgba(220,252,231,0.9); color: #166534; }
+        .ps-token-chip-out { background: rgba(254,243,199,0.9); color: #92400e; }
+        .ps-token-chip-total { background: rgba(224,231,255,0.95); color: #3730a3; }
+        /* Per-turn token summary row */
+        .ps-token-summary { display: flex; gap: 8px; align-items: center; padding: 8px 12px; margin-bottom: 12px; background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%); border-radius: 8px; border: 1px solid rgba(99,102,241,0.18); flex-wrap: wrap; }
+        .ps-token-summary-label { font-size: 0.72rem; color: #475569; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-right: 4px; }
+        /* Nested P2P block — sub-list of nested calls inside a path */
+        .ps-nested-p2p { margin: 12px 0 14px; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-left: 3px solid #6366f1; border-radius: 8px; }
+        .ps-nested-p2p-header { font-size: 0.78rem; color: #3730a3; font-weight: 600; margin-bottom: 6px; }
+        .ps-nested-p2p-list { list-style: decimal; margin: 0; padding-left: 22px; }
+        .ps-nested-p2p-item { padding: 4px 0; }
+        .ps-nested-p2p-label { font-size: 0.78rem; color: #1e293b; font-family: 'JetBrains Mono', monospace; }
+    """.trimIndent()
+
+    /**
+     * Main entry point for the PumpStation HTML report. Composes the header, state ribbon, sparkline,
+     * path inventory, turn timeline, and outcome panel into a single HTML document.
+     */
+    internal fun generatePumpStationHtmlReport(trace: List<TraceEvent>): String
+    {
+        if (trace.isEmpty()) return "<html><body><h1>PumpStation Trace</h1><p>(empty trace)</p></body></html>"
+
+        val status = derivePumpStationStatus(trace)
+        val runId = trace.firstOrNull()?.metadata?.get("runId")?.toString() ?: "unknown"
+        val durationMs = pumpStationDurationMs(trace)
+        val stateRibbon = buildPumpStationStateRibbon(trace)
+        val sparkline = buildPumpStationSparkline(trace)
+        val pathInventory = buildPumpStationPathInventory(trace)
+        val turnTimeline = buildPumpStationTurnTimeline(trace)
+        val outcome = buildPumpStationOutcomePanel(trace, status)
+        val css = generatePumpStationCSS()
+
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>PumpStation Trace — $runId</title>
+                <style>$css</style>
+            </head>
+            <body>
+                <div class="ps-container">
+                    <div class="ps-header">
+                        <span class="ps-title">⛽ PumpStation Trace</span>
+                        <span class="ps-status ps-status-$status">${status.uppercase()}</span>
+                        <span class="ps-run-id">$runId</span>
+                        <span class="ps-duration">⏱ ${durationMs}ms</span>
+                    </div>
+                    $stateRibbon
+                    $sparkline
+                    $pathInventory
+                    $turnTimeline
+                    $outcome
+                </div>
+            </body>
+            </html>
+        """.trimIndent()
+    }
+
+
     /**
      * Generates standard HTML report for non-Manifold traces.
      */
-    private fun generateStandardHtmlReport(trace: List<TraceEvent>): String 
+    private fun generateStandardHtmlReport(trace: List<TraceEvent>): String
     {
         val nodes = TraceNodeMapper.mapEventsToNodes(trace)
         val mermaidGraph = generateMermaidFlowGraph(trace, nodes)
@@ -1010,7 +1909,8 @@ class TraceVisualizer
         val nodeMap = nodes.associateBy { it.pipeName }
 
         nodes.forEachIndexed { index, node ->
-            if (index == 0) {
+            if(index == 0)
+            {
                 graph.append("    ${node.nodeId}{{\"${escapeHtml(node.pipeName)}\"}}\n")
             } else {
                 graph.append("    ${node.nodeId}[\"${escapeHtml(node.pipeName)}\"]\n")
@@ -1349,6 +2249,104 @@ class TraceVisualizer
             TraceEventType.DISTRIBUTION_GRID_DURABILITY_CHECKPOINT -> "Durability"
             else -> if(event.pipeName.isNotBlank()) event.pipeName else DISTRIBUTION_GRID_NODE_NAME
         }
+    }
+
+    /**
+     * Produce a short, human-readable label for a PumpStation event. The label includes the turn index
+     * (sourced from event metadata) and the most useful event-type-specific detail: the path name, the
+     * selected judge verdict, the risk level, the stash ID, the registry ID, and so on.
+     */
+    private fun mapPumpStationNodeName(event: TraceEvent): String
+    {
+        val turn = event.metadata["turnIndex"]?.toString()?.takeIf { it.isNotBlank() } ?: "?"
+        val phase = phaseShortName(event.eventType)
+        val detail = when (event.eventType)
+        {
+            TraceEventType.PUMP_STATION_JUDGE_COMPLETED ->
+                "isComplete=${event.metadata["isComplete"] ?: "?"}"
+            TraceEventType.PUMP_STATION_DISPATCH_COMPLETED ->
+                "→ ${event.metadata["selectedPathName"] ?: "(none)"}"
+            TraceEventType.PUMP_STATION_PATH_SAFETY_STARTED,
+            TraceEventType.PUMP_STATION_PATH_SAFETY_COMPLETED,
+            TraceEventType.PUMP_STATION_PATH_STARTED,
+            TraceEventType.PUMP_STATION_PATH_COMPLETED,
+            TraceEventType.PUMP_STATION_PATH_FAILED,
+            TraceEventType.PUMP_STATION_PATH_SELECTED ->
+                "${event.metadata["pathName"] ?: "(unknown)"} [${event.metadata["riskLevel"] ?: "?"}]"
+            TraceEventType.PUMP_STATION_PATH_HIDDEN ->
+                "hidden: ${event.metadata["pathName"] ?: "(unknown)"}"
+            TraceEventType.PUMP_STATION_INTERVENTION_STARTED,
+            TraceEventType.PUMP_STATION_INTERVENTION_COMPLETED ->
+                "${event.metadata["pathName"] ?: "(unknown)"} trigger=${event.metadata["trigger"] ?: "?"}"
+            TraceEventType.PUMP_STATION_FOREGROUND_AGENT_COMPLETED ->
+                "${event.metadata["agentName"] ?: "(unknown)"}"
+            TraceEventType.PUMP_STATION_BACKGROUND_AGENT_QUEUED ->
+                "${event.metadata["agentName"] ?: "(unknown)"}"
+            TraceEventType.PUMP_STATION_STASH_CREATED ->
+                "${event.metadata["stashId"] ?: "(unknown)"} reason=${event.metadata["reason"] ?: "?"}"
+            TraceEventType.PUMP_STATION_COMPACTION_STARTED,
+            TraceEventType.PUMP_STATION_COMPACTION_COMPLETED ->
+                "strategy=${event.metadata["strategy"] ?: "?"} (${event.metadata["memoryMode"] ?: "?"})"
+            TraceEventType.PUMP_STATION_MEMORY_UPDATE_STARTED,
+            TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED ->
+                "mode=${event.metadata["memoryMode"] ?: "?"} fill=${event.metadata["compactionPercent"] ?: "?"}"
+            TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED ->
+                "passed=${event.metadata["passed"] ?: "?"}"
+            TraceEventType.PUMP_STATION_HEALTH_CHECK_COMPLETED ->
+                "status=${event.metadata["status"] ?: "?"} warnings=${event.metadata["warnings"] ?: "0"}"
+            TraceEventType.PUMP_STATION_RESERVE_PATH_REVEALED ->
+                "${event.metadata["pathName"] ?: "(unknown)"}"
+            TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED ->
+                "guard=${event.metadata["guard"] ?: "?"} path=${event.metadata["pathName"] ?: "(unknown)"}"
+            TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED ->
+                "fill=${event.metadata["fillRatio"] ?: "?"} threshold=${event.metadata["threshold"] ?: "?"}"
+            TraceEventType.PUMP_STATION_FAILED ->
+                "${event.metadata["error"] ?: "?"}: ${event.metadata["errorMessage"] ?: ""}"
+            else -> event.metadata["selectedPathName"]?.toString().orEmpty()
+        }
+        return "Turn $turn $phase" + if (detail.isNotEmpty()) " $detail" else ""
+    }
+
+    /**
+     * Short, friendly label for a PumpStation event type, used in node labels and timeline rows.
+     */
+    private fun phaseShortName(eventType: TraceEventType): String = when (eventType)
+    {
+        TraceEventType.PUMP_STATION_STARTED -> "Started"
+        TraceEventType.PUMP_STATION_COMPLETED -> "Completed"
+        TraceEventType.PUMP_STATION_FAILED -> "Failed"
+        TraceEventType.PUMP_STATION_SUSPENDED -> "Suspended"
+        TraceEventType.PUMP_STATION_RESUMED -> "Resumed"
+        TraceEventType.PUMP_STATION_HEALTH_CHECK_STARTED -> "Health→"
+        TraceEventType.PUMP_STATION_HEALTH_CHECK_COMPLETED -> "Health✓"
+        TraceEventType.PUMP_STATION_JUDGE_STARTED -> "Judge→"
+        TraceEventType.PUMP_STATION_JUDGE_COMPLETED -> "Judge✓"
+        TraceEventType.PUMP_STATION_JUDGE_SKIPPED -> "Judge⊘"
+        TraceEventType.PUMP_STATION_DISPATCH_STARTED -> "Dispatch→"
+        TraceEventType.PUMP_STATION_DISPATCH_COMPLETED -> "Dispatch✓"
+        TraceEventType.PUMP_STATION_PATH_SAFETY_STARTED -> "Safety→"
+        TraceEventType.PUMP_STATION_PATH_SAFETY_COMPLETED -> "Safety✓"
+        TraceEventType.PUMP_STATION_PATH_VALIDATION_COMPLETED -> "PathValid"
+        TraceEventType.PUMP_STATION_INTERVENTION_STARTED -> "Intervene→"
+        TraceEventType.PUMP_STATION_INTERVENTION_COMPLETED -> "Intervene✓"
+        TraceEventType.PUMP_STATION_FOREGROUND_AGENT_COMPLETED -> "FG Agent"
+        TraceEventType.PUMP_STATION_BACKGROUND_AGENT_QUEUED -> "BG Agent"
+        TraceEventType.PUMP_STATION_MEMORY_UPDATE_STARTED -> "Memory→"
+        TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED -> "Memory✓"
+        TraceEventType.PUMP_STATION_COMPACTION_STARTED -> "Compact→"
+        TraceEventType.PUMP_STATION_COMPACTION_COMPLETED -> "Compact✓"
+        TraceEventType.PUMP_STATION_GOAL_VALIDATION_STARTED -> "Goal→"
+        TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED -> "Goal✓"
+        TraceEventType.PUMP_STATION_PATH_SELECTED -> "PathSel"
+        TraceEventType.PUMP_STATION_PATH_STARTED -> "Path→"
+        TraceEventType.PUMP_STATION_PATH_COMPLETED -> "Path✓"
+        TraceEventType.PUMP_STATION_PATH_FAILED -> "Path✗"
+        TraceEventType.PUMP_STATION_PATH_HIDDEN -> "PathHidden"
+        TraceEventType.PUMP_STATION_RESERVE_PATH_REVEALED -> "Reveal"
+        TraceEventType.PUMP_STATION_STASH_CREATED -> "Stash"
+        TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED -> "Blowout"
+        TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED -> "LoopGuard"
+        else -> eventType.name.removePrefix("PUMP_STATION_")
     }
 
     private fun generateDistributionGridMermaidGraph(nodes: List<TraceNode>, trace: List<TraceEvent>): String {
@@ -1827,9 +2825,11 @@ class TraceVisualizer
         }
 
         // Add reasoningContent
-        if(reasoningKey != null) {
+        if(reasoningKey != null)
+        {
             val reasoningContent = event.metadata[reasoningKey].toString()
-            if(reasoningContent.isNotBlank() && reasoningContent != "N/A" && reasoningContent != "null") {
+            if(reasoningContent.isNotBlank() && reasoningContent != "N/A" && reasoningContent != "null")
+            {
                 sections.add(createExpandableSection("reasoningContent", reasoningContent, "🧠", "#007bff"))
             }
         }
