@@ -86,3 +86,6 @@ aws/
 /.sisyphus
 /.playwright-mcp
 /.hermes
+
+# Git worktree directory (skill: using-git-worktrees)
+/.worktrees
