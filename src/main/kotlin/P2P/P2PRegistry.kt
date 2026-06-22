@@ -1164,7 +1164,7 @@ object P2PRegistry
                     request.transport.transportAuthBody = AuthRegistry.getToken(request.transport.transportAddress)
                 }
 
-                val jsonPayload = serialize(request)
+                val jsonPayload = serialize(request, encodedefault = true)
                 val requestHeaders = mutableMapOf("Content-Type" to "application/json")
                 if(request.transport.transportAuthBody.isNotEmpty())
                 {
@@ -1199,7 +1199,7 @@ object P2PRegistry
                 }
 
                 val executionMode = request.pcpRequest?.stdioContextOptions?.executionMode ?: StdioExecutionMode.ONE_SHOT
-                val jsonPayload = serialize(request)
+                val jsonPayload = serialize(request, encodedefault = true)
 
                 val sessionResponse = try
                 {
