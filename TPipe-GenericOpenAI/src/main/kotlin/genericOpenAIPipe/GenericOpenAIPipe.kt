@@ -10,11 +10,7 @@ import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import genericOpenAIPipe.env.*
-import genericOpenAIPipe.api.ApiMode
-import genericOpenAIPipe.api.OpenAIResponsesSseParser
-import genericOpenAIPipe.api.RequestSerializer
-import genericOpenAIPipe.api.ResponseParser
-import genericOpenAIPipe.env.OpenAIResponsesStreamEvent
+import genericOpenAIPipe.api.*
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -25,6 +21,13 @@ import io.ktor.http.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * TPipe abstraction for Generic OpenAI-compatible APIs.
@@ -690,18 +693,21 @@ class GenericOpenAIPipe : Pipe()
 
             if(streamingEnabled)
             {
-                val response = withContext(Dispatchers.IO)
+                // BUG FIX: Ktor CIO's bodyAsChannel does NOT deliver bytes
+                // incrementally for chunked transfer-encoded SSE responses
+                // through 3.3.x. All data arrives as one batch when the
+                // stream closes. Workaround: bypass Ktor entirely for the
+                // streaming call and open a direct HttpURLConnection with
+                // chunked transfer encoding. We feed the JSON body and read
+                // the response line-by-line. The InputStream blocks per
+                // line read, so each SSE delta fires emitStreamingChunk as
+                // it arrives on the socket — verified empirically via
+                // RawHttpStreamingTest (chunks arrive hundreds of ms apart
+                // rather than all in one batch).
+                return withContext(Dispatchers.IO)
                 {
-                    client.post("$baseUrl${getEndpoint()}")
-                    {
-                        contentType(ContentType.Application.Json)
-                        getAuthHeaders().forEach { (name, value) -> header(name, value) }
-
-                        setBody(jsonRequest)
-                    }
+                    executeStreamingDirect(jsonRequest)
                 }
-
-                return executeStreaming(response)
             }
             else
             {
@@ -801,6 +807,224 @@ class GenericOpenAIPipe : Pipe()
                 else -> throw e
             }
         }
+    }
+
+    /**
+     * Direct streaming call using [java.net.HttpURLConnection] instead of
+     * the Ktor CIO client. Bypasses Ktor because its CIO engine buffers
+     * chunked transfer-encoded SSE responses through 3.3.x — the
+     * ByteReadChannel returned from bodyAsChannel only delivers bytes
+     * once the response stream is closed, defeating the whole point of
+     * streaming. Verified empirically: KtorSsePluginTest confirms the
+     * SSE plugin streams correctly (using an internal channel that
+     * reads the body bytes as they arrive); RawHttpStreamingTest
+     * confirms HttpURLConnection streams correctly. Reading the
+     * InputStream line by line yields chunks hundreds of ms apart as
+     * the server sends them.
+     *
+     * This function produces the same emitStreamingChunk side effects
+     * as the Ktor path so the streaming callback wiring is unchanged.
+     * It returns the same [String] accumulator.
+     */
+    private suspend fun executeStreamingDirect(jsonRequest: String): String
+    {
+        val textBuilder = StringBuilder()
+
+        trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
+              metadata = mapOf(
+                  "step" to "streamingStart",
+                  "streaming" to true,
+                  "transport" to "HttpURLConnection",
+                  "apiMode" to when(apiMode) { is ApiMode.OpenAI -> "OpenAI"; is ApiMode.OpenAIResponses -> "OpenAIResponses"; is ApiMode.Anthropic -> "Anthropic" }
+              ))
+
+        java.net.HttpURLConnection.setFollowRedirects(false)
+        val conn = (java.net.URL("$baseUrl${getEndpoint()}").openConnection() as java.net.HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = 30_000
+            readTimeout = 120_000
+            setRequestProperty("Content-Type", "application/json")
+            getAuthHeaders().forEach { (name, value) -> setRequestProperty(name, value) }
+            setChunkedStreamingMode(0)
+        }
+
+        // Write the body
+        conn.outputStream.use { it.write(jsonRequest.toByteArray(Charsets.UTF_8)) }
+
+        val reasoningBuilder = StringBuilder()
+        var totalInputTokens = 0
+        var totalOutputTokens = 0
+        var totalReasoningTokens = 0
+
+        // Read SSE events line by line. lineSequence() reads from the
+        // BufferedReader one line at a time, which blocks per-line —
+        // so each SSE delta fires emitStreamingChunk as it arrives on
+        // the socket. This is the key behavior the Ktor bodyAsChannel
+        // path does NOT exhibit.
+        java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { reader ->
+            var lastEventType: String? = null
+            reader.lineSequence().forEach { rawLine ->
+                val line = rawLine.trimEnd()
+                if(line.isEmpty())
+                {
+                    // blank separator between events
+                    return@forEach
+                }
+                if(line.startsWith("event: "))
+                {
+                    lastEventType = line.substringAfter("event: ").trim()
+                    return@forEach
+                }
+                if(line.startsWith("data: "))
+                {
+                    val dataLine = line.substringAfter("data: ")
+                    when(apiMode)
+                    {
+                        is ApiMode.OpenAIResponses ->
+                        {
+                            val parsed = try { OpenAIResponsesSseParser.parseLine("data: $dataLine") } catch(_: Exception) { null }
+                            if(parsed != null)
+                            {
+                                when(parsed)
+                                {
+                                    is OpenAIResponsesStreamEvent.ResponseOutputTextDelta ->
+                                    {
+                                        if(parsed.delta.isNotEmpty())
+                                        {
+                                            textBuilder.append(parsed.delta)
+                                            emitStreamingChunk(parsed.delta)
+                                        }
+                                    }
+                                    is OpenAIResponsesStreamEvent.ResponseReasoningTextDelta ->
+                                    {
+                                        if(parsed.delta.isNotEmpty())
+                                        {
+                                            reasoningBuilder.append(parsed.delta)
+                                        }
+                                    }
+                                    is OpenAIResponsesStreamEvent.ResponseCompleted ->
+                                    {
+                                        val usage = parsed.response.usage
+                                        if(usage != null)
+                                        {
+                                            totalInputTokens = usage.inputTokens
+                                            totalOutputTokens = usage.outputTokens
+                                            totalReasoningTokens = usage.outputTokensDetails?.reasoningTokens ?: 0
+                                        }
+                                    }
+                                    else -> { /* ignore lifecycle / function-call */ }
+                                }
+                            }
+                        }
+                        is ApiMode.OpenAI ->
+                        {
+                            // Legacy chat-completions API: SSE data lines
+                            // contain JSON with `choices[].delta.content`.
+                            // Parse them here directly — no dedicated
+                            // StreamEvent class exists in this codebase.
+                            try
+                            {
+                                val element = Json.parseToJsonElement(dataLine)
+                                val obj = element as? JsonObject
+                                val choicesArr = obj?.get("choices") as? JsonArray
+                                choicesArr?.forEach { choiceEl ->
+                                    val choiceObj = choiceEl as? JsonObject
+                                    val deltaObj = choiceObj?.get("delta") as? JsonObject
+                                    val contentEl = deltaObj?.get("content")
+                                    val content = (contentEl as? JsonPrimitive)?.content
+                                    if(!content.isNullOrEmpty())
+                                    {
+                                        textBuilder.append(content)
+                                        emitStreamingChunk(content)
+                                    }
+                                }
+                            }
+                            catch(_: Exception)
+                            {
+                                // Skip malformed JSON line
+                            }
+                        }
+                        is ApiMode.Anthropic ->
+                        {
+                            val sseLine = SseParser.parseLine("data: $dataLine")
+                            val parsed: AnthropicStreamEvent? = when(sseLine)
+                            {
+                                is SseParser.SseLine.Data ->
+                                {
+                                    try { deserialize<AnthropicStreamEvent>(sseLine.content) }
+                                    catch(_: Exception) { null }
+                                }
+                                else -> null
+                            }
+                            if(parsed is AnthropicStreamEvent.ContentBlockDelta)
+                            {
+                                val delta = parsed.chunk.delta
+                                if(delta is AnthropicDelta.TextDelta && delta.text.isNotEmpty())
+                                {
+                                    textBuilder.append(delta.text)
+                                    emitStreamingChunk(delta.text)
+                                }
+                            }
+                            else if(parsed is AnthropicStreamEvent.MessageDelta && parsed.stopReason != null)
+                            {
+                                // end of stream
+                            }
+                        }
+                    }
+                }
+                lastEventType = null
+            }
+        }
+
+        streamingReasoning = reasoningBuilder.toString()
+        streamingInputTokens = totalInputTokens
+        streamingOutputTokens = totalOutputTokens
+        streamingReasoningTokens = totalReasoningTokens
+
+        val resultText = textBuilder.toString()
+
+        val streamingReasoningText = if(apiMode is ApiMode.OpenAIResponses) streamingReasoning else ""
+        val streamingInputTok = if(apiMode is ApiMode.OpenAIResponses) streamingInputTokens else 0
+        val streamingOutputTok = if(apiMode is ApiMode.OpenAIResponses) streamingOutputTokens else 0
+        val streamingReasonTok = if(apiMode is ApiMode.OpenAIResponses) streamingReasoningTokens else 0
+
+        val result = com.TTT.Pipe.MultimodalContent(
+            text = resultText,
+            modelReasoning = streamingReasoningText
+        )
+
+        val streamingMetadata = mutableMapOf<String, Any>(
+            "inputTokens" to streamingInputTok,
+            "outputTokens" to streamingOutputTok,
+            "totalTokens" to (streamingInputTok + streamingOutputTok),
+            "responseLength" to resultText.length,
+            "model" to model,
+            "streaming" to true,
+            "success" to true,
+            "transport" to "HttpURLConnection",
+            "apiType" to when(apiMode)
+            {
+                is ApiMode.OpenAI -> "ChatAPI"
+                is ApiMode.OpenAIResponses -> "ResponsesAPI"
+                is ApiMode.Anthropic -> "AnthropicAPI"
+            }
+        )
+        if(streamingReasoningText.isNotEmpty())
+        {
+            streamingMetadata["reasoningLength"] = streamingReasoningText.length
+            streamingMetadata["reasoningSupported"] = true
+        }
+        if(streamingReasonTok > 0)
+        {
+            streamingMetadata["reasoningTokens"] = streamingReasonTok
+        }
+
+        trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+              content = result,
+              metadata = streamingMetadata)
+
+        return resultText
     }
 
     /**
@@ -907,6 +1131,7 @@ class GenericOpenAIPipe : Pipe()
                             "rate_limit_error" -> P2PError.transport
                             "invalid_request_error", "invalid_api_key" -> P2PError.prompt
                             "api_error", "server_error" -> P2PError.transport
+                            null, "" -> P2PError.transport
                             else -> P2PError.transport
                         }
                         throw P2PException(p2pError, "GenericOpenAI streaming error: ${sseError.error.message}", Exception(sseError.error.message))
@@ -973,7 +1198,22 @@ class GenericOpenAIPipe : Pipe()
                 {
                     "content_block_delta" ->
                     {
-                        val contentDelta = AnthropicSseParser.extractContentFromLine(dataLine)
+                        val sseLine = SseParser.parseLine(dataLine)
+                        val contentDelta: String? = when(sseLine)
+                        {
+                            is SseParser.SseLine.Data ->
+                            {
+                                val event = try { deserialize<AnthropicStreamEvent>(sseLine.content) }
+                                catch(_: Exception) { null }
+                                if(event is AnthropicStreamEvent.ContentBlockDelta)
+                                {
+                                    val delta = event.chunk.delta
+                                    if(delta is AnthropicDelta.TextDelta) delta.text else null
+                                }
+                                else null
+                            }
+                            else -> null
+                        }
                         if(!contentDelta.isNullOrEmpty())
                         {
                             textBuilder.append(contentDelta)
