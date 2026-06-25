@@ -82,7 +82,7 @@ class OpenRouterPipe : Pipe()
      * Whether streaming mode is enabled.
      */
     @kotlinx.serialization.Serializable
-    private var streamingEnabled: Boolean = false
+    override var streamingEnabled: Boolean = false
 
 // OpenRouter-specific extended parameters
     /**
@@ -263,7 +263,7 @@ class OpenRouterPipe : Pipe()
      * @param enabled True to enable streaming
      * @return This pipe instance for fluent chaining
      */
-    fun setStreamingEnabled(enabled: Boolean): OpenRouterPipe
+    override fun setStreamingEnabled(enabled: Boolean): OpenRouterPipe
     {
         streamingEnabled = enabled
         return this

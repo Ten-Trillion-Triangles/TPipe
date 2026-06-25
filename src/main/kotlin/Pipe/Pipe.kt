@@ -698,6 +698,27 @@ abstract class Pipe : P2PInterface, ProviderInterface
     protected var streamingCallbackManager: StreamingCallbackManager? = null
 
     /**
+     * Whether this pipe should request streaming output from its underlying
+     * API. Subclasses that support streaming (e.g. GenericOpenAIPipe) override
+     * [setStreamingEnabled] to wire this flag into their request. The base
+     * Pipe class exposes this flag so parent pipes can propagate the
+     * streaming intent to descendants via [propagateStreamingCallback].
+     */
+    @kotlinx.serialization.Transient
+    open var streamingEnabled: Boolean = false
+
+    /**
+     * Enables or disables streaming on this pipe. Default implementation
+     * just flips the flag; subclasses override to actually wire the flag
+     * into their API request. Open so subclasses can override.
+     */
+    open fun setStreamingEnabled(enabled: Boolean): Pipe
+    {
+        this.streamingEnabled = enabled
+        return this
+    }
+
+    /**
      * Model to use for this pipe. Useful for logic that needs to behave differently depending on the model.
      * Does not have any internal functionality and is intended to be referenced by validation functions.
      */
@@ -1550,6 +1571,44 @@ abstract class Pipe : P2PInterface, ProviderInterface
             streamingCallbackManager = StreamingCallbackManager()
         }
         return streamingCallbackManager!!
+    }
+
+    /**
+     * Registers a streaming callback on this pipe AND every descendant pipe
+     * (validator, transformation, branch, reasoning). This is required because
+     * each pipe has its own [StreamingCallbackManager]; without propagation, a
+     * callback registered on a parent pipe would not fire when a child pipe's
+     * API call streams chunks. Mirrors [propagateTracingRecursively].
+     *
+     * The callback is added (idempotent) to each pipe's manager. If the same
+     * pipe has already received the callback, no duplicate is added.
+     *
+     * @param callback Suspendable callback receiving text chunks
+     * @param visited Internal — tracks already-walked pipes to prevent cycles
+     */
+    fun propagateStreamingCallback(
+        callback: suspend (String) -> Unit,
+        visited: MutableSet<String> = mutableSetOf()
+    )
+    {
+        if(pipeId in visited) return
+        visited.add(pipeId)
+
+        // Add callback to this pipe's manager.
+        obtainStreamingCallbackManager().addCallback(callback)
+
+        // Enable streaming on this pipe. Subclasses override setStreamingEnabled
+        // to wire the flag into their API request. The base Pipe.setStreamingEnabled
+        // just flips the flag.
+        setStreamingEnabled(true)
+
+        // Recurse into every child pipe.
+        listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { child ->
+            if(child.pipeId !in visited)
+            {
+                child.propagateStreamingCallback(callback, visited)
+            }
+        }
     }
 
     /**
@@ -4213,6 +4272,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         this.validatorPipe = pipe
         pipe.setParentPipe(this)
+        // Inherit any streaming callbacks already registered on this pipe so
+        // the child emits chunks to the same sinks as the parent.
+        streamingCallbackManager?.let { manager ->
+            manager.getCallbacks().forEach { cb ->
+                pipe.obtainStreamingCallbackManager().addCallback(cb)
+            }
+        }
         return this
     }
 
@@ -4229,6 +4295,11 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         this.transformationPipe = pipe
         transformationPipe?.setParentPipe(this)
+        streamingCallbackManager?.let { manager ->
+            manager.getCallbacks().forEach { cb ->
+                pipe.obtainStreamingCallbackManager().addCallback(cb)
+            }
+        }
         return this
     }
 
@@ -4245,6 +4316,11 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         this.branchPipe = pipe
         branchPipe?.setParentPipe(this)
+        streamingCallbackManager?.let { manager ->
+            manager.getCallbacks().forEach { cb ->
+                pipe.obtainStreamingCallbackManager().addCallback(cb)
+            }
+        }
         return this
     }
 
@@ -4255,6 +4331,11 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         this.reasoningPipe = pipe
         reasoningPipe?.setParentPipe(this)
+        streamingCallbackManager?.let { manager ->
+            manager.getCallbacks().forEach { cb ->
+                pipe.obtainStreamingCallbackManager().addCallback(cb)
+            }
+        }
         return this
     }
 

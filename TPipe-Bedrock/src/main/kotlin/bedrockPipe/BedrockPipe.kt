@@ -169,7 +169,7 @@ open class BedrockPipe : Pipe()
      * @see executeInvokeStream for streaming implementation
      */
     @kotlinx.serialization.Serializable
-    protected var streamingEnabled: Boolean = false
+    override var streamingEnabled: Boolean = false
 
     /**
      * Suspendable callback function for handling streaming response tokens.

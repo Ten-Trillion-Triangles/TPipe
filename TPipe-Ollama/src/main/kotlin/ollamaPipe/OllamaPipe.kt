@@ -54,7 +54,7 @@ class OllamaPipe : Pipe()
      * Whether to use streaming for responses.
      */
     @kotlinx.serialization.Serializable
-    private var streamingEnabled: Boolean = false
+    override var streamingEnabled: Boolean = false
 
     /**
      * How long to keep the model loaded in memory after the request.

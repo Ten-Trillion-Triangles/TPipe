@@ -67,7 +67,7 @@ class GenericOpenAIPipe : Pipe()
      * Whether streaming mode is enabled.
      */
     @kotlinx.serialization.Serializable
-    private var streamingEnabled: Boolean = false
+    override var streamingEnabled: Boolean = false
     private var streamingReasoning: String = ""
     private var streamingInputTokens: Int = 0
     private var streamingOutputTokens: Int = 0
@@ -335,7 +335,7 @@ class GenericOpenAIPipe : Pipe()
      * @param enabled True to enable streaming
      * @return This pipe instance for fluent chaining
      */
-    fun setStreamingEnabled(enabled: Boolean): GenericOpenAIPipe
+    override fun setStreamingEnabled(enabled: Boolean): GenericOpenAIPipe
     {
         streamingEnabled = enabled
         return this
@@ -351,6 +351,11 @@ class GenericOpenAIPipe : Pipe()
     {
         this.streamingEnabled = true
         obtainStreamingCallbackManager().addCallback(callback)
+        // Propagate to every descendant pipe so chunks emitted by child
+        // pipes (validator, transformation, branch, reasoning) flow through
+        // the same callback. Without this, callbacks registered on a parent
+        // pipe are silently ignored when its child pipe's API call streams.
+        propagateStreamingCallback(callback)
         return this
     }
 

@@ -39,8 +39,23 @@ class StreamingCallbackManager(
      */
     fun addCallback(callback: suspend (String) -> Unit)
     {
-        callbacks.add(callback)
+        // Dedup by reference equality. The same suspend lambda is a single
+        // object; if a caller registers it twice (e.g. once via the parent
+        // pipe's setStreamingCallback and once via child propagation), we
+        // don't want it firing twice. Without this, chunks appear in the
+        // terminal as exact duplicates interleaved (e.g. "HelloHello").
+        if(!callbacks.contains(callback))
+        {
+            callbacks.add(callback)
+        }
     }
+
+    /**
+     * Returns a read-only snapshot of the currently registered callbacks.
+     * Used by parent pipes to propagate callbacks to descendants so chunks
+     * from every pipe in the tree flow to the same sinks.
+     */
+    fun getCallbacks(): List<suspend (String) -> Unit> = callbacks.toList()
 
     /**
      * Removes a specific callback from the manager.
