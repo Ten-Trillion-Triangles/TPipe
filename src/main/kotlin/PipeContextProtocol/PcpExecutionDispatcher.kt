@@ -5,6 +5,21 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 
 /**
+ * Channel-separated buffered output captured from a sandboxed executor.
+ * Carries stdout, stderr, and optional binary payload alongside bookkeeping
+ * fields so downstream consumers can reconstruct what the process emitted
+ * without parsing a combined string.
+ */
+@Serializable
+data class BufferedOutput(
+    val stdout: String?,
+    val stderr: String?,
+    val binary: ByteArray?,
+    val totalBytes: Long,
+    val truncated: Boolean
+)
+
+/**
  * Result of executing a single PCP request.
  */
 @Serializable
@@ -13,7 +28,8 @@ data class PcpRequestResult(
     val output: String,
     val executionTimeMs: Long,
     val transport: Transport,
-    val error: String? = null
+    val error: String? = null,
+    val outputBuffer: BufferedOutput? = null
 )
 
 /**
