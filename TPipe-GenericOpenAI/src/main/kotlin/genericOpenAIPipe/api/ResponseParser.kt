@@ -36,8 +36,16 @@ interface ResponseParser
     companion object Factory
     {
         private val openAIResponseParser = OpenAIResponseParser()
+        // Json config for Anthropic response parsing:
+        // - ignoreUnknownKeys: tolerate extra fields MiniMax/anthropic may add
+        // - isLenient: accept unquoted JSON keys or other minor deviations
+        // - coerceInputValues: substitute defaults for null fields where possible
+        // These mirror Util.serialize() defaults and keep the parser robust
+        // against forward-compatible API changes.
         private val anthropicResponseParser = AnthropicResponseParser(Json {
-
+            ignoreUnknownKeys = true
+            isLenient = true
+            coerceInputValues = true
         })
         private val openAIResponsesResponseParser = OpenAIResponsesResponseParser()
 

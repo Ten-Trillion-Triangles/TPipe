@@ -112,7 +112,7 @@ Most providers expose the OpenAI Chat Completions surface at a different base UR
 .setBaseUrl("https://api.deepseek.com/v1")       // DeepSeek
 .setBaseUrl("https://api.groq.com/openai/v1")    // Groq
 .setBaseUrl("https://api.together.xyz/v1")       // Together
-.setBaseUrl("https://api.MiniMax.io/v1")         // MiniMax
+.setBaseUrl("https://api.minimax.io/v1")         // MiniMax
 .setBaseUrl("https://openai.myenterprise.com")   // internal proxy
 ```
 
@@ -218,9 +218,9 @@ fun main() = runBlocking {
 
     // MiniMax
     val MiniMax = GenericOpenAIPipe()
-        .setApiKey(System.getenv("MiniMax_API_KEY"))
-        .setBaseUrl("https://api.MiniMax.io/v1")
-        .setModel("MiniMax-text-01")
+        .setApiKey(System.getenv("MINIMAX_API_KEY"))
+        .setBaseUrl("https://api.minimax.io/v1")
+        .setModel("MiniMax-M2")
         .setApiMode(ApiMode.OpenAI)
         .init()
 
