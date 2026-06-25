@@ -1,11 +1,22 @@
 package com.TTT.PipeContextProtocol
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.StringWriter
 import javax.script.ScriptEngineManager
 import javax.script.SimpleBindings
 
 /**
  * Executes Kotlin scripts within the JVM.
+ *
+ * KNOWN LIMITATION (Option A): the JSR-223 engine's eval() cannot be
+ * interrupted from the outside. When timeoutMs fires, the dispatcher
+ * gives up waiting and returns a timeout error — but the engine thread
+ * keeps running until the script returns or the JVM exits. This is
+ * documented in plan Task 6; the alternative (engine.eval in its own
+ * cancellable thread + Thread.interrupt) breaks JSR-223 contract and
+ * corrupts engine state. For untrusted Kotlin scripts, wrap the
+ * dispatcher's coroutine in an outer timeout at the pipe layer.
  */
 class KotlinExecutor : PcpExecutor
 {
@@ -42,45 +53,131 @@ class KotlinExecutor : PcpExecutor
             val engine = engineManager.getEngineByExtension("kts")
                 ?: throw IllegalStateException("Kotlin script engine not found. Ensure 'kotlin-scripting-jsr223' is in the classpath.")
 
-            val writer = StringWriter()
-            val scriptContext = javax.script.SimpleScriptContext()
-            scriptContext.writer = writer
-            scriptContext.errorWriter = writer
+            val timeoutMs = mergedOptions.timeoutMs.toLong()
 
-            val bindings = scriptContext.getBindings(javax.script.ScriptContext.ENGINE_SCOPE)
+            // Run the synchronous JSR-223 eval on a daemon thread so the
+            // JVM can exit even if the leak (below) keeps the engine busy.
+            // We join with timeout — if the join times out, we return a
+            // timeout error and the daemon thread keeps running in the
+            // background. When the JVM exits, the daemon thread is killed.
+            //
+            // ACKNOWLEDGED LEAK (Option A): the JSR-223 engine's eval()
+            // cannot be interrupted from outside the engine. When timeout
+            // fires, the dispatcher gives up waiting and returns null —
+            // but the daemon engine thread keeps running until the script
+            // returns or the JVM exits. This is documented in the plan
+            // (Task 6) and in this class's KDoc. For untrusted Kotlin
+            // scripts, wrap the dispatcher's coroutine in an outer
+            // timeout at the pipe layer.
+            val captureOutcome = withContext(Dispatchers.IO) {
+                val resultHolder = arrayOfNulls<Any>(1) // [eval result]
+                val stdoutHolder = arrayOfNulls<StringWriter>(1)
+                val stderrHolder = arrayOfNulls<StringWriter>(1)
+                val exceptionHolder = arrayOfNulls<Throwable>(1)
 
-            if(mergedOptions.allowTpipeIntrospection)
-            {
-                bindings["PcpRegistry"] = PcpRegistry
-                bindings["PcpContext"] = context
-            }
+                val engineThread = Thread({
+                    try
+                    {
+                        val stdoutWriter = StringWriter()
+                        val stderrWriter = StringWriter()
+                        stdoutHolder[0] = stdoutWriter
+                        stderrHolder[0] = stderrWriter
+                        val scriptContext = javax.script.SimpleScriptContext()
+                        scriptContext.writer = stdoutWriter
+                        scriptContext.errorWriter = stderrWriter
 
-            if(mergedOptions.allowHostApplicationAccess)
-            {
-                mergedOptions.exposedBindings.keys.forEach { bindingName ->
-                    customBindings[bindingName]?.let { obj ->
-                        bindings[bindingName] = obj
+                        val bindings = scriptContext.getBindings(javax.script.ScriptContext.ENGINE_SCOPE)
+
+                        if(mergedOptions.allowTpipeIntrospection)
+                        {
+                            bindings["PcpRegistry"] = PcpRegistry
+                            bindings["PcpContext"] = context
+                        }
+
+                        if(mergedOptions.allowHostApplicationAccess)
+                        {
+                            mergedOptions.exposedBindings.keys.forEach { bindingName ->
+                                customBindings[bindingName]?.let { obj ->
+                                    bindings[bindingName] = obj
+                                }
+                            }
+                        }
+
+                        resultHolder[0] = engine.eval(script, scriptContext)
+                    }
+                    catch(e: Throwable)
+                    {
+                        exceptionHolder[0] = e
+                    }
+                }, "kotlin-engine-thread").apply { isDaemon = true }
+
+                engineThread.start()
+
+                // Use Thread.join(timeout) directly rather than
+                // withTimeoutOrNull because the inner join() is a
+                // synchronous blocking call — coroutine cancellation
+                // cannot interrupt it, so withTimeoutOrNull would still
+                // hang the IO thread until engineThread actually exits.
+                // Thread.join returns void, so check via a deadline.
+                val deadline = System.currentTimeMillis() + timeoutMs
+                engineThread.join(timeoutMs)
+                val joined = System.currentTimeMillis() < deadline && !engineThread.isAlive
+
+                if(!joined)
+                {
+                    // Timeout fired. The daemon thread is still running —
+                    // it will be killed when the JVM exits. Return null
+                    // marker to signal timeout.
+                    null
+                }
+                else
+                {
+                    val ex = exceptionHolder[0]
+                    if(ex != null)
+                    {
+                        EvalOutcome(
+                            stdout = stdoutHolder[0]?.toString()?.trim() ?: "",
+                            stderr = stderrHolder[0]?.toString()?.trim() ?: "",
+                            returnValue = null,
+                            timedOut = false,
+                            error = ex
+                        )
+                    }
+                    else
+                    {
+                        EvalOutcome(
+                            stdout = stdoutHolder[0]?.toString()?.trim() ?: "",
+                            stderr = stderrHolder[0]?.toString()?.trim() ?: "",
+                            returnValue = resultHolder[0],
+                            timedOut = false
+                        )
                     }
                 }
             }
 
-            val result = try {
-                engine.eval(script, scriptContext)
-            }
-            catch(e: Exception)
+            if(captureOutcome == null)
             {
-                val captured = writer.toString().trim()
-                if(captured.isNotEmpty())
-                {
-                    throw Exception("Execution failed but captured output: $captured. Error: ${e.message}", e)
-                }
-                throw e
+                // Timeout fired and we gave up waiting. Return a clean
+                // error to the caller. The daemon engine thread is still
+                // running — see class-level comment.
+                return PcpRequestResult(
+                    success = false,
+                    output = "",
+                    executionTimeMs = System.currentTimeMillis() - startTime,
+                    transport = Transport.Kotlin,
+                    error = "Kotlin script timed out after ${timeoutMs}ms"
+                )
             }
 
-            val output = writer.toString().trim()
-            val finalOutput = if(result != null && result !is Unit)
+            if(captureOutcome.error != null)
             {
-                if(output.isNotEmpty()) "$output\nResult: $result" else "Result: $result"
+                throw captureOutcome.error
+            }
+
+            val output = captureOutcome.stdout
+            val finalOutput = if(captureOutcome.returnValue != null && captureOutcome.returnValue !is Unit)
+            {
+                if(output.isNotEmpty()) "$output\nResult: ${captureOutcome.returnValue}" else "Result: ${captureOutcome.returnValue}"
             }
             else
             {
@@ -91,7 +188,14 @@ class KotlinExecutor : PcpExecutor
                 success = true,
                 output = finalOutput,
                 executionTimeMs = System.currentTimeMillis() - startTime,
-                transport = Transport.Kotlin
+                transport = Transport.Kotlin,
+                outputBuffer = BufferedOutput(
+                    stdout = captureOutcome.stdout,
+                    stderr = captureOutcome.stderr,
+                    binary = null,
+                    totalBytes = (captureOutcome.stdout.length).toLong() + (captureOutcome.stderr.length).toLong(),
+                    truncated = false
+                )
             )
         }
         catch(e: Exception)
@@ -105,6 +209,14 @@ class KotlinExecutor : PcpExecutor
             )
         }
     }
+
+    private data class EvalOutcome(
+        val stdout: String,
+        val stderr: String,
+        val returnValue: Any?,
+        val timedOut: Boolean,
+        val error: Throwable? = null
+    )
 
     private fun mergeContextOptions(requestOptions: KotlinContext, contextOptions: KotlinContext): KotlinContext
     {
