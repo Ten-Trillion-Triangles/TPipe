@@ -947,23 +947,42 @@ class GenericOpenAIPipe : Pipe()
                         }
                         is ApiMode.Anthropic ->
                         {
-                            val sseLine = SseParser.parseLine("data: $dataLine")
-                            val parsed: AnthropicStreamEvent? = when(sseLine)
-                            {
-                                is SseParser.SseLine.Data ->
-                                {
-                                    try { deserialize<AnthropicStreamEvent>(sseLine.content) }
-                                    catch(_: Exception) { null }
-                                }
-                                else -> null
-                            }
+                            // Use AnthropicSseParser (the wrapper that manually dispatches
+                            // by the outer `type` field) rather than calling
+                            // `deserialize<AnthropicStreamEvent>` directly. The wire shape
+                            // for content_block_delta carries `index` and `delta` at the outer
+                            // level — not nested under a `chunk` key — so the sealed class
+                            // cannot be polymorphic-decoded from the raw payload.
+                            //
+                            // Pass the raw `data: …` line directly to parseAnthropicLine —
+                            // it strips its own prefix. The previous code path passed the
+                            // already-stripped `sseLine.content` to parseAnthropicLine, which
+                            // then took the `else -> Done` branch because the JSON did not
+                            // start with `data:`.
+                            val parsed: AnthropicStreamEvent = AnthropicSseParser.parseAnthropicLine("data: $dataLine")
                             if(parsed is AnthropicStreamEvent.ContentBlockDelta)
                             {
-                                val delta = parsed.chunk.delta
-                                if(delta is AnthropicDelta.TextDelta && delta.text.isNotEmpty())
+                                when(val delta = parsed.chunk.delta)
                                 {
-                                    textBuilder.append(delta.text)
-                                    emitStreamingChunk(delta.text)
+                                    is AnthropicDelta.TextDelta ->
+                                    {
+                                        if(delta.text.isNotEmpty())
+                                        {
+                                            textBuilder.append(delta.text)
+                                            emitStreamingChunk(delta.text)
+                                        }
+                                    }
+                                    is AnthropicDelta.ThinkingDelta ->
+                                    {
+                                        if(delta.thinking.isNotEmpty())
+                                        {
+                                            reasoningBuilder.append(delta.thinking)
+                                        }
+                                    }
+                                    is AnthropicDelta.InputJsonDelta ->
+                                    {
+                                        // Structured output partial JSON — caller handles separately.
+                                    }
                                 }
                             }
                             else if(parsed is AnthropicStreamEvent.MessageDelta && parsed.stopReason != null)
@@ -984,10 +1003,26 @@ class GenericOpenAIPipe : Pipe()
 
         val resultText = textBuilder.toString()
 
-        val streamingReasoningText = if(apiMode is ApiMode.OpenAIResponses) streamingReasoning else ""
-        val streamingInputTok = if(apiMode is ApiMode.OpenAIResponses) streamingInputTokens else 0
-        val streamingOutputTok = if(apiMode is ApiMode.OpenAIResponses) streamingOutputTokens else 0
-        val streamingReasonTok = if(apiMode is ApiMode.OpenAIResponses) streamingReasoningTokens else 0
+        val streamingReasoningText = when(apiMode)
+        {
+            is ApiMode.OpenAIResponses, is ApiMode.Anthropic -> streamingReasoning
+            else -> ""
+        }
+        val streamingInputTok = when(apiMode)
+        {
+            is ApiMode.OpenAIResponses -> streamingInputTokens
+            else -> 0
+        }
+        val streamingOutputTok = when(apiMode)
+        {
+            is ApiMode.OpenAIResponses -> streamingOutputTokens
+            else -> 0
+        }
+        val streamingReasonTok = when(apiMode)
+        {
+            is ApiMode.OpenAIResponses -> streamingReasoningTokens
+            else -> 0
+        }
 
         val result = com.TTT.Pipe.MultimodalContent(
             text = resultText,
@@ -1056,10 +1091,26 @@ class GenericOpenAIPipe : Pipe()
 
         val resultText = textBuilder.toString()
 
-        val streamingReasoningText = if(apiMode is ApiMode.OpenAIResponses) streamingReasoning else ""
-        val streamingInputTok = if(apiMode is ApiMode.OpenAIResponses) streamingInputTokens else 0
-        val streamingOutputTok = if(apiMode is ApiMode.OpenAIResponses) streamingOutputTokens else 0
-        val streamingReasonTok = if(apiMode is ApiMode.OpenAIResponses) streamingReasoningTokens else 0
+        val streamingReasoningText = when(apiMode)
+        {
+            is ApiMode.OpenAIResponses, is ApiMode.Anthropic -> streamingReasoning
+            else -> ""
+        }
+        val streamingInputTok = when(apiMode)
+        {
+            is ApiMode.OpenAIResponses -> streamingInputTokens
+            else -> 0
+        }
+        val streamingOutputTok = when(apiMode)
+        {
+            is ApiMode.OpenAIResponses -> streamingOutputTokens
+            else -> 0
+        }
+        val streamingReasonTok = when(apiMode)
+        {
+            is ApiMode.OpenAIResponses -> streamingReasoningTokens
+            else -> 0
+        }
 
         val result = com.TTT.Pipe.MultimodalContent(
             text = resultText,
@@ -1160,7 +1211,8 @@ class GenericOpenAIPipe : Pipe()
      */
     private suspend fun executeStreamingAnthropic(
         channel: ByteReadChannel,
-        textBuilder: StringBuilder
+        textBuilder: StringBuilder,
+        reasoningBuilder: StringBuilder = StringBuilder()
     )
     {
         // For Anthropic streaming, we track the current event type from `event:` lines
@@ -1198,26 +1250,36 @@ class GenericOpenAIPipe : Pipe()
                 {
                     "content_block_delta" ->
                     {
-                        val sseLine = SseParser.parseLine(dataLine)
-                        val contentDelta: String? = when(sseLine)
+                        // parseAnthropicLine accepts either a `data: …` line or a bare JSON
+                        // payload, and dispatches manually by the outer `type` field. The
+                        // sealed class `AnthropicStreamEvent` does not support direct
+                        // polymorphic deserialization because its subclasses do not share
+                        // a common `type` field shape (see AnthropicStreaming.kt).
+                        val event: AnthropicStreamEvent = AnthropicSseParser.parseAnthropicLine(dataLine)
+                        if(event is AnthropicStreamEvent.ContentBlockDelta)
                         {
-                            is SseParser.SseLine.Data ->
+                            when(val delta = event.chunk.delta)
                             {
-                                val event = try { deserialize<AnthropicStreamEvent>(sseLine.content) }
-                                catch(_: Exception) { null }
-                                if(event is AnthropicStreamEvent.ContentBlockDelta)
+                                is AnthropicDelta.TextDelta ->
                                 {
-                                    val delta = event.chunk.delta
-                                    if(delta is AnthropicDelta.TextDelta) delta.text else null
+                                    if(delta.text.isNotEmpty())
+                                    {
+                                        textBuilder.append(delta.text)
+                                        emitStreamingChunk(delta.text)
+                                    }
                                 }
-                                else null
+                                is AnthropicDelta.ThinkingDelta ->
+                                {
+                                    if(delta.thinking.isNotEmpty())
+                                    {
+                                        reasoningBuilder.append(delta.thinking)
+                                    }
+                                }
+                                is AnthropicDelta.InputJsonDelta ->
+                                {
+                                    // Structured output partial JSON — caller handles separately.
+                                }
                             }
-                            else -> null
-                        }
-                        if(!contentDelta.isNullOrEmpty())
-                        {
-                            textBuilder.append(contentDelta)
-                            emitStreamingChunk(contentDelta)
                         }
                     }
                     "message_delta" ->
