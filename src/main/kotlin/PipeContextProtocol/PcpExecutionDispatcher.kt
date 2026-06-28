@@ -5,6 +5,29 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 
 /**
+ * Channel-separated buffered output captured from a sandboxed executor.
+ * Carries stdout, stderr, and optional binary payload alongside bookkeeping
+ * fields so downstream consumers can reconstruct what the process emitted
+ * without parsing a combined string.
+ *
+ * - `stdout` is populated when stdout bytes are valid UTF-8
+ * - `binary` is populated when stdout bytes are NOT valid UTF-8 (exactly one
+ *   of stdout/binary is set, never both)
+ * - `overflowPath` references a temp file holding the full stdout bytes when
+ *   `truncated` is true — only the first `maxInMemoryBytes` of stdout were
+ *   held in memory, the rest spilled to disk so output size is unbounded
+ */
+@Serializable
+data class BufferedOutput(
+    val stdout: String?,
+    val stderr: String?,
+    val binary: ByteArray?,
+    val totalBytes: Long,
+    val truncated: Boolean,
+    val overflowPath: String? = null
+)
+
+/**
  * Result of executing a single PCP request.
  */
 @Serializable
@@ -13,7 +36,8 @@ data class PcpRequestResult(
     val output: String,
     val executionTimeMs: Long,
     val transport: Transport,
-    val error: String? = null
+    val error: String? = null,
+    val outputBuffer: BufferedOutput? = null
 )
 
 /**

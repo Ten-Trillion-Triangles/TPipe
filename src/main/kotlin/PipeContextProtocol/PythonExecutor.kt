@@ -2,7 +2,6 @@ package com.TTT.PipeContextProtocol
 
 import kotlinx.serialization.Serializable
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
  * Executes Python scripts with cross-platform environment management and security controls.
@@ -11,7 +10,9 @@ import java.util.concurrent.TimeUnit
  * Uses existing StdioExecutor infrastructure for process execution while adding Python-specific
  * security validation and platform compatibility.
  */
-class PythonExecutor : PcpExecutor
+class PythonExecutor(
+    private val threadPool: PcpThreadPool = PcpThreadPool.create()
+) : PcpExecutor
 {
     private val securityManager = PythonSecurityManager()
     private val platformManager = PythonPlatformManager()
@@ -182,86 +183,90 @@ class PythonExecutor : PcpExecutor
     {
         val startTime = System.currentTimeMillis()
         val options = request.pythonContextOptions
-        
+
         return try
         {
             // Get script content from request
             val script = request.argumentsOrFunctionParams.joinToString("\n")
-            
-            // Create temporary script file
+
+            // Create temporary script file (UTF-8 pinned so non-ASCII source
+            // doesn't get silently transcoded by the platform default charset)
             val scriptFile = File.createTempFile("tpipe_python_", ".py")
-            scriptFile.writeText(script)
-            
+            scriptFile.writeText(script, Charsets.UTF_8)
+
             // Build command
             val command = buildList<String> {
                 add(options.pythonPath.ifEmpty { resolvePythonExecutable(options) ?: "python3" })
                 add(scriptFile.absolutePath)
             }
-            
+
             // Execute Python script
             val processBuilder = ProcessBuilder(command)
-            
+
             // Set working directory if specified
             if(options.workingDirectory.isNotEmpty())
             {
                 processBuilder.directory(File(options.workingDirectory))
             }
-            
+
             // Set environment variables
             val environment = processBuilder.environment()
             options.environmentVariables.forEach { (key, value) ->
                 environment[key] = value
             }
-            
-            val process = processBuilder.start()
-            
-            // Handle timeout
-            val completed = if(options.timeoutMs > 0)
+
+            // Start the process through the bounded pool so a saturated
+            // executor rejects with RejectedExecutionException instead of
+            // spawning unbounded OS processes
+            val process = try
             {
-                process.waitFor(options.timeoutMs.toLong(), TimeUnit.MILLISECONDS)
+                threadPool.submit<Process> { processBuilder.start() }.get()
             }
-            else
+            catch(e: java.util.concurrent.RejectedExecutionException)
             {
-                process.waitFor()
-                true
-            }
-            
-            if(!completed)
-            {
-                process.destroyForcibly()
                 scriptFile.delete()
                 return PcpRequestResult(
                     success = false,
-                    output = "",
+                    output = mergeWarningsWithOutput(warnings, ""),
                     executionTimeMs = System.currentTimeMillis() - startTime,
                     transport = Transport.Python,
-                    error = "Python script timed out after ${options.timeoutMs}ms"
+                    error = "Executor saturated: ${e.message}"
                 )
             }
-            
-            // Capture output
-            val output = process.inputStream.bufferedReader().readText()
-            val errorOutput = process.errorStream.bufferedReader().readText()
 
-            val finalOutput = if(errorOutput.isNotEmpty())
-            {
-                "$output\nSTDERR: $errorOutput"
-            }
-            else
-            {
-                output
-            }
-            val outputWithWarnings = mergeWarningsWithOutput(warnings, finalOutput)
-            
-            // Clean up
+            // Capture both streams in parallel via the shared helper —
+            // this is the fix for the sequential readText() deadlock that
+            // fired once either pipe buffer (~64KB) filled before the parent
+            // could drain it.
+            val captureBuffer = SubprocessOutputCapture.capture(
+                process = process,
+                timeoutMs = options.timeoutMs.toLong(),
+                maxInMemoryBytes = 256 * 1024
+            )
+
             scriptFile.delete()
-            
+
+            // Back-compat: build the same merged string the old code emitted
+            // (stdout + "\nSTDERR: " + stderr), then layer warnings on top.
+            val backcompatOutput = buildBackcompatOutput(captureBuffer, warnings)
+
             PcpRequestResult(
-                success = process.exitValue() == 0,
-                output = outputWithWarnings,
+                success = captureBuffer.totalBytes > 0 && captureBuffer.stdout != null && process.exitValue() == 0,
+                output = backcompatOutput,
                 executionTimeMs = System.currentTimeMillis() - startTime,
                 transport = Transport.Python,
-                error = if(process.exitValue() != 0) "Python script failed with exit code: ${process.exitValue()}" else null
+                error = when
+                {
+                    // Timeout: captureBuffer came back empty because the
+                    // helper destroyed the child after the timeout. This
+                    // must be checked BEFORE the exit-value branch since
+                    // SIGKILL (exit code 137) also produces a non-zero exit.
+                    captureBuffer.totalBytes == 0L && captureBuffer.stdout == null ->
+                        "Python script timed out after ${options.timeoutMs}ms"
+                    process.exitValue() != 0 -> "Python script failed with exit code: ${process.exitValue()}"
+                    else -> null
+                },
+                outputBuffer = captureBuffer
             )
         }
         catch(e: Exception)
@@ -274,6 +279,16 @@ class PythonExecutor : PcpExecutor
                 error = "Python execution failed: ${e.message}"
             )
         }
+    }
+
+    private fun buildBackcompatOutput(buffer: BufferedOutput, warnings: List<String>): String
+    {
+        val parts = mutableListOf<String>()
+        if(buffer.stdout != null) parts.add(buffer.stdout)
+        if(buffer.binary != null) parts.add("(binary output, ${buffer.binary.size} bytes)")
+        if(buffer.stderr != null && buffer.stderr.isNotEmpty()) parts.add("STDERR: ${buffer.stderr}")
+        val baseOutput = parts.joinToString("\n")
+        return mergeWarningsWithOutput(warnings, baseOutput)
     }
     
     /**

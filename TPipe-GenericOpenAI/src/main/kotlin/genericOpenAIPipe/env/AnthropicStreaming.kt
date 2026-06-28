@@ -71,6 +71,20 @@ sealed class AnthropicDelta
 
 /**
  * Sealed class representing all possible events in an Anthropic SSE stream.
+ *
+ * IMPORTANT: The subclasses here do NOT directly model the wire JSON shape.
+ * The wire format for `content_block_delta` carries the chunk fields
+ * (`index`, `delta`) at the OUTER level, not nested under a `chunk` key. The
+ * production dispatcher (`AnthropicSseParser.parseAnthropicLine`) manually
+ * reads the outer `type` field, extracts the chunk via
+ * `AnthropicStreamingChunk`, and wraps it in `ContentBlockDelta` itself.
+ *
+ * Direct polymorphic deserialization of `AnthropicStreamEvent` from a raw wire
+ * payload will fail with `MissingFieldException` because the wire shape and
+ * the class shape don't match. Always go through `AnthropicSseParser`.
+ *
+ * Kept as a sealed class hierarchy (not a flat hierarchy of nullable variants)
+ * so call-site pattern matching remains exhaustive.
  */
 @Serializable
 sealed class AnthropicStreamEvent

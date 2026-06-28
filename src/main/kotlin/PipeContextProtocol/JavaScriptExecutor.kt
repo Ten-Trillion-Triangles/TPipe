@@ -1,17 +1,18 @@
 package com.TTT.PipeContextProtocol
 
-import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
  * Executes JavaScript via an external Node.js process.
  */
-class JavaScriptExecutor : PcpExecutor
+class JavaScriptExecutor(
+    private val threadPool: PcpThreadPool = PcpThreadPool.create()
+) : PcpExecutor
 {
     private val securityManager = JavaScriptSecurityManager()
 
-    override suspend fun execute(request: PcPRequest, context: PcpContext): PcpRequestResult = kotlinx.coroutines.coroutineScope {
+    override suspend fun execute(request: PcPRequest, context: PcpContext): PcpRequestResult = coroutineScope {
         val startTime = System.currentTimeMillis()
         val script = request.argumentsOrFunctionParams.joinToString("\n")
 
@@ -44,7 +45,7 @@ class JavaScriptExecutor : PcpExecutor
         try
         {
             scriptFile = File.createTempFile("tpipe_js_", ".js")
-            scriptFile.writeText(script)
+            scriptFile.writeText(script, Charsets.UTF_8)
 
             val nodeExecutable = mergedOptions.nodePath.ifEmpty { "node" }
             val command = listOf(nodeExecutable, scriptFile.absolutePath)
@@ -58,48 +59,63 @@ class JavaScriptExecutor : PcpExecutor
 
             processBuilder.environment().putAll(mergedOptions.environmentVariables)
 
-            val process = processBuilder.start()
-
-            // Read output and error streams in parallel to avoid deadlock
-            val outputDeferred = async(kotlinx.coroutines.Dispatchers.IO) {
-                process.inputStream.bufferedReader().readText()
-            }
-            val errorDeferred = async(kotlinx.coroutines.Dispatchers.IO) {
-                process.errorStream.bufferedReader().readText()
-            }
-
-            val completed = if(mergedOptions.timeoutMs > 0)
+            // Start the process through the bounded pool — saturated
+            // executor returns RejectedExecutionException instead of
+            // spawning unbounded OS processes
+            val process = try
             {
-                process.waitFor(mergedOptions.timeoutMs.toLong(), TimeUnit.MILLISECONDS)
+                threadPool.submit<Process> { processBuilder.start() }.get()
             }
-            else
+            catch(e: java.util.concurrent.RejectedExecutionException)
             {
-                process.waitFor()
-                true
-            }
-
-            if(!completed)
-            {
-                process.destroyForcibly()
+                scriptFile?.delete()
                 return@coroutineScope PcpRequestResult(
                     success = false,
                     output = "",
                     executionTimeMs = System.currentTimeMillis() - startTime,
                     transport = Transport.JavaScript,
-                    error = "JavaScript script timed out after ${mergedOptions.timeoutMs}ms"
+                    error = "Executor saturated: ${e.message}"
                 )
             }
 
-            val output = outputDeferred.await()
-            val errorOutput = errorDeferred.await()
-            val finalOutput = if(errorOutput.isNotEmpty()) "$output\nSTDERR: $errorOutput" else output
+            // Capture both streams in parallel via the shared helper.
+            // Replaces the inline parallel-async pattern that was
+            // duplicated in every executor — keeping the implementation
+            // in one place means future bug fixes apply to all subprocess
+            // sandboxes at once.
+            val captureBuffer = SubprocessOutputCapture.capture(
+                process = process,
+                timeoutMs = mergedOptions.timeoutMs.toLong(),
+                maxInMemoryBytes = 256 * 1024
+            )
+
+            scriptFile?.delete()
+
+            val backcompatOutput = buildString {
+                if(captureBuffer.stdout != null) append(captureBuffer.stdout.trim())
+                if(captureBuffer.stderr != null && captureBuffer.stderr.isNotEmpty())
+                {
+                    if(isNotEmpty()) append('\n')
+                    append("STDERR: ").append(captureBuffer.stderr)
+                }
+            }
 
             PcpRequestResult(
-                success = process.exitValue() == 0,
-                output = finalOutput.trim(),
+                success = captureBuffer.stdout != null && process.exitValue() == 0,
+                output = backcompatOutput,
                 executionTimeMs = System.currentTimeMillis() - startTime,
                 transport = Transport.JavaScript,
-                error = if(process.exitValue() != 0) "JavaScript failed with exit code: ${process.exitValue()}" else null
+                error = when
+                {
+                    // Timeout path takes precedence over exit code because
+                    // SIGKILL (exit 137) from destroyForcibly also produces
+                    // a non-zero exit
+                    captureBuffer.stdout == null && captureBuffer.totalBytes == 0L ->
+                        "JavaScript script timed out after ${mergedOptions.timeoutMs}ms"
+                    process.exitValue() != 0 -> "JavaScript failed with exit code: ${process.exitValue()}"
+                    else -> null
+                },
+                outputBuffer = captureBuffer
             )
         }
         catch(e: Exception)

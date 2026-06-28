@@ -7,15 +7,15 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Disabled
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Live integration test for GenericOpenAIPipe with MiniMax API (Anthropic format).
+ * Live integration test for GenericOpenAIPipe with MiniMax API (OpenAI Chat
+ * Completions mode).
  *
- * This test is DISABLED by default — it requires a live API key.
- * To enable: replace @Disabled with @Test and set MINIMAX_API_KEY env var.
+ * Runs only when [MINIMAX_API_KEY] is set in the environment.
  * Credentials are injected via GenericOpenAIEnv at runtime — not hardcoded.
  *
  * To run with live credentials:
@@ -30,7 +30,7 @@ import kotlin.test.assertTrue
  * NOTE: Do NOT commit API keys. Credentials are injected programmatically
  * via GenericOpenAIEnv.setApiKey() in @BeforeAll — never hardcoded in this file.
  */
-@Disabled("Live integration test — enable manually with MINIMAX_API_KEY env var set")
+@EnabledIfEnvironmentVariable(named = "MINIMAX_API_KEY", matches = ".+")
 class MiniMaxApiTest
 {
 

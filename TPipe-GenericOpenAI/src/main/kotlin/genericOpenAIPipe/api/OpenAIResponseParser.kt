@@ -58,27 +58,3 @@ class OpenAIResponseParser : ResponseParser
         return parsedResponse
     }
 }
-
-/**
- * Error response structure from GenericOpenAI-compatible APIs.
- *
- * @property error The error details returned by the API
- */
-@kotlinx.serialization.Serializable
-data class GenericOpenAIErrorResponse(
-    val error: GenericOpenAIError
-)
-
-/**
- * Individual error detail from API error responses.
- *
- * @property message Human-readable error message
- * @property type Error type identifier (e.g., "authentication_error", "rate_limit_error")
- * @property code Machine-readable error code (e.g., "401", "429", "400")
- */
-@kotlinx.serialization.Serializable
-data class GenericOpenAIError(
-    val message: String,
-    val type: String = "",
-    val code: String? = null
-)

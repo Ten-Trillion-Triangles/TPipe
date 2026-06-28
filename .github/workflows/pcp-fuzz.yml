@@ -1,0 +1,82 @@
+name: PCP Fuzz + Stress Harness
+
+# =====================================================================
+# Per-PR gate for the PCP code-execution sandboxes.
+#
+# Runs the bounded-stress (20 parallel × 1MB output) and fuzz (30
+# random scripts through the dispatcher) harnesses added by the
+# PCP sandbox hardening plan. Catches regressions in:
+#   - SubprocessOutputCapture (deadlock, UTF-8, overflow)
+#   - PcpThreadPool (backpressure, no zombie subprocesses)
+#   - BufferedOutput (channel separation, serialization round-trip)
+#
+# The full plan-level N=100 × 10MB stress is NOT run here because
+# it takes 10+ minutes on a 16-core runner. Operators can run it
+# manually via workflow_dispatch.
+# =====================================================================
+
+on:
+  pull_request:
+    paths:
+      - 'TPipe/src/main/kotlin/PipeContextProtocol/**'
+      - 'TPipe/src/test/kotlin/PipeContextProtocol/**'
+  workflow_dispatch:
+    inputs:
+      big_stress:
+        description: 'Run the full N=100 × 10MB stress (slow)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: 'pcp-fuzz-${{ github.event.pull_request.number || github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: PCP Fuzz Harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 24
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '24'
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run FuzzTest
+        working-directory: TPipe
+        run: ./gradlew :test --tests "com.TTT.PipeContextProtocol.FuzzTest" --info
+
+      - name: Run StressTest
+        working-directory: TPipe
+        run: ./gradlew :test --tests "com.TTT.PipeContextProtocol.StressTest" --info
+
+  big_stress:
+    name: PCP N=100 Stress (manual)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.big_stress }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 24
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '24'
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run N=100 × 10MB stress (slow, runs once per dispatch)
+        working-directory: TPipe
+        run: ./gradlew :test --tests "com.TTT.PipeContextProtocol.StressTest" -Dn=100 -DperOutputBytes=10485760 --info

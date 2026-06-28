@@ -45,7 +45,7 @@ enum class LineEnding {
  * serialized.
  */
 @OptIn(ExperimentalSerializationApi::class)
-inline fun <reified T> serialize(obj: T, encodedefault : Boolean = true): String
+inline fun <reified T> serialize(obj: T, encodedefault : Boolean = false): String
 {
     val json = Json {
         prettyPrint = true

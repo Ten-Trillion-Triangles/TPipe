@@ -2,6 +2,7 @@ package genericOpenAIPipe.api
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonClassDiscriminator
 
 /**
  * Response from Anthropic /v1/messages API.
@@ -42,9 +43,18 @@ data class AnthropicMessagesResponse(
  * - [TextContentBlock]: Plain text content
  * - [ThinkingBlock]: Thinking content (for models that support it)
  *
+ * The [JsonClassDiscriminator] annotation tells kotlinx.serialization to
+ * dispatch on the JSON `"type"` field. Without this, MiniMax's `/anthropic`
+ * endpoint response (which emits `{"type":"thinking", ...}` blocks) cannot
+ * be deserialized — kotlinx throws
+ * `"Serializer for subclass 'thinking' is not found in the polymorphic
+ * scope of 'ResponseContentBlock'"`.
+ *
  * @property type The type of content block
  */
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
+@JsonClassDiscriminator("type")
 sealed class ResponseContentBlock
 {
     /**
@@ -54,6 +64,7 @@ sealed class ResponseContentBlock
      * @property text The text content
      */
     @Serializable
+    @SerialName("text")
     data class TextContentBlock(
         val type: String = "text",
         val text: String
@@ -66,6 +77,7 @@ sealed class ResponseContentBlock
      * @property thinking The thinking content
      */
     @Serializable
+    @SerialName("thinking")
     data class ThinkingBlock(
         val type: String,
         val thinking: String
