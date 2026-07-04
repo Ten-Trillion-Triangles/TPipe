@@ -357,6 +357,14 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["contextWindowBefore"] = event.contextWindowBefore
             baseMetadata["contextWindowAfter"] = event.contextWindowAfter
         }
+        is SafePruneApplied ->
+        {
+            eventType = TraceEventType.PUMP_STATION_SAFE_PRUNE_APPLIED
+            baseMetadata["originalCount"] = event.report.originalCount
+            baseMetadata["finalCount"] = event.report.finalCount
+            baseMetadata["tokensRemoved"] = event.report.tokensRemoved
+            baseMetadata["enabledFlags"] = event.report.enabledFlags.joinToString(",") { it.name }
+        }
         is GoalValidationStarted -> eventType = TraceEventType.PUMP_STATION_GOAL_VALIDATION_STARTED
         is GoalValidationCompleted ->
         {
@@ -457,6 +465,7 @@ internal fun mapPumpStationPhaseToTracePhase(phase: PumpStationPhase): TracePhas
     PumpStationPhase.ForegroundAgents -> TracePhase.AGENT_COMMUNICATION
     PumpStationPhase.MemoryUpdate -> TracePhase.CONTEXT_PREPARATION
     PumpStationPhase.Compaction -> TracePhase.CONTEXT_PREPARATION
+    PumpStationPhase.SafePrune -> TracePhase.CONTEXT_PREPARATION
     PumpStationPhase.GoalValidation -> TracePhase.VALIDATION
     PumpStationPhase.Exit -> TracePhase.CLEANUP
 }

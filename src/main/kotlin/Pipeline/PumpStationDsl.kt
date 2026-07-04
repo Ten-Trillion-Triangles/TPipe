@@ -301,6 +301,62 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var compactionStrategy: PumpStationCompactionStrategy = PumpStationCompactionStrategy.Whole
 
     /**
+     * Master switch for the optional SafePrune phase. Defaults to false — feature is
+     * fully opt-in.
+     */
+    var safePruneEnabled: Boolean = false
+
+    /**
+     * Minimum turnHistory size required for SafePrune to fire on a given turn.
+     */
+    var safePruneSizeThreshold: Int = 30
+
+    /**
+     * Number of most-recent entries that SafePrune strategies must NOT mutate.
+     */
+    var safePruneProtectRecentN: Int = 3
+
+    /**
+     * Window size for the DeduplicateByHash strategy.
+     */
+    var safePruneHashWindow: Int = 10
+
+    /**
+     * Maximum tool-response text length before StripLongToolArguments replaces it.
+     */
+    var safePruneMaxToolArgLength: Int = 2000
+
+    /**
+     * Per-strategy enable flags. Edited by [enableSafePruneStrategy] / [disableSafePruneStrategy].
+     */
+    internal val safePruneEnabledStrategies: MutableSet<SafePruneStrategy> = mutableSetOf()
+
+    /**
+     * Enable a SafePrune strategy at the builder level.
+     */
+    fun enableSafePruneStrategy(strategy: SafePruneStrategy)
+    {
+        safePruneEnabledStrategies.add(strategy)
+    }
+
+    /**
+     * Disable a SafePrune strategy at the builder level.
+     */
+    fun disableSafePruneStrategy(strategy: SafePruneStrategy)
+    {
+        safePruneEnabledStrategies.remove(strategy)
+    }
+
+    /**
+     * Replace the entire enabled-strategy set at the builder level.
+     */
+    fun setSafePruneStrategies(strategies: Set<SafePruneStrategy>)
+    {
+        safePruneEnabledStrategies.clear()
+        safePruneEnabledStrategies.addAll(strategies)
+    }
+
+    /**
      * Maximum number of ConverseHistory elements in turn history.
      * Excess elements are popped from the stack.
      */
@@ -973,6 +1029,15 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setStopHarnessOnInvalidPathRequest(stopHarnessOnInvalidPathRequest)
             .setFailurePolicy(failurePolicy)
 
+        // SafePrune configuration
+        station
+            .setSafePruneEnabled(safePruneEnabled)
+            .setSafePruneSizeThreshold(safePruneSizeThreshold)
+            .setSafePruneProtectRecentN(safePruneProtectRecentN)
+            .setSafePruneHashWindow(safePruneHashWindow)
+            .setSafePruneMaxToolArgLength(safePruneMaxToolArgLength)
+            .setSafePruneStrategies(safePruneEnabledStrategies.toSet())
+
         // Tracing
         tracingConfiguration?.let { station.enableTracing(it) }
 
@@ -1121,6 +1186,87 @@ class MemoryBlock(private val builder: PumpStationBuilder<*>)
     var strategy: PumpStationCompactionStrategy
         get() = builder.compactionStrategy
         set(value) { builder.compactionStrategy = value }
+
+    /**
+     * Configure the optional SafePrune phase. Off by default; call inside the block
+     * to enable individual strategies. Usage:
+     * ```
+     * pumpStation {
+     *     memory {
+     *         safePrune {
+     *             enabled = true
+     *             enable(SafePruneStrategy.DropPureEchoes)
+     *             enable(SafePruneStrategy.ReplaceWithSummaryRef)
+     *         }
+     *     }
+     * }
+     * ```
+     */
+    fun safePrune(block: SafePruneBlock.() -> Unit)
+    {
+        SafePruneBlock(builder).block()
+    }
+}
+
+/**
+ * Builder for the optional SafePrune phase. All knobs have safe defaults — the master
+ * switch is off until [enabled] is set to true and at least one strategy is enabled.
+ */
+@PumpStationDslMarker
+class SafePruneBlock(private val builder: PumpStationBuilder<*>)
+{
+    var enabled: Boolean
+        get() = builder.safePruneEnabled
+        set(value) { builder.safePruneEnabled = value }
+
+    var sizeThreshold: Int
+        get() = builder.safePruneSizeThreshold
+        set(value) { builder.safePruneSizeThreshold = value }
+
+    var protectRecentN: Int
+        get() = builder.safePruneProtectRecentN
+        set(value) { builder.safePruneProtectRecentN = value }
+
+    var hashWindow: Int
+        get() = builder.safePruneHashWindow
+        set(value) { builder.safePruneHashWindow = value }
+
+    var maxToolArgLength: Int
+        get() = builder.safePruneMaxToolArgLength
+        set(value) { builder.safePruneMaxToolArgLength = value }
+
+    /**
+     * Enable a single SafePrune strategy.
+     */
+    fun enable(strategy: SafePruneStrategy)
+    {
+        builder.enableSafePruneStrategy(strategy)
+    }
+
+    /**
+     * Disable a single SafePrune strategy.
+     */
+    fun disable(strategy: SafePruneStrategy)
+    {
+        builder.disableSafePruneStrategy(strategy)
+    }
+
+    /**
+     * Enable every SafePrune strategy. Use with caution — strategy D (DeduplicateByHash)
+     * and E (StripLongToolArguments) have riskier behavior profiles.
+     */
+    fun enableAll()
+    {
+        builder.setSafePruneStrategies(SafePruneStrategy.entries.toSet())
+    }
+
+    /**
+     * Disable every SafePrune strategy without turning the master switch off.
+     */
+    fun disableAll()
+    {
+        builder.setSafePruneStrategies(emptySet())
+    }
 }
 
 /**

@@ -689,6 +689,305 @@ internal fun PumpStation.defaultPrePruneForCompaction(rawTurns: List<ConverseDat
     return turns
 }
 
+//=========================================v3.5: SafePrune phase================================================
+
+/**
+ * Run the optional SafePrune phase. Fires when [safePruneEnabledInternal] is true
+ * and the size gate is met. Each enabled [SafePruneStrategy] runs in declared order
+ * against the same turnHistory snapshot; later strategies see the output of earlier
+ * ones. The protect-recent-N tail of the history is never mutated.
+ *
+ * No LLM call. Emits a single [SafePruneApplied] event with a [SafePruneReport] when
+ * at least one strategy fires and the size gate is met. When disabled or below
+ * threshold, no event is emitted.
+ */
+internal suspend fun PumpStation.runSafePrunePhase()
+{
+    if (!safePruneEnabledInternal) return
+    if (safePruneEnabledStrategiesInternal.isEmpty()) return
+    if (turnHistory.history.size <= safePruneSizeThresholdInternal) return
+
+    val originalCount = turnHistory.history.size
+    val originalChars = turnHistory.history.sumOf { it.content.text.length }
+
+    val snapshot = turnHistory.history.toList()
+    val protectN = safePruneProtectRecentNInternal.coerceAtLeast(0)
+    val protectBoundary = (snapshot.size - protectN).coerceAtLeast(0)
+
+    val enabledSnapshot = safePruneEnabledStrategiesInternal.toSet()
+    var working = snapshot
+
+    if (SafePruneStrategy.ReplaceWithSummaryRef in enabledSnapshot)
+    {
+        working = applyReplaceWithSummaryRef(working, protectBoundary, turnSummary)
+    }
+    if (SafePruneStrategy.DropPureEchoes in enabledSnapshot)
+    {
+        working = applyDropPureEchoes(working, protectBoundary)
+    }
+    if (SafePruneStrategy.CollapseToolCallResults in enabledSnapshot)
+    {
+        working = applyCollapseToolCallResults(working, protectBoundary)
+    }
+    if (SafePruneStrategy.DeduplicateByHash in enabledSnapshot)
+    {
+        working = applyDeduplicateByHash(working, protectBoundary, safePruneHashWindowInternal.coerceAtLeast(1))
+    }
+    if (SafePruneStrategy.StripLongToolArguments in enabledSnapshot)
+    {
+        working = applyStripLongToolArguments(working, protectBoundary, safePruneMaxToolArgLengthInternal.coerceAtLeast(1))
+    }
+    if (SafePruneStrategy.MetadataOnlyCompression in enabledSnapshot)
+    {
+        working = applyMetadataOnlyCompression(working, protectBoundary)
+    }
+
+    // Determine if any mutation happened. Count change covers drops/collapses;
+    // text change covers rewrites/truncations that keep the entry count the same.
+    val finalChars = working.sumOf { it.content.text.length }
+    val countChanged = working.size != snapshot.size
+    val textChanged = finalChars != originalChars
+    if (!countChanged && !textChanged)
+    {
+        return
+    }
+
+    turnHistory.history.clear()
+    turnHistory.history.addAll(working)
+
+    val tokensRemoved = (originalChars - finalChars).coerceAtLeast(0) / 4
+
+    val report = SafePruneReport(
+        enabledFlags = enabledSnapshot,
+        originalCount = originalCount,
+        finalCount = working.size,
+        tokensRemoved = tokensRemoved,
+        firedAtTurnIndex = taskState.turnIndex
+    )
+
+    emitEventInternal(SafePruneApplied(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex,
+        phase = PumpStationPhase.SafePrune,
+        report = report
+    ))
+}
+
+/**
+ * Strategy A: rewrite entries older than [protectBoundary] whose text already appears
+ * in [turnSummary] to a `[See turnSummary]` marker. Metadata preserved.
+ */
+internal fun applyReplaceWithSummaryRef(
+    entries: List<ConverseData>,
+    protectBoundary: Int,
+    turnSummary: String
+): List<ConverseData>
+{
+    if (turnSummary.isBlank() || protectBoundary >= entries.size) return entries
+    val summaryLower = turnSummary.lowercase()
+    return entries.mapIndexed { index, turn ->
+        if (index < protectBoundary)
+        {
+            val text = turn.content.text
+            if (text.isNotBlank() && summaryLower.contains(text.lowercase()))
+            {
+                val rewritten = turn.content.copy()
+                rewritten.text = "[See turnSummary]"
+                ConverseData(role = turn.role, content = rewritten)
+            }
+            else turn
+        }
+        else turn
+    }
+}
+
+/**
+ * Strategy B: drop entries whose trimmed text matches the immediately-preceding entry's
+ * trimmed text. Applied to entries older than [protectBoundary].
+ */
+internal fun applyDropPureEchoes(
+    entries: List<ConverseData>,
+    protectBoundary: Int
+): List<ConverseData>
+{
+    if (entries.isEmpty()) return entries
+    val result = mutableListOf<ConverseData>()
+    for ((index, turn) in entries.withIndex())
+    {
+        if (index < protectBoundary)
+        {
+            // index is within the eligible region — apply echo check
+            val last = result.lastOrNull()
+            if (last != null && last.content.text.trim() == turn.content.text.trim() && turn.content.text.isNotBlank())
+            {
+                // drop pure echo
+            }
+            else
+            {
+                result.add(turn)
+            }
+        }
+        else
+        {
+            // protected region — never mutate
+            result.add(turn)
+        }
+    }
+    return result
+}
+
+/**
+ * Strategy C: collapse adjacent agent/tool_result pairs into a single assistant
+ * turn with a `[tool-call: {preview}]` marker. Applied to entries older than [protectBoundary].
+ *
+ * Heuristic: a ConverseRole.agent turn followed by any of the tool-response roles
+ * (tool_response / pcp_response / mcp_response) is treated as a single tool invocation
+ * and replaced with a marker that preserves a 120-char preview of the call text.
+ */
+internal fun applyCollapseToolCallResults(
+    entries: List<ConverseData>,
+    protectBoundary: Int
+): List<ConverseData>
+{
+    if (entries.size < 2) return entries
+    val toolResponseRoles = setOf(
+        ConverseRole.tool_response,
+        ConverseRole.pcp_response,
+        ConverseRole.mcp_response
+    )
+    val result = mutableListOf<ConverseData>()
+    var index = 0
+    while (index < entries.size)
+    {
+        val current = entries[index]
+        val next = entries.getOrNull(index + 1)
+
+        if (index >= protectBoundary)
+        {
+            // protected region — never mutate
+            result.add(current)
+            index += 1
+            continue
+        }
+
+        if (current.role == ConverseRole.agent && next != null && next.role in toolResponseRoles)
+        {
+            val preview = current.content.text.take(120)
+            result.add(ConverseData(
+                role = ConverseRole.assistant,
+                content = MultimodalContent(text = "[tool-call: $preview]")
+            ))
+            index += 2
+        }
+        else
+        {
+            result.add(current)
+            index += 1
+        }
+    }
+    return result
+}
+
+/**
+ * Strategy D: drop entries whose text SHA-256 matches an earlier entry within the last
+ * [hashWindow] positions. Entries older than [protectBoundary] are eligible.
+ */
+internal fun applyDeduplicateByHash(
+    entries: List<ConverseData>,
+    protectBoundary: Int,
+    hashWindow: Int
+): List<ConverseData>
+{
+    if (entries.isEmpty()) return entries
+    val result = mutableListOf<ConverseData>()
+    val recentHashes = ArrayDeque<String>(hashWindow)
+    for ((index, turn) in entries.withIndex())
+    {
+        if (index >= protectBoundary)
+        {
+            // protected region — never mutate
+            result.add(turn)
+            recentHashes.addLast(hashText(turn.content.text))
+            if (recentHashes.size > hashWindow) recentHashes.removeFirst()
+            continue
+        }
+        val hash = hashText(turn.content.text)
+        if (turn.content.text.isNotBlank() && hash in recentHashes)
+        {
+            // drop duplicate within window
+        }
+        else
+        {
+            result.add(turn)
+            recentHashes.addLast(hash)
+            if (recentHashes.size > hashWindow) recentHashes.removeFirst()
+        }
+    }
+    return result
+}
+
+/**
+ * Strategy E: replace tool_response entries whose text length exceeds [maxLength]
+ * with a `[tool-call: {name} — args truncated, was {N} chars]` stub. Entries older than
+ * [protectBoundary] are eligible.
+ */
+internal fun applyStripLongToolArguments(
+    entries: List<ConverseData>,
+    protectBoundary: Int,
+    maxLength: Int
+): List<ConverseData>
+{
+    return entries.mapIndexed { index, turn ->
+        if (index < protectBoundary && turn.role == ConverseRole.tool_response && turn.content.text.length > maxLength)
+        {
+            val name = extractToolName(turn.content.text)
+            val stub = "[tool-call: $name — args truncated, was ${turn.content.text.length} chars]"
+            val rewritten = turn.content.copy()
+            rewritten.text = stub
+            ConverseData(role = turn.role, content = rewritten)
+        }
+        else turn
+    }
+}
+
+/**
+ * Strategy F: drop system-role entries whose text is empty and which carry only
+ * metadata. Entries older than [protectBoundary] are eligible. Entries whose metadata
+ * includes `pathName` or `tokenCount` are preserved regardless (those keys carry
+ * signal for downstream tracing).
+ */
+internal fun applyMetadataOnlyCompression(
+    entries: List<ConverseData>,
+    protectBoundary: Int
+): List<ConverseData>
+{
+    val protectedKeys = setOf("pathName", "tokenCount")
+    return entries.filterIndexed { index, turn ->
+        if (index < protectBoundary &&
+            turn.role == ConverseRole.system &&
+            turn.content.text.isBlank() &&
+            turn.content.metadata.isNotEmpty() &&
+            protectedKeys.none { it in turn.content.metadata.keys })
+        {
+            false
+        }
+        else true
+    }
+}
+
+private fun hashText(text: String): String
+{
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    val bytes = digest.digest(text.toByteArray(Charsets.UTF_8))
+    return bytes.joinToString("") { "%02x".format(it) }
+}
+
+private fun extractToolName(toolResponseText: String): String
+{
+    val match = Regex("\"name\"\\s*:\\s*\"([^\"]+)\"").find(toolResponseText)
+    return match?.groupValues?.get(1) ?: "unknown"
+}
+
 //=========================================v3: Strategy implementations=============================================
 
 /**
@@ -2095,6 +2394,7 @@ internal suspend fun PumpStation.runTurn(): TurnResult
     }
     pruneTurnHistory()
     pruneRawTurnHistory()
+    runSafePrunePhase()
 
     runForegroundAgentsPhase()
     detectAndHandleContextBlowout(PumpStationPhase.ForegroundAgents)

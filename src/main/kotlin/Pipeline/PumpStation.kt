@@ -1505,6 +1505,51 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      */
     private var maxTotalPathCallsPerPath: Int? = null
 
+//=====================================Group Q: SafePrune (optional deterministic cleanup)==========================
+
+    /**
+     * Master switch for the SafePrune phase. When false (the default) the phase is a
+     * no-op and emits no events. When true, fires every turn after the existing prunes
+     * if turnHistory.size exceeds [safePruneSizeThreshold].
+     *
+     * @see SafePruneStrategy
+     */
+    private var safePruneEnabled: Boolean = false
+
+    /**
+     * Minimum turnHistory size required for SafePrune to fire on a given turn. Defaults
+     * to 30 — below that the pass is not worth its CPU cost. Each strategy's own gating
+     * (protectRecentN, hashWindow, maxToolArgLength) applies independently.
+     */
+    private var safePruneSizeThreshold: Int = 30
+
+    /**
+     * Number of most-recent entries that SafePrune strategies must NOT mutate. Protects
+     * the just-produced path output and the immediately-prior context from being rewritten
+     * by cleanup strategies that could drop or replace them.
+     */
+    private var safePruneProtectRecentN: Int = 3
+
+    /**
+     * Window size for the [SafePruneStrategy.DeduplicateByHash] strategy. Only entries
+     * within this many positions of an earlier entry are eligible for hash-based dedup.
+     * Conservative default of 10 keeps repeated-question drops rare.
+     */
+    private var safePruneHashWindow: Int = 10
+
+    /**
+     * Maximum tool-response text length before [SafePruneStrategy.StripLongToolArguments]
+     * replaces it with a truncated stub. Conservative default of 2000 covers typical
+     * tool outputs without truncating load-bearing arguments.
+     */
+    private var safePruneMaxToolArgLength: Int = 2000
+
+    /**
+     * Strategies currently enabled. Empty by default. Add via [enableSafePruneStrategy],
+     * remove via [disableSafePruneStrategy], or replace wholesale via [setSafePruneStrategies].
+     */
+    private val safePruneEnabledStrategies: MutableSet<SafePruneStrategy> = mutableSetOf()
+
     /**
      * Policy for how the harness responds when [maxTotalPathCallsPerPath] is exceeded.
      * Default is [PathLimitExceededPolicy.Skip] — path is moved to reserve.
@@ -2100,6 +2145,18 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     internal val maxRepairPromptTokensInternal get() = maxRepairPromptTokens
     internal val maxBlowoutRecoveriesInternal get() = maxBlowoutRecoveries
     internal val blowoutThresholdInternal get() = blowoutThreshold
+
+    //=====================================Group Q accessors (SafePrune)============================================
+    // Internal read-only accessors so PumpStationLoop.kt extension functions (Group Q:
+    // safe-prune phase) can read the SafePrune configuration. Mutation goes through
+    // the public fluent setters to preserve the existing builder pattern.
+
+    internal val safePruneEnabledInternal get() = safePruneEnabled
+    internal val safePruneSizeThresholdInternal get() = safePruneSizeThreshold
+    internal val safePruneProtectRecentNInternal get() = safePruneProtectRecentN
+    internal val safePruneHashWindowInternal get() = safePruneHashWindow
+    internal val safePruneMaxToolArgLengthInternal get() = safePruneMaxToolArgLength
+    internal val safePruneEnabledStrategiesInternal get() = safePruneEnabledStrategies
 
     //=====================================Group K accessors========================================================
     // Internal accessors so PumpStationLoop.kt extension functions (Group K: context
@@ -3475,6 +3532,109 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     fun setMaxRepairPromptTokens(value: Int): PumpStation
     {
         this.maxRepairPromptTokens = value
+        return this
+    }
+
+    //=====================================SafePrune fluent setters====================================================
+
+    /**
+     * Master switch for the SafePrune phase. When false (the default), the phase is a no-op.
+     *
+     * @param enabled true to enable, false to disable.
+     * @return This PumpStation instance for method chaining.
+     * @see SafePruneStrategy
+     */
+    fun setSafePruneEnabled(enabled: Boolean): PumpStation
+    {
+        this.safePruneEnabled = enabled
+        return this
+    }
+
+    /**
+     * Minimum turnHistory size required for SafePrune to fire on a given turn.
+     *
+     * @param threshold Minimum entry count; pass <= 0 to disable the size gate.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneSizeThreshold(threshold: Int): PumpStation
+    {
+        this.safePruneSizeThreshold = threshold
+        return this
+    }
+
+    /**
+     * Number of most-recent entries that SafePrune strategies must NOT mutate.
+     *
+     * @param count Number of recent entries to protect (>= 0).
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneProtectRecentN(count: Int): PumpStation
+    {
+        this.safePruneProtectRecentN = count
+        return this
+    }
+
+    /**
+     * Window size for the [SafePruneStrategy.DeduplicateByHash] strategy.
+     *
+     * @param window Window size in entries (>= 1).
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneHashWindow(window: Int): PumpStation
+    {
+        this.safePruneHashWindow = window
+        return this
+    }
+
+    /**
+     * Maximum tool-response text length before [SafePruneStrategy.StripLongToolArguments]
+     * replaces it with a truncated stub.
+     *
+     * @param length Maximum length in characters (>= 1).
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneMaxToolArgLength(length: Int): PumpStation
+    {
+        this.safePruneMaxToolArgLength = length
+        return this
+    }
+
+    /**
+     * Enable a single SafePrune strategy. Idempotent — enabling twice has no effect.
+     *
+     * @param strategy Strategy to enable.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun enableSafePruneStrategy(strategy: SafePruneStrategy): PumpStation
+    {
+        this.safePruneEnabledStrategies.add(strategy)
+        return this
+    }
+
+    /**
+     * Disable a single SafePrune strategy. Idempotent — disabling an already-disabled
+     * strategy has no effect.
+     *
+     * @param strategy Strategy to disable.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun disableSafePruneStrategy(strategy: SafePruneStrategy): PumpStation
+    {
+        this.safePruneEnabledStrategies.remove(strategy)
+        return this
+    }
+
+    /**
+     * Replace the entire enabled-strategy set. Pass an empty set to disable all
+     * strategies without turning the master switch off.
+     *
+     * @param strategies Strategies to enable (others are disabled).
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneStrategies(strategies: Set<SafePruneStrategy>): PumpStation
+    {
+        this.safePruneEnabledStrategies.clear()
+        this.safePruneEnabledStrategies.addAll(strategies)
         return this
     }
 

@@ -6,6 +6,71 @@ import com.TTT.Context.MiniBank
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
+
+/**
+ * Cleanup strategies that the SafePrune phase can apply to [com.TTT.Context.ConverseHistory]
+ * before the LLM-requiring phases of [PumpStation] run. Each strategy is a deterministic,
+ * LLM-free transform — the user opts in per strategy. Off by default; when none are enabled
+ * the SafePrune phase is a no-op.
+ *
+ * Strategies are applied in declared order during a single pass; later strategies see the
+ * output of earlier ones.
+ */
+enum class SafePruneStrategy
+{
+    /** Rewrite older entries whose text already appears in [turnSummary] to a `[See turnSummary]` marker. */
+    ReplaceWithSummaryRef,
+
+    /** Drop entries whose text is byte-identical to the immediately-preceding entry. */
+    DropPureEchoes,
+
+    /** Collapse adjacent tool_call/tool_response pairs into a single `[tool-call: {name}]` marker. */
+    CollapseToolCallResults,
+
+    /** Drop entries whose text hash matches an earlier entry within the last [safePruneHashWindow] entries. */
+    DeduplicateByHash,
+
+    /** Replace tool_response entries whose text exceeds [safePruneMaxToolArgLength] with a truncated stub. */
+    StripLongToolArguments,
+
+    /** Drop system-role entries whose text is empty and which carry only metadata. */
+    MetadataOnlyCompression
+}
+
+/**
+ * Summary payload emitted by the SafePrune phase on a single turn. Captures the count of
+ * enabled strategies, the history size before and after the pass, the rough token delta,
+ * and the turn index at which the pass ran. Carried on the [SafePruneApplied] event so
+ * observers (tracing, tests, observability) can reconstruct what happened.
+ *
+ * @property enabledFlags Strategies that were active during this pass.
+ * @property originalCount Entries in turnHistory before the pass.
+ * @property finalCount Entries in turnHistory after the pass.
+ * @property tokensRemoved Estimated tokens saved by the pass (sum of removed text lengths / 4).
+ * @property firedAtTurnIndex Turn index at which the pass executed.
+ */
+@Serializable
+data class SafePruneReport(
+    val enabledFlags: Set<SafePruneStrategy>,
+    val originalCount: Int,
+    val finalCount: Int,
+    val tokensRemoved: Int,
+    val firedAtTurnIndex: Int
+)
+
+/**
+ * Emitted at the end of every SafePrune phase run (only when at least one strategy fired).
+ * Carries the [SafePruneReport] so downstream tracing can show per-turn savings.
+ */
+@Serializable
+data class SafePruneApplied(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.SafePrune,
+    val report: SafePruneReport
+) : PumpStationEvent
 
 /**
  * Models for the PumpStation scaffolding system.
@@ -47,6 +112,7 @@ enum class PumpStationPhase
     ForegroundAgents,
     MemoryUpdate,
     Compaction,
+    SafePrune,
     GoalValidation,
     Exit
 }
