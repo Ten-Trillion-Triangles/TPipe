@@ -1551,6 +1551,20 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     private val safePruneEnabledStrategies: MutableSet<SafePruneStrategy> = mutableSetOf()
 
     /**
+     * Per-strategy policy overrides. Empty by default; each strategy uses the
+     * PumpStation-global [safePruneSizeThreshold] / [safePruneProtectRecentN].
+     * Add via [setSafePruneStrategyPolicy]; remove by clearing the map.
+     */
+    private val safePruneStrategyPolicies: MutableMap<SafePruneStrategy, SafePrunePolicy> = mutableMapOf()
+
+    /**
+     * Per-strategy dry-run flags. Empty by default; all strategies mutate normally.
+     * When a strategy is in this set, its mutation is skipped and a
+     * [SafePruneDryRunCompleted] event is emitted instead of [SafePruneApplied].
+     */
+    private val safePruneStrategyDryRun: MutableSet<SafePruneStrategy> = mutableSetOf()
+
+    /**
      * Policy for how the harness responds when [maxTotalPathCallsPerPath] is exceeded.
      * Default is [PathLimitExceededPolicy.Skip] — path is moved to reserve.
      */
@@ -2157,6 +2171,8 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     internal val safePruneHashWindowInternal get() = safePruneHashWindow
     internal val safePruneMaxToolArgLengthInternal get() = safePruneMaxToolArgLength
     internal val safePruneEnabledStrategiesInternal get() = safePruneEnabledStrategies
+    internal val safePruneStrategyPoliciesInternal get() = safePruneStrategyPolicies
+    internal val safePruneStrategyDryRunInternal get() = safePruneStrategyDryRun
 
     //=====================================Group K accessors========================================================
     // Internal accessors so PumpStationLoop.kt extension functions (Group K: context
@@ -3635,6 +3651,63 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     {
         this.safePruneEnabledStrategies.clear()
         this.safePruneEnabledStrategies.addAll(strategies)
+        return this
+    }
+
+    /**
+     * Set a per-strategy policy override for a single strategy. Null policy
+     * clears any existing override (strategy falls back to global knobs).
+     *
+     * @param strategy Strategy to override.
+     * @param policy Override policy, or null to clear.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneStrategyPolicy(strategy: SafePruneStrategy, policy: SafePrunePolicy?): PumpStation
+    {
+        if (policy == null) safePruneStrategyPolicies.remove(strategy)
+        else safePruneStrategyPolicies[strategy] = policy
+        return this
+    }
+
+    /**
+     * Replace the entire per-strategy policy map.
+     *
+     * @param policies New policy map; strategies not in the map fall back to global.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneStrategyPolicies(policies: Map<SafePruneStrategy, SafePrunePolicy>): PumpStation
+    {
+        safePruneStrategyPolicies.clear()
+        safePruneStrategyPolicies.putAll(policies)
+        return this
+    }
+
+    /**
+     * Set or clear dry-run mode for a single strategy. When true, the strategy
+     * computes its mutation but does NOT apply it; instead a SafePruneDryRunCompleted
+     * event fires with the hypothetical report.
+     *
+     * @param strategy Strategy to toggle.
+     * @param dryRun True to enable dry-run, false to disable (default mutation).
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneStrategyDryRun(strategy: SafePruneStrategy, dryRun: Boolean): PumpStation
+    {
+        if (dryRun) safePruneStrategyDryRun.add(strategy)
+        else safePruneStrategyDryRun.remove(strategy)
+        return this
+    }
+
+    /**
+     * Enable or disable dry-run mode for every strategy at once.
+     *
+     * @param dryRun True to enable dry-run for all strategies, false to clear all.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneStrategyDryRunAll(dryRun: Boolean): PumpStation
+    {
+        if (dryRun) safePruneStrategyDryRun.addAll(SafePruneStrategy.entries)
+        else safePruneStrategyDryRun.clear()
         return this
     }
 

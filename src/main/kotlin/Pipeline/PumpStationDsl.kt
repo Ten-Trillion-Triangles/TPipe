@@ -332,6 +332,16 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     internal val safePruneEnabledStrategies: MutableSet<SafePruneStrategy> = mutableSetOf()
 
     /**
+     * Per-strategy policy overrides at the builder level. Empty by default.
+     */
+    internal val safePruneStrategyPolicies: MutableMap<SafePruneStrategy, SafePrunePolicy> = mutableMapOf()
+
+    /**
+     * Per-strategy dry-run flags at the builder level. Empty by default.
+     */
+    internal val safePruneStrategyDryRun: MutableSet<SafePruneStrategy> = mutableSetOf()
+
+    /**
      * Enable a SafePrune strategy at the builder level.
      */
     fun enableSafePruneStrategy(strategy: SafePruneStrategy)
@@ -354,6 +364,33 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     {
         safePruneEnabledStrategies.clear()
         safePruneEnabledStrategies.addAll(strategies)
+    }
+
+    /**
+     * Set a per-strategy policy override at the builder level. Pass null to clear.
+     */
+    fun setSafePruneStrategyPolicy(strategy: SafePruneStrategy, policy: SafePrunePolicy?)
+    {
+        if (policy == null) safePruneStrategyPolicies.remove(strategy)
+        else safePruneStrategyPolicies[strategy] = policy
+    }
+
+    /**
+     * Enable or disable dry-run mode for a single strategy at the builder level.
+     */
+    fun setSafePruneStrategyDryRun(strategy: SafePruneStrategy, dryRun: Boolean)
+    {
+        if (dryRun) safePruneStrategyDryRun.add(strategy)
+        else safePruneStrategyDryRun.remove(strategy)
+    }
+
+    /**
+     * Enable or disable dry-run mode for every strategy at once.
+     */
+    fun setSafePruneStrategyDryRunAll(dryRun: Boolean)
+    {
+        if (dryRun) safePruneStrategyDryRun.addAll(SafePruneStrategy.entries)
+        else safePruneStrategyDryRun.clear()
     }
 
     /**
@@ -892,6 +929,22 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         healthSystemPrompt = source.healthSystemPrompt
         lorebookSystemPrompt = source.lorebookSystemPrompt
         goalSystemPrompt = source.goalSystemPrompt
+
+        // SafePrune configuration — must be carried forward when `path()` promotes an
+        // Initial-stage builder into a Ready-stage builder via copyFrom. Otherwise
+        // config set inside `pumpStation { memory { safePrune { ... } } path(...) { ... } }`
+        // is silently dropped on the promoted builder and `runSafePrunePhase` never
+        // fires even though the user enabled the phase. Fixes a real bug uncovered
+        // during the 2026-07-04 live SafePrune verification run.
+        safePruneEnabled = source.safePruneEnabled
+        safePruneSizeThreshold = source.safePruneSizeThreshold
+        safePruneProtectRecentN = source.safePruneProtectRecentN
+        safePruneHashWindow = source.safePruneHashWindow
+        safePruneMaxToolArgLength = source.safePruneMaxToolArgLength
+        safePruneEnabledStrategies.addAll(source.safePruneEnabledStrategies)
+        safePruneStrategyPolicies.putAll(source.safePruneStrategyPolicies)
+        safePruneStrategyDryRun.addAll(source.safePruneStrategyDryRun)
+
         eventObserver = source.eventObserver
         preInitFunction = source.preInitFunction
         preValidationJudgeFunction = source.preValidationJudgeFunction
@@ -1037,6 +1090,14 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setSafePruneHashWindow(safePruneHashWindow)
             .setSafePruneMaxToolArgLength(safePruneMaxToolArgLength)
             .setSafePruneStrategies(safePruneEnabledStrategies.toSet())
+            .setSafePruneStrategyPolicies(safePruneStrategyPolicies.toMap())
+            .setSafePruneStrategyDryRunAll(false)
+        // Apply per-strategy dry-run flags individually to preserve which strategies
+        // are marked, since the master toggle above clears all.
+        for (strategy in safePruneStrategyDryRun)
+        {
+            station.setSafePruneStrategyDryRun(strategy, true)
+        }
 
         // Tracing
         tracingConfiguration?.let { station.enableTracing(it) }
@@ -1266,6 +1327,38 @@ class SafePruneBlock(private val builder: PumpStationBuilder<*>)
     fun disableAll()
     {
         builder.setSafePruneStrategies(emptySet())
+    }
+
+    /**
+     * Set a per-strategy policy override.
+     */
+    fun policy(strategy: SafePruneStrategy, policy: SafePrunePolicy)
+    {
+        builder.setSafePruneStrategyPolicy(strategy, policy)
+    }
+
+    /**
+     * Clear a per-strategy policy override (strategy falls back to global knobs).
+     */
+    fun clearPolicy(strategy: SafePruneStrategy)
+    {
+        builder.setSafePruneStrategyPolicy(strategy, null)
+    }
+
+    /**
+     * Enable or disable dry-run mode for a single strategy.
+     */
+    fun dryRun(strategy: SafePruneStrategy, dryRun: Boolean)
+    {
+        builder.setSafePruneStrategyDryRun(strategy, dryRun)
+    }
+
+    /**
+     * Enable or disable dry-run mode for every strategy at once.
+     */
+    fun dryRunAll(dryRun: Boolean)
+    {
+        builder.setSafePruneStrategyDryRunAll(dryRun)
     }
 }
 

@@ -97,7 +97,7 @@ internal fun PumpStation.applyPromptsToPipeline(
     if (agent == null) return
     val pipes = agent.getPipes()
     for (pipe in pipes)
-{
+    {
         val prompt = customPrompt ?: defaultPromptFor(agent)
         val footer = customFooter ?: defaultFooterFor(agent)
         pipe.setSystemPrompt(prompt)
@@ -711,59 +711,92 @@ internal suspend fun PumpStation.runSafePrunePhase()
     val originalChars = turnHistory.history.sumOf { it.content.text.length }
 
     val snapshot = turnHistory.history.toList()
-    val protectN = safePruneProtectRecentNInternal.coerceAtLeast(0)
-    val protectBoundary = (snapshot.size - protectN).coerceAtLeast(0)
+    val globalProtectBoundary = resolveSafePruneProtectBoundary(safePruneProtectRecentNInternal, snapshot.size)
 
     val enabledSnapshot = safePruneEnabledStrategiesInternal.toSet()
-    var working = snapshot
+    val dryRunSet = safePruneStrategyDryRunInternal
+    val isAnyDryRun = enabledSnapshot.any { it in dryRunSet }
 
-    if (SafePruneStrategy.ReplaceWithSummaryRef in enabledSnapshot)
+    // Two parallel pipelines: the actual list (only non-dry-run strategies applied)
+    // and the hypothetical list (all strategies applied, including dry-run).
+    // The hypothetical list is what the SafePruneDryRunCompleted report carries;
+    // the actual list is what replaces turnHistory when no dry-run is active.
+    var workingActual = snapshot
+    var workingHypothetical = snapshot
+
+    fun runStrategy(
+        strategy: SafePruneStrategy,
+        apply: (List<ConverseData>, Int) -> List<ConverseData>,
+        hypotheticalApply: (List<ConverseData>, Int) -> List<ConverseData> = apply
+    )
     {
-        working = applyReplaceWithSummaryRef(working, protectBoundary, turnSummary)
-    }
-    if (SafePruneStrategy.DropPureEchoes in enabledSnapshot)
-    {
-        working = applyDropPureEchoes(working, protectBoundary)
-    }
-    if (SafePruneStrategy.CollapseToolCallResults in enabledSnapshot)
-    {
-        working = applyCollapseToolCallResults(working, protectBoundary)
-    }
-    if (SafePruneStrategy.DeduplicateByHash in enabledSnapshot)
-    {
-        working = applyDeduplicateByHash(working, protectBoundary, safePruneHashWindowInternal.coerceAtLeast(1))
-    }
-    if (SafePruneStrategy.StripLongToolArguments in enabledSnapshot)
-    {
-        working = applyStripLongToolArguments(working, protectBoundary, safePruneMaxToolArgLengthInternal.coerceAtLeast(1))
-    }
-    if (SafePruneStrategy.MetadataOnlyCompression in enabledSnapshot)
-    {
-        working = applyMetadataOnlyCompression(working, protectBoundary)
+        if (strategy !in enabledSnapshot) return
+        val boundary = resolveStrategyBoundary(strategy, snapshot.size, globalProtectBoundary)
+        if (strategy !in dryRunSet)
+        {
+            workingActual = apply(workingActual, boundary)
+        }
+        workingHypothetical = hypotheticalApply(workingHypothetical, boundary)
     }
 
-    // Determine if any mutation happened. Count change covers drops/collapses;
-    // text change covers rewrites/truncations that keep the entry count the same.
-    val finalChars = working.sumOf { it.content.text.length }
-    val countChanged = working.size != snapshot.size
-    val textChanged = finalChars != originalChars
-    if (!countChanged && !textChanged)
+    runStrategy(SafePruneStrategy.ReplaceWithSummaryRef,
+        { entries, boundary -> applyReplaceWithSummaryRef(entries, boundary, turnSummary) })
+    runStrategy(SafePruneStrategy.DropPureEchoes,
+        { entries, boundary -> applyDropPureEchoes(entries, boundary) })
+    runStrategy(SafePruneStrategy.CollapseToolCallResults,
+        { entries, boundary -> applyCollapseToolCallResults(entries, boundary) })
+    runStrategy(SafePruneStrategy.DeduplicateByHash,
+        { entries, boundary -> applyDeduplicateByHash(entries, boundary, safePruneHashWindowInternal.coerceAtLeast(1)) })
+    runStrategy(SafePruneStrategy.StripLongToolArguments,
+        { entries, boundary -> applyStripLongToolArguments(entries, boundary, safePruneMaxToolArgLengthInternal.coerceAtLeast(1)) })
+    runStrategy(SafePruneStrategy.MetadataOnlyCompression,
+        { entries, boundary -> applyMetadataOnlyCompression(entries, boundary) })
+
+    // Determine if any mutation happened. Use the hypothetical list for the report
+    // (which is what the dry-run consumer cares about) and the actual list for the
+    // mutation (which is what turnHistory will become).
+    val actualChars = workingActual.sumOf { it.content.text.length }
+    val actualCountChanged = workingActual.size != snapshot.size
+    val actualTextChanged = actualChars != originalChars
+
+    if (!actualCountChanged && !actualTextChanged && !isAnyDryRun)
     {
+        // No strategy produced a mutation. Skip both event emissions.
+        return
+    }
+
+    val hypotheticalChars = workingHypothetical.sumOf { it.content.text.length }
+    val hypotheticalTokensRemoved = (originalChars - hypotheticalChars).coerceAtLeast(0) / 4
+    val hypotheticalCount = workingHypothetical.size
+
+    // The report always describes the HYPOTHETICAL effect (full strategy sweep).
+    // That way observers comparing reports across dry-run on/off see consistent numbers.
+    val report = SafePruneReport(
+        enabledFlags = enabledSnapshot,
+        originalCount = originalCount,
+        finalCount = hypotheticalCount,
+        tokensRemoved = hypotheticalTokensRemoved,
+        firedAtTurnIndex = taskState.turnIndex
+    )
+
+    if (isAnyDryRun)
+    {
+        // Dry-run strategies don't get applied, but non-dry-run strategies DO.
+        // The history still reflects the partial (non-dry-run) effect; the report
+        // describes the full hypothetical effect for observability.
+        turnHistory.history.clear()
+        turnHistory.history.addAll(workingActual)
+        emitEventInternal(SafePruneDryRunCompleted(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            phase = PumpStationPhase.SafePruneDryRun,
+            report = report
+        ))
         return
     }
 
     turnHistory.history.clear()
-    turnHistory.history.addAll(working)
-
-    val tokensRemoved = (originalChars - finalChars).coerceAtLeast(0) / 4
-
-    val report = SafePruneReport(
-        enabledFlags = enabledSnapshot,
-        originalCount = originalCount,
-        finalCount = working.size,
-        tokensRemoved = tokensRemoved,
-        firedAtTurnIndex = taskState.turnIndex
-    )
+    turnHistory.history.addAll(workingActual)
 
     emitEventInternal(SafePruneApplied(
         runId = taskState.runId,
@@ -771,6 +804,34 @@ internal suspend fun PumpStation.runSafePrunePhase()
         phase = PumpStationPhase.SafePrune,
         report = report
     ))
+}
+
+/**
+ * Resolve the protectBoundary from a protectRecentN value. Clamps to [0, snapshotSize].
+ */
+internal fun resolveSafePruneProtectBoundary(protectRecentN: Int, snapshotSize: Int): Int
+{
+    val protectN = protectRecentN.coerceAtLeast(0)
+    return (snapshotSize - protectN).coerceAtLeast(0)
+}
+
+/**
+ * Resolve the effective protectBoundary for a single strategy, honouring any
+ * per-strategy [SafePrunePolicy] override. Falls back to the PumpStation-global
+ * boundary when the policy is null or when the policy's protectRecentN is null.
+ *
+ * The caller passes [snapshotSize] (the current turnHistory size) so the boundary
+ * is computed against the actual history, not against the strategies set.
+ */
+internal fun PumpStation.resolveStrategyBoundary(
+    strategy: SafePruneStrategy,
+    snapshotSize: Int,
+    globalBoundary: Int
+): Int
+{
+    val policy = safePruneStrategyPoliciesInternal[strategy]
+    val effectiveProtectN = policy?.protectRecentN ?: return globalBoundary
+    return resolveSafePruneProtectBoundary(effectiveProtectN, snapshotSize)
 }
 
 /**

@@ -73,6 +73,44 @@ data class SafePruneApplied(
 ) : PumpStationEvent
 
 /**
+ * Per-strategy policy override. When a strategy has a non-null policy in
+ * [PumpStation.safePruneStrategyPolicies], the policy's `sizeThreshold` and
+ * `protectRecentN` override the corresponding PumpStation-global values for
+ * that strategy only. Null values mean "fall back to the global knob".
+ *
+ * Use this when one strategy needs a tighter or looser threshold than the
+ * PumpStation-wide default — e.g., StripLongToolArguments can be set to a
+ * higher threshold than DeduplicateByHash without changing the global cap.
+ *
+ * @property sizeThreshold Optional per-strategy size threshold; null = use global.
+ * @property protectRecentN Optional per-strategy protected-recent-N; null = use global.
+ * @property customParams Free-form per-strategy parameters; reserved for
+ *   strategies that need extra knobs beyond size + protection.
+ */
+@Serializable
+data class SafePrunePolicy(
+    val sizeThreshold: Int? = null,
+    val protectRecentN: Int? = null,
+    val customParams: Map<String, String> = emptyMap()
+)
+
+/**
+ * Emitted at the end of every SafePrune phase run when at least one enabled
+ * strategy is in dry-run mode and produced a mutation (a hypothetical rewrite).
+ * The [SafePruneReport] describes what WOULD have been changed; the actual
+ * turnHistory is unchanged. SafePruneDryRunCompleted and [SafePruneApplied]
+ * are mutually exclusive on a given turn — dry-run replaces apply.
+ */
+@Serializable
+data class SafePruneDryRunCompleted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.SafePruneDryRun,
+    val report: SafePruneReport
+) : PumpStationEvent
+
+/**
  * Models for the PumpStation scaffolding system.
  *
  * Contains enums, sealed interfaces, data classes, and type aliases used by the
@@ -113,6 +151,7 @@ enum class PumpStationPhase
     MemoryUpdate,
     Compaction,
     SafePrune,
+    SafePruneDryRun,
     GoalValidation,
     Exit
 }

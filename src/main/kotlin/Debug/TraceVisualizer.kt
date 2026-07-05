@@ -162,6 +162,8 @@ class TraceVisualizer
                 TraceEventType.PUMP_STATION_COMPACTION_INFLATED -> "⚠"
                 TraceEventType.PUMP_STATION_COMPACTION_ROLLED_BACK -> "↩"
                 TraceEventType.PUMP_STATION_COMPACTION_HANDED_OFF -> "⤵"
+                TraceEventType.PUMP_STATION_SAFE_PRUNE_APPLIED -> "✂"
+                TraceEventType.PUMP_STATION_SAFE_PRUNE_DRY_RUN_COMPLETED -> "🔍"
                 TraceEventType.PUMP_STATION_GOAL_VALIDATION_STARTED -> "🎯"
                 TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED -> "🎯"
                 TraceEventType.PUMP_STATION_PATH_SELECTED -> "👆"
@@ -662,6 +664,18 @@ class TraceVisualizer
                     .metadata-item strong { display: block; font-size: 0.75rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; white-space: normal; overflow-wrap: anywhere; word-break: break-word; line-height: 1.25; }
                     .metadata-item span { color: #0f172a; font-weight: 500; word-break: break-word; overflow-wrap: anywhere; font-size: 0.92rem; line-height: 1.35; }
                     .empty-state { margin: 0; color: #94a3b8; font-size: 0.9rem; font-style: italic; }
+                    /* SafePrune events get a popover-on-hover that surfaces the full report payload
+                       (originalCount, finalCount, tokensRemoved, enabledFlags). The popover is
+                       hidden by default and revealed when the card is hovered or focused. */
+                    .event-card[data-safe-prune="true"] { cursor: help; }
+                    .event-card[data-safe-prune="true"] .safe-prune-popup { display: none; position: absolute; top: 100%; right: 0; margin-top: 6px; padding: 10px 12px; min-width: 240px; max-width: 360px; border-radius: 10px; background: #0f172a; color: #e2e8f0; font-size: 0.82rem; line-height: 1.45; box-shadow: 0 12px 28px rgba(15,23,42,0.45); z-index: 50; pointer-events: none; }
+                    .event-card[data-safe-prune="true"]:hover .safe-prune-popup,
+                    .event-card[data-safe-prune="true"]:focus-within .safe-prune-popup { display: block; }
+                    .event-card[data-safe-prune="dry-run"] .safe-prune-popup { background: #1e3a5f; }
+                    .safe-prune-popup h5 { margin: 0 0 6px; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #facc15; }
+                    .safe-prune-popup dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
+                    .safe-prune-popup dt { color: #94a3b8; font-weight: 600; }
+                    .safe-prune-popup dd { margin: 0; color: #f1f5f9; }
                     details.event-details { border: 1px solid rgba(148,163,184,0.25); border-radius: 10px; background: rgba(248,250,252,0.8); padding: 12px 14px; }
                     details.event-details summary { cursor: pointer; font-weight: 600; color: #334155; font-size: 0.95rem; list-style: none; display: flex; align-items: center; gap: 8px; }
                     details.event-details summary::before { content: "⤵"; transition: transform 0.2s ease; font-size: 0.9rem; }
@@ -780,6 +794,18 @@ class TraceVisualizer
                     .metadata-item strong { display: block; font-size: 0.75rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; white-space: normal; overflow-wrap: anywhere; word-break: break-word; line-height: 1.25; }
                     .metadata-item span { color: #0f172a; font-weight: 500; word-break: break-word; overflow-wrap: anywhere; font-size: 0.92rem; line-height: 1.35; }
                     .empty-state { margin: 0; color: #94a3b8; font-size: 0.9rem; font-style: italic; }
+                    /* SafePrune events get a popover-on-hover that surfaces the full report payload
+                       (originalCount, finalCount, tokensRemoved, enabledFlags). The popover is
+                       hidden by default and revealed when the card is hovered or focused. */
+                    .event-card[data-safe-prune="true"] { cursor: help; }
+                    .event-card[data-safe-prune="true"] .safe-prune-popup { display: none; position: absolute; top: 100%; right: 0; margin-top: 6px; padding: 10px 12px; min-width: 240px; max-width: 360px; border-radius: 10px; background: #0f172a; color: #e2e8f0; font-size: 0.82rem; line-height: 1.45; box-shadow: 0 12px 28px rgba(15,23,42,0.45); z-index: 50; pointer-events: none; }
+                    .event-card[data-safe-prune="true"]:hover .safe-prune-popup,
+                    .event-card[data-safe-prune="true"]:focus-within .safe-prune-popup { display: block; }
+                    .event-card[data-safe-prune="dry-run"] .safe-prune-popup { background: #1e3a5f; }
+                    .safe-prune-popup h5 { margin: 0 0 6px; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #facc15; }
+                    .safe-prune-popup dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
+                    .safe-prune-popup dt { color: #94a3b8; font-weight: 600; }
+                    .safe-prune-popup dd { margin: 0; color: #f1f5f9; }
                     details.event-details { border: 1px solid rgba(148,163,184,0.25); border-radius: 10px; background: rgba(248,250,252,0.8); padding: 12px 14px; }
                     details.event-details summary { cursor: pointer; font-weight: 600; color: #334155; font-size: 0.95rem; list-style: none; display: flex; align-items: center; gap: 8px; }
                     details.event-details summary::before { content: "⤵"; transition: transform 0.2s ease; font-size: 0.9rem; }
@@ -900,6 +926,18 @@ class TraceVisualizer
                     .metadata-item strong { display: block; font-size: 0.75rem; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; white-space: normal; overflow-wrap: anywhere; word-break: break-word; line-height: 1.25; }
                     .metadata-item span { color: #0f172a; font-weight: 500; word-break: break-word; overflow-wrap: anywhere; font-size: 0.92rem; line-height: 1.35; }
                     .empty-state { margin: 0; color: #94a3b8; font-size: 0.9rem; font-style: italic; }
+                    /* SafePrune events get a popover-on-hover that surfaces the full report payload
+                       (originalCount, finalCount, tokensRemoved, enabledFlags). The popover is
+                       hidden by default and revealed when the card is hovered or focused. */
+                    .event-card[data-safe-prune="true"] { cursor: help; }
+                    .event-card[data-safe-prune="true"] .safe-prune-popup { display: none; position: absolute; top: 100%; right: 0; margin-top: 6px; padding: 10px 12px; min-width: 240px; max-width: 360px; border-radius: 10px; background: #0f172a; color: #e2e8f0; font-size: 0.82rem; line-height: 1.45; box-shadow: 0 12px 28px rgba(15,23,42,0.45); z-index: 50; pointer-events: none; }
+                    .event-card[data-safe-prune="true"]:hover .safe-prune-popup,
+                    .event-card[data-safe-prune="true"]:focus-within .safe-prune-popup { display: block; }
+                    .event-card[data-safe-prune="dry-run"] .safe-prune-popup { background: #1e3a5f; }
+                    .safe-prune-popup h5 { margin: 0 0 6px; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #facc15; }
+                    .safe-prune-popup dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
+                    .safe-prune-popup dt { color: #94a3b8; font-weight: 600; }
+                    .safe-prune-popup dd { margin: 0; color: #f1f5f9; }
                     details.event-details { border: 1px solid rgba(148,163,184,0.25); border-radius: 10px; background: rgba(248,250,252,0.8); padding: 12px 14px; }
                     details.event-details summary { cursor: pointer; font-weight: 600; color: #334155; font-size: 0.95rem; list-style: none; display: flex; align-items: center; gap: 8px; }
                     details.event-details summary::before { content: "⤵"; transition: transform 0.2s ease; font-size: 0.9rem; }
@@ -1327,7 +1365,32 @@ class TraceVisualizer
                 event.eventType.name.contains("COMPLETED") -> "ps-phase-success"
                 else -> "ps-phase-info"
             }
-            "<span class='ps-phase-pill $statusClass'>$fullLabel</span>"
+            val pillContent = "<span class='ps-phase-pill $statusClass'>$fullLabel</span>"
+            // SafePrune events get an interactive hover popup carrying the full report.
+            val popupAttr = when (event.eventType)
+            {
+                TraceEventType.PUMP_STATION_SAFE_PRUNE_APPLIED -> "true"
+                TraceEventType.PUMP_STATION_SAFE_PRUNE_DRY_RUN_COMPLETED -> "dry-run"
+                else -> null
+            }
+            if (popupAttr != null)
+            {
+                val originalCount = event.metadata["originalCount"] ?: "n/a"
+                val finalCount = event.metadata["finalCount"] ?: "n/a"
+                val tokensRemoved = event.metadata["tokensRemoved"] ?: "n/a"
+                val enabledFlags = event.metadata["enabledFlags"] ?: "n/a"
+                val title = if (popupAttr == "dry-run") "SafePrune Dry-Run Report" else "SafePrune Applied Report"
+                "<span class='ps-phase-wrap' tabindex='0'>$pillContent<span class='ps-safe-prune-popup'><strong>$title</strong><dl>" +
+                    "<dt>Original</dt><dd>$originalCount entries</dd>" +
+                    "<dt>Final</dt><dd>$finalCount entries</dd>" +
+                    "<dt>Tokens removed</dt><dd>$tokensRemoved</dd>" +
+                    "<dt>Strategies</dt><dd>$enabledFlags</dd>" +
+                    "</dl></span></span>"
+            }
+            else
+            {
+                pillContent
+            }
         }
     }
 
@@ -1747,6 +1810,15 @@ class TraceVisualizer
         .ps-phase-success { background: rgba(220,252,231,0.9); color: #166534; }
         .ps-phase-failed { background: rgba(254,226,226,0.9); color: #991b1b; }
         .ps-phase-info { background: rgba(224,231,255,0.95); color: #3730a3; }
+        /* SafePrune hover popup — surfaces the full SafePruneReport payload on hover/focus. */
+        .ps-phase-wrap { position: relative; cursor: help; }
+        .ps-phase-wrap .ps-safe-prune-popup { display: none; position: absolute; top: 100%; left: 0; margin-top: 6px; padding: 10px 12px; min-width: 240px; max-width: 360px; border-radius: 10px; background: #0f172a; color: #e2e8f0; font-size: 0.78rem; line-height: 1.45; box-shadow: 0 12px 28px rgba(15,23,42,0.45); z-index: 50; pointer-events: none; }
+        .ps-phase-wrap:hover .ps-safe-prune-popup,
+        .ps-phase-wrap:focus-within .ps-safe-prune-popup { display: block; }
+        .ps-phase-wrap .ps-safe-prune-popup strong { display: block; font-size: 0.74rem; letter-spacing: 0.1em; color: #facc15; text-transform: uppercase; margin-bottom: 6px; }
+        .ps-phase-wrap .ps-safe-prune-popup dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
+        .ps-phase-wrap .ps-safe-prune-popup dt { color: #94a3b8; font-weight: 600; }
+        .ps-phase-wrap .ps-safe-prune-popup dd { margin: 0; color: #f1f5f9; }
         .ps-turn-body { padding: 16px 18px; }
         .ps-turn-facts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
         .ps-fact { padding: 8px 12px; border-radius: 8px; border-left: 3px solid; font-size: 0.88rem; }
@@ -1965,9 +2037,35 @@ class TraceVisualizer
             val errorSection = buildErrorSection(event)
             val elapsedHtml = "<span class=\"event-time\">+${elapsed}ms</span>"
 
+            // SafePrune events get a hover-popover with the full report payload.
+            val safePruneAttr = when (event.eventType)
+            {
+                TraceEventType.PUMP_STATION_SAFE_PRUNE_APPLIED -> "true"
+                TraceEventType.PUMP_STATION_SAFE_PRUNE_DRY_RUN_COMPLETED -> "dry-run"
+                else -> null
+            }
+            val safePrunePopup = if (safePruneAttr != null)
+            {
+                val originalCount = event.metadata["originalCount"] ?: "n/a"
+                val finalCount = event.metadata["finalCount"] ?: "n/a"
+                val tokensRemoved = event.metadata["tokensRemoved"] ?: "n/a"
+                val enabledFlags = event.metadata["enabledFlags"] ?: "n/a"
+                val title = if (safePruneAttr == "dry-run") "SafePrune Dry-Run Report" else "SafePrune Applied Report"
+                """<div class="safe-prune-popup"><h5>${escapeHtml(title)}</h5>
+                    <dl>
+                        <dt>Original</dt><dd>${escapeHtml(originalCount.toString())} entries</dd>
+                        <dt>Final</dt><dd>${escapeHtml(finalCount.toString())} entries</dd>
+                        <dt>Tokens removed</dt><dd>${escapeHtml(tokensRemoved.toString())}</dd>
+                        <dt>Strategies</dt><dd>${escapeHtml(enabledFlags.toString())}</dd>
+                    </dl></div>"""
+            }
+            else ""
+
             feed.append(
                 """
-                <article id="${event.id}" class="trace-item event-card ${severity.cssClass}" data-pipe="${escapeHtml(pipeName)}">
+                <article id="${event.id}" class="trace-item event-card ${severity.cssClass}" data-pipe="${escapeHtml(pipeName)}"${
+                    if (safePruneAttr != null) " data-safe-prune=\"$safePruneAttr\" tabindex=\"0\"" else ""
+                }>
                     <header class="event-header">
                         $elapsedHtml
                         $eventBadge
@@ -1979,6 +2077,7 @@ class TraceVisualizer
                         $contentSection
                         $errorSection
                     </div>
+                    $safePrunePopup
                 </article>
                 """.trimIndent()
             )
@@ -2346,6 +2445,8 @@ class TraceVisualizer
         TraceEventType.PUMP_STATION_STASH_CREATED -> "Stash"
         TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED -> "Blowout"
         TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED -> "LoopGuard"
+        TraceEventType.PUMP_STATION_SAFE_PRUNE_APPLIED -> "SafePrune✂"
+        TraceEventType.PUMP_STATION_SAFE_PRUNE_DRY_RUN_COMPLETED -> "SafePrune(dry)🔍"
         else -> eventType.name.removePrefix("PUMP_STATION_")
     }
 

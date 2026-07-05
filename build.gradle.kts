@@ -106,6 +106,14 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
     jvmArgs("-Xmx512m")
+    // JDWP listener for debugging the test JVM (only when TPIPE_TEST_JDWP_PORT is set).
+    // attach via: jdb -sourcepath src/main/kotlin -connect com.sun.jdi.SocketAttach:hostname=localhost,port=$PORT
+    val debugPort = System.getenv("TPIPE_TEST_JDWP_PORT")
+    if (debugPort != null) {
+        val suspend = System.getenv("TPIPE_TEST_JDWP_SUSPEND") ?: "n"
+        jvmArgs("-agentlib:jdwp=transport=dt_socket,server=y,suspend=$suspend,address=*:$debugPort")
+        println("[build.gradle.kts] test JVM JDWP listener enabled on port $debugPort (suspend=$suspend)")
+    }
 }
 
 // =====================================================================
