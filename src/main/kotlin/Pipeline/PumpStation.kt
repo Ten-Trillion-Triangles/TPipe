@@ -208,11 +208,18 @@ data class PathDescriptionList(
  * Request object called by the llm to invoke a given path. Requires a path name to be passed, and the schema to be
  * supplied. This might be a custom JSON schema, a data class, or [PcpContext]. If PcpContext is supplied, then
  * the instructions on how to supply pcp will be auto-injected into the agent as well.
+ *
+ * The optional [pathSelectionRationale] field captures the LLM's free-text reasoning for why it picked
+ * this specific path from the available list. The rationale rides into the trace and is consumed by the
+ * judge phase for grading decision quality. When null on the wire, the dispatch output is still
+ * schema-valid (back-compat with old LLM checkpoints that don't emit the field). The harness nudges the
+ * LLM to commit a value when [PumpStationFailurePolicy.requirePathSelectionRationale] is true.
  */
 @kotlinx.serialization.Serializable
 data class PathRequest(
     var pathName: String = "",
-    var pathSchema: String = ""
+    var pathSchema: String = "",
+    var pathSelectionRationale: String? = null
 )
 
 /**
