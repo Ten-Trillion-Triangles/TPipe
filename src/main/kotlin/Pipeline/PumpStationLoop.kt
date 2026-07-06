@@ -273,6 +273,7 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
 
     // Judge LLM call
     val result = runAgent(judgeAgent, input)
+    val judgeUsage = agentTokenUsage(judgeAgent)
 
     // Post-judge hook
     val postResult = postJudgeFunctionInternal?.invoke(result, this) ?: result
@@ -291,7 +292,11 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
         runId = taskState.runId,
         turnIndex = taskState.turnIndex,
         isComplete = verdict.isComplete,
-        shouldTerminate = verdict.shouldTerminate
+        shouldTerminate = verdict.shouldTerminate,
+        result = postResult,
+        inputTokens = judgeUsage?.first,
+        outputTokens = judgeUsage?.second?.first,
+        totalTokens = judgeUsage?.second?.second
     ))
     recordAndCheckKillSwitch(judgeAgent)
     return verdict
@@ -404,6 +409,10 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
                 outputTokens = dispatchUsage?.second?.first,
                 totalTokens = dispatchUsage?.second?.second
             ))
+            // Soft-nudge: if the policy requires a rationale and the dispatch LLM
+            // emitted null/blank rationale, append a Hint to turn history so the
+            // next dispatch LLM sees the field it forgot.
+            applyRationaleNudgeIfNeeded(pathRequest, pathRequest.pathSelectionRationale)
             return pathRequest
         }
 
@@ -2781,4 +2790,42 @@ internal fun PumpStation.recordAndCheckKillSwitch(agent: P2PInterface?)
         accumulatedOutputTokensInternal,
         runStartElapsedMsInternal
     )
+}
+
+//==========================================Nudge=============================================
+/**
+ * Soft-nudges the dispatch LLM to commit a [PathRequest.pathSelectionRationale]
+ * on the next dispatch turn.
+ *
+ * Returns false (silently) when the failure policy is OFF, when the rationale is
+ * already non-blank, or when the station has no runId yet. When the policy is ON
+ * AND the rationale is null/blank, append a single "Harness Notice" message to
+ * [com.TTT.Pipeline.PumpStation.turnHistory] so the next dispatch sees the field
+ * it forgot. The nudge is informational — never a hard dispatch failure.
+ *
+ * @param request the [PathRequest] returned by the dispatch LLM.
+ * @param rationale the rationale string the dispatch LLM emitted. May be null.
+ * @return true when a hint was appended, false when the call was silent.
+ */
+internal fun PumpStation.applyRationaleNudgeIfNeeded(
+    request: PathRequest,
+    rationale: String?
+): Boolean
+{
+    if (!this.failurePolicy.requirePathSelectionRationale) return false
+    if (!rationale.isNullOrBlank()) return false
+    if (this.taskState.runId.isBlank()) return false
+
+    val hintMessage = "[Harness Notice] Your dispatch output was a valid PathRequest JSON but " +
+        "the pathSelectionRationale field was empty. The harness is configured to require a " +
+        "rationale (requirePathSelectionRationale=true). On your next dispatch, commit a brief " +
+        "1-2 sentence explanation of WHY you picked the path you picked."
+
+    this.turnHistory.add(
+        ConverseData(
+            role = ConverseRole.user,
+            content = MultimodalContent(text = hintMessage)
+        )
+    )
+    return true
 }
