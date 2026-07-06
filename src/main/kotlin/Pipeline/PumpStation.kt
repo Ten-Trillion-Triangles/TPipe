@@ -1127,6 +1127,15 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      */
     private var stopHarnessOnInvalidPathRequest = false
 
+    /**
+     * Mirror of [PumpStationFailurePolicy.requirePathSelectionRationale].
+     * Cached at build/init time and re-read on every dispatch turn.
+     * If true, the dispatch LLM is required to commit a non-null
+     * [PathRequest.pathSelectionRationale] on every turn; empty emissions
+     * cause a Hint to be appended to the next-turn dispatch history.
+     */
+    private var requirePathSelectionRationale = true
+
 //--------------------------------------------------Internal------------------------------------------------------------
 
     /**
@@ -3821,6 +3830,22 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Sets the [requirePathSelectionRationale] flag on the failure policy,
+     * controlling whether the dispatch LLM is required to commit a
+     * [PathRequest.pathSelectionRationale] on every turn.
+     *
+     * @param require true to require a rationale; false to silence the
+     *                prompt directive and skip the nudge-on-empty check.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setRequirePathSelectionRationale(require: Boolean): PumpStation
+    {
+        this.failurePolicy.requirePathSelectionRationale = require
+        this.requirePathSelectionRationale = require
+        return this
+    }
+
+    /**
      * Sets whether the judge phase parses the agent's text output as a JSON
      * JudgeVerdict. Default is true (the contract documented in
      * [DEFAULT_JUDGE_PROMPT] is honored). Set to false to drive the judge
@@ -4663,6 +4688,8 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         this.failurePolicy.stashOversizedOutputs = policy.stashOversizedOutputs
         this.failurePolicy.callInterventionOnPathFailure = policy.callInterventionOnPathFailure
         this.failurePolicy.stopHarnessOnInvalidPathRequest = policy.stopHarnessOnInvalidPathRequest
+        this.failurePolicy.requirePathSelectionRationale = policy.requirePathSelectionRationale
+        this.requirePathSelectionRationale = policy.requirePathSelectionRationale
         return this
     }
 

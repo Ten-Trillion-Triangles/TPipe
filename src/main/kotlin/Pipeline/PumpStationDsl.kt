@@ -473,6 +473,14 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var stopHarnessOnInvalidPathRequest: Boolean = false
 
     /**
+     * If true, the dispatch LLM must commit a non-null
+     * [PathRequest.pathSelectionRationale] on every dispatch turn.
+     * A blank/null rationale causes the harness to append a soft Hint
+     * to the next-turn dispatch history (no hard dispatch failure).
+     */
+    var requirePathSelectionRationale: Boolean = true
+
+    /**
      * Failure recovery policy for common failure modes.
      */
     var failurePolicy: PumpStationFailurePolicy = PumpStationFailurePolicy()
@@ -930,6 +938,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         maxBlowoutRecoveries = source.maxBlowoutRecoveries
         maxRepairPromptTokens = source.maxRepairPromptTokens
         stopHarnessOnInvalidPathRequest = source.stopHarnessOnInvalidPathRequest
+        requirePathSelectionRationale = source.requirePathSelectionRationale
         failurePolicy = source.failurePolicy
         maxConsecutiveSamePath = source.maxConsecutiveSamePath
         maxTotalPathCallsPerPath = source.maxTotalPathCallsPerPath
@@ -1098,6 +1107,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setMaxBlowoutRecoveries(maxBlowoutRecoveries)
             .setMaxRepairPromptTokens(maxRepairPromptTokens)
             .setStopHarnessOnInvalidPathRequest(stopHarnessOnInvalidPathRequest)
+            .setRequirePathSelectionRationale(requirePathSelectionRationale)
             .setFailurePolicy(failurePolicy)
 
         // SafePrune configuration
