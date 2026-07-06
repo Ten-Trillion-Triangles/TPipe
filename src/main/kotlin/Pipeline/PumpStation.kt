@@ -1032,6 +1032,24 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     internal var judgeRunModeInternal: PumpStationJudgeRunMode = PumpStationJudgeRunMode.Always
 
     /**
+     * When true (default), the judge phase is skipped on turn 0 and a [JudgeSkipped] event with
+     * `reason = "first_turn"` is emitted in its place. The harness then runs dispatch and at least
+     * one path before the judge gets a verdict vote.
+     *
+     * Why this exists: a live judge LLM can see the pre-dispatch state (just the system task and
+     * user prompt with no paths fired yet) and return `isComplete = true` based on a hallucinated
+     * brief. The harness then short-circuits via `runExitFlow` and the loop is permanently broken
+     * before any path ever runs. Skipping the judge on turn 0 forces the pipeline to make at least
+     * one real attempt before judging completion.
+     *
+     * Does NOT interact with [PumpStationJudgeRunMode.FlagTriggered] — that mode's `no_flag_set`
+     * skip takes precedence and continues to use its canonical reason.
+     *
+     * Set to false to restore the legacy "judge fires on every turn including turn 0" behavior.
+     */
+    internal var skipJudgeOnFirstTurnInternal: Boolean = true
+
+    /**
      * Defines the maximum number of concurrent background agents that can be spawned at any given time.
      * If a spawn request would exceed this number it will be queued and batched out at the maximum number
      * allowed at a given time.
@@ -3380,6 +3398,34 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      * Returns the active judge run mode. See [PumpStationJudgeRunMode] for semantics.
      */
     fun getJudgeRunMode(): PumpStationJudgeRunMode = judgeRunModeInternal
+
+    /**
+     * When `enabled` is true (default), the judge phase is skipped on turn 0 and a
+     * [JudgeSkipped] event with `reason = "first_turn"` is emitted in its place. The harness
+     * then runs dispatch and at least one path before the judge gets a verdict vote.
+     *
+     * This prevents the live-judge failure mode where a judge LLM sees the pre-dispatch
+     * state (system task + user prompt with no paths yet), hallucinates a completed brief,
+     * and returns `isComplete = true`. Without this guard the harness short-circuits via
+     * [runExitFlow] before any path runs.
+     *
+     * Does NOT interact with [PumpStationJudgeRunMode.FlagTriggered] — that mode's
+     * `no_flag_set` skip takes precedence.
+     *
+     * @param enabled When true, skip the judge on turn 0. Default true.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSkipJudgeOnFirstTurn(enabled: Boolean): PumpStation
+    {
+        this.skipJudgeOnFirstTurnInternal = enabled
+        return this
+    }
+
+    /**
+     * Returns whether the judge phase is skipped on turn 0. See [setSkipJudgeOnFirstTurn]
+     * for semantics. Default is true.
+     */
+    fun getSkipJudgeOnFirstTurn(): Boolean = skipJudgeOnFirstTurnInternal
 
     /**
      * Returns the configured judge agent pipeline, or `null` if no judge has been wired.

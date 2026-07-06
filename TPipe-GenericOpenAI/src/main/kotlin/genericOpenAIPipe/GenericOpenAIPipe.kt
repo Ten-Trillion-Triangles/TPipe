@@ -301,6 +301,28 @@ class GenericOpenAIPipe : Pipe()
     }
 
     /**
+     * Wire-format completion hook — translates TPipe's pipe.jsonOutput (and related
+     * pipe-level state) into the OpenAI/Anthropic-compatible response_format field
+     * so the provider API enforces JSON-mode at the wire instead of relying on
+     * prompt-only instructions.
+     *
+     * If the user already called [setResponseFormat] explicitly, that wins. If the
+     * pipe advertises native JSON support ([supportsNativeJson] = true), no wire
+     * format is set. Otherwise, when pipe.jsonOutput is non-empty we set
+     * response_format to type "json_object" (the wire-level knob MiniMax-M2.7 and
+     * OpenAI-compatible chat-completions endpoints honor to lock the LLM into
+     * emitting valid JSON).
+     */
+    override fun onApplySystemPromptComplete()
+    {
+        if(responseFormat != null) return
+        if(supportsNativeJson) return
+        if(jsonOutput.isBlank()) return
+
+        responseFormat = ResponseFormat(type = "json_object", jsonSchema = null)
+    }
+
+    /**
      * Sets whether to enable structured outputs via json_schema.
      * @param enabled True to enable structured outputs
      * @return This pipe instance for fluent chaining
@@ -1448,6 +1470,22 @@ class GenericOpenAIPipe : Pipe()
     override fun cleanPromptText(content: MultimodalContent): MultimodalContent
     {
         return content
+    }
+
+    /**
+     * Provider-side response cleanup. Some endpoints wrap their payload in
+     * auxiliary reasoning surfaces (e.g. `&lt;think&gt;...&lt;/think&gt;` blocks from MiniMax-M2.7,
+     * DeepSeek-R1, OpenAI o-series). TPipe core stays content-agnostic — the wire
+     * format translation is already done in [onApplySystemPromptComplete]; this
+     * hook is the symmetric exit-side cleanup, run after the model returns but
+     * before TPipe parses.
+     *
+     * @param text Raw text returned by the wire.
+     * @return Input with provider-local wrapping removed; identity if no cleanup needed.
+     */
+    override fun cleanResponseText(text: String): String
+    {
+        return ResponseShapeNormalizer.stripThinkTags(text)
     }
 
 //=========================================Test Helpers=========================================================================

@@ -233,6 +233,24 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
         // Flag is set: clear it (one-shot) and fall through to the normal judge flow.
         taskState.requestJudgeNextTurn = false
     }
+    else if (skipJudgeOnFirstTurnInternal && taskState.turnIndex == 0)
+    {
+        // First-turn guard: skip the judge on turn 0 to prevent the live-judge failure mode
+        // where a judge LLM sees the pre-dispatch state and hallucinates isComplete=true
+        // before any path has run. The harness continues into dispatch and at least one
+        // path execution; the judge gets a real verdict vote on turn 1+.
+        //
+        // Only fires in PumpStationJudgeRunMode.Always — the FlagTriggered branch above
+        // already short-circuits and keeps its canonical "no_flag_set" reason. The
+        // "first_turn" reason is reserved for the Always-mode guard.
+        emitEventInternal(JudgeSkipped(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            reason = "first_turn",
+            judgeRunMode = PumpStationJudgeRunMode.Always
+        ))
+        return JudgeVerdict.empty()
+    }
 
     emitEventInternal(JudgeStarted(
         runId = taskState.runId,
@@ -331,6 +349,51 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
         val pathRequest = parseDispatchOutput(result)
         if (pathRequest != null)
 {
+            // Empty pathName is treated as a harness error, not a "I'm done" sentinel.
+            // The dispatch LLM MUST always pick a path from the visible list. Returning
+            // empty pathName silently would let the loop spin without progress; instead we
+            // emit PathFailed, append a hint to the conversation history so the next
+            // dispatch LLM sees the constraint, and let the loop continue to the next
+            // turn. The harness safety net (maxTurns) bounds the retry count.
+            if (pathRequest.pathName.isBlank())
+{
+                val hintMessage = "[Harness Notice] Your dispatch output was a valid PathRequest " +
+                    "JSON but the pathName field was empty. Empty pathName is NOT a valid " +
+                    "signal — you MUST pick an exact path name from the visible list above. " +
+                    "If you cannot make progress, pick a path whose purpose is to ask the " +
+                    "user for clarification. To signal task completion, use a path that sets " +
+                    "passPipeline=true on its result, not an empty pathName."
+                turnHistory.add(
+                    ConverseData(
+                        role = ConverseRole.user,
+                        content = MultimodalContent(text = hintMessage)
+                    )
+                )
+                emitEventInternal(PathFailed(
+                    runId = taskState.runId,
+                    turnIndex = taskState.turnIndex,
+                    pathName = "(empty)",
+                    riskLevel = PathRiskLevel.Low,
+                    error = PumpStationError.DispatchJsonRepairFailed,
+                    errorMessage = "Dispatch returned a valid PathRequest with empty pathName. " +
+                        "Hint appended to turn history."
+                ))
+                if (failurePolicy.stopHarnessOnInvalidPathRequest)
+{
+                    taskState.lastError = PumpStationError.DispatchJsonRepairFailed
+                }
+                emitEventInternal(DispatchCompleted(
+                    runId = taskState.runId,
+                    turnIndex = taskState.turnIndex,
+                    selectedPathName = null,
+                    pathRequest = pathRequest,
+                    result = result,
+                    inputTokens = dispatchUsage?.first,
+                    outputTokens = dispatchUsage?.second?.first,
+                    totalTokens = dispatchUsage?.second?.second
+                ))
+                return null
+            }
             emitEventInternal(DispatchCompleted(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
@@ -2411,7 +2474,10 @@ internal suspend fun PumpStation.runTurn(): TurnResult
 
     val pathRequest = runDispatchPhase() ?: return TurnResult.Continue
     detectAndHandleContextBlowout(PumpStationPhase.Dispatch)
-    if (pathRequest.pathName.isBlank()) return TurnResult.Continue
+    // Note: runDispatchPhase now returns null when pathName is blank (treated as a
+    // harness error, with a hint appended to turn history). The previous sentinel
+    // shortcut (`if (pathRequest.pathName.isBlank()) return TurnResult.Continue`) was
+    // removed when empty pathName stopped being a valid "I'm done" signal.
 
     if (!checkPauseGuards(PumpStationPausePhase.BeforePathExecution))
 {

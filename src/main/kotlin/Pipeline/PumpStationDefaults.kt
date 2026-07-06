@@ -49,6 +49,30 @@ A summary of older turns is provided as a prefix.
 
 The available paths will be auto-injected below. Return a PathRequest JSON object as specified.
 
+=== REQUIRED OUTPUT FORMAT ===
+
+Your response MUST be a JSON object matching the PathRequest schema:
+
+{
+  "pathName": "<exact name of a path from the visible list below>",
+  "inputData": { ... path-specific input fields per the path's inputSchema ... }
+}
+
+Rules (all strictly enforced):
+1. Output ONLY the JSON object. No prose, no explanation, no markdown fences, no
+   "I'll help with that" preamble, no apologies, no clarification questions.
+2. pathName MUST be the exact string from the visible paths list — not invented,
+   not paraphrased, not empty. Empty pathName is a harness error, not a sentinel.
+3. inputData MUST conform to the path's inputSchema (shown in the visible paths
+   list). Include every required field. Do NOT invent fields.
+4. If the user input is empty or ambiguous, you MUST still emit a PathRequest
+   that picks the most reasonable path to make progress. If you truly cannot
+   make progress, pick a path whose purpose is to ask the user for clarification
+   (if one is registered). Do NOT respond conversationally.
+5. To signal "task is complete", call the harness's path-based passPipeline
+   mechanism (a path that sets passPipeline=true on its result), NOT an empty
+   pathName. There is no valid "I'm done" output other than picking a path.
+
 If the harness is running in FlagTriggered judge mode, selecting a path whose execution function
 calls requestJudgeNextTurn() (e.g. a "signal-done" path) will let the judge evaluate the task on
 the next turn without paying the judge LLM cost on every turn.

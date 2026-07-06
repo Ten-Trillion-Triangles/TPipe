@@ -2277,7 +2277,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     |
                     |=== Output Requirement ===
                     |Your final response must be a PathRequest JSON object. Do not return any other format.
-                    |If you do not need to call a path, return: {"pathName": "", "inputData": {}}
+                    |Empty pathName is NOT a valid sentinel — you MUST always pick a path from the list above.
+                    |If you cannot make progress, pick a path whose purpose is to ask the user for clarification.
                     |
                 """.trimMargin()
 
@@ -2332,6 +2333,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
         }
 
         applySemanticDecompressionPrelude()
+
+        onApplySystemPromptComplete()
 
         return this
     }
@@ -2581,6 +2584,16 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         todoListInstructions = instructions
         return this
+    }
+
+    /**
+     * Wire-format completion hook. Called by [applySystemPrompt] after all TPipe
+     * prompt-injection has resolved. Subclasses override to translate pipe.jsonOutput
+     * into their provider's native wire-level enforcement (e.g. response_format).
+     * Default: no-op.
+     */
+    protected open fun onApplySystemPromptComplete()
+    {
     }
 
     /**
@@ -6399,7 +6412,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
                         trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, finalResult,
                               metadata = mapOf("outputText" to if(isExecutingAsReasoningPipe) "" else finalResult.text))
-                        return@coroutineScope embedContentIntoInternalConverse(finalResult).takeIf { wrapContentWithConverseHistory } ?: finalResult
+                        val cleanedFinal = finalResult.apply { text = cleanResponseText(finalResult.text) }
+                        return@coroutineScope embedContentIntoInternalConverse(cleanedFinal).takeIf { wrapContentWithConverseHistory } ?: cleanedFinal
                     }
 
                     else
@@ -6477,7 +6491,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
                     trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, finalResult,
                           metadata = mapOf("outputText" to if(isExecutingAsReasoningPipe) "" else finalResult.text))
-                    return@coroutineScope embedContentIntoInternalConverse(finalResult).takeIf { wrapContentWithConverseHistory } ?: finalResult
+                    val cleanedFinal = finalResult.apply { text = cleanResponseText(finalResult.text) }
+                    return@coroutineScope embedContentIntoInternalConverse(cleanedFinal).takeIf { wrapContentWithConverseHistory } ?: cleanedFinal
                 }
             }
             else

@@ -1281,3 +1281,97 @@ fun testPresencePenaltySerialization()
         assertEquals("", content, "InputJsonDelta should return empty string")
     }
 }
+
+//=========================================Wire-format translation Tests========================================
+
+class GenericOpenAIPipeWireFormatTest
+{
+    @Test
+    fun onApplySystemPromptComplete_setsJsonObjectWhenJsonOutputPresent()
+    {
+        val pipe = GenericOpenAIPipe().apply {
+            setSystemPrompt("base")
+            setJsonOutput("""{"pathName":"example_string","pathSchema":"example_string"}""")
+            applySystemPrompt()
+        }
+
+        val rf = pipe::class.java.getDeclaredField("responseFormat")
+            .apply { isAccessible = true }
+            .get(pipe) as ResponseFormat?
+        assertNotNull(rf, "responseFormat should be auto-set when jsonOutput is non-empty")
+        assertEquals("json_object", rf.type)
+        assertEquals(null, rf.jsonSchema)
+    }
+
+    @Test
+    fun onApplySystemPromptComplete_noOpWhenResponseFormatAlreadySet()
+    {
+        val pipe = GenericOpenAIPipe().apply {
+            setSystemPrompt("base")
+            setJsonOutput("""{"pathName":"x","pathSchema":"y"}""")
+            setResponseFormat(
+                "json_schema",
+                kotlinx.serialization.json.Json.parseToJsonElement("""{"type":"object"}""") as kotlinx.serialization.json.JsonObject)
+            applySystemPrompt()
+        }
+
+        val rf = pipe::class.java.getDeclaredField("responseFormat")
+            .apply { isAccessible = true }
+            .get(pipe) as ResponseFormat
+        assertEquals("json_schema", rf.type)
+        // User-set response_format wins over auto-derived.
+    }
+
+    @Test
+    fun onApplySystemPromptComplete_noOpWhenJsonOutputIsBlank()
+    {
+        val pipe = GenericOpenAIPipe()
+            .setSystemPrompt("base")
+            .applySystemPrompt()
+
+        val rf = pipe::class.java.getDeclaredField("responseFormat")
+            .apply { isAccessible = true }
+            .get(pipe)
+        assertEquals(null, rf, "responseFormat should be null when jsonOutput is empty")
+    }
+
+    @Test
+    fun onApplySystemPromptComplete_noOpWhenSupportsNativeJson()
+    {
+        val pipe = GenericOpenAIPipe().apply {
+            setSystemPrompt("base")
+            setJsonOutput("""{"a":1}""")
+        }
+
+        // Manually flip supportsNativeJson to true to simulate a provider-native pipe.
+        val field = pipe::class.java.superclass.getDeclaredField("supportsNativeJson")
+        field.isAccessible = true
+        field.setBoolean(pipe, true)
+
+        // Now apply the system prompt with the native-JSON flag enabled.
+        pipe.applySystemPrompt()
+
+        val rf = pipe::class.java.getDeclaredField("responseFormat")
+            .apply { isAccessible = true }
+            .get(pipe)
+        assertEquals(null, rf, "responseFormat should be null when supportsNativeJson is true")
+    }
+
+    @Test
+    fun cleanResponseText_stripsThinkTags()
+    {
+        val pipe = GenericOpenAIPipe()
+        val raw = "think\nreasoning chains\nthink\n{\"pathName\":\"report\"}"
+        val cleaned = pipe.cleanResponseText(raw)
+        assertEquals("{\"pathName\":\"report\"}", cleaned)
+    }
+
+    @Test
+    fun cleanResponseText_passesThroughWhenNoThinkTags()
+    {
+        val pipe = GenericOpenAIPipe()
+        val raw = "{\"pathName\":\"report\",\"pathSchema\":\"\"}"
+        val cleaned = pipe.cleanResponseText(raw)
+        assertEquals(raw, cleaned)
+    }
+}

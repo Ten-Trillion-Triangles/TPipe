@@ -231,6 +231,22 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var judgeRunMode: PumpStationJudgeRunMode = PumpStationJudgeRunMode.Always
 
     /**
+     * When true (default), the judge phase is skipped on turn 0 and the harness proceeds
+     * directly to dispatch. The judge LLM gets a verdict vote starting on turn 1, after at
+     * least one path has run and produced real output.
+     *
+     * Prevents the live-judge failure mode where the judge LLM sees the pre-dispatch state
+     * (system task + user prompt with no paths yet) and hallucinates `isComplete=true` based
+     * on an imagined brief. Without this guard the harness short-circuits before any path
+     * ever runs and the loop is permanently broken.
+     *
+     * Set to false to restore the legacy "judge fires on every turn including turn 0" behavior.
+     * Has no effect when [judgeRunMode] is [PumpStationJudgeRunMode.FlagTriggered] — that
+     * mode's `no_flag_set` skip takes precedence.
+     */
+    var skipJudgeOnFirstTurn: Boolean = true
+
+    /**
      * Maximum number of concurrent background agents.
      * Excess requests are queued and batched.
      */
@@ -896,6 +912,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         userGuidelines = source.userGuidelines
         entryUserPrompt = source.entryUserPrompt
         judgeRunMode = source.judgeRunMode
+        skipJudgeOnFirstTurn = source.skipJudgeOnFirstTurn
         maxConcurrentBackgroundAgents = source.maxConcurrentBackgroundAgents
         maxConcurrentForegroundAgents = source.maxConcurrentForegroundAgents
         foregroundTurnInterval = source.foregroundTurnInterval
@@ -1061,6 +1078,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         station
             .setMaxTurns(maxTurns)
             .setJudgeRunMode(judgeRunMode)
+            .setSkipJudgeOnFirstTurn(skipJudgeOnFirstTurn)
             .setMaxConcurrentBackgroundAgents(maxConcurrentBackgroundAgents)
             .setMaxConcurrentForegroundAgents(maxConcurrentForegroundAgents)
             .setAsyncPathsAppendToTurnHistory(asyncPathsAppendToTurnHistory)
