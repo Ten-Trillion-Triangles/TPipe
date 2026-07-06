@@ -1082,7 +1082,16 @@ data class PumpStationFailurePolicy(
     var maxDispatchRepairAttempts: Int = 1,
     var stashOversizedOutputs: Boolean = true,
     var callInterventionOnPathFailure: Boolean = true,
-    var stopHarnessOnInvalidPathRequest: Boolean = false
+    var stopHarnessOnInvalidPathRequest: Boolean = false,
+    /**
+     * If true, the dispatch LLM is REQUIRED to commit a non-null
+     * [PathRequest.pathSelectionRationale] each turn. When the LLM emits
+     * null/blank, the harness appends a Hint to turn history on the next
+     * dispatch rather than failing the dispatch outright. If false, the
+     * rationale field is not surfaced in the path-injection prompt and no
+     * nudge is appended on empty.
+     */
+    var requirePathSelectionRationale: Boolean = true
 )
 
 //=========================================Snapshot===================================================================

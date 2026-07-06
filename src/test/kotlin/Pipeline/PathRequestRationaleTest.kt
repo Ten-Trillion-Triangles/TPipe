@@ -2,6 +2,8 @@ package com.TTT.Pipeline
 
 import kotlinx.serialization.json.Json
 import com.TTT.Pipeline.PathRequest
+import com.TTT.Pipeline.PumpStationFailurePolicy
+import com.TTT.Config.TPipeConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -40,5 +42,16 @@ class PathRequestRationaleTest
         assertEquals("research", decoded.pathName)
         assertNull(decoded.pathSelectionRationale,
             "Old JSON without the field must decode with rationale=null (back-compat).")
+    }
+
+    @Test
+    fun failurePolicyDefaultsRationaleRequirementToTrue()
+    {
+        val policy = PumpStationFailurePolicy()
+        assertEquals(true, policy.requirePathSelectionRationale,
+            "Default MUST be true per operator direction. Off-switch available via setter.")
+        val traceDir = TPipeConfig.getTraceDir()
+        assertTrue(traceDir.isNotBlank(),
+            "TPipeConfig.getTraceDir() must return a non-blank trace dir so subsequent tests can write traces.")
     }
 }
