@@ -562,6 +562,104 @@ object PipeTimeoutManager
  * Pipe instances are mutable execution objects. Build separate instances for concurrent top-level runs rather than
  * sharing the same instance across multiple simultaneous executions.
  */
+//======================================================================
+// buildDefaultPathInjection — extracted helper for the path-injection
+// text appended to the dispatch LLM's system prompt.
+//======================================================================
+
+/**
+ * Builds the default path-injection text that is appended to the dispatch LLM's
+ * system prompt when [Pipe.autoInjectPathDataFromPumpStation] is enabled. The injection
+ * instructs the LLM to emit a [com.TTT.Pipeline.PathRequest] JSON object that names
+ * exactly one visible path and supplies its [com.TTT.Pipeline.PathRequest.pathSchema]-conforming
+ * [com.TTT.Pipeline.PathRequest.inputData].
+ *
+ * When [requireRationale] is true, an additional rule (numbered 7) is appended instructing the LLM to
+ * commit a brief 1-2 sentence [com.TTT.Pipeline.PathRequest.pathSelectionRationale] explaining WHY
+ * it picked the path. When false, the rationale field is not advertised in the prompt and the LLM
+ * is free to emit null/blank rationale without consequence.
+ *
+ * @param pathDescriptorJson the JSON-serialized list of visible path descriptors to advertise to the LLM.
+ * @param pathRequestSchema the JSON-schema example for PathRequest to bind against.
+ * @param requireRationale whether to append the rule 7 rationale directive. Mirrors
+ *                         [com.TTT.Pipeline.PumpStationFailurePolicy.requirePathSelectionRationale].
+ * @return the assembled injection text (caller appends to systemPrompt).
+ */
+internal fun buildDefaultPathInjection(
+    pathDescriptorJson: String,
+    pathRequestSchema: String,
+    requireRationale: Boolean
+): String
+{
+    val rationaleDirective: String = if(requireRationale)
+    {
+        """
+            |7. You MUST commit a brief (1-2 sentence) `pathSelectionRationale` explaining
+            |   WHY you picked this path from the list above. The rationale is captured into
+            |   the trace and judged alongside the path outcome. Empty rationale will trigger a
+            |   harness-nudge on the next turn.
+            |"""
+    }
+    else
+    {
+        ""
+    }
+
+    return """
+            |
+            |=== Path Invocation Protocol (MANDATORY) ===
+            |
+            |You MUST use the paths below to continue your task. This is not optional — the harness
+            |WILL reject any output that does not conform to the PathRequest schema.
+            |
+            |Available paths:
+            |${pathDescriptorJson}
+            |
+            |=== Calling a Path ===
+            |To call a path, you MUST return a valid PathRequest JSON object:
+            |{
+            |    "pathName": "the exact path name from the list above",
+            |    "inputData": { ... path-specific input fields ... }
+            |}
+            |
+            |The "inputData" schema for each path is shown in the path descriptor above under "inputSchema".
+            |Do NOT invent fields. Do NOT omit required fields. Do NOT call paths not listed above.
+            |
+            |=== Calling Paths with PCP Schemas ===
+            |If a path has a "pcpSchema" section in its descriptor, that path's inputData MUST conform
+            |to the PCP function's input format defined in that pcpSchema. The pcpSchema shows:
+            |  - functionName: the PCP function to invoke
+            |  - tPipeContextOptions / stdioContextOptions / httpContextOptions / pythonContextOptions / etc.
+            |  - params (where "isRequired" indicates required vs optional fields)
+            |
+            |To call a PCP-enabled path:
+            |  1. Set "pathName" to the path's exact name
+            |  2. For "inputData", construct the PCP call exactly as described in that path's pcpSchema:
+            |     - Set tPipeContextOptions.functionName to the PCP function name
+            |     - Set tPipeContextOptions.callParams to a map of argument names → values
+            |       OR set tPipeContextOptions.argumentsOrFunctionParams to a list of positional values
+            |     - For stdio/http/python/etc calls, populate the respective context options accordingly
+            |  3. Include ALL required params (isRequired=true). Optional params may be omitted.
+            |
+            |=== Rules (ALL STRICTLY ENFORCED) ===
+            |1. You MUST only call paths listed above — no invented path names
+            |2. You MUST follow the exact inputSchema for the path you are calling
+            |3. You MUST provide all required inputData fields for the selected path
+            |4. For PCP paths: you MUST follow the PCP function's parameter schema exactly
+            |5. You MUST NOT change the name of the path you are calling
+            |6. You MUST return valid JSON matching the PathRequest schema below
+            |${rationaleDirective}
+            |PathRequest schema:
+            |${pathRequestSchema}
+            |
+            |=== Output Requirement ===
+            |Your final response must be a PathRequest JSON object. Do not return any other format.
+            |Empty pathName is NOT a valid sentinel — you MUST always pick a path from the list above.
+            |If you cannot make progress, pick a path whose purpose is to ask the user for clarification.
+            |
+            """.trimMargin()
+}
+
 @kotlinx.serialization.Serializable
 abstract class Pipe : P2PInterface, ProviderInterface
 {
@@ -2291,103 +2389,6 @@ abstract class Pipe : P2PInterface, ProviderInterface
         return this
     }
 
-//======================================================================
-// buildDefaultPathInjection — extracted helper for the path-injection
-// text appended to the dispatch LLM's system prompt.
-//======================================================================
-
-/**
- * Builds the default path-injection text that is appended to the dispatch LLM's
- * system prompt when [Pipe.autoInjectPathDataFromPumpStation] is enabled. The injection
- * instructs the LLM to emit a [com.TTT.Pipeline.PathRequest] JSON object that names
- * exactly one visible path and supplies its [com.TTT.Pipeline.PathRequest.pathSchema]-conforming
- * [com.TTT.Pipeline.PathRequest.inputData].
- *
- * When [requireRationale] is true, an additional rule (numbered 7) is appended instructing the LLM to
- * commit a brief 1-2 sentence [com.TTT.Pipeline.PathRequest.pathSelectionRationale] explaining WHY
- * it picked the path. When false, the rationale field is not advertised in the prompt and the LLM
- * is free to emit null/blank rationale without consequence.
- *
- * @param pathDescriptorJson the JSON-serialized list of visible path descriptors to advertise to the LLM.
- * @param pathRequestSchema the JSON-schema example for PathRequest to bind against.
- * @param requireRationale whether to append the rule 7 rationale directive. Mirrors
- *                         [com.TTT.Pipeline.PumpStationFailurePolicy.requirePathSelectionRationale].
- * @return the assembled injection text (caller appends to systemPrompt).
- */
-internal fun buildDefaultPathInjection(
-    pathDescriptorJson: String,
-    pathRequestSchema: String,
-    requireRationale: Boolean
-): String
-{
-    val rationaleDirective: String = if(requireRationale)
-    {
-        """
-            |7. You MUST commit a brief (1-2 sentence) `pathSelectionRationale` explaining
-            |   WHY you picked this path from the list above. The rationale is captured into
-            |   the trace and judged alongside the path outcome. Empty rationale will trigger a
-            |   harness-nudge on the next turn.
-            |"""
-    }
-    else
-    {
-        ""
-    }
-
-    return """
-            |
-            |=== Path Invocation Protocol (MANDATORY) ===
-            |
-            |You MUST use the paths below to continue your task. This is not optional — the harness
-            |WILL reject any output that does not conform to the PathRequest schema.
-            |
-            |Available paths:
-            |${pathDescriptorJson}
-            |
-            |=== Calling a Path ===
-            |To call a path, you MUST return a valid PathRequest JSON object:
-            |{
-            |    "pathName": "the exact path name from the list above",
-            |    "inputData": { ... path-specific input fields ... }
-            |}
-            |
-            |The "inputData" schema for each path is shown in the path descriptor above under "inputSchema".
-            |Do NOT invent fields. Do NOT omit required fields. Do NOT call paths not listed above.
-            |
-            |=== Calling Paths with PCP Schemas ===
-            |If a path has a "pcpSchema" section in its descriptor, that path's inputData MUST conform
-            |to the PCP function's input format defined in that pcpSchema. The pcpSchema shows:
-            |  - functionName: the PCP function to invoke
-            |  - tPipeContextOptions / stdioContextOptions / httpContextOptions / pythonContextOptions / etc.
-            |  - params (where "isRequired" indicates required vs optional fields)
-            |
-            |To call a PCP-enabled path:
-            |  1. Set "pathName" to the path's exact name
-            |  2. For "inputData", construct the PCP call exactly as described in that path's pcpSchema:
-            |     - Set tPipeContextOptions.functionName to the PCP function name
-            |     - Set tPipeContextOptions.callParams to a map of argument names → values
-            |       OR set tPipeContextOptions.argumentsOrFunctionParams to a list of positional values
-            |     - For stdio/http/python/etc calls, populate the respective context options accordingly
-            |  3. Include ALL required params (isRequired=true). Optional params may be omitted.
-            |
-            |=== Rules (ALL STRICTLY ENFORCED) ===
-            |1. You MUST only call paths listed above — no invented path names
-            |2. You MUST follow the exact inputSchema for the path you are calling
-            |3. You MUST provide all required inputData fields for the selected path
-            |4. For PCP paths: you MUST follow the PCP function's parameter schema exactly
-            |5. You MUST NOT change the name of the path you are calling
-            |6. You MUST return valid JSON matching the PathRequest schema below
-            |${rationaleDirective}
-            |PathRequest schema:
-            |${pathRequestSchema}
-            |
-            |=== Output Requirement ===
-            |Your final response must be a PathRequest JSON object. Do not return any other format.
-            |Empty pathName is NOT a valid sentinel — you MUST always pick a path from the list above.
-            |If you cannot make progress, pick a path whose purpose is to ask the user for clarification.
-            |
-            """.trimMargin()
-}
 
     /**
      * Set the prompt to be injected into the middle of the system prompt. After initial introduction, and after
