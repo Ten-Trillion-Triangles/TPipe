@@ -10,6 +10,7 @@ import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.Util.extractAllJsonObjects
 import com.TTT.Util.extractJson
 import com.TTT.Util.isDefault
+import com.TTT.Util.serializeConverseHistory
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
@@ -782,7 +783,23 @@ internal fun PumpStation.buildUserMessageForTurn(): String
         PumpStationPhase.GoalValidation -> "Verify the work was done."
         else -> ""
     }
-    return summaryPrefix + phaseQuestion
+    // Embed the conversation history into the user message text so downstream
+    // pipes (which read only content.text) actually receive it. Without this,
+    // [com.TTT.Pipe.Pipe.generateContent]'s default implementation drops
+    // [MultimodalContent.context.converseHistory] on the floor — the system
+    // prompt claims "The conversation history below shows every turn" but the
+    // turn history never reaches the LLM.
+    //
+    // The serialized form matches [com.TTT.Pipe.Pipe.serializeConverseHistory]
+    // which the rest of the codebase uses for embedded-history payloads (see
+    // Pipe.kt:2091, 5479, 5726). Empty history is skipped to keep the
+    // no-history case identical to the previous behavior.
+    val historyBlock = if (turnHistory.history.isNotEmpty())
+    {
+        "\n\n[CONVERSATION HISTORY]\n" + serializeConverseHistory(turnHistory) + "\n[/CONVERSATION HISTORY]"
+    }
+    else ""
+    return summaryPrefix + phaseQuestion + historyBlock
 }
 
 /**

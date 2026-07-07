@@ -314,7 +314,20 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
         turnIndex = taskState.turnIndex
     ))
 
-    val baseInput = taskState.latestContent ?: buildTurnContent()
+    // Build the dispatch input from buildTurnContent() so the conversation
+    // history (which now includes the prior judge verdict + path outputs) is
+    // embedded in the user message text. Prepend the latestContent text —
+    // when present, it is the most recent prior agent's output (judge verdict
+    // on the previous turn, or path output on turn 0) and gives the dispatch
+    // LLM direct context without forcing it to re-parse the serialized
+    // history block.
+    val baseInput = if (taskState.latestContent != null && taskState.latestContent!!.text.isNotEmpty())
+    {
+        val enriched = buildTurnContent()
+        enriched.copy(text = "[LATEST PRIOR AGENT OUTPUT]\n" + taskState.latestContent!!.text +
+            "\n[/LATEST PRIOR AGENT OUTPUT]\n\n" + enriched.text)
+    }
+    else buildTurnContent()
     val input = preValidationDispatchFunctionInternal?.invoke(baseInput, contextWindow, miniBank, this)
         ?.let { baseInput.copy(miniBankContext = it) } ?: baseInput
 
