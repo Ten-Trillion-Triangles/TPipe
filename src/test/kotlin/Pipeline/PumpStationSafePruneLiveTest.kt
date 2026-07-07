@@ -108,9 +108,10 @@ class PumpStationSafePruneLiveTest
 
         val baseUrl = minimaxBaseUrl
         val traceCfg = traceConfigFor("safe-prune-transparent")
-        val pumpStationHtmlDir = File(
-            "${System.getProperty("user.home")}/.TPipe-Debug/traces/PumpStation/safe-prune-transparent"
-        )
+        // Use canonical TPipe trace root resolved from TPipeConfig — NOT the legacy
+        // ~/.TPipe-Debug hard-coded literal. The harness's per-agent HTML export
+        // also lands under TPipeConfig.getTraceDir() so this stays consistent.
+        val pumpStationHtmlDir = File(TPipeConfig.getTraceDir(), "safe-prune-transparent")
 
         val station = pumpStation("pumpstation-safe-prune-live")
         {
@@ -300,9 +301,9 @@ class PumpStationSafePruneLiveTest
      */
     private fun traceConfigFor(testName: String): TraceConfig
     {
-        val perTestDir = File(
-            "${System.getProperty("user.home")}/.TPipe-Debug/traces/PumpStation/$testName"
-        )
+        // Canonical TPipe trace root — resolved from TPipeConfig so tpipe.dir.* config
+        // and test overrides are honored. Never hard-code ~/.TPipe-Debug.
+        val perTestDir = File(TPipeConfig.getTraceDir(), testName)
         perTestDir.deleteRecursively()
         perTestDir.mkdirs()
         return TraceConfig(

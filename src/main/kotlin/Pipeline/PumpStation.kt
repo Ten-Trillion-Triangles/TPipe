@@ -425,6 +425,17 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      */
     private var executionFunction: (suspend (content: MultimodalContent, stationRef: PumpStation, turnHistory: ConverseHistory?, turnSummary: String) -> MultimodalContent)? = null
 
+    /**
+     * True when this path has a developer-supplied [executionFunction]. Used by
+     * [com.TTT.Pipeline.runPreInitPhase] to detect a path-bound exit signal — paths
+     * with a custom function may return [MultimodalContent.passPipeline] = true or
+     * [MultimodalContent.terminatePipeline] = true to exit the harness, even without
+     * a judge agent. Without this signal the harness would emit a false-positive
+     * [WarningCode.NoExitSignalConfigured] advisory.
+     */
+    internal val hasExecutionFunction: Boolean
+        get() = executionFunction != null
+
 
 //-----------------------------------------------------init--------------------------------------------------------
 
@@ -2742,8 +2753,10 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                         pathName = pathName
                     ))
 
-                    val interventionResult = interventionAgent?.executeLocal(taskState.latestContent ?: MultimodalContent())
-                    val interventionUsage = agentTokenUsageInternal(interventionAgent)
+                    // Builder overrides field per KDoc at :894-896.
+                    val resolvedInterventionAgent = interventionAgentBuilderFunction?.invoke(this) ?: interventionAgent
+                    val interventionResult = resolvedInterventionAgent?.executeLocal(taskState.latestContent ?: MultimodalContent())
+                    val interventionUsage = agentTokenUsageInternal(resolvedInterventionAgent)
 
                     emitEventInternal(InterventionCompleted(
                         runId = taskState.runId,

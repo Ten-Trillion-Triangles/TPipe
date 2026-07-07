@@ -2387,12 +2387,16 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
     ))
 
     // No-exit-signal advisory: emit a HarnessWarning when the developer has configured
-    // NONE of the three legitimate exit mechanisms. Respects intentional configurations
-    // (FlagTriggered + path-bound requestJudgeNextTurn, or a single-turn maxTurns budget).
+    // NONE of the four legitimate exit mechanisms documented in [WarningCode.NoExitSignalConfigured]:
+    // (1) a judge agent, (2) [requestJudgeNextTurn] bound to a path with judgeRunMode = FlagTriggered,
+    // (3) a path that returns [MultimodalContent.passPipeline] = true on success, and
+    // (4) a path that returns [MultimodalContent.terminatePipeline] = true on failure.
+    // Path (3) and (4) are inferred from the path having a custom executionFunction.
     val hasJudge = judgeAgent != null || judgeAgentBuilderFunction != null
     val isFlagTriggered = judgeRunModeInternal == PumpStationJudgeRunMode.FlagTriggered
+    val hasPathExitSignal = pathList.values.any { it.hasExecutionFunction }
     val allowsLongRun = maxTurnsInternal > 1
-    if (!hasJudge && !isFlagTriggered && allowsLongRun)
+    if (!hasJudge && !isFlagTriggered && !hasPathExitSignal && allowsLongRun)
     {
         emitEventInternal(HarnessWarning(
             runId = taskState.runId,
