@@ -1,5 +1,6 @@
 package com.TTT.Pipeline
 
+import com.TTT.Config.TPipeConfig
 import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
@@ -63,7 +64,7 @@ import java.nio.file.Paths
  * in 6 different configurations. None of the LLM calls actually happened at the path
  * layer — gather/analyze/report were all `setExecutionFunction { ... -> "Gathered notes: ..." }`
  * stubs. This rewrite puts a real [GenericOpenAIPipe] on every LLM-facing role, so the
- * trace HTML files at `~/.TPipe-Debug/traces/PumpStation/<testName>/` contain real prompts,
+ * trace HTML files at `${TPipeConfig.getTraceDir()}/PumpStation/<testName>/` contain real prompts,
  * real completions, and real token counts. The assertions check the *content* of the final
  * brief (length, topic mention, section headers), not just the [PumpStationExitReason].
  *
@@ -136,8 +137,14 @@ class PumpStationMiniMaxLiveTest
          */
         private const val MAX_TOKENS = 16384
 
-        /** Where the pump station HTML (auto-export) and per-agent HTML files land. */
-        private const val TRACE_DIR = "~/.TPipe-Debug/traces/PumpStation/"
+        /**
+         * Where the pump station HTML (auto-export) and per-agent HTML files land.
+         *
+         * Saved under [TPipeConfig.getTraceDir] (canonical TPipe trace root), NOT under
+         * the legacy `~/.TPipe-Debug/` location. Resolved at runtime via
+         * [com.TTT.Config.TPipeConfig.getTraceDir] — never hard-coded so `tpipe.dir.*`
+         * config and tests that override it are honored.
+         */
 
         /** Claude's local MCP server registry — used to discover the MiniMax MCP server. */
         private const val CLAUDE_JSON_PATH = "~/.claude.json"
@@ -543,7 +550,8 @@ class PumpStationMiniMaxLiveTest
      * - is enabled,
      * - uses HTML output,
      * - at [TraceDetailLevel.DEBUG] (the most verbose level — full LLM IO + tokens + metadata),
-     * - auto-exports the pump station HTML to a per-test subdir under [TRACE_DIR].
+     * - auto-exports the pump station HTML to a per-test subdir resolved at runtime
+     *   via [TPipeConfig.getTraceDir].
      *
      * The autoExport filename is `pumpstation-<runId12>.html`. When multiple tests run
      * in parallel they all share the same millisecond timestamp prefix on their
@@ -578,10 +586,10 @@ class PumpStationMiniMaxLiveTest
         )
     }
 
-    /** Resolves `~/.TPipe-Debug/traces/PumpStation/` to an absolute path and creates the directory. */
+    /** Resolves the canonical TPipe trace root to an absolute path and creates the directory. */
     private fun traceDir(): File
     {
-        val dir = File(TRACE_DIR.replace("~", System.getProperty("user.home")))
+        val dir = File(TPipeConfig.getTraceDir(), "PumpStation")
         if (!dir.exists()) dir.mkdirs()
         return dir
     }
@@ -1339,7 +1347,8 @@ class PumpStationMiniMaxLiveTest
             }
 
             // Direct TraceConfig assignment. The harness will auto-export the
-            // pump station HTML to TRACE_DIR (one level up from the per-test subdir).
+            // pump station HTML to the canonical TPipe trace root resolved at runtime
+            // via [TPipeConfig.getTraceDir] (one level up from the per-test subdir).
             tracingConfiguration = traceConfigFor(testName)
 
             systemTask = "You are a research assistant that produces one-page " +
@@ -1396,7 +1405,7 @@ class PumpStationMiniMaxLiveTest
                 MultimodalContent(text = "Research the following topic: $RESEARCH_TOPIC")
             )
             // getTraceReport triggers TraceConfig.autoExport (writes the pump station
-            // HTML to ~/.TPipe-Debug/traces/PumpStation/pumpstation-<runId12>.html).
+            // HTML to ${TPipeConfig.getTraceDir()}/PumpStation/pumpstation-<runId12>.html).
             // Must be called in both success and failure paths so the trace artifacts
             // are always written.
             station.getTraceReport(TraceFormat.HTML)
@@ -1598,7 +1607,14 @@ private class StubOpenAIServer
 
     fun stop()
     {
-        server?.stop(0)
+        // Bug fix: stop(0) was causing java.io.EOFException against
+        // GenericOpenAIPipe clients because HttpServer.stop(0) force-closes
+        // every HttpConnection instead of letting in-flight handlers drain.
+        // The JDK ServerImpl loop exits immediately (delay=0) then forcibly
+        // closes connections. Replaced with stop(2): 2s grace window lets
+        // in-flight handlers complete their response-body writes cleanly.
+        // Reproduced by the StubServerLifecycleTest contract class.
+        server?.stop(2)
         server = null
     }
 
