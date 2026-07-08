@@ -795,6 +795,7 @@ internal fun PumpStation.buildTurnContent(): MultimodalContent
  */
 internal fun PumpStation.buildUserMessageForTurn(): String
 {
+    val originalInputPrefix = taskState.originalInput?.text.orEmpty().let { if (it.isNotBlank()) "$it\n\n" else "" }
     val summaryPrefix = if (turnSummary.isNotBlank()) "$turnSummary\n\n" else ""
     val phaseQuestion = when (taskState.phase)
     {
@@ -819,7 +820,7 @@ internal fun PumpStation.buildUserMessageForTurn(): String
         "\n\n[CONVERSATION HISTORY]\n" + serializeConverseHistory(turnHistory) + "\n[/CONVERSATION HISTORY]"
     }
     else ""
-    return summaryPrefix + phaseQuestion + historyBlock
+    return originalInputPrefix + summaryPrefix + phaseQuestion + historyBlock
 }
 
 /**

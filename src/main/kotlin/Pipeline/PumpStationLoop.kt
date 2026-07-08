@@ -599,15 +599,18 @@ private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalConte
 internal fun PumpStation.buildPathInput(path: PathObject, request: PathRequest): MultimodalContent
 {
     val base = buildTurnContent()
-    // Prefer the dispatch LLM's [PathRequest.pathSchema] (the model can pass structured
-    // input data through this field). Fall back to the path's static schema. If both
-    // are blank, fall back to the harness\'s original input so the path pipe always
-    // receives a non-empty user prompt — otherwise the pipe\'s empty-prompt guard
-    // trips with "Empty user prompt" before the LLM is even called (verified: this
-    // was a real-world failure when a real LLM returned a path request with no
-    // pathSchema field).
+    // When the dispatch LLM emits a non-empty pathSchema, merge it with the user's
+    // original input rather than replacing it — the dispatch LLM cannot be trusted
+    // to faithfully carry the task description on its own.
     val effectiveSchema = request.pathSchema.ifEmpty { path.pathSchema }
-    base.text = effectiveSchema.ifEmpty { taskState.originalInput?.text ?: base.text }
+    val originalInputText = taskState.originalInput?.text?.takeIf { it.isNotBlank() }
+    base.text = when
+    {
+        originalInputText != null && effectiveSchema.isNotEmpty() -> "$originalInputText\n\n$effectiveSchema"
+        originalInputText != null -> originalInputText
+        effectiveSchema.isNotEmpty() -> effectiveSchema
+        else -> base.text
+    }
     base.metadata.putAll(
         mutableMapOf<Any, Any>(
             "selectedPath" to path.pathName,

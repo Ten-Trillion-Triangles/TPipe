@@ -616,6 +616,7 @@ class TraceVisualizer
         val mermaidGraph = generateManifoldMermaidGraph(nodes, trace)
         val orchestrationTable = generateOrchestrationTable(trace, ::mapManifoldNodeName)
         val agentInteractionTable = generateAgentInteractionTable(trace)
+        val tokenCard = buildContainerTokenCard(trace)
         val javascript = TraceInteractivity.generateJavaScript(nodes)
         
         return """
@@ -697,9 +698,10 @@ class TraceVisualizer
             <body>
                 <div class="container">
                     <h1>🎯 TPipe Manifold Execution Analysis</h1>
+                    $tokenCard
 
                     ${buildManifoldSummary(trace)}
-                    
+
                     <div class="manifold-section orchestration">
                         <h2>📊 Orchestration Flow</h2>
                         <div class="mermaid">$mermaidGraph</div>
@@ -739,6 +741,7 @@ class TraceVisualizer
         val stateRibbon = buildJunctionStateRibbon(trace)
         val orchestrationTable = generateOrchestrationTable(trace, ::mapJunctionNodeName)
         val participantInteractionTable = generateParticipantInteractionTable(trace)
+        val tokenCard = buildContainerTokenCard(trace)
         val javascript = TraceInteractivity.generateJavaScript(nodes)
 
         return """
@@ -827,6 +830,7 @@ class TraceVisualizer
             <body>
                 <div class="container">
                     <h1>🎯 TPipe Junction Execution Analysis</h1>
+                    $tokenCard
 
                     ${buildJunctionSummary(trace)}
 
@@ -871,6 +875,7 @@ class TraceVisualizer
         val orchestrationTable = generateOrchestrationTable(trace, ::mapDistributionGridNodeName)
         val activityTable = generateDistributionGridActivityTable(trace)
         val stateRibbon = buildDistributionGridStateRibbon(trace)
+        val tokenCard = buildContainerTokenCard(trace)
         val javascript = TraceInteractivity.generateJavaScript(nodes)
 
         return """
@@ -959,6 +964,7 @@ class TraceVisualizer
             <body>
                 <div class="container">
                     <h1>🧭 TPipe DistributionGrid Execution Analysis</h1>
+                    $tokenCard
 
                     ${buildDistributionGridSummary(trace)}
 
@@ -999,6 +1005,7 @@ class TraceVisualizer
     {
         val nodes = TraceNodeMapper.mapEventsToNodes(trace)
         val mermaidGraph = generateMermaidFlowGraph(trace, nodes)
+        val tokenCard = buildContainerTokenCard(trace)
         val detailsTable = generateDetailsTable(trace)
         val javascript = TraceInteractivity.generateJavaScript(nodes)
 
@@ -1034,6 +1041,7 @@ class TraceVisualizer
             <body>
                 <div class="container">
                     <h1><span>&#9660;</span> TPipe Splitter Execution Flow</h1>
+                    $tokenCard
 
                     <div class="flow-section">
                         <h2>&#128202; Interactive Flow Graph</h2>
@@ -1647,6 +1655,48 @@ class TraceVisualizer
     }
 
     /**
+     * Build the trace-wide token totals card for the report header. Sums input/output across
+     * every event that carries them in metadata, SKIPPING KILLSWITCH_CHECK (which reports
+     * cumulative-AT-check-time, not actual spend — the underlying JUDGE_COMPLETED /
+     * DISPATCH_COMPLETED / PATH_COMPLETED events already account for that ground). Returns
+     * null when no event in the trace carries any token metadata, so short traces don't show
+     * a misleading "0 tokens" card.
+     *
+     * Uses Long for the sums because a long-running harness can blow past Int.MAX_VALUE
+     * (the per-event values are Int; the aggregate is the concern).
+     *
+     * Shared across all five container HTML reports (PumpStation, Manifold, Junction,
+     * Splitter, DistributionGrid) — the visualizer previously had a per-container
+     * `buildPumpStationTokenCard` only. Now lifted here with the same shape.
+     */
+    private fun buildContainerTokenCard(trace: List<TraceEvent>): String?
+    {
+        var input = 0L
+        var output = 0L
+        var counted = 0
+        for (event in trace)
+        {
+            // Skip KILLSWITCH_CHECK — every check duplicates prior spend.
+            if (event.eventType == TraceEventType.KILLSWITCH_CHECK) continue
+            val inMeta = event.metadata["inputTokens"]?.toString()?.toLongOrNull()
+            val outMeta = event.metadata["outputTokens"]?.toString()?.toLongOrNull()
+            if (inMeta != null || outMeta != null) counted++
+            if (inMeta != null) input += inMeta
+            if (outMeta != null) output += outMeta
+        }
+        if (counted == 0) return null
+        return """
+            <span class="trace-token-card">
+                <span class="trace-token-card-label">TOKEN TOTALS</span>
+                <span class="trace-token-input">Input: ${"%,d".format(input)}</span>
+                <span class="trace-token-output">Output: ${"%,d".format(output)}</span>
+                <span class="trace-token-sum">Total: ${"%,d".format(input + output)}</span>
+                <span class="trace-token-events">Events w/ tokens: $counted / ${trace.size}</span>
+            </span>
+        """.trimIndent()
+    }
+
+    /**
      * Render the three small token-usage pills used by both per-event extras and the per-turn
      * summary. Pills whose value is null are omitted.
      */
@@ -1878,6 +1928,18 @@ class TraceVisualizer
         .ps-nested-p2p-list { list-style: decimal; margin: 0; padding-left: 22px; }
         .ps-nested-p2p-item { padding: 4px 0; }
         .ps-nested-p2p-label { font-size: 0.78rem; color: #1e293b; font-family: 'JetBrains Mono', monospace; }
+        /* Trace-wide token totals card (header KPI row) - shared across all container HTML reports */
+        .trace-token-card { display: inline-flex; align-items: center; gap: 14px; padding: 6px 14px; background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%); border: 1px solid rgba(99,102,241,0.32); border-radius: 999px; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; }
+        .trace-token-card-label { color: #4338ca; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; }
+        /* Input / Output / Total / Events — coded by color so a tired dev can scan at a glance.
+           Teal-cyan for input, amber-warm for output, slate for total, muted for events.
+           Teal-vs-amber chosen over red-vs-green because it survives the most common
+           colorblindness forms (deuteranopia/protanopia) and passes WCAG AA on the
+           #f1f5f9/#eef2ff card background. */
+        .trace-token-input { color: #0e7490; font-weight: 600; }
+        .trace-token-output { color: #b45309; font-weight: 600; }
+        .trace-token-sum { color: #1e293b; font-weight: 700; }
+        .trace-token-events { color: #64748b; font-size: 0.7rem; }
     """.trimIndent()
 
     /**
@@ -1891,6 +1953,7 @@ class TraceVisualizer
         val status = derivePumpStationStatus(trace)
         val runId = trace.firstOrNull()?.metadata?.get("runId")?.toString() ?: "unknown"
         val durationMs = pumpStationDurationMs(trace)
+        val tokenCard = buildContainerTokenCard(trace)
         val stateRibbon = buildPumpStationStateRibbon(trace)
         val sparkline = buildPumpStationSparkline(trace)
         val pathInventory = buildPumpStationPathInventory(trace)
@@ -1913,6 +1976,7 @@ class TraceVisualizer
                         <span class="ps-status ps-status-$status">${status.uppercase()}</span>
                         <span class="ps-run-id">$runId</span>
                         <span class="ps-duration">⏱ ${durationMs}ms</span>
+                        $tokenCard
                     </div>
                     $stateRibbon
                     $sparkline

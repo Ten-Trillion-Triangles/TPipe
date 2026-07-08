@@ -429,6 +429,76 @@ class PumpStationTraceVisualizationTest
             "Path content must be escaped to &lt;script&gt;")
     }
 
+    /**
+     * Aggregate token totals should appear at the top of the HTML report as a
+     * dedicated card. Aggregates inputTokens and outputTokens from every event
+     * that carries them in metadata, SKIPPING KILLSWITCH_CHECK (which reports
+     * cumulative-AT-check-time, not actual spend — the underlying
+     * JUDGE_COMPLETED / DISPATCH_COMPLETED / PATH_COMPLETED events already
+     * cover that ground).
+     */
+    @Test
+    fun reportShowsTokenTotalsHeaderCard()
+    {
+        val trace = listOf(
+            createEvent(0, TraceEventType.PUMP_STATION_STARTED, mapOf("runId" to "ps-test")),
+            // Real spend events — these DO contribute to the totals.
+            createEvent(1, TraceEventType.PUMP_STATION_JUDGE_COMPLETED,
+                mapOf("runId" to "ps-test", "isComplete" to false, "shouldTerminate" to false,
+                      "inputTokens" to 1000, "outputTokens" to 500, "totalTokens" to 1500)),
+            createEvent(1, TraceEventType.PUMP_STATION_DISPATCH_COMPLETED,
+                mapOf("runId" to "ps-test", "selectedPathName" to "search",
+                      "inputTokens" to 2000, "outputTokens" to 800, "totalTokens" to 2800)),
+            // KILLSWITCH_CHECK — must be EXCLUDED from the totals aggregate
+            // (input=3000, output=1300 below must NOT push the totals to 6,000 in / 2,600 out).
+            createEvent(1, TraceEventType.KILLSWITCH_CHECK,
+                mapOf("runId" to "ps-test",
+                      "inputTokens" to 3000, "outputTokens" to 1300,
+                      "inputLimit" to "none", "outputLimit" to "none",
+                      "elapsedMs" to 1L))
+        )
+        val html = visualizer.generateHtmlReport(trace)
+        // Card exists in the PumpStation namespace. Targets the rendered span,
+        // not the bare class name — the bare name also matches the CSS
+        // selector in the embedded <style> block.
+        assertTrue(html.contains("<span class=\"trace-token-card\">"),
+            "Report must include the rendered trace-token-card element in the header")
+        // Comma-formatted sums (KillSwitch input=3000/output=1300 must NOT contribute).
+        assertTrue(html.contains("Input: 3,000"),
+            "Input total = 1000 (judge) + 2000 (dispatch) = 3,000; KillSwitch 3000 must be skipped")
+        assertTrue(html.contains("Output: 1,300"),
+            "Output total = 500 (judge) + 800 (dispatch) = 1,300; KillSwitch 1300 must be skipped")
+        assertTrue(html.contains("Total: 4,300"),
+            "Sum total = 3,000 + 1,300 = 4,300")
+        // The KillSwitch row should not inflate the visible totals past 4,300.
+        assertFalse(html.contains("Total: 7,900") || html.contains("Total: 7,600"),
+            "Header must not double-count KILLSWITCH_CHECK into the totals")
+    }
+
+    /**
+     * Card hidden when no event carries token metadata — short harness runs
+     * (e.g. only a PUMP_STATION_STARTED and one path turn) should not show
+     * a misleading "0 tokens" card.
+     *
+     * The assertion targets the rendered `<span class="ps-token-card">` opening
+     * tag rather than the bare class name — the bare name also matches the
+     * CSS selector in the embedded `<style>` block, which would always be
+     * present once the feature ships.
+     */
+    @Test
+    fun reportHidesTokenCardWhenNoTokenMetadata()
+    {
+        val trace = listOf(
+            createEvent(0, TraceEventType.PUMP_STATION_STARTED, mapOf("runId" to "ps-test")),
+            createEvent(1, TraceEventType.PUMP_STATION_DISPATCH_COMPLETED,
+                mapOf("runId" to "ps-test", "selectedPathName" to "search"))
+            // No inputTokens / outputTokens in any metadata.
+        )
+        val html = visualizer.generateHtmlReport(trace)
+        assertFalse(html.contains("<span class=\"trace-token-card\">"),
+            "Header must hide the token card when zero events carry token metadata")
+    }
+
     private fun createEvent(
         turnIndex: Int,
         eventType: TraceEventType,
