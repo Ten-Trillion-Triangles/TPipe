@@ -1520,6 +1520,16 @@ class TraceVisualizer
     {
         val rows = events.joinToString("") { event ->
             val label = phaseShortName(event.eventType)
+            // Surface the agent's final response as a dedicated "Result:" line in the turn
+            // details card, parsed out of the `contentPreview` metadata field. The upstream
+            // value is the `MultimodalContent.toString()` rendering which prefixes the body
+            // with `text=`; strip that prefix so the row reads as plain prose.
+            val contentPreview = event.metadata["contentPreview"]?.toString()
+            val resultLine = if (!contentPreview.isNullOrEmpty()) {
+                val stripped = contentPreview.removePrefix("text=")
+                "<div class='ps-result-line'><span class='ps-result-label'>Result:</span>" +
+                    "<span class='ps-result-text'>${escapeHtml(stripped)}</span></div>"
+            } else ""
             val metaRows = event.metadata.entries
                 .filter { it.key != "turnIndex" && it.key != "phase" && it.key != "runId" }
                 .joinToString("") { (k, v) ->
@@ -1529,6 +1539,7 @@ class TraceVisualizer
             val extras = buildPumpStationEventExtras(event)
             "<div class='ps-detail-row'>" +
                 "<div class='ps-detail-label'>$label <span class='ps-detail-type'>(${event.eventType.name})</span></div>" +
+                resultLine +
                 "<div class='ps-detail-meta'>$metaRows</div>" +
                 extras +
                 "</div>"
@@ -1889,6 +1900,11 @@ class TraceVisualizer
         .ps-detail-row:last-child { border-bottom: none; }
         .ps-detail-label { font-weight: 600; font-size: 0.82rem; color: #1e293b; }
         .ps-detail-type { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: #64748b; }
+        /* Agent result line — extracted from the `contentPreview` metadata field and
+           rendered as the headline row for this event. Border-left accents it. */
+        .ps-result-line { margin: 6px 0 8px 12px; padding: 6px 10px; background: #f1f5f9; border-left: 3px solid #6366f1; border-radius: 4px; font-size: 0.82rem; line-height: 1.45; }
+        .ps-result-label { color: #4338ca; font-weight: 700; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 6px; }
+        .ps-result-text { color: #1e293b; font-family: 'JetBrains Mono', monospace; word-break: break-word; }
         .ps-detail-meta { margin-top: 4px; padding-left: 12px; }
         .ps-meta-row { font-size: 0.78rem; }
         .ps-meta-key { color: #64748b; font-weight: 500; }

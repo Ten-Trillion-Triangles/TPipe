@@ -476,11 +476,77 @@ class PumpStationTraceVisualizationTest
     }
 
     /**
+     * Agent result text (the `contentPreview` metadata) should be promoted into a dedicated
+     * `Result:` line under the agent event label so a tired dev can see what the agent said
+     * without scanning the metadata table or opening the "View content" toggle. The raw
+     * `text=` Sprintf prefix is stripped.
+     */
+    @Test
+    fun reportPromotesAgentResultTextToVisibleLine()
+    {
+        val trace = listOf(
+            createEvent(0, TraceEventType.PUMP_STATION_STARTED, mapOf("runId" to "ps-test")),
+            createEvent(1, TraceEventType.PUMP_STATION_JUDGE_COMPLETED, mapOf(
+                "runId" to "ps-test",
+                "isComplete" to false,
+                "shouldTerminate" to false,
+                "contentPreview" to "text=verdict: not yet complete, more paths needed",
+                "contentLength" to 47,
+                "inputTokens" to 320,
+                "outputTokens" to 48
+            )),
+            createEvent(1, TraceEventType.PUMP_STATION_DISPATCH_COMPLETED, mapOf(
+                "runId" to "ps-test",
+                "selectedPathName" to "search",
+                "contentPreview" to "text=dispatcher chose: search (path=search, schema=...)",
+                "contentLength" to 51,
+                "inputTokens" to 410,
+                "outputTokens" to 72
+            ))
+        )
+        val html = visualizer.generateHtmlReport(trace)
+        // Promoted Result line should be present, outside the metadata table.
+        assertTrue(html.contains("Result:"),
+            "Each agent event should carry a visible 'Result:' line with the agent's text")
+        // The promoted text strips the Sprintf 'text=' prefix.
+        assertTrue(html.contains("verdict: not yet complete, more paths needed"),
+            "Result line should show the agent's text without the 'text=' Sprintf prefix")
+        assertTrue(html.contains("dispatcher chose: search (path=search, schema=...)"),
+            "Result line should show the dispatcher's text without the 'text=' Sprintf prefix")
+        // Sanity: the existing 'View content' toggle remains for full content browsing.
+        assertTrue(html.contains("View content"),
+            "Existing View content toggle should remain for full content browsing")
+    }
+
+    /**
+     * Events without a contentPreview (e.g. path lifecycle markers, started events) should NOT
+     * get a Result: line — only events that produced a result carry one.
+     */
+    @Test
+    fun reportOmitsResultLineForEventsWithoutContentPreview()
+    {
+        val trace = listOf(
+            createEvent(0, TraceEventType.PUMP_STATION_STARTED, mapOf("runId" to "ps-test")),
+            createEvent(1, TraceEventType.PUMP_STATION_PATH_SELECTED, mapOf(
+                "runId" to "ps-test",
+                "pathName" to "search",
+                "riskLevel" to "LOW"
+            ))
+        )
+        val html = visualizer.generateHtmlReport(trace)
+        // PATH_SELECTED has no contentPreview — should not render a Result: line.
+        // Count Result: occurrences; should be zero because no content-bearing event is in the trace.
+        val resultLineCount = html.split("Result:").size - 1
+        assertEquals(0, resultLineCount,
+            "Events without contentPreview should not produce a Result: line")
+    }
+
+    /**
      * Card hidden when no event carries token metadata — short harness runs
      * (e.g. only a PUMP_STATION_STARTED and one path turn) should not show
      * a misleading "0 tokens" card.
      *
-     * The assertion targets the rendered `<span class="ps-token-card">` opening
+     * The assertion targets the rendered `<span class="trace-token-card">` opening
      * tag rather than the bare class name — the bare name also matches the
      * CSS selector in the embedded `<style>` block, which would always be
      * present once the feature ships.
