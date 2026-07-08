@@ -787,7 +787,8 @@ class PumpStationMiniMaxLiveTest
                 systemPrompt = "You are a research gatherer. Produce 3-5 substantive " +
                     "findings on the topic in the user\'s message. " +
                     "Each finding should be a fact, observation, or tradeoff — not a " +
-                    "generic statement. Aim for ~150 words.",
+                    "generic statement. Do not use ## headers or tables — the report " +
+                    "path will structure these later. Aim for ~150 words.",
                 baseUrl = baseUrl,
                 pcpContext = pcp,
                 traceConfig = traceConfig
