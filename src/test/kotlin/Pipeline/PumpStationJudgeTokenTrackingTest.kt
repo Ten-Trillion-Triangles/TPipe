@@ -8,6 +8,7 @@ import com.TTT.Pipe.TokenUsage
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -236,13 +237,17 @@ class PumpStationJudgeTokenTrackingTest
         assertTrue(judgeCompleted.totalTokens != null && judgeCompleted.totalTokens!! > 0,
             "JudgeCompleted.totalTokens must be non-null and positive after the fix")
 
-        // Pin the upstream contract: the -1 fallback in PumpStationHelpers still exists.
-        // If anyone removes it, this assertion fails and the author must re-pin because
-        // we have a deliberate sentinel-vs-null contract that the visualizer relies on.
+        // Pin the upstream contract (B7 fix 2026-07-08): the -1 sentinel in
+        // PumpStationHelpers has been removed; the funnel now OMITS the
+        // key when the event's token field is null. The visualizer's
+        // readTokenField already handles missing keys (returns null and
+        // hides the chip), so omitting is strictly better than writing
+        // a misleading -1 sentinel. This assertion pins the new contract.
         val helpersSource = java.io.File("src/main/kotlin/Pipeline/PumpStationHelpers.kt")
             .readText()
-        assertTrue(helpersSource.contains("baseMetadata.put(\"inputTokens\", -1)"),
-            "Sanity: PumpStationHelpers still emits -1 sentinel when token field is null. " +
-            "If this fails, the sentinel path has been removed and this test needs rewriting.")
+        assertFalse(helpersSource.contains("baseMetadata.put(\"inputTokens\", -1)"),
+            "Sanity: PumpStationHelpers no longer emits -1 token sentinel. " +
+                "If this fails, the funnel was reverted to the old sentinel " +
+                "behavior and this test needs rewriting.")
     }
 }
