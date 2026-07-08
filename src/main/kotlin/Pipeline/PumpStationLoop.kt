@@ -2832,6 +2832,14 @@ internal fun PumpStation.applyRationaleNudgeIfNeeded(
     if (!this.failurePolicy.requirePathSelectionRationale) return false
     if (!rationale.isNullOrBlank()) return false
     if (this.taskState.runId.isBlank()) return false
+    // B3 fix: dedup the nudge per run. The LLM has already been told
+    // once that it forgot the rationale; repeating the same hint every
+    // turn bloats the prompt without adding signal. Skip subsequent
+    // nudges if a prior [Harness Notice] message is already in history.
+    val alreadyNudged = this.turnHistory.history.any { conv ->
+        conv.content.text?.contains("[Harness Notice]") == true
+    }
+    if (alreadyNudged) return false
 
     val hintMessage = "[Harness Notice] Your dispatch output was a valid PathRequest JSON but " +
         "the pathSelectionRationale field was empty. The harness is configured to require a " +
