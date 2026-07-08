@@ -114,7 +114,12 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["warningCode"] = event.code.name
             baseMetadata["mechanisms"] = event.mechanisms.joinToString(",") { it.name }
         }
-        is HarnessCompleted -> eventType = TraceEventType.PUMP_STATION_COMPLETED
+        is HarnessCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_COMPLETED
+            baseMetadata["exitReason"] = event.exitReason.name
+            baseMetadata["finalOutput"] = event.finalOutput?.toString() ?: ""
+        }
         is HarnessFailed ->
         {
             eventType = TraceEventType.PUMP_STATION_FAILED
