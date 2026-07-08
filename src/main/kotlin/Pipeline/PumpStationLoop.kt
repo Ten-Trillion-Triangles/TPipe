@@ -586,9 +586,6 @@ private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalConte
                 phase = PumpStationPhase.PathExecution,
                 pathName = pathName,
                 riskLevel = riskLevel,
-                // B4 fix: distinguish transport-layer timeouts from other
-                // path-execution failures so operators can see WHY the path
-                // died (timeout vs. malformed response vs. code exception).
                 error = classifyPathException(e),
                 errorMessage = e.message
             ))
@@ -2835,10 +2832,9 @@ internal fun PumpStation.applyRationaleNudgeIfNeeded(
     if (!this.failurePolicy.requirePathSelectionRationale) return false
     if (!rationale.isNullOrBlank()) return false
     if (this.taskState.runId.isBlank()) return false
-    // B3 fix: dedup the nudge per run. The LLM has already been told
-    // once that it forgot the rationale; repeating the same hint every
-    // turn bloats the prompt without adding signal. Skip subsequent
-    // nudges if a prior [Harness Notice] message is already in history.
+    // Skip repeat nudges within a run — a prior [Harness Notice] message
+    // already told the dispatch LLM what to do; repeating it bloats the
+    // prompt without adding signal.
     val alreadyNudged = this.turnHistory.history.any { conv ->
         conv.content.text?.contains("[Harness Notice]") == true
     }

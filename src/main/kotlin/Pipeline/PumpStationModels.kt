@@ -165,10 +165,9 @@ enum class PumpStationError
     InvalidPathRequest,
     DispatchJsonRepairFailed,
     PathExecutionException,
-    // B4: distinct from PathExecutionException — emitted when the path
-    // call timed out (SocketTimeoutException, IOException with "timeout"
-    // in message). Allows the harness and operators to distinguish
-    // transport-layer timeouts from malformed-response or code exceptions.
+    // Path call timed out (transport-layer). Distinct from
+    // PathExecutionException so the harness and operators can tell
+    // timeouts apart from malformed-response or code exceptions.
     PathTimeout,
     TokenBudgetExceeded,
     MemoryBlowout,

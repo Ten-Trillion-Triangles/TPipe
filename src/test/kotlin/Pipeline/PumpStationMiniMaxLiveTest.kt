@@ -1217,11 +1217,6 @@ class PumpStationMiniMaxLiveTest
         stub.start()
         try
         {
-            // B6 fix: use loopEnqueue for pathSafety so the stub keeps rejecting
-            // past the explicit queue depth. Other roles (judge, dispatch,
-            // report) are still pre-queued because they need fixed responses
-            // (judge returns isComplete=true to exit cleanly; dispatch picks
-            // the same path; report returns a fixed brief).
             val queueCount = 6 + 2
             repeat(queueCount) { stub.enqueueFor("judge", StubOpenAIServer.judgeResponse(isComplete = false)) }
             stub.enqueueFor("judge", StubOpenAIServer.judgeResponse(isComplete = true))
@@ -1602,10 +1597,9 @@ private class StubOpenAIServer
     private val responsesByRole: MutableMap<String, java.util.concurrent.ConcurrentLinkedQueue<String>> =
         java.util.concurrent.ConcurrentHashMap()
     private val callLog: java.util.concurrent.ConcurrentLinkedQueue<String> = java.util.concurrent.ConcurrentLinkedQueue()
-    // B6 fix: per-role fallback callbacks invoked when the per-role queue
-    // is empty. Lets tests express "this role always returns X" without
-    // pre-queuing N copies up-front (which is fragile when the harness
-    // runs more turns than expected).
+    // Per-role fallbacks invoked when the per-role queue is empty. Tests
+    // can use this to express "this role always returns X" without
+    // pre-queuing N copies up-front.
     private val loopFallbacks: MutableMap<String, () -> String> = java.util.concurrent.ConcurrentHashMap()
     private var server: com.sun.net.httpserver.HttpServer? = null
     var port: Int = 0
@@ -1621,10 +1615,10 @@ private class StubOpenAIServer
     }
 
     /**
-     * B6: register a fallback for [role]. When the role's per-call queue is
-     * exhausted, [provider] is invoked to produce a fresh response. Used by
-     * stub-07-path-safety-rejection (and any future test that wants
-     * "always-reject" or "always-approve" semantics for a role).
+     * Register a fallback for [role]. When the role's per-call queue is
+     * exhausted, [provider] is invoked to produce a fresh response — lets
+     * tests express "always-reject" or "always-approve" semantics for a
+     * role without sizing the per-call queue to the turn count.
      */
     fun loopEnqueue(role: String, provider: () -> String)
     {
@@ -1714,11 +1708,6 @@ private class StubOpenAIServer
         maxHarnessTurns: Int = 6
     )
     {
-        // B5 invariant (verified 2026-07-08): every per-role queue below is
-        // sized via `turnBudget = maxHarnessTurns + buffer`. Stub-01/03/05/06
-        // already follow this pattern (Bug 5 fix at :1726-1731). The exception
-        // is stub-07-path-safety-rejection which uses a hardcoded `queueCount = 8`
-        // and runs out mid-loop — that is fixed separately as B6 (see Task 6).
         // Per-role response queues. Each role is independent so the harness can
         // call any role any number of times without starving the others. The
         // old single-FIFO design had a brittle "must match the LLM call order

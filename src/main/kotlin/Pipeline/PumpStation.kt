@@ -2768,10 +2768,6 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                         outputTokens = interventionUsage?.second?.first,
                         totalTokens = interventionUsage?.second?.second
                     ))
-                    // B2 fix: reset the counter so re-selecting the same path
-                    // doesn't keep incrementing past the limit. The guard has
-                    // fired; the path still runs this turn, but the next turn
-                    // starts with a fresh budget.
                     consecutivePathCount = 0
                 }
             }
@@ -2904,11 +2900,9 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         }
         catch(e: Exception)
         {
-            // B4 fix: classify the exception so timeouts get a distinct
-            // error code. Critically, do NOT set lastError for timeouts —
-            // a timeout is a path-level failure, not a harness-level
-            // failure; the harness should continue trying the next turn
-            // rather than breaking out via runFinalizationPhase.
+            // Timeouts are path-level, not harness-level, failures: skip
+            // lastError so the loop continues instead of breaking into
+            // runFinalizationPhase on the first transport timeout.
             val errorCode = classifyPathException(e)
             emitEventInternal(PathFailed(
                 runId = taskState.runId,
