@@ -2702,7 +2702,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         val agent = pathSafetyAgent ?: return true
         val result = agent.executeLocal(input)
         val parsed = if (pathSafetyExpectsJsonContract) parsePathSafetyVerdict(result.text) else null
-        return parsed ?: !(result.terminatePipeline || result.passPipeline)
+        return parsed?.approved ?: !(result.terminatePipeline || result.passPipeline)
     }
 
     private suspend fun invokePath(path: PathObject, input: MultimodalContent): MultimodalContent

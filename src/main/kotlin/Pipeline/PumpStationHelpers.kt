@@ -651,7 +651,17 @@ internal fun PumpStation.parseDispatchOutput(content: MultimodalContent): PathRe
  *    wrapped in a markdown code fence or interleaved with reasoning prose.
  *    The first object that contains a `safe` field (boolean literal) wins.
  */
-internal fun parsePathSafetyVerdict(text: String): Boolean?
+/**
+ * Parsed path-safety verdict: the boolean verdict plus the optional reason string.
+ * Used by [parsePathSafetyVerdict] to return both fields in a single pass so the
+ * dispatch hint can include the actual rejection reason (F3 fix, 2026-07-08).
+ */
+internal data class PathSafetyVerdict(
+    val approved: Boolean,
+    val reason: String?
+)
+
+internal fun parsePathSafetyVerdict(text: String): PathSafetyVerdict?
 {
     if (text.isBlank()) return null
     val candidates = try { extractAllJsonObjects(text) } catch (_: Exception) { emptyList() }
@@ -661,8 +671,9 @@ internal fun parsePathSafetyVerdict(text: String): Boolean?
         val safeField = obj["safe"] ?: continue
         val safePrim = safeField as? JsonPrimitive ?: continue
         if (safePrim.isString) continue
-        val bool = safePrim.booleanOrNull
-        if (bool != null) return bool
+        val bool = safePrim.booleanOrNull ?: continue
+        val reason = (obj["reason"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        return PathSafetyVerdict(approved = bool, reason = reason)
     }
     return null
 }

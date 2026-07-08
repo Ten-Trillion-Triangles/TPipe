@@ -3,7 +3,6 @@ package com.TTT.Pipeline
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
  * Unit tests for [parsePathSafetyVerdict] (the path-safety agent JSON verdict parser
@@ -12,6 +11,12 @@ import kotlin.test.assertTrue
  * only checked [MultimodalContent.terminatePipeline] / [MultimodalContent.passPipeline]
  * flags, which is a degenerate always-approve (LLMs don't set those flags on safety
  * verdicts).
+ *
+ * Updated 2026-07-08 (F3 fix): the parser now returns a [PathSafetyVerdict] data
+ * class carrying both the boolean verdict AND the optional `reason` string, so the
+ * path-safety → dispatch hint can include the actual rejection reason instead of
+ * the hardcoded "Rejected by path safety check" fallback. The boolean check at
+ * callers uses `verdict.approved`; the reason is best-effort (null if missing).
  */
 class PathSafetyVerdictParserTest
 {
@@ -19,23 +24,52 @@ class PathSafetyVerdictParserTest
     fun parsesTrueVerdict()
     {
         val result = parsePathSafetyVerdict("""{"safe": true, "reason": "approved"}""")
-        assertEquals(true, result)
+        assertEquals(true, result!!.approved)
     }
 
     @Test
     fun parsesFalseVerdict()
     {
         val result = parsePathSafetyVerdict("""{"safe": false, "reason": "rejected by safety policy"}""")
-        assertEquals(false, result)
+        assertEquals(false, result!!.approved)
+    }
+
+    @Test
+    fun parsesFalseVerdictWithReason()
+    {
+        val result = parsePathSafetyVerdict(
+            """{"safe": false, "reason": "schema invalid: missing required field 'topic'"}"""
+        )
+        assertEquals(false, result!!.approved)
+        assertEquals("schema invalid: missing required field 'topic'", result.reason)
+    }
+
+    @Test
+    fun parsesTrueVerdictWithReason()
+    {
+        val result = parsePathSafetyVerdict("""{"safe": true, "reason": "all checks passed"}""")
+        assertEquals(true, result!!.approved)
+        assertEquals("all checks passed", result.reason)
+    }
+
+    @Test
+    fun parsesVerdictWithMissingReason()
+    {
+        val result = parsePathSafetyVerdict("""{"safe": false}""")
+        assertEquals(false, result!!.approved)
+        assertEquals(null, result.reason)
     }
 
     @Test
     fun handlesSurroundingWhitespace()
     {
-        val result = parsePathSafetyVerdict("""
+        val result = parsePathSafetyVerdict(
+            """
             {"safe": false, "reason": "trim me"}
-        """.trimIndent())
-        assertEquals(false, result)
+        """.trimIndent()
+        )
+        assertEquals(false, result!!.approved)
+        assertEquals("trim me", result.reason)
     }
 
     @Test
@@ -101,24 +135,33 @@ class PathSafetyVerdictParserTest
     @Test
     fun ignoresExtraFields()
     {
-        // Extra fields are fine — we only care about `safe`.
+        // Extra fields are fine — we only care about `safe` and `reason`.
         val result = parsePathSafetyVerdict(
             """{"safe": true, "reason": "approved", "extra": "ignored", "nested": {"x": 1}}"""
         )
-        assertEquals(true, result)
+        assertEquals(true, result!!.approved)
+        assertEquals("approved", result.reason)
     }
 
     @Test
-    fun rejectsMarkdownFencedResponse()
+    fun extractsVerdictFromMarkdownFencedResponse()
     {
         // Real LLMs frequently wrap their JSON in ```json ... ``` fences.
-        // The strict parser rejects the fenced form (returns null) and the
-        // caller falls back to the legacy flag check. This is intentional:
-        // a strict parse keeps the failure mode obvious. A real production
-        // agent that consistently fences its response would need to call
-        // [com.TTT.Util.repairJsonString] upstream or strip the fences in
-        // its system prompt.
-        val result = parsePathSafetyVerdict("```json\n{\"safe\": false}\n```")
-        assertNull(result)
+        // extractAllJsonObjects is designed to recover the inner object, so the
+        // fenced form DOES yield a verdict. The test asserts the unwrapped verdict
+        // is returned (the parser is lenient about fences, strict about field types).
+        val result = parsePathSafetyVerdict("```json\n{\"safe\": false, \"reason\": \"fenced\"}\n```")
+        assertEquals(false, result!!.approved)
+        assertEquals("fenced", result.reason)
+    }
+
+    @Test
+    fun rejectsNonStringReasonField()
+    {
+        // Non-string reason (number, object, etc.) is rejected — the field must
+        // be a string literal or omitted entirely. Anything else returns null.
+        val result = parsePathSafetyVerdict("""{"safe": false, "reason": 42}""")
+        assertEquals(false, result!!.approved)
+        assertEquals(null, result.reason)
     }
 }
