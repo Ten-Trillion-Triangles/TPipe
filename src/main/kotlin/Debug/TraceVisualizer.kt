@@ -1937,7 +1937,7 @@ class TraceVisualizer
            colorblindness forms (deuteranopia/protanopia) and passes WCAG AA on the
            #f1f5f9/#eef2ff card background. */
         .trace-token-input { color: #0e7490; font-weight: 600; }
-        .trace-token-output { color: #b45309; font-weight: 600; }
+        .trace-token-output { color: #92400e; font-weight: 600; }
         .trace-token-sum { color: #1e293b; font-weight: 700; }
         .trace-token-events { color: #64748b; font-size: 0.7rem; }
     """.trimIndent()
