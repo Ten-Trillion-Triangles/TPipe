@@ -1217,23 +1217,20 @@ class PumpStationMiniMaxLiveTest
         stub.start()
         try
         {
-            // Bug fix 2026-07-07: hand-queue enough responses for the rejection-and-retry
-            // flow. The harness runs:
-            //   judge(false) → dispatch → report → pathSafety(REJECTS report) → dispatch → ...
-            //   → eventually the harness exits via JudgeComplete. The original test only
-            //   enqueued 1 dispatch and 1 pathSafety response, which ran out on the
-            //   retry and triggered the IllegalStateException → EOFException on the client.
-            // We enqueue maxHarnessTurns + buffer of each role so the rejection+retry
-            // loop can complete cleanly.
+            // B6 fix: use loopEnqueue for pathSafety so the stub keeps rejecting
+            // past the explicit queue depth. Other roles (judge, dispatch,
+            // report) are still pre-queued because they need fixed responses
+            // (judge returns isComplete=true to exit cleanly; dispatch picks
+            // the same path; report returns a fixed brief).
             val queueCount = 6 + 2
             repeat(queueCount) { stub.enqueueFor("judge", StubOpenAIServer.judgeResponse(isComplete = false)) }
             stub.enqueueFor("judge", StubOpenAIServer.judgeResponse(isComplete = true))
             repeat(queueCount) { stub.enqueueFor("dispatch", StubOpenAIServer.dispatchResponse("report")) }
-            repeat(queueCount) {
-                stub.enqueueFor("pathSafety", StubOpenAIServer.pathSafetyResponse(
+            stub.loopEnqueue("pathSafety") {
+                StubOpenAIServer.pathSafetyResponse(
                     safe = false,
                     reason = "stub rejected — verifying path safety JSON verdict is honored"
-                ))
+                )
             }
             repeat(queueCount) { stub.enqueueFor("report", StubOpenAIServer.responsesBody(REPORT_BRIEF)) }
             runResearchHarness(
@@ -1605,6 +1602,11 @@ private class StubOpenAIServer
     private val responsesByRole: MutableMap<String, java.util.concurrent.ConcurrentLinkedQueue<String>> =
         java.util.concurrent.ConcurrentHashMap()
     private val callLog: java.util.concurrent.ConcurrentLinkedQueue<String> = java.util.concurrent.ConcurrentLinkedQueue()
+    // B6 fix: per-role fallback callbacks invoked when the per-role queue
+    // is empty. Lets tests express "this role always returns X" without
+    // pre-queuing N copies up-front (which is fragile when the harness
+    // runs more turns than expected).
+    private val loopFallbacks: MutableMap<String, () -> String> = java.util.concurrent.ConcurrentHashMap()
     private var server: com.sun.net.httpserver.HttpServer? = null
     var port: Int = 0
         private set
@@ -1616,6 +1618,21 @@ private class StubOpenAIServer
         {
             responsesByRole[role] = java.util.concurrent.ConcurrentLinkedQueue()
         }
+    }
+
+    /**
+     * B6: register a fallback for [role]. When the role's per-call queue is
+     * exhausted, [provider] is invoked to produce a fresh response. Used by
+     * stub-07-path-safety-rejection (and any future test that wants
+     * "always-reject" or "always-approve" semantics for a role).
+     */
+    fun loopEnqueue(role: String, provider: () -> String)
+    {
+        val queue = responsesByRole[role]
+            ?: error("Unknown role: $role. Known: ${responsesByRole.keys}")
+        loopFallbacks[role] = provider
+        // Touch the queue so the init's known-roles check passes later.
+        queue.size
     }
 
     /** Enqueue a response on the default ("any") queue. Prefer [enqueueFor]. */
@@ -1643,10 +1660,11 @@ private class StubOpenAIServer
             // fallback lets queueForConfiguration() pre-populate one bucket
             // when the test doesn't care about role classification.
             val queue = responsesByRole[role] ?: responsesByRole.getValue("any")
-            val response = queue.poll() ?: throw IllegalStateException(
-                "StubOpenAIServer: no canned response queued for role='$role'. " +
-                    "Body prefix: ${body.take(200)}"
-            )
+            val response = queue.poll() ?: loopFallbacks[role]?.invoke()
+                ?: throw IllegalStateException(
+                    "StubOpenAIServer: no canned response queued for role='$role'. " +
+                        "Body prefix: ${body.take(200)}"
+                )
             val bytes = response.toByteArray(Charsets.UTF_8)
             exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
             exchange.sendResponseHeaders(200, bytes.size.toLong())
@@ -1696,6 +1714,11 @@ private class StubOpenAIServer
         maxHarnessTurns: Int = 6
     )
     {
+        // B5 invariant (verified 2026-07-08): every per-role queue below is
+        // sized via `turnBudget = maxHarnessTurns + buffer`. Stub-01/03/05/06
+        // already follow this pattern (Bug 5 fix at :1726-1731). The exception
+        // is stub-07-path-safety-rejection which uses a hardcoded `queueCount = 8`
+        // and runs out mid-loop — that is fixed separately as B6 (see Task 6).
         // Per-role response queues. Each role is independent so the harness can
         // call any role any number of times without starving the others. The
         // old single-FIFO design had a brittle "must match the LLM call order
