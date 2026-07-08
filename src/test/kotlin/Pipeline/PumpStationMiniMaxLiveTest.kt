@@ -1696,6 +1696,11 @@ private class StubOpenAIServer
         maxHarnessTurns: Int = 6
     )
     {
+        // B5 invariant (verified 2026-07-08): every per-role queue below is
+        // sized via `turnBudget = maxHarnessTurns + buffer`. Stub-01/03/05/06
+        // already follow this pattern (Bug 5 fix at :1726-1731). The exception
+        // is stub-07-path-safety-rejection which uses a hardcoded `queueCount = 8`
+        // and runs out mid-loop — that is fixed separately as B6 (see Task 6).
         // Per-role response queues. Each role is independent so the harness can
         // call any role any number of times without starving the others. The
         // old single-FIFO design had a brittle "must match the LLM call order
