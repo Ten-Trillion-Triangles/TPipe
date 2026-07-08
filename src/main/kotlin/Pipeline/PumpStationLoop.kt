@@ -586,7 +586,10 @@ private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalConte
                 phase = PumpStationPhase.PathExecution,
                 pathName = pathName,
                 riskLevel = riskLevel,
-                error = PumpStationError.PathExecutionException,
+                // B4 fix: distinguish transport-layer timeouts from other
+                // path-execution failures so operators can see WHY the path
+                // died (timeout vs. malformed response vs. code exception).
+                error = classifyPathException(e),
                 errorMessage = e.message
             ))
         }

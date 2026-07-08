@@ -85,6 +85,21 @@ internal fun PumpStation.tracePumpStationEvent(event: PumpStationEvent)
 }
 
 /**
+ * Classify an exception caught during path execution. B4 fix: transport-
+ * layer timeouts (SocketTimeoutException, IOException with "timeout" in
+ * the message) are emitted as [PumpStationError.PathTimeout]; everything
+ * else falls through to [PumpStationError.PathExecutionException].
+ */
+internal fun classifyPathException(e: Throwable): PumpStationError = when
+{
+    e is java.net.SocketTimeoutException -> PumpStationError.PathTimeout
+    e is java.io.IOException &&
+        e.message?.contains("timeout", ignoreCase = true) == true ->
+            PumpStationError.PathTimeout
+    else -> PumpStationError.PathExecutionException
+}
+
+/**
  * Convert a [PumpStationEvent] to a [TraceEvent] for visualization. Returns null for events that
  * have no trace representation (currently none, but the safety net keeps the funnel total).
  *

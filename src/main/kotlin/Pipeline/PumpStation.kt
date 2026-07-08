@@ -2904,15 +2904,24 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         }
         catch(e: Exception)
         {
+            // B4 fix: classify the exception so timeouts get a distinct
+            // error code. Critically, do NOT set lastError for timeouts —
+            // a timeout is a path-level failure, not a harness-level
+            // failure; the harness should continue trying the next turn
+            // rather than breaking out via runFinalizationPhase.
+            val errorCode = classifyPathException(e)
             emitEventInternal(PathFailed(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
                 pathName = pathName,
                 riskLevel = riskLevel,
-                error = PumpStationError.PathExecutionException,
+                error = errorCode,
                 errorMessage = e.message
             ))
-            taskState.lastError = PumpStationError.PathExecutionException
+            if (errorCode != PumpStationError.PathTimeout)
+            {
+                taskState.lastError = PumpStationError.PathExecutionException
+            }
             taskState.currentPathName = priorPathName
             return input
         }
