@@ -2697,13 +2697,34 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     suspend fun checkPathSafety(path: PathObject, input: MultimodalContent): Boolean
     {
         pathSafetyFunction?.let { fn ->
+            // Custom function users don't carry a reason string — the hint will
+            // use the fallback wording. Clear any stale value.
+            pathSafetyLastVerdict = null
             return fn(path, path.pathSchema, this)
         }
         val agent = pathSafetyAgent ?: return true
         val result = agent.executeLocal(input)
         val parsed = if (pathSafetyExpectsJsonContract) parsePathSafetyVerdict(result.text) else null
+        // Capture the parsed verdict (including reason) so the hint code at the
+        // call site can surface the actual rejection reason to the dispatch LLM.
+        // F3 fix (2026-07-08): without this, the rejection was only logged as
+        // "Rejected by path safety check" and the dispatch LLM had no signal that
+        // its prior choice was rejected.
+        pathSafetyLastVerdict = parsed
         return parsed?.approved ?: !(result.terminatePipeline || result.passPipeline)
     }
+
+    /**
+     * The verdict returned by the most recent [checkPathSafety] call when the
+     * path-safety agent was used. Null when (a) the custom [pathSafetyFunction]
+     * was used (no reason string is available), or (b) the JSON contract parse
+     * returned null and the legacy flag check was the source of the verdict, or
+     * (c) the path was approved (no rejection to report).
+     *
+     * Consumed by [com.TTT.Pipeline.invokePath] at the rejection site to build
+     * the [Path Safety] hint appended to turnHistory. F3 fix (2026-07-08).
+     */
+    internal var pathSafetyLastVerdict: PathSafetyVerdict? = null
 
     private suspend fun invokePath(path: PathObject, input: MultimodalContent): MultimodalContent
     {
@@ -2863,6 +2884,10 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
             // degenerate always-approve (LLMs don't normally set terminatePipeline on a
             // safety verdict response).
             val approved = checkPathSafety(path, input)
+            // Capture the rejection reason from the safety verdict (when the agent
+            // path was used). pathSafetyFunction users don't carry a reason —
+            // the hint will fall back to "Rejected by path safety check".
+            val safetyReason: String? = if (!approved) pathSafetyLastVerdict?.reason else null
 
             emitEventInternal(PathSafetyCompleted(
                 runId = taskState.runId,
@@ -2870,11 +2895,24 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                 pathName = pathName,
                 riskLevel = riskLevel,
                 approved = approved,
-                reason = if (!approved) "Rejected by path safety check" else null
+                reason = if (!approved) (safetyReason ?: "Rejected by path safety check") else null
             ))
 
             if (!approved)
             {
+                // F3 fix (2026-07-08): surface the rejection in the next dispatch
+                // LLM's user prompt so dispatch can pick a different path.
+                // Symmetric with the empty-pathName hint at PumpStationLoop.kt:378-389
+                // and the empty-rationale hint at PumpStationLoop.kt:2848-2854.
+                val hintMessage = "[Path Safety] Path '$pathName' was rejected by the path-safety gate" +
+                    (if (safetyReason.isNullOrBlank()) "." else " for: $safetyReason.") +
+                    " Select a different path from the visible list on your next dispatch."
+                turnHistory.add(
+                    ConverseData(
+                        role = ConverseRole.user,
+                        content = MultimodalContent(text = hintMessage)
+                    )
+                )
                 return input
             }
         }
