@@ -180,9 +180,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
                 baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
             }
             if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
-            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
-            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
-            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it }
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it }
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it }
         }
         is DispatchStarted -> eventType = TraceEventType.PUMP_STATION_DISPATCH_STARTED
         is DispatchCompleted ->
@@ -200,9 +200,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
                 baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
             }
             if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
-            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
-            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
-            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it }
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it }
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it }
         }
         is PathSelected ->
         {
@@ -245,9 +245,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
                 baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
             }
             if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
-            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
-            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
-            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it }
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it }
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it }
         }
         is PathFailed ->
         {
@@ -291,9 +291,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
                 baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
             }
             if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
-            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
-            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
-            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it }
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it }
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it }
         }
         is ForegroundAgentCompleted ->
         {
@@ -309,9 +309,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
                 baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
             }
             if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
-            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
-            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
-            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it }
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it }
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it }
         }
         is MemoryUpdateStarted ->
         {
@@ -455,9 +455,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
                 baseMetadata["modelReasoningLen"] = event.response!!.modelReasoning.length
             }
             if (event.response?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.response!!.binaryContent.size
-            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
-            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
-            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it }
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it }
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it }
         }
     }
 
