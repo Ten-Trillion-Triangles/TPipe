@@ -182,6 +182,7 @@ pumpStation("name") {
     setMaxTurnHistorySize(50)
     setJudgeJsonContractEnabled(true)
     setPathSafetyJsonContractEnabled(true)
+    setRequirePathSelectionRationale(true)
     setJudgeRunMode(PumpStationJudgeRunMode.Always)
 
     // Health
@@ -327,7 +328,7 @@ The enums referenced by the API are documented in full in **[PumpStation Models 
 - `PathRiskLevel` — Low, Medium, High
 - `PumpStationStatus` — NotStarted, Running, WaitingOnBackground, Suspended, Completed, Failed, Terminated
 - `PumpStationPhase` — PreInit, HealthCheck, Judge, Dispatch, PathSafety, PathExecution, PathValidation, Intervention, ForegroundAgents, MemoryUpdate, Compaction, GoalValidation, Exit
-- `PumpStationError` — UnknownPath, InvalidPathRequest, DispatchJsonRepairFailed, PathExecutionException, TokenBudgetExceeded, MemoryBlowout, KillSwitchTripped, MaxTurnsExceeded, LoopGuardTriggered, P2PRequestInvalid, InitNotCalled, CompactionInflated, CompactionRolledBack
+- `PumpStationError` — UnknownPath, InvalidPathRequest, DispatchJsonRepairFailed, PathExecutionException, PathTimeout, TokenBudgetExceeded, MemoryBlowout, KillSwitchTripped, MaxTurnsExceeded, LoopGuardTriggered, P2PRequestInvalid, InitNotCalled, CompactionInflated, CompactionRolledBack
 - `PumpStationExitReason` — JudgeComplete, PassSignal, TerminateSignal, MaxTurnsHit, KillSwitchTripped, GoalValidationFailed, InterventionTerminated, Error
 - `PumpStationPausePhase` — BeforeJudge, AfterJudge, BeforeDispatch, AfterDispatch, BeforePathSafety, BeforePathExecution, AfterPathExecution, BeforeMemoryUpdate, BeforeCompaction, BeforeGoalValidation, BeforeExit
 - `StashReason` — TokenOverflow, BinaryPayload, ErrorLog, UnsafeForPrompt, DeveloperRequested, BackgroundResult

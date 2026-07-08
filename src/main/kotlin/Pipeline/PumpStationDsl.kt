@@ -231,6 +231,22 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var judgeRunMode: PumpStationJudgeRunMode = PumpStationJudgeRunMode.Always
 
     /**
+     * When true (default), the judge phase is skipped on turn 0 and the harness proceeds
+     * directly to dispatch. The judge LLM gets a verdict vote starting on turn 1, after at
+     * least one path has run and produced real output.
+     *
+     * Prevents the live-judge failure mode where the judge LLM sees the pre-dispatch state
+     * (system task + user prompt with no paths yet) and hallucinates `isComplete=true` based
+     * on an imagined brief. Without this guard the harness short-circuits before any path
+     * ever runs and the loop is permanently broken.
+     *
+     * Set to false to restore the legacy "judge fires on every turn including turn 0" behavior.
+     * Has no effect when [judgeRunMode] is [PumpStationJudgeRunMode.FlagTriggered] — that
+     * mode's `no_flag_set` skip takes precedence.
+     */
+    var skipJudgeOnFirstTurn: Boolean = true
+
+    /**
      * Maximum number of concurrent background agents.
      * Excess requests are queued and batched.
      */
@@ -301,6 +317,99 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var compactionStrategy: PumpStationCompactionStrategy = PumpStationCompactionStrategy.Whole
 
     /**
+     * Master switch for the optional SafePrune phase. Defaults to false — feature is
+     * fully opt-in.
+     */
+    var safePruneEnabled: Boolean = false
+
+    /**
+     * Minimum turnHistory size required for SafePrune to fire on a given turn.
+     */
+    var safePruneSizeThreshold: Int = 30
+
+    /**
+     * Number of most-recent entries that SafePrune strategies must NOT mutate.
+     */
+    var safePruneProtectRecentN: Int = 3
+
+    /**
+     * Window size for the DeduplicateByHash strategy.
+     */
+    var safePruneHashWindow: Int = 10
+
+    /**
+     * Maximum tool-response text length before StripLongToolArguments replaces it.
+     */
+    var safePruneMaxToolArgLength: Int = 2000
+
+    /**
+     * Per-strategy enable flags. Edited by [enableSafePruneStrategy] / [disableSafePruneStrategy].
+     */
+    internal val safePruneEnabledStrategies: MutableSet<SafePruneStrategy> = mutableSetOf()
+
+    /**
+     * Per-strategy policy overrides at the builder level. Empty by default.
+     */
+    internal val safePruneStrategyPolicies: MutableMap<SafePruneStrategy, SafePrunePolicy> = mutableMapOf()
+
+    /**
+     * Per-strategy dry-run flags at the builder level. Empty by default.
+     */
+    internal val safePruneStrategyDryRun: MutableSet<SafePruneStrategy> = mutableSetOf()
+
+    /**
+     * Enable a SafePrune strategy at the builder level.
+     */
+    fun enableSafePruneStrategy(strategy: SafePruneStrategy)
+    {
+        safePruneEnabledStrategies.add(strategy)
+    }
+
+    /**
+     * Disable a SafePrune strategy at the builder level.
+     */
+    fun disableSafePruneStrategy(strategy: SafePruneStrategy)
+    {
+        safePruneEnabledStrategies.remove(strategy)
+    }
+
+    /**
+     * Replace the entire enabled-strategy set at the builder level.
+     */
+    fun setSafePruneStrategies(strategies: Set<SafePruneStrategy>)
+    {
+        safePruneEnabledStrategies.clear()
+        safePruneEnabledStrategies.addAll(strategies)
+    }
+
+    /**
+     * Set a per-strategy policy override at the builder level. Pass null to clear.
+     */
+    fun setSafePruneStrategyPolicy(strategy: SafePruneStrategy, policy: SafePrunePolicy?)
+    {
+        if (policy == null) safePruneStrategyPolicies.remove(strategy)
+        else safePruneStrategyPolicies[strategy] = policy
+    }
+
+    /**
+     * Enable or disable dry-run mode for a single strategy at the builder level.
+     */
+    fun setSafePruneStrategyDryRun(strategy: SafePruneStrategy, dryRun: Boolean)
+    {
+        if (dryRun) safePruneStrategyDryRun.add(strategy)
+        else safePruneStrategyDryRun.remove(strategy)
+    }
+
+    /**
+     * Enable or disable dry-run mode for every strategy at once.
+     */
+    fun setSafePruneStrategyDryRunAll(dryRun: Boolean)
+    {
+        if (dryRun) safePruneStrategyDryRun.addAll(SafePruneStrategy.entries)
+        else safePruneStrategyDryRun.clear()
+    }
+
+    /**
      * Maximum number of ConverseHistory elements in turn history.
      * Excess elements are popped from the stack.
      */
@@ -362,6 +471,14 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      * for a path request.
      */
     var stopHarnessOnInvalidPathRequest: Boolean = false
+
+    /**
+     * If true, the dispatch LLM must commit a non-null
+     * [PathRequest.pathSelectionRationale] on every dispatch turn.
+     * A blank/null rationale causes the harness to append a soft Hint
+     * to the next-turn dispatch history (no hard dispatch failure).
+     */
+    var requirePathSelectionRationale: Boolean = true
 
     /**
      * Failure recovery policy for common failure modes.
@@ -803,6 +920,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         userGuidelines = source.userGuidelines
         entryUserPrompt = source.entryUserPrompt
         judgeRunMode = source.judgeRunMode
+        skipJudgeOnFirstTurn = source.skipJudgeOnFirstTurn
         maxConcurrentBackgroundAgents = source.maxConcurrentBackgroundAgents
         maxConcurrentForegroundAgents = source.maxConcurrentForegroundAgents
         foregroundTurnInterval = source.foregroundTurnInterval
@@ -820,6 +938,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         maxBlowoutRecoveries = source.maxBlowoutRecoveries
         maxRepairPromptTokens = source.maxRepairPromptTokens
         stopHarnessOnInvalidPathRequest = source.stopHarnessOnInvalidPathRequest
+        requirePathSelectionRationale = source.requirePathSelectionRationale
         failurePolicy = source.failurePolicy
         maxConsecutiveSamePath = source.maxConsecutiveSamePath
         maxTotalPathCallsPerPath = source.maxTotalPathCallsPerPath
@@ -836,6 +955,22 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         healthSystemPrompt = source.healthSystemPrompt
         lorebookSystemPrompt = source.lorebookSystemPrompt
         goalSystemPrompt = source.goalSystemPrompt
+
+        // SafePrune configuration — must be carried forward when `path()` promotes an
+        // Initial-stage builder into a Ready-stage builder via copyFrom. Otherwise
+        // config set inside `pumpStation { memory { safePrune { ... } } path(...) { ... } }`
+        // is silently dropped on the promoted builder and `runSafePrunePhase` never
+        // fires even though the user enabled the phase. Fixes a real bug uncovered
+        // during the 2026-07-04 live SafePrune verification run.
+        safePruneEnabled = source.safePruneEnabled
+        safePruneSizeThreshold = source.safePruneSizeThreshold
+        safePruneProtectRecentN = source.safePruneProtectRecentN
+        safePruneHashWindow = source.safePruneHashWindow
+        safePruneMaxToolArgLength = source.safePruneMaxToolArgLength
+        safePruneEnabledStrategies.addAll(source.safePruneEnabledStrategies)
+        safePruneStrategyPolicies.putAll(source.safePruneStrategyPolicies)
+        safePruneStrategyDryRun.addAll(source.safePruneStrategyDryRun)
+
         eventObserver = source.eventObserver
         preInitFunction = source.preInitFunction
         preValidationJudgeFunction = source.preValidationJudgeFunction
@@ -952,6 +1087,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         station
             .setMaxTurns(maxTurns)
             .setJudgeRunMode(judgeRunMode)
+            .setSkipJudgeOnFirstTurn(skipJudgeOnFirstTurn)
             .setMaxConcurrentBackgroundAgents(maxConcurrentBackgroundAgents)
             .setMaxConcurrentForegroundAgents(maxConcurrentForegroundAgents)
             .setAsyncPathsAppendToTurnHistory(asyncPathsAppendToTurnHistory)
@@ -971,7 +1107,25 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setMaxBlowoutRecoveries(maxBlowoutRecoveries)
             .setMaxRepairPromptTokens(maxRepairPromptTokens)
             .setStopHarnessOnInvalidPathRequest(stopHarnessOnInvalidPathRequest)
+            .setRequirePathSelectionRationale(requirePathSelectionRationale)
             .setFailurePolicy(failurePolicy)
+
+        // SafePrune configuration
+        station
+            .setSafePruneEnabled(safePruneEnabled)
+            .setSafePruneSizeThreshold(safePruneSizeThreshold)
+            .setSafePruneProtectRecentN(safePruneProtectRecentN)
+            .setSafePruneHashWindow(safePruneHashWindow)
+            .setSafePruneMaxToolArgLength(safePruneMaxToolArgLength)
+            .setSafePruneStrategies(safePruneEnabledStrategies.toSet())
+            .setSafePruneStrategyPolicies(safePruneStrategyPolicies.toMap())
+            .setSafePruneStrategyDryRunAll(false)
+        // Apply per-strategy dry-run flags individually to preserve which strategies
+        // are marked, since the master toggle above clears all.
+        for (strategy in safePruneStrategyDryRun)
+        {
+            station.setSafePruneStrategyDryRun(strategy, true)
+        }
 
         // Tracing
         tracingConfiguration?.let { station.enableTracing(it) }
@@ -1121,6 +1275,119 @@ class MemoryBlock(private val builder: PumpStationBuilder<*>)
     var strategy: PumpStationCompactionStrategy
         get() = builder.compactionStrategy
         set(value) { builder.compactionStrategy = value }
+
+    /**
+     * Configure the optional SafePrune phase. Off by default; call inside the block
+     * to enable individual strategies. Usage:
+     * ```
+     * pumpStation {
+     *     memory {
+     *         safePrune {
+     *             enabled = true
+     *             enable(SafePruneStrategy.DropPureEchoes)
+     *             enable(SafePruneStrategy.ReplaceWithSummaryRef)
+     *         }
+     *     }
+     * }
+     * ```
+     */
+    fun safePrune(block: SafePruneBlock.() -> Unit)
+    {
+        SafePruneBlock(builder).block()
+    }
+}
+
+/**
+ * Builder for the optional SafePrune phase. All knobs have safe defaults — the master
+ * switch is off until [enabled] is set to true and at least one strategy is enabled.
+ */
+@PumpStationDslMarker
+class SafePruneBlock(private val builder: PumpStationBuilder<*>)
+{
+    var enabled: Boolean
+        get() = builder.safePruneEnabled
+        set(value) { builder.safePruneEnabled = value }
+
+    var sizeThreshold: Int
+        get() = builder.safePruneSizeThreshold
+        set(value) { builder.safePruneSizeThreshold = value }
+
+    var protectRecentN: Int
+        get() = builder.safePruneProtectRecentN
+        set(value) { builder.safePruneProtectRecentN = value }
+
+    var hashWindow: Int
+        get() = builder.safePruneHashWindow
+        set(value) { builder.safePruneHashWindow = value }
+
+    var maxToolArgLength: Int
+        get() = builder.safePruneMaxToolArgLength
+        set(value) { builder.safePruneMaxToolArgLength = value }
+
+    /**
+     * Enable a single SafePrune strategy.
+     */
+    fun enable(strategy: SafePruneStrategy)
+    {
+        builder.enableSafePruneStrategy(strategy)
+    }
+
+    /**
+     * Disable a single SafePrune strategy.
+     */
+    fun disable(strategy: SafePruneStrategy)
+    {
+        builder.disableSafePruneStrategy(strategy)
+    }
+
+    /**
+     * Enable every SafePrune strategy. Use with caution — strategy D (DeduplicateByHash)
+     * and E (StripLongToolArguments) have riskier behavior profiles.
+     */
+    fun enableAll()
+    {
+        builder.setSafePruneStrategies(SafePruneStrategy.entries.toSet())
+    }
+
+    /**
+     * Disable every SafePrune strategy without turning the master switch off.
+     */
+    fun disableAll()
+    {
+        builder.setSafePruneStrategies(emptySet())
+    }
+
+    /**
+     * Set a per-strategy policy override.
+     */
+    fun policy(strategy: SafePruneStrategy, policy: SafePrunePolicy)
+    {
+        builder.setSafePruneStrategyPolicy(strategy, policy)
+    }
+
+    /**
+     * Clear a per-strategy policy override (strategy falls back to global knobs).
+     */
+    fun clearPolicy(strategy: SafePruneStrategy)
+    {
+        builder.setSafePruneStrategyPolicy(strategy, null)
+    }
+
+    /**
+     * Enable or disable dry-run mode for a single strategy.
+     */
+    fun dryRun(strategy: SafePruneStrategy, dryRun: Boolean)
+    {
+        builder.setSafePruneStrategyDryRun(strategy, dryRun)
+    }
+
+    /**
+     * Enable or disable dry-run mode for every strategy at once.
+     */
+    fun dryRunAll(dryRun: Boolean)
+    {
+        builder.setSafePruneStrategyDryRunAll(dryRun)
+    }
 }
 
 /**

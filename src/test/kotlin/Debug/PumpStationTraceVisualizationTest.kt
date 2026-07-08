@@ -429,6 +429,142 @@ class PumpStationTraceVisualizationTest
             "Path content must be escaped to &lt;script&gt;")
     }
 
+    /**
+     * Aggregate token totals should appear at the top of the HTML report as a
+     * dedicated card. Aggregates inputTokens and outputTokens from every event
+     * that carries them in metadata, SKIPPING KILLSWITCH_CHECK (which reports
+     * cumulative-AT-check-time, not actual spend — the underlying
+     * JUDGE_COMPLETED / DISPATCH_COMPLETED / PATH_COMPLETED events already
+     * cover that ground).
+     */
+    @Test
+    fun reportShowsTokenTotalsHeaderCard()
+    {
+        val trace = listOf(
+            createEvent(0, TraceEventType.PUMP_STATION_STARTED, mapOf("runId" to "ps-test")),
+            // Real spend events — these DO contribute to the totals.
+            createEvent(1, TraceEventType.PUMP_STATION_JUDGE_COMPLETED,
+                mapOf("runId" to "ps-test", "isComplete" to false, "shouldTerminate" to false,
+                      "inputTokens" to 1000, "outputTokens" to 500, "totalTokens" to 1500)),
+            createEvent(1, TraceEventType.PUMP_STATION_DISPATCH_COMPLETED,
+                mapOf("runId" to "ps-test", "selectedPathName" to "search",
+                      "inputTokens" to 2000, "outputTokens" to 800, "totalTokens" to 2800)),
+            // KILLSWITCH_CHECK — must be EXCLUDED from the totals aggregate
+            // (input=3000, output=1300 below must NOT push the totals to 6,000 in / 2,600 out).
+            createEvent(1, TraceEventType.KILLSWITCH_CHECK,
+                mapOf("runId" to "ps-test",
+                      "inputTokens" to 3000, "outputTokens" to 1300,
+                      "inputLimit" to "none", "outputLimit" to "none",
+                      "elapsedMs" to 1L))
+        )
+        val html = visualizer.generateHtmlReport(trace)
+        // Card exists in the PumpStation namespace. Targets the rendered span,
+        // not the bare class name — the bare name also matches the CSS
+        // selector in the embedded <style> block.
+        assertTrue(html.contains("<span class=\"trace-token-card\">"),
+            "Report must include the rendered trace-token-card element in the header")
+        // Comma-formatted sums (KillSwitch input=3000/output=1300 must NOT contribute).
+        assertTrue(html.contains("Input: 3,000"),
+            "Input total = 1000 (judge) + 2000 (dispatch) = 3,000; KillSwitch 3000 must be skipped")
+        assertTrue(html.contains("Output: 1,300"),
+            "Output total = 500 (judge) + 800 (dispatch) = 1,300; KillSwitch 1300 must be skipped")
+        assertTrue(html.contains("Total: 4,300"),
+            "Sum total = 3,000 + 1,300 = 4,300")
+        // The KillSwitch row should not inflate the visible totals past 4,300.
+        assertFalse(html.contains("Total: 7,900") || html.contains("Total: 7,600"),
+            "Header must not double-count KILLSWITCH_CHECK into the totals")
+    }
+
+    /**
+     * Agent result text (the `contentPreview` metadata) should be promoted into a dedicated
+     * `Result:` line under the agent event label so a tired dev can see what the agent said
+     * without scanning the metadata table or opening the "View content" toggle. The raw
+     * `text=` Sprintf prefix is stripped.
+     */
+    @Test
+    fun reportPromotesAgentResultTextToVisibleLine()
+    {
+        val trace = listOf(
+            createEvent(0, TraceEventType.PUMP_STATION_STARTED, mapOf("runId" to "ps-test")),
+            createEvent(1, TraceEventType.PUMP_STATION_JUDGE_COMPLETED, mapOf(
+                "runId" to "ps-test",
+                "isComplete" to false,
+                "shouldTerminate" to false,
+                "contentPreview" to "text=verdict: not yet complete, more paths needed",
+                "contentLength" to 47,
+                "inputTokens" to 320,
+                "outputTokens" to 48
+            )),
+            createEvent(1, TraceEventType.PUMP_STATION_DISPATCH_COMPLETED, mapOf(
+                "runId" to "ps-test",
+                "selectedPathName" to "search",
+                "contentPreview" to "text=dispatcher chose: search (path=search, schema=...)",
+                "contentLength" to 51,
+                "inputTokens" to 410,
+                "outputTokens" to 72
+            ))
+        )
+        val html = visualizer.generateHtmlReport(trace)
+        // Promoted Result line should be present, outside the metadata table.
+        assertTrue(html.contains("Result:"),
+            "Each agent event should carry a visible 'Result:' line with the agent's text")
+        // The promoted text strips the Sprintf 'text=' prefix.
+        assertTrue(html.contains("verdict: not yet complete, more paths needed"),
+            "Result line should show the agent's text without the 'text=' Sprintf prefix")
+        assertTrue(html.contains("dispatcher chose: search (path=search, schema=...)"),
+            "Result line should show the dispatcher's text without the 'text=' Sprintf prefix")
+        // Sanity: the existing 'View content' toggle remains for full content browsing.
+        assertTrue(html.contains("View content"),
+            "Existing View content toggle should remain for full content browsing")
+    }
+
+    /**
+     * Events without a contentPreview (e.g. path lifecycle markers, started events) should NOT
+     * get a Result: line — only events that produced a result carry one.
+     */
+    @Test
+    fun reportOmitsResultLineForEventsWithoutContentPreview()
+    {
+        val trace = listOf(
+            createEvent(0, TraceEventType.PUMP_STATION_STARTED, mapOf("runId" to "ps-test")),
+            createEvent(1, TraceEventType.PUMP_STATION_PATH_SELECTED, mapOf(
+                "runId" to "ps-test",
+                "pathName" to "search",
+                "riskLevel" to "LOW"
+            ))
+        )
+        val html = visualizer.generateHtmlReport(trace)
+        // PATH_SELECTED has no contentPreview — should not render a Result: line.
+        // Count Result: occurrences; should be zero because no content-bearing event is in the trace.
+        val resultLineCount = html.split("Result:").size - 1
+        assertEquals(0, resultLineCount,
+            "Events without contentPreview should not produce a Result: line")
+    }
+
+    /**
+     * Card hidden when no event carries token metadata — short harness runs
+     * (e.g. only a PUMP_STATION_STARTED and one path turn) should not show
+     * a misleading "0 tokens" card.
+     *
+     * The assertion targets the rendered `<span class="trace-token-card">` opening
+     * tag rather than the bare class name — the bare name also matches the
+     * CSS selector in the embedded `<style>` block, which would always be
+     * present once the feature ships.
+     */
+    @Test
+    fun reportHidesTokenCardWhenNoTokenMetadata()
+    {
+        val trace = listOf(
+            createEvent(0, TraceEventType.PUMP_STATION_STARTED, mapOf("runId" to "ps-test")),
+            createEvent(1, TraceEventType.PUMP_STATION_DISPATCH_COMPLETED,
+                mapOf("runId" to "ps-test", "selectedPathName" to "search"))
+            // No inputTokens / outputTokens in any metadata.
+        )
+        val html = visualizer.generateHtmlReport(trace)
+        assertFalse(html.contains("<span class=\"trace-token-card\">"),
+            "Header must hide the token card when zero events carry token metadata")
+    }
+
     private fun createEvent(
         turnIndex: Int,
         eventType: TraceEventType,

@@ -7,7 +7,10 @@ import com.TTT.Debug.TraceEventType
 import com.TTT.Debug.TracePhase
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.PcPRequest
-import kotlinx.serialization.json.Json
+import com.TTT.Util.extractAllJsonObjects
+import com.TTT.Util.extractJson
+import com.TTT.Util.isDefault
+import com.TTT.Util.serializeConverseHistory
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
@@ -82,6 +85,21 @@ internal fun PumpStation.tracePumpStationEvent(event: PumpStationEvent)
 }
 
 /**
+ * Classify an exception caught during path execution. B4 fix: transport-
+ * layer timeouts (SocketTimeoutException, IOException with "timeout" in
+ * the message) are emitted as [PumpStationError.PathTimeout]; everything
+ * else falls through to [PumpStationError.PathExecutionException].
+ */
+internal fun classifyPathException(e: Throwable): PumpStationError = when
+{
+    e is java.net.SocketTimeoutException -> PumpStationError.PathTimeout
+    e is java.io.IOException &&
+        e.message?.contains("timeout", ignoreCase = true) == true ->
+            PumpStationError.PathTimeout
+    else -> PumpStationError.PathExecutionException
+}
+
+/**
  * Convert a [PumpStationEvent] to a [TraceEvent] for visualization. Returns null for events that
  * have no trace representation (currently none, but the safety net keeps the funnel total).
  *
@@ -111,7 +129,12 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["warningCode"] = event.code.name
             baseMetadata["mechanisms"] = event.mechanisms.joinToString(",") { it.name }
         }
-        is HarnessCompleted -> eventType = TraceEventType.PUMP_STATION_COMPLETED
+        is HarnessCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_COMPLETED
+            baseMetadata["exitReason"] = event.exitReason.name
+            baseMetadata["finalOutput"] = event.finalOutput?.toString() ?: ""
+        }
         is HarnessFailed ->
         {
             eventType = TraceEventType.PUMP_STATION_FAILED
@@ -157,9 +180,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
                 baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
             }
             if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
-            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
-            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
-            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it }
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it }
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it }
         }
         is DispatchStarted -> eventType = TraceEventType.PUMP_STATION_DISPATCH_STARTED
         is DispatchCompleted ->
@@ -177,9 +200,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
                 baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
             }
             if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
-            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
-            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
-            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it }
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it }
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it }
         }
         is PathSelected ->
         {
@@ -222,9 +245,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
                 baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
             }
             if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
-            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
-            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
-            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it }
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it }
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it }
         }
         is PathFailed ->
         {
@@ -268,9 +291,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
                 baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
             }
             if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
-            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
-            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
-            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it }
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it }
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it }
         }
         is ForegroundAgentCompleted ->
         {
@@ -286,9 +309,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
                 baseMetadata["modelReasoningLen"] = event.result!!.modelReasoning.length
             }
             if (event.result?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.result!!.binaryContent.size
-            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
-            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
-            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it }
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it }
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it }
         }
         is MemoryUpdateStarted ->
         {
@@ -357,6 +380,22 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["contextWindowBefore"] = event.contextWindowBefore
             baseMetadata["contextWindowAfter"] = event.contextWindowAfter
         }
+        is SafePruneApplied ->
+        {
+            eventType = TraceEventType.PUMP_STATION_SAFE_PRUNE_APPLIED
+            baseMetadata["originalCount"] = event.report.originalCount
+            baseMetadata["finalCount"] = event.report.finalCount
+            baseMetadata["tokensRemoved"] = event.report.tokensRemoved
+            baseMetadata["enabledFlags"] = event.report.enabledFlags.joinToString(",") { it.name }
+        }
+        is SafePruneDryRunCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_SAFE_PRUNE_DRY_RUN_COMPLETED
+            baseMetadata["originalCount"] = event.report.originalCount
+            baseMetadata["finalCount"] = event.report.finalCount
+            baseMetadata["tokensRemoved"] = event.report.tokensRemoved
+            baseMetadata["enabledFlags"] = event.report.enabledFlags.joinToString(",") { it.name }
+        }
         is GoalValidationStarted -> eventType = TraceEventType.PUMP_STATION_GOAL_VALIDATION_STARTED
         is GoalValidationCompleted ->
         {
@@ -416,9 +455,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
                 baseMetadata["modelReasoningLen"] = event.response!!.modelReasoning.length
             }
             if (event.response?.binaryContent?.isNotEmpty() == true) baseMetadata["binaryCount"] = event.response!!.binaryContent.size
-            event.inputTokens?.let { baseMetadata["inputTokens"] = it } ?: baseMetadata.put("inputTokens", -1)
-            event.outputTokens?.let { baseMetadata["outputTokens"] = it } ?: baseMetadata.put("outputTokens", -1)
-            event.totalTokens?.let { baseMetadata["totalTokens"] = it } ?: baseMetadata.put("totalTokens", -1)
+            event.inputTokens?.let { baseMetadata["inputTokens"] = it }
+            event.outputTokens?.let { baseMetadata["outputTokens"] = it }
+            event.totalTokens?.let { baseMetadata["totalTokens"] = it }
         }
     }
 
@@ -457,6 +496,8 @@ internal fun mapPumpStationPhaseToTracePhase(phase: PumpStationPhase): TracePhas
     PumpStationPhase.ForegroundAgents -> TracePhase.AGENT_COMMUNICATION
     PumpStationPhase.MemoryUpdate -> TracePhase.CONTEXT_PREPARATION
     PumpStationPhase.Compaction -> TracePhase.CONTEXT_PREPARATION
+    PumpStationPhase.SafePrune -> TracePhase.CONTEXT_PREPARATION
+    PumpStationPhase.SafePruneDryRun -> TracePhase.CONTEXT_PREPARATION
     PumpStationPhase.GoalValidation -> TracePhase.VALIDATION
     PumpStationPhase.Exit -> TracePhase.CLEANUP
 }
@@ -484,22 +525,27 @@ internal fun checkMultimodalFlags(content: MultimodalContent, source: String): F
  * Parse the judge agent's text output as a JudgeVerdict.
  * On parse failure, returns an empty (default) verdict — caller should
  * treat this as "not complete, continue loop".
+ *
+ * Uses TPipe's [com.TTT.Util.extractJson] so judge outputs wrapped in
+ * markdown code fences or interleaved with reasoning prose still extract
+ * cleanly. extractJson returns the first JSON object that deserializes
+ * into [JudgeVerdict] — and our type has no required constructor fields, so
+ * any reasonable {...} with optional booleans deserializes.
+ *
+ * The [com.TTT.Util.isDefault] guard catches the "deserialize-succeeded-but-
+ * got-default" failure mode where the LLM emitted `{}` or a bare object that
+ * decodes to a JudgeVerdict with all-default false values. Without the guard,
+ * such output would be indistinguishable from a real "isComplete=false" verdict;
+ * with the guard, default-only objects fall through to [JudgeVerdict.empty].
  */
 internal fun PumpStation.parseJudgeVerdict(content: MultimodalContent): JudgeVerdict
 {
-    return try
+    val parsed = try { extractJson<JudgeVerdict>(content.text) } catch (_: Exception) { null }
+    if (parsed != null && !parsed.isDefault())
     {
-        val json = Json.parseToJsonElement(content.text) as? JsonObject
-            ?: return JudgeVerdict.empty()
-        JudgeVerdict(
-            isComplete = json["isComplete"]?.jsonPrimitive?.boolean ?: false,
-            shouldTerminate = json["shouldTerminate"]?.jsonPrimitive?.boolean ?: false
-        )
+        return parsed
     }
-    catch (e: Exception)
-    {
-        JudgeVerdict.empty()
-    }
+    return JudgeVerdict.empty()
 }
 
 /**
@@ -529,19 +575,58 @@ internal fun JudgeVerdict.withFlagCheck(content: MultimodalContent): JudgeVerdic
  */
 internal fun PumpStation.parseDispatchOutput(content: MultimodalContent): PathRequest?
 {
-    return try
-    {
-        val json = Json.parseToJsonElement(content.text) as? JsonObject
-            ?: return null
-        val name = json["pathName"]?.jsonPrimitive?.content ?: ""
-        val schema = json["pathSchema"]?.jsonPrimitive?.content ?: ""
-        if (name.isEmpty()) null else PathRequest(pathName = name, pathSchema = schema)
+    // Use TPipe's high-level schema-aware JSON extractor
+        // [com.TTT.Util.extractJson]<[PathRequest]>. It does the brace-range scanning +
+        // lenient parsing internally (via extractAllJsonObjects), then deserializes
+        // the first matching JSON object into the requested type. This recovers
+        // from every realistic LLM formatting quirk we observed:
+        //   - markdown code fences ```json ... ``` (verified by inspecting the
+        //     PUMP_STATION_PATH_FAILED events in the trace HTMLs)
+        //   - reasoning prose before/after the JSON object
+        //   - trailing prose after the closing brace
+        //   - multiple JSON blocks (the function picks the first one deserializeable
+        //     as PathRequest)
+        //
+        // The [com.TTT.Util.isDefault] guard rejects the failure mode where the
+        // deserializer "succeeds" but produces a default-initialized PathRequest
+        // because the LLM emitted `{}` (a JSON object that decodes cleanly but carries
+        // no actual path selection). Without this guard, downstream callers would
+        // treat a default PathRequest as a valid request.
+        //
+        // Blank pathName is handled in two layers:
+        //   1. The LLM emits NO pathName key at all (e.g., `{}`) → isDefault() catches it
+        //      here and we return null, falling into the repair-exhaustion path.
+        //   2. The LLM emits `{"pathName": ""}` (explicit empty) → isDefault() also catches
+        //      it (PathRequest defaults are blank), but we have already decided that
+        //      explicit empty pathName is a legitimate "no path" signal that the harness
+        //      must see. So we pre-check the raw text for an explicit pathName key and
+        //      return the parsed PathRequest (with blank pathName) so the dispatch phase
+        //      can emit PathFailed(pathName="(empty)") and append a hint to history.
+        val hasExplicitPathName = content.text.contains("\"pathName\"")
+        return try
+        {
+            val parsed = extractJson<PathRequest>(content.text)
+            if (parsed != null && !parsed.isDefault())
+            {
+                parsed
+            }
+            else if (parsed != null && hasExplicitPathName)
+            {
+                // Explicit empty pathName — return as-is so the dispatch phase can record
+                // the failure and surface it to the harness. The dispatch phase distinguishes
+                // blank pathName from valid pathName after parseDispatchOutput succeeds.
+                parsed
+            }
+            else
+            {
+                null
+            }
+        }
+        catch (_: Exception)
+        {
+            null
+        }
     }
-    catch (e: Exception)
-    {
-        null
-    }
-}
 
 /**
  * Parse the path-safety agent's text output as a structured verdict.
@@ -562,34 +647,35 @@ internal fun PumpStation.parseDispatchOutput(content: MultimodalContent): PathRe
  *  - The field must be a JSON boolean literal (true / false).
  *  - Strings like "true", numbers, and null are all rejected → caller falls back.
  *  - Missing `safe` returns null.
- *  - The text is trimmed but otherwise parsed as-is; no markdown fence stripping
- *    is performed here because path-safety verdicts are tiny and a strict parse
- *    keeps the failure mode obvious. The [PumpStation.invokePathInternal] call
- *    site can call [com.TTT.Util.repairJsonString] upstream if needed.
+ *  - Uses [com.TTT.Util.extractAllJsonObjects] so the verdict survives being
+ *    wrapped in a markdown code fence or interleaved with reasoning prose.
+ *    The first object that contains a `safe` field (boolean literal) wins.
  */
-internal fun parsePathSafetyVerdict(text: String): Boolean?
+/**
+ * Parsed path-safety verdict: the boolean verdict plus the optional reason string.
+ * Used by [parsePathSafetyVerdict] to return both fields in a single pass so the
+ * dispatch hint can include the actual rejection reason (F3 fix, 2026-07-08).
+ */
+internal data class PathSafetyVerdict(
+    val approved: Boolean,
+    val reason: String?
+)
+
+internal fun parsePathSafetyVerdict(text: String): PathSafetyVerdict?
 {
     if (text.isBlank()) return null
-    val trimmed = text.trim()
-    return try
+    val candidates = try { extractAllJsonObjects(text) } catch (_: Exception) { emptyList() }
+    for (element in candidates)
     {
-        val element = Json.parseToJsonElement(trimmed)
-        val obj = element as? JsonObject ?: return null
-        val safeField = obj["safe"] ?: return null
-        // Require a JSON boolean LITERAL (true / false). The kotlinx-serialization
-        // [JsonPrimitive.booleanOrNull] is lenient — it accepts the strings "true" /
-        // "false" and parses them as booleans. For a structured safety verdict we
-        // want strictness: a non-conforming agent (returns "true" as a string,
-        // returns 1, returns null) should fall back to the legacy flag check rather
-        // than being silently coerced. Reject string-typed primitives explicitly.
-        val safePrim = safeField as? JsonPrimitive ?: return null
-        if (safePrim.isString) return null
-        safePrim.booleanOrNull
+        val obj = element as? JsonObject ?: continue
+        val safeField = obj["safe"] ?: continue
+        val safePrim = safeField as? JsonPrimitive ?: continue
+        if (safePrim.isString) continue
+        val bool = safePrim.booleanOrNull ?: continue
+        val reason = (obj["reason"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        return PathSafetyVerdict(approved = bool, reason = reason)
     }
-    catch (e: Exception)
-    {
-        null
-    }
+    return null
 }
 
 //=========================================Path Resolution======================================================
@@ -720,6 +806,7 @@ internal fun PumpStation.buildTurnContent(): MultimodalContent
  */
 internal fun PumpStation.buildUserMessageForTurn(): String
 {
+    val originalInputPrefix = taskState.originalInput?.text.orEmpty().let { if (it.isNotBlank()) "$it\n\n" else "" }
     val summaryPrefix = if (turnSummary.isNotBlank()) "$turnSummary\n\n" else ""
     val phaseQuestion = when (taskState.phase)
     {
@@ -728,7 +815,23 @@ internal fun PumpStation.buildUserMessageForTurn(): String
         PumpStationPhase.GoalValidation -> "Verify the work was done."
         else -> ""
     }
-    return summaryPrefix + phaseQuestion
+    // Embed the conversation history into the user message text so downstream
+    // pipes (which read only content.text) actually receive it. Without this,
+    // [com.TTT.Pipe.Pipe.generateContent]'s default implementation drops
+    // [MultimodalContent.context.converseHistory] on the floor — the system
+    // prompt claims "The conversation history below shows every turn" but the
+    // turn history never reaches the LLM.
+    //
+    // The serialized form matches [com.TTT.Pipe.Pipe.serializeConverseHistory]
+    // which the rest of the codebase uses for embedded-history payloads (see
+    // Pipe.kt:2091, 5479, 5726). Empty history is skipped to keep the
+    // no-history case identical to the previous behavior.
+    val historyBlock = if (turnHistory.history.isNotEmpty())
+    {
+        "\n\n[CONVERSATION HISTORY]\n" + serializeConverseHistory(turnHistory) + "\n[/CONVERSATION HISTORY]"
+    }
+    else ""
+    return originalInputPrefix + summaryPrefix + phaseQuestion + historyBlock
 }
 
 /**

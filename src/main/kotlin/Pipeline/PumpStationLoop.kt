@@ -97,7 +97,7 @@ internal fun PumpStation.applyPromptsToPipeline(
     if (agent == null) return
     val pipes = agent.getPipes()
     for (pipe in pipes)
-{
+    {
         val prompt = customPrompt ?: defaultPromptFor(agent)
         val footer = customFooter ?: defaultFooterFor(agent)
         pipe.setSystemPrompt(prompt)
@@ -233,6 +233,24 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
         // Flag is set: clear it (one-shot) and fall through to the normal judge flow.
         taskState.requestJudgeNextTurn = false
     }
+    else if (skipJudgeOnFirstTurnInternal && taskState.turnIndex == 0)
+    {
+        // First-turn guard: skip the judge on turn 0 to prevent the live-judge failure mode
+        // where a judge LLM sees the pre-dispatch state and hallucinates isComplete=true
+        // before any path has run. The harness continues into dispatch and at least one
+        // path execution; the judge gets a real verdict vote on turn 1+.
+        //
+        // Only fires in PumpStationJudgeRunMode.Always — the FlagTriggered branch above
+        // already short-circuits and keeps its canonical "no_flag_set" reason. The
+        // "first_turn" reason is reserved for the Always-mode guard.
+        emitEventInternal(JudgeSkipped(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            reason = "first_turn",
+            judgeRunMode = PumpStationJudgeRunMode.Always
+        ))
+        return JudgeVerdict.empty()
+    }
 
     emitEventInternal(JudgeStarted(
         runId = taskState.runId,
@@ -255,6 +273,7 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
 
     // Judge LLM call
     val result = runAgent(judgeAgent, input)
+    val judgeUsage = agentTokenUsage(judgeAgent)
 
     // Post-judge hook
     val postResult = postJudgeFunctionInternal?.invoke(result, this) ?: result
@@ -273,7 +292,11 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
         runId = taskState.runId,
         turnIndex = taskState.turnIndex,
         isComplete = verdict.isComplete,
-        shouldTerminate = verdict.shouldTerminate
+        shouldTerminate = verdict.shouldTerminate,
+        result = postResult,
+        inputTokens = judgeUsage?.first,
+        outputTokens = judgeUsage?.second?.first,
+        totalTokens = judgeUsage?.second?.second
     ))
     recordAndCheckKillSwitch(judgeAgent)
     return verdict
@@ -291,7 +314,20 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
         turnIndex = taskState.turnIndex
     ))
 
-    val baseInput = taskState.latestContent ?: buildTurnContent()
+    // Build the dispatch input from buildTurnContent() so the conversation
+    // history (which now includes the prior judge verdict + path outputs) is
+    // embedded in the user message text. Prepend the latestContent text —
+    // when present, it is the most recent prior agent's output (judge verdict
+    // on the previous turn, or path output on turn 0) and gives the dispatch
+    // LLM direct context without forcing it to re-parse the serialized
+    // history block.
+    val baseInput = if (taskState.latestContent != null && taskState.latestContent!!.text.isNotEmpty())
+    {
+        val enriched = buildTurnContent()
+        enriched.copy(text = "[LATEST PRIOR AGENT OUTPUT]\n" + taskState.latestContent!!.text +
+            "\n[/LATEST PRIOR AGENT OUTPUT]\n\n" + enriched.text)
+    }
+    else buildTurnContent()
     val input = preValidationDispatchFunctionInternal?.invoke(baseInput, contextWindow, miniBank, this)
         ?.let { baseInput.copy(miniBankContext = it) } ?: baseInput
 
@@ -331,6 +367,51 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
         val pathRequest = parseDispatchOutput(result)
         if (pathRequest != null)
 {
+            // Empty pathName is treated as a harness error, not a "I'm done" sentinel.
+            // The dispatch LLM MUST always pick a path from the visible list. Returning
+            // empty pathName silently would let the loop spin without progress; instead we
+            // emit PathFailed, append a hint to the conversation history so the next
+            // dispatch LLM sees the constraint, and let the loop continue to the next
+            // turn. The harness safety net (maxTurns) bounds the retry count.
+            if (pathRequest.pathName.isBlank())
+{
+                val hintMessage = "[Harness Notice] Your dispatch output was a valid PathRequest " +
+                    "JSON but the pathName field was empty. Empty pathName is NOT a valid " +
+                    "signal — you MUST pick an exact path name from the visible list above. " +
+                    "If you cannot make progress, pick a path whose purpose is to ask the " +
+                    "user for clarification. To signal task completion, use a path that sets " +
+                    "passPipeline=true on its result, not an empty pathName."
+                turnHistory.add(
+                    ConverseData(
+                        role = ConverseRole.user,
+                        content = MultimodalContent(text = hintMessage)
+                    )
+                )
+                emitEventInternal(PathFailed(
+                    runId = taskState.runId,
+                    turnIndex = taskState.turnIndex,
+                    pathName = "(empty)",
+                    riskLevel = PathRiskLevel.Low,
+                    error = PumpStationError.DispatchJsonRepairFailed,
+                    errorMessage = "Dispatch returned a valid PathRequest with empty pathName. " +
+                        "Hint appended to turn history."
+                ))
+                if (failurePolicy.stopHarnessOnInvalidPathRequest)
+{
+                    taskState.lastError = PumpStationError.DispatchJsonRepairFailed
+                }
+                emitEventInternal(DispatchCompleted(
+                    runId = taskState.runId,
+                    turnIndex = taskState.turnIndex,
+                    selectedPathName = null,
+                    pathRequest = pathRequest,
+                    result = result,
+                    inputTokens = dispatchUsage?.first,
+                    outputTokens = dispatchUsage?.second?.first,
+                    totalTokens = dispatchUsage?.second?.second
+                ))
+                return null
+            }
             emitEventInternal(DispatchCompleted(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
@@ -341,6 +422,10 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
                 outputTokens = dispatchUsage?.second?.first,
                 totalTokens = dispatchUsage?.second?.second
             ))
+            // Soft-nudge: if the policy requires a rationale and the dispatch LLM
+            // emitted null/blank rationale, append a Hint to turn history so the
+            // next dispatch LLM sees the field it forgot.
+            applyRationaleNudgeIfNeeded(pathRequest, pathRequest.pathSelectionRationale)
             return pathRequest
         }
 
@@ -501,7 +586,7 @@ private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalConte
                 phase = PumpStationPhase.PathExecution,
                 pathName = pathName,
                 riskLevel = riskLevel,
-                error = PumpStationError.PathExecutionException,
+                error = classifyPathException(e),
                 errorMessage = e.message
             ))
         }
@@ -514,15 +599,18 @@ private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalConte
 internal fun PumpStation.buildPathInput(path: PathObject, request: PathRequest): MultimodalContent
 {
     val base = buildTurnContent()
-    // Prefer the dispatch LLM's [PathRequest.pathSchema] (the model can pass structured
-    // input data through this field). Fall back to the path's static schema. If both
-    // are blank, fall back to the harness\'s original input so the path pipe always
-    // receives a non-empty user prompt — otherwise the pipe\'s empty-prompt guard
-    // trips with "Empty user prompt" before the LLM is even called (verified: this
-    // was a real-world failure when a real LLM returned a path request with no
-    // pathSchema field).
+    // When the dispatch LLM emits a non-empty pathSchema, merge it with the user's
+    // original input rather than replacing it — the dispatch LLM cannot be trusted
+    // to faithfully carry the task description on its own.
     val effectiveSchema = request.pathSchema.ifEmpty { path.pathSchema }
-    base.text = effectiveSchema.ifEmpty { taskState.originalInput?.text ?: base.text }
+    val originalInputText = taskState.originalInput?.text?.takeIf { it.isNotBlank() }
+    base.text = when
+    {
+        originalInputText != null && effectiveSchema.isNotEmpty() -> "$originalInputText\n\n$effectiveSchema"
+        originalInputText != null -> originalInputText
+        effectiveSchema.isNotEmpty() -> effectiveSchema
+        else -> base.text
+    }
     base.metadata.putAll(
         mutableMapOf<Any, Any>(
             "selectedPath" to path.pathName,
@@ -687,6 +775,366 @@ internal fun PumpStation.defaultPrePruneForCompaction(rawTurns: List<ConverseDat
     }
 
     return turns
+}
+
+//=========================================v3.5: SafePrune phase================================================
+
+/**
+ * Run the optional SafePrune phase. Fires when [safePruneEnabledInternal] is true
+ * and the size gate is met. Each enabled [SafePruneStrategy] runs in declared order
+ * against the same turnHistory snapshot; later strategies see the output of earlier
+ * ones. The protect-recent-N tail of the history is never mutated.
+ *
+ * No LLM call. Emits a single [SafePruneApplied] event with a [SafePruneReport] when
+ * at least one strategy fires and the size gate is met. When disabled or below
+ * threshold, no event is emitted.
+ */
+internal suspend fun PumpStation.runSafePrunePhase()
+{
+    if (!safePruneEnabledInternal) return
+    if (safePruneEnabledStrategiesInternal.isEmpty()) return
+    if (turnHistory.history.size <= safePruneSizeThresholdInternal) return
+
+    val originalCount = turnHistory.history.size
+    val originalChars = turnHistory.history.sumOf { it.content.text.length }
+
+    val snapshot = turnHistory.history.toList()
+    val globalProtectBoundary = resolveSafePruneProtectBoundary(safePruneProtectRecentNInternal, snapshot.size)
+
+    val enabledSnapshot = safePruneEnabledStrategiesInternal.toSet()
+    val dryRunSet = safePruneStrategyDryRunInternal
+    val isAnyDryRun = enabledSnapshot.any { it in dryRunSet }
+
+    // Two parallel pipelines: the actual list (only non-dry-run strategies applied)
+    // and the hypothetical list (all strategies applied, including dry-run).
+    // The hypothetical list is what the SafePruneDryRunCompleted report carries;
+    // the actual list is what replaces turnHistory when no dry-run is active.
+    var workingActual = snapshot
+    var workingHypothetical = snapshot
+
+    fun runStrategy(
+        strategy: SafePruneStrategy,
+        apply: (List<ConverseData>, Int) -> List<ConverseData>,
+        hypotheticalApply: (List<ConverseData>, Int) -> List<ConverseData> = apply
+    )
+    {
+        if (strategy !in enabledSnapshot) return
+        val boundary = resolveStrategyBoundary(strategy, snapshot.size, globalProtectBoundary)
+        if (strategy !in dryRunSet)
+        {
+            workingActual = apply(workingActual, boundary)
+        }
+        workingHypothetical = hypotheticalApply(workingHypothetical, boundary)
+    }
+
+    runStrategy(SafePruneStrategy.ReplaceWithSummaryRef,
+        { entries, boundary -> applyReplaceWithSummaryRef(entries, boundary, turnSummary) })
+    runStrategy(SafePruneStrategy.DropPureEchoes,
+        { entries, boundary -> applyDropPureEchoes(entries, boundary) })
+    runStrategy(SafePruneStrategy.CollapseToolCallResults,
+        { entries, boundary -> applyCollapseToolCallResults(entries, boundary) })
+    runStrategy(SafePruneStrategy.DeduplicateByHash,
+        { entries, boundary -> applyDeduplicateByHash(entries, boundary, safePruneHashWindowInternal.coerceAtLeast(1)) })
+    runStrategy(SafePruneStrategy.StripLongToolArguments,
+        { entries, boundary -> applyStripLongToolArguments(entries, boundary, safePruneMaxToolArgLengthInternal.coerceAtLeast(1)) })
+    runStrategy(SafePruneStrategy.MetadataOnlyCompression,
+        { entries, boundary -> applyMetadataOnlyCompression(entries, boundary) })
+
+    // Determine if any mutation happened. Use the hypothetical list for the report
+    // (which is what the dry-run consumer cares about) and the actual list for the
+    // mutation (which is what turnHistory will become).
+    val actualChars = workingActual.sumOf { it.content.text.length }
+    val actualCountChanged = workingActual.size != snapshot.size
+    val actualTextChanged = actualChars != originalChars
+
+    if (!actualCountChanged && !actualTextChanged && !isAnyDryRun)
+    {
+        // No strategy produced a mutation. Skip both event emissions.
+        return
+    }
+
+    val hypotheticalChars = workingHypothetical.sumOf { it.content.text.length }
+    val hypotheticalTokensRemoved = (originalChars - hypotheticalChars).coerceAtLeast(0) / 4
+    val hypotheticalCount = workingHypothetical.size
+
+    // The report always describes the HYPOTHETICAL effect (full strategy sweep).
+    // That way observers comparing reports across dry-run on/off see consistent numbers.
+    val report = SafePruneReport(
+        enabledFlags = enabledSnapshot,
+        originalCount = originalCount,
+        finalCount = hypotheticalCount,
+        tokensRemoved = hypotheticalTokensRemoved,
+        firedAtTurnIndex = taskState.turnIndex
+    )
+
+    if (isAnyDryRun)
+    {
+        // Dry-run strategies don't get applied, but non-dry-run strategies DO.
+        // The history still reflects the partial (non-dry-run) effect; the report
+        // describes the full hypothetical effect for observability.
+        turnHistory.history.clear()
+        turnHistory.history.addAll(workingActual)
+        emitEventInternal(SafePruneDryRunCompleted(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            phase = PumpStationPhase.SafePruneDryRun,
+            report = report
+        ))
+        return
+    }
+
+    turnHistory.history.clear()
+    turnHistory.history.addAll(workingActual)
+
+    emitEventInternal(SafePruneApplied(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex,
+        phase = PumpStationPhase.SafePrune,
+        report = report
+    ))
+}
+
+/**
+ * Resolve the protectBoundary from a protectRecentN value. Clamps to [0, snapshotSize].
+ */
+internal fun resolveSafePruneProtectBoundary(protectRecentN: Int, snapshotSize: Int): Int
+{
+    val protectN = protectRecentN.coerceAtLeast(0)
+    return (snapshotSize - protectN).coerceAtLeast(0)
+}
+
+/**
+ * Resolve the effective protectBoundary for a single strategy, honouring any
+ * per-strategy [SafePrunePolicy] override. Falls back to the PumpStation-global
+ * boundary when the policy is null or when the policy's protectRecentN is null.
+ *
+ * The caller passes [snapshotSize] (the current turnHistory size) so the boundary
+ * is computed against the actual history, not against the strategies set.
+ */
+internal fun PumpStation.resolveStrategyBoundary(
+    strategy: SafePruneStrategy,
+    snapshotSize: Int,
+    globalBoundary: Int
+): Int
+{
+    val policy = safePruneStrategyPoliciesInternal[strategy]
+    val effectiveProtectN = policy?.protectRecentN ?: return globalBoundary
+    return resolveSafePruneProtectBoundary(effectiveProtectN, snapshotSize)
+}
+
+/**
+ * Strategy A: rewrite entries older than [protectBoundary] whose text already appears
+ * in [turnSummary] to a `[See turnSummary]` marker. Metadata preserved.
+ */
+internal fun applyReplaceWithSummaryRef(
+    entries: List<ConverseData>,
+    protectBoundary: Int,
+    turnSummary: String
+): List<ConverseData>
+{
+    if (turnSummary.isBlank() || protectBoundary >= entries.size) return entries
+    val summaryLower = turnSummary.lowercase()
+    return entries.mapIndexed { index, turn ->
+        if (index < protectBoundary)
+        {
+            val text = turn.content.text
+            if (text.isNotBlank() && summaryLower.contains(text.lowercase()))
+            {
+                val rewritten = turn.content.copy()
+                rewritten.text = "[See turnSummary]"
+                ConverseData(role = turn.role, content = rewritten)
+            }
+            else turn
+        }
+        else turn
+    }
+}
+
+/**
+ * Strategy B: drop entries whose trimmed text matches the immediately-preceding entry's
+ * trimmed text. Applied to entries older than [protectBoundary].
+ */
+internal fun applyDropPureEchoes(
+    entries: List<ConverseData>,
+    protectBoundary: Int
+): List<ConverseData>
+{
+    if (entries.isEmpty()) return entries
+    val result = mutableListOf<ConverseData>()
+    for ((index, turn) in entries.withIndex())
+    {
+        if (index < protectBoundary)
+        {
+            // index is within the eligible region — apply echo check
+            val last = result.lastOrNull()
+            if (last != null && last.content.text.trim() == turn.content.text.trim() && turn.content.text.isNotBlank())
+            {
+                // drop pure echo
+            }
+            else
+            {
+                result.add(turn)
+            }
+        }
+        else
+        {
+            // protected region — never mutate
+            result.add(turn)
+        }
+    }
+    return result
+}
+
+/**
+ * Strategy C: collapse adjacent agent/tool_result pairs into a single assistant
+ * turn with a `[tool-call: {preview}]` marker. Applied to entries older than [protectBoundary].
+ *
+ * Heuristic: a ConverseRole.agent turn followed by any of the tool-response roles
+ * (tool_response / pcp_response / mcp_response) is treated as a single tool invocation
+ * and replaced with a marker that preserves a 120-char preview of the call text.
+ */
+internal fun applyCollapseToolCallResults(
+    entries: List<ConverseData>,
+    protectBoundary: Int
+): List<ConverseData>
+{
+    if (entries.size < 2) return entries
+    val toolResponseRoles = setOf(
+        ConverseRole.tool_response,
+        ConverseRole.pcp_response,
+        ConverseRole.mcp_response
+    )
+    val result = mutableListOf<ConverseData>()
+    var index = 0
+    while (index < entries.size)
+    {
+        val current = entries[index]
+        val next = entries.getOrNull(index + 1)
+
+        if (index >= protectBoundary)
+        {
+            // protected region — never mutate
+            result.add(current)
+            index += 1
+            continue
+        }
+
+        if (current.role == ConverseRole.agent && next != null && next.role in toolResponseRoles)
+        {
+            val preview = current.content.text.take(120)
+            result.add(ConverseData(
+                role = ConverseRole.assistant,
+                content = MultimodalContent(text = "[tool-call: $preview]")
+            ))
+            index += 2
+        }
+        else
+        {
+            result.add(current)
+            index += 1
+        }
+    }
+    return result
+}
+
+/**
+ * Strategy D: drop entries whose text SHA-256 matches an earlier entry within the last
+ * [hashWindow] positions. Entries older than [protectBoundary] are eligible.
+ */
+internal fun applyDeduplicateByHash(
+    entries: List<ConverseData>,
+    protectBoundary: Int,
+    hashWindow: Int
+): List<ConverseData>
+{
+    if (entries.isEmpty()) return entries
+    val result = mutableListOf<ConverseData>()
+    val recentHashes = ArrayDeque<String>(hashWindow)
+    for ((index, turn) in entries.withIndex())
+    {
+        if (index >= protectBoundary)
+        {
+            // protected region — never mutate
+            result.add(turn)
+            recentHashes.addLast(hashText(turn.content.text))
+            if (recentHashes.size > hashWindow) recentHashes.removeFirst()
+            continue
+        }
+        val hash = hashText(turn.content.text)
+        if (turn.content.text.isNotBlank() && hash in recentHashes)
+        {
+            // drop duplicate within window
+        }
+        else
+        {
+            result.add(turn)
+            recentHashes.addLast(hash)
+            if (recentHashes.size > hashWindow) recentHashes.removeFirst()
+        }
+    }
+    return result
+}
+
+/**
+ * Strategy E: replace tool_response entries whose text length exceeds [maxLength]
+ * with a `[tool-call: {name} — args truncated, was {N} chars]` stub. Entries older than
+ * [protectBoundary] are eligible.
+ */
+internal fun applyStripLongToolArguments(
+    entries: List<ConverseData>,
+    protectBoundary: Int,
+    maxLength: Int
+): List<ConverseData>
+{
+    return entries.mapIndexed { index, turn ->
+        if (index < protectBoundary && turn.role == ConverseRole.tool_response && turn.content.text.length > maxLength)
+        {
+            val name = extractToolName(turn.content.text)
+            val stub = "[tool-call: $name — args truncated, was ${turn.content.text.length} chars]"
+            val rewritten = turn.content.copy()
+            rewritten.text = stub
+            ConverseData(role = turn.role, content = rewritten)
+        }
+        else turn
+    }
+}
+
+/**
+ * Strategy F: drop system-role entries whose text is empty and which carry only
+ * metadata. Entries older than [protectBoundary] are eligible. Entries whose metadata
+ * includes `pathName` or `tokenCount` are preserved regardless (those keys carry
+ * signal for downstream tracing).
+ */
+internal fun applyMetadataOnlyCompression(
+    entries: List<ConverseData>,
+    protectBoundary: Int
+): List<ConverseData>
+{
+    val protectedKeys = setOf("pathName", "tokenCount")
+    return entries.filterIndexed { index, turn ->
+        if (index < protectBoundary &&
+            turn.role == ConverseRole.system &&
+            turn.content.text.isBlank() &&
+            turn.content.metadata.isNotEmpty() &&
+            protectedKeys.none { it in turn.content.metadata.keys })
+        {
+            false
+        }
+        else true
+    }
+}
+
+private fun hashText(text: String): String
+{
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    val bytes = digest.digest(text.toByteArray(Charsets.UTF_8))
+    return bytes.joinToString("") { "%02x".format(it) }
+}
+
+private fun extractToolName(toolResponseText: String): String
+{
+    val match = Regex("\"name\"\\s*:\\s*\"([^\"]+)\"").find(toolResponseText)
+    return match?.groupValues?.get(1) ?: "unknown"
 }
 
 //=========================================v3: Strategy implementations=============================================
@@ -1942,12 +2390,16 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
     ))
 
     // No-exit-signal advisory: emit a HarnessWarning when the developer has configured
-    // NONE of the three legitimate exit mechanisms. Respects intentional configurations
-    // (FlagTriggered + path-bound requestJudgeNextTurn, or a single-turn maxTurns budget).
+    // NONE of the four legitimate exit mechanisms documented in [WarningCode.NoExitSignalConfigured]:
+    // (1) a judge agent, (2) [requestJudgeNextTurn] bound to a path with judgeRunMode = FlagTriggered,
+    // (3) a path that returns [MultimodalContent.passPipeline] = true on success, and
+    // (4) a path that returns [MultimodalContent.terminatePipeline] = true on failure.
+    // Path (3) and (4) are inferred from the path having a custom executionFunction.
     val hasJudge = judgeAgent != null || judgeAgentBuilderFunction != null
     val isFlagTriggered = judgeRunModeInternal == PumpStationJudgeRunMode.FlagTriggered
+    val hasPathExitSignal = pathList.values.any { it.hasExecutionFunction }
     val allowsLongRun = maxTurnsInternal > 1
-    if (!hasJudge && !isFlagTriggered && allowsLongRun)
+    if (!hasJudge && !isFlagTriggered && !hasPathExitSignal && allowsLongRun)
     {
         emitEventInternal(HarnessWarning(
             runId = taskState.runId,
@@ -2051,7 +2503,10 @@ internal suspend fun PumpStation.runTurn(): TurnResult
 
     val pathRequest = runDispatchPhase() ?: return TurnResult.Continue
     detectAndHandleContextBlowout(PumpStationPhase.Dispatch)
-    if (pathRequest.pathName.isBlank()) return TurnResult.Continue
+    // Note: runDispatchPhase now returns null when pathName is blank (treated as a
+    // harness error, with a hint appended to turn history). The previous sentinel
+    // shortcut (`if (pathRequest.pathName.isBlank()) return TurnResult.Continue`) was
+    // removed when empty pathName stopped being a valid "I'm done" signal.
 
     if (!checkPauseGuards(PumpStationPausePhase.BeforePathExecution))
 {
@@ -2095,6 +2550,7 @@ internal suspend fun PumpStation.runTurn(): TurnResult
     }
     pruneTurnHistory()
     pruneRawTurnHistory()
+    runSafePrunePhase()
 
     runForegroundAgentsPhase()
     detectAndHandleContextBlowout(PumpStationPhase.ForegroundAgents)
@@ -2354,4 +2810,49 @@ internal fun PumpStation.recordAndCheckKillSwitch(agent: P2PInterface?)
         accumulatedOutputTokensInternal,
         runStartElapsedMsInternal
     )
+}
+
+//==========================================Nudge=============================================
+/**
+ * Soft-nudges the dispatch LLM to commit a [PathRequest.pathSelectionRationale]
+ * on the next dispatch turn.
+ *
+ * Returns false (silently) when the failure policy is OFF, when the rationale is
+ * already non-blank, or when the station has no runId yet. When the policy is ON
+ * AND the rationale is null/blank, append a single "Harness Notice" message to
+ * [com.TTT.Pipeline.PumpStation.turnHistory] so the next dispatch sees the field
+ * it forgot. The nudge is informational — never a hard dispatch failure.
+ *
+ * @param request the [PathRequest] returned by the dispatch LLM.
+ * @param rationale the rationale string the dispatch LLM emitted. May be null.
+ * @return true when a hint was appended, false when the call was silent.
+ */
+internal fun PumpStation.applyRationaleNudgeIfNeeded(
+    request: PathRequest,
+    rationale: String?
+): Boolean
+{
+    if (!this.failurePolicy.requirePathSelectionRationale) return false
+    if (!rationale.isNullOrBlank()) return false
+    if (this.taskState.runId.isBlank()) return false
+    // Skip repeat nudges within a run — a prior [Harness Notice] message
+    // already told the dispatch LLM what to do; repeating it bloats the
+    // prompt without adding signal.
+    val alreadyNudged = this.turnHistory.history.any { conv ->
+        conv.content.text?.contains("[Harness Notice]") == true
+    }
+    if (alreadyNudged) return false
+
+    val hintMessage = "[Harness Notice] Your dispatch output was a valid PathRequest JSON but " +
+        "the pathSelectionRationale field was empty. The harness is configured to require a " +
+        "rationale (requirePathSelectionRationale=true). On your next dispatch, commit a brief " +
+        "1-2 sentence explanation of WHY you picked the path you picked."
+
+    this.turnHistory.add(
+        ConverseData(
+            role = ConverseRole.user,
+            content = MultimodalContent(text = hintMessage)
+        )
+    )
+    return true
 }

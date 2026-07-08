@@ -189,6 +189,11 @@ class PumpStationFlagTriggeredJudgeTest
             val station = buildTestStation(maxHarnessTurns = 3)
                 .setJudgeAgent(notDoneJudge())
                 .setDispatchAgent(dispatchAlwaysPicks("p1"))
+                // Disable the new first-turn skip default so this test can verify Always
+                // mode's "judge fires every turn" guarantee without the first_turn skip
+                // masking turn 0. The intent of this test is the requestJudgeNextTurn
+                // behavior, not the first-turn skip.
+                .setSkipJudgeOnFirstTurn(false)
                 .setEventObserver(observer)
             val p1 = testPath("p1", returnText = "did")
             p1.setExecutionFunction { content, pumpStation, _, _ ->

@@ -202,11 +202,12 @@ A `PathRequest` JSON object:
 ```json
 {
   "pathName": "the exact path name from the visible list",
-  "pathSchema": "free-form input schema string for the path"
+  "pathSchema": "free-form input schema string for the path",
+  "pathSelectionRationale": "1-2 sentence explanation of why this path was picked"
 }
 ```
 
-`pathName` is matched case-insensitively against `pathList` and `reservePaths`. An empty or blank `pathName` ends the turn without calling a path (the loop continues). `pathSchema` is passed to the path as the input — see [The Path Execution Contract](#the-path-execution-contract).
+`pathName` is matched case-insensitively against `pathList` and `reservePaths`. An empty or blank `pathName` ends the turn without calling a path (the loop continues). `pathSchema` is passed to the path as the input — see [The Path Execution Contract](#the-path-execution-contract). `pathSelectionRationale` is optional and may be null; when non-null and `failurePolicy.requirePathSelectionRationale` is true, the harness expects the LLM to commit one each turn, and surfaces a soft nudge in the next dispatch prompt when it does not. See [Dispatch Contract: `pathSelectionRationale`](#dispatch-contract-pathselectionrationale).
 
 `PathRequest` is a `data class` in `Pipeline/PumpStationModels.kt`:
 
@@ -214,7 +215,8 @@ A `PathRequest` JSON object:
 @Serializable
 data class PathRequest(
     var pathName: String = "",
-    var pathSchema: String = ""
+    var pathSchema: String = "",
+    var pathSelectionRationale: String? = null
 )
 ```
 
@@ -336,13 +338,15 @@ A `PathSafetyVerdict` JSON object:
 
 The parser is **strict** on the `safe` field — it must be a JSON boolean literal (`true` or `false`). Strings like `"true"`, numbers, and `null` are rejected; the harness falls back to the flag-based check on the result. To use the strict JSON contract, do nothing; to disable it and rely on `MultimodalContent` flags only, set `pathSafetyJsonContractEnabled = false` (or `setPathSafetyJsonContractEnabled(false)`).
 
+The `reason` field rides into the `PathSafetyCompleted` event's metadata (`reason: String?`) and into the `PUMP_STATION_PATH_SAFETY_COMPLETED` trace event. When the harness rejects the path, the rejection message written to the next dispatch prompt includes the path-safety reason via `buildLlmErrorMessage` (`Pipeline/PumpStationHelpers.kt:743`). The notice names the path, the rejection source, and the reason text.
+
 **Flag-based fallback (when JSON parse fails or the contract is disabled):**
 
 - `terminatePipeline = true` → reject the path, return the original input unchanged
 - `passPipeline = true` → approve the path, run it normally
 - neither set → reject the path (defensive default)
 
-When a path is rejected by safety, the harness does **not** call the path. The original input flows through as the turn's result so the loop can continue.
+When a path is rejected by safety, the harness does **not** call the path. The original input flows through as the turn's result so the loop can continue, and the rejection reason is appended to `turnHistory` so the dispatch agent on the next turn can read it.
 
 ### The Lorebook Agent Contract
 
@@ -590,6 +594,7 @@ The `pumpStation { }` builder supports these top-level blocks and setters.
 | `maxConsecutiveSamePath` | `Int`                                      | `3`     | Loop guard on consecutive same-path dispatch. |
 | `maxTotalPathCallsPerPath` | `Int?`                                   | `null`  | Loop guard on total calls per path; null disables. |
 | `pathLimitExceededPolicy` | `PathLimitExceededPolicy`                 | `Skip`  | `Skip`, `Halt`, or `Continue` when the per-path limit is hit. |
+| `requirePathSelectionRationale` | `Boolean`                            | `true`  | When true, the harness appends a one-shot reminder to the next dispatch prompt if the LLM returned a null `pathSelectionRationale`. See [Dispatch Contract: `pathSelectionRationale`](#dispatch-contract-pathselectionrationale). |
 | `asyncPathsAppendToTurnHistory` | `Boolean`                             | `true`  | Station-wide default for whether async paths append their result to `turnHistory` on completion. Per-path opt-out via `suppressHistoryEmit` on the path block. |
 | `asyncAgentsAppendToTurnHistory` | `Boolean`                            | `false` | Station-wide default for whether async harness agents append their result to `turnHistory` on completion. Per-slot opt-in via `HarnessAgentSlot.appendsToTurnHistory`. |
 | `asyncJobGracePeriodMs` | `Long?`                                     | `null`  | Optional millisecond grace period given to in-flight async coroutines after finalization before `cancelAsyncJobs` cancels the `asyncScope`. `null` (the default) is unbounded. See [Async Substrate](#async-substrate) below. |
@@ -724,17 +729,62 @@ data class PumpStationFailurePolicy(
     var maxDispatchRepairAttempts: Int = 1,
     var stashOversizedOutputs: Boolean = true,
     var callInterventionOnPathFailure: Boolean = true,
-    var stopHarnessOnInvalidPathRequest: Boolean = false
+    var stopHarnessOnInvalidPathRequest: Boolean = false,
+    var requirePathSelectionRationale: Boolean = true
 )
 ```
 
-| Field | Default | Description |
+|| Field | Default | Description |
 |-------|---------|-------------|
 | `repairInvalidDispatchJson` | `true` | Repair malformed dispatch output up to `maxDispatchRepairAttempts` times. |
 | `maxDispatchRepairAttempts` | `1` | Max repair attempts. |
 | `stashOversizedOutputs` | `true` | Stash oversized path outputs to keep prompt budgets bounded. |
 | `callInterventionOnPathFailure` | `true` | Invoke `interventionAgent` after a path failure. |
 | `stopHarnessOnInvalidPathRequest` | `false` | When true, set `lastError = DispatchJsonRepairFailed` after repair budget is exhausted. |
+| `requirePathSelectionRationale` | `true` | When true, the harness appends a one-shot reminder to the next dispatch prompt if the LLM returned a null `pathSelectionRationale`. See [Dispatch Contract: `pathSelectionRationale`](#dispatch-contract-pathselectionrationale). The field is mirrored on the `PumpStationBuilder` (`requirePathSelectionRationale: Boolean = true`) and on `PumpStation` itself; `setRequirePathSelectionRationale(Boolean)` keeps both sides in sync. |
+
+### Dispatch Contract: `pathSelectionRationale`
+
+`PathRequest` carries an optional `pathSelectionRationale: String?`. The dispatch LLM writes the reason; the trace and the judge's grading pass read it. The field is nullable so old checkpoints that don't emit it still produce a schema-valid `PathRequest`.
+
+**Field shape:**
+
+```kotlin
+@Serializable
+data class PathRequest(
+    var pathName: String = "",
+    var pathSchema: String = "",
+    var pathSelectionRationale: String? = null
+)
+```
+
+`pathSelectionRationale` is serialized into `DispatchCompleted.pathRequest` and into the `PUMP_STATION_DISPATCH_COMPLETED` trace event metadata.
+
+**Failure policy and DSL setter:**
+
+```kotlin
+failurePolicy.requirePathSelectionRationale = true   // default
+
+pumpStation("research") {
+    setRequirePathSelectionRationale(true)
+}
+```
+
+**Soft-nudge behavior:**
+
+If the dispatch LLM emits a `PathRequest` with a null or blank `pathSelectionRationale`, `applyRationaleNudgeIfNeeded` (`Pipeline/PumpStationLoop.kt:2830`) appends a one-shot reminder to the next dispatch prompt:
+
+```
+the pathSelectionRationale field was empty. The harness is configured to require a
+rationale (requirePathSelectionRationale=true). On your next dispatch, commit a brief
+(1-2 sentence) `pathSelectionRationale` explaining WHY you picked this path.
+```
+
+The reminder is appended at most once per run. A poorly trained model can still emit null and the harness accepts it. Set `failurePolicy.requirePathSelectionRationale = false` to silence the prompt.
+
+**Related fix: judge history injection:**
+
+`buildUserMessageForTurn` (`Pipeline/PumpStationHelpers.kt`) serializes `turnHistory` into the judge and dispatch user prompts. The judge and dispatch agents see the same per-turn content the way the prior phase saw it. See `JudgeDispatchHistoryInjectionTest` for the regression coverage.
 
 
 ## Execution Flow: The Two-Scope Loop
@@ -1175,6 +1225,8 @@ Two guards run before each path call:
 
 Default `3`. When the dispatch agent selects the same path `N` consecutive turns, the harness emits a `LoopGuardTripped` event, optionally invokes `interventionAgent` (if set), and proceeds with the call. The developer can detect this in DITL hooks or in their intervention agent.
 
+After a `LoopGuardTripped`, the consecutive-same-path counter resets to zero rather than staying at the threshold. The next dispatch turn starts fresh and a future return to the tripping path gets the full `maxConsecutiveSamePath` budget again.
+
 ### `maxTotalPathCallsPerPath`
 
 Default `null` (disabled). When set, after the call count for a path exceeds the cap, the harness emits `LoopGuardTripped` and consults the policy:
@@ -1357,6 +1409,8 @@ PumpStation tracing is keyed by `taskState.runId` (e.g. `ps-1718371200000-1234`)
 
 The visualizer reads the `phase` and `turnIndex` from the trace event metadata, so each event carries a consistent `turnIndex` regardless of where it was emitted. The original `PumpStationPhase` is preserved in `metadata["phase"]` even when the `TracePhase` is a more generic bucket.
 
+`TraceVisualizer` (in `Debug/TraceVisualizer.kt`) renders per-turn input / output token counts on the harness timeline, paired with the `DispatchCompleted` and `PathCompleted` events that spent them. Use it to spot a runaway-token run (one path dominating the budget) without correlating `inputTokens` / `outputTokens` from individual events by hand.
+
 Trace events emitted by PumpStation:
 
 | `TraceEventType` | Emitted on | Metadata fields |
@@ -1500,7 +1554,11 @@ By default, the harness attempts up to `maxDispatchRepairAttempts` (default 1) r
 
 ### Path-safety agent rejects a path
 
-The path was not called. The original input flows through as the turn's result so the loop can continue. Inspect `PathSafetyCompleted.approved` in the trace to see the reason.
+The path was not called. The original input flows through as the turn's result so the loop can continue. Inspect `PathSafetyCompleted.approved` and `PathSafetyCompleted.reason` in the trace (or in the `PUMP_STATION_PATH_SAFETY_COMPLETED` event metadata). The reason string also rides into the rejection notice that the dispatch agent sees on the next turn, written to `turnHistory`.
+
+### Path timed out
+
+`java.net.SocketTimeoutException` and transport-level timeouts are classified as `PumpStationError.PathTimeout`. The `PathFailed` event carries `error = PathTimeout`. The harness treats it like any other path failure from a loop-guard / intervention perspective. The distinction is useful for DITL hooks that want to react differently to network stalls.
 
 
 ## Best Practices
@@ -1517,6 +1575,7 @@ The path was not called. The original input flows through as the turn's result s
 - **Don't share a single `PumpStation` instance across concurrent `executeLocal` calls.** Build a fresh station per concurrent run.
 - **Tune compaction strategy per workload.** `Whole` is the cheapest when history fits; `Chunked` is the only option when history has blown past the agent's context window.
 - **Test the magic contracts.** The judge, dispatch, and path-safety agents have structured JSON outputs. Validate them in your test suite — `parseJudgeVerdict`, `parseDispatchOutput`, and `parsePathSafetyVerdict` are accessible for direct invocation.
+- **Read the dispatch rationale.** To see why a station picked a path on a given turn, inspect `DispatchCompleted.pathRequest.pathSelectionRationale` in the trace. Leave `requirePathSelectionRationale = true` (the default) in production; flip it off only when running with a downstream model that has not been instructed to emit the field.
 
 
 ## Cross-References

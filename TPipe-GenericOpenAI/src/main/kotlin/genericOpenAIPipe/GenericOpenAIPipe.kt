@@ -19,6 +19,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.utils.io.*
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
@@ -28,6 +29,15 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.IOException
+
+/**
+ * Fixed 100ms backoff between the first request and the single retry in
+ * [GenericOpenAIPipe.runRequestWithRetry]. File-level constant (not a class member)
+ * to avoid introducing a companion object that interacts unexpectedly with the
+ * serialization layer.
+ */
+private const val RETRY_BACKOFF_MILLIS: Long = 100L
 
 /**
  * TPipe abstraction for Generic OpenAI-compatible APIs.
@@ -301,6 +311,28 @@ class GenericOpenAIPipe : Pipe()
     }
 
     /**
+     * Wire-format completion hook — translates TPipe's pipe.jsonOutput (and related
+     * pipe-level state) into the OpenAI/Anthropic-compatible response_format field
+     * so the provider API enforces JSON-mode at the wire instead of relying on
+     * prompt-only instructions.
+     *
+     * If the user already called [setResponseFormat] explicitly, that wins. If the
+     * pipe advertises native JSON support ([supportsNativeJson] = true), no wire
+     * format is set. Otherwise, when pipe.jsonOutput is non-empty we set
+     * response_format to type "json_object" (the wire-level knob MiniMax-M2.7 and
+     * OpenAI-compatible chat-completions endpoints honor to lock the LLM into
+     * emitting valid JSON).
+     */
+    override fun onApplySystemPromptComplete()
+    {
+        if(responseFormat != null) return
+        if(supportsNativeJson) return
+        if(jsonOutput.isBlank()) return
+
+        responseFormat = ResponseFormat(type = "json_object", jsonSchema = null)
+    }
+
+    /**
      * Sets whether to enable structured outputs via json_schema.
      * @param enabled True to enable structured outputs
      * @return This pipe instance for fluent chaining
@@ -432,13 +464,20 @@ class GenericOpenAIPipe : Pipe()
 
         provider = ProviderName.Gpt
 
-        httpClient = HttpClient(CIO)
+        // Only create the default CIO client when the pipe has not been supplied with
+        // a pre-built HttpClient. The test-only [injectHttpClientForTest] path depends
+        // on this guard: it sets httpClient before init() so the production client is
+        // not allocated and the test's MockEngine (or other custom engine) is honoured.
+        if(httpClient == null)
         {
-            install(HttpTimeout)
+            httpClient = HttpClient(CIO)
             {
-                requestTimeoutMillis = 120_000
-                connectTimeoutMillis = 30_000
-                socketTimeoutMillis = 120_000
+                install(HttpTimeout)
+                {
+                    requestTimeoutMillis = 120_000
+                    connectTimeoutMillis = 30_000
+                    socketTimeoutMillis = 120_000
+                }
             }
         }
 
@@ -588,14 +627,16 @@ class GenericOpenAIPipe : Pipe()
         }
         else
         {
-            val responseText = withContext(Dispatchers.IO)
-            {
-                client.post("$baseUrl${getEndpoint()}")
+            val responseText = runRequestWithRetry {
+                withContext(Dispatchers.IO)
                 {
-                    contentType(ContentType.Application.Json)
-                    getAuthHeaders().forEach { (name, value) -> header(name, value) }
-                    setBody(jsonRequest)
-                }.bodyAsText()
+                    client.post("$baseUrl${getEndpoint()}")
+                    {
+                        contentType(ContentType.Application.Json)
+                        getAuthHeaders().forEach { (name, value) -> header(name, value) }
+                        setBody(jsonRequest)
+                    }.bodyAsText()
+                }
             }
 
             val response: GenericOpenAIChatResponse = try
@@ -711,15 +752,17 @@ class GenericOpenAIPipe : Pipe()
             }
             else
             {
-                val responseText = withContext(Dispatchers.IO)
-                {
-                    client.post("$baseUrl${getEndpoint()}")
+                val responseText = runRequestWithRetry {
+                    withContext(Dispatchers.IO)
                     {
-                        contentType(ContentType.Application.Json)
-                        getAuthHeaders().forEach { (name, value) -> header(name, value) }
+                        client.post("$baseUrl${getEndpoint()}")
+                        {
+                            contentType(ContentType.Application.Json)
+                            getAuthHeaders().forEach { (name, value) -> header(name, value) }
 
-                        setBody(jsonRequest)
-                    }.bodyAsText()
+                            setBody(jsonRequest)
+                        }.bodyAsText()
+                    }
                 }
 
                 val response: GenericOpenAIChatResponse = try
@@ -1450,12 +1493,74 @@ class GenericOpenAIPipe : Pipe()
         return content
     }
 
-//=========================================Test Helpers=========================================================================
-// Package-private helpers used by `OpenAIResponsesPipeDispatchTest` and friends to drive
-// the pipe without a real HTTP server. They are intentionally minimal — they only expose
+    /**
+     * Provider-side response cleanup. Some endpoints wrap their payload in
+     * auxiliary reasoning surfaces (e.g. `&lt;think&gt;...&lt;/think&gt;` blocks from MiniMax-M2.7,
+     * DeepSeek-R1, OpenAI o-series). TPipe core stays content-agnostic — the wire
+     * format translation is already done in [onApplySystemPromptComplete]; this
+     * hook is the symmetric exit-side cleanup, run after the model returns but
+     * before TPipe parses.
+     *
+     * @param text Raw text returned by the wire.
+     * @return Input with provider-local wrapping removed; identity if no cleanup needed.
+     */
+    override fun cleanResponseText(text: String): String
+    {
+        return ResponseShapeNormalizer.stripThinkTags(text)
+    }
+
+//=========================================Test-Only Helpers==========================================================
+// The methods in this section exist solely to support the test suite. They let
+// the pipe be driven without a real HTTP server. They are intentionally minimal — they only expose
 // the seams the test suite actually uses (endpoint / auth-header introspection,
 // HTTP-client injection, suspendable init/abort, and a non-`Pipeline` text generation
 // path that bypasses `Pipeline.execute` so MockEngine round-trips stay synchronous).
+
+//=========================================Transport Retry==========================================================
+
+    /**
+     * Runs [block] and retries it once after a 100ms backoff if it throws an
+     * [IOException].
+     *
+     * Background: Ktor's CIO engine surfaces transport-level failures
+     * ([java.net.SocketTimeoutException], raw [java.io.EOFException] from a
+     * mid-stream cut, [io.ktor.client.plugins.HttpRequestTimeoutException],
+     * [java.net.ConnectException]) as subclasses of [java.io.IOException]. None of
+     * these were retried inside `client.post(...).bodyAsText()` previously, so a
+     * single transient blip aborted the entire pump-station dispatch.
+     *
+     * Retry policy is deliberately narrow:
+     *   - retries exactly once (no exponential backoff, no jitter);
+     *   - retries ONLY on [IOException]; HTTP error responses, parse failures, and
+     *     programmer errors propagate unchanged so the caller's outer catch can
+     *     classify them;
+     *   - the second [IOException] propagates unchanged so the pipe's outer catch
+     *     can wrap it into [P2PException] with the [P2PError.transport] code,
+     *     preserving the original exception as `cause`.
+     *
+     * @param block The suspending operation to run. May throw [IOException].
+     * @return The value returned by [block] on the first or second attempt.
+     * @throws IOException If both attempts throw [IOException]; the second exception is rethrown.
+     */
+    private suspend fun <T> runRequestWithRetry(block: suspend () -> T): T
+    {
+        return try
+        {
+            block()
+        }
+        catch(e: IOException)
+        {
+            delay(RETRY_BACKOFF_MILLIS)
+            try
+            {
+                block()
+            }
+            catch(retryFailure: IOException)
+            {
+                throw retryFailure
+            }
+        }
+    }
 
     /**
      * Returns the endpoint the pipe would POST to, for the current [apiMode].

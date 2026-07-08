@@ -6,6 +6,109 @@ import com.TTT.Context.MiniBank
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import kotlinx.serialization.Contextual
+import kotlinx.serialization.Serializable
+
+/**
+ * Cleanup strategies that the SafePrune phase can apply to [com.TTT.Context.ConverseHistory]
+ * before the LLM-requiring phases of [PumpStation] run. Each strategy is a deterministic,
+ * LLM-free transform — the user opts in per strategy. Off by default; when none are enabled
+ * the SafePrune phase is a no-op.
+ *
+ * Strategies are applied in declared order during a single pass; later strategies see the
+ * output of earlier ones.
+ */
+enum class SafePruneStrategy
+{
+    /** Rewrite older entries whose text already appears in [turnSummary] to a `[See turnSummary]` marker. */
+    ReplaceWithSummaryRef,
+
+    /** Drop entries whose text is byte-identical to the immediately-preceding entry. */
+    DropPureEchoes,
+
+    /** Collapse adjacent tool_call/tool_response pairs into a single `[tool-call: {name}]` marker. */
+    CollapseToolCallResults,
+
+    /** Drop entries whose text hash matches an earlier entry within the last [safePruneHashWindow] entries. */
+    DeduplicateByHash,
+
+    /** Replace tool_response entries whose text exceeds [safePruneMaxToolArgLength] with a truncated stub. */
+    StripLongToolArguments,
+
+    /** Drop system-role entries whose text is empty and which carry only metadata. */
+    MetadataOnlyCompression
+}
+
+/**
+ * Summary payload emitted by the SafePrune phase on a single turn. Captures the count of
+ * enabled strategies, the history size before and after the pass, the rough token delta,
+ * and the turn index at which the pass ran. Carried on the [SafePruneApplied] event so
+ * observers (tracing, tests, observability) can reconstruct what happened.
+ *
+ * @property enabledFlags Strategies that were active during this pass.
+ * @property originalCount Entries in turnHistory before the pass.
+ * @property finalCount Entries in turnHistory after the pass.
+ * @property tokensRemoved Estimated tokens saved by the pass (sum of removed text lengths / 4).
+ * @property firedAtTurnIndex Turn index at which the pass executed.
+ */
+@Serializable
+data class SafePruneReport(
+    val enabledFlags: Set<SafePruneStrategy>,
+    val originalCount: Int,
+    val finalCount: Int,
+    val tokensRemoved: Int,
+    val firedAtTurnIndex: Int
+)
+
+/**
+ * Emitted at the end of every SafePrune phase run (only when at least one strategy fired).
+ * Carries the [SafePruneReport] so downstream tracing can show per-turn savings.
+ */
+@Serializable
+data class SafePruneApplied(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.SafePrune,
+    val report: SafePruneReport
+) : PumpStationEvent
+
+/**
+ * Per-strategy policy override. When a strategy has a non-null policy in
+ * [PumpStation.safePruneStrategyPolicies], the policy's `sizeThreshold` and
+ * `protectRecentN` override the corresponding PumpStation-global values for
+ * that strategy only. Null values mean "fall back to the global knob".
+ *
+ * Use this when one strategy needs a tighter or looser threshold than the
+ * PumpStation-wide default — e.g., StripLongToolArguments can be set to a
+ * higher threshold than DeduplicateByHash without changing the global cap.
+ *
+ * @property sizeThreshold Optional per-strategy size threshold; null = use global.
+ * @property protectRecentN Optional per-strategy protected-recent-N; null = use global.
+ * @property customParams Free-form per-strategy parameters; reserved for
+ *   strategies that need extra knobs beyond size + protection.
+ */
+@Serializable
+data class SafePrunePolicy(
+    val sizeThreshold: Int? = null,
+    val protectRecentN: Int? = null,
+    val customParams: Map<String, String> = emptyMap()
+)
+
+/**
+ * Emitted at the end of every SafePrune phase run when at least one enabled
+ * strategy is in dry-run mode and produced a mutation (a hypothetical rewrite).
+ * The [SafePruneReport] describes what WOULD have been changed; the actual
+ * turnHistory is unchanged. SafePruneDryRunCompleted and [SafePruneApplied]
+ * are mutually exclusive on a given turn — dry-run replaces apply.
+ */
+@Serializable
+data class SafePruneDryRunCompleted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.SafePruneDryRun,
+    val report: SafePruneReport
+) : PumpStationEvent
 
 /**
  * Models for the PumpStation scaffolding system.
@@ -47,6 +150,8 @@ enum class PumpStationPhase
     ForegroundAgents,
     MemoryUpdate,
     Compaction,
+    SafePrune,
+    SafePruneDryRun,
     GoalValidation,
     Exit
 }
@@ -60,6 +165,10 @@ enum class PumpStationError
     InvalidPathRequest,
     DispatchJsonRepairFailed,
     PathExecutionException,
+    // Path call timed out (transport-layer). Distinct from
+    // PathExecutionException so the harness and operators can tell
+    // timeouts apart from malformed-response or code exceptions.
+    PathTimeout,
     TokenBudgetExceeded,
     MemoryBlowout,
     KillSwitchTripped,
@@ -977,7 +1086,16 @@ data class PumpStationFailurePolicy(
     var maxDispatchRepairAttempts: Int = 1,
     var stashOversizedOutputs: Boolean = true,
     var callInterventionOnPathFailure: Boolean = true,
-    var stopHarnessOnInvalidPathRequest: Boolean = false
+    var stopHarnessOnInvalidPathRequest: Boolean = false,
+    /**
+     * If true, the dispatch LLM is REQUIRED to commit a non-null
+     * [PathRequest.pathSelectionRationale] each turn. When the LLM emits
+     * null/blank, the harness appends a Hint to turn history on the next
+     * dispatch rather than failing the dispatch outright. If false, the
+     * rationale field is not surfaced in the path-injection prompt and no
+     * nudge is appended on empty.
+     */
+    var requirePathSelectionRationale: Boolean = true
 )
 
 //=========================================Snapshot===================================================================

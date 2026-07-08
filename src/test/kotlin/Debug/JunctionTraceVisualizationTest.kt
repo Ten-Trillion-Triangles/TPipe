@@ -62,6 +62,90 @@ class JunctionTraceVisualizationTest
         assertFalse(manifoldHtml.contains("Participant Interactions"))
     }
 
+    /**
+     * Aggregate token totals should appear at the top of the Junction HTML report as a
+     * dedicated card. Aggregates inputTokens and outputTokens from every event that carries
+     * them in metadata, SKIPPING KILLSWITCH_CHECK (cumulative-AT-check-time, not actual spend).
+     *
+     * Targets the rendered `TOKEN TOTALS` label rather than a CSS class — the
+     * bare class name would also match the CSS selector in the embedded
+     * `<style>` block.
+     */
+    @Test
+    fun reportShowsTokenTotalsHeaderCard()
+    {
+        val baseTime = System.currentTimeMillis()
+        val visualizer = TraceVisualizer()
+        val trace = listOf(
+            TraceEvent(
+                timestamp = baseTime,
+                pipeId = "junction-001",
+                pipeName = "Junction-Moderator",
+                eventType = TraceEventType.JUNCTION_START,
+                phase = TracePhase.ORCHESTRATION,
+                content = MultimodalContent("Debate the best approach."),
+                contextSnapshot = null,
+                metadata = mapOf("participantCount" to 2, "strategy" to "SIMULTANEOUS")
+            ),
+            TraceEvent(
+                timestamp = baseTime + 120,
+                pipeId = "junction-001",
+                pipeName = "Junction-Moderator",
+                eventType = TraceEventType.JUNCTION_PARTICIPANT_RESPONSE,
+                phase = TracePhase.AGENT_COMMUNICATION,
+                content = MultimodalContent("Planner response"),
+                contextSnapshot = null,
+                metadata = mapOf("participant" to "Planner", "phase" to "PLAN", "cycle" to 1,
+                                "inputTokens" to 1500, "outputTokens" to 600, "totalTokens" to 2100)
+            ),
+            TraceEvent(
+                timestamp = baseTime + 260,
+                pipeId = "junction-001",
+                pipeName = "Junction-Moderator",
+                eventType = TraceEventType.JUNCTION_PARTICIPANT_RESPONSE,
+                phase = TracePhase.AGENT_COMMUNICATION,
+                content = MultimodalContent("Actor response"),
+                contextSnapshot = null,
+                metadata = mapOf("participant" to "Actor", "phase" to "ACT", "cycle" to 1,
+                                "inputTokens" to 2500, "outputTokens" to 800, "totalTokens" to 3300)
+            ),
+            // KILLSWITCH_CHECK must be EXCLUDED from totals (cumulative-AT-check, not spend)
+            TraceEvent(
+                timestamp = baseTime + 270,
+                pipeId = "junction-001",
+                pipeName = "Junction-Moderator",
+                eventType = TraceEventType.KILLSWITCH_CHECK,
+                phase = TracePhase.MONITORING,
+                content = null,
+                contextSnapshot = null,
+                metadata = mapOf("inputTokens" to 4000, "outputTokens" to 1400,
+                                "inputLimit" to "none", "outputLimit" to "none",
+                                "elapsedMs" to 1L)
+            )
+        )
+        val html = visualizer.generateHtmlReport(trace)
+        assertTrue(html.contains("TOKEN TOTALS"),
+            "Junction report must include the rendered TOKEN TOTALS card")
+        assertTrue(html.contains("Input: 4,000"),
+            "Input total = 1500 (Planner) + 2500 (Actor) = 4,000; KillSwitch 4000 must be skipped")
+        assertTrue(html.contains("Output: 1,400"),
+            "Output total = 600 (Planner) + 800 (Actor) = 1,400; KillSwitch 1400 must be skipped")
+        assertTrue(html.contains("Total: 5,400"),
+            "Sum total = 4,000 + 1,400 = 5,400")
+    }
+
+    /**
+     * Card hidden when no event carries token metadata.
+     */
+    @Test
+    fun reportHidesTokenCardWhenNoTokenMetadata()
+    {
+        val visualizer = TraceVisualizer()
+        val html = visualizer.generateHtmlReport(generateMockJunctionTrace())
+        assertFalse(html.contains("TOKEN TOTALS"),
+            "Junction report must hide the token card when zero events carry token metadata")
+    }
+
     private fun generateMockJunctionTrace(): List<TraceEvent>
     {
         val baseTime = System.currentTimeMillis()

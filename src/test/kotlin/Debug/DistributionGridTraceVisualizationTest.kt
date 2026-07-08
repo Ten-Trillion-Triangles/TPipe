@@ -4,10 +4,112 @@ import com.TTT.Config.TPipeConfig
 import com.TTT.Pipe.MultimodalContent
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DistributionGridTraceVisualizationTest
 {
+    /**
+     * Aggregate token totals should appear at the top of the DistributionGrid HTML
+     * report as a dedicated card. Aggregates inputTokens and outputTokens from every
+     * event that carries them in metadata, SKIPPING KILLSWITCH_CHECK
+     * (cumulative-AT-check-time, not actual spend — see DistributionGrid.kt
+     * checkKillSwitch()).
+     *
+     * Anchors on the rendered `TOKEN TOTALS` label rather than a per-container CSS
+     * class — see ManifoldTraceVisualizationTest header for the rationale.
+     */
+    @Test
+    fun reportShowsTokenTotalsHeaderCard()
+    {
+        val baseTime = System.currentTimeMillis()
+        val visualizer = TraceVisualizer()
+        val trace = listOf(
+            TraceEvent(
+                timestamp = baseTime,
+                pipeId = "grid-001",
+                pipeName = "DistributionGrid-node-a",
+                eventType = TraceEventType.DISTRIBUTION_GRID_START,
+                phase = TracePhase.ORCHESTRATION,
+                content = MultimodalContent("Start task"),
+                contextSnapshot = null,
+                metadata = mapOf("taskId" to "task-123", "nodeId" to "node-a")
+            ),
+            TraceEvent(
+                timestamp = baseTime + 60,
+                pipeId = "grid-001",
+                pipeName = "DistributionGrid-node-a",
+                eventType = TraceEventType.DISTRIBUTION_GRID_MEMORY_ENVELOPE,
+                phase = TracePhase.CONTEXT_PREPARATION,
+                content = null,
+                contextSnapshot = null,
+                metadata = mapOf(
+                    "taskId" to "task-123", "targetNodeId" to "node-b",
+                    "resolvedBudget" to 4096, "compacted" to true,
+                    "inputTokens" to 1500, "outputTokens" to 300, "totalTokens" to 1800
+                )
+            ),
+            TraceEvent(
+                timestamp = baseTime + 90,
+                pipeId = "grid-001",
+                pipeName = "DistributionGrid-node-a",
+                eventType = TraceEventType.DISTRIBUTION_GRID_PEER_HANDOFF,
+                phase = TracePhase.P2P_TRANSPORT,
+                content = MultimodalContent("Send to peer"),
+                contextSnapshot = null,
+                metadata = mapOf(
+                    "taskId" to "task-123", "peerKey" to "peer-b", "targetNodeId" to "node-b",
+                    "inputTokens" to 3500, "outputTokens" to 700, "totalTokens" to 4200
+                )
+            ),
+            // KILLSWITCH_CHECK must be EXCLUDED from totals (cumulative-AT-check, not spend)
+            TraceEvent(
+                timestamp = baseTime + 100,
+                pipeId = "grid-001",
+                pipeName = "DistributionGrid-node-a",
+                eventType = TraceEventType.KILLSWITCH_CHECK,
+                phase = TracePhase.MONITORING,
+                content = null,
+                contextSnapshot = null,
+                metadata = mapOf(
+                    "inputTokens" to 4242, "outputTokens" to 4242,
+                    "inputLimit" to "none", "outputLimit" to "none", "elapsedMs" to 1L
+                )
+            ),
+            TraceEvent(
+                timestamp = baseTime + 280,
+                pipeId = "grid-001",
+                pipeName = "DistributionGrid-node-a",
+                eventType = TraceEventType.DISTRIBUTION_GRID_END,
+                phase = TracePhase.CLEANUP,
+                content = MultimodalContent("Finished"),
+                contextSnapshot = null,
+                metadata = mapOf("taskId" to "task-123", "nodeId" to "node-a")
+            )
+        )
+        val html = visualizer.generateHtmlReport(trace)
+        assertTrue(html.contains("TOKEN TOTALS"),
+            "DistributionGrid report must include the rendered TOKEN TOTALS card")
+        assertTrue(html.contains("Input: 5,000"),
+            "Input total = 1500 (memory_envelope) + 3500 (peer_handoff) = 5,000; KillSwitch 4242 must be skipped")
+        assertTrue(html.contains("Output: 1,000"),
+            "Output total = 300 + 700 = 1,000; KillSwitch 4242 must be skipped")
+        assertTrue(html.contains("Total: 6,000"),
+            "Sum total = 5,000 + 1,000 = 6,000")
+    }
+
+    /**
+     * Card hidden when no event carries token metadata.
+     */
+    @Test
+    fun reportHidesTokenCardWhenNoTokenMetadata()
+    {
+        val visualizer = TraceVisualizer()
+        val html = visualizer.generateHtmlReport(generateMockDistributionGridTrace())
+        assertFalse(html.contains("TOKEN TOTALS"),
+            "DistributionGrid report must hide the token card when zero events carry token metadata")
+    }
+
     @Test
     fun generateDistributionGridHtmlTraceShowsGridSpecificSections()
     {

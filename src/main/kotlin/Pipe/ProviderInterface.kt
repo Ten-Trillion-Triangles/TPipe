@@ -16,4 +16,18 @@ interface ProviderInterface
         //Default to do nothing but some providers will need a bunch of cleanup actions taken.
         return content
     }
+
+    /**
+     * Cleans the raw text returned by the model before it propagates to TPipe
+     * core. Default is identity. Some providers wrap useful output in auxiliary
+     * surface that should be removed at the response boundary so downstream
+     * consumers see only the model's intended payload.
+     *
+     * @param text Raw text returned from the wire before any provider-local cleanup.
+     * @return Input with any provider-specific wrapping removed. Whitespace preserved.
+     */
+    fun cleanResponseText(text: String): String
+    {
+        return text
+    }
 }

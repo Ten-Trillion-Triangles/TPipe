@@ -208,11 +208,18 @@ data class PathDescriptionList(
  * Request object called by the llm to invoke a given path. Requires a path name to be passed, and the schema to be
  * supplied. This might be a custom JSON schema, a data class, or [PcpContext]. If PcpContext is supplied, then
  * the instructions on how to supply pcp will be auto-injected into the agent as well.
+ *
+ * The optional [pathSelectionRationale] field captures the LLM's free-text reasoning for why it picked
+ * this specific path from the available list. The rationale rides into the trace and is consumed by the
+ * judge phase for grading decision quality. When null on the wire, the dispatch output is still
+ * schema-valid (back-compat with old LLM checkpoints that don't emit the field). The harness nudges the
+ * LLM to commit a value when [PumpStationFailurePolicy.requirePathSelectionRationale] is true.
  */
 @kotlinx.serialization.Serializable
 data class PathRequest(
     var pathName: String = "",
-    var pathSchema: String = ""
+    var pathSchema: String = "",
+    var pathSelectionRationale: String? = null
 )
 
 /**
@@ -417,6 +424,17 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      * pass onward to an internal agent.
      */
     private var executionFunction: (suspend (content: MultimodalContent, stationRef: PumpStation, turnHistory: ConverseHistory?, turnSummary: String) -> MultimodalContent)? = null
+
+    /**
+     * True when this path has a developer-supplied [executionFunction]. Used by
+     * [com.TTT.Pipeline.runPreInitPhase] to detect a path-bound exit signal — paths
+     * with a custom function may return [MultimodalContent.passPipeline] = true or
+     * [MultimodalContent.terminatePipeline] = true to exit the harness, even without
+     * a judge agent. Without this signal the harness would emit a false-positive
+     * [WarningCode.NoExitSignalConfigured] advisory.
+     */
+    internal val hasExecutionFunction: Boolean
+        get() = executionFunction != null
 
 
 //-----------------------------------------------------init--------------------------------------------------------
@@ -1032,6 +1050,24 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     internal var judgeRunModeInternal: PumpStationJudgeRunMode = PumpStationJudgeRunMode.Always
 
     /**
+     * When true (default), the judge phase is skipped on turn 0 and a [JudgeSkipped] event with
+     * `reason = "first_turn"` is emitted in its place. The harness then runs dispatch and at least
+     * one path before the judge gets a verdict vote.
+     *
+     * Why this exists: a live judge LLM can see the pre-dispatch state (just the system task and
+     * user prompt with no paths fired yet) and return `isComplete = true` based on a hallucinated
+     * brief. The harness then short-circuits via `runExitFlow` and the loop is permanently broken
+     * before any path ever runs. Skipping the judge on turn 0 forces the pipeline to make at least
+     * one real attempt before judging completion.
+     *
+     * Does NOT interact with [PumpStationJudgeRunMode.FlagTriggered] — that mode's `no_flag_set`
+     * skip takes precedence and continues to use its canonical reason.
+     *
+     * Set to false to restore the legacy "judge fires on every turn including turn 0" behavior.
+     */
+    internal var skipJudgeOnFirstTurnInternal: Boolean = true
+
+    /**
      * Defines the maximum number of concurrent background agents that can be spawned at any given time.
      * If a spawn request would exceed this number it will be queued and batched out at the maximum number
      * allowed at a given time.
@@ -1101,6 +1137,15 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      * exit the PumpStation harness on the spot.
      */
     private var stopHarnessOnInvalidPathRequest = false
+
+    /**
+     * Mirror of [PumpStationFailurePolicy.requirePathSelectionRationale].
+     * Cached at build/init time and re-read on every dispatch turn.
+     * If true, the dispatch LLM is required to commit a non-null
+     * [PathRequest.pathSelectionRationale] on every turn; empty emissions
+     * cause a Hint to be appended to the next-turn dispatch history.
+     */
+    private var requirePathSelectionRationale = true
 
 //--------------------------------------------------Internal------------------------------------------------------------
 
@@ -1504,6 +1549,65 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      * Loop guard: maximum total invocations allowed per path name.
      */
     private var maxTotalPathCallsPerPath: Int? = null
+
+//=====================================Group Q: SafePrune (optional deterministic cleanup)==========================
+
+    /**
+     * Master switch for the SafePrune phase. When false (the default) the phase is a
+     * no-op and emits no events. When true, fires every turn after the existing prunes
+     * if turnHistory.size exceeds [safePruneSizeThreshold].
+     *
+     * @see SafePruneStrategy
+     */
+    private var safePruneEnabled: Boolean = false
+
+    /**
+     * Minimum turnHistory size required for SafePrune to fire on a given turn. Defaults
+     * to 30 — below that the pass is not worth its CPU cost. Each strategy's own gating
+     * (protectRecentN, hashWindow, maxToolArgLength) applies independently.
+     */
+    private var safePruneSizeThreshold: Int = 30
+
+    /**
+     * Number of most-recent entries that SafePrune strategies must NOT mutate. Protects
+     * the just-produced path output and the immediately-prior context from being rewritten
+     * by cleanup strategies that could drop or replace them.
+     */
+    private var safePruneProtectRecentN: Int = 3
+
+    /**
+     * Window size for the [SafePruneStrategy.DeduplicateByHash] strategy. Only entries
+     * within this many positions of an earlier entry are eligible for hash-based dedup.
+     * Conservative default of 10 keeps repeated-question drops rare.
+     */
+    private var safePruneHashWindow: Int = 10
+
+    /**
+     * Maximum tool-response text length before [SafePruneStrategy.StripLongToolArguments]
+     * replaces it with a truncated stub. Conservative default of 2000 covers typical
+     * tool outputs without truncating load-bearing arguments.
+     */
+    private var safePruneMaxToolArgLength: Int = 2000
+
+    /**
+     * Strategies currently enabled. Empty by default. Add via [enableSafePruneStrategy],
+     * remove via [disableSafePruneStrategy], or replace wholesale via [setSafePruneStrategies].
+     */
+    private val safePruneEnabledStrategies: MutableSet<SafePruneStrategy> = mutableSetOf()
+
+    /**
+     * Per-strategy policy overrides. Empty by default; each strategy uses the
+     * PumpStation-global [safePruneSizeThreshold] / [safePruneProtectRecentN].
+     * Add via [setSafePruneStrategyPolicy]; remove by clearing the map.
+     */
+    private val safePruneStrategyPolicies: MutableMap<SafePruneStrategy, SafePrunePolicy> = mutableMapOf()
+
+    /**
+     * Per-strategy dry-run flags. Empty by default; all strategies mutate normally.
+     * When a strategy is in this set, its mutation is skipped and a
+     * [SafePruneDryRunCompleted] event is emitted instead of [SafePruneApplied].
+     */
+    private val safePruneStrategyDryRun: MutableSet<SafePruneStrategy> = mutableSetOf()
 
     /**
      * Policy for how the harness responds when [maxTotalPathCallsPerPath] is exceeded.
@@ -2101,6 +2205,20 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     internal val maxBlowoutRecoveriesInternal get() = maxBlowoutRecoveries
     internal val blowoutThresholdInternal get() = blowoutThreshold
 
+    //=====================================Group Q accessors (SafePrune)============================================
+    // Internal read-only accessors so PumpStationLoop.kt extension functions (Group Q:
+    // safe-prune phase) can read the SafePrune configuration. Mutation goes through
+    // the public fluent setters to preserve the existing builder pattern.
+
+    internal val safePruneEnabledInternal get() = safePruneEnabled
+    internal val safePruneSizeThresholdInternal get() = safePruneSizeThreshold
+    internal val safePruneProtectRecentNInternal get() = safePruneProtectRecentN
+    internal val safePruneHashWindowInternal get() = safePruneHashWindow
+    internal val safePruneMaxToolArgLengthInternal get() = safePruneMaxToolArgLength
+    internal val safePruneEnabledStrategiesInternal get() = safePruneEnabledStrategies
+    internal val safePruneStrategyPoliciesInternal get() = safePruneStrategyPolicies
+    internal val safePruneStrategyDryRunInternal get() = safePruneStrategyDryRun
+
     //=====================================Group K accessors========================================================
     // Internal accessors so PumpStationLoop.kt extension functions (Group K: context
     // blowout detection) can read and mutate the private [stash] and [stashManifest]
@@ -2579,13 +2697,34 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     suspend fun checkPathSafety(path: PathObject, input: MultimodalContent): Boolean
     {
         pathSafetyFunction?.let { fn ->
+            // Custom function users don't carry a reason string — the hint will
+            // use the fallback wording. Clear any stale value.
+            pathSafetyLastVerdict = null
             return fn(path, path.pathSchema, this)
         }
         val agent = pathSafetyAgent ?: return true
         val result = agent.executeLocal(input)
         val parsed = if (pathSafetyExpectsJsonContract) parsePathSafetyVerdict(result.text) else null
-        return parsed ?: !(result.terminatePipeline || result.passPipeline)
+        // Capture the parsed verdict (including reason) so the hint code at the
+        // call site can surface the actual rejection reason to the dispatch LLM.
+        // F3 fix (2026-07-08): without this, the rejection was only logged as
+        // "Rejected by path safety check" and the dispatch LLM had no signal that
+        // its prior choice was rejected.
+        pathSafetyLastVerdict = parsed
+        return parsed?.approved ?: !(result.terminatePipeline || result.passPipeline)
     }
+
+    /**
+     * The verdict returned by the most recent [checkPathSafety] call when the
+     * path-safety agent was used. Null when (a) the custom [pathSafetyFunction]
+     * was used (no reason string is available), or (b) the JSON contract parse
+     * returned null and the legacy flag check was the source of the verdict, or
+     * (c) the path was approved (no rejection to report).
+     *
+     * Consumed by [com.TTT.Pipeline.invokePath] at the rejection site to build
+     * the [Path Safety] hint appended to turnHistory. F3 fix (2026-07-08).
+     */
+    internal var pathSafetyLastVerdict: PathSafetyVerdict? = null
 
     private suspend fun invokePath(path: PathObject, input: MultimodalContent): MultimodalContent
     {
@@ -2635,8 +2774,10 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                         pathName = pathName
                     ))
 
-                    val interventionResult = interventionAgent?.executeLocal(taskState.latestContent ?: MultimodalContent())
-                    val interventionUsage = agentTokenUsageInternal(interventionAgent)
+                    // Builder overrides field per KDoc at :894-896.
+                    val resolvedInterventionAgent = interventionAgentBuilderFunction?.invoke(this) ?: interventionAgent
+                    val interventionResult = resolvedInterventionAgent?.executeLocal(taskState.latestContent ?: MultimodalContent())
+                    val interventionUsage = agentTokenUsageInternal(resolvedInterventionAgent)
 
                     emitEventInternal(InterventionCompleted(
                         runId = taskState.runId,
@@ -2648,6 +2789,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                         outputTokens = interventionUsage?.second?.first,
                         totalTokens = interventionUsage?.second?.second
                     ))
+                    consecutivePathCount = 0
                 }
             }
             else
@@ -2742,6 +2884,10 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
             // degenerate always-approve (LLMs don't normally set terminatePipeline on a
             // safety verdict response).
             val approved = checkPathSafety(path, input)
+            // Capture the rejection reason from the safety verdict (when the agent
+            // path was used). pathSafetyFunction users don't carry a reason —
+            // the hint will fall back to "Rejected by path safety check".
+            val safetyReason: String? = if (!approved) pathSafetyLastVerdict?.reason else null
 
             emitEventInternal(PathSafetyCompleted(
                 runId = taskState.runId,
@@ -2749,11 +2895,24 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                 pathName = pathName,
                 riskLevel = riskLevel,
                 approved = approved,
-                reason = if (!approved) "Rejected by path safety check" else null
+                reason = if (!approved) (safetyReason ?: "Rejected by path safety check") else null
             ))
 
             if (!approved)
             {
+                // F3 fix (2026-07-08): surface the rejection in the next dispatch
+                // LLM's user prompt so dispatch can pick a different path.
+                // Symmetric with the empty-pathName hint at PumpStationLoop.kt:378-389
+                // and the empty-rationale hint at PumpStationLoop.kt:2848-2854.
+                val hintMessage = "[Path Safety] Path '$pathName' was rejected by the path-safety gate" +
+                    (if (safetyReason.isNullOrBlank()) "." else " for: $safetyReason.") +
+                    " Select a different path from the visible list on your next dispatch."
+                turnHistory.add(
+                    ConverseData(
+                        role = ConverseRole.user,
+                        content = MultimodalContent(text = hintMessage)
+                    )
+                )
                 return input
             }
         }
@@ -2779,15 +2938,22 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         }
         catch(e: Exception)
         {
+            // Timeouts are path-level, not harness-level, failures: skip
+            // lastError so the loop continues instead of breaking into
+            // runFinalizationPhase on the first transport timeout.
+            val errorCode = classifyPathException(e)
             emitEventInternal(PathFailed(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
                 pathName = pathName,
                 riskLevel = riskLevel,
-                error = PumpStationError.PathExecutionException,
+                error = errorCode,
                 errorMessage = e.message
             ))
-            taskState.lastError = PumpStationError.PathExecutionException
+            if (errorCode != PumpStationError.PathTimeout)
+            {
+                taskState.lastError = PumpStationError.PathExecutionException
+            }
             taskState.currentPathName = priorPathName
             return input
         }
@@ -3309,6 +3475,34 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     fun getJudgeRunMode(): PumpStationJudgeRunMode = judgeRunModeInternal
 
     /**
+     * When `enabled` is true (default), the judge phase is skipped on turn 0 and a
+     * [JudgeSkipped] event with `reason = "first_turn"` is emitted in its place. The harness
+     * then runs dispatch and at least one path before the judge gets a verdict vote.
+     *
+     * This prevents the live-judge failure mode where a judge LLM sees the pre-dispatch
+     * state (system task + user prompt with no paths yet), hallucinates a completed brief,
+     * and returns `isComplete = true`. Without this guard the harness short-circuits via
+     * [runExitFlow] before any path runs.
+     *
+     * Does NOT interact with [PumpStationJudgeRunMode.FlagTriggered] — that mode's
+     * `no_flag_set` skip takes precedence.
+     *
+     * @param enabled When true, skip the judge on turn 0. Default true.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSkipJudgeOnFirstTurn(enabled: Boolean): PumpStation
+    {
+        this.skipJudgeOnFirstTurnInternal = enabled
+        return this
+    }
+
+    /**
+     * Returns whether the judge phase is skipped on turn 0. See [setSkipJudgeOnFirstTurn]
+     * for semantics. Default is true.
+     */
+    fun getSkipJudgeOnFirstTurn(): Boolean = skipJudgeOnFirstTurnInternal
+
+    /**
      * Returns the configured judge agent pipeline, or `null` if no judge has been wired.
      * Public accessor for the [judgeAgent] field; useful in defaults factories and integration
      * tests that need to verify the slot was filled.
@@ -3478,6 +3672,166 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         return this
     }
 
+    //=====================================SafePrune fluent setters====================================================
+
+    /**
+     * Master switch for the SafePrune phase. When false (the default), the phase is a no-op.
+     *
+     * @param enabled true to enable, false to disable.
+     * @return This PumpStation instance for method chaining.
+     * @see SafePruneStrategy
+     */
+    fun setSafePruneEnabled(enabled: Boolean): PumpStation
+    {
+        this.safePruneEnabled = enabled
+        return this
+    }
+
+    /**
+     * Minimum turnHistory size required for SafePrune to fire on a given turn.
+     *
+     * @param threshold Minimum entry count; pass <= 0 to disable the size gate.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneSizeThreshold(threshold: Int): PumpStation
+    {
+        this.safePruneSizeThreshold = threshold
+        return this
+    }
+
+    /**
+     * Number of most-recent entries that SafePrune strategies must NOT mutate.
+     *
+     * @param count Number of recent entries to protect (>= 0).
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneProtectRecentN(count: Int): PumpStation
+    {
+        this.safePruneProtectRecentN = count
+        return this
+    }
+
+    /**
+     * Window size for the [SafePruneStrategy.DeduplicateByHash] strategy.
+     *
+     * @param window Window size in entries (>= 1).
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneHashWindow(window: Int): PumpStation
+    {
+        this.safePruneHashWindow = window
+        return this
+    }
+
+    /**
+     * Maximum tool-response text length before [SafePruneStrategy.StripLongToolArguments]
+     * replaces it with a truncated stub.
+     *
+     * @param length Maximum length in characters (>= 1).
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneMaxToolArgLength(length: Int): PumpStation
+    {
+        this.safePruneMaxToolArgLength = length
+        return this
+    }
+
+    /**
+     * Enable a single SafePrune strategy. Idempotent — enabling twice has no effect.
+     *
+     * @param strategy Strategy to enable.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun enableSafePruneStrategy(strategy: SafePruneStrategy): PumpStation
+    {
+        this.safePruneEnabledStrategies.add(strategy)
+        return this
+    }
+
+    /**
+     * Disable a single SafePrune strategy. Idempotent — disabling an already-disabled
+     * strategy has no effect.
+     *
+     * @param strategy Strategy to disable.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun disableSafePruneStrategy(strategy: SafePruneStrategy): PumpStation
+    {
+        this.safePruneEnabledStrategies.remove(strategy)
+        return this
+    }
+
+    /**
+     * Replace the entire enabled-strategy set. Pass an empty set to disable all
+     * strategies without turning the master switch off.
+     *
+     * @param strategies Strategies to enable (others are disabled).
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneStrategies(strategies: Set<SafePruneStrategy>): PumpStation
+    {
+        this.safePruneEnabledStrategies.clear()
+        this.safePruneEnabledStrategies.addAll(strategies)
+        return this
+    }
+
+    /**
+     * Set a per-strategy policy override for a single strategy. Null policy
+     * clears any existing override (strategy falls back to global knobs).
+     *
+     * @param strategy Strategy to override.
+     * @param policy Override policy, or null to clear.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneStrategyPolicy(strategy: SafePruneStrategy, policy: SafePrunePolicy?): PumpStation
+    {
+        if (policy == null) safePruneStrategyPolicies.remove(strategy)
+        else safePruneStrategyPolicies[strategy] = policy
+        return this
+    }
+
+    /**
+     * Replace the entire per-strategy policy map.
+     *
+     * @param policies New policy map; strategies not in the map fall back to global.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneStrategyPolicies(policies: Map<SafePruneStrategy, SafePrunePolicy>): PumpStation
+    {
+        safePruneStrategyPolicies.clear()
+        safePruneStrategyPolicies.putAll(policies)
+        return this
+    }
+
+    /**
+     * Set or clear dry-run mode for a single strategy. When true, the strategy
+     * computes its mutation but does NOT apply it; instead a SafePruneDryRunCompleted
+     * event fires with the hypothetical report.
+     *
+     * @param strategy Strategy to toggle.
+     * @param dryRun True to enable dry-run, false to disable (default mutation).
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneStrategyDryRun(strategy: SafePruneStrategy, dryRun: Boolean): PumpStation
+    {
+        if (dryRun) safePruneStrategyDryRun.add(strategy)
+        else safePruneStrategyDryRun.remove(strategy)
+        return this
+    }
+
+    /**
+     * Enable or disable dry-run mode for every strategy at once.
+     *
+     * @param dryRun True to enable dry-run for all strategies, false to clear all.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSafePruneStrategyDryRunAll(dryRun: Boolean): PumpStation
+    {
+        if (dryRun) safePruneStrategyDryRun.addAll(SafePruneStrategy.entries)
+        else safePruneStrategyDryRun.clear()
+        return this
+    }
+
     /**
      * Returns the maximum number of tokens allowed in a repair/regeneration
      * prompt.
@@ -3531,6 +3885,22 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     fun setStopHarnessOnInvalidPathRequest(stop: Boolean): PumpStation
     {
         this.stopHarnessOnInvalidPathRequest = stop
+        return this
+    }
+
+    /**
+     * Sets the [requirePathSelectionRationale] flag on the failure policy,
+     * controlling whether the dispatch LLM is required to commit a
+     * [PathRequest.pathSelectionRationale] on every turn.
+     *
+     * @param require true to require a rationale; false to silence the
+     *                prompt directive and skip the nudge-on-empty check.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setRequirePathSelectionRationale(require: Boolean): PumpStation
+    {
+        this.failurePolicy.requirePathSelectionRationale = require
+        this.requirePathSelectionRationale = require
         return this
     }
 
@@ -4377,6 +4747,8 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         this.failurePolicy.stashOversizedOutputs = policy.stashOversizedOutputs
         this.failurePolicy.callInterventionOnPathFailure = policy.callInterventionOnPathFailure
         this.failurePolicy.stopHarnessOnInvalidPathRequest = policy.stopHarnessOnInvalidPathRequest
+        this.failurePolicy.requirePathSelectionRationale = policy.requirePathSelectionRationale
+        this.requirePathSelectionRationale = policy.requirePathSelectionRationale
         return this
     }
 
