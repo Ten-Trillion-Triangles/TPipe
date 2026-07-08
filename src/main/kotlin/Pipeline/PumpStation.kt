@@ -2768,6 +2768,11 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                         outputTokens = interventionUsage?.second?.first,
                         totalTokens = interventionUsage?.second?.second
                     ))
+                    // B2 fix: reset the counter so re-selecting the same path
+                    // doesn't keep incrementing past the limit. The guard has
+                    // fired; the path still runs this turn, but the next turn
+                    // starts with a fresh budget.
+                    consecutivePathCount = 0
                 }
             }
             else
