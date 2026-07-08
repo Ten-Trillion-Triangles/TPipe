@@ -547,7 +547,7 @@ val pipe = BedrockPipe()
     .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
     .setValidatorFunction { content ->
         val isValid = validateContent(content.text)
-        
+
         // Only enable detailed tracing on failures
         if (!isValid) {
             enableTracing(TraceConfig().apply {
@@ -557,9 +557,27 @@ val pipe = BedrockPipe()
                 includeFullContent = true
             })
         }
-        
+
         isValid
     }
+```
+
+### Harness Token Spread Visualization
+
+`TraceVisualizer` (in `Debug/TraceVisualizer.kt`) renders per-turn input / output token counts on the harness timeline, paired with the `DispatchCompleted` and `PathCompleted` events that spent them.
+
+```kotlin
+val station = pumpStation("research") {
+    tracing {
+        enabled()
+        outputFormat(TraceFormat.HTML)
+    }
+}
+runBlocking { station.executeLocal(MultimodalContent(text = "...")) }
+val html = station.getTraceReport(TraceFormat.HTML)
+```
+
+The HTML export renders a token-spread strip beneath the main flow diagram showing where the budget went turn-by-turn. Use it to spot a runaway-token run without correlating `inputTokens` / `outputTokens` from individual events by hand.
 ```
 
 ### Performance Profiling

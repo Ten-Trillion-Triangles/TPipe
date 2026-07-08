@@ -9,11 +9,12 @@
 @Serializable
 data class PathRequest(
     var pathName: String = "",
-    var pathSchema: String = ""
+    var pathSchema: String = "",
+    var pathSelectionRationale: String? = null
 )
 ```
 
-`pathName` is matched case-insensitively against `pathList` and `reservePaths`. `pathSchema` is passed to the path as the input.
+`pathName` is matched case-insensitively against `pathList` and `reservePaths`. `pathSchema` is passed to the path as the input. `pathSelectionRationale` is an optional free-text reason the dispatch LLM writes for the path it picked. It rides into `DispatchCompleted.pathRequest` and into the `PUMP_STATION_DISPATCH_COMPLETED` trace event. The field is nullable, so old checkpoints that don't emit it still produce a schema-valid `PathRequest`. When `failurePolicy.requirePathSelectionRationale = true` (the default) and the LLM returns null, the harness appends a one-shot reminder to the next dispatch prompt. See [Dispatch Contract: `pathSelectionRationale`](../containers/pumpstation.md#dispatch-contract-pathselectionrationale).
 
 ### PathDescriptionData
 
@@ -200,17 +201,19 @@ data class PumpStationFailurePolicy(
     var maxDispatchRepairAttempts: Int = 1,
     var stashOversizedOutputs: Boolean = true,
     var callInterventionOnPathFailure: Boolean = true,
-    var stopHarnessOnInvalidPathRequest: Boolean = false
+    var stopHarnessOnInvalidPathRequest: Boolean = false,
+    var requirePathSelectionRationale: Boolean = true
 )
 ```
 
-| Field | Default | Description |
+|| Field | Default | Description |
 |-------|---------|-------------|
 | `repairInvalidDispatchJson` | `true` | Repair malformed dispatch output up to `maxDispatchRepairAttempts` times. |
 | `maxDispatchRepairAttempts` | `1` | Max repair attempts. |
 | `stashOversizedOutputs` | `true` | Stash oversized path outputs. |
 | `callInterventionOnPathFailure` | `true` | Invoke `interventionAgent` after a path failure. |
 | `stopHarnessOnInvalidPathRequest` | `false` | When true, set `lastError = DispatchJsonRepairFailed` after repair budget is exhausted. |
+| `requirePathSelectionRationale` | `true` | When true, the harness appends a one-shot reminder to the next dispatch prompt if the LLM returned a null `pathSelectionRationale`. Mirrored on `PumpStationBuilder` and on `PumpStation` itself; `setRequirePathSelectionRationale(Boolean)` keeps both sides in sync. See [Dispatch Contract: `pathSelectionRationale`](../containers/pumpstation.md#dispatch-contract-pathselectionrationale). |
 
 ### PumpStationSnapshot
 

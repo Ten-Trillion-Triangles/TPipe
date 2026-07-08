@@ -132,7 +132,9 @@ When the parser returns `null` (or `pathSafetyJsonContractEnabled` is `false`), 
 - `passPipeline = true` → approve the path, run it
 - neither set → reject (defensive default)
 
-When a path is rejected, no `PathStarted` / `PathCompleted` event is emitted; the original input flows through as the turn's result.
+When a path is rejected, no `PathStarted` / `PathCompleted` event is emitted. The original input flows through as the turn's result. The rejection reason (the JSON `reason` field if the JSON contract is in force, or "path rejected by safety" otherwise) is appended to `turnHistory`, where the dispatch agent on the next turn can read it.
+
+The parser (`Pipeline/PumpStationHelpers.kt`) extracts the `reason` alongside `safe`. `PumpStation.kt` rewrites the rejection notice via `buildLlmErrorMessage` to include the path name, the rejection source, and the reason text. The reason also rides into `PathSafetyCompleted.reason` and into the `PUMP_STATION_PATH_SAFETY_COMPLETED` trace event metadata.
 
 ### Disabling the JSON Contract
 
@@ -486,7 +488,8 @@ Previous output: <truncated bad output>
 Please retry with a valid PathRequest JSON object. The schema is:
 {
   "pathName": "the exact path name from the visible list",
-  "inputData": { ... path-specific input fields ... }
+  "pathSchema": "free-form input schema string",
+  "pathSelectionRationale": "1-2 sentence explanation of why this path was picked (optional)"
 }
 ```
 
@@ -496,6 +499,12 @@ The repair loop runs up to `failurePolicy.maxDispatchRepairAttempts` times (defa
 - `failurePolicy.stopHarnessOnInvalidPathRequest = true`: the harness records `lastError = DispatchJsonRepairFailed`. `runFinalizationPhase` emits `HarnessFailed`.
 
 Only the dispatch contract supports repair. Other contracts either fall back to defaults (judge, health) or fall back to flag-based logic (path-safety, lorebook, summary).
+
+### Dispatch Rationale Reminder (Soft Nudge)
+
+When `failurePolicy.requirePathSelectionRationale = true` (the default) and the dispatch LLM returns `pathSelectionRationale = null` or blank, `applyRationaleNudgeIfNeeded` (`Pipeline/PumpStationLoop.kt:2830`) appends a one-shot reminder to the next dispatch user prompt.
+
+The reminder is appended at most once per run. To disable the nudge, set `failurePolicy.requirePathSelectionRationale = false` (or `setRequirePathSelectionRationale(false)` in the DSL).
 
 
 ## Testing the Contracts
@@ -526,12 +535,19 @@ import com.TTT.Pipeline.PathRequest
 import com.TTT.Util.serialize
 import com.TTT.Util.deserialize
 
-val req = PathRequest(pathName = "research", pathSchema = """{"q":"hi"}""")
+val req = PathRequest(
+    pathName = "research",
+    pathSchema = """{"q":"hi"}""",
+    pathSelectionRationale = "Picked research because the user asked for history of X."
+)
 val json = serialize(req, false)
 val parsed = deserialize<PathRequest>(json)
 assertEquals("research", parsed.pathName)
 assertEquals("""{"q":"hi"}""", parsed.pathSchema)
+assertEquals("Picked research because the user asked for history of X.", parsed.pathSelectionRationale)
 ```
+
+`pathSelectionRationale` is nullable: old checkpoints that don't emit it round-trip as `null`. See [Dispatch Contract: `pathSelectionRationale`](../containers/pumpstation.md#dispatch-contract-pathselectionrationale).
 
 ### Validate a HealthReport
 
