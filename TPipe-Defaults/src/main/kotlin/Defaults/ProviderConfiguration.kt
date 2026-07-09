@@ -253,6 +253,51 @@ data class OpenRouterConfiguration(
 }
 
 /**
+ * Configuration for the GenericOpenAI provider when used through `TPipe-Defaults`.
+ *
+ * The GenericOpenAI pipe is provider-agnostic — it speaks the OpenAI wire format but the
+ * `baseUrl` field lets it target OpenAI, MiniMax, Together, Anyscale, local Ollama, vLLM,
+ * and llama.cpp endpoints. The default `baseUrl` resolves to the official OpenAI endpoint.
+ *
+ * @param model Model identifier the underlying pipe should report to the API.
+ * @param apiKey API key. May be left blank if the GenericOpenAI env resolver supplies it.
+ * @param pipeCount Number of pipes to create when this configuration drives a manager pipeline.
+ * @param baseUrl Base URL of the OpenAI-compatible endpoint.
+ * @param apiMode Wire-format selector. Values: "OpenAI", "OpenAIResponses", "Anthropic".
+ *  The factory translates this string to the package-private `ApiMode` enum on
+ *  [genericOpenAIPipe.GenericOpenAIPipe.setApiMode].
+ * @param httpReferer HTTP Referer header (some gateways require it for traffic tracking).
+ * @param appTitle Application title header (OpenRouter-style identification).
+ * @param sessionId Optional sticky session identifier.
+ * @param verbosity Optional verbosity hint passed through to OpenAI-style endpoints.
+ * @param reasoningEffort Optional reasoning-effort hint (low / medium / high) passed
+ *  through to providers that support it.
+ * @param parallelToolCalls When non-null, configure the underlying pipe to allow or
+ *  disallow parallel function calls.
+ * @param structuredOutputs When non-null, toggle structured JSON-schema output on the
+ *  underlying pipe.
+ * @param manifoldMemory Manifold-specific manager-memory defaults applied by `TPipe-Defaults`.
+ */
+data class GenericOpenAIConfiguration(
+    var model: String,
+    var apiKey: String = "",
+    var pipeCount: Int = 1,
+    var baseUrl: String = "https://api.openai.com/v1",
+    var apiMode: String = "OpenAI",
+    var httpReferer: String = "",
+    var appTitle: String = "",
+    var sessionId: String? = null,
+    var verbosity: String? = null,
+    var reasoningEffort: String? = null,
+    var parallelToolCalls: Boolean? = null,
+    var structuredOutputs: Boolean? = null,
+    var manifoldMemory: ManifoldMemoryConfiguration = ManifoldMemoryConfiguration()
+) : ProviderConfiguration()
+{
+    override fun validate(): Boolean = model.isNotBlank() && pipeCount > 0
+}
+
+/**
  * Grid-specific Ollama defaults configuration.
  *
  * @param model Model name to use.
