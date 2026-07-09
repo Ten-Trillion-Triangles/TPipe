@@ -8,6 +8,7 @@ import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.KillSwitchContext
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PConcurrencyMode
+import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.P2PTransport
@@ -1001,8 +1002,8 @@ class WorkerDsl(private val agentName: String)
 @ManifoldDslMarker
 class ValidationDsl
 {
-    private var validator: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null
-    private var failureHandler: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null
+    private var validator: (suspend (content: MultimodalContent, agent: P2PInterface) -> Boolean)? = null
+    private var failureHandler: (suspend (content: MultimodalContent, agent: P2PInterface) -> Boolean)? = null
     private var transformer: (suspend (content: MultimodalContent) -> MultimodalContent)? = null
 
     /**
@@ -1010,7 +1011,7 @@ class ValidationDsl
      *
      * @param function Validation function invoked after worker execution.
      */
-    fun validator(function: suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)
+    fun validator(function: suspend (content: MultimodalContent, agent: P2PInterface) -> Boolean)
     {
         validator = function
     }
@@ -1020,7 +1021,7 @@ class ValidationDsl
      *
      * @param function Failure handler that attempts to recover from a bad worker result.
      */
-    fun failure(function: suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)
+    fun failure(function: suspend (content: MultimodalContent, agent: P2PInterface) -> Boolean)
     {
         failureHandler = function
     }
@@ -1368,8 +1369,8 @@ data class HistoryConfiguration(
  * @property transformer Optional manifold content transformer.
  */
 data class ValidationConfiguration(
-    val validator: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null,
-    val failureHandler: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null,
+    val validator: (suspend (content: MultimodalContent, agent: P2PInterface) -> Boolean)? = null,
+    val failureHandler: (suspend (content: MultimodalContent, agent: P2PInterface) -> Boolean)? = null,
     val transformer: (suspend (content: MultimodalContent) -> MultimodalContent)? = null
 )
 

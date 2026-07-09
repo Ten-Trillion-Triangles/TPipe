@@ -244,13 +244,13 @@ class Manifold : P2PInterface
      * @param content The content object that is being worked on by the llm agent.
      * @param agent The agent that just completed the task.
      */
-    private var workerValidatorFunction: (suspend (content: MultimodalContent, agent: Pipeline, manifold: Manifold) -> Boolean)? = null
+    private var workerValidatorFunction: (suspend (content: MultimodalContent, agent: P2PInterface, manifold: Manifold) -> Boolean)? = null
 
     /**
      * Human in the loop function to handle a failure before the manifold is shut down. Allows the coder to
      * attempt to rectify whatever the issue is.
      */
-    private var failureFunction: (suspend (content: MultimodalContent, agent: Pipeline, manifold: Manifold) -> Boolean)? = null
+    private var failureFunction: (suspend (content: MultimodalContent, agent: P2PInterface, manifold: Manifold) -> Boolean)? = null
 
     /**
      * Human in the loop function to allow for content transformation upon a successful llm call. Also, can be used
@@ -616,7 +616,7 @@ class Manifold : P2PInterface
      * that the manifold has not produced any breaking, or otherwise invalid output. If not supplied validtion
      * attempts will be skipped.
      */
-    fun setValidatorFunction(func: suspend (content: MultimodalContent, agent: Pipeline, manifold: Manifold) -> Boolean) : Manifold
+    fun setValidatorFunction(func: suspend (content: MultimodalContent, agent: P2PInterface, manifold: Manifold) -> Boolean) : Manifold
     {
         workerValidatorFunction = func
         return this
@@ -626,7 +626,7 @@ class Manifold : P2PInterface
      * Defines a branch failure function to attempt to recover the state of the manifold in the event of a validation
      * failure. This can only be called if the validation function is also valid.
      */
-    fun setFailureFunction(func: suspend (content: MultimodalContent, agent: Pipeline, manifold: Manifold) -> Boolean) : Manifold
+    fun setFailureFunction(func: suspend (content: MultimodalContent, agent: P2PInterface, manifold: Manifold) -> Boolean) : Manifold
     {
         failureFunction = func
         return this
@@ -1025,14 +1025,27 @@ class Manifold : P2PInterface
         val managerDescriptor = managerPipeline.getP2pDescription() ?: throw Exception("Manager pipeline descriptor is null. Cannot start the manifold.")
         val managerAgentDescriptor = AgentDescriptor.buildFromDescriptor(managerDescriptor)
 
-        val localAgents = P2PRegistry.listLocalAgents(this).toMutableList()
-        localAgents.remove(managerDescriptor) //Remove manager so that we don't broadcast this to the workers.
-
         /**
-         * All agents inside the manifold class need to be registered locally, since they will always be called
-         * by the manager pipeline through local scope by default.
+         * Build the agent-path list the manager pipeline will see in its prompt.
+         *
+         * Includes BOTH:
+         *   - local agents (registered with this Manifold as their container, no external-connection flag), AND
+         *   - global agents (registered with allowExternalConnections=true so they are addressable from
+         *     outside their owning container).
+         *
+         * The manager descriptor is filtered out so it does not appear as a callable target to itself.
+         *
+         * Original implementation only listed local agents, which prevented the manager from dispatching to
+         * any worker that lived only in P2PRegistry. That restriction existed historically due to memory-
+         * safety and race-condition concerns; P2PRegistry's agent-duplication and factory-mode semantics
+         * already provide the required isolation, so the restriction has been lifted.
          */
-        for(descriptor in localAgents)
+        val visibleAgents = mutableListOf<P2PDescriptor>()
+        visibleAgents.addAll(P2PRegistry.listLocalAgents(this))
+        visibleAgents.addAll(P2PRegistry.listGlobalAgents())
+        visibleAgents.removeAll { it.agentName == managerDescriptor.agentName }
+
+        for(descriptor in visibleAgents)
         {
             val agentDescriptor = AgentDescriptor.buildFromDescriptor(descriptor)
             agentPaths.add(agentDescriptor)
@@ -1778,14 +1791,22 @@ class Manifold : P2PInterface
                     trace(TraceEventType.VALIDATION_START, TracePhase.ORCHESTRATION,
                         metadata = mapOf("validatorFunction" to workerValidatorFunction.toString()))
 
-                    //Get the worker pipeline that just executed
-                    val workerPipeline = workerPipelinesByAgentName[agentRequest.agentName] ?: workerPipelines.find { pipeline ->
-                        pipeline.getP2pDescription()?.agentName == agentRequest.agentName ||
-                            pipeline.getP2pTransport()?.transportAddress == agentRequest.agentName
-                    }
+                    /**
+                     * Resolve the worker that just executed. Prefer the local worker-pipelines map (covers
+                     * the historical case where workers are in-process Pipelines). Fall back to the
+                     * P2PRegistry for remote workers. If neither resolves, skip the user-supplied
+                     * validator/failure functions for this iteration (preserves the prior short-circuit
+                     * semantics — these functions were silently skipped before when no local worker
+                     * matched).
+                     */
+                    val workerAgent: P2PInterface? =
+                        workerPipelinesByAgentName[agentRequest.agentName] ?: workerPipelines.find { pipeline ->
+                            pipeline.getP2pDescription()?.agentName == agentRequest.agentName ||
+                                pipeline.getP2pTransport()?.transportAddress == agentRequest.agentName
+                        } ?: P2PRegistry.findAgentByName(agentRequest.agentName)
 
                     //Handle branch failure state if our validation function did not pass.
-                    if(workerPipeline != null && workerValidatorFunction?.invoke(response.output!!, workerPipeline, this) == false)
+                    if(workerAgent != null && workerValidatorFunction?.invoke(response.output!!, workerAgent, this) == false)
                     {
                         //Execute branch failure if provided. This gives one last chance to not end the manifold.
                         if(failureFunction != null)
@@ -1794,7 +1815,7 @@ class Manifold : P2PInterface
                                 metadata = mapOf("failureFunction" to failureFunction.toString()))
 
                             //Bail on the manifold if we can't pass this. Otherwise, we can resume the task.
-                            if(failureFunction?.invoke(response.output!!, workerPipeline, this) == false)
+                            if(workerAgent != null && failureFunction?.invoke(response.output!!, workerAgent, this) == false)
                             {
                                 val errorMessage = response.output?.metadata?.get("error") ?: "Unable to recover using branch failure function."
 
