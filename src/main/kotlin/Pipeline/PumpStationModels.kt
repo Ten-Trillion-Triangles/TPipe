@@ -195,6 +195,7 @@ enum class PumpStationExitReason
     TerminateSignal,
     MaxTurnsHit,
     KillSwitchTripped,
+    LoopGuardTripped,
     GoalValidationFailed,
     InterventionTerminated,
     Error

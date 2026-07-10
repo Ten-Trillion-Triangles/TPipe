@@ -489,9 +489,10 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
 
     /**
      * Maximum consecutive dispatch turns that can select the same path.
-     * Prevents infinite loops on a single path.
+     * Null disables the guard. The guard is opt-in: set this explicitly when a
+     * station should police repeated path selection.
      */
-    var maxConsecutiveSamePath: Int = 3
+    var maxConsecutiveSamePath: Int? = null
 
     /**
      * Maximum total dispatch calls allowed per specific path.
