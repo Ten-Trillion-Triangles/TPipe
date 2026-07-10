@@ -52,6 +52,13 @@ sealed class ManifoldStage
 class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     var managerConfig: ManagerConfiguration? = null,
     val workerConfigs: MutableList<WorkerConfiguration> = mutableListOf(),
+    /**
+     * Workers attached as bare [P2PInterface]s (Junction, DistributionGrid, PumpStation, nested
+     * Manifold, etc.) via the `workerP2P(name) { ... }` DSL block. The classic
+     * `worker(name) { pipeline { ... } }` block populates [workerConfigs]; this list carries the
+     * higher-order container workers. Duplicate-name checks in [validateWorkers] scan both.
+     */
+    val workerP2PConfigs: MutableList<WorkerP2PConfiguration> = mutableListOf(),
     var historyConfiguration: HistoryConfiguration? = null,
     var validationConfiguration: ValidationConfiguration? = null,
     var initFunctionConfiguration: InitFunctionConfiguration? = null,
@@ -98,6 +105,7 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     private fun <T : ManifoldStage> createNew(
         managerConfig: ManagerConfiguration? = this.managerConfig,
         workerConfigs: MutableList<WorkerConfiguration> = this.workerConfigs,
+        workerP2PConfigs: MutableList<WorkerP2PConfiguration> = this.workerP2PConfigs,
         historyConfiguration: HistoryConfiguration? = this.historyConfiguration,
         validationConfiguration: ValidationConfiguration? = this.validationConfiguration,
         tracingConfiguration: TraceConfig? = this.tracingConfiguration,
@@ -110,6 +118,7 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         val newBuilder = ManifoldBuilder<T>(
             managerConfig = managerConfig,
             workerConfigs = workerConfigs,
+            workerP2PConfigs = workerP2PConfigs,
             historyConfiguration = historyConfiguration,
             validationConfiguration = validationConfiguration,
             tracingConfiguration = tracingConfiguration,
@@ -224,6 +233,41 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         return createNew<ManifoldStage.Ready>(
             managerConfig = managerConfig,
             workerConfigs = workerConfigs,
+            workerP2PConfigs = workerP2PConfigs,
+            historyConfiguration = historyConfiguration,
+            validationConfiguration = validationConfiguration,
+            tracingConfiguration = tracingConfiguration,
+            summaryPipelineConfiguration = summaryPipelineConfiguration,
+            concurrencyModeConfiguration = concurrencyModeConfiguration,
+            killSwitchConfiguration = killSwitchConfiguration,
+            maxIterationsConfiguration = maxIterationsConfiguration
+        )
+    }
+
+    /**
+     * Declare a higher-order [P2PInterface] worker (Junction, DistributionGrid, PumpStation,
+     * nested Manifold, or any P2PInterface) that can be called by the manifold manager. The
+     * block body configures the worker via [WorkerP2PDsl]: it must assign a `component`, and
+     * may supply `descriptor`/`requirements`/`description`/`skills`.
+     *
+     * Companion to `worker(name) { pipeline { ... } }`. Same stage transitions: after the first
+     * `workerP2P` (or `worker`) call the builder reaches [ManifoldStage.Ready] so [build] is
+     * callable.
+     *
+     * @param agentName Public routing name for the worker.
+     * @param block Builder block that wires the P2PInterface into the manifold.
+     * @return A new builder in Ready stage.
+     */
+    fun workerP2P(agentName: String, block: WorkerP2PDsl.() -> Unit): ManifoldBuilder<ManifoldStage.Ready>
+    {
+        val builder = WorkerP2PDsl(agentName)
+        builder.block()
+        workerP2PConfigs.add(builder.build())
+
+        return createNew<ManifoldStage.Ready>(
+            managerConfig = managerConfig,
+            workerConfigs = workerConfigs,
+            workerP2PConfigs = workerP2PConfigs,
             historyConfiguration = historyConfiguration,
             validationConfiguration = validationConfiguration,
             tracingConfiguration = tracingConfiguration,
@@ -379,6 +423,18 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
             )
         }
 
+        for(workerP2P in workerP2PConfigs)
+        {
+            manifold.addWorker(
+                component = workerP2P.component,
+                descriptor = workerP2P.descriptor,
+                requirements = workerP2P.requirements,
+                agentName = workerP2P.agentName,
+                agentDescription = workerP2P.description,
+                agentSkills = workerP2P.skills
+            )
+        }
+
         applyValidationConfiguration(manifold)
         applyInitFunctionConfiguration(manifold)
         applySummaryPipelineConfiguration(manifold)
@@ -401,19 +457,26 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
      */
     private fun validateWorkers()
     {
-        if(workerConfigs.isEmpty())
+        if(workerConfigs.isEmpty() && workerP2PConfigs.isEmpty())
         {
-            throw IllegalArgumentException("At least one worker { ... } block is required to build a manifold.")
+            throw IllegalArgumentException("At least one worker { ... } or workerP2P { ... } block is required to build a manifold.")
         }
 
-        val duplicateNames = workerConfigs
-            .groupBy { worker -> worker.agentName }
-            .filter { groupedWorkers -> groupedWorkers.value.size > 1 }
+        val pipelineWorkerNames = workerConfigs.map { it.agentName }
+        val p2pWorkerNames = workerP2PConfigs.map { it.agentName }
+        val allNames = pipelineWorkerNames + p2pWorkerNames
+
+        val duplicateNames = allNames
+            .groupBy { it }
+            .filter { it.value.size > 1 }
             .keys
             .sorted()
         if(duplicateNames.isNotEmpty())
         {
-            throw IllegalArgumentException("Worker agent names must be unique. Duplicate names: ${duplicateNames.joinToString()}")
+            throw IllegalArgumentException(
+                "Worker agent names must be unique across pipeline-shaped and workerP2P-shaped blocks. " +
+                    "Duplicate names: ${duplicateNames.joinToString()}"
+            )
         }
 
         val duplicateRoutingIdentities = workerConfigs
@@ -995,6 +1058,131 @@ class WorkerDsl(private val agentName: String)
         )
     }
 }
+
+/**
+ * Builder for a higher-order [P2PInterface] worker (Junction, DistributionGrid, PumpStation,
+ * nested [Manifold], or any other `P2PInterface`) attached to the Manifold via the
+ * `workerP2P(name) { ... }` DSL block.
+ *
+ * Unlike [WorkerDsl], this builder does NOT take a `pipeline { ... }` block. The caller
+ * supplies an already-built P2PInterface and the descriptor/requirements that govern its
+ * P2P registration. The component's own `init()` lifecycle is responsible for its
+ * internals — the outer Manifold does NOT call `init(true)` on non-Pipeline workers.
+ *
+ * @param agentName Public routing name assigned to this worker. Must be unique against
+ *                  any other worker (Pipeline-shaped or `workerP2P`-shaped) on the same Manifold.
+ */
+@ManifoldDslMarker
+class WorkerP2PDsl(private val agentName: String)
+{
+    /**
+     * The higher-order [P2PInterface] to attach as a worker. DSL callers set this with
+     * `component = someJunction` syntax inside the `workerP2P(name) { ... }` block. Reading
+     * is internal-only.
+     */
+    var component: P2PInterface? = null
+    private var descriptor: P2PDescriptor? = null
+    private var requirements: P2PRequirements? = null
+    private var description = ""
+    private val skills = mutableListOf<P2PSkills>()
+
+    /**
+     * Replace the worker's P2P descriptor. Required unless the component already has one set.
+     *
+     * @param descriptor Explicit descriptor to register the worker under.
+     */
+    fun descriptor(descriptor: P2PDescriptor)
+    {
+        this.descriptor = descriptor
+    }
+
+    /**
+     * Replace the worker's P2P requirements. Required unless the component already has them set.
+     *
+     * @param requirements Explicit requirements to register the worker with.
+     */
+    fun requirements(requirements: P2PRequirements)
+    {
+        this.requirements = requirements
+    }
+
+    /**
+     * Set a human-readable description for this worker agent.
+     *
+     * @param description Description shown to the manager when choosing a worker.
+     */
+    fun description(description: String)
+    {
+        this.description = description
+    }
+
+    /**
+     * Add a worker skill descriptor.
+     *
+     * @param name Skill name to advertise.
+     * @param description Skill description to advertise.
+     */
+    fun skill(name: String, description: String)
+    {
+        skills.add(P2PSkills(name, description))
+    }
+
+    /**
+     * Replace the worker skills with the supplied list.
+     *
+     * @param skills Worker skills to advertise.
+     */
+    fun skills(skills: List<P2PSkills>)
+    {
+        this.skills.clear()
+        this.skills.addAll(skills)
+    }
+
+    /**
+     * Build the immutable worker-P2P configuration captured by this DSL block.
+     *
+     * @return Worker-P2P configuration ready for manifold assembly.
+     */
+    internal fun build(): WorkerP2PConfiguration
+    {
+        val resolvedComponent = component ?: throw IllegalArgumentException(
+            "workerP2P '$agentName' requires a component = ... declaration."
+        )
+        validatePairedP2PSettings(
+            descriptor = descriptor,
+            requirements = requirements,
+            targetDescription = "workerP2P '$agentName'"
+        )
+
+        return WorkerP2PConfiguration(
+            agentName = agentName,
+            component = resolvedComponent,
+            descriptor = descriptor,
+            requirements = requirements,
+            description = description,
+            skills = skills.toList().ifEmpty { null }
+        )
+    }
+}
+
+/**
+ * Immutable worker-P2P configuration captured by [WorkerP2PDsl].
+ *
+ * @property agentName Public routing name for the worker.
+ * @property component Higher-order P2PInterface to register (Junction, DistributionGrid, ...).
+ * @property descriptor Optional explicit P2P descriptor override.
+ * @property requirements Optional explicit P2P requirements override.
+ * @property description Human-readable worker description.
+ * @property skills Optional advertised worker skills.
+ */
+data class WorkerP2PConfiguration(
+    val agentName: String,
+    val component: P2PInterface,
+    val descriptor: P2PDescriptor?,
+    val requirements: P2PRequirements?,
+    val description: String,
+    val skills: List<P2PSkills>?
+)
 
 /**
  * Builder for optional manifold validation and transformation hooks.

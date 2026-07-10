@@ -160,7 +160,10 @@ manifold.killSwitch = KillSwitch(inputTokenLimit = 100_000)
 // Automatically sets:
 // - manifold.killSwitch = KillSwitch(...)
 // - manifold.managerPipeline.killSwitch = KillSwitch(...)
-// - manifold.workerPipelines[0].killSwitch = KillSwitch(...)
+// - manifold.getWorkerPipelines()[0].killSwitch = KillSwitch(...)
+// - For higher-order workers (Junction, DistributionGrid, PumpStation, nested Manifold)
+//   attached via manifold.getWorkerComponents(), propagation reaches the contained
+//   pipelines transitively through the container's own propagation chain.
 // - etc.
 ```
 
