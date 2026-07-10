@@ -7,6 +7,7 @@ import com.TTT.PipeContextProtocol.PcpStdioHost
 import com.TTT.MCP.Server.McpStdioHost
 import com.TTT.MCP.Server.McpHttpHost
 import com.TTT.Config.TPipeConfig
+import com.TTT.Util.ProcessName
 import io.ktor.server.netty.*
 
 /**
@@ -16,6 +17,8 @@ import io.ktor.server.netty.*
  */
 fun main(args: Array<String>)
 {
+    ProcessName.set(resolveProcessLabel(args))
+
     if(args.contains("--remote-memory"))
     {
         TPipeConfig.remoteMemoryEnabled = true
@@ -142,4 +145,29 @@ private fun extractMcpBridgeHttpBindAddress(args: Array<String>): String {
         return bindArg.substringAfter("=").ifEmpty { "127.0.0.1" }
     }
     return System.getenv("TPIPE_MCP_BRIDGE_HTTP_BIND") ?: "127.0.0.1"
+}
+
+/**
+ * Picks a short, mode-specific process label so the running TPipe JVM is identifiable
+ * in `ps`, `top`, `htop`, and `killall` without having to cross-reference the
+ * original launch command. Labels are capped at 15 bytes by the Linux kernel
+ * TASK_COMM limit; longer labels truncate.
+ */
+private fun resolveProcessLabel(args: Array<String>): String {
+    return when {
+        args.contains("--mcp-bridge-http") -> "TPipe-MCPBr-H"
+        args.contains("--mcp-bridge-stdio-loop") -> "TPipe-MCPBr-SL"
+        args.contains("--mcp-bridge-stdio-once") -> "TPipe-MCPBr-SO"
+        args.contains("--mcp-http") -> "TPipe-MCP-HTTP"
+        args.contains("--mcp-stdio-loop") -> "TPipe-MCP-SL"
+        args.contains("--mcp-stdio-once") -> "TPipe-MCP-SO"
+        args.contains("--pcp-stdio-loop") -> "TPipe-PCP-SL"
+        args.contains("--pcp-stdio-once") -> "TPipe-PCP-SO"
+        args.contains("--stdio-loop") -> "TPipe-Stdio-L"
+        args.contains("--stdio-once") -> "TPipe-Stdio-O"
+        args.contains("--remote-memory") -> "TPipe-RemMem"
+        args.contains("--http") -> "TPipe-HTTP"
+        args.isEmpty() -> "TPipe-HTTP"
+        else -> "TPipe"
+    }
 }
