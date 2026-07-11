@@ -685,25 +685,90 @@ class PumpStationPostGoalLiveTest
      * Live-mode goal agent: real MiniMax LLM call. Pass-prompt instructs the LLM to always
      * return a passing response. Fail-prompt instructs it to always signal failure.
      */
+    // The harness's goal-validation path checks `result.terminatePipeline` (line 2408 of
+    // PumpStationLoop.kt: `val passed = !result.terminatePipeline`), not the textual
+    // content of the goal-agent response. Text-only prompts like "say GOALFAILED" or
+    // "say GOALCONFIRMED" do NOT flip the flag, so the harness treats every response
+    // as `passed=true`. The wrappers below use a real LLM inside but force the
+    // flag at the wrapper boundary, matching the stub-mode pattern.
     private fun PumpStationBuilder<*>.liveGoalAgentThatPasses()
     {
-        goalAgent = createAgentPipeline(
-            testName = "goal",
-            pipeName = "goal",
-            systemPrompt = "You are a goal-verification agent. Inspect the conversation " +
-                "and respond with one short sentence confirming the work is done. " +
-                "NEVER signal failure. End your response with the literal token 'GOALCONFIRMED'."
-        )
+        goalAgent = wrapPipelineAsLivePassingGoal()
     }
 
     private fun PumpStationBuilder<*>.liveGoalAgentThatFails()
     {
-        goalAgent = createAgentPipeline(
-            testName = "goal",
-            pipeName = "goal",
+        goalAgent = wrapPipelineAsLiveFailingGoal()
+    }
+
+    /**
+     * Live-LLM-backed passing goal agent: invokes a real LLM pipe (so the call is
+     * recorded in the live trace) and always returns a result with
+     * `terminatePipeline = false`. Drives a real goal-validation cycle that
+     * always passes; the trace HTML will show the GOAL_VALIDATION events.
+     */
+    private fun wrapPipelineAsLivePassingGoal(): P2PInterface
+    {
+        val pipe = createMiniMaxPipe(
+            "goal-pass-live",
             systemPrompt = "You are a goal-verification agent. Inspect the conversation " +
-                "and ALWAYS respond with 'GOALFAILED: not done'. NEVER confirm the work."
+                "and respond with one short sentence confirming the work is done. " +
+                "End your response with the literal token 'GOALCONFIRMED'."
         )
+        val pipeline = Pipeline().apply { add(pipe) }
+        runBlocking { pipeline.init(true) }
+        return object : P2PInterface
+        {
+            override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
+            {
+                val out = pipeline.executeLocal(content)
+                return MultimodalContent(text = out.text).apply { terminatePipeline = false }
+            }
+            override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? = null
+            override fun setParentInterface(parent: P2PInterface) {}
+            override fun getParentP2PInterface(): P2PInterface? = null
+            override fun getPaths(): String = ""
+            override fun setTokenBudgetRecursive(budget: TokenBudgetSettings) {}
+            override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+            override fun setPipeSettingsRecursively(settings: PipeSettings) {}
+            override suspend fun P2PInit() {}
+            override var killSwitch: KillSwitch? = null
+        }
+    }
+
+    /**
+     * Live-LLM-backed failing goal agent: invokes a real LLM pipe (so the call is
+     * recorded in the live trace) and always returns a result with
+     * `terminatePipeline = true`. Drives a real goal-validation cycle that always
+     * fails; the harness will count the failure toward `maxGoalFailAttempts` and
+     * eventually exit with `PumpStationExitReason.GoalValidationFailed`.
+     */
+    private fun wrapPipelineAsLiveFailingGoal(): P2PInterface
+    {
+        val pipe = createMiniMaxPipe(
+            "goal-fail-live",
+            systemPrompt = "You are a goal-verification agent. Inspect the conversation " +
+                "and ALWAYS respond with 'GOALFAILED: not done'."
+        )
+        val pipeline = Pipeline().apply { add(pipe) }
+        runBlocking { pipeline.init(true) }
+        return object : P2PInterface
+        {
+            override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
+            {
+                val out = pipeline.executeLocal(content)
+                return MultimodalContent(text = out.text).apply { terminatePipeline = true }
+            }
+            override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? = null
+            override fun setParentInterface(parent: P2PInterface) {}
+            override fun getParentP2PInterface(): P2PInterface? = null
+            override fun getPaths(): String = ""
+            override fun setTokenBudgetRecursive(budget: TokenBudgetSettings) {}
+            override fun getTokenBudgetSettings(): TokenBudgetSettings? = null
+            override fun setPipeSettingsRecursively(settings: PipeSettings) {}
+            override suspend fun P2PInit() {}
+            override var killSwitch: KillSwitch? = null
+        }
     }
 
     /**
