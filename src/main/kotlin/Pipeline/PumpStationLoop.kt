@@ -477,6 +477,153 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
 }
 
 /**
+ * Multi-path dispatch phase. Mirrors [runDispatchPhase] but parses a
+ * [PathRequestList] and launches every parsed path via the existing async
+ * substrate. Emits [PathBatchStarted] before fan-out, [PathBatchCompleted]
+ * after fan-out, [PathBatchFailed] on parse/repair exhaustion.
+ *
+ * Returns `null` on success — `runTurn`'s "no foreground path this turn"
+ * branch then continues the loop. The async paths' results drain at the
+ * next judge via [drainPendingAsyncResults] and merge into turn history.
+ *
+ * Phase 2 will replace this null-return pattern with structured concurrency
+ * (coroutineScope / async / awaitAll) and proper halt-flag aggregation.
+ */
+internal suspend fun PumpStation.runDispatchPhaseMulti(): PathRequest?
+{
+    taskState.phase = PumpStationPhase.Dispatch
+    emitEventInternal(DispatchStarted(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex
+    ))
+
+    val baseInput = if (taskState.latestContent != null && taskState.latestContent!!.text.isNotEmpty())
+    {
+        val enriched = buildTurnContent()
+        enriched.copy(text = "[LATEST PRIOR AGENT OUTPUT]\n" + taskState.latestContent!!.text +
+            "\n[/LATEST PRIOR AGENT OUTPUT]\n\n" + enriched.text)
+    }
+    else buildTurnContent()
+    val input = preValidationDispatchFunctionInternal?.invoke(baseInput, contextWindow, miniBank, this)
+        ?.let { baseInput.copy(miniBankContext = it) } ?: baseInput
+
+    var result = runAgent(dispatchAgent, input)
+
+    val dispatchFlags = checkMultimodalFlags(result, "Dispatch")
+    if (dispatchFlags.shouldHalt)
+{
+        taskState.lastError = PumpStationError.P2PRequestInvalid
+        return null
+    }
+
+    postGenerateFunctionInternal?.invoke(result, this)?.let { returnedAgent ->
+        result.metadata["postGenerateAgent"] = returnedAgent
+    }
+
+    var repairAttempts = 0
+    val dispatchUsage = agentTokenUsage(dispatchAgent)
+    recordAndCheckKillSwitch(dispatchAgent)
+
+    while (repairAttempts <= failurePolicy.maxDispatchRepairAttempts)
+{
+        val flags = checkMultimodalFlags(result, "Dispatch")
+        if (flags.shouldHalt)
+{
+            taskState.lastError = PumpStationError.P2PRequestInvalid
+            return null
+        }
+        val pathRequestList = parseDispatchOutputMulti(result)
+        if (pathRequestList != null && pathRequestList.paths.isNotEmpty())
+{
+            emitEventInternal(PathBatchStarted(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                pathNames = pathRequestList.paths.map { it.pathName },
+                batchRationale = pathRequestList.batchRationale
+            ))
+
+            var succeededCount = 0
+            var failedCount = 0
+            for (request in pathRequestList.paths)
+{
+                val resolvedPath = resolvePath(request.pathName)
+                if (resolvedPath == null)
+{
+                    failedCount++
+                    emitEventInternal(PathFailed(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        pathName = request.pathName,
+                        riskLevel = PathRiskLevel.Low,
+                        error = PumpStationError.UnknownPath,
+                        errorMessage = "Path '${request.pathName}' not found in batch"
+                    ))
+                    continue
+                }
+                val pathInput = buildPathInput(resolvedPath, request)
+                try
+{
+                    launchAsyncPath(resolvedPath, pathInput)
+                    succeededCount++
+                }
+                catch (e: Exception)
+{
+                    failedCount++
+                    emitEventInternal(PathFailed(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        pathName = request.pathName,
+                        riskLevel = resolvedPath.riskLevel,
+                        error = classifyPathException(e),
+                        errorMessage = e.message
+                    ))
+                }
+            }
+
+            emitEventInternal(PathBatchCompleted(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                totalPaths = pathRequestList.paths.size,
+                succeededPaths = succeededCount,
+                failedPaths = failedCount
+            ))
+
+            emitEventInternal(DispatchCompleted(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                selectedPathName = pathRequestList.paths.firstOrNull()?.pathName,
+                pathRequest = pathRequestList.paths.firstOrNull(),
+                result = result,
+                inputTokens = dispatchUsage?.first,
+                outputTokens = dispatchUsage?.second?.first,
+                totalTokens = dispatchUsage?.second?.second
+            ))
+
+            return null
+        }
+
+        if (!failurePolicy.repairInvalidDispatchJson) break
+        if (repairAttempts >= failurePolicy.maxDispatchRepairAttempts) break
+        repairAttempts++
+
+        val repairPrompt = buildMultiPathRepairPrompt(result)
+        result = runAgent(dispatchAgent, repairPrompt)
+    }
+
+    emitEventInternal(PathBatchFailed(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex,
+        errorMessage = "Multi-path repair exhausted after $repairAttempts attempts",
+        repairAttempts = repairAttempts
+    ))
+    if (failurePolicy.stopHarnessOnInvalidPathRequest)
+{
+        taskState.lastError = PumpStationError.DispatchJsonRepairFailed
+    }
+    return null
+}
+
+/**
  * Build a repair prompt asking the dispatch agent to fix its malformed JSON.
  */
 internal fun PumpStation.buildRepairPrompt(badOutput: MultimodalContent): MultimodalContent
@@ -489,6 +636,27 @@ Please retry with a valid PathRequest JSON object. The schema is:
 {
   "pathName": "the exact path name from the visible list",
   "inputData": { ... path-specific input fields ... }
+}
+""".trimIndent()
+    return MultimodalContent(text = repairText)
+}
+
+/**
+ * Multi-path variant of [buildRepairPrompt]. Targets the [PathRequestList]
+ * schema when the station is in [PathExecutionShape.MultiPath] mode.
+ */
+internal fun PumpStation.buildMultiPathRepairPrompt(badOutput: MultimodalContent): MultimodalContent
+{
+    val repairText = """
+[Harness Notice] Your previous dispatch output was not parseable as a PathRequestList JSON.
+Previous output: ${badOutput.text.take(maxRepairPromptTokensInternal)}
+
+Please retry with a valid PathRequestList JSON object. The schema is:
+{
+  "paths": [
+    {"pathName": "...", "pathSchema": "...", "pathSelectionRationale": "..."}
+  ],
+  "batchRationale": "..."
 }
 """.trimIndent()
     return MultimodalContent(text = repairText)
@@ -2643,7 +2811,11 @@ internal suspend fun PumpStation.runTurn(): TurnResult
     }
     if (judgeVerdict.isComplete) return runExitFlow()
 
-    val pathRequest = runDispatchPhase() ?: return TurnResult.Continue
+    val pathRequest = when (pathExecutionShapeInternal)
+    {
+        PathExecutionShape.SinglePath -> runDispatchPhase()
+        PathExecutionShape.MultiPath -> runDispatchPhaseMulti()
+    } ?: return TurnResult.Continue
     detectAndHandleContextBlowout(PumpStationPhase.Dispatch)
     // Note: runDispatchPhase now returns null when pathName is blank (treated as a
     // harness error, with a hint appended to turn history). The previous sentinel
