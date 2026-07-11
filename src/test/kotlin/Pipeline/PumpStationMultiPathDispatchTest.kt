@@ -198,4 +198,33 @@ class PumpStationMultiPathDispatchTest
         val result = station.parseDispatchOutputMulti(com.TTT.Pipe.MultimodalContent(text = "not json at all"))
         assertEquals(null, result)
     }
+
+    @Test
+    fun dslPathExecutionShapeAssignmentApplies()
+    {
+        val station = pumpStation("dsl-multi") {
+            judgeAgent = Pipeline()
+            dispatchAgent = Pipeline()
+            pathExecutionShape = PathExecutionShape.MultiPath
+            path("noop") {
+                description = "noop"
+                setExecutionFunction { _, _, _, _ -> com.TTT.Pipe.MultimodalContent(text = "ok") }
+            }
+        }
+        assertEquals(PathExecutionShape.MultiPath, station.getPathExecutionShape())
+    }
+
+    @Test
+    fun dslDefaultIsSinglePath()
+    {
+        val station = pumpStation("dsl-default") {
+            judgeAgent = Pipeline()
+            dispatchAgent = Pipeline()
+            path("noop") {
+                description = "noop"
+                setExecutionFunction { _, _, _, _ -> com.TTT.Pipe.MultimodalContent(text = "ok") }
+            }
+        }
+        assertEquals(PathExecutionShape.SinglePath, station.getPathExecutionShape())
+    }
 }

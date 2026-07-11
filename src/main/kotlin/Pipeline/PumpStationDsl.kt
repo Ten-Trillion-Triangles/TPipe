@@ -93,6 +93,20 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      * multi-path dispatch contract where the dispatch LLM emits a
      * [com.TTT.Pipeline.PathRequestList] and the harness fans the list out
      * via the existing async substrate.
+     *
+     * DSL usage follows the assignment pattern used elsewhere in this
+     * builder (e.g. `judgeAgent = ...`, `dispatchAgent = ...`):
+     *
+     *     pumpStation("example") {
+     *         judgeAgent = Pipeline()
+     *         dispatchAgent = Pipeline()
+     *         pathExecutionShape = PathExecutionShape.MultiPath
+     *         path("noop") { ... }
+     *     }
+     *
+     * The assignment must precede any `path(...)` call because `path()`
+     * promotes the Initial-stage builder and the promoted builder copies
+     * the value of `pathExecutionShape` at promotion time.
      */
     var pathExecutionShape: PathExecutionShape = PathExecutionShape.SinglePath
 
