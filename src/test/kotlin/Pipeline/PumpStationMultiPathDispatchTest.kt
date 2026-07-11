@@ -102,4 +102,39 @@ class PumpStationMultiPathDispatchTest
         assert(prompt.contains("PathRequestList")) { "multi-path prompt must name the type" }
         assert(prompt.contains("batchRationale")) { "multi-path prompt must document batchRationale" }
     }
+
+    @Test
+    fun buildDispatchSystemPromptBranchesOnShape()
+    {
+        val singleStation = pumpStation("single-shape") {
+            judgeAgent = Pipeline()
+            dispatchAgent = Pipeline()
+            path("noop") {
+                description = "noop"
+                setExecutionFunction { _, _, _, _ -> com.TTT.Pipe.MultimodalContent(text = "ok") }
+            }
+            pathExecutionShape = PathExecutionShape.SinglePath
+        }
+        val singlePrompt = singleStation.buildDispatchSystemPrompt()
+        assert(singlePrompt.contains("PathRequest")) {
+            "SinglePath prompt must reference PathRequest"
+        }
+        assert(!singlePrompt.contains("PathRequestList")) {
+            "SinglePath prompt must NOT reference PathRequestList"
+        }
+
+        val multiStation = pumpStation("multi-shape") {
+            judgeAgent = Pipeline()
+            dispatchAgent = Pipeline()
+            pathExecutionShape = PathExecutionShape.MultiPath
+            path("noop") {
+                description = "noop"
+                setExecutionFunction { _, _, _, _ -> com.TTT.Pipe.MultimodalContent(text = "ok") }
+            }
+        }
+        val multiPrompt = multiStation.buildDispatchSystemPrompt()
+        assert(multiPrompt.contains("PathRequestList")) {
+            "MultiPath prompt must reference PathRequestList"
+        }
+    }
 }

@@ -86,6 +86,17 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var dispatchAgent: P2PInterface? = null
 
     /**
+     * Dispatch contract shape for this station. Defaults to
+     * [com.TTT.Pipeline.PathExecutionShape.SinglePath] (preserves the
+     * pre-existing dispatch JSON contract). Set to
+     * [com.TTT.Pipeline.PathExecutionShape.MultiPath] to switch to the
+     * multi-path dispatch contract where the dispatch LLM emits a
+     * [com.TTT.Pipeline.PathRequestList] and the harness fans the list out
+     * via the existing async substrate.
+     */
+    var pathExecutionShape: PathExecutionShape = PathExecutionShape.SinglePath
+
+    /**
      * Optional agent that can intervene with path calls, enforcing correct behavior
      * and providing nudges/hints to steer the dispatch and judge agents.
      */
@@ -972,6 +983,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         concurrencyMode = source.concurrencyMode
         maxGoalFailAttempts = source.maxGoalFailAttempts
         maxRawTurnHistorySize = source.maxRawTurnHistorySize
+        pathExecutionShape = source.pathExecutionShape
         blowoutThreshold = source.blowoutThreshold
         memoryUpdateTimeoutMs = source.memoryUpdateTimeoutMs
         maxBlowoutRecoveries = source.maxBlowoutRecoveries
@@ -1071,6 +1083,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setPostGoalAgent(postGoalAgent)
             .setPreInitAgent(preInitAgent)
             .setPathSafetyAgent(pathSafetyAgent)
+            .setPathExecutionShape(pathExecutionShape)
 
         // Agent builder functions
         station

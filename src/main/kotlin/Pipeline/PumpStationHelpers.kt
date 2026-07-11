@@ -806,7 +806,12 @@ internal fun PumpStation.buildJudgeSystemPrompt(): String
  */
 internal fun PumpStation.buildDispatchSystemPrompt(): String
 {
-    return DEFAULT_DISPATCH_PROMPT
+    val template = when (pathExecutionShapeInternal)
+    {
+        PathExecutionShape.SinglePath -> DEFAULT_DISPATCH_PROMPT
+        PathExecutionShape.MultiPath -> DEFAULT_DISPATCH_PROMPT_MULTI
+    }
+    return template
         .replace("{personality}", personality)
         .replace("{systemTask}", systemTask)
         .replace("{userGuidelines}", userGuidelines)
