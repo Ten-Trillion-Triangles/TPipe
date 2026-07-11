@@ -1094,6 +1094,17 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     internal var skipJudgeOnFirstTurnInternal: Boolean = true
 
     /**
+     * Dispatch contract shape for this PumpStation. Default is [PathExecutionShape.SinglePath]
+     * which preserves the pre-existing dispatch JSON contract. Setting this to
+     * [PathExecutionShape.MultiPath] injects the multi-path dispatch prompt and routes the
+     * dispatch output through [com.TTT.Pipeline.parseDispatchOutputMulti].
+     *
+     * Read via [getPathExecutionShape]. Internal accessor for the loop file is
+     * [pathExecutionShapeInternal].
+     */
+    internal var pathExecutionShape: PathExecutionShape = PathExecutionShape.SinglePath
+
+    /**
      * Defines the maximum number of concurrent background agents that can be spawned at any given time.
      * If a spawn request would exceed this number it will be queued and batched out at the maximum number
      * allowed at a given time.
@@ -3556,9 +3567,45 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Sets the dispatch contract shape for this PumpStation.
+     *
+     * [PathExecutionShape.SinglePath] (default) preserves the existing dispatch JSON
+     * contract: dispatch LLM returns one [com.TTT.Pipeline.PathRequest], harness
+     * invokes one path.
+     *
+     * [PathExecutionShape.MultiPath] injects a new dispatch prompt asking the
+     * LLM to return a [com.TTT.Pipeline.PathRequestList]. The harness fans the
+     * list out via the existing async substrate and merges results into turn
+     * history on the next judge. New [PathBatchStarted] / [PathBatchCompleted] /
+     * [PathBatchFailed] events carry the batch metadata.
+     *
+     * @param shape The dispatch contract shape to use.
+     * @return This [PumpStation] for method chaining.
+     */
+    fun setPathExecutionShape(shape: PathExecutionShape): PumpStation
+    {
+        this.pathExecutionShape = shape
+        return this
+    }
+
+    /**
      * Returns the active judge run mode. See [PumpStationJudgeRunMode] for semantics.
      */
     fun getJudgeRunMode(): PumpStationJudgeRunMode = judgeRunModeInternal
+
+    /**
+     * Returns the configured dispatch contract shape for this PumpStation.
+     * Defaults to [PathExecutionShape.SinglePath] for backward compatibility.
+     *
+     * @return The current [PathExecutionShape] for this station.
+     */
+    fun getPathExecutionShape(): PathExecutionShape = pathExecutionShape
+
+    /**
+     * Internal accessor so [com.TTT.Pipeline.PumpStationLoop.kt] extension functions
+     * can read the dispatch contract shape without exposing the mutable backing field.
+     */
+    internal val pathExecutionShapeInternal get() = pathExecutionShape
 
     /**
      * When `enabled` is true (default), the judge phase is skipped on turn 0 and a

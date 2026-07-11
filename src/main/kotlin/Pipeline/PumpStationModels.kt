@@ -308,6 +308,38 @@ data class PathLimitExceededResult(
     val nextPathOverride: String? = null
 )
 
+//=========================================Dispatch Contract Shape============================================
+
+/**
+ * Dispatch contract shape for the harness.
+ *
+ * SinglePath (default) preserves the pre-existing dispatch JSON contract —
+ * dispatch LLM returns one [com.TTT.Pipeline.PathRequest] per turn, harness
+ * invokes one path.
+ *
+ * MultiPath injects the multi-path dispatch prompt and parses a
+ * [PathRequestList] containing one or more [com.TTT.Pipeline.PathRequest]s.
+ * The harness fans the parsed list out via the existing async substrate
+ * (see [com.TTT.Pipeline.PumpStation.launchAsyncPath]) and merges results
+ * into turn history on the next judge.
+ *
+ * MultiPath does NOT introduce halt-flag aggregation in this phase — the
+ * fan-out is fire-and-collect-next-turn. Each path still emits its own
+ * path events; new batch-boundary events ([PathBatchStarted] /
+ * [PathBatchCompleted] / [PathBatchFailed]) carry the fan-out metadata.
+ *
+ * @property SinglePath Default. Today's dispatch contract, today's prompt,
+ *   today's parse, today's single-path execution. Never emits batch events.
+ * @property MultiPath New contract. The dispatch prompt asks for a list of
+ *   paths, the parser extracts [PathRequestList], the harness launches each
+ *   path as an async coroutine via the existing async substrate.
+ */
+enum class PathExecutionShape
+{
+    SinglePath,
+    MultiPath
+}
+
 //=========================================Sealed Interface & Events==============================================
 
 /**
