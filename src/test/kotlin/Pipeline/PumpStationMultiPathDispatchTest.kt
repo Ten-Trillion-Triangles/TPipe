@@ -20,6 +20,7 @@ class PumpStationMultiPathDispatchTest
         val station = pumpStation("default-shape") {
             judgeAgent = Pipeline()
             dispatchAgent = Pipeline()
+            pathExecutionShape = PathExecutionShape.SinglePath
             path("noop") {
                 description = "no-op test path"
                 setExecutionFunction { _, _, _, _ -> com.TTT.Pipe.MultimodalContent(text = "ok") }
@@ -109,11 +110,11 @@ class PumpStationMultiPathDispatchTest
         val singleStation = pumpStation("single-shape") {
             judgeAgent = Pipeline()
             dispatchAgent = Pipeline()
+            pathExecutionShape = PathExecutionShape.SinglePath
             path("noop") {
                 description = "noop"
                 setExecutionFunction { _, _, _, _ -> com.TTT.Pipe.MultimodalContent(text = "ok") }
             }
-            pathExecutionShape = PathExecutionShape.SinglePath
         }
         val singlePrompt = singleStation.buildDispatchSystemPrompt()
         assert(singlePrompt.contains("PathRequest")) {
@@ -136,5 +137,65 @@ class PumpStationMultiPathDispatchTest
         assert(multiPrompt.contains("PathRequestList")) {
             "MultiPath prompt must reference PathRequestList"
         }
+    }
+
+    @Test
+    fun parseDispatchOutputMultiExtractsList()
+    {
+        val station = pumpStation("multi-parse") {
+            judgeAgent = Pipeline()
+            dispatchAgent = Pipeline()
+            pathExecutionShape = PathExecutionShape.MultiPath
+            path("noop") {
+                description = "noop"
+                setExecutionFunction { _, _, _, _ -> com.TTT.Pipe.MultimodalContent(text = "ok") }
+            }
+        }
+        val llmOutput = com.TTT.Pipe.MultimodalContent(text = """
+            {
+              "paths": [
+                {"pathName": "noop", "pathSchema": "{}", "pathSelectionRationale": "first"},
+                {"pathName": "noop", "pathSchema": "{}", "pathSelectionRationale": "second"}
+              ],
+              "batchRationale": "Independent reads, parallelize."
+            }
+        """.trimIndent())
+        val result = station.parseDispatchOutputMulti(llmOutput)
+        assertEquals(2, result?.paths?.size)
+        assertEquals("noop", result?.paths?.get(0)?.pathName)
+        assertEquals("Independent reads, parallelize.", result?.batchRationale)
+    }
+
+    @Test
+    fun parseDispatchOutputMultiRejectsSingleShape()
+    {
+        val station = pumpStation("multi-rejects-single") {
+            judgeAgent = Pipeline()
+            dispatchAgent = Pipeline()
+            pathExecutionShape = PathExecutionShape.MultiPath
+            path("noop") {
+                description = "noop"
+                setExecutionFunction { _, _, _, _ -> com.TTT.Pipe.MultimodalContent(text = "ok") }
+            }
+        }
+        val llmOutput = com.TTT.Pipe.MultimodalContent(text = """{"pathName": "noop", "pathSchema": "{}"}""")
+        val result = station.parseDispatchOutputMulti(llmOutput)
+        assertEquals(null, result)
+    }
+
+    @Test
+    fun parseDispatchOutputMultiReturnsNullOnGarbage()
+    {
+        val station = pumpStation("multi-garbage") {
+            judgeAgent = Pipeline()
+            dispatchAgent = Pipeline()
+            pathExecutionShape = PathExecutionShape.MultiPath
+            path("noop") {
+                description = "noop"
+                setExecutionFunction { _, _, _, _ -> com.TTT.Pipe.MultimodalContent(text = "ok") }
+            }
+        }
+        val result = station.parseDispatchOutputMulti(com.TTT.Pipe.MultimodalContent(text = "not json at all"))
+        assertEquals(null, result)
     }
 }

@@ -691,6 +691,26 @@ internal fun PumpStation.parseDispatchOutput(content: MultimodalContent): PathRe
         }
     }
 
+internal fun PumpStation.parseDispatchOutputMulti(content: MultimodalContent): PathRequestList?
+{
+    return try
+    {
+        val parsed = extractJson<PathRequestList>(content.text)
+        if (parsed != null && !parsed.isDefault() && parsed.paths.isNotEmpty())
+        {
+            parsed
+        }
+        else
+        {
+            null
+        }
+    }
+    catch (_: Exception)
+    {
+        null
+    }
+}
+
 /**
  * Parse the path-safety agent's text output as a structured verdict.
  *
