@@ -849,7 +849,13 @@ fun Application.traceServerModule(config: TraceServerConfig = TraceServerConfigB
             // For simplicity we use `System.currentTimeMillis()` here as well;
             // the store keeps the authoritative value but the WS message only
             // needs to be a rough ordering hint.
-            val summary = TraceSummary(payload.pipelineId, System.currentTimeMillis(), payload.name, payload.status)
+            val summary = TraceSummary(
+                id = payload.pipelineId,
+                timestamp = System.currentTimeMillis(),
+                name = payload.name,
+                status = payload.status,
+                kind = payload.kind,
+            )
             // Legacy v1 wire format (no `op` discriminator). v2 dashboards
             // that want the new envelope should subscribe via the WS.
             val jsonSummary = Json.encodeToString(TraceSummary.serializer(), summary)
