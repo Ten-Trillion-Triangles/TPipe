@@ -588,7 +588,8 @@ object PipeTimeoutManager
 internal fun buildDefaultPathInjection(
     pathDescriptorJson: String,
     pathRequestSchema: String,
-    requireRationale: Boolean
+    requireRationale: Boolean,
+    multiPath: Boolean = false
 ): String
 {
     val rationaleDirective: String = if(requireRationale)
@@ -603,6 +604,15 @@ internal fun buildDefaultPathInjection(
     else
     {
         ""
+    }
+
+    if(multiPath)
+    {
+        return buildMultiPathInjection(
+            pathDescriptorJson = pathDescriptorJson,
+            pathRequestSchema = pathRequestSchema,
+            rationaleDirective = rationaleDirective
+        )
     }
 
     return """
@@ -655,6 +665,85 @@ internal fun buildDefaultPathInjection(
             |=== Output Requirement ===
             |Your final response must be a PathRequest JSON object. Do not return any other format.
             |Empty pathName is NOT a valid sentinel — you MUST always pick a path from the list above.
+            |If you cannot make progress, pick a path whose purpose is to ask the user for clarification.
+            |
+            """.trimMargin()
+}
+
+/**
+ * Multi-path variant of the dispatch injection text. Used when the parent
+ * [com.TTT.Pipeline.PumpStation] is configured with
+ * [com.TTT.Pipeline.PathExecutionShape.MultiPath]. The LLM is told to emit a
+ * [com.TTT.Pipeline.PathRequestList] (paths array + batchRationale) instead of
+ * a single [com.TTT.Pipeline.PathRequest].
+ *
+ * The PCP-binding rules are repeated because a per-path pcpSchema still
+ * applies inside the array entries.
+ */
+internal fun buildMultiPathInjection(
+    pathDescriptorJson: String,
+    pathRequestSchema: String,
+    rationaleDirective: String
+): String
+{
+    return """
+            |
+            |=== Path Invocation Protocol (MANDATORY, MULTI-PATH) ===
+            |
+            |You MUST use the paths below to continue your task. This is not optional — the harness
+            |WILL reject any output that does not conform to the PathRequestList schema.
+            |
+            |Available paths:
+            |${pathDescriptorJson}
+            |
+            |=== Calling Paths (Multi-Path Fan-Out) ===
+            |To call one or more paths in a single turn, you MUST return a valid PathRequestList
+            |JSON object:
+            |{
+            |    "paths": [
+            |        {
+            |            "pathName": "the exact path name from the list above",
+            |            "inputData": { ... path-specific input fields per the path's inputSchema ... },
+            |            "pathSelectionRationale": "why this path was chosen"
+            |        }
+            |    ],
+            |    "batchRationale": "why these paths were selected for fan-out instead of a single path"
+            |}
+            |
+            |Each entry's "inputData" schema is shown in the path descriptor above under "inputSchema".
+            |Do NOT invent fields. Do NOT omit required fields. Do NOT call paths not listed above.
+            |The "paths" array MUST contain at least one entry — an empty array is invalid.
+            |
+            |=== Calling Paths with PCP Schemas ===
+            |If a path has a "pcpSchema" section in its descriptor, that path's inputData MUST conform
+            |to the PCP function's input format defined in that pcpSchema. The pcpSchema shows:
+            |  - functionName: the PCP function to invoke
+            |  - tPipeContextOptions / stdioContextOptions / httpContextOptions / pythonContextOptions / etc.
+            |  - params (where "isRequired" indicates required vs optional fields)
+            |
+            |To call a PCP-enabled path:
+            |  1. Set "pathName" to the path's exact name
+            |  2. For "inputData", construct the PCP call exactly as described in that path's pcpSchema:
+            |     - Set tPipeContextOptions.functionName to the PCP function name
+            |     - Set tPipeContextOptions.callParams to a map of argument names → values
+            |       OR set tPipeContextOptions.argumentsOrFunctionParams to a list of positional values
+            |     - For stdio/http/python/etc calls, populate the respective context options accordingly
+            |  3. Include ALL required params (isRequired=true). Optional params may be omitted.
+            |
+            |=== Rules (ALL STRICTLY ENFORCED) ===
+            |1. You MUST only call paths listed above — no invented path names
+            |2. You MUST follow the exact inputSchema for each path you are calling
+            |3. You MUST provide all required inputData fields for every selected path
+            |4. For PCP paths: you MUST follow the PCP function's parameter schema exactly
+            |5. You MUST NOT change the name of any path you are calling
+            |6. You MUST return valid JSON matching the PathRequestList schema below
+            |${rationaleDirective}
+            |PathRequestList schema:
+            |${pathRequestSchema}
+            |
+            |=== Output Requirement ===
+            |Your final response must be a PathRequestList JSON object. Do not return any other format.
+            |The "paths" array MUST be non-empty. Pick one or more paths from the list above.
             |If you cannot make progress, pick a path whose purpose is to ask the user for clarification.
             |
             """.trimMargin()
@@ -2324,17 +2413,35 @@ abstract class Pipe : P2PInterface, ProviderInterface
             {
                 val pathDescriptorList = parentStation.getVisiblePathDescriptorsForDispatch()
                 val pathDescriptorJson = serialize(pathDescriptorList, false)
-                val pathRequestSchema = examplePromptFor(PathRequest::class)
+                // Branch the schema on the station's dispatch contract shape.
+                // SinglePath stations bind to PathRequest; MultiPath stations bind to
+                // PathRequestList. The dispatch LLM gets a schema consistent with
+                // the system prompt template (DEFAULT_DISPATCH_PROMPT vs
+                // DEFAULT_DISPATCH_PROMPT_MULTI) and the parser the harness will run
+                // (parseDispatchOutput vs parseDispatchOutputMulti).
+                val multiPath = parentStation.pathExecutionShapeInternal ==
+                    com.TTT.Pipeline.PathExecutionShape.MultiPath
+                val schemaClass = if(multiPath)
+                {
+                    com.TTT.Pipeline.PathRequestList::class
+                }
+                else
+                {
+                    PathRequest::class
+                }
+                val pathRequestSchema = examplePromptFor(schemaClass)
 
                 val defaultPathInjection = buildDefaultPathInjection(
                     pathDescriptorJson = pathDescriptorJson,
                     pathRequestSchema = pathRequestSchema,
-                    requireRationale = parentStation.failurePolicy.requirePathSelectionRationale
+                    requireRationale = parentStation.failurePolicy.requirePathSelectionRationale,
+                    multiPath = multiPath
                 )
 
                 systemPrompt = systemPrompt + defaultPathInjection
 
-                // Bind output to PathRequest schema
+                // Bind output to the dispatch contract schema. In SinglePath mode this
+                // is PathRequest; in MultiPath mode this is PathRequestList.
                 jsonOutput = pathRequestSchema
                 supportsNativeJson = false
             }

@@ -227,4 +227,53 @@ class PumpStationMultiPathDispatchTest
         }
         assertEquals(PathExecutionShape.SinglePath, station.getPathExecutionShape())
     }
+
+    @Test
+    fun singlePathDispatchInjectionKeepsContractText()
+    {
+        // Contract pin: the SinglePath dispatch prompt + path injection block
+        // MUST remain compatible with what existed before the multi-path feature
+        // landed. The dispatch LLM is told to emit PathRequest, the harness
+        // parses PathRequest, and the per-path injection text is unchanged.
+        val station = pumpStation("single-pin") {
+            judgeAgent = Pipeline()
+            dispatchAgent = Pipeline()
+            pathExecutionShape = PathExecutionShape.SinglePath
+            path("noop") {
+                description = "noop"
+                setExecutionFunction { _, _, _, _ -> com.TTT.Pipe.MultimodalContent(text = "ok") }
+            }
+        }
+        val prompt = station.buildDispatchSystemPrompt()
+        assert(prompt.contains("PathRequest")) {
+            "SinglePath prompt must reference PathRequest"
+        }
+        assert(prompt.contains("PathRequestList").not()) {
+            "SinglePath prompt must NOT reference PathRequestList"
+        }
+    }
+
+    @Test
+    fun multiPathDispatchInjectionContainsPathRequestListSchema()
+    {
+        // The dispatch LLM in MultiPath mode must be told to emit a
+        // PathRequestList, not a PathRequest. The injection block in Pipe.kt
+        // branches on parentStation.pathExecutionShapeInternal; this test
+        // exercises the same code path via the harness's Pipe enableHarnessMode
+        // injection.
+        val station = pumpStation("multi-pin") {
+            judgeAgent = Pipeline()
+            dispatchAgent = Pipeline()
+            pathExecutionShape = PathExecutionShape.MultiPath
+            path("noop") {
+                description = "noop"
+                setExecutionFunction { _, _, _, _ -> com.TTT.Pipe.MultimodalContent(text = "ok") }
+            }
+        }
+        val prompt = station.buildDispatchSystemPrompt()
+        // The system prompt template references PathRequestList.
+        assert(prompt.contains("PathRequestList")) {
+            "MultiPath system prompt template must reference PathRequestList"
+        }
+    }
 }
