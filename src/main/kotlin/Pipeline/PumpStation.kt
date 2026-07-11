@@ -2840,7 +2840,10 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                         turnIndex = taskState.turnIndex,
                         guard = "maxConsecutiveSamePath",
                         pathName = pathName,
-                        detail = "consecutive=$consecutivePathCount, limit=${maxConsecutiveSamePath!!}"
+                        detail = "consecutive=$consecutivePathCount, limit=${maxConsecutiveSamePath!!}",
+                        metric = "consecutive",
+                        observed = consecutivePathCount,
+                        limit = maxConsecutiveSamePath!!
                     ))
                     emitEventInternal(PathFailed(
                         runId = taskState.runId,
@@ -2876,7 +2879,10 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                 turnIndex = taskState.turnIndex,
                 guard = "maxTotalPathCallsPerPath",
                 pathName = pathName,
-                detail = "count=$callCount, limit=${maxTotalPathCallsPerPath!!}"
+                detail = "count=$callCount, limit=${maxTotalPathCallsPerPath!!}",
+                metric = "totalCount",
+                observed = callCount,
+                limit = maxTotalPathCallsPerPath!!
             ))
             val limitResult = pathLimitExceededFunction?.invoke(
                 path,

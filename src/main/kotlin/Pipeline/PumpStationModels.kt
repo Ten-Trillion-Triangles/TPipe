@@ -886,7 +886,10 @@ data class LoopGuardTripped(
     override val phase: PumpStationPhase = PumpStationPhase.PathExecution,
     val guard: String,
     val pathName: String,
-    val detail: String
+    val detail: String,
+    val metric: String,
+    val observed: Int,
+    val limit: Int
 ) : PumpStationEvent
 
 /**

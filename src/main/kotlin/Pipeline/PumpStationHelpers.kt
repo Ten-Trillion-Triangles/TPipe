@@ -449,6 +449,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["guard"] = event.guard
             baseMetadata["pathName"] = event.pathName
             baseMetadata["detail"] = event.detail
+            baseMetadata["metric"] = event.metric
+            baseMetadata["observed"] = event.observed
+            baseMetadata["limit"] = event.limit
         }
         is ContextBlowoutDetected ->
         {
