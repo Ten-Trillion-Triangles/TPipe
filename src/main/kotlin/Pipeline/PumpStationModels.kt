@@ -609,6 +609,73 @@ data class PathFailed(
 ) : PumpStationEvent
 
 /**
+ * A batch of paths was selected for fan-out execution. Emitted at the start
+ * of the multi-path dispatch phase when [com.TTT.Pipeline.PumpStation] is
+ * configured with [PathExecutionShape.MultiPath].
+ *
+ * SinglePath mode never emits this event.
+ *
+ * @property pathNames Ordered list of path names in the batch.
+ * @property batchRationale Optional rationale copied from
+ *   [PathRequestList.batchRationale].
+ */
+@kotlinx.serialization.Serializable
+data class PathBatchStarted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Dispatch,
+    val pathNames: List<String>,
+    val batchRationale: String?
+) : PumpStationEvent
+
+/**
+ * All paths in a multi-path batch have completed (or failed). Emitted at the
+ * end of the dispatch phase after the harness has launched every path in
+ * [PathBatchStarted.pathNames]. The per-path [PathStarted] / [PathCompleted]
+ * / [PathFailed] events carry the per-path detail; this event marks the
+ * batch boundary.
+ *
+ * SinglePath mode never emits this event.
+ *
+ * @property totalPaths Number of paths in the batch.
+ * @property succeededPaths Number of paths that completed without an error.
+ * @property failedPaths Number of paths that emitted [PathFailed].
+ */
+@kotlinx.serialization.Serializable
+data class PathBatchCompleted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Dispatch,
+    val totalPaths: Int,
+    val succeededPaths: Int,
+    val failedPaths: Int
+) : PumpStationEvent
+
+/**
+ * Multi-path dispatch itself failed (the dispatch LLM output could not be
+ * parsed as a [PathRequestList] even after repair). Emitted when the
+ * repair loop is exhausted; the harness continues to the next turn. This
+ * is distinct from per-path [PathFailed] — batch-level failures mean
+ * zero paths in the batch were launched.
+ *
+ * SinglePath mode never emits this event.
+ *
+ * @property errorMessage Human-readable description of the failure.
+ * @property repairAttempts Number of repair iterations attempted.
+ */
+@kotlinx.serialization.Serializable
+data class PathBatchFailed(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Dispatch,
+    val errorMessage: String,
+    val repairAttempts: Int
+) : PumpStationEvent
+
+/**
  * Path was hidden from dispatch due to exceeding call limits.
  */
 @kotlinx.serialization.Serializable

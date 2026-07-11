@@ -51,4 +51,46 @@ class PumpStationMultiPathDispatchTest
         assertEquals(emptyList<PathRequest>(), empty.paths)
         assertEquals(null, empty.batchRationale)
     }
+
+    @Test
+    fun pathBatchStartedEventCarriesPathNames()
+    {
+        val event = PathBatchStarted(
+            runId = "test-run",
+            turnIndex = 0,
+            pathNames = listOf("gather", "analyze"),
+            batchRationale = "parallel read"
+        )
+        assertEquals(listOf("gather", "analyze"), event.pathNames)
+        assertEquals(PumpStationPhase.Dispatch, event.phase)
+        assertEquals("test-run", event.runId)
+    }
+
+    @Test
+    fun pathBatchCompletedCarriesCounts()
+    {
+        val event = PathBatchCompleted(
+            runId = "test-run",
+            turnIndex = 0,
+            totalPaths = 3,
+            succeededPaths = 2,
+            failedPaths = 1
+        )
+        assertEquals(3, event.totalPaths)
+        assertEquals(2, event.succeededPaths)
+        assertEquals(1, event.failedPaths)
+    }
+
+    @Test
+    fun pathBatchFailedCarriesRepairAttempts()
+    {
+        val event = PathBatchFailed(
+            runId = "test-run",
+            turnIndex = 0,
+            errorMessage = "JSON repair exhausted",
+            repairAttempts = 2
+        )
+        assertEquals(2, event.repairAttempts)
+        assertEquals("JSON repair exhausted", event.errorMessage)
+    }
 }

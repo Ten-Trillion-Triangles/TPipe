@@ -297,6 +297,25 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["pathName"] = event.pathName
             baseMetadata["reason"] = event.reason
         }
+        is PathBatchStarted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_BATCH_STARTED
+            baseMetadata["pathNames"] = event.pathNames.joinToString(",")
+            baseMetadata["batchRationale"] = event.batchRationale ?: ""
+        }
+        is PathBatchCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_BATCH_COMPLETED
+            baseMetadata["totalPaths"] = event.totalPaths
+            baseMetadata["succeededPaths"] = event.succeededPaths
+            baseMetadata["failedPaths"] = event.failedPaths
+        }
+        is PathBatchFailed ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_BATCH_FAILED
+            baseMetadata["errorMessage"] = event.errorMessage
+            baseMetadata["repairAttempts"] = event.repairAttempts
+        }
         is PathValidationCompleted ->
         {
             eventType = TraceEventType.PUMP_STATION_PATH_VALIDATION_COMPLETED
