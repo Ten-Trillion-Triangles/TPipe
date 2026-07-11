@@ -93,4 +93,13 @@ class PumpStationMultiPathDispatchTest
         assertEquals(2, event.repairAttempts)
         assertEquals("JSON repair exhausted", event.errorMessage)
     }
+
+    @Test
+    fun multiPathDispatchPromptMentionsListShape()
+    {
+        val prompt = DEFAULT_DISPATCH_PROMPT_MULTI
+        assert(prompt.contains("paths")) { "multi-path prompt must mention 'paths' key" }
+        assert(prompt.contains("PathRequestList")) { "multi-path prompt must name the type" }
+        assert(prompt.contains("batchRationale")) { "multi-path prompt must document batchRationale" }
+    }
 }

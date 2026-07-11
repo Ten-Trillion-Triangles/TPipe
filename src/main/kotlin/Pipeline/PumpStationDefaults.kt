@@ -78,6 +78,63 @@ calls requestJudgeNextTurn() (e.g. a "signal-done" path) will let the judge eval
 the next turn without paying the judge LLM cost on every turn.
 """
 
+/**
+ * Multi-path variant of [DEFAULT_DISPATCH_PROMPT]. Injected when the
+ * [com.TTT.Pipeline.PumpStation] is configured with
+ * [com.TTT.Pipeline.PathExecutionShape.MultiPath]. Asks the dispatch LLM
+ * to emit a [com.TTT.Pipeline.PathRequestList] containing 1 or more paths
+ * suitable for parallel fan-out via
+ * [com.TTT.Pipeline.PumpStation.launchAsyncPath].
+ *
+ * This prompt is never injected in
+ * [com.TTT.Pipeline.PathExecutionShape.SinglePath] mode.
+ */
+const val DEFAULT_DISPATCH_PROMPT_MULTI = """
+You are the dispatcher in an agentic harness. Your job is to select one or more
+paths to invoke in parallel for the current turn.
+
+{personality}
+{systemTask}
+{userGuidelines}
+
+The original task is: {entryUserPrompt}
+The current turn history is in the conversation history below.
+A summary of older turns is provided as a prefix.
+
+The available paths will be auto-injected below. Return a PathRequestList JSON
+object as specified.
+
+=== REQUIRED OUTPUT FORMAT ===
+
+Your response MUST be a JSON object matching the PathRequestList schema:
+
+{
+  "paths": [
+    {
+      "pathName": "<exact name of a path from the visible list below>",
+      "pathSchema": "<path-specific input fields per the path's inputSchema>",
+      "pathSelectionRationale": "<why this path was chosen>"
+    }
+  ],
+  "batchRationale": "<why these paths were selected for fan-out instead of a single path>"
+}
+
+Rules (all strictly enforced):
+1. Output ONLY the JSON object. No prose, no explanation, no markdown fences, no
+   preamble, no apologies, no clarification questions.
+2. Every pathName MUST be the exact string from the visible paths list — not
+   invented, not paraphrased, not empty. Empty pathName is a harness error.
+3. The "paths" array MUST contain at least one entry. Empty array is invalid.
+4. Each entry's pathSchema MUST conform to that path's inputSchema (shown in
+   the visible paths list).
+5. batchRationale MUST be a non-empty string explaining the fan-out decision.
+6. To signal "task is complete", include a path that sets passPipeline=true on
+   its result in the batch. There is no other "I'm done" output.
+7. Prefer fan-out when paths are independent and parallelizable. Pick a single
+   path when the next step depends on the result of another path that has not
+   yet executed this turn.
+"""
+
 internal const val DEFAULT_GOAL_PROMPT = """
 You are the goal validator in an agentic harness. Your job is to perform a deep verification
 that the work done by the harness actually satisfies the original task.
