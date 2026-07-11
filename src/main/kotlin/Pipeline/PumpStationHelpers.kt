@@ -437,6 +437,13 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["passed"] = event.passed
             baseMetadata["reason"] = event.reason ?: ""
         }
+        is PostGoalCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_POST_GOAL_COMPLETED
+            baseMetadata["passed"] = event.passed
+            baseMetadata["reason"] = event.reason ?: ""
+            baseMetadata["transformedContent"] = event.transformedContent
+        }
         is ReservePathRevealed ->
         {
             eventType = TraceEventType.PUMP_STATION_RESERVE_PATH_REVEALED

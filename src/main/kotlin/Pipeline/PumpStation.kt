@@ -985,6 +985,32 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     internal var goalAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
 
     /**
+     * Optional post-success agent. Fires inside [runExitFlow] after the goal agent passes,
+     * or on the no-goal-agent / passPipeline-routed exit paths. Receives the goal agent's
+     * output (or the harness's exit-flow content when no goal agent is configured). Output
+     * becomes the harness's final deliverable on pass; a [MultimodalContent.terminatePipeline]
+     * result halts the harness with [PumpStationExitReason.JudgeComplete] without re-loop.
+     *
+     * @see [postGoalAgentBuilderFunction] for runtime override
+     * @see [postGoalFunction] for the synchronous transform that precedes this agent
+     */
+    internal var postGoalAgent: P2PInterface? = null
+
+    /**
+     * Optional bindable builder function for [postGoalAgent]. When non-null this is invoked
+     * to generate the agent per harness invocation and [postGoalAgent] is ignored.
+     */
+    internal var postGoalAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+
+    /**
+     * Optional DITL function fired inside [runExitFlow] after the goal agent passes (or
+     * when no goal agent is configured and the harness is exiting through [runExitFlow]).
+     * Synchronous transform: receives the goal agent's output and returns a possibly-modified
+     * [MultimodalContent]. Precedes [postGoalAgent] when both are configured.
+     */
+    internal var postGoalFunction: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)? = null
+
+    /**
      * Stored paths on this harness. Each path is mapped by its name from inside the path object, and the
      * reference to the object. Names are normalized to be case-insensitive, and all path calls will normalize
      * to lowercase when calling a path.
@@ -3160,6 +3186,21 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Sets the post-success agent. Fires inside [runExitFlow] on every successful exit
+     * (broad coverage including the no-goal-agent path). Output becomes the harness's
+     * final deliverable on pass; [MultimodalContent.terminatePipeline] halts with
+     * [PumpStationExitReason.JudgeComplete] without re-loop.
+     *
+     * @param agent The post-success agent, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPostGoalAgent(agent: P2PInterface?): PumpStation
+    {
+        this.postGoalAgent = agent
+        return this
+    }
+
+    /**
      * Sets the pre-init agent for this PumpStation. The pre-init agent fires prior
      * to starting the harness for any initial setup or state handling.
      *
@@ -3275,6 +3316,33 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     fun setGoalAgentBuilderFunction(fn: (suspend (harness: PumpStation) -> P2PInterface)?): PumpStation
     {
         this.goalAgentBuilderFunction = fn
+        return this
+    }
+
+    /**
+     * Sets the post-success agent builder function. When non-null, this overrides
+     * any value set via [setPostGoalAgent].
+     *
+     * @param fn The builder function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPostGoalAgentBuilderFunction(fn: (suspend (harness: PumpStation) -> P2PInterface)?): PumpStation
+    {
+        this.postGoalAgentBuilderFunction = fn
+        return this
+    }
+
+    /**
+     * Sets the post-success DITL function. Fires inside [runExitFlow] after the goal
+     * agent passes (or on the no-goal-agent path). Synchronous transformation of the
+     * goal output that precedes [postGoalAgent] when both are configured.
+     *
+     * @param fn The transformation function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPostGoalFunction(fn: (suspend (content: MultimodalContent, harness: PumpStation) -> MultimodalContent)?): PumpStation
+    {
+        this.postGoalFunction = fn
         return this
     }
 

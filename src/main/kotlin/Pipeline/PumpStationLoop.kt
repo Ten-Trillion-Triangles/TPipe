@@ -2390,7 +2390,8 @@ internal suspend fun PumpStation.runExitFlow(): TurnResult
     }
     if (goalAgent == null)
 {
-        return TurnResult.Halt(PumpStationExitReason.JudgeComplete)
+        val exitContent = buildGoalContent()
+        return runPostGoalHook(exitContent)
     }
 
     val agent = goalAgentBuilderFunction?.invoke(this) ?: goalAgent!!
@@ -2422,6 +2423,59 @@ internal suspend fun PumpStation.runExitFlow(): TurnResult
         }
         return TurnResult.Continue
     }
+
+    return runPostGoalHook(result)
+}
+
+/**
+ * Post-success hook fired from [runExitFlow] on every successful exit (broad coverage
+ * including the no-goal-agent and passPipeline-routed paths). Runs [postGoalFunction]
+ * synchronously if configured, then resolves and runs [postGoalAgent] /
+ * [postGoalAgentBuilderFunction] if either is set. Emits [PostGoalCompleted] with
+ * `passed=true, transformedContent=false` when neither is configured so observers
+ * still correlate every `runExitFlow` invocation.
+ *
+ * Mirrors the goal agent's content authority (transformation + terminatePipeline
+ * signal) but NOT its control-flow authority — a non-passing post-goal agent halts
+ * with [PumpStationExitReason.JudgeComplete] instead of returning `Continue`, to
+ * prevent infinite re-loop if a post-goal agent always fails. Loop-back on success
+ * exit is the harness's call, not the hook's.
+ */
+internal suspend fun PumpStation.runPostGoalHook(inputContent: MultimodalContent): TurnResult
+{
+    val transformed = postGoalFunction?.invoke(inputContent, this)
+    val contentForAgent = transformed ?: inputContent
+    val transformedContentFlag = transformed != null && transformed !== inputContent
+
+    val resolvedAgent: P2PInterface? = postGoalAgentBuilderFunction?.invoke(this) ?: postGoalAgent
+
+    if (resolvedAgent == null)
+{
+        emitEventInternal(PostGoalCompleted(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            passed = true,
+            reason = null,
+            transformedContent = transformedContentFlag
+        ))
+        taskState.latestContent = contentForAgent
+        return TurnResult.Halt(PumpStationExitReason.JudgeComplete)
+    }
+
+    resolvedAgent.setParentInterface(this)
+    resolvedAgent.P2PInit()
+    val result = resolvedAgent.executeLocal(contentForAgent)
+    val passed = !result.terminatePipeline
+
+    emitEventInternal(PostGoalCompleted(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex,
+        passed = passed,
+        reason = if (!passed) result.text else null,
+        transformedContent = transformedContentFlag
+    ))
+
+    taskState.latestContent = result
 
     return TurnResult.Halt(PumpStationExitReason.JudgeComplete)
 }

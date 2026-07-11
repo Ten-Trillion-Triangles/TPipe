@@ -209,6 +209,10 @@ enum class TraceEventType {
     PUMP_STATION_SAFE_PRUNE_DRY_RUN_COMPLETED,
     PUMP_STATION_GOAL_VALIDATION_STARTED,
     PUMP_STATION_GOAL_VALIDATION_COMPLETED,
+    // Post-success intervention surface that fires inside runExitFlow after the goal
+    // agent passes (or on the no-goal-agent / passPipeline-routed exit paths). Emitted
+    // by [com.TTT.Pipeline.PumpStation.runPostGoalHook] once per successful exit.
+    PUMP_STATION_POST_GOAL_COMPLETED,
 
     PUMP_STATION_PATH_SELECTED,
     PUMP_STATION_PATH_STARTED,

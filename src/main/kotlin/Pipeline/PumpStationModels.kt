@@ -810,6 +810,33 @@ data class GoalValidationCompleted(
 ) : PumpStationEvent
 
 /**
+ * Post-success hook completed inside [runExitFlow]. Fires on every successful exit
+ * through the exit flow — including the no-goal-agent and passPipeline-routed paths.
+ * Does NOT fire on [com.TTT.Pipeline.PumpStationError.GoalValidationFailed] failure
+ * exhaustion halts.
+ *
+ * [passed] indicates whether the optional [com.TTT.Pipeline.PumpStation.postGoalAgent]
+ * signaled failure via [com.TTT.Pipe.MultimodalContent.terminatePipeline] on its result.
+ * [transformedContent] indicates whether [com.TTT.Pipeline.PumpStation.postGoalFunction]
+ * modified its input. When both function and agent are absent, the harness emits this
+ * event with [passed]=true and [transformedContent]=false as a default-pass marker so
+ * observers can still correlate every `runExitFlow` invocation.
+ *
+ * [reason] is populated with the post-goal agent's result text when [passed]=false;
+ * null otherwise.
+ */
+@kotlinx.serialization.Serializable
+data class PostGoalCompleted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Exit,
+    val passed: Boolean,
+    val reason: String?,
+    val transformedContent: Boolean
+) : PumpStationEvent
+
+/**
  * Harness completed execution successfully.
  */
 @kotlinx.serialization.Serializable

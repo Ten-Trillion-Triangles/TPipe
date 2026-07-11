@@ -7,9 +7,11 @@ import com.TTT.Pipeline.Pipeline
 import openrouterPipe.OpenRouterPipe
 
 /**
- * Internal factory for creating minimal OpenRouter-configured Manifold instances.
+ * Factory for creating minimal OpenRouter-configured Manifold and Pipe instances.
+ * Public so external test consumers can reuse the same construction logic
+ * that [Defaults.PumpStationDefaults.withOpenRouter] uses internally.
  */
-internal object OpenRouterDefaults
+object OpenRouterDefaults
 {
     /**
      * Creates a Manifold instance with basic OpenRouter configuration.
