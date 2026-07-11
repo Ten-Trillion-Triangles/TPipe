@@ -495,6 +495,14 @@ class PumpStationPostGoalLiveTest
             }
             eventObserver = { ev -> /* sink — assertions live on the trace HTML */ }
 
+            // Direct trace capture wiring (canonical TPipeConfig.getTraceDir() path).
+            // MUST be set BEFORE configurePaths() runs: the first `path("name") { }` call
+            // triggers `promote()` which `copyFrom(this)` snapshots the initial builder's
+            // state into the promoted Ready-stage builder. Any property set after that
+            // snapshot is lost. tracingConfiguration is the most consequential lost
+            // property because it controls whether getTraceReport() writes the HTML file.
+            tracingConfiguration = traceCfg
+
             // Memory mode wiring
             if (memoryMode == PumpStationMemoryManagementMode.Compaction)
             {
@@ -537,37 +545,59 @@ class PumpStationPostGoalLiveTest
             // Goal agent wiring (varies by configuration)
             configureGoal()
 
-            // Path wiring (varies by configuration)
+            // Path wiring (varies by configuration) — triggers promote() via first path() call
             configurePaths()
 
-            // Direct trace capture wiring (canonical TPipeConfig.getTraceDir() path)
-            tracingConfiguration = traceCfg
             systemTask = "You are a research assistant. Conclude by calling the report path."
             userGuidelines = "Be concise."
             maxHarnessTurns = 6
         }
 
         val station = pumpStation("pumpstation-postgoal-$testName", builder)
-        val result = station.executeLocal(
-            MultimodalContent(text = "Run the post-goal hook harness.")
-        )
 
-        // Drain background events so the trace HTML captures the full stream.
-        station.drainBackgroundEventQueue()
-        // getTraceReport triggers TraceConfig.autoExport and writes the pump station HTML.
-        station.getTraceReport(TraceFormat.HTML)
-        exportAgentTraces(testName)
+        // Live LLM tests hit a transient upstream condition (\"Service error. Please retry later\"
+        // from MiniMax) intermittently. Retry up to 3 times with a 3s backoff before declaring
+        // the test a hard failure. Stub-mode tests don't need this — they never throw P2PException.
+        var attemptCount = 0
+        val maxAttempts = 3
+        var lastException: Throwable? = null
+        while (attemptCount < maxAttempts)
+        {
+            attemptCount += 1
+            try
+            {
+                val result = station.executeLocal(
+                    MultimodalContent(text = "Run the post-goal hook harness.")
+                )
+                // Drain background events so the trace HTML captures the full stream.
+                station.drainBackgroundEventQueue()
+                // getTraceReport triggers TraceConfig.autoExport and writes the pump station HTML.
+                station.getTraceReport(TraceFormat.HTML)
+                exportAgentTraces(testName)
 
-        // Trace artifact assertions (LOCATION + CONTENT).
-        assertRunProducedTracesWithPostGoal(
-            station = station,
-            testName = testName,
-            expectedExit = expectedExit,
-            postGoalExpectsFire = postGoalExpectsFire
-        )
+                // Trace artifact assertions (LOCATION + CONTENT).
+                assertRunProducedTracesWithPostGoal(
+                    station = station,
+                    testName = testName,
+                    expectedExit = expectedExit,
+                    postGoalExpectsFire = postGoalExpectsFire
+                )
 
-        // Live-result sanity check (only on pass-pipeline configs that don't gate on MaxTurnsHit).
-        assertNotNull(result.text, "$testName: executeLocal returned null text")
+                // Live-result sanity check (only on pass-pipeline configs that don't gate on MaxTurnsHit).
+                assertNotNull(result.text, "$testName: executeLocal returned null text")
+                return@runPostGoalHarness
+            }
+            catch (e: com.TTT.P2P.P2PException)
+            {
+                lastException = e
+                val isTransient = e.message?.contains("Service error", ignoreCase = true) == true
+                if (!isTransient || attemptCount >= maxAttempts) throw e
+                System.err.println("[RETRY] $testName attempt $attemptCount/$maxAttempts failed: ${e.message?.take(120)}; sleeping 3s")
+                kotlinx.coroutines.delay(3000)
+            }
+        }
+        // Should never reach here — either return or throw above.
+        throw lastException ?: IllegalStateException("$testName: retry loop exited without result")
     }
 
     // ====================================================================================
