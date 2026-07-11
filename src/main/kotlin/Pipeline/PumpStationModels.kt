@@ -308,6 +308,27 @@ data class PathLimitExceededResult(
     val nextPathOverride: String? = null
 )
 
+/**
+ * Multi-path dispatch output. Wraps a list of [PathRequest]s plus an optional
+ * rationale explaining why the dispatcher chose to fan out instead of picking
+ * a single path.
+ *
+ * This shape is only produced when the [com.TTT.Pipeline.PumpStation] is
+ * configured with [PathExecutionShape.MultiPath]. SinglePath mode never
+ * produces or consumes this type.
+ *
+ * @property paths Ordered list of path requests to fan out. Each path
+ *   follows the same [PathRequest] contract as single-path dispatch.
+ * @property batchRationale Optional human-readable explanation of why the
+ *   fan-out was chosen. Surfaced in the [PathBatchStarted] event so the
+ *   trace visualizer can render it.
+ */
+@kotlinx.serialization.Serializable
+data class PathRequestList(
+    val paths: List<PathRequest> = emptyList(),
+    val batchRationale: String? = null
+)
+
 //=========================================Dispatch Contract Shape============================================
 
 /**

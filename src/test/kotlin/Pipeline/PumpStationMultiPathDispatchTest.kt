@@ -28,4 +28,27 @@ class PumpStationMultiPathDispatchTest
         assertEquals(PathExecutionShape.SinglePath, station.getPathExecutionShape())
         assertNotNull(station)
     }
+
+    @Test
+    fun pathRequestListSerializesAndDeserializes()
+    {
+        val original = PathRequestList(
+            paths = listOf(
+                PathRequest(pathName = "gather", pathSchema = "{}", pathSelectionRationale = "first"),
+                PathRequest(pathName = "analyze", pathSchema = "{}", pathSelectionRationale = "second")
+            ),
+            batchRationale = "Independent reads, parallelize."
+        )
+        val text = com.TTT.Util.serialize(original)
+        val roundTripped: PathRequestList = com.TTT.Util.deserialize(text) ?: error("deserialize failed")
+        assertEquals(original, roundTripped)
+    }
+
+    @Test
+    fun pathRequestListDefaultsAreSensible()
+    {
+        val empty = PathRequestList()
+        assertEquals(emptyList<PathRequest>(), empty.paths)
+        assertEquals(null, empty.batchRationale)
+    }
 }
