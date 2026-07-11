@@ -104,12 +104,16 @@ object TraceNodeMapper
     /**
      * Resolve the grouping key for a PumpStation event. Turn index is sourced from the event metadata
      * (populated by the PumpStation → TraceEvent conversion helper in PumpStationHelpers.kt). Goal
-     * validation events get a nested sub-loop key, and reserve path reveals cluster by path name.
+     * validation events AND the post-success intervention event get a nested sub-loop key, and reserve
+     * path reveals cluster by path name. The post-goal event clusters with goal events because it
+     * fires inside `runExitFlow` as the post-success extension of the goal-validation phase; visually
+     * adjacent in the funnel.
      */
     private fun resolvePumpStationNodeKey(event: TraceEvent): String
     {
         val turnIndex = event.metadata["turnIndex"]?.toString()?.toIntOrNull() ?: -1
-        val isGoalEvent = event.eventType.name.startsWith("PUMP_STATION_GOAL_VALIDATION_")
+        val isGoalEvent = event.eventType.name.startsWith("PUMP_STATION_GOAL_VALIDATION_") ||
+            event.eventType.name.startsWith("PUMP_STATION_POST_GOAL_")
         val isReserveReveal = event.eventType == TraceEventType.PUMP_STATION_RESERVE_PATH_REVEALED
 
         return when
