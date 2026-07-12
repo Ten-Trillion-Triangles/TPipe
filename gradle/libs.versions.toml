@@ -3,6 +3,7 @@
 kotlin-version = "2.2.20"
 ktor-version = "3.1.3"
 logback-version = "1.4.14"
+dokka-version = "2.0.0"
 
 [libraries]
 ktor-server-content-negotiation = { module = "io.ktor:ktor-server-content-negotiation", version.ref = "ktor-version" }
@@ -18,3 +19,4 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin-version" }
 ktor = { id = "io.ktor.plugin", version.ref = "ktor-version" }
 kotlin-plugin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin-version" }
 shadow = { id = "com.gradleup.shadow", version = "8.3.6" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka-version" }

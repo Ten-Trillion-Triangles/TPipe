@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.gradle.api.GradleException
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.authentication.http.BasicAuthentication
+import org.gradle.external.javadoc.StandardJavadocDocletOptions
 
 /**
  * Support for GraalVM  Native is planned but not yet implemented. This will allow us to deploy this library
@@ -15,6 +16,7 @@ plugins {
     alias(libs.plugins.ktor)
     alias(libs.plugins.kotlin.plugin.serialization)
     alias(libs.plugins.shadow)
+    alias(libs.plugins.dokka)
     `maven-publish`
 }
 
@@ -23,7 +25,38 @@ java {
         languageVersion.set(JavaLanguageVersion.of(24))   // compileJava → 24
     }
     withSourcesJar()
-    withJavadocJar()
+    // No `withJavadocJar()` — Gradle's stock Javadoc tool rejects Kotlin
+    // source files (`.kt` extension) and produces a 261-byte stub jar.
+    // The `-javadoc.jar` artifact is built by Dokka instead, via the
+    // `dokkaJavadoc` task defined below.
+}
+
+// Dokka produces a real Java-tooling-compatible `-javadoc.jar` containing
+// HTML pages generated from Kotlin source (KDoc → HTML). The output jar
+// shape matches what javadoc would emit, so consumers' IDEs pick it up
+// automatically when published alongside the main jar.
+tasks.named<org.jetbrains.dokka.gradle.DokkaTask>("dokkaJavadoc") {
+    dokkaSourceSets.configureEach {
+        sourceRoots.from("src/main/kotlin")
+        jdkVersion.set(24)
+        // KDoc on root-level files (Application.kt, Routing.kt,
+        // Serialization.kt) that declare `package com.TTT` lives at
+        // a path that doesn't match — Dokka handles this gracefully
+        // (it documents them under the synthetic `com.TTT` package)
+        // without the "illegal package name" errors Gradle's javadoc
+        // task emits.
+    }
+}
+
+// Wire Dokka into the javadoc jar slot so the published artifact set
+// includes `-javadoc.jar` as consumers expect.
+val dokkaTask = tasks.named<org.jetbrains.dokka.gradle.DokkaTask>("dokkaJavadoc")
+val javadocJar by tasks.registering(Jar::class) {
+    group = "documentation"
+    description = "Assembles the -javadoc.jar artifact from Dokka's HTML output."
+    archiveClassifier.set("javadoc")
+    from(dokkaTask.flatMap { it.outputDirectory })
+    dependsOn(dokkaTask)
 }
 
 kotlin {
@@ -135,6 +168,7 @@ publishing {
             }
             from(components["java"])
             artifact(tasks.named("licenseJar"))
+            artifact(tasks.named("javadocJar"))
         }
     }
     repositories {
