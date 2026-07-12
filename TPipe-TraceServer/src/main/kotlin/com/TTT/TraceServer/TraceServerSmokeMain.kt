@@ -1,5 +1,6 @@
 package com.TTT.TraceServer
 
+import com.TTT.TraceServer.auth.Pbkdf2PasswordHasher
 import kotlin.concurrent.thread
 
 /**
@@ -25,16 +26,22 @@ fun main()
     println("--- TraceServer Smoke: PumpStation kind-aware dashboard ---")
     println("Booting TraceServer on 127.0.0.1:8081 ...")
 
+    // Open dashboard / open agent POST — no auth required for the screenshot smoke.
+    // The /api/auth/login route short-circuits to `clientAuthMechanism?.invoke(raw) ?: false`
+    // when passwordHasherEnabled is false; without a mechanism it returns false.
+    // Set passwordHasherEnabled=true + supply a PBKDF2 hash for "smoke-key" so the
+    // dashboard can log in with that key.
+    val smokeKeyHash = Pbkdf2PasswordHasher().hash("smoke-key")
     val cfg = TraceServerConfig(
         port = 8081,
         host = "127.0.0.1",
         defaultTenant = "smoke",
-        // Open dashboard / open agent POST — no auth required for the screenshot smoke.
-        // The default AuthConfig has passwordHasherEnabled=true + expectedHash=null which
-        // makes /api/auth/login reject everything; setting passwordHasherEnabled=false
-        // makes the login route accept any (or no) key and issue an anonymous session.
-        auth = AuthConfig(passwordHasherEnabled = false),
+        auth = AuthConfig(
+            passwordHasherEnabled = true,
+            expectedHash = smokeKeyHash,
+        ),
     )
+    TraceServerRegistry.agentAuthMechanism = { token -> token?.startsWith("Bearer ") == true }
 
     // No auth — leaves both mechanisms null. Dashboard open, agent POSTs accepted.
     thread(start = true, isDaemon = false, name = "Ktor-TraceServer-Smoke") {
