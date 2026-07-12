@@ -135,7 +135,7 @@ class FileBackedTraceStore(
         val state = tenantState(filter.tenant)
         val all: List<TraceSummary> = state.lock.read {
             state.bucket.entries
-                .map { (id, entry) -> TraceSummary(id, entry.insertedAt, entry.payload.name, entry.payload.status) }
+                .map { (id, entry) -> TraceSummary(id, entry.insertedAt, entry.payload.name, entry.payload.status, entry.payload.kind) }
                 .sortedByDescending { it.timestamp }
         }
         val tagsById: Map<String, Map<String, String>>? = if(filter.tag != null)
