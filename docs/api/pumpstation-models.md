@@ -16,6 +16,37 @@ data class PathRequest(
 
 `pathName` is matched case-insensitively against `pathList` and `reservePaths`. `pathSchema` is passed to the path as the input. `pathSelectionRationale` is an optional free-text reason the dispatch LLM writes for the path it picked. It rides into `DispatchCompleted.pathRequest` and into the `PUMP_STATION_DISPATCH_COMPLETED` trace event. The field is nullable, so old checkpoints that don't emit it still produce a schema-valid `PathRequest`. When `failurePolicy.requirePathSelectionRationale = true` (the default) and the LLM returns null, the harness appends a one-shot reminder to the next dispatch prompt. See [Dispatch Contract: `pathSelectionRationale`](../containers/pumpstation.md#dispatch-contract-pathselectionrationale).
 
+### PathRequestList
+
+`Pipeline/PumpStationModels.kt:327` — Multi-path counterpart to `PathRequest`. The dispatch LLM emits this when the station is configured with `PathExecutionShape.MultiPath`; the harness parses it and fans the list out via the existing async substrate.
+
+```kotlin
+@Serializable
+data class PathRequestList(
+    val paths: List<PathRequest> = emptyList(),
+    val batchRationale: String? = null
+)
+```
+
+`paths` is the ordered list of path requests to invoke. Each entry follows the same `PathRequest` contract as single-path dispatch — `pathName` must match a visible path, `pathSchema` is passed to the path as the input, `pathSelectionRationale` is captured per-path. `batchRationale` is an optional human-readable explanation of why fan-out was chosen over a single path. It rides into the `PathBatchStarted` event so the trace visualizer can render it as the rationale pill. `paths` must be non-empty after parsing — a `PathRequestList` with no entries is treated as a parse failure by `parseDispatchOutputMulti` and triggers the repair loop.
+
+### PathExecutionShape
+
+`Pipeline/PumpStationModels.kt:358` — Station-level dispatch contract selector. Controls which dispatch prompt template the harness injects, which parser it runs, and which event types it emits.
+
+```kotlin
+enum class PathExecutionShape {
+    SinglePath,
+    MultiPath
+}
+```
+
+`SinglePath` is the default. The dispatch prompt asks for one `PathRequest`, the parser extracts it via `parseDispatchOutput`, and the harness invokes a single path. The batch-boundary events (`PathBatchStarted`, `PathBatchCompleted`, `PathBatchFailed`) are never emitted.
+
+`MultiPath` switches the contract. The dispatch prompt asks for a `PathRequestList`, the parser extracts it via `parseDispatchOutputMulti`, and the harness launches each path as an async coroutine via the existing async substrate. Results merge into turn history on the next judge. The per-path `PathStarted` / `PathCompleted` / `PathFailed` events are still emitted as today; the new batch events carry the fan-out metadata.
+
+Multi-path fan-out in this phase is fire-and-collect-next-turn: there is no halt-flag aggregation across the batch. Each path runs independently; the harness does not abort the remaining paths on a single-path failure.
+
 ### PathDescriptionData
 
 `Pipeline/PumpStation.kt:173` — Immutable record produced by `PathObject.init()`.
@@ -351,7 +382,7 @@ The full event taxonomy is documented below. Each event has a corresponding `Tra
 | Event | Data | Phase | Description |
 |-------|------|-------|-------------|
 | `DispatchStarted` | (no extra fields) | `Dispatch` | Emitted at the start of `runDispatchPhase`. |
-| `DispatchCompleted` | `selectedPathName: String?`, `pathRequest: PathRequest?`, `result: MultimodalContent?`, `inputTokens: Int?`, `outputTokens: Int?`, `totalTokens: Int?` | `Dispatch` | Emitted at the end of `runDispatchPhase`. |
+| `DispatchCompleted` | `selectedPathName: String?`, `pathRequest: PathRequest?`, `result: MultimodalContent?`, `inputTokens: Int?`, `outputTokens: Int?`, `totalTokens: Int?` | `Dispatch` | Emitted at the end of `runDispatchPhase`. In `PathExecutionShape.MultiPath` mode this event still fires and `pathRequest` carries the first entry of the parsed `PathRequestList` so existing single-path consumers continue to work; the batch detail rides in the separate `PathBatchStarted` / `PathBatchCompleted` events. |
 
 ### Path Execution Events
 
@@ -367,6 +398,16 @@ The full event taxonomy is documented below. Each event has a corresponding `Tra
 | `PathFailed` | `pathName: String`, `riskLevel: PathRiskLevel`, `error: PumpStationError`, `errorMessage: String?` | `PathExecution` | Emitted on path failure. |
 | `PathHidden` | `pathName: String`, `reason: String` | `PathExecution` | Emitted when the per-path limit is exceeded and policy is `Skip`. |
 | `PathValidationCompleted` | `pathName: String`, `approved: Boolean`, `reason: String?` | `PathValidation` | Emitted after the `pathValidationFunction` runs. |
+
+### Multi-Path Batch Events
+
+`Pipeline/PumpStationModels.kt:623-676` — Batch-boundary markers for `PathExecutionShape.MultiPath` dispatch. SinglePath mode never emits these events.
+
+| Event | Data | Phase | Description |
+|-------|------|-------|-------------|
+| `PathBatchStarted` | `pathNames: List<String>`, `batchRationale: String?` | `Dispatch` | Emitted at the start of `runDispatchPhaseMulti` after the dispatch LLM's `PathRequestList` is parsed and before the per-path fan-out. `pathNames` is the ordered list of paths the harness is about to launch; `batchRationale` is the copy from `PathRequestList.batchRationale`. |
+| `PathBatchCompleted` | `totalPaths: Int`, `succeededPaths: Int`, `failedPaths: Int` | `Dispatch` | Emitted at the end of `runDispatchPhaseMulti` after every path in the batch has either completed or failed. Per-path detail rides in the standard `PathCompleted` / `PathFailed` events; this event carries the batch totals. |
+| `PathBatchFailed` | `errorMessage: String`, `repairAttempts: Int` | `Dispatch` | Emitted when the dispatch LLM output could not be parsed as a `PathRequestList` even after the repair loop exhausted `failurePolicy.maxDispatchRepairAttempts`. Distinct from per-path `PathFailed` — a batch failure means zero paths in the batch were launched. |
 
 ### Intervention Events
 
@@ -625,8 +666,8 @@ The `revealWhen` predicate on a `PathObject` is typed as this alias. The receive
 | `PumpStationJudgeRunMode` | `Pipeline/PumpStation.kt` |
 | `PathRiskLevel` | `Pipeline/PumpStation.kt` |
 | `PathRequest` | `Pipeline/PumpStation.kt` |
-| `PathDescriptionData` | `Pipeline/PumpStation.kt` |
-| `PathDescriptionList` | `Pipeline/PumpStation.kt` |
+| `PathRequestList`, `PathExecutionShape` | `Pipeline/PumpStationModels.kt` |
+| `PathDescriptionData`, `PathDescriptionList` | `Pipeline/PumpStation.kt` |
 | `MemoryActionResult` | `Pipeline/PumpStation.kt` |
 | `PumpStationStatus`, `PumpStationPhase`, `PumpStationError`, `PumpStationExitReason`, `PumpStationPausePhase` | `Pipeline/PumpStationModels.kt` |
 | `StashReason`, `PathLimitExceededPolicy`, `HealthStatus` | `Pipeline/PumpStationModels.kt` |
@@ -645,7 +686,7 @@ The `revealWhen` predicate on a `PathObject` is typed as this alias. The receive
 
 - **[PumpStation Container Doc](../containers/pumpstation.md)** — Architecture, execution flow
 - **[PumpStation API Reference](pumpstation.md)** — Public properties, methods, and setters
-- **[PumpStation Magic Contracts](../core-concepts/pumpstation-magic-contracts.md)** — JSON schemas and parsers
+- **[PumpStation Magic Contracts](../core-concepts/pumpstation-magic-contracts.md)** — JSON schemas and parsers, including `parseDispatchOutputMulti` for the multi-path contract
 - **[TPipe-Defaults Package](tpipe-defaults-package.md#pumpstationdefaults)** — `PumpStationDefaults.withOpenRouter` factory
 - **[Pipe Context Protocol](pipe-context-protocol.md)** — `PcpContext` referenced by `PathDescriptionData.pcpSchema`
 - **[Lorebook API](lorebook.md)** — `LoreBook` referenced by `LorebookAgentInput.currentLorebook`

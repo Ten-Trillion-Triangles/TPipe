@@ -113,6 +113,10 @@ pumpStation("name") {
     userGuidelines = "..."
     entryUserPrompt = "..."
 
+    // Dispatch contract — SinglePath (default) emits one PathRequest per turn;
+    // MultiPath emits a PathRequestList and fans out via the async substrate.
+    pathExecutionShape = PathExecutionShape.MultiPath
+
     // Direct agent assignment
     judgeAgent = pipeline()
     dispatchAgent = pipeline()
@@ -326,6 +330,7 @@ The enums referenced by the API are documented in full in **[PumpStation Models 
 - `PumpStationCompactionStrategy` — Whole, Chunked, Hybrid
 - `PumpStationJudgeRunMode` — Always, FlagTriggered
 - `PathRiskLevel` — Low, Medium, High
+- `PathExecutionShape` — SinglePath, MultiPath. Controls whether the dispatch agent emits one `PathRequest` per turn (default) or a `PathRequestList` that the harness fans out across multiple paths.
 - `PumpStationStatus` — NotStarted, Running, WaitingOnBackground, Suspended, Completed, Failed, Terminated
 - `PumpStationPhase` — PreInit, HealthCheck, Judge, Dispatch, PathSafety, PathExecution, PathValidation, Intervention, ForegroundAgents, MemoryUpdate, Compaction, GoalValidation, Exit
 - `PumpStationError` — UnknownPath, InvalidPathRequest, DispatchJsonRepairFailed, PathExecutionException, PathTimeout, TokenBudgetExceeded, MemoryBlowout, KillSwitchTripped, MaxTurnsExceeded, LoopGuardTriggered, P2PRequestInvalid, InitNotCalled, CompactionInflated, CompactionRolledBack
