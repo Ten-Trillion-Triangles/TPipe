@@ -30,6 +30,7 @@ class TraceDashboard {
         this.isConnected = false;
         this.searchQuery = '';
         this.statusFilter = '';
+        this.kindFilter = '';
         this.authMode = 'KEY';
         this.activeAuthTab = 'key';
         this.reconnectAttempts = 0;
@@ -59,7 +60,8 @@ class TraceDashboard {
             refreshBtn: document.getElementById('refreshBtn'),
             deleteTraceBtn: document.getElementById('deleteTraceBtn'),
             openRawBtn: document.getElementById('openRawBtn'),
-            filterChips: document.getElementById('filterChips')
+            filterChips: document.getElementById('filterChips'),
+            kindFilterChips: document.getElementById('kindFilterChips')
         };
 
         this._wireEvents();
@@ -598,6 +600,21 @@ class TraceDashboard {
         this.fetchTraces();
     }
 
+    setKindFilter(kind) {
+        this.kindFilter = kind || '';
+        this._applyKindChipState();
+        this.renderTraceList();
+    }
+
+    _applyKindChipState() {
+        if (!this.elements.kindFilterChips) return;
+        const chips = this.elements.kindFilterChips.querySelectorAll('.kind-chip');
+        chips.forEach(chip => {
+            const isActive = (chip.dataset.kind || '') === this.kindFilter;
+            chip.classList.toggle('active', isActive);
+        });
+    }
+
     _applyFilterChipState() {
         const chips = this.elements.filterChips.querySelectorAll('.chip');
         chips.forEach(chip => {
@@ -654,6 +671,9 @@ class TraceDashboard {
 
     renderTraceList() {
         const filtered = this.traces.filter(trace => {
+            // Kind filter (client-side)
+            if (this.kindFilter && (trace.kind || '') !== this.kindFilter) return false;
+            // Search filter (existing)
             if (!this.searchQuery) return true;
             const haystack = [
                 trace.name, trace.id, trace.status, trace.pipelineId
@@ -662,7 +682,7 @@ class TraceDashboard {
         });
 
         const pill = this.elements.traceCount;
-        const filterActive = Boolean(this.searchQuery || this.statusFilter);
+        const filterActive = Boolean(this.searchQuery || this.statusFilter || this.kindFilter);
         const visible = filtered.length;
         // `unfilteredTotalTraces` is the most recent count of every trace in
         // the tenant, which is what users expect to see in the denominator
