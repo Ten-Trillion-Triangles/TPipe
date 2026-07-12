@@ -2988,9 +2988,26 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
     // already gates on dispatchAutomatically at Debug/PipeTracer.kt:132 and catches
     // HTTP failures internally; the outer `tracingEnabledInternal` check avoids the
     // export call when the developer never opted into tracing.
+    //
+    // After the implicit first dispatch (from PipeTracer.exportTrace), re-dispatch
+    // with `kind = "pumpstation"` so the TraceServer dashboard can render the
+    // PumpStation badge + filter chip. The TraceServer's `_upsertSummary` will
+    // replace the first entry with this kind-stamped version. Belt-and-suspenders:
+    // also stamp `tags["component"] = "pumpstation"` for clients using the
+    // `?tag=component:pumpstation` filter path.
     if(tracingEnabledInternal && RemoteTraceConfig.dispatchAutomatically)
     {
         PipeTracer.exportTrace(taskState.runId, com.TTT.Debug.TraceFormat.HTML)
+        com.TTT.Debug.RemoteTraceDispatcher.dispatchTrace(
+            pipelineId = taskState.runId,
+            name = taskState.runId,
+            status = when (taskState.status)
+            {
+                com.TTT.Pipeline.PumpStationStatus.Completed -> "SUCCESS"
+                else -> "FAILURE"
+            },
+            kind = "pumpstation",
+        )
     }
 
     // Prefer the path's actual output (lastPathResult) as the deliverable. The harness's
