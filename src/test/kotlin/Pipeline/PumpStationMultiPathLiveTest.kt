@@ -61,6 +61,12 @@ class PumpStationMultiPathLiveTest
             dispatchAgent = miniMaxPipeline("dispatch", apiKey, traceConfig)
             pathExecutionShape = PathExecutionShape.MultiPath
             tracingConfiguration = traceConfig
+            // eventObserver MUST be assigned BEFORE the first path() call.
+            // path() triggers promote() which snapshots the Initial builder's
+            // eventObserver into the new Ready builder via copyFrom — a later
+            // assignment to the Initial builder's eventObserver field is
+            // silently dropped.
+            eventObserver = { batchEvents.add(it) }
             path("noop") {
                 description = "No-op test path that echoes the input."
                 setExecutionFunction { content, _, _, _ ->
@@ -73,38 +79,49 @@ class PumpStationMultiPathLiveTest
                     MultimodalContent(text = "Gathered: ${content.text.take(80)}")
                 }
             }
-            eventObserver = { batchEvents.add(it) }
             killSwitch {
-                inputTokenLimit = 60_000
-                outputTokenLimit = 60_000
+                // Generous limits for a live-test smoke run. M2.7 with the
+                // multi-path schema can run 4-6 turns before completion; each
+                // turn is ~10-30K tokens. 250K covers a full multi-turn run.
+                inputTokenLimit = 250_000
+                outputTokenLimit = 250_000
             }
         }
 
+        var caughtException: Exception? = null
         try
         {
             runBlocking {
                 station.executeLocal(MultimodalContent(
                     text = "Write a brief summary comparing Kotlin coroutines and Java virtual threads."
                 ))
-                // Explicit getTraceReport triggers TraceConfig.autoExport (writes the
-                // pump station HTML to the canonical TPipeConfig.getTraceDir() root).
-                // Without this call, the PumpStation-level HTML is not exported even
-                // though the per-pipe HTML files (judge/dispatch) ARE exported via
-                // pipeline.enableTracing on each agent pipeline.
-                val report = station.getTraceReport(com.TTT.Debug.TraceFormat.HTML)
-                System.err.println("[PumpStationMultiPathLiveTest] getTraceReport returned ${report.length} chars; first 200: ${report.take(200)}")
             }
         }
         catch (e: Exception)
         {
-            System.err.println("[PumpStationMultiPathLiveTest] executeLocal failed: ${e.message}")
-            e.printStackTrace()
-            return
+            // Surface the failure (e.g. KillSwitch tripped) but don't abort — we still
+            // want the partial trace HTML to land at the canonical location below.
+            System.err.println("[PumpStationMultiPathLiveTest] executeLocal threw: ${e.message}")
+            caughtException = e
         }
         finally
         {
+            try
+            {
+                runBlocking {
+                    // Always export the trace, even when executeLocal threw partway.
+                    // Without this, a killSwitch trip or repair exhaustion leaves the
+                    // canonical trace dir empty even though events were captured.
+                    station.getTraceReport(com.TTT.Debug.TraceFormat.HTML)
+                }
+            }
+            catch (e: Exception)
+            {
+                System.err.println("[PumpStationMultiPathLiveTest] getTraceReport failed: ${e.message}")
+            }
             System.clearProperty("tpipe.allowInsecureBaseUrl")
         }
+        if (caughtException != null) return
 
         // The dispatch LLM should have produced a batch event of some kind.
         // Either PathBatchStarted (parse succeeded) or PathBatchFailed
@@ -113,6 +130,13 @@ class PumpStationMultiPathLiveTest
         val sawBatchEvent = batchEvents.any {
             it is PathBatchStarted || it is PathBatchCompleted || it is PathBatchFailed
         }
+        kotlin.test.assertTrue(
+            sawBatchEvent,
+            "MultiPath mode should emit PathBatchStarted/Completed/Failed events; " +
+            "got ${batchEvents.size} events total. " +
+            "If 0 events, check that eventObserver is set BEFORE the first path() call " +
+            "(promote() snapshots Initial builder state into Ready at first path())."
+        )
         if (!sawBatchEvent)
         {
             System.err.println(
@@ -121,24 +145,20 @@ class PumpStationMultiPathLiveTest
                 "Total events: ${batchEvents.size}"
             )
         }
-        // We do not assert sawBatchEvent strictly — LLM non-determinism may
-        // produce a single-path-shaped response on a particular run. The
-        // deterministic tests cover the parsing contract. This live test
-        // is observational.
 
         // Trace artifact location check: the PumpStation HTML trace MUST
         // land at the canonical TPipeConfig.getTraceDir() root, NOT under
         // a hard-coded `~/.TPipe-Debug/...` literal. A regression that
         // routes traces elsewhere would silently break downstream visualizer
         // tooling — this assertion surfaces the bug.
-        val pumpstationHtml = File(traceDir(testName), "pumpstation-*.html")
-            .listFiles()
-            ?.firstOrNull()
+        val pumpstationDir = File(TPipeConfig.getTraceDir(), "PumpStation/$testName")
+        val pumpstationHtml = pumpstationDir.listFiles()
+            ?.firstOrNull { it.name.startsWith("pumpstation-") && it.name.endsWith(".html") }
         if (pumpstationHtml == null || !pumpstationHtml.exists())
         {
             System.err.println(
                 "[PumpStationMultiPathLiveTest] No PumpStation HTML trace found under " +
-                "${File(traceDir(testName), "").absolutePath}/pumpstation-*.html. " +
+                "${pumpstationDir.absolutePath}/pumpstation-*.html. " +
                 "Trace capture may have failed; verify enableTracing is wired before init."
             )
         }
