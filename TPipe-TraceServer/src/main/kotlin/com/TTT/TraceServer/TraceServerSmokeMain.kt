@@ -29,6 +29,11 @@ fun main()
         port = 8081,
         host = "127.0.0.1",
         defaultTenant = "smoke",
+        // Open dashboard / open agent POST — no auth required for the screenshot smoke.
+        // The default AuthConfig has passwordHasherEnabled=true + expectedHash=null which
+        // makes /api/auth/login reject everything; setting passwordHasherEnabled=false
+        // makes the login route accept any (or no) key and issue an anonymous session.
+        auth = AuthConfig(passwordHasherEnabled = false),
     )
 
     // No auth — leaves both mechanisms null. Dashboard open, agent POSTs accepted.
