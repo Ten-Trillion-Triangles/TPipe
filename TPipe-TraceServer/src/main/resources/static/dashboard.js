@@ -701,10 +701,12 @@ class TraceDashboard {
         const shortId = (trace.id || '').substring(0, 8);
         const tagsHtml = this._renderTraceTags(trace.tags);
         const isActive = this.activeTraceId === trace.id ? 'active' : '';
+        const kindBadge = this._renderKindBadge(trace.kind);
 
         return `
             <div class="trace-item ${isActive}" data-trace-id="${id}">
                 <div class="trace-header">
+                    ${kindBadge}
                     <span class="trace-name" title="${titleAttr}">${name}</span>
                     <span class="trace-status ${statusClass}">${this.escapeHtml(rawStatus)}</span>
                 </div>
@@ -728,6 +730,13 @@ class TraceDashboard {
             return `<span class="trace-tag">${key}:${val}</span>`;
         }).join('');
         return `<div class="trace-tags">${items}</div>`;
+    }
+
+    _renderKindBadge(kind) {
+        if (!kind) return '';
+        const safeKind = String(kind).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        if (!safeKind) return '';
+        return `<span class="trace-kind-badge kind-${safeKind}">${safeKind}</span>`;
     }
 
     // ----------------------- Click delegation -----------------------

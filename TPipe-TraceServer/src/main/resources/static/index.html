@@ -584,6 +584,24 @@
             .content-header .icon-btn { padding: 4px 6px; font-size: 0.75rem; }
             .content-header .icon-btn span:not([aria-hidden]) { display: none; }
         }
+
+        /* Component-kind badge — shown next to trace name when trace.kind is set. */
+        .trace-kind-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-right: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            vertical-align: middle;
+        }
+        .trace-kind-badge.kind-pumpstation { background: #4a3b6b; color: #fff; }
+        .trace-kind-badge.kind-manifold   { background: #3b6b4a; color: #fff; }
+        .trace-kind-badge.kind-junction   { background: #6b4a3b; color: #fff; }
+        .trace-kind-badge.kind-pipeline   { background: #4a4a4a; color: #fff; }
+        .trace-kind-badge.kind-unknown    { background: #2a2a2a; color: #aaa; }
     </style>
 </head>
 <body>
