@@ -100,6 +100,10 @@ fun main(args: Array<String>) {
                     i++
                 }
             }
+            "--print-default-string" -> {
+                println(DEFAULT_TEST_STRING)
+                return
+            }
         }
         i++
     }
@@ -110,8 +114,9 @@ fun main(args: Array<String>) {
     }
 
     if(expectedTokens <= 0) {
-        System.err.println("Usage: tuner --expected-tokens <integer> [--test-string \"<string>\"]")
+        System.err.println("Usage: tuner --expected-tokens <integer> [--test-string \"<string>\"] [--print-default-string]")
         System.err.println("Omit --test-string or provide an empty value to use the default stress-test string.")
+        System.err.println("Use --print-default-string to emit the default string without running the tuner.")
         System.exit(1)
     }
 

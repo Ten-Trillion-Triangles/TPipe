@@ -27,6 +27,12 @@ As an LLM agent, when you are tasked with "tuning TPipe for a specific LLM model
    ./TPipe-Tuner/tuner.sh --test-string "$(cat your-file.json)" --expected-tokens 1305
    ```
 
+   **To inspect the built-in default string:**
+   ```bash
+   ./TPipe-Tuner/tuner.sh --print-default-string
+   ```
+   This emits the full default stress-test string and exits immediately — no `--expected-tokens` required.
+
 3. **Read the Output**
    The application will run for a few seconds (or 1-2 minutes for large inputs) scanning combinations and applying bias. It will print the exact optimal configuration in a JSON block at the end of the output, including every `TruncationSettings` field even when the value matches the default.
 

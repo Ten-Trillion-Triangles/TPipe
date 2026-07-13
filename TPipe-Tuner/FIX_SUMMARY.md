@@ -49,7 +49,7 @@ TPipe-Tuner scripts used `$*` (bash) and `%*` (Windows) which don't preserve arg
 ## Files Modified
 1. `/TPipe-Tuner/tuner.sh` - Fixed argument forwarding
 2. `/TPipe-Tuner/tuner.bat` - Fixed Windows argument handling
-3. `/TPipe-Tuner/src/main/kotlin/com/TTT/Tuner/TunerApp.kt` - Added debug output and optimizations
+3. `/TPipe-Tuner/src/main/kotlin/com/TTT/Tuner/TunerApp.kt` - Added debug output, optimizations, and `--print-default-string` flag
 4. `/TPipe-Tuner/instructions.md` - Updated documentation
 
 ## Performance Notes
