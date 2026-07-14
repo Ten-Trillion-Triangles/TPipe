@@ -86,3 +86,50 @@ val junction = junction {
 ### Design note
 
 `summaryAgent(agent)` calls `setSummaryAgent` directly rather than replacing the entire memory policy, preserving any previously set `enableSummarization`, `summaryBudget`, or `recentDiscussionEntries` values.
+
+## DISTRIBUTION GRID MEMORY — SUMMARIZATION BACKENDS
+
+DistributionGrid's outbound memory shaping (during explicit peer handoff) uses a three-tier budget: critical state, recent history, optional older-history summary. When the older-history tier is included and `enableSummarization` is set, DistributionGrid can optionally summarize that history through one of two backends.
+
+### Backend priority
+
+1. **Agent backend** — `DistributionGridMemoryPolicy.summaryAgent`: a `P2PInterface`. When set, DistributionGrid calls `executeLocal` (in a suspend coroutine, no `runBlocking`) with:
+   - `text`: older history string
+   - `metadata["distributionGridSummarizerContext"]`: `DistributionGridSummarizerContext` carrying `taskId`, `currentNodeId`, `targetNodeId`, `summaryBudget`, `summarySeed`
+
+   DistributionGrid extracts `MultimodalContent.text` from the response as the summary. This backend takes absolute priority when both agent and lambda are configured.
+
+2. **Lambda backend** — `DistributionGridMemoryPolicy.summarizer`: a `((String) -> String)?` lambda. Fallback when the agent backend is absent, throws, or returns blank text.
+
+3. **Verbatim** — when neither backend is configured, or both fail, older history is included verbatim (subject to token budget).
+
+### Failure handling
+
+Both backends are wrapped in `runCatching`:
+- Agent/lambda exceptions → next branch (lambda if agent failed, verbatim if lambda failed)
+- Agent/lambda blank output (`text.isBlank()`) → next branch
+- Token cap applied after summarization via `budgetText(summaryBudget)`
+
+### Configuration
+
+```kotlin
+val grid = distributionGrid {
+    router(MyRouter())
+    worker(MyWorker())
+    memory {
+        enableSummarization(true)
+        summaryBudget(1024)
+    }
+    summaryAgent(mySummaryAgent)            // P2PInterface — agent backend
+    // OR block form:
+    summaryAgent { this.summaryAgent = myAgent }
+    // Lambda fallback (used when no agent):
+    memory {
+        summarizer { rawHistory -> compact(rawHistory) }
+    }
+}
+```
+
+### Design note
+
+`summaryAgent(agent)` calls `setSummaryAgent` directly rather than replacing the entire memory policy, preserving any previously set `enableSummarization`, `summaryBudget`, or other policy fields. This avoids the silent-overwrite pitfall where DSL calls like `memory { enableSummarization(true); summaryBudget(1024) }; summaryAgent(myAgent)` would otherwise wipe the first call's effect.

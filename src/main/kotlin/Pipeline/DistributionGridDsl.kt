@@ -52,6 +52,7 @@ class DistributionGridBuilder<S : GridStage> @PublishedApi internal constructor(
     private var discoveryConfiguration: DistributionGridDiscoveryConfiguration? = null,
     private var routingConfiguration: DistributionGridRoutingPolicy? = null,
     private var memoryConfiguration: DistributionGridMemoryPolicy? = null,
+    private var summaryAgentConfiguration: P2PInterface? = null,
     private var durabilityConfiguration: DistributionGridDurableStore? = null,
     private var tracingConfiguration: DistributionGridTracingConfiguration? = null,
     private var hooksConfiguration: DistributionGridHooksConfiguration? = null,
@@ -299,6 +300,59 @@ class DistributionGridBuilder<S : GridStage> @PublishedApi internal constructor(
     }
 
     /**
+     * Configure the optional summary agent invoked in a suspend coroutine to produce outbound
+     * memory summaries for older history tails.
+     *
+     * The agent takes absolute priority over the [summarizer][DistributionGridMemoryPolicy.summarizer]
+     * lambda when both are set and [enableSummarization][DistributionGridMemoryPolicy.enableSummarization]
+     * is true. Its [P2PInterface.executeLocal] is called with a [DistributionGridSummarizerContext]
+     * in metadata; the returned [MultimodalContent.text] is used as the summary.
+     *
+     * Routes through [DistributionGrid.setSummaryAgent], which mutates the existing memory policy
+     * in place. This preserves any previously configured `enableSummarization`, `summaryBudget`,
+     * or other policy fields set via [memory].
+     *
+     * @param agent Summary agent, or `null` to clear.
+     * @return This builder for chaining.
+     */
+    fun summaryAgent(agent: P2PInterface?): DistributionGridBuilder<S>
+    {
+        summaryAgentConfiguration = agent
+        return this
+    }
+
+    /**
+     * Configure the summary agent via a builder block.
+     *
+     * Enables inlining agent configuration alongside memory policy settings:
+     *
+     * ```kotlin
+     * distributionGrid {
+     *     memory {
+     *         enableSummarization = true
+     *         summaryBudget = 1024
+     *     }
+     *     summaryAgent { this.summaryAgent = myAgent }
+     * }
+     * ```
+     *
+     * @param block Block configuring a temporary [DistributionGridMemoryPolicy] whose
+     *              [DistributionGridMemoryPolicy.summaryAgent] is copied into the grid's policy
+     *              via [DistributionGrid.setSummaryAgent].
+     * @return This builder for chaining.
+     */
+    fun summaryAgent(block: DistributionGridMemoryPolicy.() -> Unit): DistributionGridBuilder<S>
+    {
+        val policy = DistributionGridMemoryPolicy()
+        policy.block()
+        if(policy.summaryAgent != null)
+        {
+            summaryAgentConfiguration = policy.summaryAgent
+        }
+        return this
+    }
+
+    /**
      * Configure the durable-store binding.
      *
      * @param block Builder block that supplies the store.
@@ -421,6 +475,7 @@ class DistributionGridBuilder<S : GridStage> @PublishedApi internal constructor(
 
         routingConfiguration?.let { grid.setRoutingPolicy(it.deepCopy()) }
         memoryConfiguration?.let { grid.setMemoryPolicy(it.copy()) }
+        summaryAgentConfiguration?.let { grid.setSummaryAgent(it) }
         if(durabilityConfiguration != null)
         {
             grid.setDurableStore(durabilityConfiguration)
@@ -1115,6 +1170,16 @@ class DistributionGridMemoryDsl
     fun summarizer(summarizer: (String) -> String)
     {
         policy.summarizer = summarizer
+    }
+
+    /**
+     * Configure the summary agent invoked in a suspend coroutine when [enableSummarization] is true.
+     *
+     * @param agent Summary agent, or `null` to clear.
+     */
+    fun summaryAgent(agent: P2PInterface?)
+    {
+        policy.summaryAgent = agent
     }
 
     internal fun build(): DistributionGridMemoryPolicy = policy.copy()

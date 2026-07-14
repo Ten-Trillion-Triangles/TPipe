@@ -84,6 +84,7 @@ Valid `decision` values: `continue`, `stop`, `refine`, `override`.
 | `killSwitch(input, output, onTripped)` | Halts execution if token limits are exceeded. |
 | `concurrencyMode(ISOLATED)` | Required for P2P exposure. Each request gets a fresh junction state. |
 | `memoryPolicy { }` | Shapes outbound memory (e.g., token budget for what participants receive). |
+| `summaryAgent(agent)` | Optional `P2PInterface` invoked in a suspend coroutine to summarize older history. Takes priority over the summarizer lambda. |
 
 ### Workflow Recipe Contract
 
@@ -237,6 +238,7 @@ All builder methods return `JunctionBuilder<S>` for chaining:
 | `descriptor(descriptor)` | any | Sets the P2P descriptor for this junction |
 | `requirements(requirements)` | any | Sets the P2P requirements |
 | `memoryPolicy { }` | any | Configures outbound memory policy |
+| `summaryAgent(agent)` | any | Configures optional summary agent (suspend-coroutine invocation; takes priority over the summarizer lambda) |
 
 ### Manual Builder
 
