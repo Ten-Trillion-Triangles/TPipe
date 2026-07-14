@@ -1703,7 +1703,7 @@ class Junction : P2PInterface
      * @param phase The active workflow phase, or null if in DISCUSSION mode.
      * @return A compact summary section or an empty string if [summarySeed] is blank or [summaryBudget] is zero.
      */
-    private fun buildSummaryText(
+    private suspend fun buildSummaryText(
         summaryLabel: String,
         summarySeed: String,
         summaryBudget: Int,
@@ -1735,9 +1735,7 @@ class Junction : P2PInterface
                     metadata["junctionSummarizerContext"] = context
                 }
                 val result = runCatching {
-                    kotlinx.coroutines.runBlocking {
-                        junctionMemoryPolicy.summaryAgent!!.executeLocal(agentInput)
-                    }
+                    junctionMemoryPolicy.summaryAgent!!.executeLocal(agentInput)
                 }
                 result.getOrNull()?.text?.ifBlank { trimmedSeed } ?: trimmedSeed
             }
@@ -1843,7 +1841,7 @@ class Junction : P2PInterface
      * @return A fully budgeted memory envelope ready to render into a prompt.
      * @throws IllegalStateException If the resolved budget cannot safely hold Junction's minimum critical state.
      */
-    private fun budgetEnvelope(
+    private suspend fun budgetEnvelope(
         roleName: String,
         roleKind: JunctionMemoryRole,
         binding: JunctionBinding?,
@@ -2817,7 +2815,7 @@ class Junction : P2PInterface
      * @param cycleNumber Active workflow cycle number.
      * @return A prompt ready to dispatch through P2P.
      */
-    private fun buildWorkflowPhasePrompt(
+    private suspend fun buildWorkflowPhasePrompt(
         binding: JunctionBinding,
         phase: JunctionWorkflowPhase,
         workingContent: MultimodalContent,
@@ -2934,7 +2932,7 @@ class Junction : P2PInterface
      * @param roundNumber Active discussion round number.
      * @return A memory envelope tailored to a discussion participant.
      */
-    private fun buildParticipantMemoryEnvelope(
+    private suspend fun buildParticipantMemoryEnvelope(
         binding: JunctionBinding,
         workingContent: MultimodalContent,
         roundNumber: Int
@@ -2967,7 +2965,7 @@ class Junction : P2PInterface
      * @param voteResults Weighted vote tally for the round.
      * @return A memory envelope tailored to the moderator.
      */
-    private fun buildModeratorMemoryEnvelope(
+    private suspend fun buildModeratorMemoryEnvelope(
         workingContent: MultimodalContent,
         opinions: List<ParticipantOpinion>,
         voteResults: List<VotingResult>
@@ -3040,7 +3038,7 @@ class Junction : P2PInterface
      * @param cycleNumber Active workflow cycle number.
      * @return A memory envelope tailored to the workflow role.
      */
-    private fun buildWorkflowMemoryEnvelope(
+    private suspend fun buildWorkflowMemoryEnvelope(
         binding: JunctionBinding,
         phase: JunctionWorkflowPhase,
         workingContent: MultimodalContent,
@@ -3745,7 +3743,7 @@ class Junction : P2PInterface
      * @param roundNumber Active round number.
      * @return A fully formed P2P request with compact memory attached.
      */
-    private fun buildParticipantRequest(
+    private suspend fun buildParticipantRequest(
         binding: JunctionBinding,
         workingContent: MultimodalContent,
         roundNumber: Int
@@ -3954,7 +3952,7 @@ class Junction : P2PInterface
      * @param voteResults Weighted vote tally for the round.
      * @return A prompt ready to dispatch to the moderator binding.
      */
-    private fun buildModeratorPrompt(
+    private suspend fun buildModeratorPrompt(
         workingContent: MultimodalContent,
         opinions: List<ParticipantOpinion>,
         voteResults: List<VotingResult>
