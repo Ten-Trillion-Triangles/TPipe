@@ -7,6 +7,7 @@
 - [Core Concepts](#core-concepts)
 - [DSL Builder](#dsl-builder)
 - [Summary Pipeline](#summary-pipeline)
+- [Summary to MiniBank Auto-Injection](#summary-to-minibank-auto-injection)
 - [initialUserPrompt](#initialuserprompt)
 - [Startup Checklist](#startup-checklist)
 - [Fastest Working Setup](#fastest-working-setup)
@@ -131,6 +132,7 @@ The manifold maintains a single `workingContentObject` (a `MultimodalContent` wr
 | `history { }` | Configures manager history truncation. Determines how much history the manager sees each iteration. |
 | `validation { }` | Attaches validator/failure/transformer hooks. These intercept the worker output before it's appended to history. |
 | `summaryPipeline { }` | Adds a summarization step after each worker response. Changes what the manager sees (condensed vs full history). |
+| `summaryInjection { }` | Companion to `summaryPipeline { }`. When enabled, appends each summary chunk into `workingContentObject.miniBankContext` so the next manager call sees the running summary automatically without a custom `setContextTruncationFunction(...)` hook. Off by default. |
 | `killSwitch(input, output, onTripped)` | Sets token limits that halt execution. Protects against runaway workers. |
 | `concurrencyMode(ISOLATED)` | Required for P2P exposure. Each request gets a fresh manifold state. |
 
@@ -216,6 +218,7 @@ The `manifold { }` builder supports these top-level blocks:
 | `validation { }` | Optional | Hooks for worker output validation and transformation |
 | `tracing { }` | Optional | Enables tracing for the manifold and child pipelines |
 | `summaryPipeline { }` | Optional | Adds an optional summarization pipeline that runs after each worker response |
+| `summaryInjection { }` | Optional | Companion block to `summaryPipeline { }`. Enables opt-in auto-injection of each iteration's summary text into `workingContentObject.miniBankContext` at a configurable key |
 | `concurrencyMode(mode)` | Optional | Sets P2P concurrency mode (SHARED or ISOLATED) |
 | `killSwitch(input, output, onTripped)` | Optional | Halts execution if token limits are exceeded |
 
@@ -435,6 +438,88 @@ val builtManifold = manifold {
 The summary pipeline is invoked inside the main execution loop, after the worker response is received and merged into `workingContentObject`, but before the termination condition is re-evaluated for the next iteration. The accumulated summary is accessible via the `initialUserPrompt` property after execution.
 
 > **Note:** The summary pipeline must have context overflow protection configured on all its pipes, just like worker pipelines. This prevents a misbehaving summarizer from crashing the manifold.
+
+## Summary to MiniBank Auto-Injection
+
+The `summaryInjection { }` block is the optional, opt-in companion to `summaryPipeline { }`. When enabled, each iteration's summary text is automatically folded into `workingContentObject.miniBankContext` so the next manager call sees the running summary without requiring a developer-side `setContextTruncationFunction(...)` hook.
+
+By default, `summaryPipeline { }` writes to a private `runningSummary` field on the manifold that the manager never reads. `summaryInjection { }` makes the summary visible to the manager's first pipe in the next iteration, in the form of a MiniBank entry that downstream pipes can pull from (either via `pullGlobalContext(...)` + `setPageKey(...)` with the configured MiniBank key, or via direct `workingContentObject.miniBankContext` access in a custom pipe).
+
+### Behavior
+
+- **Default-off.** Existing callers of `setSummaryPipeline(...)` see byte-identical `workingContentObject.miniBankContext` before and after this feature is enabled — it's strictly additive.
+- **Stable key.** The summary lands at `"manifold.summary"` (default) or whatever key is set via `miniBankKey(...)`. The string is the top-level MiniBank entry; each iteration's summary text becomes a new `LoreBook` entry on the `ContextWindow` at that key.
+- **`APPEND` vs `REGENERATE`** — mirrors `SummaryMode` semantics on the MiniBank side:
+  - `SummaryMode.APPEND` — each iteration's summary chunk accumulates as a fresh `LoreBook` entry on the persistent `ContextWindow` at the configured key.
+  - `SummaryMode.REGENERATE` — the `ContextWindow` at the configured key is replaced wholesale with a fresh window containing only the latest summary.
+- **Synchronous in-loop.** The MiniBank write happens inside the manifold's `while` loop, after the worker's response is merged and before the termination check. There is no async / mutex / interval — it runs once per worker completion.
+
+### DSL
+
+```kotlin
+val builtManifold = manifold {
+    defaults {
+        bedrock(
+            BedrockConfiguration(
+                region = "us-east-1",
+                model = "anthropic.claude-3-haiku-20240307-v1:0"
+            )
+        )
+    }
+
+    worker("research-worker") {
+        description("Researches and summarizes requested information.")
+        pipeline(researchPipeline)
+    }
+
+    summaryPipeline {
+        summaryMode(SummaryMode.APPEND)        // APPEND or REGENERATE
+        pipeline {
+            pipelineName = "summary-pipeline"
+            add(summaryPipe.withOverflowProtection())
+        }
+    }
+
+    summaryInjection {
+        injectIntoMiniBank()                  // required — turns the feature on
+        miniBankKey("research.summary")       // optional — defaults to "manifold.summary"
+    }
+}
+```
+
+The `summaryInjection { }` block supports:
+
+| Method | Required? | Description |
+|---|---|---|
+| `injectIntoMiniBank()` | Opt-in flag | Calling this enables the feature. Without it, the block pre-seeds the configured MiniBank key on the manifold but does not activate injection — useful for "configure key now, enable later" workflows. |
+| `miniBankKey(key)` | Optional | Override the MiniBank key. Must be non-blank; calling with `""` or whitespace throws `IllegalArgumentException`. Default key is `"manifold.summary"`. |
+| *(second call)* | Forbidden | Calling `summaryInjection { }` twice on the same builder throws `IllegalArgumentException`, mirroring the `summaryPipeline { }` state-machine guard. |
+
+### Manual Setters
+
+For callers who build the manifold via direct setters instead of the DSL:
+
+```kotlin
+val manifold = Manifold()
+    .setManagerPipeline(managerPipeline)
+    .addWorkerPipeline(workerPipeline)
+    .setSummaryPipeline(summaryPipeline)
+    .setInjectSummaryIntoMiniBank(true)        // opt in
+    .setSummaryMiniBankKey("research.summary") // optional, defaults to "manifold.summary"
+```
+
+- `setInjectSummaryIntoMiniBank(enabled)` — enables or disables the feature; returns the manifold for builder chaining.
+- `setSummaryMiniBankKey(key)` — sets the MiniBank key; throws `IllegalArgumentException` if `key` is blank.
+
+### Cost & Iteration Expectations
+
+`summaryPipeline { }` and `summaryInjection { }` together add exactly one extra LLM call per loop iteration (the summary pipeline itself), and Manifold's iteration count should be small (~10–50) by design — the manifold coordinates a known multi-step workflow rather than driving an open-ended agent loop. The MiniBank write per iteration is constant-time. If your workload genuinely needs hundreds of iterations, the heavy container (`PumpStation`) is the more appropriate choice.
+
+### Caveats
+
+- **Iteration-1 visibility.** The summary pipeline runs *after* the first worker dispatch, so the first manager call does not see the summary yet. The summary becomes visible starting from iteration 2. If turn-1 visibility matters, pre-seed the summary via `manifold.setSummary*` setters before the first `execute(...)`.
+- **Manager-side consumption.** The summary is written into `workingContentObject.miniBankContext`, but the manager's pipe still needs to actually pull from it. For `TPipe-Defaults` manager pipelines, configure `pullGlobalContext(...)` + `setPageKey(...)` with the configured MiniBank key. For custom manager pipes, read `workingContentObject.miniBankContext.contextMap[summaryMiniBankKey]` directly.
+- **`@RuntimeState` preservation.** Both `runningSummary` and `workingContentObject.miniBankContext` are covered by `@RuntimeState`, so pause/resume preserves the accumulated summary transparently. No additional serialization wiring required.
 
 ## initialUserPrompt
 
@@ -921,6 +1006,7 @@ Fix:
 - Use `addP2pAgentNames(...)` only when custom manager pipe names break the default `"Agent caller pipe"` convention
 - Enable tracing while developing custom manager prompts or agent-routing behavior
 - Build a fresh manifold per concurrent top-level task
+- Use `summaryInjection { }` after `summaryPipeline { }` to make the running summary visible to the next manager call via `workingContentObject.miniBankContext` (see [Summary to MiniBank Auto-Injection](#summary-to-minibank-auto-injection))
 
 ## P2P Concurrency
 
