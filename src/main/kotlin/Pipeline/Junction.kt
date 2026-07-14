@@ -34,6 +34,7 @@ import com.TTT.Util.RuntimeState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.channels.Channel
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -1668,20 +1669,33 @@ class Junction : P2PInterface
     /**
      * Build the optional summary block for older history tails.
      *
-     * Summarization is only a support mechanism here. The output is still bounded by deterministic budgeting
-     * and falls back to the raw tail when the summarizer produces nothing useful.
+     * Branching order:
+     * 1. If [summaryAgent][JunctionMemoryPolicy.summaryAgent] is set and
+     *    [enableSummarization][JunctionMemoryPolicy.enableSummarization] is true:
+     *    invoke the agent via [P2PInterface.executeLocal] with [JunctionSummarizerContext] in
+     *    [MultimodalContent.metadata], extract [MultimodalContent.text].
+     * 2. Else if [summarizer][JunctionMemoryPolicy.summarizer] is set and
+     *    [enableSummarization][JunctionMemoryPolicy.enableSummarization] is true:
+     *    invoke the lambda with older history text.
+     * 3. Otherwise: return the raw older history text verbatim (subject to [summaryBudget] token cap).
+     *
+     * All branches are wrapped in [runCatching] — agent or lambda exceptions fall back to verbatim.
      *
      * @param summaryLabel Human-readable label for the summary section.
-     * @param summarySeed Older-history content used as the basis for optional summarization.
+     * @param summarySeed Older-history content used as the basis for summarization.
      * @param summaryBudget Token budget reserved for the summary.
      * @param settings Token-counting settings to reuse for the summary.
-     * @return A compact summary section or an empty string if no safe summary exists.
+     * @param roleKind The Junction memory role this summary is being prepared for.
+     * @param phase The active workflow phase, or null if in DISCUSSION mode.
+     * @return A compact summary section or an empty string if [summarySeed] is blank or [summaryBudget] is zero.
      */
     private fun buildSummaryText(
         summaryLabel: String,
         summarySeed: String,
         summaryBudget: Int,
-        settings: TruncationSettings
+        settings: TruncationSettings,
+        roleKind: JunctionMemoryRole,
+        phase: JunctionWorkflowPhase?
     ): String
     {
         if(summarySeed.isBlank() || summaryBudget <= 0)
@@ -1690,15 +1704,36 @@ class Junction : P2PInterface
         }
 
         val trimmedSeed = summarySeed.take(junctionMemoryPolicy.maxSummaryCharacters)
-        val summarized = if(junctionMemoryPolicy.enableSummarization && junctionMemoryPolicy.summarizer != null)
+        val summarized = when
         {
-            runCatching { junctionMemoryPolicy.summarizer?.invoke(trimmedSeed).orEmpty() }
-                .getOrDefault("")
-                .ifBlank { trimmedSeed }
-        }
-        else
-        {
-            trimmedSeed
+            junctionMemoryPolicy.summaryAgent != null && junctionMemoryPolicy.enableSummarization ->
+            {
+                val context = JunctionSummarizerContext(
+                    roleKind = roleKind,
+                    phase = phase,
+                    summaryBudget = summaryBudget,
+                    summarySeed = trimmedSeed
+                )
+                val agentInput = MultimodalContent(
+                    text = trimmedSeed,
+                    context = ContextWindow()
+                ).apply {
+                    metadata["junctionSummarizerContext"] = context
+                }
+                val result = runCatching {
+                    kotlinx.coroutines.runBlocking {
+                        junctionMemoryPolicy.summaryAgent!!.executeLocal(agentInput)
+                    }
+                }
+                result.getOrNull()?.text?.ifBlank { trimmedSeed } ?: trimmedSeed
+            }
+            junctionMemoryPolicy.enableSummarization && junctionMemoryPolicy.summarizer != null ->
+            {
+                runCatching { junctionMemoryPolicy.summarizer?.invoke(trimmedSeed).orEmpty() }
+                    .getOrDefault("")
+                    .ifBlank { trimmedSeed }
+            }
+            else -> trimmedSeed
         }
 
         val summarySection = buildSectionText(summaryLabel, listOf(summarized))
@@ -1802,7 +1837,8 @@ class Junction : P2PInterface
         criticalLines: List<String>,
         recentLines: List<String>,
         summarySeed: String,
-        summaryLabel: String
+        summaryLabel: String,
+        phase: JunctionWorkflowPhase?
     ): JunctionMemoryEnvelope
     {
         val settings = resolveMemoryTruncationSettings(binding)
@@ -1840,7 +1876,14 @@ class Junction : P2PInterface
         val criticalText = budgetText(criticalRaw, criticalBudget, settings, preserveStart = true)
         val recentRaw = buildSectionText("Recent history", recentLines)
         val recentText = budgetText(recentRaw, recentBudget, settings, preserveStart = true)
-        val summaryText = buildSummaryText(summaryLabel, summarySeed, summaryBudget, settings)
+        val summaryText = buildSummaryText(
+            summaryLabel = summaryLabel,
+            summarySeed = summarySeed,
+            summaryBudget = summaryBudget,
+            settings = settings,
+            roleKind = roleKind,
+            phase = phase
+        )
 
         val sections = mutableListOf<JunctionMemorySection>()
         sections.add(
@@ -2894,7 +2937,8 @@ class Junction : P2PInterface
             criticalLines = criticalLines,
             recentLines = recentLines,
             summarySeed = summarySeed,
-            summaryLabel = "Older discussion summary"
+            summaryLabel = "Older discussion summary",
+            phase = null
         )
     }
 
@@ -2968,7 +3012,8 @@ class Junction : P2PInterface
                     voteLines.forEach { appendLine(it) }
                 }
             }.trim(),
-            summaryLabel = "Older moderator summary"
+            summaryLabel = "Older moderator summary",
+            phase = null
         )
     }
 
@@ -3007,7 +3052,8 @@ class Junction : P2PInterface
             criticalLines = criticalLines,
             recentLines = recentLines,
             summarySeed = summarySeed,
-            summaryLabel = "Older workflow summary"
+            summaryLabel = "Older workflow summary",
+            phase = phase
         )
     }
 
