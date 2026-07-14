@@ -341,6 +341,42 @@ class JunctionBuilder<S : JunctionStage> @PublishedApi internal constructor(
     }
 
     /**
+     * Set a [P2PInterface] agent to use as the summary backend.
+     * Takes priority over [JunctionMemoryPolicy.summarizer] when both are set.
+     *
+     * @param component The P2P-capable agent to invoke for older-history summarization.
+     * @return This builder for chaining.
+     */
+    fun summaryAgent(component: P2PInterface): JunctionBuilder<S>
+    {
+        junction.memoryPolicy {
+            this.summaryAgent = component
+        }
+        return this
+    }
+
+    /**
+     * Configure the summary agent via a builder block.
+     * Enables inlining agent configuration alongside memory policy settings.
+     *
+     * @param block Block configuring a temporary [JunctionMemoryPolicy] whose [JunctionMemoryPolicy.summaryAgent]
+     *              will be copied into the Junction's policy.
+     * @return This builder for chaining.
+     */
+    fun summaryAgent(block: JunctionMemoryPolicy.() -> Unit): JunctionBuilder<S>
+    {
+        val policy = JunctionMemoryPolicy()
+        policy.block()
+        if(policy.summaryAgent != null)
+        {
+            junction.memoryPolicy {
+                this.summaryAgent = policy.summaryAgent
+            }
+        }
+        return this
+    }
+
+    /**
      * Configure the planner role for workflow-oriented Junction execution.
      *
      * @param roleName Stable planner routing name.
