@@ -503,6 +503,26 @@ class Manifold : P2PInterface
     private var runningSummary: String = ""
 
     /**
+     * Optional MiniBank context key under which summary text is injected into
+     * [workingContentObject].miniBankContext.contextMap after each worker response.
+     *
+     * Pair with [injectSummaryIntoMiniBank] to enable the auto-injection feature.
+     * Defaults to "manifold.summary" so the slot is discoverable without ceremony.
+     */
+    private var summaryMiniBankKey: String = "manifold.summary"
+
+    /**
+     * Opt-in flag. When true, each iteration's summary text (the same value folded into
+     * [runningSummary]) is also written into [workingContentObject].miniBankContext.contextMap
+     * at the key configured by [summaryMiniBankKey] so the next manager call sees the summary
+     * without requiring a developer-side hook on [setContextTruncationFunction].
+     *
+     * Default false: preserves prior behavior for users who relied on
+     * [runningSummary] being private and out-of-band.
+     */
+    private var injectSummaryIntoMiniBank: Boolean = false
+
+    /**
      * Used to pause or resume a manifold. When a manifold pauses the loop will freeze and wait until it can resume.
      * This allows us to stop the progression of the manifold after a worker pipe runs to allow for accepting user input,
      * Then resume after getting that user input or system input. Unlike regular pipelines which the orchestration is
@@ -720,10 +740,18 @@ class Manifold : P2PInterface
         transformationFunction = func
         return this
     }
-
     /**
-     * Sets the optional summarization pipeline that runs after each worker response.
+     * Sets the optional summarization pipeline that runs after each worker response,
+     * before the next manager loop iteration.
      * The summary pipeline must have context overflow protection configured.
+     *
+     * When [setInjectSummaryIntoMiniBank] is enabled, each iteration's summary text is also folded into
+     * [workingContentObject].miniBankContext at the key configured by [setSummaryMiniBankKey], so the
+     * next manager call sees the running summary without requiring a developer-side hook on
+     * [setContextTruncationFunction]. In [SummaryMode.APPEND] each chunk is added as a fresh
+     * [com.TTT.Context.LoreBook] entry on the persistent [com.TTT.Context.ContextWindow] at that key
+     * (accumulating across iterations). In [SummaryMode.REGENERATE] the entire
+     * [com.TTT.Context.ContextWindow] at that key is replaced with one containing only the latest summary.
      *
      * @param pipeline The pipeline to use for summarization.
      * @param descriptor Optional P2P descriptor.
@@ -751,6 +779,51 @@ class Manifold : P2PInterface
     fun setSummaryMode(mode: SummaryMode): Manifold
     {
         summaryMode = mode
+        return this
+    }
+
+    /**
+     * Configure the MiniBank key under which the running summary is auto-injected into
+     * [workingContentObject].miniBankContext when [setInjectSummaryIntoMiniBank] is enabled.
+     *
+     * The default key is "manifold.summary"; pass any non-blank string to override. The key
+     * is the top-level [com.TTT.Context.MiniBank] entry, with each iteration's summary
+     * stored as a [com.TTT.Context.LoreBook] entry on the [com.TTT.Context.ContextWindow]
+     * at that key.
+     *
+     * @param key Non-blank MiniBank key under which to store the running summary.
+     * @return This [Manifold] for builder-style chaining.
+     * @throws IllegalArgumentException if [key] is blank.
+     */
+    fun setSummaryMiniBankKey(key: String): Manifold
+    {
+        require(key.isNotBlank()) { "MiniBank key must not be blank." }
+        summaryMiniBankKey = key
+        return this
+    }
+
+    /**
+     * Enable or disable automatic injection of the running summary into
+     * [workingContentObject].miniBankContext so the next manager call sees it without
+     * any developer-side hook on [setContextTruncationFunction].
+     *
+     * When enabled, each iteration's summary text is written into
+     * [workingContentObject].miniBankContext.contextMap at the key configured by
+     * [setSummaryMiniBankKey]:
+     *   - [SummaryMode.APPEND]: each chunk is added as a fresh [com.TTT.Context.LoreBook] entry
+     *     on the persistent [com.TTT.Context.ContextWindow] at that key, accumulating across iterations.
+     *   - [SummaryMode.REGENERATE]: the [com.TTT.Context.ContextWindow] at that key is replaced
+     *     wholesale with a fresh window containing only the latest summary.
+     *
+     * Off by default — preserves prior behavior for users who relied on [runningSummary] being
+     * private and out-of-band.
+     *
+     * @param enabled True to enable injection, false to disable.
+     * @return This [Manifold] for builder-style chaining.
+     */
+    fun setInjectSummaryIntoMiniBank(enabled: Boolean): Manifold
+    {
+        injectSummaryIntoMiniBank = enabled
         return this
     }
 
@@ -2084,6 +2157,36 @@ class Manifold : P2PInterface
                     {
                         SummaryMode.APPEND -> runningSummary += summaryText
                         SummaryMode.REGENERATE -> runningSummary = summaryText
+                    }
+
+                    // === NEW: MiniBank auto-injection ===
+                    if (injectSummaryIntoMiniBank)
+                    {
+                        val miniBankKey = summaryMiniBankKey
+                        when (summaryMode)
+                        {
+                            SummaryMode.APPEND ->
+                            {
+                                val existing = workingContentObject.miniBankContext.contextMap[miniBankKey]
+                                    ?: ContextWindow().also { workingContentObject.miniBankContext.contextMap[miniBankKey] = it }
+                                existing.addLoreBookEntry(
+                                    key = "manifold.summary.append.${loopIterationCount}",
+                                    value = summaryText,
+                                    weight = 0,
+                                )
+                            }
+                            SummaryMode.REGENERATE ->
+                            {
+                                workingContentObject.miniBankContext.contextMap.remove(miniBankKey)
+                                val freshWindow = ContextWindow()
+                                freshWindow.addLoreBookEntry(
+                                    key = "manifold.summary.regenerate.${loopIterationCount}",
+                                    value = summaryText,
+                                    weight = 0,
+                                )
+                                workingContentObject.miniBankContext.contextMap[miniBankKey] = freshWindow
+                            }
+                        }
                     }
                 }
             }

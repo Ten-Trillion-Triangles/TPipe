@@ -64,6 +64,7 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     var initFunctionConfiguration: InitFunctionConfiguration? = null,
     var tracingConfiguration: TraceConfig? = null,
     var summaryPipelineConfiguration: SummaryPipelineConfiguration? = null,
+    var summaryInjectionConfiguration: SummaryInjectionConfiguration? = null,
     var concurrencyModeConfiguration: P2PConcurrencyMode = P2PConcurrencyMode.SHARED,
     var killSwitchConfiguration: KillSwitch? = null,
     var maxIterationsConfiguration: Int? = null
@@ -110,6 +111,7 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         validationConfiguration: ValidationConfiguration? = this.validationConfiguration,
         tracingConfiguration: TraceConfig? = this.tracingConfiguration,
         summaryPipelineConfiguration: SummaryPipelineConfiguration? = this.summaryPipelineConfiguration,
+        summaryInjectionConfiguration: SummaryInjectionConfiguration? = this.summaryInjectionConfiguration,
         concurrencyModeConfiguration: P2PConcurrencyMode = this.concurrencyModeConfiguration,
         killSwitchConfiguration: KillSwitch? = this.killSwitchConfiguration,
         maxIterationsConfiguration: Int? = this.maxIterationsConfiguration
@@ -123,6 +125,7 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
             validationConfiguration = validationConfiguration,
             tracingConfiguration = tracingConfiguration,
             summaryPipelineConfiguration = summaryPipelineConfiguration,
+            summaryInjectionConfiguration = summaryInjectionConfiguration,
             concurrencyModeConfiguration = concurrencyModeConfiguration,
             killSwitchConfiguration = killSwitchConfiguration,
             maxIterationsConfiguration = maxIterationsConfiguration
@@ -238,6 +241,7 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
             validationConfiguration = validationConfiguration,
             tracingConfiguration = tracingConfiguration,
             summaryPipelineConfiguration = summaryPipelineConfiguration,
+            summaryInjectionConfiguration = summaryInjectionConfiguration,
             concurrencyModeConfiguration = concurrencyModeConfiguration,
             killSwitchConfiguration = killSwitchConfiguration,
             maxIterationsConfiguration = maxIterationsConfiguration
@@ -272,6 +276,7 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
             validationConfiguration = validationConfiguration,
             tracingConfiguration = tracingConfiguration,
             summaryPipelineConfiguration = summaryPipelineConfiguration,
+            summaryInjectionConfiguration = summaryInjectionConfiguration,
             concurrencyModeConfiguration = concurrencyModeConfiguration,
             killSwitchConfiguration = killSwitchConfiguration,
             maxIterationsConfiguration = maxIterationsConfiguration
@@ -363,6 +368,30 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     }
 
     /**
+     * Configure summary-MiniBank auto-injection. Companion block to [summaryPipeline].
+     *
+     * When enabled, each iteration's summary text is folded into the manifold's working
+     * [com.TTT.Pipe.MultimodalContent].miniBankContext so the next manager call sees the running
+     * summary without a developer-side hook on `contextTruncationFunction`. Defaults to off —
+     * must be explicitly enabled via [SummaryInjectionDsl.injectIntoMiniBank].
+     *
+     * The default MiniBank key is "manifold.summary"; override via [SummaryInjectionDsl.miniBankKey].
+     *
+     * @param block Builder block that declares the inject-into-MiniBank flag and optional key.
+     * @return This builder for chaining.
+     * @throws IllegalArgumentException if this block is called twice on the same builder.
+     */
+    fun summaryInjection(block: SummaryInjectionDsl.() -> Unit): ManifoldBuilder<S>
+    {
+        require(summaryInjectionConfiguration == null) { "Summary injection has already been configured for this manifold DSL." }
+
+        val builder = SummaryInjectionDsl()
+        builder.block()
+        summaryInjectionConfiguration = builder.build()
+        return this
+    }
+
+    /**
      * Build and initialize the configured [Manifold].
      * ONLY available on ManifoldBuilder<Ready> - compile error otherwise.
      *
@@ -438,6 +467,7 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         applyValidationConfiguration(manifold)
         applyInitFunctionConfiguration(manifold)
         applySummaryPipelineConfiguration(manifold)
+        applySummaryInjectionConfiguration(manifold)
 
         if(killSwitchConfiguration != null)
         {
@@ -720,6 +750,20 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         val configuration = summaryPipelineConfiguration ?: return
         manifold.setSummaryPipeline(configuration.pipeline, configuration.descriptor, configuration.requirements)
         manifold.setSummaryMode(configuration.summaryMode)
+    }
+
+    /**
+     * Apply the summary-injection configuration to the manifold. The setter order matters:
+     * the key is set first so a call to injectIntoMiniBank(true) always reads the resolved key.
+     */
+    private fun applySummaryInjectionConfiguration(manifold: Manifold)
+    {
+        val configuration = summaryInjectionConfiguration ?: return
+        manifold.setSummaryMiniBankKey(configuration.summaryMiniBankKey)
+        if(configuration.injectIntoMiniBank)
+        {
+            manifold.setInjectSummaryIntoMiniBank(true)
+        }
     }
 }
 
@@ -1383,6 +1427,59 @@ class SummaryPipelineDsl
 }
 
 /**
+ * Builder for optional summary-injection configuration. Companion to [SummaryPipelineDsl].
+ *
+ * Calling [injectIntoMiniBank] enables auto-injection of the running summary into the manifold's
+ * [com.TTT.Pipe.MultimodalContent].miniBankContext so the next manager call sees the running
+ * summary without a [com.TTT.Pipeline.Manifold.setContextTruncationFunction] hook. The default
+ * MiniBank key is "manifold.summary" but is settable via [miniBankKey].
+ */
+@ManifoldDslMarker
+class SummaryInjectionDsl
+{
+    private var injectIntoMiniBankValue: Boolean = false
+    private var summaryMiniBankKeyValue: String = "manifold.summary"
+
+    /**
+     * Enable auto-injection of the running summary into the manifold's working [com.TTT.Pipe.MultimodalContent].miniBankContext.
+     *
+     * Multiple calls are coalesced — repeated invocations are no-ops beyond the first; the
+     * builder enforces a single configurable value of each field rather than a single call.
+     */
+    fun injectIntoMiniBank()
+    {
+        injectIntoMiniBankValue = true
+    }
+
+    /**
+     * Override the [com.TTT.Context.MiniBank] key under which the running summary is stored.
+     *
+     * Must be non-blank. Calling this without [injectIntoMiniBank] is permitted — it
+     * pre-configures the key for when the feature is later enabled (typically by calling
+     * [injectIntoMiniBank] in a separate [summaryInjection] block, or via
+     * [com.TTT.Pipeline.Manifold.setInjectSummaryIntoMiniBank] on the assembled manifold).
+     */
+    fun miniBankKey(key: String)
+    {
+        require(key.isNotBlank()) { "MiniBank key must not be blank." }
+        summaryMiniBankKeyValue = key
+    }
+
+    /**
+     * Build the immutable summary-injection configuration captured by this DSL block.
+     *
+     * @return Summary-injection configuration ready for manifold assembly.
+     */
+    internal fun build(): SummaryInjectionConfiguration
+    {
+        return SummaryInjectionConfiguration(
+            injectIntoMiniBank = injectIntoMiniBankValue,
+            summaryMiniBankKey = summaryMiniBankKeyValue
+        )
+    }
+}
+
+/**
  * Immutable manager configuration captured by [ManagerDsl].
  *
  * @property pipeline Manager pipeline to register on the manifold.
@@ -1584,6 +1681,20 @@ data class SummaryPipelineConfiguration(
     val descriptor: P2PDescriptor?,
     val requirements: P2PRequirements?,
     val summaryMode: SummaryMode = SummaryMode.APPEND
+)
+
+/**
+ * Immutable summary-injection configuration captured by [SummaryInjectionDsl].
+ *
+ * @property injectIntoMiniBank When true, the running summary is folded into the manifold's
+ * working [com.TTT.Pipe.MultimodalContent].miniBankContext so the next manager call sees it
+ * without any developer-side hook.
+ * @property summaryMiniBankKey MiniBank key under which the running summary is stored.
+ * Default is "manifold.summary".
+ */
+data class SummaryInjectionConfiguration(
+    val injectIntoMiniBank: Boolean = false,
+    val summaryMiniBankKey: String = "manifold.summary"
 )
 
 /**
