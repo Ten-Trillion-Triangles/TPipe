@@ -341,17 +341,18 @@ class JunctionBuilder<S : JunctionStage> @PublishedApi internal constructor(
     }
 
     /**
-     * Set a [P2PInterface] agent to use as the summary backend.
-     * Takes priority over [JunctionMemoryPolicy.summarizer] when both are set.
+     * Set a [P2PInterface] agent to use for optional history summarization.
      *
-     * @param component The P2P-capable agent to invoke for older-history summarization.
+     * The agent takes priority over the [JunctionMemoryPolicy.summarizer] lambda when both are set.
+     * The policy must also have [JunctionMemoryPolicy.enableSummarization] set to true.
+     *
+     * @param agent The agent to invoke for summarization. Its [executeLocal][P2PInterface.executeLocal]
+     *              will be called with the older history context and a [JunctionSummarizerContext] in metadata.
      * @return This builder for chaining.
      */
-    fun summaryAgent(component: P2PInterface): JunctionBuilder<S>
+    fun summaryAgent(agent: P2PInterface): JunctionBuilder<S>
     {
-        junction.memoryPolicy {
-            this.summaryAgent = component
-        }
+        junction.setSummaryAgent(agent)
         return this
     }
 
@@ -369,9 +370,7 @@ class JunctionBuilder<S : JunctionStage> @PublishedApi internal constructor(
         policy.block()
         if(policy.summaryAgent != null)
         {
-            junction.memoryPolicy {
-                this.summaryAgent = policy.summaryAgent
-            }
+            junction.setSummaryAgent(policy.summaryAgent)
         }
         return this
     }
