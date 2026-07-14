@@ -583,6 +583,20 @@ class Junction : P2PInterface
     }
 
     /**
+     * Set the summary agent without replacing the rest of the memory policy.
+     *
+     * Use this when the policy is already configured and only the summary agent needs to be updated.
+     *
+     * @param agent The P2PInterface agent to use for summarization, or null to disable agent-based summarization.
+     * @return This Junction object for method chaining.
+     */
+    fun setSummaryAgent(agent: P2PInterface?): Junction
+    {
+        junctionMemoryPolicy.summaryAgent = agent
+        return this
+    }
+
+    /**
      * Configure the memory policy inline.
      *
      * @param block Mutable configuration block for the outbound memory policy.

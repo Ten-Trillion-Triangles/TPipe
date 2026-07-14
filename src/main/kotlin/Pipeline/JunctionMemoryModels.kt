@@ -2,6 +2,7 @@ package com.TTT.Pipeline
 
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
+import com.TTT.P2P.P2PInterface
 import kotlinx.serialization.Serializable
 
 /**
@@ -55,7 +56,23 @@ data class JunctionMemoryPolicy(
     var enableSummarization: Boolean = false,
     var summaryBudget: Int = 1024,
     var maxSummaryCharacters: Int = 4096,
-    @kotlinx.serialization.Transient var summarizer: ((String) -> String)? = null
+    @kotlinx.serialization.Transient var summarizer: ((String) -> String)? = null,
+    @kotlinx.serialization.Transient var summaryAgent: P2PInterface? = null
+)
+
+/**
+ * Contextual metadata passed to a [P2PInterface] summary agent when summarizing older history.
+ *
+ * @param roleKind The Junction memory role the summary is being prepared for.
+ * @param phase The active workflow phase, or null if in DISCUSSION mode.
+ * @param summaryBudget Token budget allocated for the summary section.
+ * @param summarySeed Raw older-history text to be summarized.
+ */
+data class JunctionSummarizerContext(
+    val roleKind: JunctionMemoryRole,
+    val phase: JunctionWorkflowPhase?,
+    val summaryBudget: Int,
+    val summarySeed: String
 )
 
 /**
