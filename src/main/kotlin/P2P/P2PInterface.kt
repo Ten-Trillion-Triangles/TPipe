@@ -87,6 +87,19 @@ interface P2PInterface
     fun setPipeSettingsRecursively(settings: PipeSettings) {}
 
     /**
+     * Registers a streaming callback on this interface AND recursively on every
+     * descendant pipe and container. Mirrors the propagation behaviour of
+     * [setTokenBudgetRecursive] and [setPipeSettingsRecursively].
+     *
+     * The callback is propagated via [com.TTT.Pipe.Pipe.propagateStreamingCallback]
+     * on each leaf pipe, which handles cycle detection and dedup-by-reference
+     * so the same callback object fires exactly once per token.
+     *
+     * @param callback Suspendable callback receiving streamed text chunks
+     */
+    fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit) {}
+
+    /**
      * Sets the parent interface to any child P2PInterface object. This useful for generic pass of this data
      * during complex container classes.
      */

@@ -638,6 +638,13 @@ class DistributionGrid : P2PInterface
         workerPipelines?.forEach { it.setPipeSettingsRecursively(settings) }
     }
 
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        entryPipeline?.setStreamingCallbackRecursive(callback)
+        judgePipeline?.setStreamingCallbackRecursive(callback)
+        workerPipelines?.forEach { it.setStreamingCallbackRecursive(callback) }
+    }
+
     /**
      * Execute the local DistributionGrid runtime path directly.
      *

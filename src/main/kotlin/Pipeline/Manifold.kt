@@ -217,6 +217,15 @@ class Manifold : P2PInterface
         }
     }
 
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        managerPipeline.setStreamingCallbackRecursive(callback)
+        for (workerComponent in workerComponents)
+        {
+            workerComponent.setStreamingCallbackRecursive(callback)
+        }
+    }
+
 //=============================================Properties===============================================================
 
     private var managerPipeline: Pipeline = Pipeline()

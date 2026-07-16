@@ -2168,6 +2168,23 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         propagateSettingsToAllAgents()
     }
 
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        judgeAgent?.setStreamingCallbackRecursive(callback)
+        dispatchAgent?.setStreamingCallbackRecursive(callback)
+        interventionAgent?.setStreamingCallbackRecursive(callback)
+        healthAgent?.setStreamingCallbackRecursive(callback)
+        lorebookAgent?.setStreamingCallbackRecursive(callback)
+        summaryAgent?.setStreamingCallbackRecursive(callback)
+        goalAgent?.setStreamingCallbackRecursive(callback)
+        preInitAgent?.setStreamingCallbackRecursive(callback)
+        pathSafetyAgent?.setStreamingCallbackRecursive(callback)
+        for (slot in additionalHarnessAgentSlots)
+        {
+            slot.agent?.setStreamingCallbackRecursive(callback)
+        }
+    }
+
     /**
      * Returns the current task state for inspection.
      */

@@ -451,6 +451,13 @@ class Pipeline : P2PInterface
             pipe.setPipeSettingsRecursively(settings)
         }
     }
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        for (pipe in getPipes())
+        {
+            pipe.propagateStreamingCallback(callback)
+        }
+    }
 
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {

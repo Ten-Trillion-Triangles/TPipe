@@ -105,6 +105,17 @@ class Splitter: P2PInterface
         }
     }
 
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        for (activatorValue in activatorKeys.values)
+        {
+            for (pipeline in activatorValue.pipelines)
+            {
+                pipeline.setStreamingCallbackRecursive(callback)
+            }
+        }
+    }
+
 //-------------------------------------------Properties--------------------------------------------------------------------
 
 

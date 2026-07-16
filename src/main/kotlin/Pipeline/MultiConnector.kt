@@ -124,6 +124,13 @@ class MultiConnector : P2PInterface
     {
         return connectors.flatMap { it.getPipelinesFromInterface() }
     }
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        for (connector in connectors)
+        {
+            connector.setStreamingCallbackRecursive(callback)
+        }
+    }
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {
