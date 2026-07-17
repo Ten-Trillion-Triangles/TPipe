@@ -584,6 +584,50 @@
             .content-header .icon-btn { padding: 4px 6px; font-size: 0.75rem; }
             .content-header .icon-btn span:not([aria-hidden]) { display: none; }
         }
+
+        /* Component-kind badge — shown next to trace name when trace.kind is set. */
+        .trace-kind-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-right: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            vertical-align: middle;
+        }
+        .trace-kind-badge.kind-pumpstation { background: #4a3b6b; color: #fff; }
+        .trace-kind-badge.kind-manifold   { background: #3b6b4a; color: #fff; }
+        .trace-kind-badge.kind-junction   { background: #6b4a3b; color: #fff; }
+        .trace-kind-badge.kind-pipeline   { background: #4a4a4a; color: #fff; }
+        .trace-kind-badge.kind-unknown    { background: #2a2a2a; color: #aaa; }
+
+        /* Component-kind filter chip row — sits below the status filter chip row. */
+        .kind-filter-chips {
+            display: flex;
+            gap: 6px;
+            padding: 8px 16px;
+            border-bottom: 1px solid #2a2a2a;
+        }
+        .kind-chip {
+            padding: 4px 12px;
+            background: transparent;
+            border: 1px solid #4a4a4a;
+            border-radius: 14px;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .kind-chip.active {
+            background: #4a3b6b;
+            color: #fff;
+            border-color: #4a3b6b;
+        }
+        .kind-chip:hover {
+            background: #3a3a3a;
+            color: #fff;
+        }
     </style>
 </head>
 <body>
@@ -662,6 +706,12 @@
                     <button type="button" class="chip success" data-status="SUCCESS" onclick="app.setStatusFilter('SUCCESS')">Success</button>
                     <button type="button" class="chip failure" data-status="FAILURE" onclick="app.setStatusFilter('FAILURE')">Failure</button>
                     <button type="button" class="chip pending" data-status="PENDING" onclick="app.setStatusFilter('PENDING')">Pending</button>
+                </div>
+                <div class="kind-filter-chips" id="kindFilterChips" role="group" aria-label="Filter by component kind">
+                    <button type="button" class="kind-chip active" data-kind="" onclick="app.setKindFilter('')">All</button>
+                    <button type="button" class="kind-chip" data-kind="pumpstation" onclick="app.setKindFilter('pumpstation')">PumpStation</button>
+                    <button type="button" class="kind-chip" data-kind="manifold" onclick="app.setKindFilter('manifold')">Manifold</button>
+                    <button type="button" class="kind-chip" data-kind="pipeline" onclick="app.setKindFilter('pipeline')">Pipeline</button>
                 </div>
             </div>
 

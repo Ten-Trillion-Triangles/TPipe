@@ -635,6 +635,30 @@ object P2PRegistry
     fun remove(agent: P2PInterface) = Agents.remove(agent.getP2pTransport())
 
     /**
+     * Look up the [P2PInterface] registered under [agentName] in this registry.
+     * Scans every registered transport and returns the first listing whose
+     * descriptor.agentName matches. Returns null when no such listing exists.
+     *
+     * Used by container classes (Manifold, Junction) to resolve the agent
+     * argument passed to user-supplied validator / failure / transformation
+     * functions when the dispatched worker is not in the container's local
+     * worker map. Replaces the previous JVM-only lookup; works for any agent
+     * registered in this registry regardless of container locality.
+     */
+    fun findAgentByName(agentName: String) : P2PInterface?
+    {
+        for(entry in Agents)
+        {
+            val registered = entry.value
+            if(registered.descriptor.agentName == agentName)
+            {
+                return registered.container
+            }
+        }
+        return null
+    }
+
+    /**
      * Return a listing of all agents in the registry that allows external connections outside their container
      * object.
      */

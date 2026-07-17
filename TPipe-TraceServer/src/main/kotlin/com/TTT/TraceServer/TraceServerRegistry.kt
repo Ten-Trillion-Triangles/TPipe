@@ -21,9 +21,21 @@ import java.util.concurrent.ConcurrentHashMap
  * Lightweight summary of a single trace payload. The `timestamp` field is
  * captured at insertion time by the [TraceStore] (not at list time) so the
  * list is sorted by a stable, meaningful value.
+ *
+ * v2 wire: `kind` is an optional discriminator (`"pumpstation"`, etc.) so the
+ * dashboard can group / color / sort traces by source component. Default
+ * `null` keeps the wire shape backward compatible with v1 clients and servers
+ * — when omitted from JSON, `kind` decodes to `null` and re-encodes are also
+ * omitted thanks to `explicitNulls = false` on [TraceServerJson].
  */
 @Serializable
-data class TraceSummary(val id: String, val timestamp: Long, val name: String, val status: String)
+data class TraceSummary(
+    val id: String,
+    val timestamp: Long,
+    val name: String,
+    val status: String,
+    val kind: String? = null, // v2 wire; v1 clients/servers send no field
+)
 {
 }
 
@@ -37,6 +49,12 @@ data class TraceSummary(val id: String, val timestamp: Long, val name: String, v
  *  filterable search. The v2 server stores tags per-trace and exposes a
  *  `?tag=key:value` filter on `GET /api/traces`. The default empty map
  *  keeps the wire shape backward compatible with v1 clients and servers.
+ *
+ * @property kind optional discriminator (`"pumpstation"`, etc.) carrying the
+ *  originating component through to the dashboard. Default `null` preserves
+ *  the v1 wire shape — when omitted from JSON, `kind` decodes to `null` and
+ *  re-encodes are also omitted thanks to `explicitNulls = false` on
+ *  [TraceServerJson].
  */
 @Serializable
 data class TracePayload(
@@ -44,7 +62,8 @@ data class TracePayload(
     val htmlContent: String,
     val name: String,
     val status: String,
-    val tags: Map<String, String> = emptyMap()
+    val tags: Map<String, String> = emptyMap(),
+    val kind: String? = null, // v2 wire
 )
 {
 }

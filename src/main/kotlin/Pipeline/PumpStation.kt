@@ -985,6 +985,32 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     internal var goalAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
 
     /**
+     * Optional post-success agent. Fires inside [runExitFlow] after the goal agent passes,
+     * or on the no-goal-agent / passPipeline-routed exit paths. Receives the goal agent's
+     * output (or the harness's exit-flow content when no goal agent is configured). Output
+     * becomes the harness's final deliverable on pass; a [MultimodalContent.terminatePipeline]
+     * result halts the harness with [PumpStationExitReason.JudgeComplete] without re-loop.
+     *
+     * @see [postGoalAgentBuilderFunction] for runtime override
+     * @see [postGoalFunction] for the synchronous transform that precedes this agent
+     */
+    internal var postGoalAgent: P2PInterface? = null
+
+    /**
+     * Optional bindable builder function for [postGoalAgent]. When non-null this is invoked
+     * to generate the agent per harness invocation and [postGoalAgent] is ignored.
+     */
+    internal var postGoalAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
+
+    /**
+     * Optional DITL function fired inside [runExitFlow] after the goal agent passes (or
+     * when no goal agent is configured and the harness is exiting through [runExitFlow]).
+     * Synchronous transform: receives the goal agent's output and returns a possibly-modified
+     * [MultimodalContent]. Precedes [postGoalAgent] when both are configured.
+     */
+    internal var postGoalFunction: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)? = null
+
+    /**
      * Stored paths on this harness. Each path is mapped by its name from inside the path object, and the
      * reference to the object. Names are normalized to be case-insensitive, and all path calls will normalize
      * to lowercase when calling a path.
@@ -1066,6 +1092,17 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      * Set to false to restore the legacy "judge fires on every turn including turn 0" behavior.
      */
     internal var skipJudgeOnFirstTurnInternal: Boolean = true
+
+    /**
+     * Dispatch contract shape for this PumpStation. Default is [PathExecutionShape.SinglePath]
+     * which preserves the pre-existing dispatch JSON contract. Setting this to
+     * [PathExecutionShape.MultiPath] injects the multi-path dispatch prompt and routes the
+     * dispatch output through [com.TTT.Pipeline.parseDispatchOutputMulti].
+     *
+     * Read via [getPathExecutionShape]. Internal accessor for the loop file is
+     * [pathExecutionShapeInternal].
+     */
+    internal var pathExecutionShape: PathExecutionShape = PathExecutionShape.SinglePath
 
     /**
      * Defines the maximum number of concurrent background agents that can be spawned at any given time.
@@ -2131,6 +2168,23 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         propagateSettingsToAllAgents()
     }
 
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        judgeAgent?.setStreamingCallbackRecursive(callback)
+        dispatchAgent?.setStreamingCallbackRecursive(callback)
+        interventionAgent?.setStreamingCallbackRecursive(callback)
+        healthAgent?.setStreamingCallbackRecursive(callback)
+        lorebookAgent?.setStreamingCallbackRecursive(callback)
+        summaryAgent?.setStreamingCallbackRecursive(callback)
+        goalAgent?.setStreamingCallbackRecursive(callback)
+        preInitAgent?.setStreamingCallbackRecursive(callback)
+        pathSafetyAgent?.setStreamingCallbackRecursive(callback)
+        for (slot in additionalHarnessAgentSlots)
+        {
+            slot.agent?.setStreamingCallbackRecursive(callback)
+        }
+    }
+
     /**
      * Returns the current task state for inspection.
      */
@@ -2707,11 +2761,13 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         val parsed = if (pathSafetyExpectsJsonContract) parsePathSafetyVerdict(result.text) else null
         // Capture the parsed verdict (including reason) so the hint code at the
         // call site can surface the actual rejection reason to the dispatch LLM.
-        // F3 fix (2026-07-08): without this, the rejection was only logged as
-        // "Rejected by path safety check" and the dispatch LLM had no signal that
-        // its prior choice was rejected.
         pathSafetyLastVerdict = parsed
-        return parsed?.approved ?: !(result.terminatePipeline || result.passPipeline)
+        return when
+        {
+            parsed != null                    -> parsed.approved
+            pathSafetyExpectsJsonContract     -> path.riskLevel == PathRiskLevel.Low
+            else                              -> !(result.terminatePipeline || result.passPipeline)
+        }
     }
 
     /**
@@ -2722,7 +2778,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      * (c) the path was approved (no rejection to report).
      *
      * Consumed by [com.TTT.Pipeline.invokePath] at the rejection site to build
-     * the [Path Safety] hint appended to turnHistory. F3 fix (2026-07-08).
+     * the [Path Safety] hint appended to turnHistory.
      */
     internal var pathSafetyLastVerdict: PathSafetyVerdict? = null
 
@@ -2740,7 +2796,85 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
             riskLevel = riskLevel
         ))
 
-        // --- Loop guard checks ---
+        // --- Risk check (runs FIRST so safety-rejected paths return input
+        // before the loop guards increment their counters) ---
+        if (riskLevel != PathRiskLevel.Low)
+        {
+            // Emit PathSafetyStarted event
+            emitEventInternal(PathSafetyStarted(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                pathName = pathName,
+                riskLevel = riskLevel
+            ))
+
+            // Call path safety function or agent — function OR agent, first to return true approves.
+            //
+            // The agent's verdict is parsed as a structured `{"safe": bool, ...}` JSON object
+            // (see [parsePathSafetyVerdict]). The legacy flag-based check
+            // (`!result.terminatePipeline && !result.passPipeline`) is kept as a fallback
+            // so custom agents that don't follow the JSON convention still work — but a
+            // real path-safety LLM that returns `{"safe": false}` is now actually consulted.
+            // Previously the flag check was the only gate, which made the safety check a
+            // degenerate always-approve (LLMs don't normally set terminatePipeline on a
+            // safety verdict response).
+            val approved = checkPathSafety(path, input)
+            // Capture the rejection reason from the safety verdict (when the agent
+            // path was used). pathSafetyFunction users don't carry a reason —
+            // the hint will fall back to "Rejected by path safety check".
+            val safetyReason: String? = if (!approved) pathSafetyLastVerdict?.reason else null
+
+            emitEventInternal(PathSafetyCompleted(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                pathName = pathName,
+                riskLevel = riskLevel,
+                approved = approved,
+                reason = if (!approved) (safetyReason ?: "Rejected by path safety check") else null
+            ))
+
+            if (!approved)
+            {
+                /*
+                 * Surface the rejection in the next dispatch LLM's user prompt so
+                 * dispatch can pick a different path. Symmetric with the
+                 * empty-pathName hint at PumpStationLoop.kt:378-389 and the
+                 * empty-rationale hint at PumpStationLoop.kt:2848-2854.
+                 *
+                 * `return input` here short-circuits the path before the
+                 * loop-guard counters below increment, so the safety-rejected
+                 * path does NOT trip maxConsecutiveSamePath or
+                 * maxTotalPathCallsPerPath. See
+                 * [com.TTT.Pipeline.PumpStationLoopGuardSafetyOrderingTest].
+                 *
+                 * Dedup the hint by pathName so a path that the safety gate
+                 * rejects every turn doesn't accumulate one [Path Safety]
+                 * entry per turn. We only append when no earlier turnHistory
+                 * entry has already mentioned the same pathName.
+                 */
+                val hintMarker = "[Path Safety] Path '$pathName'"
+                val alreadyNudged = turnHistory.history.any { turn ->
+                    turn.content.text?.contains(hintMarker) == true
+                }
+                if (!alreadyNudged)
+                {
+                    val hintMessage = hintMarker + " was rejected by the path-safety gate" +
+                        (if (safetyReason.isNullOrBlank()) "." else " for: $safetyReason.") +
+                        " Select a different path from the visible list on your next dispatch."
+                    turnHistory.add(
+                        ConverseData(
+                            role = ConverseRole.user,
+                            content = MultimodalContent(text = hintMessage)
+                        )
+                    )
+                }
+                return input
+            }
+        }
+
+        // --- Loop guard checks (run AFTER the risk/safety gate so the
+        // return-input short-circuit at the rejection site prevents these
+        // counters from incrementing on safety-rejected paths) ---
         if (maxConsecutiveSamePath != null)
         {
             if (pathName == lastSelectedPathName)
@@ -2748,13 +2882,22 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                 consecutivePathCount++
                 if (consecutivePathCount >= maxConsecutiveSamePath!!)
                 {
-                    // Loop guard triggered — emit PathFailed + LoopGuardTripped, then call interventionAgent if set
+                    /*
+                     * Loop-guard trips halt the harness. Set the exit reason,
+                     * mark the path output terminatePipeline, and surface the
+                     * failure to the trace — repeated dispatch of the same
+                     * path is a hard ceiling that the harness must not paper
+                     * over by re-running the intervention agent.
+                     */
                     emitEventInternal(LoopGuardTripped(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         guard = "maxConsecutiveSamePath",
                         pathName = pathName,
-                        detail = "consecutive=$consecutivePathCount, limit=${maxConsecutiveSamePath!!}"
+                        detail = "consecutive=$consecutivePathCount, limit=${maxConsecutiveSamePath!!}",
+                        metric = "consecutive",
+                        observed = consecutivePathCount,
+                        limit = maxConsecutiveSamePath!!
                     ))
                     emitEventInternal(PathFailed(
                         runId = taskState.runId,
@@ -2765,31 +2908,12 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                         error = PumpStationError.LoopGuardTriggered,
                         errorMessage = "maxConsecutiveSamePath exceeded for path '${pathName}'"
                     ))
-
-                    // Emit InterventionStarted, invoke interventionAgent if configured, then emit InterventionCompleted
-                    emitEventInternal(InterventionStarted(
-                        runId = taskState.runId,
-                        turnIndex = taskState.turnIndex,
-                        trigger = PumpStationError.LoopGuardTriggered,
-                        pathName = pathName
-                    ))
-
-                    // Builder overrides field per KDoc at :894-896.
-                    val resolvedInterventionAgent = interventionAgentBuilderFunction?.invoke(this) ?: interventionAgent
-                    val interventionResult = resolvedInterventionAgent?.executeLocal(taskState.latestContent ?: MultimodalContent())
-                    val interventionUsage = agentTokenUsageInternal(resolvedInterventionAgent)
-
-                    emitEventInternal(InterventionCompleted(
-                        runId = taskState.runId,
-                        turnIndex = taskState.turnIndex,
-                        nudges = 0,
-                        shouldContinue = true,
-                        result = interventionResult,
-                        inputTokens = interventionUsage?.first,
-                        outputTokens = interventionUsage?.second?.first,
-                        totalTokens = interventionUsage?.second?.second
-                    ))
+                    taskState.latestContent = (taskState.latestContent ?: MultimodalContent())
+                        .also { it.terminatePipeline = true }
+                    taskState.lastError = PumpStationError.LoopGuardTriggered
+                    taskState.exitReason = PumpStationExitReason.LoopGuardTripped
                     consecutivePathCount = 0
+                    return input
                 }
             }
             else
@@ -2809,7 +2933,10 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                 turnIndex = taskState.turnIndex,
                 guard = "maxTotalPathCallsPerPath",
                 pathName = pathName,
-                detail = "count=$callCount, limit=${maxTotalPathCallsPerPath!!}"
+                detail = "count=$callCount, limit=${maxTotalPathCallsPerPath!!}",
+                metric = "totalCount",
+                observed = callCount,
+                limit = maxTotalPathCallsPerPath!!
             ))
             val limitResult = pathLimitExceededFunction?.invoke(
                 path,
@@ -2859,61 +2986,6 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                         errorMessage = limitResult.reason.ifEmpty { "maxTotalPathCallsPerPath exceeded but continuing" }
                     ))
                 }
-            }
-        }
-
-        // --- Risk check ---
-        if (riskLevel != PathRiskLevel.Low)
-        {
-            // Emit PathSafetyStarted event
-            emitEventInternal(PathSafetyStarted(
-                runId = taskState.runId,
-                turnIndex = taskState.turnIndex,
-                pathName = pathName,
-                riskLevel = riskLevel
-            ))
-
-            // Call path safety function or agent — function OR agent, first to return true approves.
-            //
-            // The agent's verdict is parsed as a structured `{"safe": bool, ...}` JSON object
-            // (see [parsePathSafetyVerdict]). The legacy flag-based check
-            // (`!result.terminatePipeline && !result.passPipeline`) is kept as a fallback
-            // so custom agents that don't follow the JSON convention still work — but a
-            // real path-safety LLM that returns `{"safe": false}` is now actually consulted.
-            // Previously the flag check was the only gate, which made the safety check a
-            // degenerate always-approve (LLMs don't normally set terminatePipeline on a
-            // safety verdict response).
-            val approved = checkPathSafety(path, input)
-            // Capture the rejection reason from the safety verdict (when the agent
-            // path was used). pathSafetyFunction users don't carry a reason —
-            // the hint will fall back to "Rejected by path safety check".
-            val safetyReason: String? = if (!approved) pathSafetyLastVerdict?.reason else null
-
-            emitEventInternal(PathSafetyCompleted(
-                runId = taskState.runId,
-                turnIndex = taskState.turnIndex,
-                pathName = pathName,
-                riskLevel = riskLevel,
-                approved = approved,
-                reason = if (!approved) (safetyReason ?: "Rejected by path safety check") else null
-            ))
-
-            if (!approved)
-            {
-                // F3 fix (2026-07-08): surface the rejection in the next dispatch
-                // LLM's user prompt so dispatch can pick a different path.
-                // Symmetric with the empty-pathName hint at PumpStationLoop.kt:378-389
-                // and the empty-rationale hint at PumpStationLoop.kt:2848-2854.
-                val hintMessage = "[Path Safety] Path '$pathName' was rejected by the path-safety gate" +
-                    (if (safetyReason.isNullOrBlank()) "." else " for: $safetyReason.") +
-                    " Select a different path from the visible list on your next dispatch."
-                turnHistory.add(
-                    ConverseData(
-                        role = ConverseRole.user,
-                        content = MultimodalContent(text = hintMessage)
-                    )
-                )
-                return input
             }
         }
 
@@ -3142,6 +3214,21 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Sets the post-success agent. Fires inside [runExitFlow] on every successful exit
+     * (broad coverage including the no-goal-agent path). Output becomes the harness's
+     * final deliverable on pass; [MultimodalContent.terminatePipeline] halts with
+     * [PumpStationExitReason.JudgeComplete] without re-loop.
+     *
+     * @param agent The post-success agent, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPostGoalAgent(agent: P2PInterface?): PumpStation
+    {
+        this.postGoalAgent = agent
+        return this
+    }
+
+    /**
      * Sets the pre-init agent for this PumpStation. The pre-init agent fires prior
      * to starting the harness for any initial setup or state handling.
      *
@@ -3257,6 +3344,33 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     fun setGoalAgentBuilderFunction(fn: (suspend (harness: PumpStation) -> P2PInterface)?): PumpStation
     {
         this.goalAgentBuilderFunction = fn
+        return this
+    }
+
+    /**
+     * Sets the post-success agent builder function. When non-null, this overrides
+     * any value set via [setPostGoalAgent].
+     *
+     * @param fn The builder function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPostGoalAgentBuilderFunction(fn: (suspend (harness: PumpStation) -> P2PInterface)?): PumpStation
+    {
+        this.postGoalAgentBuilderFunction = fn
+        return this
+    }
+
+    /**
+     * Sets the post-success DITL function. Fires inside [runExitFlow] after the goal
+     * agent passes (or on the no-goal-agent path). Synchronous transformation of the
+     * goal output that precedes [postGoalAgent] when both are configured.
+     *
+     * @param fn The transformation function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPostGoalFunction(fn: (suspend (content: MultimodalContent, harness: PumpStation) -> MultimodalContent)?): PumpStation
+    {
+        this.postGoalFunction = fn
         return this
     }
 
@@ -3470,9 +3584,45 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Sets the dispatch contract shape for this PumpStation.
+     *
+     * [PathExecutionShape.SinglePath] (default) preserves the existing dispatch JSON
+     * contract: dispatch LLM returns one [com.TTT.Pipeline.PathRequest], harness
+     * invokes one path.
+     *
+     * [PathExecutionShape.MultiPath] injects a new dispatch prompt asking the
+     * LLM to return a [com.TTT.Pipeline.PathRequestList]. The harness fans the
+     * list out via the existing async substrate and merges results into turn
+     * history on the next judge. New [PathBatchStarted] / [PathBatchCompleted] /
+     * [PathBatchFailed] events carry the batch metadata.
+     *
+     * @param shape The dispatch contract shape to use.
+     * @return This [PumpStation] for method chaining.
+     */
+    fun setPathExecutionShape(shape: PathExecutionShape): PumpStation
+    {
+        this.pathExecutionShape = shape
+        return this
+    }
+
+    /**
      * Returns the active judge run mode. See [PumpStationJudgeRunMode] for semantics.
      */
     fun getJudgeRunMode(): PumpStationJudgeRunMode = judgeRunModeInternal
+
+    /**
+     * Returns the configured dispatch contract shape for this PumpStation.
+     * Defaults to [PathExecutionShape.SinglePath] for backward compatibility.
+     *
+     * @return The current [PathExecutionShape] for this station.
+     */
+    fun getPathExecutionShape(): PathExecutionShape = pathExecutionShape
+
+    /**
+     * Internal accessor so [com.TTT.Pipeline.PumpStationLoop.kt] extension functions
+     * can read the dispatch contract shape without exposing the mutable backing field.
+     */
+    internal val pathExecutionShapeInternal get() = pathExecutionShape
 
     /**
      * When `enabled` is true (default), the judge phase is skipped on turn 0 and a

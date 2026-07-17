@@ -469,6 +469,7 @@ The harness uses a strict parser when the contract is non-negotiable (path-safet
 |------------------------------|------------------------------------------------------------------|
 | `parseJudgeVerdict`          | Lenient. Missing fields default to `false`. Returns `empty()` on parse failure. |
 | `parseDispatchOutput`        | Strict. Returns `null` on parse failure or empty `pathName`.     |
+| `parseDispatchOutputMulti`   | Strict. Returns `null` on parse failure or empty `paths` array. Used when `pathExecutionShape = PathExecutionShape.MultiPath`; the empty-array case is treated as a parse failure and triggers the repair loop. |
 | `parsePathSafetyVerdict`     | Strict. `safe` must be a JSON boolean literal. Returns `null` otherwise. |
 | `parseHealthReport`          | Lenient. Returns `HealthReport()` (Unknown) on parse failure.    |
 | `extractJson<LorebookAgentOutput>` | Lenient. Falls back to legacy `applyLorebookUpdates` on failure. |
@@ -497,6 +498,25 @@ The repair loop runs up to `failurePolicy.maxDispatchRepairAttempts` times (defa
 
 - `failurePolicy.stopHarnessOnInvalidPathRequest = false` (default): the turn continues without a path call. The natural-language error message is injected into `turnHistory` for the next turn.
 - `failurePolicy.stopHarnessOnInvalidPathRequest = true`: the harness records `lastError = DispatchJsonRepairFailed`. `runFinalizationPhase` emits `HarnessFailed`.
+
+### Multi-Path Repair Prompt
+
+`buildMultiPathRepairPrompt(badOutput: MultimodalContent)` (`Pipeline/PumpStationLoop.kt:648`) constructs the follow-up prompt for `PathExecutionShape.MultiPath` mode when the dispatch LLM's output fails to parse as `PathRequestList`:
+
+```
+[Harness Notice] Your previous dispatch output was not parseable as a PathRequestList JSON.
+Previous output: <truncated bad output>
+
+Please retry with a valid PathRequestList JSON object. The schema is:
+{
+  "paths": [
+    {"pathName": "...", "pathSchema": "...", "pathSelectionRationale": "..."}
+  ],
+  "batchRationale": "..."
+}
+```
+
+The multi-path repair loop has the same configuration as the single-path loop: up to `failurePolicy.maxDispatchRepairAttempts` iterations, with `failurePolicy.stopHarnessOnInvalidPathRequest` controlling the post-exhaustion behavior. A `PathBatchFailed` event with `errorMessage` and `repairAttempts` rides at the end of the failed batch, distinct from per-path `PathFailed` events.
 
 Only the dispatch contract supports repair. Other contracts either fall back to defaults (judge, health) or fall back to flag-based logic (path-safety, lorebook, summary).
 
@@ -548,6 +568,30 @@ assertEquals("Picked research because the user asked for history of X.", parsed.
 ```
 
 `pathSelectionRationale` is nullable: old checkpoints that don't emit it round-trip as `null`. See [Dispatch Contract: `pathSelectionRationale`](../containers/pumpstation.md#dispatch-contract-pathselectionrationale).
+
+### Round-Trip a PathRequestList
+
+```kotlin
+import com.TTT.Pipeline.PathRequest
+import com.TTT.Pipeline.PathRequestList
+import com.TTT.Util.serialize
+import com.TTT.Util.deserialize
+
+val list = PathRequestList(
+    paths = listOf(
+        PathRequest(pathName = "research", pathSchema = """{"q":"hi"}""", pathSelectionRationale = "first"),
+        PathRequest(pathName = "summarize", pathSchema = "{}", pathSelectionRationale = "second")
+    ),
+    batchRationale = "Independent reads; parallelize."
+)
+val json = serialize(list)
+val parsed = deserialize<PathRequestList>(json) ?: error("deserialize failed")
+assertEquals(2, parsed.paths.size)
+assertEquals("research", parsed.paths[0].pathName)
+assertEquals("Independent reads; parallelize.", parsed.batchRationale)
+```
+
+The multi-path contract is the dispatch LLM's contract when `pathExecutionShape = PathExecutionShape.MultiPath`. The harness calls `parseDispatchOutputMulti` (rather than `parseDispatchOutput`) against the LLM output, then `runDispatchPhaseMulti` fans the parsed list out via `launchAsyncPath`. An empty `paths` array is treated as a parse failure and triggers the repair loop.
 
 ### Validate a HealthReport
 

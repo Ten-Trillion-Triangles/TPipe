@@ -638,6 +638,13 @@ class DistributionGrid : P2PInterface
         workerPipelines?.forEach { it.setPipeSettingsRecursively(settings) }
     }
 
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        entryPipeline?.setStreamingCallbackRecursive(callback)
+        judgePipeline?.setStreamingCallbackRecursive(callback)
+        workerPipelines?.forEach { it.setStreamingCallbackRecursive(callback) }
+    }
+
     /**
      * Execute the local DistributionGrid runtime path directly.
      *
@@ -931,6 +938,39 @@ class DistributionGrid : P2PInterface
         memoryPolicy = policy.copy()
         markShellDirty()
         return this
+    }
+
+    /**
+     * Assign the optional [P2PInterface] summary agent invoked in a suspend coroutine to produce
+     * outbound memory summaries for older history tails.
+     *
+     * Takes absolute priority over [DistributionGridMemoryPolicy.summarizer] when both are set and
+     * [DistributionGridMemoryPolicy.enableSummarization] is true. The agent's
+     * [P2PInterface.executeLocal] is called with a [DistributionGridSummarizerContext] in metadata;
+     * the returned [MultimodalContent.text] is used as the summary.
+     *
+     * This setter mutates the existing memory policy in place and is the canonical API for the
+     * top-level DSL `summaryAgent(agent)` method. Do NOT route through [setMemoryPolicy], which
+     * performs a full replacement and would silently wipe prior memory policy fields.
+     *
+     * @param agent Summary agent, or `null` to clear the previously assigned agent.
+     * @return This grid for method chaining.
+     */
+    fun setSummaryAgent(agent: P2PInterface?): DistributionGrid
+    {
+        memoryPolicy.summaryAgent = agent
+        markShellDirty()
+        return this
+    }
+
+    /**
+     * Read the currently configured summary agent.
+     *
+     * @return Active summary agent, or `null` if none is configured.
+     */
+    fun getSummaryAgent(): P2PInterface?
+    {
+        return memoryPolicy.summaryAgent
     }
 
     /**
@@ -5125,15 +5165,35 @@ class DistributionGrid : P2PInterface
     /**
      * Build the optional older-history summary block used only after hard budgets are allocated.
      *
+     * Branching order:
+     * 1. If [summaryAgent][DistributionGridMemoryPolicy.summaryAgent] is set and
+     *    [enableSummarization][DistributionGridMemoryPolicy.enableSummarization] is true:
+     *    invoke the agent in a suspend coroutine via [P2PInterface.executeLocal] with a
+     *    [DistributionGridSummarizerContext] in [MultimodalContent.metadata], extract the returned
+     *    [MultimodalContent.text] as the summary.
+     * 2. Else if [summarizer][DistributionGridMemoryPolicy.summarizer] is set and
+     *    [enableSummarization] is true: invoke the lambda with the older history text.
+     * 3. Otherwise: return the raw older history text verbatim (subject to [summaryBudget] token cap).
+     *
+     * All branches are wrapped in [runCatching] — agent or lambda exceptions fall back to the next
+     * branch. Blank text from the agent or lambda also triggers fallback. The final block is then
+     * truncated via [budgetText] to fit [summaryBudget].
+     *
      * @param summarySeed Older-history text seed.
      * @param summaryBudget Summary token budget.
      * @param settings Shared truncation settings.
+     * @param taskId Task identifier the summary is being prepared for.
+     * @param currentNodeId Source node invoking the summarizer.
+     * @param targetNodeId Remote peer that will receive the memory envelope.
      * @return Budgeted summary block.
      */
-    private fun buildSummaryText(
+    internal suspend fun buildSummaryText(
         summarySeed: String,
         summaryBudget: Int,
-        settings: TruncationSettings
+        settings: TruncationSettings,
+        taskId: String,
+        currentNodeId: String,
+        targetNodeId: String
     ): String
     {
         if(summarySeed.isBlank() || summaryBudget <= 0)
@@ -5142,16 +5202,45 @@ class DistributionGrid : P2PInterface
         }
 
         val trimmedSeed = summarySeed.take(memoryPolicy.maxSummaryCharacters)
-        val summarized = if(memoryPolicy.enableSummarization && memoryPolicy.summarizer != null)
+
+        // Try agent backend first. If it fails (throws or blank), fall through to the lambda.
+        var agentSummary: String? = null
+        if(memoryPolicy.summaryAgent != null && memoryPolicy.enableSummarization)
         {
-            runCatching { memoryPolicy.summarizer?.invoke(trimmedSeed).orEmpty() }
-                .getOrDefault("")
-                .ifBlank { trimmedSeed }
+            val context = DistributionGridSummarizerContext(
+                taskId = taskId,
+                currentNodeId = currentNodeId,
+                targetNodeId = targetNodeId,
+                summaryBudget = summaryBudget,
+                summarySeed = trimmedSeed
+            )
+            val agentInput = MultimodalContent(
+                text = trimmedSeed,
+                context = ContextWindow()
+            ).apply {
+                metadata["distributionGridSummarizerContext"] = context
+            }
+            val agentResult = runCatching {
+                memoryPolicy.summaryAgent!!.executeLocal(agentInput)
+            }
+            val agentText = agentResult.getOrNull()?.text
+            if(!agentText.isNullOrBlank())
+            {
+                agentSummary = agentText
+            }
         }
-        else
-        {
-            trimmedSeed
-        }
+
+        val summarized = agentSummary
+            ?: if(memoryPolicy.enableSummarization && memoryPolicy.summarizer != null)
+            {
+                runCatching { memoryPolicy.summarizer?.invoke(trimmedSeed).orEmpty() }
+                    .getOrDefault("")
+                    .ifBlank { trimmedSeed }
+            }
+            else
+            {
+                trimmedSeed
+            }
 
         val summarySection = buildSectionText("Summary", listOf(summarized))
         return budgetText(summarySection, summaryBudget, settings, preserveStart = true)
@@ -5331,7 +5420,7 @@ class DistributionGrid : P2PInterface
      * @param descriptor Remote peer descriptor.
      * @return Compact outbound memory envelope.
      */
-    private fun buildOutboundMemoryEnvelope(
+    internal suspend fun buildOutboundMemoryEnvelope(
         envelope: DistributionGridEnvelope,
         descriptor: P2PDescriptor
     ): DistributionGridMemoryEnvelope
@@ -5365,7 +5454,14 @@ class DistributionGrid : P2PInterface
         val recentRaw = buildSectionText("Recent history", buildOutboundRecentLines(envelope))
         val criticalText = budgetText(criticalRaw, criticalBudget, settings, preserveStart = true)
         val recentText = budgetText(recentRaw, recentBudget, settings, preserveStart = true)
-        val summaryText = buildSummaryText(summarySeed, summaryBudget, settings)
+        val summaryText = buildSummaryText(
+            summarySeed = summarySeed,
+            summaryBudget = summaryBudget,
+            settings = settings,
+            taskId = envelope.taskId,
+            currentNodeId = envelope.currentNodeId,
+            targetNodeId = descriptor.distributionGridMetadata?.nodeId.orEmpty()
+        )
 
         val sections = mutableListOf<DistributionGridMemorySection>()
         sections.add(

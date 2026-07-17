@@ -7,6 +7,7 @@
 - [Core Concepts](#core-concepts)
 - [DSL Builder](#dsl-builder)
 - [Summary Pipeline](#summary-pipeline)
+- [Summary to MiniBank Auto-Injection](#summary-to-minibank-auto-injection)
 - [initialUserPrompt](#initialuserprompt)
 - [Startup Checklist](#startup-checklist)
 - [Fastest Working Setup](#fastest-working-setup)
@@ -54,13 +55,21 @@ The default `TPipe-Defaults` manager pipeline uses two pipes:
 1. An entry pipe that reads `ConverseHistory` and emits `TaskProgress`
 2. An agent-caller pipe that reads `TaskProgress` and emits `AgentRequest`
 
-### Worker Pipelines
+### Worker Agents
 
-Worker pipelines are the specialized agents the manager delegates to. Each worker must:
+A worker is anything that implements `P2PInterface` and can serve as a dispatch target for the manager. The canonical worker types are:
+
+- **`Pipeline`** — a single pipeline of pipes that performs one specialized task. This is the classic worker shape.
+- **Higher-order containers** — `Junction`, `DistributionGrid`, `PumpStation`, or even a nested `Manifold`. The manager treats them as a single routing target; the container handles its own internal participant routing, voting, or fan-out.
+
+Every worker must:
 
 - Be added to the manifold before startup
 - Be able to accept converse input from the manager
-- Have prompt overflow protection configured on every pipe via token budgeting or legacy auto truncation
+- Have prompt overflow protection configured on every pipe in every `Pipeline` worker (or on every leaf pipe across nested `Pipeline`s inside a higher-order worker). Higher-order containers that aggregate multiple pipelines must satisfy this rule transitively.
+- Carry a valid `P2PDescriptor` and `P2PRequirements`, either supplied by the caller or auto-generated from the worker shape
+
+A `Pipeline` worker can rely on `addWorker(component)` auto-generating `Transport.Tpipe` descriptor defaults. A higher-order worker must supply its own descriptor and requirements because the defaults assume Pipeline-specific semantics (`usesConverse`, `recordsInteractionContext`, `pcp` context protocol) that may not apply to arbitrary `P2PInterface` components.
 
 ## Agent Contract
 
@@ -85,7 +94,7 @@ The manager pipeline must output JSON via `setJsonOutput(AgentRequest())` that c
 }
 ```
 
-The `targetAgentName` maps to a worker that was registered via `addWorkerPipeline(...)`. The manifold routes the request to that worker's P2P endpoint.
+The `targetAgentName` maps to a worker that was registered via `addWorker(component: P2PInterface, ...)`. The canonical method accepts any `P2PInterface` (Pipeline, Junction, DistributionGrid, PumpStation, nested Manifold); `addWorkerPipeline(pipeline: Pipeline, ...)` is a delegating sugar kept for backward compatibility. The manifold routes the request to that worker's P2P endpoint.
 
 ### What the Manifold Provides to Workers
 
@@ -123,6 +132,7 @@ The manifold maintains a single `workingContentObject` (a `MultimodalContent` wr
 | `history { }` | Configures manager history truncation. Determines how much history the manager sees each iteration. |
 | `validation { }` | Attaches validator/failure/transformer hooks. These intercept the worker output before it's appended to history. |
 | `summaryPipeline { }` | Adds a summarization step after each worker response. Changes what the manager sees (condensed vs full history). |
+| `summaryInjection { }` | Companion to `summaryPipeline { }`. When enabled, appends each summary chunk into `workingContentObject.miniBankContext` so the next manager call sees the running summary automatically without a custom `setContextTruncationFunction(...)` hook. Off by default. |
 | `killSwitch(input, output, onTripped)` | Sets token limits that halt execution. Protects against runaway workers. |
 | `concurrencyMode(ISOLATED)` | Required for P2P exposure. Each request gets a fresh manifold state. |
 
@@ -190,7 +200,7 @@ val builtManifold = manifold {
 }
 ```
 
-The DSL removes the normal `setManagerPipeline(...)`, `addWorkerPipeline(...)`, and `init()` ceremony from the common path. The returned manifold is fully initialized and ready for `execute(...)`.
+The DSL removes the normal `setManagerPipeline(...)`, `addWorker(component, ...)`, and `init()` ceremony from the common path. The returned manifold is fully initialized and ready for `execute(...)`.
 
 ### DSL Blocks
 
@@ -199,7 +209,8 @@ The `manifold { }` builder supports these top-level blocks:
 | Block | Required | Description |
 |-------|----------|-------------|
 | `manager { }` | Yes (or `defaults { }`) | Configures the manager pipeline |
-| `worker("name") { }` | Yes (at least one) | Registers a worker agent |
+| `worker("name") { }` | Yes (at least one) | Registers a `Pipeline` worker agent |
+| `workerP2P("name") { }` | Yes (at least one, mixed with `worker { }`) | Registers any `P2PInterface` worker (Junction, DistributionGrid, PumpStation, nested Manifold) |
 | `defaults { }` | Alternative to `manager { }` | Uses TPipe-Defaults to build the manager |
 | `maxIterations(limit)` | Optional | Sets the maximum loop iterations (default: 100, null = unlimited) |
 | `history { }` | Optional | Configures manager shared-history truncation |
@@ -207,10 +218,11 @@ The `manifold { }` builder supports these top-level blocks:
 | `validation { }` | Optional | Hooks for worker output validation and transformation |
 | `tracing { }` | Optional | Enables tracing for the manifold and child pipelines |
 | `summaryPipeline { }` | Optional | Adds an optional summarization pipeline that runs after each worker response |
+| `summaryInjection { }` | Optional | Companion block to `summaryPipeline { }`. Enables opt-in auto-injection of each iteration's summary text into `workingContentObject.miniBankContext` at a configurable key |
 | `concurrencyMode(mode)` | Optional | Sets P2P concurrency mode (SHARED or ISOLATED) |
 | `killSwitch(input, output, onTripped)` | Optional | Halts execution if token limits are exceeded |
 
-Each block can only appear once (except `worker`, which can appear multiple times).
+Each block can only appear once (except `worker` and `workerP2P`, which can appear multiple times and may be mixed).
 
 All builder methods return `ManifoldBuilder<S>` for chaining. For example, `concurrencyMode()`, `killSwitch()`, `maxIterations()`, and `history()` can be called in sequence:
 
@@ -276,6 +288,89 @@ val builtManifold = manifold {
 ```
 
 This is equivalent to calling `manifold.setManifoldInitFunction(...)` on the API.
+
+### workerP2P { }
+
+The `workerP2P("name") { }` block registers any `P2PInterface` as a worker — Junction, DistributionGrid, PumpStation, or a nested Manifold. This is the companion block to `worker("name") { }`: same stage transitions, same uniqueness rules, mixed freely in the same builder.
+
+```kotlin
+import com.TTT.P2P.ContextProtocol
+import com.TTT.P2P.P2PDescriptor
+import com.TTT.P2P.P2PRequirements
+import com.TTT.P2P.P2PTransport
+import com.TTT.P2P.P2PSkills
+import com.TTT.PipelineContextProtocol.Transport
+import com.TTT.Pipeline.Junction
+
+val criticAgent = Junction().apply {
+    participant("critic-a") { pipeline(criticPipelineA) }
+    participant("critic-b") { pipeline(criticPipelineB) }
+}
+
+val junctionDescriptor = P2PDescriptor(
+    agentName = "critic-council",
+    agentDescription = "Two-perspective critic council reachable as a single agent.",
+    transport = P2PTransport(
+        transportMethod = Transport.Tpipe,
+        transportAddress = "critic-council"
+    ),
+    requiresAuth = false,
+    usesConverse = true,
+    allowsAgentDuplication = false,
+    allowsCustomContext = false,
+    allowsCustomAgentJson = false,
+    recordsInteractionContext = true,
+    recordsPromptContent = true,
+    allowsExternalContext = false,
+    contextProtocol = ContextProtocol.pcp,
+    agentSkills = listOf(
+        P2PSkills("critique", "Returns a critique under both perspectives.")
+    )
+)
+
+val junctionRequirements = P2PRequirements(
+    allowAgentDuplication = false,
+    allowCustomContext = false,
+    allowExternalConnections = false,
+    requireConverseInput = true
+)
+
+val builtManifold = manifold {
+    manager { /* ... */ }
+
+    worker("research-worker") {
+        pipeline(researchPipeline)
+    }
+
+    workerP2P("critic-council") {
+        component = criticAgent
+        description("Two-perspective critic reachable as one routing target.")
+        descriptor(junctionDescriptor)
+        requirements(junctionRequirements)
+    }
+}
+```
+
+The block body configures the worker via `WorkerP2PDsl`:
+
+- `component = <p2pInterface>` — required. The worker to attach.
+- `description("...")` — optional human-readable description shown to the manager.
+- `descriptor(<P2PDescriptor>)` — required for non-Pipeline workers. The caller owns the descriptor's agent name, transport, and security posture.
+- `requirements(<P2PRequirements>)` — required for non-Pipeline workers, paired with `descriptor`.
+- `skill(name, description)` / `skills(list)` — optional advertised capabilities.
+
+`workerP2P` and `worker` names must be unique against each other on the same manifold. The validator in `validateWorkers()` scans both lists so duplicate names across shapes throw `IllegalArgumentException` at build time.
+
+The canonical API surface is `manifold.addWorker(component: P2PInterface, descriptor, requirements, agentName, agentDescription, agentSkills)`. `addWorkerPipeline(pipeline: Pipeline, ...)` remains as a delegating sugar so existing call sites compile and run unchanged. Pipeline-shaped workers can omit `descriptor`/`requirements` and rely on auto-generated `Transport.Tpipe` defaults. Higher-order workers must supply both — the auto-generation rules assume Pipeline semantics that may not apply to arbitrary `P2PInterface` components.
+
+### Worker Accessors
+
+After `init()`, two accessors expose attached workers:
+
+- `manifold.getWorkerComponents(): List<P2PInterface>` — every attached worker in attach order, including `Pipeline`, `Junction`, `DistributionGrid`, `PumpStation`, and nested `Manifold`.
+- `manifold.getWorkerPipelines(): List<Pipeline>` — backward-compatible sugar that filters `getWorkerComponents()` down to `Pipeline`-shaped workers. New code should prefer `getWorkerComponents()`.
+
+Both accessors are snapshot reads; the manifold's internal worker storage is not mutated after `init()`.
 
 ### tracing { }
 
@@ -344,6 +439,88 @@ The summary pipeline is invoked inside the main execution loop, after the worker
 
 > **Note:** The summary pipeline must have context overflow protection configured on all its pipes, just like worker pipelines. This prevents a misbehaving summarizer from crashing the manifold.
 
+## Summary to MiniBank Auto-Injection
+
+The `summaryInjection { }` block is the optional, opt-in companion to `summaryPipeline { }`. When enabled, each iteration's summary text is automatically folded into `workingContentObject.miniBankContext` so the next manager call sees the running summary without requiring a developer-side `setContextTruncationFunction(...)` hook.
+
+By default, `summaryPipeline { }` writes to a private `runningSummary` field on the manifold that the manager never reads. `summaryInjection { }` makes the summary visible to the manager's first pipe in the next iteration, in the form of a MiniBank entry that downstream pipes can pull from (either via `pullGlobalContext(...)` + `setPageKey(...)` with the configured MiniBank key, or via direct `workingContentObject.miniBankContext` access in a custom pipe).
+
+### Behavior
+
+- **Default-off.** Existing callers of `setSummaryPipeline(...)` see byte-identical `workingContentObject.miniBankContext` before and after this feature is enabled — it's strictly additive.
+- **Stable key.** The summary lands at `"manifold.summary"` (default) or whatever key is set via `miniBankKey(...)`. The string is the top-level MiniBank entry; each iteration's summary text becomes a new `LoreBook` entry on the `ContextWindow` at that key.
+- **`APPEND` vs `REGENERATE`** — mirrors `SummaryMode` semantics on the MiniBank side:
+  - `SummaryMode.APPEND` — each iteration's summary chunk accumulates as a fresh `LoreBook` entry on the persistent `ContextWindow` at the configured key.
+  - `SummaryMode.REGENERATE` — the `ContextWindow` at the configured key is replaced wholesale with a fresh window containing only the latest summary.
+- **Synchronous in-loop.** The MiniBank write happens inside the manifold's `while` loop, after the worker's response is merged and before the termination check. There is no async / mutex / interval — it runs once per worker completion.
+
+### DSL
+
+```kotlin
+val builtManifold = manifold {
+    defaults {
+        bedrock(
+            BedrockConfiguration(
+                region = "us-east-1",
+                model = "anthropic.claude-3-haiku-20240307-v1:0"
+            )
+        )
+    }
+
+    worker("research-worker") {
+        description("Researches and summarizes requested information.")
+        pipeline(researchPipeline)
+    }
+
+    summaryPipeline {
+        summaryMode(SummaryMode.APPEND)        // APPEND or REGENERATE
+        pipeline {
+            pipelineName = "summary-pipeline"
+            add(summaryPipe.withOverflowProtection())
+        }
+    }
+
+    summaryInjection {
+        injectIntoMiniBank()                  // required — turns the feature on
+        miniBankKey("research.summary")       // optional — defaults to "manifold.summary"
+    }
+}
+```
+
+The `summaryInjection { }` block supports:
+
+| Method | Required? | Description |
+|---|---|---|
+| `injectIntoMiniBank()` | Opt-in flag | Calling this enables the feature. Without it, the block pre-seeds the configured MiniBank key on the manifold but does not activate injection — useful for "configure key now, enable later" workflows. |
+| `miniBankKey(key)` | Optional | Override the MiniBank key. Must be non-blank; calling with `""` or whitespace throws `IllegalArgumentException`. Default key is `"manifold.summary"`. |
+| *(second call)* | Forbidden | Calling `summaryInjection { }` twice on the same builder throws `IllegalArgumentException`, mirroring the `summaryPipeline { }` state-machine guard. |
+
+### Manual Setters
+
+For callers who build the manifold via direct setters instead of the DSL:
+
+```kotlin
+val manifold = Manifold()
+    .setManagerPipeline(managerPipeline)
+    .addWorkerPipeline(workerPipeline)
+    .setSummaryPipeline(summaryPipeline)
+    .setInjectSummaryIntoMiniBank(true)        // opt in
+    .setSummaryMiniBankKey("research.summary") // optional, defaults to "manifold.summary"
+```
+
+- `setInjectSummaryIntoMiniBank(enabled)` — enables or disables the feature; returns the manifold for builder chaining.
+- `setSummaryMiniBankKey(key)` — sets the MiniBank key; throws `IllegalArgumentException` if `key` is blank.
+
+### Cost & Iteration Expectations
+
+`summaryPipeline { }` and `summaryInjection { }` together add exactly one extra LLM call per loop iteration (the summary pipeline itself), and Manifold's iteration count should be small (~10–50) by design — the manifold coordinates a known multi-step workflow rather than driving an open-ended agent loop. The MiniBank write per iteration is constant-time. If your workload genuinely needs hundreds of iterations, the heavy container (`PumpStation`) is the more appropriate choice.
+
+### Caveats
+
+- **Iteration-1 visibility.** The summary pipeline runs *after* the first worker dispatch, so the first manager call does not see the summary yet. The summary becomes visible starting from iteration 2. If turn-1 visibility matters, pre-seed the summary via `manifold.setSummary*` setters before the first `execute(...)`.
+- **Manager-side consumption.** The summary is written into `workingContentObject.miniBankContext`, but the manager's pipe still needs to actually pull from it. For `TPipe-Defaults` manager pipelines, configure `pullGlobalContext(...)` + `setPageKey(...)` with the configured MiniBank key. For custom manager pipes, read `workingContentObject.miniBankContext.contextMap[summaryMiniBankKey]` directly.
+- **`@RuntimeState` preservation.** Both `runningSummary` and `workingContentObject.miniBankContext` are covered by `@RuntimeState`, so pause/resume preserves the accumulated summary transparently. No additional serialization wiring required.
+
 ## initialUserPrompt
 
 The `initialUserPrompt` property stores the raw user prompt string passed to `execute()` at the moment it is called. It is public and readable after execution completes:
@@ -367,11 +544,11 @@ The DSL validates your configuration at build time and throws `IllegalArgumentEx
 - Unnamed `AgentRequest` pipes require an explicit `agentDispatchPipe(...)` declaration
 
 **Worker validation:**
-- At least one `worker { }` block is required
-- Worker agent names must be unique
+- At least one `worker { }` or `workerP2P { }` block is required
+- Worker agent names must be unique across `worker { }` and `workerP2P { }` blocks on the same manifold
 - Worker routing identities (from custom descriptors) must be unique
 - Worker P2P transport identities must be unique
-- Every pipe in every worker pipeline must have overflow protection configured (token budgeting or legacy auto truncation)
+- Every pipe in every worker pipeline must have overflow protection configured (token budgeting or legacy auto truncation). For higher-order workers, this rule applies transitively to every leaf pipe across nested pipelines.
 - Workers with custom P2P descriptors must use `Transport.Tpipe` for local manifold workers
 - Custom local TPipe descriptors must have matching `agentName` and `transportAddress`
 - Each worker pipeline must contain at least one pipe
@@ -388,10 +565,10 @@ Before calling `execute(...)`, make sure all of the following are true:
 
 - A manager pipeline has been assigned with `setManagerPipeline(...)`
 - The manager has at least one pipe that emits `AgentRequest`
-- At least one worker pipeline has been added with `addWorkerPipeline(...)`
+- At least one worker has been added with `addWorker(component, ...)` — pipeline-shaped via `addWorkerPipeline(...)`, or any `P2PInterface` via `addWorker(component, ...)` with explicit descriptor and requirements
 - The manifold has a manager-history control path:
   `setManagerTokenBudget(...)`, manager pipe token budget, `autoTruncateContext()` with context window settings, or `setContextTruncationFunction(...)`
-- Every worker pipeline has overflow protection configured
+- Every leaf pipe inside every worker pipeline has overflow protection configured
 - `init()` has been called
 
 If any of these are missing, `init()` or the first execution loop can fail.
@@ -434,8 +611,8 @@ fun main() = runBlocking {
     )
 
     manifold
-        .addWorkerPipeline(
-            buildResearchWorker(),
+        .addWorker(
+            component = buildResearchWorker(),
             agentName = "research-worker",
             agentDescription = "Researches and summarizes requested information."
         )
@@ -453,7 +630,7 @@ fun main() = runBlocking {
 ### Why This Works
 
 - `ManifoldDefaults.withBedrock(...)` creates a manager pipeline with the expected `TaskProgress` and `AgentRequest` flow
-- `addWorkerPipeline(...)` registers the worker locally for manifold routing
+- `addWorker(component, ...)` registers the worker locally for manifold routing. Pipeline-shaped workers auto-generate `Transport.Tpipe` descriptor defaults. Higher-order `P2PInterface` workers (`Junction`, `DistributionGrid`, `PumpStation`, nested `Manifold`) require an explicit `descriptor` and `requirements`.
 - The worker pipe uses legacy auto truncation, so worker startup passes overflow validation
 - `init()` discovers local workers and injects the worker list into the manager's agent-calling pipe
 
@@ -600,7 +777,7 @@ Manifold is not just a loop. It also owns several setup and runtime chores that 
 
 ### P2P Registration Defaults
 
-When you call `setManagerPipeline(...)` or `addWorkerPipeline(...)` without custom descriptors or requirements, manifold creates secure local-only P2P settings for those pipelines and registers them with `P2PRegistry`.
+When you call `setManagerPipeline(...)`, `addWorkerPipeline(...)`, or `addWorker(component, ...)` without custom descriptors and requirements, manifold creates secure local-only P2P settings for that worker and registers it with `P2PRegistry`. Pipeline-shaped workers go through the auto-generation path: `Transport.Tpipe`, `usesConverse = true`, `recordsInteractionContext = true`, `contextProtocol = pcp`. Higher-order `P2PInterface` workers (`Junction`, `DistributionGrid`, `PumpStation`, nested `Manifold`) must supply their own descriptor and requirements because the auto-generation rules assume Pipeline semantics that may not apply to the container's participant routing, voting, or fan-out behavior.
 
 ### Local Agent Discovery
 
@@ -829,6 +1006,7 @@ Fix:
 - Use `addP2pAgentNames(...)` only when custom manager pipe names break the default `"Agent caller pipe"` convention
 - Enable tracing while developing custom manager prompts or agent-routing behavior
 - Build a fresh manifold per concurrent top-level task
+- Use `summaryInjection { }` after `summaryPipeline { }` to make the running summary visible to the next manager call via `workingContentObject.miniBankContext` (see [Summary to MiniBank Auto-Injection](#summary-to-minibank-auto-injection))
 
 ## P2P Concurrency
 

@@ -86,6 +86,31 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var dispatchAgent: P2PInterface? = null
 
     /**
+     * Dispatch contract shape for this station. Defaults to
+     * [com.TTT.Pipeline.PathExecutionShape.SinglePath] (preserves the
+     * pre-existing dispatch JSON contract). Set to
+     * [com.TTT.Pipeline.PathExecutionShape.MultiPath] to switch to the
+     * multi-path dispatch contract where the dispatch LLM emits a
+     * [com.TTT.Pipeline.PathRequestList] and the harness fans the list out
+     * via the existing async substrate.
+     *
+     * DSL usage follows the assignment pattern used elsewhere in this
+     * builder (e.g. `judgeAgent = ...`, `dispatchAgent = ...`):
+     *
+     *     pumpStation("example") {
+     *         judgeAgent = Pipeline()
+     *         dispatchAgent = Pipeline()
+     *         pathExecutionShape = PathExecutionShape.MultiPath
+     *         path("noop") { ... }
+     *     }
+     *
+     * The assignment must precede any `path(...)` call because `path()`
+     * promotes the Initial-stage builder and the promoted builder copies
+     * the value of `pathExecutionShape` at promotion time.
+     */
+    var pathExecutionShape: PathExecutionShape = PathExecutionShape.SinglePath
+
+    /**
      * Optional agent that can intervene with path calls, enforcing correct behavior
      * and providing nudges/hints to steer the dispatch and judge agents.
      */
@@ -108,6 +133,21 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      * Fires [MultimodalContent.terminatePipeline] to signal failure and force resume.
      */
     var goalAgent: P2PInterface? = null
+
+    /**
+     * Optional agent that fires after the goal agent passes (or when no goal agent is
+     * configured and the harness is exiting through [runExitFlow]). Receives the
+     * goal agent's output (or the harness's exit-flow content when no goal agent is
+     * configured) as its input and may set [MultimodalContent.terminatePipeline] on
+     * its result to signal failure. Fires on every successful exit through
+     * [runExitFlow] — broad coverage including the no-goal-agent and passPipeline-
+     * routed paths — but NOT on the [PumpStationExitReason.GoalValidationFailed]
+     * failure-exhaustion halt path or the [MultimodalContent.terminatePipeline] direct
+     * halt path. Output becomes the harness's final deliverable; a non-passing agent
+     * halts the harness with [PumpStationExitReason.JudgeComplete] (does NOT re-loop
+     * — post-success-only semantic).
+     */
+    var postGoalAgent: P2PInterface? = null
 
     /**
      * Optional agent that fires prior to starting the harness.
@@ -155,6 +195,14 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      * Builder function for [goalAgent] - creates a fresh instance per harness invocation.
      */
     var goalAgentBuilderFunction: (suspend (PumpStation) -> P2PInterface)? = null
+
+    /**
+     * Builder function for [postGoalAgent] - creates a fresh instance per harness
+     * invocation. When non-null, this overrides any value set via [setPostGoalAgent].
+     *
+     * @see [postGoalAgent]
+     */
+    var postGoalAgentBuilderFunction: (suspend (PumpStation) -> P2PInterface)? = null
 
     /**
      * Builder function for healthAgent - creates fresh instance each invocation.
@@ -489,9 +537,10 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
 
     /**
      * Maximum consecutive dispatch turns that can select the same path.
-     * Prevents infinite loops on a single path.
+     * Null disables the guard. The guard is opt-in: set this explicitly when a
+     * station should police repeated path selection.
      */
-    var maxConsecutiveSamePath: Int = 3
+    var maxConsecutiveSamePath: Int? = null
 
     /**
      * Maximum total dispatch calls allowed per specific path.
@@ -663,10 +712,23 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var postCompactionFunction: (suspend (MultimodalContent, ConverseHistory, PumpStation) -> MultimodalContent)? = null
 
     /**
-     * DITL function fired when the context window is truncated to make room.
+     * DITL function that fires when the context window is truncated to make room.
      * Allows the developer to react before the harness loop continues.
      */
     var onContextTruncated: (suspend (wasTruncated: Boolean, remainingFreeSpace: Int) -> Unit)? = null
+
+    /**
+     * DITL function fired after the goal agent passes (or when no goal agent is
+     * configured and the harness is exiting through [runExitFlow]). Synchronous
+     * transformation: receives the goal agent's output (or the harness's exit-flow
+     * content when no goal agent is configured) and returns a possibly-modified
+     * [MultimodalContent]. Precedes [postGoalAgent] when both are configured —
+     * the agent receives the function's return value. Fires on every successful
+     * exit through [runExitFlow] (broad coverage); does NOT fire on the
+     * [PumpStationExitReason.GoalValidationFailed] failure-exhaustion halt path or
+     * the [MultimodalContent.terminatePipeline] direct halt path.
+     */
+    var postGoalFunction: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)? = null
 
 //=========================================Nested Blocks Storage====================================================
 
@@ -901,6 +963,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         lorebookAgent = source.lorebookAgent
         summaryAgent = source.summaryAgent
         goalAgent = source.goalAgent
+        postGoalAgent = source.postGoalAgent
         preInitAgent = source.preInitAgent
         pathSafetyAgent = source.pathSafetyAgent
         healthAgent = source.healthAgent
@@ -910,6 +973,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         lorebookAgentBuilderFunction = source.lorebookAgentBuilderFunction
         summaryAgentBuilderFunction = source.summaryAgentBuilderFunction
         goalAgentBuilderFunction = source.goalAgentBuilderFunction
+        postGoalAgentBuilderFunction = source.postGoalAgentBuilderFunction
         healthAgentBuilderFunction = source.healthAgentBuilderFunction
         healthAgentTurnInterval = source.healthAgentTurnInterval
         healthAgentErrorRatioThreshold = source.healthAgentErrorRatioThreshold
@@ -933,6 +997,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         concurrencyMode = source.concurrencyMode
         maxGoalFailAttempts = source.maxGoalFailAttempts
         maxRawTurnHistorySize = source.maxRawTurnHistorySize
+        pathExecutionShape = source.pathExecutionShape
         blowoutThreshold = source.blowoutThreshold
         memoryUpdateTimeoutMs = source.memoryUpdateTimeoutMs
         maxBlowoutRecoveries = source.maxBlowoutRecoveries
@@ -1029,8 +1094,10 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setLorebookAgent(lorebookAgent)
             .setSummaryAgent(summaryAgent)
             .setGoalAgent(goalAgent)
+            .setPostGoalAgent(postGoalAgent)
             .setPreInitAgent(preInitAgent)
             .setPathSafetyAgent(pathSafetyAgent)
+            .setPathExecutionShape(pathExecutionShape)
 
         // Agent builder functions
         station
@@ -1040,6 +1107,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setLorebookAgentBuilderFunction(lorebookAgentBuilderFunction)
             .setSummaryAgentBuilderFunction(summaryAgentBuilderFunction)
             .setGoalAgentBuilderFunction(goalAgentBuilderFunction)
+            .setPostGoalAgentBuilderFunction(postGoalAgentBuilderFunction)
 
         // Magic-contract toggles
         station

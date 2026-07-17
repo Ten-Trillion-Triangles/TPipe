@@ -116,35 +116,31 @@ class DistributionGridHardeningTest
                         )
                     )
                 )
-                val summaryEnvelopeMethod = DistributionGrid::class.java.getDeclaredMethod(
-                    "buildOutboundMemoryEnvelope",
-                    DistributionGridEnvelope::class.java,
-                    P2PDescriptor::class.java
-                )
-                summaryEnvelopeMethod.isAccessible = true
-                val shapedMemoryEnvelope = summaryEnvelopeMethod.invoke(
-                    senderGrid,
-                    DistributionGridEnvelope(
-                        taskId = "memory-task",
-                        content = MultimodalContent(
-                            text = buildString {
-                                repeat(12) {
-                                    append("Summary budget must be reserved before compacting the remaining memory. ")
+                val shapedMemoryEnvelope = kotlinx.coroutines.runBlocking {
+                    senderGrid.buildOutboundMemoryEnvelope(
+                        DistributionGridEnvelope(
+                            taskId = "memory-task",
+                            content = MultimodalContent(
+                                text = buildString {
+                                    repeat(12) {
+                                        append("Summary budget must be reserved before compacting the remaining memory. ")
+                                    }
                                 }
-                            }
+                            ),
+                            executionNotes = mutableListOf("older-note-1", "older-note-2", "older-note-3")
                         ),
-                        executionNotes = mutableListOf("older-note-1", "older-note-2", "older-note-3")
-                    ),
-                    remotePeer.getP2pDescription()!!.deepCopy()
-                ) as DistributionGridMemoryEnvelope
-                val blankSummaryEnvelope = summaryEnvelopeMethod.invoke(
-                    senderGrid,
-                    DistributionGridEnvelope(
-                        taskId = "memory-task-blank",
-                        content = MultimodalContent(text = "")
-                    ),
-                    remotePeer.getP2pDescription()!!.deepCopy()
-                ) as DistributionGridMemoryEnvelope
+                        remotePeer.getP2pDescription()!!.deepCopy()
+                    )
+                }
+                val blankSummaryEnvelope = kotlinx.coroutines.runBlocking {
+                    senderGrid.buildOutboundMemoryEnvelope(
+                        DistributionGridEnvelope(
+                            taskId = "memory-task-blank",
+                            content = MultimodalContent(text = "")
+                        ),
+                        remotePeer.getP2pDescription()!!.deepCopy()
+                    )
+                }
 
                 val capturedEnvelope = remotePeer.lastTaskEnvelope
                 assertTrue(result.passPipeline)

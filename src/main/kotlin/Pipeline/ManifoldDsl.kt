@@ -8,6 +8,7 @@ import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.KillSwitchContext
 import com.TTT.P2P.P2PDescriptor
 import com.TTT.P2P.P2PConcurrencyMode
+import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.P2PTransport
@@ -51,11 +52,19 @@ sealed class ManifoldStage
 class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     var managerConfig: ManagerConfiguration? = null,
     val workerConfigs: MutableList<WorkerConfiguration> = mutableListOf(),
+    /**
+     * Workers attached as bare [P2PInterface]s (Junction, DistributionGrid, PumpStation, nested
+     * Manifold, etc.) via the `workerP2P(name) { ... }` DSL block. The classic
+     * `worker(name) { pipeline { ... } }` block populates [workerConfigs]; this list carries the
+     * higher-order container workers. Duplicate-name checks in [validateWorkers] scan both.
+     */
+    val workerP2PConfigs: MutableList<WorkerP2PConfiguration> = mutableListOf(),
     var historyConfiguration: HistoryConfiguration? = null,
     var validationConfiguration: ValidationConfiguration? = null,
     var initFunctionConfiguration: InitFunctionConfiguration? = null,
     var tracingConfiguration: TraceConfig? = null,
     var summaryPipelineConfiguration: SummaryPipelineConfiguration? = null,
+    var summaryInjectionConfiguration: SummaryInjectionConfiguration? = null,
     var concurrencyModeConfiguration: P2PConcurrencyMode = P2PConcurrencyMode.SHARED,
     var killSwitchConfiguration: KillSwitch? = null,
     var maxIterationsConfiguration: Int? = null
@@ -97,10 +106,12 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     private fun <T : ManifoldStage> createNew(
         managerConfig: ManagerConfiguration? = this.managerConfig,
         workerConfigs: MutableList<WorkerConfiguration> = this.workerConfigs,
+        workerP2PConfigs: MutableList<WorkerP2PConfiguration> = this.workerP2PConfigs,
         historyConfiguration: HistoryConfiguration? = this.historyConfiguration,
         validationConfiguration: ValidationConfiguration? = this.validationConfiguration,
         tracingConfiguration: TraceConfig? = this.tracingConfiguration,
         summaryPipelineConfiguration: SummaryPipelineConfiguration? = this.summaryPipelineConfiguration,
+        summaryInjectionConfiguration: SummaryInjectionConfiguration? = this.summaryInjectionConfiguration,
         concurrencyModeConfiguration: P2PConcurrencyMode = this.concurrencyModeConfiguration,
         killSwitchConfiguration: KillSwitch? = this.killSwitchConfiguration,
         maxIterationsConfiguration: Int? = this.maxIterationsConfiguration
@@ -109,10 +120,12 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         val newBuilder = ManifoldBuilder<T>(
             managerConfig = managerConfig,
             workerConfigs = workerConfigs,
+            workerP2PConfigs = workerP2PConfigs,
             historyConfiguration = historyConfiguration,
             validationConfiguration = validationConfiguration,
             tracingConfiguration = tracingConfiguration,
             summaryPipelineConfiguration = summaryPipelineConfiguration,
+            summaryInjectionConfiguration = summaryInjectionConfiguration,
             concurrencyModeConfiguration = concurrencyModeConfiguration,
             killSwitchConfiguration = killSwitchConfiguration,
             maxIterationsConfiguration = maxIterationsConfiguration
@@ -223,10 +236,47 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         return createNew<ManifoldStage.Ready>(
             managerConfig = managerConfig,
             workerConfigs = workerConfigs,
+            workerP2PConfigs = workerP2PConfigs,
             historyConfiguration = historyConfiguration,
             validationConfiguration = validationConfiguration,
             tracingConfiguration = tracingConfiguration,
             summaryPipelineConfiguration = summaryPipelineConfiguration,
+            summaryInjectionConfiguration = summaryInjectionConfiguration,
+            concurrencyModeConfiguration = concurrencyModeConfiguration,
+            killSwitchConfiguration = killSwitchConfiguration,
+            maxIterationsConfiguration = maxIterationsConfiguration
+        )
+    }
+
+    /**
+     * Declare a higher-order [P2PInterface] worker (Junction, DistributionGrid, PumpStation,
+     * nested Manifold, or any P2PInterface) that can be called by the manifold manager. The
+     * block body configures the worker via [WorkerP2PDsl]: it must assign a `component`, and
+     * may supply `descriptor`/`requirements`/`description`/`skills`.
+     *
+     * Companion to `worker(name) { pipeline { ... } }`. Same stage transitions: after the first
+     * `workerP2P` (or `worker`) call the builder reaches [ManifoldStage.Ready] so [build] is
+     * callable.
+     *
+     * @param agentName Public routing name for the worker.
+     * @param block Builder block that wires the P2PInterface into the manifold.
+     * @return A new builder in Ready stage.
+     */
+    fun workerP2P(agentName: String, block: WorkerP2PDsl.() -> Unit): ManifoldBuilder<ManifoldStage.Ready>
+    {
+        val builder = WorkerP2PDsl(agentName)
+        builder.block()
+        workerP2PConfigs.add(builder.build())
+
+        return createNew<ManifoldStage.Ready>(
+            managerConfig = managerConfig,
+            workerConfigs = workerConfigs,
+            workerP2PConfigs = workerP2PConfigs,
+            historyConfiguration = historyConfiguration,
+            validationConfiguration = validationConfiguration,
+            tracingConfiguration = tracingConfiguration,
+            summaryPipelineConfiguration = summaryPipelineConfiguration,
+            summaryInjectionConfiguration = summaryInjectionConfiguration,
             concurrencyModeConfiguration = concurrencyModeConfiguration,
             killSwitchConfiguration = killSwitchConfiguration,
             maxIterationsConfiguration = maxIterationsConfiguration
@@ -318,6 +368,30 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     }
 
     /**
+     * Configure summary-MiniBank auto-injection. Companion block to [summaryPipeline].
+     *
+     * When enabled, each iteration's summary text is folded into the manifold's working
+     * [com.TTT.Pipe.MultimodalContent].miniBankContext so the next manager call sees the running
+     * summary without a developer-side hook on `contextTruncationFunction`. Defaults to off —
+     * must be explicitly enabled via [SummaryInjectionDsl.injectIntoMiniBank].
+     *
+     * The default MiniBank key is "manifold.summary"; override via [SummaryInjectionDsl.miniBankKey].
+     *
+     * @param block Builder block that declares the inject-into-MiniBank flag and optional key.
+     * @return This builder for chaining.
+     * @throws IllegalArgumentException if this block is called twice on the same builder.
+     */
+    fun summaryInjection(block: SummaryInjectionDsl.() -> Unit): ManifoldBuilder<S>
+    {
+        require(summaryInjectionConfiguration == null) { "Summary injection has already been configured for this manifold DSL." }
+
+        val builder = SummaryInjectionDsl()
+        builder.block()
+        summaryInjectionConfiguration = builder.build()
+        return this
+    }
+
+    /**
      * Build and initialize the configured [Manifold].
      * ONLY available on ManifoldBuilder<Ready> - compile error otherwise.
      *
@@ -378,9 +452,22 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
             )
         }
 
+        for(workerP2P in workerP2PConfigs)
+        {
+            manifold.addWorker(
+                component = workerP2P.component,
+                descriptor = workerP2P.descriptor,
+                requirements = workerP2P.requirements,
+                agentName = workerP2P.agentName,
+                agentDescription = workerP2P.description,
+                agentSkills = workerP2P.skills
+            )
+        }
+
         applyValidationConfiguration(manifold)
         applyInitFunctionConfiguration(manifold)
         applySummaryPipelineConfiguration(manifold)
+        applySummaryInjectionConfiguration(manifold)
 
         if(killSwitchConfiguration != null)
         {
@@ -400,19 +487,26 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
      */
     private fun validateWorkers()
     {
-        if(workerConfigs.isEmpty())
+        if(workerConfigs.isEmpty() && workerP2PConfigs.isEmpty())
         {
-            throw IllegalArgumentException("At least one worker { ... } block is required to build a manifold.")
+            throw IllegalArgumentException("At least one worker { ... } or workerP2P { ... } block is required to build a manifold.")
         }
 
-        val duplicateNames = workerConfigs
-            .groupBy { worker -> worker.agentName }
-            .filter { groupedWorkers -> groupedWorkers.value.size > 1 }
+        val pipelineWorkerNames = workerConfigs.map { it.agentName }
+        val p2pWorkerNames = workerP2PConfigs.map { it.agentName }
+        val allNames = pipelineWorkerNames + p2pWorkerNames
+
+        val duplicateNames = allNames
+            .groupBy { it }
+            .filter { it.value.size > 1 }
             .keys
             .sorted()
         if(duplicateNames.isNotEmpty())
         {
-            throw IllegalArgumentException("Worker agent names must be unique. Duplicate names: ${duplicateNames.joinToString()}")
+            throw IllegalArgumentException(
+                "Worker agent names must be unique across pipeline-shaped and workerP2P-shaped blocks. " +
+                    "Duplicate names: ${duplicateNames.joinToString()}"
+            )
         }
 
         val duplicateRoutingIdentities = workerConfigs
@@ -656,6 +750,20 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         val configuration = summaryPipelineConfiguration ?: return
         manifold.setSummaryPipeline(configuration.pipeline, configuration.descriptor, configuration.requirements)
         manifold.setSummaryMode(configuration.summaryMode)
+    }
+
+    /**
+     * Apply the summary-injection configuration to the manifold. The setter order matters:
+     * the key is set first so a call to injectIntoMiniBank(true) always reads the resolved key.
+     */
+    private fun applySummaryInjectionConfiguration(manifold: Manifold)
+    {
+        val configuration = summaryInjectionConfiguration ?: return
+        manifold.setSummaryMiniBankKey(configuration.summaryMiniBankKey)
+        if(configuration.injectIntoMiniBank)
+        {
+            manifold.setInjectSummaryIntoMiniBank(true)
+        }
     }
 }
 
@@ -996,13 +1104,138 @@ class WorkerDsl(private val agentName: String)
 }
 
 /**
+ * Builder for a higher-order [P2PInterface] worker (Junction, DistributionGrid, PumpStation,
+ * nested [Manifold], or any other `P2PInterface`) attached to the Manifold via the
+ * `workerP2P(name) { ... }` DSL block.
+ *
+ * Unlike [WorkerDsl], this builder does NOT take a `pipeline { ... }` block. The caller
+ * supplies an already-built P2PInterface and the descriptor/requirements that govern its
+ * P2P registration. The component's own `init()` lifecycle is responsible for its
+ * internals — the outer Manifold does NOT call `init(true)` on non-Pipeline workers.
+ *
+ * @param agentName Public routing name assigned to this worker. Must be unique against
+ *                  any other worker (Pipeline-shaped or `workerP2P`-shaped) on the same Manifold.
+ */
+@ManifoldDslMarker
+class WorkerP2PDsl(private val agentName: String)
+{
+    /**
+     * The higher-order [P2PInterface] to attach as a worker. DSL callers set this with
+     * `component = someJunction` syntax inside the `workerP2P(name) { ... }` block. Reading
+     * is internal-only.
+     */
+    var component: P2PInterface? = null
+    private var descriptor: P2PDescriptor? = null
+    private var requirements: P2PRequirements? = null
+    private var description = ""
+    private val skills = mutableListOf<P2PSkills>()
+
+    /**
+     * Replace the worker's P2P descriptor. Required unless the component already has one set.
+     *
+     * @param descriptor Explicit descriptor to register the worker under.
+     */
+    fun descriptor(descriptor: P2PDescriptor)
+    {
+        this.descriptor = descriptor
+    }
+
+    /**
+     * Replace the worker's P2P requirements. Required unless the component already has them set.
+     *
+     * @param requirements Explicit requirements to register the worker with.
+     */
+    fun requirements(requirements: P2PRequirements)
+    {
+        this.requirements = requirements
+    }
+
+    /**
+     * Set a human-readable description for this worker agent.
+     *
+     * @param description Description shown to the manager when choosing a worker.
+     */
+    fun description(description: String)
+    {
+        this.description = description
+    }
+
+    /**
+     * Add a worker skill descriptor.
+     *
+     * @param name Skill name to advertise.
+     * @param description Skill description to advertise.
+     */
+    fun skill(name: String, description: String)
+    {
+        skills.add(P2PSkills(name, description))
+    }
+
+    /**
+     * Replace the worker skills with the supplied list.
+     *
+     * @param skills Worker skills to advertise.
+     */
+    fun skills(skills: List<P2PSkills>)
+    {
+        this.skills.clear()
+        this.skills.addAll(skills)
+    }
+
+    /**
+     * Build the immutable worker-P2P configuration captured by this DSL block.
+     *
+     * @return Worker-P2P configuration ready for manifold assembly.
+     */
+    internal fun build(): WorkerP2PConfiguration
+    {
+        val resolvedComponent = component ?: throw IllegalArgumentException(
+            "workerP2P '$agentName' requires a component = ... declaration."
+        )
+        validatePairedP2PSettings(
+            descriptor = descriptor,
+            requirements = requirements,
+            targetDescription = "workerP2P '$agentName'"
+        )
+
+        return WorkerP2PConfiguration(
+            agentName = agentName,
+            component = resolvedComponent,
+            descriptor = descriptor,
+            requirements = requirements,
+            description = description,
+            skills = skills.toList().ifEmpty { null }
+        )
+    }
+}
+
+/**
+ * Immutable worker-P2P configuration captured by [WorkerP2PDsl].
+ *
+ * @property agentName Public routing name for the worker.
+ * @property component Higher-order P2PInterface to register (Junction, DistributionGrid, ...).
+ * @property descriptor Optional explicit P2P descriptor override.
+ * @property requirements Optional explicit P2P requirements override.
+ * @property description Human-readable worker description.
+ * @property skills Optional advertised worker skills.
+ */
+data class WorkerP2PConfiguration(
+    val agentName: String,
+    val component: P2PInterface,
+    val descriptor: P2PDescriptor?,
+    val requirements: P2PRequirements?,
+    val description: String,
+    val skills: List<P2PSkills>?
+)
+
+/**
  * Builder for optional manifold validation and transformation hooks.
  */
 @ManifoldDslMarker
 class ValidationDsl
 {
-    private var validator: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null
-    private var failureHandler: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null
+    private var validator: (suspend (content: MultimodalContent, agent: P2PInterface) -> Boolean)? = null
+    private var failureHandler: (suspend (content: MultimodalContent, agent: P2PInterface) -> Boolean)? = null
     private var transformer: (suspend (content: MultimodalContent) -> MultimodalContent)? = null
 
     /**
@@ -1010,7 +1243,7 @@ class ValidationDsl
      *
      * @param function Validation function invoked after worker execution.
      */
-    fun validator(function: suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)
+    fun validator(function: suspend (content: MultimodalContent, agent: P2PInterface) -> Boolean)
     {
         validator = function
     }
@@ -1020,7 +1253,7 @@ class ValidationDsl
      *
      * @param function Failure handler that attempts to recover from a bad worker result.
      */
-    fun failure(function: suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)
+    fun failure(function: suspend (content: MultimodalContent, agent: P2PInterface) -> Boolean)
     {
         failureHandler = function
     }
@@ -1189,6 +1422,59 @@ class SummaryPipelineDsl
             descriptor = descriptor,
             requirements = requirements,
             summaryMode = summaryMode
+        )
+    }
+}
+
+/**
+ * Builder for optional summary-injection configuration. Companion to [SummaryPipelineDsl].
+ *
+ * Calling [injectIntoMiniBank] enables auto-injection of the running summary into the manifold's
+ * [com.TTT.Pipe.MultimodalContent].miniBankContext so the next manager call sees the running
+ * summary without a [com.TTT.Pipeline.Manifold.setContextTruncationFunction] hook. The default
+ * MiniBank key is "manifold.summary" but is settable via [miniBankKey].
+ */
+@ManifoldDslMarker
+class SummaryInjectionDsl
+{
+    private var injectIntoMiniBankValue: Boolean = false
+    private var summaryMiniBankKeyValue: String = "manifold.summary"
+
+    /**
+     * Enable auto-injection of the running summary into the manifold's working [com.TTT.Pipe.MultimodalContent].miniBankContext.
+     *
+     * Multiple calls are coalesced — repeated invocations are no-ops beyond the first; the
+     * builder enforces a single configurable value of each field rather than a single call.
+     */
+    fun injectIntoMiniBank()
+    {
+        injectIntoMiniBankValue = true
+    }
+
+    /**
+     * Override the [com.TTT.Context.MiniBank] key under which the running summary is stored.
+     *
+     * Must be non-blank. Calling this without [injectIntoMiniBank] is permitted — it
+     * pre-configures the key for when the feature is later enabled (typically by calling
+     * [injectIntoMiniBank] in a separate [summaryInjection] block, or via
+     * [com.TTT.Pipeline.Manifold.setInjectSummaryIntoMiniBank] on the assembled manifold).
+     */
+    fun miniBankKey(key: String)
+    {
+        require(key.isNotBlank()) { "MiniBank key must not be blank." }
+        summaryMiniBankKeyValue = key
+    }
+
+    /**
+     * Build the immutable summary-injection configuration captured by this DSL block.
+     *
+     * @return Summary-injection configuration ready for manifold assembly.
+     */
+    internal fun build(): SummaryInjectionConfiguration
+    {
+        return SummaryInjectionConfiguration(
+            injectIntoMiniBank = injectIntoMiniBankValue,
+            summaryMiniBankKey = summaryMiniBankKeyValue
         )
     }
 }
@@ -1368,8 +1654,8 @@ data class HistoryConfiguration(
  * @property transformer Optional manifold content transformer.
  */
 data class ValidationConfiguration(
-    val validator: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null,
-    val failureHandler: (suspend (content: MultimodalContent, agent: Pipeline) -> Boolean)? = null,
+    val validator: (suspend (content: MultimodalContent, agent: P2PInterface) -> Boolean)? = null,
+    val failureHandler: (suspend (content: MultimodalContent, agent: P2PInterface) -> Boolean)? = null,
     val transformer: (suspend (content: MultimodalContent) -> MultimodalContent)? = null
 )
 
@@ -1395,6 +1681,20 @@ data class SummaryPipelineConfiguration(
     val descriptor: P2PDescriptor?,
     val requirements: P2PRequirements?,
     val summaryMode: SummaryMode = SummaryMode.APPEND
+)
+
+/**
+ * Immutable summary-injection configuration captured by [SummaryInjectionDsl].
+ *
+ * @property injectIntoMiniBank When true, the running summary is folded into the manifold's
+ * working [com.TTT.Pipe.MultimodalContent].miniBankContext so the next manager call sees it
+ * without any developer-side hook.
+ * @property summaryMiniBankKey MiniBank key under which the running summary is stored.
+ * Default is "manifold.summary".
+ */
+data class SummaryInjectionConfiguration(
+    val injectIntoMiniBank: Boolean = false,
+    val summaryMiniBankKey: String = "manifold.summary"
 )
 
 /**

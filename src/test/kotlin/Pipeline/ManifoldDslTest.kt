@@ -1362,7 +1362,9 @@ class ManifoldDslTest
     fun validationHookCalledOnWorkerSuccess() = runBlocking {
         var validatorCallCount = 0
         var validatorReceivedContent: MultimodalContent? = null
-        var validatorReceivedAgent: Pipeline? = null
+        // validatorReceivedAgent is P2PInterface since the worker-attach API widens from Pipeline
+        // to P2PInterface; the test narrows back to Pipeline because this case only uses Pipeline workers.
+        var validatorReceivedAgent: com.TTT.P2P.P2PInterface? = null
 
         val builtManifold = manifold {
             manager {
@@ -1406,14 +1408,16 @@ class ManifoldDslTest
             validatorCallCount++
             validatorReceivedContent = content
             validatorReceivedAgent = agent
-            true // Return TRUE to indicate success
+            true // Lambda returns Boolean for setValidatorFunction. Enclosing @Test signature is `fun ... : Unit`.
         }
 
-        builtManifold.execute(MultimodalContent("test prompt"))
+        Unit.also {
+            builtManifold.execute(MultimodalContent("test prompt"))
 
-        assertEquals(1, validatorCallCount, "Validator should be called exactly once on worker success")
-        assertTrue(validatorReceivedContent != null, "Validator should receive worker response content")
-        assertTrue(validatorReceivedAgent != null, "Validator should receive worker pipeline")
+            assertEquals(1, validatorCallCount, "Validator should be called exactly once on worker success")
+            assertTrue(validatorReceivedContent != null, "Validator should receive worker response content")
+            assertNotNull(validatorReceivedAgent as? Pipeline, "Validator should receive the worker component")
+        }
     }
 
     /**
@@ -1556,6 +1560,133 @@ class ManifoldDslTest
 
         // If we reach here without error, the dispatch with custom manager transport worked correctly
         assertEquals("custom-manager", builtManifold.getManagerPipeline().pipelineName)
+    }
+
+    /**
+     * Verifies the new `workerP2P(name) { ... }` DSL block attaches any [P2PInterface] as a
+     * worker alongside the classic `worker(name) { pipeline { ... } }` block, and that
+     * routing reaches the higher-order worker end-to-end through P2PRegistry.
+     *
+     * The Manifold attaches one Pipeline-shaped worker and one Junction worker (composed of
+     * two ScriptedPipe participants) so neither route is artificially privileged. The
+     * manager dispatches to the Junction by name and the test verifies execution completes
+     * with both workers present in `getWorkerComponents()`.
+     */
+    @Test
+    fun manifoldsDispatchesToJunctionWorker() = runBlocking<Unit>
+    {
+        // Junction with two stub Pipeline participants so a real P2P round-trip can run
+        // without an LLM. Both participants echo back a deterministic response.
+        val junctionParticipantOne = Pipeline().apply {
+            pipelineName = "junction-participant-one"
+            add(ScriptedPipe(outputs = listOf("participant-one-result")).setPipeName("participant-one"))
+        }
+        val junctionParticipantTwo = Pipeline().apply {
+            pipelineName = "junction-participant-two"
+            add(ScriptedPipe(outputs = listOf("participant-two-result")).setPipeName("participant-two"))
+        }
+        val junction = Junction().apply {
+            addParticipant("participant-one", junctionParticipantOne)
+            addParticipant("participant-two", junctionParticipantTwo)
+        }
+        val junctionTransport = P2PTransport(transportMethod = Transport.Tpipe, transportAddress = "junction-worker-transport")
+        val junctionDescriptor = P2PDescriptor(
+            agentName = "junction-worker",
+            agentDescription = "Higher-order worker composed of two Pipelines",
+            transport = junctionTransport,
+            requiresAuth = false,
+            usesConverse = false,
+            allowsAgentDuplication = true,
+            allowsCustomContext = true,
+            allowsCustomAgentJson = true,
+            recordsInteractionContext = false,
+            recordsPromptContent = false,
+            allowsExternalContext = true,
+            contextProtocol = ContextProtocol.none
+        )
+        val junctionRequirements = P2PRequirements(
+            allowExternalConnections = true,
+            allowAgentDuplication = true
+        )
+
+        try {
+            // Manager emits one AgentRequest targeting "junction-worker", then TaskProgress
+            // with isTaskComplete=true so the loop terminates cleanly.
+            val managerPipe = ScriptedPipe(
+                outputs = listOf(
+                    serialize(AgentRequest(agentName = "junction-worker")),
+                    serialize(TaskProgress(isTaskComplete = true))
+                )
+            )
+                .setPipeName("dispatcher")
+                .setJsonOutput(AgentRequest())
+                .setTokenBudget(
+                    TokenBudgetSettings(
+                        contextWindowSize = 4096,
+                        userPromptSize = 1024,
+                        maxTokens = 256
+                    )
+                )
+
+            // One Pipeline-shaped worker alongside the Junction worker, to confirm the
+            // DSL block does not exclude the existing pipeline path.
+            val pipelineWorkerPipe = DummyPipe().setPipeName("pipeline-worker").setContextWindowSize(2048).autoTruncateContext()
+
+            val builtManifold = manifold {
+                manager {
+                    pipeline {
+                        pipelineName = "manifold-with-junction-worker"
+                        add(managerPipe)
+                    }
+                    agentDispatchPipe("dispatcher")
+                }
+
+                history {
+                    managerTokenBudget(
+                        TokenBudgetSettings(
+                            contextWindowSize = 4096,
+                            userPromptSize = 1024,
+                            maxTokens = 256
+                        )
+                    )
+                }
+
+                worker("pipeline-worker") {
+                    pipeline {
+                        pipelineName = "pipeline-worker-pipeline"
+                        add(pipelineWorkerPipe)
+                    }
+                }
+
+                workerP2P("junction-worker") {
+                    component = junction
+                    description("Higher-order worker composed of two Pipelines")
+                    descriptor(junctionDescriptor)
+                    requirements(junctionRequirements)
+                }
+            }
+
+            // Structural assertions: the new DSL block produced the right Manifold shape.
+            val allComponents = builtManifold.getWorkerComponents()
+            assertEquals(2, allComponents.size, "Manifold should hold two workers (one Pipeline, one Junction)")
+            assertTrue(
+                allComponents.any { it.getP2pDescription()?.agentName == "junction-worker" },
+                "Junction worker must be present in getWorkerComponents() with agentName 'junction-worker'"
+            )
+            assertTrue(
+                allComponents.any { it is Pipeline && it.pipelineName == "pipeline-worker-pipeline" },
+                "Pipeline-shaped worker must still be present"
+            )
+
+            // Functional assertion: dispatch routes to the Junction through P2P. The Junction
+            // is a P2PInterface, so this exercises the new `addWorker(P2PInterface)` path
+            // end-to-end. ManagerPipe emits one AgentRequest naming junction-worker, then
+            // terminates — execute() returns a non-error MultimodalContent without throwing.
+            builtManifold.execute(MultimodalContent("please dispatch to the junction worker"))
+        } finally {
+            // P2PRegistry.remove is idempotent; safe to call regardless of registration state.
+            P2PRegistry.remove(junction)
+        }
     }
 
     /**

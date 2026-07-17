@@ -10,6 +10,7 @@
 - [The Router Contract](#the-router-contract)
 - [The Worker Contract](#the-worker-contract)
 - [Hook Points Reference](#hook-points-reference)
+- [Memory Summarization Backends](#memory-summarization-backends)
 - [DSL Builder](#dsl-builder)
 - [Manual Assembly](#manual-assembly)
 - [Peer and Registry Discovery](#peer-and-registry-discovery)
@@ -225,6 +226,10 @@ val workerPipeline = Pipeline().apply {
 | `routing { allowRemotePcpForwarding(true/false) }` | Whether PCP payloads are forwarded to remote nodes. Affects what workers see. |
 | `memory { outboundTokenBudget(n) }` | Shapes outbound memory. The router receives truncated context if the budget is tight. |
 | `memory { summaryBudget(n) }` | Budget for memory summarization if enabled. |
+| `memory { enableSummarization(true/false) }` | Switches on older-history summarization for outbound handoffs. |
+| `summaryAgent(agent)` | Optional `P2PInterface` invoked in a suspend coroutine to summarize older history. Takes priority over the `summarizer` lambda. See [Memory Summarization Backends](#memory-summarization-backends). |
+| `summaryAgent(enableSummarization = true, summaryBudget = 1024) { ... }` | Block form configuring a temporary policy; only the `summaryAgent` field is copied into the grid's policy. |
+| `memory { summaryAgent(agent) }` | In-block setter on the memory DSL; mirrors the top-level `summaryAgent(agent)`. |
 | `hooks { beforeRoute { } }` | Intercepts before router runs. Can modify content or add attributes. |
 | `hooks { beforeLocalWorker { } }` | Intercepts after router returns `RUN_LOCAL_WORKER`. |
 | `hooks { afterLocalWorker { } }` | Intercepts after worker completes. Can add execution notes. |
@@ -482,6 +487,90 @@ hooks {
 }
 ```
 
+## Memory Summarization Backends
+
+DistributionGrid's outbound memory shaping (used during explicit peer handoff) builds a three-tier `DistributionGridMemoryEnvelope`: **critical** state (always included), **recent** history (bounded `executionNotes` + `hopHistory`), and an optional **older-history summary** when `enableSummarization` is true. The summary tier can be produced by two interchangeable backends.
+
+### Backend priority
+
+| Order | Backend | Field | When picked |
+|-------|---------|-------|------------|
+| 1 | **Agent** | `DistributionGridMemoryPolicy.summaryAgent: P2PInterface?` | Agent set + `enableSummarization = true` |
+| 2 | **Lambda** | `DistributionGridMemoryPolicy.summarizer: ((String) -> String)?` | Lambda set + `enableSummarization = true` AND agent absent or blank/throw |
+| 3 | **Verbatim** | (none — `summarySeed` clipped to `summaryBudget`) | Neither set, or both failed |
+
+When the agent backend is configured, the grid builds a `DistributionGridSummarizerContext` and passes it to the agent's `executeLocal` input via `metadata["distributionGridSummarizerContext"]`. The agent's `MultimodalContent.text` becomes the summary. The lambda fallback (if any) receives the trimmed seed text only. All branches are wrapped in `runCatching`, and blank agent/lambda output triggers the next branch — never silently produces blank memory.
+
+### `DistributionGridSummarizerContext`
+
+```kotlin
+data class DistributionGridSummarizerContext(
+    val taskId: String,             // Stable task identifier the summary is being prepared for
+    val currentNodeId: String,      // Source node invoking the summarizer
+    val targetNodeId: String,       // Remote peer that will receive the resulting memory envelope
+    val summaryBudget: Int,         // Token budget allocated for the summary section
+    val summarySeed: String          // Raw older-history text to be summarized
+)
+```
+
+### Configuration
+
+```kotlin
+val grid = distributionGrid {
+    router(routerPipeline)
+    worker(workerPipeline)
+
+    memory {
+        enableSummarization(true)
+        summaryBudget(1024)
+    }
+
+    // Top-level: takes priority over the summarizer lambda
+    summaryAgent(summaryAgentPipeline)
+
+    // Lambda fallback (used when agent absent, throws, or returns blank)
+    memory {
+        summarizer { olderHistory -> compact(olderHistory) }
+    }
+}
+```
+
+Block form of `summaryAgent` configures a temporary `DistributionGridMemoryPolicy` and copies only its `summaryAgent` field into the grid's existing policy — `enableSummarization`, `summaryBudget`, and other policy fields set in an earlier `memory { }` block are preserved (in-place mutation; no policy replacement).
+
+```kotlin
+distributionGrid {
+    memory {
+        enableSummarization(true)
+        summaryBudget(1024)
+    }
+    summaryAgent { this.summaryAgent = myAgent }  // preserves enableSummarization + summaryBudget
+}
+```
+
+The in-block setter inside `memory { }` is equivalent:
+
+```kotlin
+distributionGrid {
+    memory {
+        enableSummarization(true)
+        summaryBudget(1024)
+        summaryAgent(myAgent)        // setter on the memory DSL
+    }
+}
+```
+
+### Failure handling
+
+- Agent exception → next branch (lambda, then verbatim)
+- Agent blank text → next branch
+- Lambda exception → verbatim
+- Lambda blank text → verbatim
+- Final block is truncated to `summaryBudget` tokens via `budgetText(summaryBudget)`
+
+### Why this design
+
+The agent backend matches the same shape Junction uses for its `JunctionSummaryAgentContext` — domain-native data class, agent invoked through a suspend `P2PInterface.executeLocal`. This means your `summaryAgent` can be any TPipe container: a `Pipeline`, another `Junction`, a `PumpStation`, a nested `DistributionGrid`, or a hand-rolled `P2PInterface` implementation. It does **not** require `runBlocking` — all invocation is suspended.
+
 ## DSL Builder
 
 The Kotlin DSL is the preferred way to assemble a grid:
@@ -514,7 +603,13 @@ val grid = distributionGrid {
     memory {
         outboundTokenBudget(4096)
         summaryBudget(512)
+        enableSummarization(true)
+        summarizer { olderHistory -> compact(olderHistory) }  // optional lambda fallback
     }
+
+    // Optional summary agent — takes priority over the summarizer lambda when both are set.
+    // Invoked in a suspend coroutine, no runBlocking required. See "Memory Summarization Backends".
+    summaryAgent(summaryAgentPipeline)
 
     // Tracing
     tracing {

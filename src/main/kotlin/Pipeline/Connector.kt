@@ -104,6 +104,13 @@ class Connector : P2PInterface
             pipeline.setPipeSettingsRecursively(settings)
         }
     }
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        for (pipeline in branches.values)
+        {
+            pipeline.setStreamingCallbackRecursive(callback)
+        }
+    }
 
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?

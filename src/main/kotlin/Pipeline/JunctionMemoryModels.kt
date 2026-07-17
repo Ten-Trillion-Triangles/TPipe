@@ -2,6 +2,7 @@ package com.TTT.Pipeline
 
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
+import com.TTT.P2P.P2PInterface
 import kotlinx.serialization.Serializable
 
 /**
@@ -42,6 +43,35 @@ data class JunctionMemorySection(
  *
  * Deterministic compaction is the first line of defense. Optional summarization may be enabled as a
  * co-support mechanism, but it is always subordinate to hard budget enforcement.
+ *
+ * ## Summarization backends
+ *
+ * Two summarization backends are supported:
+ *
+ * 1. **[summarizer][summaryAgent]** — a [P2PInterface] agent. When set, Junction calls
+ *    [executeLocal][P2PInterface.executeLocal] with a [JunctionSummarizerContext] in the input
+ *    metadata and uses the returned [MultimodalContent.text] as the summary. This backend takes
+ *    absolute priority when both it and the lambda are configured.
+ *
+ * 2. **[summarizer][summarizerLambda]** — a [kotlin.coroutines.Continuation] lambda [((String) -> String)?].
+ *    When the agent backend is absent, Junction invokes this lambda with the older history text.
+ *    The lambda is optional; if neither backend is configured, the older history is included verbatim.
+ *
+ * Both backends are wrapped in [runCatching]: exceptions produce blank output and the verbatim
+ * fallback is used; blank text from the agent also triggers verbatim fallback.
+ *
+ * @param outboundTokenBudget Total outbound token budget for this participant.
+ * @param safetyReserveTokens Tokens held back from distribution to prevent overflow.
+ * @param minimumCriticalBudget Minimum tokens for critical recent context.
+ * @param minimumRecentBudget Minimum tokens for recent history.
+ * @param enableSummarization When true, older history beyond [recentDiscussionEntries] may be summarized.
+ * @param summaryBudget Tokens reserved for the optional summary section.
+ * @param maxSummaryCharacters Maximum input characters fed to the summarizer or lambda.
+ * @param recentDiscussionEntries How many discussion round entries to keep in the recent window.
+ * @param recentOpinionCount How many recent opinions to include verbatim.
+ * @param recentPhaseResultCount How many recent phase results to include verbatim.
+ * @param summaryAgent Optional [P2PInterface] agent for summarization. Takes priority over [summarizerLambda].
+ * @param summarizerLambda Optional lambda for summarization. Fallback when [summaryAgent] is null.
  */
 @Serializable
 data class JunctionMemoryPolicy(
@@ -55,7 +85,23 @@ data class JunctionMemoryPolicy(
     var enableSummarization: Boolean = false,
     var summaryBudget: Int = 1024,
     var maxSummaryCharacters: Int = 4096,
-    @kotlinx.serialization.Transient var summarizer: ((String) -> String)? = null
+    @kotlinx.serialization.Transient var summarizer: ((String) -> String)? = null,
+    @kotlinx.serialization.Transient var summaryAgent: P2PInterface? = null
+)
+
+/**
+ * Contextual metadata passed to a [P2PInterface] summary agent when summarizing older history.
+ *
+ * @param roleKind The Junction memory role the summary is being prepared for.
+ * @param phase The active workflow phase, or null if in DISCUSSION mode.
+ * @param summaryBudget Token budget allocated for the summary section.
+ * @param summarySeed Raw older-history text to be summarized.
+ */
+data class JunctionSummarizerContext(
+    val roleKind: JunctionMemoryRole,
+    val phase: JunctionWorkflowPhase?,
+    val summaryBudget: Int,
+    val summarySeed: String
 )
 
 /**

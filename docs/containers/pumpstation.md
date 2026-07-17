@@ -229,6 +229,63 @@ If the harness cannot parse the dispatch output as `PathRequest`, it invokes `bu
 
 The error message the harness injects for an unknown path or invalid path request is built by `buildLlmErrorMessage` (`Pipeline/PumpStationHelpers.kt:743`). It is natural-language, names the available paths, and explains what a valid `PathRequest` looks like — the dispatch agent sees this on the next turn as part of `turnHistory`.
 
+### Dispatch Contract Shape: `PathExecutionShape`
+
+`PumpStation` runs in one of two dispatch contract shapes, selected by `pathExecutionShape` on the builder or `setPathExecutionShape(...)` on the station. The shape controls which prompt template the harness injects into the dispatch pipe, which parser the harness runs against the dispatch LLM's output, and which event types fire during the dispatch phase.
+
+| Shape | Default? | Prompt | Parser | Per-path events | Batch events |
+|-------|----------|--------|--------|-----------------|--------------|
+| `PathExecutionShape.SinglePath` | Yes | `DEFAULT_DISPATCH_PROMPT` | `parseDispatchOutput` → `PathRequest?` | Emitted | Never emitted |
+| `PathExecutionShape.MultiPath` | No | `DEFAULT_DISPATCH_PROMPT_MULTI` | `parseDispatchOutputMulti` → `PathRequestList?` | Emitted | `PathBatchStarted`, `PathBatchCompleted`, `PathBatchFailed` |
+
+`SinglePath` is the contract described above: one `PathRequest` per turn, one path invocation per turn. `MultiPath` is described in the next subsection.
+
+When `MultiPath` is active, `runTurn` branches at the dispatch phase and calls `runDispatchPhaseMulti` instead of `runDispatchPhase`. The batch events fire at the fan-out boundary; the per-path events (`PathStarted`, `PathCompleted`, `PathFailed`) still fire individually as each path launches and resolves. The existing single-path consumers that read `DispatchCompleted.pathRequest` continue to work — `runDispatchPhaseMulti` carries the first entry of the parsed `PathRequestList` into that field.
+
+### Multi-Path Dispatch Contract
+
+When `pathExecutionShape = PathExecutionShape.MultiPath`, the dispatch LLM is asked to emit a `PathRequestList` instead of a `PathRequest`. The harness parses the list and launches each path via the existing async substrate, then collects the results at the next judge.
+
+**What the dispatch agent must output:**
+
+```json
+{
+  "paths": [
+    {
+      "pathName": "the exact path name from the visible list",
+      "pathSchema": "free-form input schema string for the path",
+      "pathSelectionRationale": "why this path was chosen"
+    }
+  ],
+  "batchRationale": "why these paths were chosen for fan-out instead of a single path"
+}
+```
+
+`paths` must be non-empty. Each entry follows the same `PathRequest` contract as single-path dispatch — `pathName` is matched case-insensitively, `pathSchema` is passed to the path as the input, `pathSelectionRationale` is captured per-path. `batchRationale` is optional and surfaces in the `PathBatchStarted` event so the trace visualizer can render it alongside the batch detail.
+
+**`PathRequestList` data class** (`Pipeline/PumpStationModels.kt:327`):
+
+```kotlin
+@Serializable
+data class PathRequestList(
+    val paths: List<PathRequest> = emptyList(),
+    val batchRationale: String? = null
+)
+```
+
+**Default prompt:** `DEFAULT_DISPATCH_PROMPT_MULTI` in `Pipeline/PumpStationDefaults.kt`. The harness chooses between `DEFAULT_DISPATCH_PROMPT` and `DEFAULT_DISPATCH_PROMPT_MULTI` at `buildDispatchSystemPrompt()` time, gated on the station's `pathExecutionShape`. The dispatch pipe's `enableHarnessMode()` injection block is also shape-aware: when `MultiPath` is active, the injected path invocation protocol asks for a `PathRequestList` and binds `jsonOutput` to that schema instead of the `PathRequest` schema.
+
+**Fan-out behavior:**
+
+Each parsed `PathRequest` in the list is launched via `launchAsyncPath` on the station's `asyncScope`. The harness emits `PathBatchStarted` before fan-out, per-path `PathStarted` / `PathCompleted` / `PathFailed` as each path runs, then `PathBatchCompleted` once the last path resolves. Async results merge into `turnHistory` via the existing async-substrate drain at the next judge. Per-path failures do not abort the rest of the batch.
+
+**Repair on parse failure:**
+
+If the harness cannot parse the dispatch output as `PathRequestList`, it invokes `buildMultiPathRepairPrompt` (up to `failurePolicy.maxDispatchRepairAttempts` times) to ask the model to fix its malformed JSON. After the repair budget is exhausted, the harness emits `PathBatchFailed` with `errorMessage` and `repairAttempts`, and:
+
+- If `failurePolicy.stopHarnessOnInvalidPathRequest` is `true`, the harness records `lastError = DispatchJsonRepairFailed` and the finalization phase emits `HarnessFailed`.
+- Otherwise the turn continues without launching any path in the batch.
+
 ### The Path Execution Contract
 
 **Type:** `PathObject` — see [PathObject and PathRequest](#pathobject-and-pathrequest)

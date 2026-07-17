@@ -40,6 +40,36 @@ import java.io.IOException
 private const val RETRY_BACKOFF_MILLIS: Long = 100L
 
 /**
+ * Test-friendly abstraction over [java.net.HttpURLConnection] for the streaming-direct
+ * code path. Production default wraps a real HttpURLConnection; tests inject a
+ * [HttpStreamingConnectionFactory] that returns canned SSE bodies without making
+ * a network call. See `MockStreamingConnectionFactory` in the test source set.
+ */
+internal interface HttpStreamingConnection : java.io.Closeable
+{
+    val responseCode: Int
+    val outputStream: java.io.OutputStream
+    val inputStream: java.io.InputStream
+    fun disconnect()
+}
+
+internal fun interface HttpStreamingConnectionFactory
+{
+    /**
+     * Opens a connection to [url] with [method] and [headers], returning an
+     * [HttpStreamingConnection] whose [outputStream] is ready to receive the
+     * request body and whose [inputStream] yields the response body byte-by-byte.
+     */
+    fun open(
+        url: String,
+        method: String,
+        headers: Map<String, String>,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int
+    ): HttpStreamingConnection
+}
+
+/**
  * TPipe abstraction for Generic OpenAI-compatible APIs.
  *
  * Provides access to OpenAI-compatible /v1/chat/completions endpoints
@@ -75,6 +105,15 @@ class GenericOpenAIPipe : Pipe()
      */
     @kotlinx.serialization.Transient
     private var httpClient: HttpClient? = null
+
+    /**
+     * Factory that opens the streaming-direct HTTP connection (used by
+     * [executeStreamingDirect] for chunked SSE). The production default wraps
+     * `java.net.URL(...).openConnection() as java.net.HttpURLConnection`; tests
+     * inject a stub via [injectStreamingConnectionFactoryForTest].
+     */
+    @kotlinx.serialization.Transient
+    private var streamingConnectionFactory: HttpStreamingConnectionFactory? = null
 
     /**
      * Whether streaming mode is enabled.
@@ -481,6 +520,30 @@ class GenericOpenAIPipe : Pipe()
             }
         }
 
+        // Default streaming-direct factory wraps java.net.URL + HttpURLConnection.
+        // The test seam injects a stub via injectStreamingConnectionFactoryForTest.
+        if(streamingConnectionFactory == null)
+        {
+            streamingConnectionFactory = HttpStreamingConnectionFactory { url, method, headers, connectTimeoutMs, readTimeoutMs ->
+                object : HttpStreamingConnection
+                {
+                    private val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                        requestMethod = method
+                        doOutput = true
+                        connectTimeout = connectTimeoutMs
+                        readTimeout = readTimeoutMs
+                        headers.forEach { (name, value) -> setRequestProperty(name, value) }
+                        setChunkedStreamingMode(0)
+                    }
+                    override val responseCode: Int get() = conn.responseCode
+                    override val outputStream: java.io.OutputStream get() = conn.outputStream
+                    override val inputStream: java.io.InputStream get() = conn.inputStream
+                    override fun disconnect() { conn.disconnect() }
+                    override fun close() { conn.disconnect() }
+                }
+            }
+        }
+
         trace(TraceEventType.PIPE_SUCCESS, TracePhase.INITIALIZATION,
               metadata = mapOf("initialized" to true))
 
@@ -882,15 +945,16 @@ class GenericOpenAIPipe : Pipe()
               ))
 
         java.net.HttpURLConnection.setFollowRedirects(false)
-        val conn = (java.net.URL("$baseUrl${getEndpoint()}").openConnection() as java.net.HttpURLConnection).apply {
-            requestMethod = "POST"
-            doOutput = true
-            connectTimeout = 30_000
-            readTimeout = 120_000
-            setRequestProperty("Content-Type", "application/json")
-            getAuthHeaders().forEach { (name, value) -> setRequestProperty(name, value) }
-            setChunkedStreamingMode(0)
-        }
+        val conn = (streamingConnectionFactory ?: error("streamingConnectionFactory not initialized")).open(
+            url = "$baseUrl${getEndpoint()}",
+            method = "POST",
+            headers = buildMap {
+                put("Content-Type", "application/json")
+                putAll(getAuthHeaders())
+            },
+            connectTimeoutMs = 30_000,
+            readTimeoutMs = 120_000
+        )
 
         // Write the body
         conn.outputStream.use { it.write(jsonRequest.toByteArray(Charsets.UTF_8)) }
@@ -955,8 +1019,26 @@ class GenericOpenAIPipe : Pipe()
                                             totalOutputTokens = usage.outputTokens
                                             totalReasoningTokens = usage.outputTokensDetails?.reasoningTokens ?: 0
                                         }
+                                        applyResponsesTerminalTextFallback(parsed, textBuilder)
                                     }
-                                    else -> { /* ignore lifecycle / function-call */ }
+                                    is OpenAIResponsesStreamEvent.ResponseFailed ->
+                                    {
+                                        val failMsg = parsed.response.error?.message
+                                            ?: "OpenAI Responses stream reported response.failed (id=${parsed.response.id})"
+                                        trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                                              metadata = mapOf(
+                                                  "reason" to "responseFailed",
+                                                  "responseId" to parsed.response.id,
+                                                  "apiType" to "ResponsesAPI"
+                                              ))
+                                        throw P2PException(P2PError.transport, failMsg, Exception(failMsg))
+                                    }
+                                    else ->
+                                    {
+                                        // ResponseOutputTextDone and other terminal-shaped events:
+                                        // delegate to the fallback helper for any text it can recover.
+                                        applyResponsesTerminalTextFallback(parsed, textBuilder)
+                                    }
                                 }
                             }
                         }
@@ -1046,6 +1128,28 @@ class GenericOpenAIPipe : Pipe()
 
         val resultText = textBuilder.toString()
 
+        // OpenAI family: a completed-but-empty response is a typed provider failure
+        // (the model produced no usable text in any of the supported shapes — deltas,
+        // done-event, completed-response output). Without this check the pipe records
+        // success=true with responseLength=0, which downstream validators misclassify
+        // as a validator-pipe termination.
+        if((apiMode is ApiMode.OpenAIResponses || apiMode is ApiMode.OpenAI) && resultText.isEmpty())
+        {
+            val errMessage = "OpenAI streaming produced no output text " +
+                "(mode=${if(apiMode is ApiMode.OpenAIResponses) "ResponsesAPI" else "ChatAPI"}, " +
+                "inputTokens=$streamingInputTokens, outputTokens=$streamingOutputTokens, " +
+                "model=$model)"
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                  metadata = mapOf(
+                      "reason" to "emptyProviderResponse",
+                      "inputTokens" to streamingInputTokens,
+                      "outputTokens" to streamingOutputTokens,
+                      "streaming" to true,
+                      "apiType" to if(apiMode is ApiMode.OpenAIResponses) "ResponsesAPI" else "ChatAPI"
+                  ))
+            throw P2PException(P2PError.transport, errMessage, Exception(errMessage))
+        }
+
         val streamingReasoningText = when(apiMode)
         {
             is ApiMode.OpenAIResponses, is ApiMode.Anthropic -> streamingReasoning
@@ -1133,6 +1237,25 @@ class GenericOpenAIPipe : Pipe()
         }
 
         val resultText = textBuilder.toString()
+
+        // Mirror of the HttpURLConnection empty-failure guard: a completed-but-empty
+        // OpenAI family stream is a typed provider failure, not API success.
+        if((apiMode is ApiMode.OpenAIResponses || apiMode is ApiMode.OpenAI) && resultText.isEmpty())
+        {
+            val errMessage = "OpenAI streaming produced no output text " +
+                "(mode=${if(apiMode is ApiMode.OpenAIResponses) "ResponsesAPI" else "ChatAPI"}, " +
+                "inputTokens=$streamingInputTokens, outputTokens=$streamingOutputTokens, " +
+                "model=$model)"
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                  metadata = mapOf(
+                      "reason" to "emptyProviderResponse",
+                      "inputTokens" to streamingInputTokens,
+                      "outputTokens" to streamingOutputTokens,
+                      "streaming" to true,
+                      "apiType" to if(apiMode is ApiMode.OpenAIResponses) "ResponsesAPI" else "ChatAPI"
+                  ))
+            throw P2PException(P2PError.transport, errMessage, Exception(errMessage))
+        }
 
         val streamingReasoningText = when(apiMode)
         {
@@ -1424,10 +1547,27 @@ class GenericOpenAIPipe : Pipe()
                         totalOutputTokens = usage.outputTokens
                         totalReasoningTokens = usage.outputTokensDetails?.reasoningTokens ?: 0
                     }
+                    applyResponsesTerminalTextFallback(event, textBuilder)
                     break
                 }
-                is OpenAIResponsesStreamEvent.ResponseFailed -> break
-                else -> { /* Unknown / lifecycle / function-call: keep reading */ }
+                is OpenAIResponsesStreamEvent.ResponseFailed ->
+                {
+                    val failMsg = event.response.error?.message
+                        ?: "OpenAI Responses stream reported response.failed (id=${event.response.id})"
+                    trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                          metadata = mapOf(
+                              "reason" to "responseFailed",
+                              "responseId" to event.response.id,
+                              "apiType" to "ResponsesAPI"
+                          ))
+                    throw P2PException(P2PError.transport, failMsg, Exception(failMsg))
+                }
+                else ->
+                {
+                    // ResponseOutputTextDone and other terminal-shaped events:
+                    // delegate to the fallback helper for any text it can recover.
+                    applyResponsesTerminalTextFallback(event, textBuilder)
+                }
             }
         }
 
@@ -1437,6 +1577,78 @@ class GenericOpenAIPipe : Pipe()
         streamingInputTokens = totalInputTokens
         streamingOutputTokens = totalOutputTokens
         streamingReasoningTokens = totalReasoningTokens
+    }
+
+    /**
+     * Applies the OpenAI Responses terminal-text fallback contract to [textBuilder].
+     *
+     * Order of preference:
+     *   1. [OpenAIResponsesStreamEvent.ResponseOutputTextDone] — if the builder is
+     *      still empty when this event arrives, use the done-event's accumulated
+     *      [OpenAIResponsesStreamEvent.ResponseOutputTextDone.text] as the only source
+     *      of truth. Skip when deltas already produced text to avoid duplication.
+     *   2. [OpenAIResponsesStreamEvent.ResponseCompleted] — if the builder is still
+     *      empty when the completion event arrives, walk
+     *      `response.output[*].content[*].output_text.text` (mirroring the
+     *      non-streaming `OpenAIResponsesResponseParser.extractTextAndRefusal` shape)
+     *      and concatenate the text parts.
+     *
+     * Any other event type is a no-op. The HttpURLConnection and Ktor streaming
+     * loops both call this from inside their `when` dispatch so the contract stays
+     * identical between the two paths.
+     *
+     * @param event The parsed SSE event to apply
+     * @param textBuilder The accumulating text buffer; mutated in place
+     * @return Number of characters added to [textBuilder] by this event (0 if no-op)
+     */
+    private fun applyResponsesTerminalTextFallback(
+        event: OpenAIResponsesStreamEvent,
+        textBuilder: StringBuilder
+    ): Int
+    {
+        return when(event)
+        {
+            is OpenAIResponsesStreamEvent.ResponseOutputTextDone ->
+            {
+                if(textBuilder.isEmpty() && event.text.isNotEmpty())
+                {
+                    textBuilder.append(event.text)
+                    event.text.length
+                }
+                else
+                {
+                    0
+                }
+            }
+            is OpenAIResponsesStreamEvent.ResponseCompleted ->
+            {
+                if(textBuilder.isNotEmpty()) return 0
+                val recovered = StringBuilder()
+                for(item in event.response.output)
+                {
+                    if(item is OpenAIResponsesOutputItem.Message)
+                    {
+                        for(part in item.content)
+                        {
+                            if(part is OpenAIResponsesContentPart.OutputText)
+                            {
+                                recovered.append(part.text)
+                            }
+                        }
+                    }
+                }
+                if(recovered.isNotEmpty())
+                {
+                    textBuilder.append(recovered)
+                    recovered.length
+                }
+                else
+                {
+                    0
+                }
+            }
+            else -> 0
+        }
     }
 
 //=========================================Context Management==========================================================
@@ -1582,6 +1794,17 @@ class GenericOpenAIPipe : Pipe()
     fun injectHttpClientForTest(client: HttpClient)
     {
         httpClient = client
+    }
+
+    /**
+     * Replaces the streaming-connection factory with a caller-supplied one for tests
+     * that need to control the HttpURLConnection used by [executeStreamingDirect].
+     * The production factory wraps java.net.URL(...). Test factories should record
+     * the request and return canned SSE bodies via [HttpStreamingConnection.inputStream].
+     */
+    internal fun injectStreamingConnectionFactoryForTest(factory: HttpStreamingConnectionFactory)
+    {
+        streamingConnectionFactory = factory
     }
 
     /**

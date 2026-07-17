@@ -195,6 +195,7 @@ enum class PumpStationExitReason
     TerminateSignal,
     MaxTurnsHit,
     KillSwitchTripped,
+    LoopGuardTripped,
     GoalValidationFailed,
     InterventionTerminated,
     Error
@@ -306,6 +307,59 @@ data class PathLimitExceededResult(
     val reason: String = "",
     val nextPathOverride: String? = null
 )
+
+/**
+ * Multi-path dispatch output. Wraps a list of [PathRequest]s plus an optional
+ * rationale explaining why the dispatcher chose to fan out instead of picking
+ * a single path.
+ *
+ * This shape is only produced when the [com.TTT.Pipeline.PumpStation] is
+ * configured with [PathExecutionShape.MultiPath]. SinglePath mode never
+ * produces or consumes this type.
+ *
+ * @property paths Ordered list of path requests to fan out. Each path
+ *   follows the same [PathRequest] contract as single-path dispatch.
+ * @property batchRationale Optional human-readable explanation of why the
+ *   fan-out was chosen. Surfaced in the [PathBatchStarted] event so the
+ *   trace visualizer can render it.
+ */
+@kotlinx.serialization.Serializable
+data class PathRequestList(
+    val paths: List<PathRequest> = emptyList(),
+    val batchRationale: String? = null
+)
+
+//=========================================Dispatch Contract Shape============================================
+
+/**
+ * Dispatch contract shape for the harness.
+ *
+ * SinglePath (default) preserves the pre-existing dispatch JSON contract —
+ * dispatch LLM returns one [com.TTT.Pipeline.PathRequest] per turn, harness
+ * invokes one path.
+ *
+ * MultiPath injects the multi-path dispatch prompt and parses a
+ * [PathRequestList] containing one or more [com.TTT.Pipeline.PathRequest]s.
+ * The harness fans the parsed list out via the existing async substrate
+ * (see [com.TTT.Pipeline.PumpStation.launchAsyncPath]) and merges results
+ * into turn history on the next judge.
+ *
+ * MultiPath does NOT introduce halt-flag aggregation in this phase — the
+ * fan-out is fire-and-collect-next-turn. Each path still emits its own
+ * path events; new batch-boundary events ([PathBatchStarted] /
+ * [PathBatchCompleted] / [PathBatchFailed]) carry the fan-out metadata.
+ *
+ * @property SinglePath Default. Today's dispatch contract, today's prompt,
+ *   today's parse, today's single-path execution. Never emits batch events.
+ * @property MultiPath New contract. The dispatch prompt asks for a list of
+ *   paths, the parser extracts [PathRequestList], the harness launches each
+ *   path as an async coroutine via the existing async substrate.
+ */
+enum class PathExecutionShape
+{
+    SinglePath,
+    MultiPath
+}
 
 //=========================================Sealed Interface & Events==============================================
 
@@ -552,6 +606,73 @@ data class PathFailed(
     val riskLevel: PathRiskLevel,
     val error: PumpStationError,
     val errorMessage: String?
+) : PumpStationEvent
+
+/**
+ * A batch of paths was selected for fan-out execution. Emitted at the start
+ * of the multi-path dispatch phase when [com.TTT.Pipeline.PumpStation] is
+ * configured with [PathExecutionShape.MultiPath].
+ *
+ * SinglePath mode never emits this event.
+ *
+ * @property pathNames Ordered list of path names in the batch.
+ * @property batchRationale Optional rationale copied from
+ *   [PathRequestList.batchRationale].
+ */
+@kotlinx.serialization.Serializable
+data class PathBatchStarted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Dispatch,
+    val pathNames: List<String>,
+    val batchRationale: String?
+) : PumpStationEvent
+
+/**
+ * All paths in a multi-path batch have completed (or failed). Emitted at the
+ * end of the dispatch phase after the harness has launched every path in
+ * [PathBatchStarted.pathNames]. The per-path [PathStarted] / [PathCompleted]
+ * / [PathFailed] events carry the per-path detail; this event marks the
+ * batch boundary.
+ *
+ * SinglePath mode never emits this event.
+ *
+ * @property totalPaths Number of paths in the batch.
+ * @property succeededPaths Number of paths that completed without an error.
+ * @property failedPaths Number of paths that emitted [PathFailed].
+ */
+@kotlinx.serialization.Serializable
+data class PathBatchCompleted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Dispatch,
+    val totalPaths: Int,
+    val succeededPaths: Int,
+    val failedPaths: Int
+) : PumpStationEvent
+
+/**
+ * Multi-path dispatch itself failed (the dispatch LLM output could not be
+ * parsed as a [PathRequestList] even after repair). Emitted when the
+ * repair loop is exhausted; the harness continues to the next turn. This
+ * is distinct from per-path [PathFailed] — batch-level failures mean
+ * zero paths in the batch were launched.
+ *
+ * SinglePath mode never emits this event.
+ *
+ * @property errorMessage Human-readable description of the failure.
+ * @property repairAttempts Number of repair iterations attempted.
+ */
+@kotlinx.serialization.Serializable
+data class PathBatchFailed(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Dispatch,
+    val errorMessage: String,
+    val repairAttempts: Int
 ) : PumpStationEvent
 
 /**
@@ -809,6 +930,33 @@ data class GoalValidationCompleted(
 ) : PumpStationEvent
 
 /**
+ * Post-success hook completed inside [runExitFlow]. Fires on every successful exit
+ * through the exit flow — including the no-goal-agent and passPipeline-routed paths.
+ * Does NOT fire on [com.TTT.Pipeline.PumpStationError.GoalValidationFailed] failure
+ * exhaustion halts.
+ *
+ * [passed] indicates whether the optional [com.TTT.Pipeline.PumpStation.postGoalAgent]
+ * signaled failure via [com.TTT.Pipe.MultimodalContent.terminatePipeline] on its result.
+ * [transformedContent] indicates whether [com.TTT.Pipeline.PumpStation.postGoalFunction]
+ * modified its input. When both function and agent are absent, the harness emits this
+ * event with [passed]=true and [transformedContent]=false as a default-pass marker so
+ * observers can still correlate every `runExitFlow` invocation.
+ *
+ * [reason] is populated with the post-goal agent's result text when [passed]=false;
+ * null otherwise.
+ */
+@kotlinx.serialization.Serializable
+data class PostGoalCompleted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Exit,
+    val passed: Boolean,
+    val reason: String?,
+    val transformedContent: Boolean
+) : PumpStationEvent
+
+/**
  * Harness completed execution successfully.
  */
 @kotlinx.serialization.Serializable
@@ -885,7 +1033,10 @@ data class LoopGuardTripped(
     override val phase: PumpStationPhase = PumpStationPhase.PathExecution,
     val guard: String,
     val pathName: String,
-    val detail: String
+    val detail: String,
+    val metric: String,
+    val observed: Int,
+    val limit: Int
 ) : PumpStationEvent
 
 /**

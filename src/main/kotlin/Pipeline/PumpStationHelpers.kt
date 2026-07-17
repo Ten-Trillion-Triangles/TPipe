@@ -121,7 +121,22 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
     var agentContent: MultimodalContent? = null
     when (event)
     {
-        is HarnessStarted -> eventType = TraceEventType.PUMP_STATION_STARTED
+        is HarnessStarted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_STARTED
+            /*
+             * Surface the original input preview so the trace visualizer can
+             * show what the harness was tasked with, even after the input has
+             * been compacted out of turn history. Clipped at
+             * [CONTENT_PREVIEW_MAX] with the standard ellipsis suffix.
+             */
+            val previewText = event.originalInput?.text.orEmpty()
+            val clipped = if (previewText.length > CONTENT_PREVIEW_MAX)
+                previewText.substring(0, CONTENT_PREVIEW_MAX) + ELLIPSIS
+            else
+                previewText
+            baseMetadata["originalInputPreview"] = clipped
+        }
         is PreInitCompleted -> eventType = TraceEventType.PUMP_STATION_STARTED
         is HarnessWarning ->
         {
@@ -158,7 +173,15 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["warnings"] = event.warnings
             baseMetadata["terminateHarness"] = event.terminateHarness
         }
-        is JudgeStarted -> eventType = TraceEventType.PUMP_STATION_JUDGE_STARTED
+        is JudgeStarted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_JUDGE_STARTED
+            /*
+             * The visualizer renders the "Always" vs "FlagTriggered" badge
+             * per turn from this field.
+             */
+            baseMetadata["judgeRunMode"] = judgeRunModeInternal.name
+        }
         is JudgeSkipped ->
         {
             eventType = TraceEventType.PUMP_STATION_JUDGE_SKIPPED
@@ -189,7 +212,12 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
         {
             eventType = TraceEventType.PUMP_STATION_DISPATCH_COMPLETED
             baseMetadata["selectedPathName"] = event.selectedPathName ?: ""
-            baseMetadata["pathRequest"] = event.pathRequest?.toString() ?: ""
+            /*
+             * Emit JSON-encoded PathRequest so the trace viewer can render
+             * all fields (pathName, pathSchema, pathSelectionRationale)
+             * cleanly.
+             */
+            baseMetadata["pathRequest"] = event.pathRequest?.let { com.TTT.Util.serialize(it) } ?: ""
             agentContent = event.result
             val (preview, len) = contentPreview(event.result)
             if (preview.isNotEmpty()) baseMetadata["contentPreview"] = preview
@@ -222,6 +250,12 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["pathName"] = event.pathName
             baseMetadata["riskLevel"] = event.riskLevel.name
             baseMetadata["approved"] = event.approved
+            /*
+             * Also emit approvedAsInt so JSON consumers that lose Kotlin
+             * Boolean nuance on some platforms have a stable numeric
+             * representation to key off.
+             */
+            baseMetadata["approvedAsInt"] = if (event.approved) 1 else 0
             baseMetadata["reason"] = event.reason ?: ""
         }
         is PathStarted ->
@@ -262,6 +296,25 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             eventType = TraceEventType.PUMP_STATION_PATH_HIDDEN
             baseMetadata["pathName"] = event.pathName
             baseMetadata["reason"] = event.reason
+        }
+        is PathBatchStarted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_BATCH_STARTED
+            baseMetadata["pathNames"] = event.pathNames.joinToString(",")
+            baseMetadata["batchRationale"] = event.batchRationale ?: ""
+        }
+        is PathBatchCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_BATCH_COMPLETED
+            baseMetadata["totalPaths"] = event.totalPaths
+            baseMetadata["succeededPaths"] = event.succeededPaths
+            baseMetadata["failedPaths"] = event.failedPaths
+        }
+        is PathBatchFailed ->
+        {
+            eventType = TraceEventType.PUMP_STATION_PATH_BATCH_FAILED
+            baseMetadata["errorMessage"] = event.errorMessage
+            baseMetadata["repairAttempts"] = event.repairAttempts
         }
         is PathValidationCompleted ->
         {
@@ -403,6 +456,13 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["passed"] = event.passed
             baseMetadata["reason"] = event.reason ?: ""
         }
+        is PostGoalCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_POST_GOAL_COMPLETED
+            baseMetadata["passed"] = event.passed
+            baseMetadata["reason"] = event.reason ?: ""
+            baseMetadata["transformedContent"] = event.transformedContent
+        }
         is ReservePathRevealed ->
         {
             eventType = TraceEventType.PUMP_STATION_RESERVE_PATH_REVEALED
@@ -415,6 +475,9 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["guard"] = event.guard
             baseMetadata["pathName"] = event.pathName
             baseMetadata["detail"] = event.detail
+            baseMetadata["metric"] = event.metric
+            baseMetadata["observed"] = event.observed
+            baseMetadata["limit"] = event.limit
         }
         is ContextBlowoutDetected ->
         {
@@ -628,6 +691,26 @@ internal fun PumpStation.parseDispatchOutput(content: MultimodalContent): PathRe
         }
     }
 
+internal fun PumpStation.parseDispatchOutputMulti(content: MultimodalContent): PathRequestList?
+{
+    return try
+    {
+        val parsed = extractJson<PathRequestList>(content.text)
+        if (parsed != null && !parsed.isDefault() && parsed.paths.isNotEmpty())
+        {
+            parsed
+        }
+        else
+        {
+            null
+        }
+    }
+    catch (_: Exception)
+    {
+        null
+    }
+}
+
 /**
  * Parse the path-safety agent's text output as a structured verdict.
  *
@@ -654,7 +737,7 @@ internal fun PumpStation.parseDispatchOutput(content: MultimodalContent): PathRe
 /**
  * Parsed path-safety verdict: the boolean verdict plus the optional reason string.
  * Used by [parsePathSafetyVerdict] to return both fields in a single pass so the
- * dispatch hint can include the actual rejection reason (F3 fix, 2026-07-08).
+ * dispatch hint can include the actual rejection reason.
  */
 internal data class PathSafetyVerdict(
     val approved: Boolean,
@@ -743,7 +826,12 @@ internal fun PumpStation.buildJudgeSystemPrompt(): String
  */
 internal fun PumpStation.buildDispatchSystemPrompt(): String
 {
-    return DEFAULT_DISPATCH_PROMPT
+    val template = when (pathExecutionShapeInternal)
+    {
+        PathExecutionShape.SinglePath -> DEFAULT_DISPATCH_PROMPT
+        PathExecutionShape.MultiPath -> DEFAULT_DISPATCH_PROMPT_MULTI
+    }
+    return template
         .replace("{personality}", personality)
         .replace("{systemTask}", systemTask)
         .replace("{userGuidelines}", userGuidelines)
@@ -807,7 +895,7 @@ internal fun PumpStation.buildTurnContent(): MultimodalContent
 internal fun PumpStation.buildUserMessageForTurn(): String
 {
     val originalInputPrefix = taskState.originalInput?.text.orEmpty().let { if (it.isNotBlank()) "$it\n\n" else "" }
-    val summaryPrefix = if (turnSummary.isNotBlank()) "$turnSummary\n\n" else ""
+    val summaryPrefix = if (turnSummary.isNotBlank()) "[TURN SUMMARY]\n$turnSummary\n[/TURN SUMMARY]\n\n" else ""
     val phaseQuestion = when (taskState.phase)
     {
         PumpStationPhase.Judge -> "Is the task complete? Decide based on the conversation history."
@@ -887,6 +975,37 @@ What to do instead: Return a PathRequest JSON object matching this schema:
   "pathName": "the exact path name from the list above",
   "inputData": { ... path-specific input fields ... }
 }
+""".trimIndent()
+}
+
+/**
+ * Build the [Harness Notice] message for a malformed dispatch-emitted
+ * `pathSchema`. Used when [PumpStation.buildPathInput] detects that the
+ * dispatch LLM emitted a non-empty `pathSchema` that fails
+ * [kotlinx.serialization.json.Json.parseToJsonElement] as a JSON object — the
+ * dispatch-emitted schema is treated as garbage and the path's own canonical
+ * [com.TTT.Pipeline.PathObject.pathSchema] is used instead. The notice
+ * teaches the next dispatch LLM to leave the field blank (or return a valid
+ * JSON object) instead of leaking the literal schema string into the path
+ * LLM's prompt.
+ *
+ * Format mirrors [buildInvalidPathRequestMessage]: natural language, no JSON
+ * schema rewrite (the LLM doesn't need to regenerate the schema, only stop
+ * producing garbage when it can't form one).
+ *
+ * @param details expects keys: `pathName` (the path the dispatch selected),
+ * `output` (the raw dispatch pathSchema text we tried to deserialize).
+ */
+internal fun PumpStation.buildPathSchemaFallbackMessage(details: Map<String, Any>): String
+{
+    val pathName = details["pathName"] ?: "(unknown)"
+    val output = details["output"] ?: "(no output)"
+    return """
+[Harness Notice] Your dispatch output's pathSchema did not deserialize as a valid PathRequest JSON object.
+
+What you did: Returned `pathSchema` as: $output
+Why it's a problem: The path LLM would receive this literal string as its prompt and research it instead of the topic.
+What to do instead: Return a pathName in your dispatch JSON. Leave `pathSchema` blank or return it as a valid JSON object. The path's own `pathSchema` (defined on the path at registration time) is the canonical source of truth and will be used as the authoritative schema for path "$pathName".
 """.trimIndent()
 }
 

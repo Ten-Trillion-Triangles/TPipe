@@ -62,6 +62,7 @@ class PumpStationEventTypeTest
             TraceEventType.PUMP_STATION_DISPATCH_COMPLETED,
             TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED,
             TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED,
+            TraceEventType.PUMP_STATION_POST_GOAL_COMPLETED,
             TraceEventType.PUMP_STATION_PATH_SELECTED,
             TraceEventType.PUMP_STATION_PATH_STARTED,
             TraceEventType.PUMP_STATION_PATH_COMPLETED,

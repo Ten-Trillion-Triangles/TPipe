@@ -166,6 +166,7 @@ class TraceVisualizer
                 TraceEventType.PUMP_STATION_SAFE_PRUNE_DRY_RUN_COMPLETED -> "🔍"
                 TraceEventType.PUMP_STATION_GOAL_VALIDATION_STARTED -> "🎯"
                 TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED -> "🎯"
+                TraceEventType.PUMP_STATION_POST_GOAL_COMPLETED -> "✅"
                 TraceEventType.PUMP_STATION_PATH_SELECTED -> "👆"
                 TraceEventType.PUMP_STATION_PATH_STARTED -> "▶"
                 TraceEventType.PUMP_STATION_PATH_COMPLETED -> "✅"
@@ -249,7 +250,8 @@ class TraceVisualizer
                 TraceEventType.PUMP_STATION_COMPLETED, TraceEventType.PUMP_STATION_PATH_COMPLETED,
                 TraceEventType.PUMP_STATION_JUDGE_COMPLETED, TraceEventType.PUMP_STATION_DISPATCH_COMPLETED,
                 TraceEventType.PUMP_STATION_HEALTH_CHECK_COMPLETED, TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED,
-                TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED -> "[SUCCESS]"
+                TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED,
+                TraceEventType.PUMP_STATION_POST_GOAL_COMPLETED -> "[SUCCESS]"
                 TraceEventType.PIPE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE,
                 TraceEventType.PUMP_STATION_FAILED, TraceEventType.PUMP_STATION_PATH_FAILED,
                 TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED, TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED -> "[FAILURE]"
@@ -1115,7 +1117,10 @@ class TraceVisualizer
         val distinctTurns = trace.mapNotNull { it.metadata["turnIndex"]?.toString()?.toIntOrNull() }.distinct().sorted()
         val turnCounter = if (distinctTurns.isEmpty()) "0" else "${distinctTurns.size}"
 
-        val goalEvents = trace.filter { it.eventType == TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED }
+        val goalEvents = trace.filter {
+            it.eventType == TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED ||
+                it.eventType == TraceEventType.PUMP_STATION_POST_GOAL_COMPLETED
+        }
         val goalPassed = goalEvents.count { it.metadata["passed"] == true }
         val goalFailed = goalEvents.size - goalPassed
         val goalCard = when
@@ -2471,6 +2476,9 @@ class TraceVisualizer
                 "mode=${event.metadata["memoryMode"] ?: "?"} fill=${event.metadata["compactionPercent"] ?: "?"}"
             TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED ->
                 "passed=${event.metadata["passed"] ?: "?"}"
+            TraceEventType.PUMP_STATION_POST_GOAL_COMPLETED ->
+                "passed=${event.metadata["passed"] ?: "?"} " +
+                    "transformed=${event.metadata["transformedContent"] ?: "?"}"
             TraceEventType.PUMP_STATION_HEALTH_CHECK_COMPLETED ->
                 "status=${event.metadata["status"] ?: "?"} warnings=${event.metadata["warnings"] ?: "0"}"
             TraceEventType.PUMP_STATION_RESERVE_PATH_REVEALED ->
@@ -2516,6 +2524,7 @@ class TraceVisualizer
         TraceEventType.PUMP_STATION_COMPACTION_COMPLETED -> "Compact✓"
         TraceEventType.PUMP_STATION_GOAL_VALIDATION_STARTED -> "Goal→"
         TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED -> "Goal✓"
+        TraceEventType.PUMP_STATION_POST_GOAL_COMPLETED -> "PostGoal✓"
         TraceEventType.PUMP_STATION_PATH_SELECTED -> "PathSel"
         TraceEventType.PUMP_STATION_PATH_STARTED -> "Path→"
         TraceEventType.PUMP_STATION_PATH_COMPLETED -> "Path✓"

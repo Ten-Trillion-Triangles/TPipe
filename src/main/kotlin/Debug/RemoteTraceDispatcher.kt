@@ -10,19 +10,41 @@ import java.net.URL
 import kotlinx.serialization.encodeToString
 import kotlinx.coroutines.Dispatchers
 
+/**
+ * Wire payload sent from the TPipe client to the remote TraceServer.
+ *
+ * v2 of the wire format adds an optional [kind] discriminator so the dashboard
+ * can recognize container-class traces (e.g. `"pumpstation"`) distinctly.
+ * The field defaults to `null`, which keeps the payload wire-compatible with
+ * v1 callers that do not yet serialize `kind`.
+ */
 @Serializable
-data class TracePayload(val pipelineId: String, val htmlContent: String, val name: String, val status: String)
+data class TracePayload(
+    val pipelineId: String,
+    val htmlContent: String,
+    val name: String,
+    val status: String,
+    val kind: String? = null,  // v2 wire; v1 callers serialize without it
+)
 
 object RemoteTraceDispatcher {
 
     /**
-     * Dispatches a trace summary and detailed HTML report for a pipeline ID 
+     * Dispatches a trace summary and detailed HTML report for a pipeline ID
      * to a remote TraceServer.
      * @param pipelineId The ID of the pipeline being traced.
      * @param name Optional display name for the trace.
      * @param status Final execution status (e.g. SUCCESS, FAILURE).
+     * @param kind Optional container-class discriminator (e.g. `"pumpstation"`)
+     *   forwarded to TraceServer so the dashboard can distinguish trace sources.
+     *   `null` (v1 default) is preserved so legacy callers remain wire-compatible.
      */
-    fun dispatchTrace(pipelineId: String, name: String = pipelineId, status: String = "SUCCESS")
+    fun dispatchTrace(
+        pipelineId: String,
+        name: String = pipelineId,
+        status: String = "SUCCESS",
+        kind: String? = null,
+    )
     {
         val baseUrl = RemoteTraceConfig.remoteServerUrl ?: return
 
@@ -37,7 +59,7 @@ object RemoteTraceDispatcher {
             return
         }
 
-        val payload = TracePayload(pipelineId, htmlContent, name, status)
+        val payload = TracePayload(pipelineId, htmlContent, name, status, kind)
         val jsonPayload = Json.encodeToString(TracePayload.serializer(), payload)
 
         // Resolve auth token automatically if not manually set

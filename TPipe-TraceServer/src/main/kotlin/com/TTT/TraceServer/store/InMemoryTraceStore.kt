@@ -83,7 +83,7 @@ class InMemoryTraceStore(private val maxTraces: Int = 10_000) : TraceStore {
     {
         val bucket = tenantBucket(filter.tenant)
         val all: List<TraceSummary> = bucket.entries
-            .map { (id, entry) -> TraceSummary(id, entry.insertedAt, entry.payload.name, entry.payload.status) }
+            .map { (id, entry) -> TraceSummary(id, entry.insertedAt, entry.payload.name, entry.payload.status, entry.payload.kind) }
             .sortedByDescending { it.timestamp }
 
         val tagsById: Map<String, Map<String, String>>? = if(filter.tag != null)

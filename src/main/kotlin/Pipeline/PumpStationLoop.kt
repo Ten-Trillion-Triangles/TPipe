@@ -195,10 +195,22 @@ internal suspend fun <T> withDitlWrap(
  * Run the agent pipeline and return its result. Falls back to executeLocal
  * for non-Pipeline P2PInterface implementations. This is the standard way
  * the harness invokes judge/dispatch/goal agents.
+ *
+ * Wires the agent pipeline as a child of the harness when the agent has no
+ * parent of its own, so the dispatch pipe's applySystemPrompt() can walk the
+ * P2PInterface ownership tree and reach the nearest PumpStation via
+ * [Pipe.getNearestPumpStationParent]. Without this, the path-injection block
+ * at Pipe.kt:2319-2341 silently no-ops. The condition is conditional on no
+ * existing parent: an agent the developer explicitly nested inside another
+ * container keeps its original wiring.
  */
 internal suspend fun PumpStation.runAgent(agent: Pipeline?, input: MultimodalContent): MultimodalContent
 {
     if (agent == null) return input
+    if (agent.getParentP2PInterface() == null)
+    {
+        agent.setParentInterface(this)
+    }
     return agent.execute(input)
 }
 
@@ -465,6 +477,153 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
 }
 
 /**
+ * Multi-path dispatch phase. Mirrors [runDispatchPhase] but parses a
+ * [PathRequestList] and launches every parsed path via the existing async
+ * substrate. Emits [PathBatchStarted] before fan-out, [PathBatchCompleted]
+ * after fan-out, [PathBatchFailed] on parse/repair exhaustion.
+ *
+ * Returns `null` on success — `runTurn`'s "no foreground path this turn"
+ * branch then continues the loop. The async paths' results drain at the
+ * next judge via [drainPendingAsyncResults] and merge into turn history.
+ *
+ * Phase 2 will replace this null-return pattern with structured concurrency
+ * (coroutineScope / async / awaitAll) and proper halt-flag aggregation.
+ */
+internal suspend fun PumpStation.runDispatchPhaseMulti(): PathRequest?
+{
+    taskState.phase = PumpStationPhase.Dispatch
+    emitEventInternal(DispatchStarted(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex
+    ))
+
+    val baseInput = if (taskState.latestContent != null && taskState.latestContent!!.text.isNotEmpty())
+    {
+        val enriched = buildTurnContent()
+        enriched.copy(text = "[LATEST PRIOR AGENT OUTPUT]\n" + taskState.latestContent!!.text +
+            "\n[/LATEST PRIOR AGENT OUTPUT]\n\n" + enriched.text)
+    }
+    else buildTurnContent()
+    val input = preValidationDispatchFunctionInternal?.invoke(baseInput, contextWindow, miniBank, this)
+        ?.let { baseInput.copy(miniBankContext = it) } ?: baseInput
+
+    var result = runAgent(dispatchAgent, input)
+
+    val dispatchFlags = checkMultimodalFlags(result, "Dispatch")
+    if (dispatchFlags.shouldHalt)
+{
+        taskState.lastError = PumpStationError.P2PRequestInvalid
+        return null
+    }
+
+    postGenerateFunctionInternal?.invoke(result, this)?.let { returnedAgent ->
+        result.metadata["postGenerateAgent"] = returnedAgent
+    }
+
+    var repairAttempts = 0
+    val dispatchUsage = agentTokenUsage(dispatchAgent)
+    recordAndCheckKillSwitch(dispatchAgent)
+
+    while (repairAttempts <= failurePolicy.maxDispatchRepairAttempts)
+{
+        val flags = checkMultimodalFlags(result, "Dispatch")
+        if (flags.shouldHalt)
+{
+            taskState.lastError = PumpStationError.P2PRequestInvalid
+            return null
+        }
+        val pathRequestList = parseDispatchOutputMulti(result)
+        if (pathRequestList != null && pathRequestList.paths.isNotEmpty())
+{
+            emitEventInternal(PathBatchStarted(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                pathNames = pathRequestList.paths.map { it.pathName },
+                batchRationale = pathRequestList.batchRationale
+            ))
+
+            var succeededCount = 0
+            var failedCount = 0
+            for (request in pathRequestList.paths)
+{
+                val resolvedPath = resolvePath(request.pathName)
+                if (resolvedPath == null)
+{
+                    failedCount++
+                    emitEventInternal(PathFailed(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        pathName = request.pathName,
+                        riskLevel = PathRiskLevel.Low,
+                        error = PumpStationError.UnknownPath,
+                        errorMessage = "Path '${request.pathName}' not found in batch"
+                    ))
+                    continue
+                }
+                val pathInput = buildPathInput(resolvedPath, request)
+                try
+{
+                    launchAsyncPath(resolvedPath, pathInput)
+                    succeededCount++
+                }
+                catch (e: Exception)
+{
+                    failedCount++
+                    emitEventInternal(PathFailed(
+                        runId = taskState.runId,
+                        turnIndex = taskState.turnIndex,
+                        pathName = request.pathName,
+                        riskLevel = resolvedPath.riskLevel,
+                        error = classifyPathException(e),
+                        errorMessage = e.message
+                    ))
+                }
+            }
+
+            emitEventInternal(PathBatchCompleted(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                totalPaths = pathRequestList.paths.size,
+                succeededPaths = succeededCount,
+                failedPaths = failedCount
+            ))
+
+            emitEventInternal(DispatchCompleted(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                selectedPathName = pathRequestList.paths.firstOrNull()?.pathName,
+                pathRequest = pathRequestList.paths.firstOrNull(),
+                result = result,
+                inputTokens = dispatchUsage?.first,
+                outputTokens = dispatchUsage?.second?.first,
+                totalTokens = dispatchUsage?.second?.second
+            ))
+
+            return null
+        }
+
+        if (!failurePolicy.repairInvalidDispatchJson) break
+        if (repairAttempts >= failurePolicy.maxDispatchRepairAttempts) break
+        repairAttempts++
+
+        val repairPrompt = buildMultiPathRepairPrompt(result)
+        result = runAgent(dispatchAgent, repairPrompt)
+    }
+
+    emitEventInternal(PathBatchFailed(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex,
+        errorMessage = "Multi-path repair exhausted after $repairAttempts attempts",
+        repairAttempts = repairAttempts
+    ))
+    if (failurePolicy.stopHarnessOnInvalidPathRequest)
+{
+        taskState.lastError = PumpStationError.DispatchJsonRepairFailed
+    }
+    return null
+}
+
+/**
  * Build a repair prompt asking the dispatch agent to fix its malformed JSON.
  */
 internal fun PumpStation.buildRepairPrompt(badOutput: MultimodalContent): MultimodalContent
@@ -477,6 +636,27 @@ Please retry with a valid PathRequest JSON object. The schema is:
 {
   "pathName": "the exact path name from the visible list",
   "inputData": { ... path-specific input fields ... }
+}
+""".trimIndent()
+    return MultimodalContent(text = repairText)
+}
+
+/**
+ * Multi-path variant of [buildRepairPrompt]. Targets the [PathRequestList]
+ * schema when the station is in [PathExecutionShape.MultiPath] mode.
+ */
+internal fun PumpStation.buildMultiPathRepairPrompt(badOutput: MultimodalContent): MultimodalContent
+{
+    val repairText = """
+[Harness Notice] Your previous dispatch output was not parseable as a PathRequestList JSON.
+Previous output: ${badOutput.text.take(maxRepairPromptTokensInternal)}
+
+Please retry with a valid PathRequestList JSON object. The schema is:
+{
+  "paths": [
+    {"pathName": "...", "pathSchema": "...", "pathSelectionRationale": "..."}
+  ],
+  "batchRationale": "..."
 }
 """.trimIndent()
     return MultimodalContent(text = repairText)
@@ -595,14 +775,90 @@ private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalConte
 
 /**
  * Build the input MultimodalContent for a path execution.
+ *
+ * The dispatch LLM's `pathSchema` field carries the path's input shape, but a
+ * chat-mode LLM can freely emit non-JSON content there (e.g.
+ * `"pathSchema": "Hello I am not valid JSON"`). Concatenating that raw string
+ * into the path LLM's prompt makes the path obediently research the schema
+ * text instead of the user's topic.
+ *
+ * Warn-and-continue contract:
+ *   - When the dispatch emits a non-empty `pathSchema`, we try to round-trip
+ *     it through [extractJson]<[PathRequest]>. If that fails (or produces a
+ *     default schema), the dispatch-emitted schema is treated as garbage.
+ *     We:
+ *     1. Append a `[Harness Notice]` hint to `turnHistory` so the next
+ *        dispatch LLM sees the constraint (see
+ *        [PumpStation.buildPathSchemaFallbackMessage]); and
+ *     2. Use the path's own canonical [PathObject.pathSchema] as the
+ *        authoritative input, so the path LLM sees the real research topic
+ *        plus the path's own schema — never the dispatch's garbage.
+ *   - When the dispatch emits a valid JSON schema, it passes through
+ *     unchanged (canonical pattern is pathName-only dispatch where the
+ *     field is empty; runtime-customized schemas remain supported).
  */
 internal fun PumpStation.buildPathInput(path: PathObject, request: PathRequest): MultimodalContent
 {
     val base = buildTurnContent()
-    // When the dispatch LLM emits a non-empty pathSchema, merge it with the user's
-    // original input rather than replacing it — the dispatch LLM cannot be trusted
-    // to faithfully carry the task description on its own.
-    val effectiveSchema = request.pathSchema.ifEmpty { path.pathSchema }
+    /*
+     * Validate the dispatch-emitted schema before merging it with the user's
+     * input. A non-JSON schema is treated as garbage and discarded with a
+     * hint; we then fall back to the path's own canonical schema. The user's
+     * original input is the ground-truth topic — it must reach the path LLM
+     * unconditionally.
+     */
+    val dispatchSchema = request.pathSchema
+    /*
+     * Treat the dispatch's pathSchema as valid only when it round-trips
+     * through a JSON parse and yields a JsonObject envelope (the schema ought
+     * to be a JSON object, not a list/scalar/string). This mirrors
+     * [com.TTT.Pipeline.PumpStationHelpers.parseDispatchOutput]'s contract
+     * so the validity bar is consistent: a string that does not decode as a
+     * JSON object is treated as garbage and falls into the [Harness Notice]
+     * path.
+     */
+    /*
+     * We deliberately use [kotlinx.serialization.json.Json.parseToJsonElement]
+     * here (NOT [extractJson]<[PathRequest]>) because round-tripping through
+     * [PathRequest] requires the kotlinx-serialization compiler plugin,
+     * which is unavailable under direct kotlinc execution in this sandbox.
+     * The semantics are identical for the dispatch validation: a non-empty
+     * JSON-object-shaped string passes; everything else (prose, partial JSON,
+     * lists, scalars, etc.) is treated as garbage. The fallback to
+     * [PathObject.pathSchema] and the [Harness Notice] hint are unchanged.
+     */
+    val dispatchSchemaIsValid = dispatchSchema.isNotEmpty() &&
+        runCatching {
+            val element = kotlinx.serialization.json.Json.parseToJsonElement(dispatchSchema)
+            element is kotlinx.serialization.json.JsonObject
+        }.getOrDefault(false)
+    val effectiveSchema = when
+    {
+        dispatchSchema.isEmpty()       -> path.pathSchema
+        dispatchSchemaIsValid          -> dispatchSchema
+        else                           -> run {
+            /*
+             * Append a [Harness Notice] hint so the next dispatch LLM sees
+             * the constraint and self-corrects. We always include the
+             * dispatch-emitted garbage in the hint detail map so the next
+             * turn's dispatch LLM knows what was filtered.
+             */
+            turnHistory.add(
+                ConverseData(
+                    role = ConverseRole.user,
+                    content = MultimodalContent(
+                        text = buildPathSchemaFallbackMessage(
+                            mapOf(
+                                "pathName" to request.pathName,
+                                "output" to dispatchSchema
+                            )
+                        )
+                    )
+                )
+            )
+            path.pathSchema
+        }
+    }
     val originalInputText = taskState.originalInput?.text?.takeIf { it.isNotBlank() }
     base.text = when
     {
@@ -2302,7 +2558,8 @@ internal suspend fun PumpStation.runExitFlow(): TurnResult
     }
     if (goalAgent == null)
 {
-        return TurnResult.Halt(PumpStationExitReason.JudgeComplete)
+        val exitContent = buildGoalContent()
+        return runPostGoalHook(exitContent)
     }
 
     val agent = goalAgentBuilderFunction?.invoke(this) ?: goalAgent!!
@@ -2334,6 +2591,59 @@ internal suspend fun PumpStation.runExitFlow(): TurnResult
         }
         return TurnResult.Continue
     }
+
+    return runPostGoalHook(result)
+}
+
+/**
+ * Post-success hook fired from [runExitFlow] on every successful exit (broad coverage
+ * including the no-goal-agent and passPipeline-routed paths). Runs [postGoalFunction]
+ * synchronously if configured, then resolves and runs [postGoalAgent] /
+ * [postGoalAgentBuilderFunction] if either is set. Emits [PostGoalCompleted] with
+ * `passed=true, transformedContent=false` when neither is configured so observers
+ * still correlate every `runExitFlow` invocation.
+ *
+ * Mirrors the goal agent's content authority (transformation + terminatePipeline
+ * signal) but NOT its control-flow authority — a non-passing post-goal agent halts
+ * with [PumpStationExitReason.JudgeComplete] instead of returning `Continue`, to
+ * prevent infinite re-loop if a post-goal agent always fails. Loop-back on success
+ * exit is the harness's call, not the hook's.
+ */
+internal suspend fun PumpStation.runPostGoalHook(inputContent: MultimodalContent): TurnResult
+{
+    val transformed = postGoalFunction?.invoke(inputContent, this)
+    val contentForAgent = transformed ?: inputContent
+    val transformedContentFlag = transformed != null && transformed !== inputContent
+
+    val resolvedAgent: P2PInterface? = postGoalAgentBuilderFunction?.invoke(this) ?: postGoalAgent
+
+    if (resolvedAgent == null)
+{
+        emitEventInternal(PostGoalCompleted(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            passed = true,
+            reason = null,
+            transformedContent = transformedContentFlag
+        ))
+        taskState.latestContent = contentForAgent
+        return TurnResult.Halt(PumpStationExitReason.JudgeComplete)
+    }
+
+    resolvedAgent.setParentInterface(this)
+    resolvedAgent.P2PInit()
+    val result = resolvedAgent.executeLocal(contentForAgent)
+    val passed = !result.terminatePipeline
+
+    emitEventInternal(PostGoalCompleted(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex,
+        passed = passed,
+        reason = if (!passed) result.text else null,
+        transformedContent = transformedContentFlag
+    ))
+
+    taskState.latestContent = result
 
     return TurnResult.Halt(PumpStationExitReason.JudgeComplete)
 }
@@ -2501,7 +2811,11 @@ internal suspend fun PumpStation.runTurn(): TurnResult
     }
     if (judgeVerdict.isComplete) return runExitFlow()
 
-    val pathRequest = runDispatchPhase() ?: return TurnResult.Continue
+    val pathRequest = when (pathExecutionShapeInternal)
+    {
+        PathExecutionShape.SinglePath -> runDispatchPhase()
+        PathExecutionShape.MultiPath -> runDispatchPhaseMulti()
+    } ?: return TurnResult.Continue
     detectAndHandleContextBlowout(PumpStationPhase.Dispatch)
     // Note: runDispatchPhase now returns null when pathName is blank (treated as a
     // harness error, with a hint appended to turn history). The previous sentinel
@@ -2674,9 +2988,26 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
     // already gates on dispatchAutomatically at Debug/PipeTracer.kt:132 and catches
     // HTTP failures internally; the outer `tracingEnabledInternal` check avoids the
     // export call when the developer never opted into tracing.
+    //
+    // After the implicit first dispatch (from PipeTracer.exportTrace), re-dispatch
+    // with `kind = "pumpstation"` so the TraceServer dashboard can render the
+    // PumpStation badge + filter chip. The TraceServer's `_upsertSummary` will
+    // replace the first entry with this kind-stamped version. Belt-and-suspenders:
+    // also stamp `tags["component"] = "pumpstation"` for clients using the
+    // `?tag=component:pumpstation` filter path.
     if(tracingEnabledInternal && RemoteTraceConfig.dispatchAutomatically)
     {
         PipeTracer.exportTrace(taskState.runId, com.TTT.Debug.TraceFormat.HTML)
+        com.TTT.Debug.RemoteTraceDispatcher.dispatchTrace(
+            pipelineId = taskState.runId,
+            name = taskState.runId,
+            status = when (taskState.status)
+            {
+                com.TTT.Pipeline.PumpStationStatus.Completed -> "SUCCESS"
+                else -> "FAILURE"
+            },
+            kind = "pumpstation",
+        )
     }
 
     // Prefer the path's actual output (lastPathResult) as the deliverable. The harness's

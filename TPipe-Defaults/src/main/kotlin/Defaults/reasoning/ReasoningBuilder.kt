@@ -1,10 +1,14 @@
 package Defaults.reasoning
 
 import Defaults.BedrockConfiguration
+import Defaults.GenericOpenAIConfiguration
 import Defaults.ManifoldDefaults.withBedrock
 import Defaults.OllamaConfiguration
+import Defaults.OpenRouterConfiguration
 import Defaults.providers.BedrockDefaults.createBedrockPipe
+import Defaults.providers.GenericOpenAIDefaults.createGenericOpenAIPipe
 import Defaults.providers.OllamaDefaults.createOllamaPipe
+import Defaults.providers.OpenRouterDefaults.createOpenRouterPipe
 import Defaults.reasoning.ReasoningPrompts.bestIdeaPrompt
 import Defaults.reasoning.ReasoningPrompts.chainOfThoughtSystemPrompt
 import Defaults.reasoning.ReasoningPrompts.comprehensivePlanPrompt
@@ -368,6 +372,58 @@ object ReasoningBuilder
         val ollamaPipe = createOllamaPipe(ollamaConfig)
         assignDefaults(reasoningSettings, pipeSettings, ollamaPipe)
         return ollamaPipe
+    }
+
+
+    /**
+     * Generate an OpenRouter reasoning pipe, and assign the defaults to it. The pipe returned
+     * here is a fully-wired [openrouterPipe.OpenRouterPipe] ready to attach via
+     * [com.TTT.Pipe.Pipe.setReasoningPipe].
+     *
+     * Reasoning settings that target an OpenAI-compatible endpoint (StructuredCot,
+     * ExplicitCot, BestIdea, RolePlay, ChainOfDraft, SemanticDecompression) are all
+     * supported. The OpenRouterPipe model argument should be a fully-qualified OpenRouter
+     * model identifier (for example `"anthropic/claude-3.5-sonnet"` or `"openai/o1"`).
+     *
+     * @param openRouterConfig [OpenRouterConfiguration] Configuration settings to build a pipe.
+     * @param reasoningSettings [ReasoningSettings] Settings that configure reasoning behaviour.
+     * @param pipeSettings [PipeSettings] Optional baseline settings to copy onto the pipe.
+     *
+     * @return [Pipe] the reasoning pipe cast to [Pipe].
+     */
+    fun reasonWithOpenRouter(
+        openRouterConfig: OpenRouterConfiguration,
+        reasoningSettings: ReasoningSettings,
+        pipeSettings: PipeSettings?) : Pipe
+    {
+        val openRouterPipe = createOpenRouterPipe(openRouterConfig)
+        assignDefaults(reasoningSettings, pipeSettings, openRouterPipe)
+        return openRouterPipe
+    }
+
+
+    /**
+     * Generate a GenericOpenAI reasoning pipe, and assign the defaults to it. The pipe returned
+     * here is a [genericOpenAIPipe.GenericOpenAIPipe] — provider-agnostic across OpenAI,
+     * MiniMax, Together, Anyscale, vLLM, llama.cpp, and any other OpenAI-compatible endpoint.
+     *
+     * The `apiMode` field on [GenericOpenAIConfiguration] (`"OpenAI"`, `"OpenAIResponses"`,
+     * `"Anthropic"`) selects the wire-format adapter. Defaults to OpenAI chat completions.
+     *
+     * @param genericConfig [GenericOpenAIConfiguration] Configuration settings to build a pipe.
+     * @param reasoningSettings [ReasoningSettings] Settings that configure reasoning behaviour.
+     * @param pipeSettings [PipeSettings] Optional baseline settings to copy onto the pipe.
+     *
+     * @return [Pipe] the reasoning pipe cast to [Pipe].
+     */
+    fun reasonWithGenericOpenAI(
+        genericConfig: GenericOpenAIConfiguration,
+        reasoningSettings: ReasoningSettings,
+        pipeSettings: PipeSettings?) : Pipe
+    {
+        val genericOpenAIPipe = createGenericOpenAIPipe(genericConfig)
+        assignDefaults(reasoningSettings, pipeSettings, genericOpenAIPipe)
+        return genericOpenAIPipe
     }
 
 }

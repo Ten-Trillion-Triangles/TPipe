@@ -34,6 +34,7 @@ import com.TTT.Util.RuntimeState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.channels.Channel
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -324,6 +325,15 @@ class Junction : P2PInterface
         }
     }
 
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        moderatorBinding?.component?.setStreamingCallbackRecursive(callback)
+        for (binding in participantBindings)
+        {
+            binding.component.setStreamingCallbackRecursive(callback)
+        }
+    }
+
 //----------------------------------------------Configuration------------------------------------------------------------
 
     /**
@@ -578,6 +588,20 @@ class Junction : P2PInterface
     fun setMemoryPolicy(policy: JunctionMemoryPolicy): Junction
     {
         junctionMemoryPolicy = policy.copy()
+        return this
+    }
+
+    /**
+     * Set the summary agent without replacing the rest of the memory policy.
+     *
+     * Use this when the policy is already configured and only the summary agent needs to be updated.
+     *
+     * @param agent The P2PInterface agent to use for summarization, or null to disable agent-based summarization.
+     * @return This Junction object for method chaining.
+     */
+    fun setSummaryAgent(agent: P2PInterface?): Junction
+    {
+        junctionMemoryPolicy.summaryAgent = agent
         return this
     }
 
@@ -1668,20 +1692,33 @@ class Junction : P2PInterface
     /**
      * Build the optional summary block for older history tails.
      *
-     * Summarization is only a support mechanism here. The output is still bounded by deterministic budgeting
-     * and falls back to the raw tail when the summarizer produces nothing useful.
+     * Branching order:
+     * 1. If [summaryAgent][JunctionMemoryPolicy.summaryAgent] is set and
+     *    [enableSummarization][JunctionMemoryPolicy.enableSummarization] is true:
+     *    invoke the agent via [P2PInterface.executeLocal] with [JunctionSummarizerContext] in
+     *    [MultimodalContent.metadata], extract [MultimodalContent.text].
+     * 2. Else if [summarizer][JunctionMemoryPolicy.summarizer] is set and
+     *    [enableSummarization][JunctionMemoryPolicy.enableSummarization] is true:
+     *    invoke the lambda with older history text.
+     * 3. Otherwise: return the raw older history text verbatim (subject to [summaryBudget] token cap).
+     *
+     * All branches are wrapped in [runCatching] — agent or lambda exceptions fall back to verbatim.
      *
      * @param summaryLabel Human-readable label for the summary section.
-     * @param summarySeed Older-history content used as the basis for optional summarization.
+     * @param summarySeed Older-history content used as the basis for summarization.
      * @param summaryBudget Token budget reserved for the summary.
      * @param settings Token-counting settings to reuse for the summary.
-     * @return A compact summary section or an empty string if no safe summary exists.
+     * @param roleKind The Junction memory role this summary is being prepared for.
+     * @param phase The active workflow phase, or null if in DISCUSSION mode.
+     * @return A compact summary section or an empty string if [summarySeed] is blank or [summaryBudget] is zero.
      */
-    private fun buildSummaryText(
+    private suspend fun buildSummaryText(
         summaryLabel: String,
         summarySeed: String,
         summaryBudget: Int,
-        settings: TruncationSettings
+        settings: TruncationSettings,
+        roleKind: JunctionMemoryRole,
+        phase: JunctionWorkflowPhase?
     ): String
     {
         if(summarySeed.isBlank() || summaryBudget <= 0)
@@ -1690,15 +1727,34 @@ class Junction : P2PInterface
         }
 
         val trimmedSeed = summarySeed.take(junctionMemoryPolicy.maxSummaryCharacters)
-        val summarized = if(junctionMemoryPolicy.enableSummarization && junctionMemoryPolicy.summarizer != null)
+        val summarized = when
         {
-            runCatching { junctionMemoryPolicy.summarizer?.invoke(trimmedSeed).orEmpty() }
-                .getOrDefault("")
-                .ifBlank { trimmedSeed }
-        }
-        else
-        {
-            trimmedSeed
+            junctionMemoryPolicy.summaryAgent != null && junctionMemoryPolicy.enableSummarization ->
+            {
+                val context = JunctionSummarizerContext(
+                    roleKind = roleKind,
+                    phase = phase,
+                    summaryBudget = summaryBudget,
+                    summarySeed = trimmedSeed
+                )
+                val agentInput = MultimodalContent(
+                    text = trimmedSeed,
+                    context = ContextWindow()
+                ).apply {
+                    metadata["junctionSummarizerContext"] = context
+                }
+                val result = runCatching {
+                    junctionMemoryPolicy.summaryAgent!!.executeLocal(agentInput)
+                }
+                result.getOrNull()?.text?.ifBlank { trimmedSeed } ?: trimmedSeed
+            }
+            junctionMemoryPolicy.enableSummarization && junctionMemoryPolicy.summarizer != null ->
+            {
+                runCatching { junctionMemoryPolicy.summarizer?.invoke(trimmedSeed).orEmpty() }
+                    .getOrDefault("")
+                    .ifBlank { trimmedSeed }
+            }
+            else -> trimmedSeed
         }
 
         val summarySection = buildSectionText(summaryLabel, listOf(summarized))
@@ -1794,7 +1850,7 @@ class Junction : P2PInterface
      * @return A fully budgeted memory envelope ready to render into a prompt.
      * @throws IllegalStateException If the resolved budget cannot safely hold Junction's minimum critical state.
      */
-    private fun budgetEnvelope(
+    private suspend fun budgetEnvelope(
         roleName: String,
         roleKind: JunctionMemoryRole,
         binding: JunctionBinding?,
@@ -1802,7 +1858,8 @@ class Junction : P2PInterface
         criticalLines: List<String>,
         recentLines: List<String>,
         summarySeed: String,
-        summaryLabel: String
+        summaryLabel: String,
+        phase: JunctionWorkflowPhase?
     ): JunctionMemoryEnvelope
     {
         val settings = resolveMemoryTruncationSettings(binding)
@@ -1840,7 +1897,14 @@ class Junction : P2PInterface
         val criticalText = budgetText(criticalRaw, criticalBudget, settings, preserveStart = true)
         val recentRaw = buildSectionText("Recent history", recentLines)
         val recentText = budgetText(recentRaw, recentBudget, settings, preserveStart = true)
-        val summaryText = buildSummaryText(summaryLabel, summarySeed, summaryBudget, settings)
+        val summaryText = buildSummaryText(
+            summaryLabel = summaryLabel,
+            summarySeed = summarySeed,
+            summaryBudget = summaryBudget,
+            settings = settings,
+            roleKind = roleKind,
+            phase = phase
+        )
 
         val sections = mutableListOf<JunctionMemorySection>()
         sections.add(
@@ -2760,7 +2824,7 @@ class Junction : P2PInterface
      * @param cycleNumber Active workflow cycle number.
      * @return A prompt ready to dispatch through P2P.
      */
-    private fun buildWorkflowPhasePrompt(
+    private suspend fun buildWorkflowPhasePrompt(
         binding: JunctionBinding,
         phase: JunctionWorkflowPhase,
         workingContent: MultimodalContent,
@@ -2877,7 +2941,7 @@ class Junction : P2PInterface
      * @param roundNumber Active discussion round number.
      * @return A memory envelope tailored to a discussion participant.
      */
-    private fun buildParticipantMemoryEnvelope(
+    private suspend fun buildParticipantMemoryEnvelope(
         binding: JunctionBinding,
         workingContent: MultimodalContent,
         roundNumber: Int
@@ -2894,7 +2958,8 @@ class Junction : P2PInterface
             criticalLines = criticalLines,
             recentLines = recentLines,
             summarySeed = summarySeed,
-            summaryLabel = "Older discussion summary"
+            summaryLabel = "Older discussion summary",
+            phase = null
         )
     }
 
@@ -2909,7 +2974,7 @@ class Junction : P2PInterface
      * @param voteResults Weighted vote tally for the round.
      * @return A memory envelope tailored to the moderator.
      */
-    private fun buildModeratorMemoryEnvelope(
+    private suspend fun buildModeratorMemoryEnvelope(
         workingContent: MultimodalContent,
         opinions: List<ParticipantOpinion>,
         voteResults: List<VotingResult>
@@ -2968,7 +3033,8 @@ class Junction : P2PInterface
                     voteLines.forEach { appendLine(it) }
                 }
             }.trim(),
-            summaryLabel = "Older moderator summary"
+            summaryLabel = "Older moderator summary",
+            phase = null
         )
     }
 
@@ -2981,7 +3047,7 @@ class Junction : P2PInterface
      * @param cycleNumber Active workflow cycle number.
      * @return A memory envelope tailored to the workflow role.
      */
-    private fun buildWorkflowMemoryEnvelope(
+    private suspend fun buildWorkflowMemoryEnvelope(
         binding: JunctionBinding,
         phase: JunctionWorkflowPhase,
         workingContent: MultimodalContent,
@@ -3007,7 +3073,8 @@ class Junction : P2PInterface
             criticalLines = criticalLines,
             recentLines = recentLines,
             summarySeed = summarySeed,
-            summaryLabel = "Older workflow summary"
+            summaryLabel = "Older workflow summary",
+            phase = phase
         )
     }
 
@@ -3685,7 +3752,7 @@ class Junction : P2PInterface
      * @param roundNumber Active round number.
      * @return A fully formed P2P request with compact memory attached.
      */
-    private fun buildParticipantRequest(
+    private suspend fun buildParticipantRequest(
         binding: JunctionBinding,
         workingContent: MultimodalContent,
         roundNumber: Int
@@ -3894,7 +3961,7 @@ class Junction : P2PInterface
      * @param voteResults Weighted vote tally for the round.
      * @return A prompt ready to dispatch to the moderator binding.
      */
-    private fun buildModeratorPrompt(
+    private suspend fun buildModeratorPrompt(
         workingContent: MultimodalContent,
         opinions: List<ParticipantOpinion>,
         voteResults: List<VotingResult>

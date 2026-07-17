@@ -124,7 +124,67 @@ class Manifold : P2PInterface
 
     override fun getPipelinesFromInterface(): List<Pipeline>
     {
-        return listOf(managerPipeline) + workerPipelines
+        return listOf(managerPipeline) + workerComponents.filterIsInstance<Pipeline>()
+    }
+
+    /**
+     * Override the [P2PInterface.executeLocal] identity pass-through so a Manifold embedded
+     * as a per-pipe shim doesn't silently echo input back to its caller without doing work.
+     *
+     * The default `P2PInterface.executeLocal(content)` returns the input unchanged. For most
+     * containers that's correct (Pipeline executes its pipes in place; Junction runs its
+     * strategy). For Manifold it's wrong — there is no single worker to dispatch to unless
+     * the shim caller (currently `Pipe.kt:5739` `containerPtr.executeLocal`) supplies the
+     * `agentName` of the target worker in `content.metadata["dispatchAgentName"]`.
+     *
+     * Without that metadata the override has no way to pick a worker, so it throws an
+     * explicit [UnsupportedOperationException] naming the missing upstream contract rather
+     * than silently returning content. The shim caller can satisfy the contract by reading
+     * the dispatcher pipe's emitted [AgentRequest.agentName] and stashing it in metadata
+     * before invoking `executeLocal` — tracked as a follow-up so this overload does not
+     * pretend to dispatch when routing metadata is absent.
+     */
+    override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
+    {
+        val targetAgentName = content.metadata["dispatchAgentName"] as? String
+        if(targetAgentName == null)
+        {
+            throw UnsupportedOperationException(
+                "Manifold.executeLocal requires a target worker agent name in " +
+                    "content.metadata[\"dispatchAgentName\"]. The Pipe.shim redirect path " +
+                    "(Pipe.kt:5739) does not currently populate this metadata. Manifold " +
+                    "cannot pick a worker without it; silently passing through would mask " +
+                    "the missing routing contract."
+            )
+        }
+
+        val workerAgent = workerComponentsByAgentName[targetAgentName]
+            ?: workerComponents.find { it.getP2pDescription()?.agentName == targetAgentName }
+            ?: P2PRegistry.findAgentByName(targetAgentName)
+            ?: throw IllegalStateException(
+                "Manifold.executeLocal: no worker found for dispatchAgentName '$targetAgentName'"
+            )
+
+        val workerTransport = workerAgent.getP2pTransport()
+            ?: throw IllegalStateException(
+                "Manifold.executeLocal: worker '$targetAgentName' has no P2PTransport configured"
+            )
+
+        // Build a P2PRequest that targets the worker's address. P2PRequest's fields are
+        // transport / prompt / context — the worker's own executeP2PRequest resolves the
+        // agentName via P2PRegistry at dispatch time using transportAddress + its own
+        // descriptor.
+        val request = P2PRequest(
+            transport = workerTransport,
+            prompt = content
+        )
+
+        val response = workerAgent.executeP2PRequest(request)
+            ?: throw IllegalStateException(
+                "Manifold.executeLocal: worker '$targetAgentName' returned a null P2PResponse"
+            )
+
+        return response.output ?: content
     }
 
     /**
@@ -140,9 +200,9 @@ class Manifold : P2PInterface
     override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
     {
         managerPipeline.setTokenBudgetRecursive(budget)
-        for (workerPipeline in workerPipelines)
+        for (workerComponent in workerComponents)
         {
-            workerPipeline.setTokenBudgetRecursive(budget)
+            workerComponent.setTokenBudgetRecursive(budget)
         }
     }
 
@@ -151,17 +211,37 @@ class Manifold : P2PInterface
     override fun setPipeSettingsRecursively(settings: PipeSettings)
     {
         managerPipeline.setPipeSettingsRecursively(settings)
-        for (workerPipeline in workerPipelines)
+        for (workerComponent in workerComponents)
         {
-            workerPipeline.setPipeSettingsRecursively(settings)
+            workerComponent.setPipeSettingsRecursively(settings)
+        }
+    }
+
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        managerPipeline.setStreamingCallbackRecursive(callback)
+        for (workerComponent in workerComponents)
+        {
+            workerComponent.setStreamingCallbackRecursive(callback)
         }
     }
 
 //=============================================Properties===============================================================
 
     private var managerPipeline: Pipeline = Pipeline()
-    private var workerPipelines: MutableList<Pipeline> = mutableListOf()
-    private val workerPipelinesByAgentName = mutableMapOf<String, Pipeline>()
+    /**
+     * Workers attached to this Manifold. Each entry is any [P2PInterface] — historically
+     * only [Pipeline] was accepted (via [addWorkerPipeline]); since the 2026-07-09 P2P
+     * worker generalization, [Junction], [DistributionGrid], [PumpStation], and nested
+     * [Manifold] instances are addressable too via [addWorker].
+     */
+    private var workerComponents: MutableList<P2PInterface> = mutableListOf()
+    /**
+     * Worker [P2PInterface]s indexed by agentName. Pipeline-specific endpoints extract
+     * the worker via [Pipeline]; non-Pipeline components reach a richer surface (their
+     * own dispatch path, their own descriptor). Always kept in sync with [workerComponents].
+     */
+    private val workerComponentsByAgentName = mutableMapOf<String, P2PInterface>()
 
     /**
      * Most critical property in this class. This is the content object that will be worked on by every llm agent
@@ -244,13 +324,13 @@ class Manifold : P2PInterface
      * @param content The content object that is being worked on by the llm agent.
      * @param agent The agent that just completed the task.
      */
-    private var workerValidatorFunction: (suspend (content: MultimodalContent, agent: Pipeline, manifold: Manifold) -> Boolean)? = null
+    private var workerValidatorFunction: (suspend (content: MultimodalContent, agent: P2PInterface, manifold: Manifold) -> Boolean)? = null
 
     /**
      * Human in the loop function to handle a failure before the manifold is shut down. Allows the coder to
      * attempt to rectify whatever the issue is.
      */
-    private var failureFunction: (suspend (content: MultimodalContent, agent: Pipeline, manifold: Manifold) -> Boolean)? = null
+    private var failureFunction: (suspend (content: MultimodalContent, agent: P2PInterface, manifold: Manifold) -> Boolean)? = null
 
     /**
      * Human in the loop function to allow for content transformation upon a successful llm call. Also, can be used
@@ -321,7 +401,10 @@ class Manifold : P2PInterface
         set(value) {
             _killSwitch = value
             managerPipeline.killSwitch = value
-            workerPipelines.forEach { it.killSwitch = value }
+            for (workerComponent in workerComponents)
+            {
+                workerComponent.killSwitch = value
+            }
         }
 
     /**
@@ -427,6 +510,26 @@ class Manifold : P2PInterface
      */
     @RuntimeState
     private var runningSummary: String = ""
+
+    /**
+     * Optional MiniBank context key under which summary text is injected into
+     * [workingContentObject].miniBankContext.contextMap after each worker response.
+     *
+     * Pair with [injectSummaryIntoMiniBank] to enable the auto-injection feature.
+     * Defaults to "manifold.summary" so the slot is discoverable without ceremony.
+     */
+    private var summaryMiniBankKey: String = "manifold.summary"
+
+    /**
+     * Opt-in flag. When true, each iteration's summary text (the same value folded into
+     * [runningSummary]) is also written into [workingContentObject].miniBankContext.contextMap
+     * at the key configured by [summaryMiniBankKey] so the next manager call sees the summary
+     * without requiring a developer-side hook on [setContextTruncationFunction].
+     *
+     * Default false: preserves prior behavior for users who relied on
+     * [runningSummary] being private and out-of-band.
+     */
+    private var injectSummaryIntoMiniBank: Boolean = false
 
     /**
      * Used to pause or resume a manifold. When a manifold pauses the loop will freeze and wait until it can resume.
@@ -570,9 +673,11 @@ class Manifold : P2PInterface
      */
     fun workersHaveOverflowProtection() : Boolean
     {
-        return workerPipelines.all { pipeline ->
-            pipeline.hasContextOverflowProtectionConfigured()
-        }
+        return workerComponents
+            .filterIsInstance<Pipeline>()
+            .all { pipeline ->
+                pipeline.hasContextOverflowProtectionConfigured()
+            }
     }
 
     /**
@@ -582,11 +687,14 @@ class Manifold : P2PInterface
      */
     fun getWorkersWithoutOverflowProtection() : List<String>
     {
-        return workerPipelines.filter { pipeline ->
-            !pipeline.hasContextOverflowProtectionConfigured()
-        }.map { pipeline ->
-            pipeline.pipelineName.ifEmpty { "<unnamed worker pipeline>" }
-        }
+        return workerComponents
+            .filterIsInstance<Pipeline>()
+            .filter { pipeline ->
+                !pipeline.hasContextOverflowProtectionConfigured()
+            }
+            .map { pipeline ->
+                pipeline.pipelineName.ifEmpty { "<unnamed worker pipeline>" }
+            }
     }
 
     /**
@@ -616,7 +724,7 @@ class Manifold : P2PInterface
      * that the manifold has not produced any breaking, or otherwise invalid output. If not supplied validtion
      * attempts will be skipped.
      */
-    fun setValidatorFunction(func: suspend (content: MultimodalContent, agent: Pipeline, manifold: Manifold) -> Boolean) : Manifold
+    fun setValidatorFunction(func: suspend (content: MultimodalContent, agent: P2PInterface, manifold: Manifold) -> Boolean) : Manifold
     {
         workerValidatorFunction = func
         return this
@@ -626,7 +734,7 @@ class Manifold : P2PInterface
      * Defines a branch failure function to attempt to recover the state of the manifold in the event of a validation
      * failure. This can only be called if the validation function is also valid.
      */
-    fun setFailureFunction(func: suspend (content: MultimodalContent, agent: Pipeline, manifold: Manifold) -> Boolean) : Manifold
+    fun setFailureFunction(func: suspend (content: MultimodalContent, agent: P2PInterface, manifold: Manifold) -> Boolean) : Manifold
     {
         failureFunction = func
         return this
@@ -641,10 +749,18 @@ class Manifold : P2PInterface
         transformationFunction = func
         return this
     }
-
     /**
-     * Sets the optional summarization pipeline that runs after each worker response.
+     * Sets the optional summarization pipeline that runs after each worker response,
+     * before the next manager loop iteration.
      * The summary pipeline must have context overflow protection configured.
+     *
+     * When [setInjectSummaryIntoMiniBank] is enabled, each iteration's summary text is also folded into
+     * [workingContentObject].miniBankContext at the key configured by [setSummaryMiniBankKey], so the
+     * next manager call sees the running summary without requiring a developer-side hook on
+     * [setContextTruncationFunction]. In [SummaryMode.APPEND] each chunk is added as a fresh
+     * [com.TTT.Context.LoreBook] entry on the persistent [com.TTT.Context.ContextWindow] at that key
+     * (accumulating across iterations). In [SummaryMode.REGENERATE] the entire
+     * [com.TTT.Context.ContextWindow] at that key is replaced with one containing only the latest summary.
      *
      * @param pipeline The pipeline to use for summarization.
      * @param descriptor Optional P2P descriptor.
@@ -672,6 +788,51 @@ class Manifold : P2PInterface
     fun setSummaryMode(mode: SummaryMode): Manifold
     {
         summaryMode = mode
+        return this
+    }
+
+    /**
+     * Configure the MiniBank key under which the running summary is auto-injected into
+     * [workingContentObject].miniBankContext when [setInjectSummaryIntoMiniBank] is enabled.
+     *
+     * The default key is "manifold.summary"; pass any non-blank string to override. The key
+     * is the top-level [com.TTT.Context.MiniBank] entry, with each iteration's summary
+     * stored as a [com.TTT.Context.LoreBook] entry on the [com.TTT.Context.ContextWindow]
+     * at that key.
+     *
+     * @param key Non-blank MiniBank key under which to store the running summary.
+     * @return This [Manifold] for builder-style chaining.
+     * @throws IllegalArgumentException if [key] is blank.
+     */
+    fun setSummaryMiniBankKey(key: String): Manifold
+    {
+        require(key.isNotBlank()) { "MiniBank key must not be blank." }
+        summaryMiniBankKey = key
+        return this
+    }
+
+    /**
+     * Enable or disable automatic injection of the running summary into
+     * [workingContentObject].miniBankContext so the next manager call sees it without
+     * any developer-side hook on [setContextTruncationFunction].
+     *
+     * When enabled, each iteration's summary text is written into
+     * [workingContentObject].miniBankContext.contextMap at the key configured by
+     * [setSummaryMiniBankKey]:
+     *   - [SummaryMode.APPEND]: each chunk is added as a fresh [com.TTT.Context.LoreBook] entry
+     *     on the persistent [com.TTT.Context.ContextWindow] at that key, accumulating across iterations.
+     *   - [SummaryMode.REGENERATE]: the [com.TTT.Context.ContextWindow] at that key is replaced
+     *     wholesale with a fresh window containing only the latest summary.
+     *
+     * Off by default — preserves prior behavior for users who relied on [runningSummary] being
+     * private and out-of-band.
+     *
+     * @param enabled True to enable injection, false to disable.
+     * @return This [Manifold] for builder-style chaining.
+     */
+    fun setInjectSummaryIntoMiniBank(enabled: Boolean): Manifold
+    {
+        injectSummaryIntoMiniBank = enabled
         return this
     }
 
@@ -851,141 +1012,159 @@ class Manifold : P2PInterface
     }
 
     /**
-     * Getter to read our worker pipelines. Provides access to the list of worker pipelines registered with this Manifold.
+     * Getter for backward-compatible access to Pipeline-shaped workers only. New code
+     * should prefer [getWorkerComponents] which surfaces every attached [P2PInterface].
      */
     fun getWorkerPipelines(): List<Pipeline>
     {
-        return workerPipelines.toList()
+        return workerComponents.filterIsInstance<Pipeline>()
     }
 
+    /**
+     * Getter for every [P2PInterface] currently attached as a worker, in attach order.
+     * Includes Pipeline, Junction, DistributionGrid, PumpStation, and nested Manifold
+     * workers. Use [getWorkerPipelines] when a Pipeline-typed view is required.
+     */
+    fun getWorkerComponents(): List<P2PInterface>
+    {
+        return workerComponents.toList()
+    }
 
     /**
-     * Add a worker pipeline to this Manifold. Worker pipelines are specialized agents that perform
-     * specific tasks as directed by the manager pipeline. Each worker is registered with the P2P system
-     * to enable communication and task delegation from the manager.
+     * Add a worker [P2PInterface] to this Manifold. The worker can be any higher-order container
+     * (Pipeline, Junction, DistributionGrid, PumpStation, nested Manifold) so long as it has
+     * its own [P2PDescriptor], [P2PRequirements], and [P2PTransport] wired up — either by the
+     * caller (the recommended path for non-Pipeline workers) or by Manifold when `component`
+     * is a `Pipeline` and the caller omits descriptor/requirements.
      *
-     * @param pipeline The worker pipeline to add to this Manifold's worker collection.
-     * @param descriptor Optional P2P descriptor for custom worker configuration. If null, secure defaults are generated.
-     * @param requirements Optional P2P requirements for custom worker settings. If null, secure defaults are generated.
+     * When `component is Pipeline` AND both `descriptor` and `requirements` are null, this method
+     * auto-generates Pipeline-shaped defaults (Transport.Tpipe, `usesConverse=true`,
+     * `recordsInteractionContext=true`, etc.). That default path preserves the historical
+     * `addWorkerPipeline(...)` behavior.
      *
-     * @return This Manifold object for method chaining.
+     * When `component` is non-Pipeline OR the caller supplies descriptor/requirements, this
+     * method requires both descriptor and requirements to be non-null and uses them as-is.
+     * The caller owns the descriptor's agent name, transport, and security posture.
+     *
+     * @param component The worker to attach. Must implement [P2PInterface].
+     * @param descriptor Optional explicit descriptor. Required when `component` is non-Pipeline.
+     * @param requirements Optional explicit requirements. Required when `component` is non-Pipeline.
+     * @param agentName Worker agent name. For Pipeline defaults, used only when descriptor is null.
+     * @param agentDescription Worker description. For Pipeline defaults, used only when descriptor is null.
+     * @param agentSkills Worker skills. For Pipeline defaults, used only when descriptor is null.
+     * @return This Manifold for method chaining.
      */
-    fun addWorkerPipeline(pipeline: Pipeline,
-                          descriptor: P2PDescriptor? = null,
-                          requirements: P2PRequirements? = null,
-                          agentName : String = "",
-                          agentDescription: String = "",
-                          agentSkills: List<P2PSkills>? = null): Manifold
+    fun addWorker(component: P2PInterface,
+                  descriptor: P2PDescriptor? = null,
+                  requirements: P2PRequirements? = null,
+                  agentName: String = "",
+                  agentDescription: String = "",
+                  agentSkills: List<P2PSkills>? = null): Manifold
     {
-        workerPipelines.add(pipeline) //Add pipeline to our worker collection.
+        P2PRegistry.remove(component) //Drop any stale registration so the new one is the only one live.
 
-        P2PRegistry.remove(pipeline) //Remove if we're registered somewhere else.
-
-        /**
-         * Auto generate the required settings for p2p registration based on general common default cases for
-         * worker pipelines in the Manifold class. This is required if the user does not pass through their own settings.
-         * The P2PRegistry will throw if the settings are null when it tries to read from the interface.
-         */
-        if(descriptor == null || requirements == null)
+        // Pipeline-shaped workers with empty descriptor / requirements get auto-generated
+        // defaults matching the historical addWorkerPipeline behavior. Every other shape
+        // requires the caller to provide complete descriptor+requirements because the
+        // auto-generation rules assume Pipeline semantics (usesConverse, recordsInteractionContext,
+        // PCP context protocol) that may not apply to arbitrary P2P components.
+        if(component is Pipeline && descriptor == null && requirements == null)
         {
-            val resolvedAgentName = agentName.ifEmpty { "${pipeline.pipelineName}-Manifold-Worker" }
+            val resolvedAgentName = agentName.ifEmpty { "${component.pipelineName}-Manifold-Worker" }
             val transport = P2PTransport()
-            transport.transportAddress = resolvedAgentName // Must match agentName for routing.
+            transport.transportAddress = resolvedAgentName
             transport.transportMethod = Transport.Tpipe
 
-            /**
-             * Worker pipelines should have slightly more permissive settings than the manager since they need
-             * to accept tasks and context from the manager. However, external access is still restricted for security.
-             * Converse input is required to track worker interactions with the manager.
-             */
-            val requirements = P2PRequirements(
+            val generatedRequirements = P2PRequirements(
                 allowAgentDuplication = false,
                 allowCustomContext = false,
                 allowExternalConnections = false,
                 requireConverseInput = true
             )
+            generatedRequirements.acceptedContent = mutableListOf(SupportedContentTypes.text)
 
-
-            requirements.acceptedContent = mutableListOf(SupportedContentTypes.text)
-
-            /**
-             * Define the core skill that all workers have - executing specialized tasks as directed by the manager.
-             * Individual workers may have additional specialized skills, but this covers the basic worker capability.
-             */
-            var skills = mutableListOf<P2PSkills>()
-
-
+            val skills = mutableListOf<P2PSkills>()
             if(agentSkills == null)
             {
                 skills.add(P2PSkills("Execute", "Execute specialized tasks as directed by the manager pipeline"))
             }
-
             else
             {
-                skills = agentSkills.toMutableList()
+                skills.addAll(agentSkills)
             }
 
-            //Define default description if not provided.
-            var defaultDescription = let { agentDescription.ifEmpty { "Specialized worker pipeline for task execution within Manifold orchestration" } }
+            val defaultDescription = agentDescription.ifEmpty { "Specialized worker pipeline for task execution within Manifold orchestration" }
 
-            /**
-             * Define descriptor with worker-appropriate defaults. Workers are more permissive than managers
-             * but still maintain security boundaries for external access.
-             */
-            val workerDescriptor = P2PDescriptor(
+            val generatedDescriptor = P2PDescriptor(
                 agentName = resolvedAgentName,
                 agentDescription = defaultDescription,
                 transport = transport,
                 requiresAuth = false,
-                usesConverse = true, //Workers use converse to communicate with manager
+                usesConverse = true,
                 allowsAgentDuplication = false,
                 allowsCustomContext = false,
                 allowsCustomAgentJson = false,
-                recordsInteractionContext = true, //Track interactions for debugging
+                recordsInteractionContext = true,
                 recordsPromptContent = true,
                 allowsExternalContext = false,
                 contextProtocol = com.TTT.P2P.ContextProtocol.pcp,
                 agentSkills = skills
             )
 
-            /**
-             * We need to bind this before we register. If we don't it will become global, and we'll end up
-             * missing the agents when we pull the local agents in init. This obviously would cause a catastrophic
-             * failure if we don't have any agents registered.
-             */
-            pipeline.setContainerObject(this)
-            pipeline.setParentInterface(this)
-            pipeline.setP2pTransport(transport)
-            pipeline.setP2pDescription(workerDescriptor)
-            pipeline.setP2pRequirements(requirements)
-            workerPipelinesByAgentName[resolvedAgentName] = pipeline
+            component.setContainerObject(this)
+            component.setParentInterface(this)
+            component.setP2pTransport(transport)
+            component.setP2pDescription(generatedDescriptor)
+            component.setP2pRequirements(generatedRequirements)
 
-            /**
-             * Register the worker pipeline with the P2PRegistry using generated settings.
-             */
-            P2PRegistry.register(pipeline, transport, workerDescriptor, requirements)
+            workerComponents.add(component)
+            workerComponentsByAgentName[resolvedAgentName] = component
+            P2PRegistry.register(component, transport, generatedDescriptor, generatedRequirements)
             return this
         }
 
-        P2PRegistry.remove(pipeline) //Remove to ensure we aren't double registered.
+        if(descriptor == null || requirements == null)
+        {
+            throw IllegalArgumentException(
+                "Non-Pipeline workers must supply both descriptor and requirements. " +
+                    "Auto-generated defaults assume Pipeline semantics and are not safe for arbitrary P2PInterface components."
+            )
+        }
 
-        /**
-         * Custom worker descriptors still need to remain local to this manifold so init() can discover them via the
-         * registry before it activates worker pipelines.
-         */
-        pipeline.setContainerObject(this)
-        pipeline.setParentInterface(this)
-        pipeline.setP2pTransport(descriptor.transport)
-        pipeline.setP2pDescription(descriptor)
-        pipeline.setP2pRequirements(requirements)
-        workerPipelinesByAgentName[descriptor.agentName] = pipeline
+        // Custom-descriptor path: caller owns the descriptor's agentName and transport.
+        component.setContainerObject(this)
+        component.setParentInterface(this)
+        component.setP2pTransport(descriptor.transport)
+        component.setP2pDescription(descriptor)
+        component.setP2pRequirements(requirements)
 
-        /**
-         * Register using assigned settings. None of them can be null otherwise we would not hit here.
-         * So assume non-null and try to register.
-         */
-        P2PRegistry.register(pipeline, descriptor.transport, descriptor, requirements)
+        workerComponents.add(component)
+        workerComponentsByAgentName[descriptor.agentName] = component
+        P2PRegistry.register(component, descriptor.transport, descriptor, requirements)
         return this
+    }
+
+    /**
+     * Backward-compatible sugar for the legacy worker-attach API. Delegates to the new
+     * [addWorker] canonical method. Existing callers continue to compile and run unchanged;
+     * the canonical signature accepts any [P2PInterface], not just Pipeline.
+     *
+     * @param pipeline The worker pipeline to add to this Manifold.
+     * @param descriptor Optional custom descriptor.
+     * @param requirements Optional custom requirements.
+     * @param agentName Worker agent name (used only when descriptor is null).
+     * @param agentDescription Worker description (used only when descriptor is null).
+     * @param agentSkills Worker skills (used only when descriptor is null).
+     * @return This Manifold for method chaining.
+     */
+    fun addWorkerPipeline(pipeline: Pipeline,
+                          descriptor: P2PDescriptor? = null,
+                          requirements: P2PRequirements? = null,
+                          agentName: String = "",
+                          agentDescription: String = "",
+                          agentSkills: List<P2PSkills>? = null): Manifold
+    {
+        return addWorker(pipeline, descriptor, requirements, agentName, agentDescription, agentSkills)
     }
 
 
@@ -1002,7 +1181,7 @@ class Manifold : P2PInterface
     suspend fun init()
     {
         //Step 1: Check for empty pipelines. If any are empty we need to throw on the spot.
-        if(managerPipeline.getPipes().isEmpty() || workerPipelines.isEmpty()) throw Exception("One or more manager or worker pipelines are empty. Cannot start the manifold.")
+        if(managerPipeline.getPipes().isEmpty() || workerComponents.isEmpty()) throw Exception("One or more manager or worker pipelines are empty. Cannot start the manifold.")
 
         //Bind our container to ensure our manifold manager is local. Init to ensure it's ready to make llm calls.
         managerPipeline.setContainerObject(this)
@@ -1025,14 +1204,27 @@ class Manifold : P2PInterface
         val managerDescriptor = managerPipeline.getP2pDescription() ?: throw Exception("Manager pipeline descriptor is null. Cannot start the manifold.")
         val managerAgentDescriptor = AgentDescriptor.buildFromDescriptor(managerDescriptor)
 
-        val localAgents = P2PRegistry.listLocalAgents(this).toMutableList()
-        localAgents.remove(managerDescriptor) //Remove manager so that we don't broadcast this to the workers.
-
         /**
-         * All agents inside the manifold class need to be registered locally, since they will always be called
-         * by the manager pipeline through local scope by default.
+         * Build the agent-path list the manager pipeline will see in its prompt.
+         *
+         * Includes BOTH:
+         *   - local agents (registered with this Manifold as their container, no external-connection flag), AND
+         *   - global agents (registered with allowExternalConnections=true so they are addressable from
+         *     outside their owning container).
+         *
+         * The manager descriptor is filtered out so it does not appear as a callable target to itself.
+         *
+         * Original implementation only listed local agents, which prevented the manager from dispatching to
+         * any worker that lived only in P2PRegistry. That restriction existed historically due to memory-
+         * safety and race-condition concerns; P2PRegistry's agent-duplication and factory-mode semantics
+         * already provide the required isolation, so the restriction has been lifted.
          */
-        for(descriptor in localAgents)
+        val visibleAgents = mutableListOf<P2PDescriptor>()
+        visibleAgents.addAll(P2PRegistry.listLocalAgents(this))
+        visibleAgents.addAll(P2PRegistry.listGlobalAgents())
+        visibleAgents.removeAll { it.agentName == managerDescriptor.agentName }
+
+        for(descriptor in visibleAgents)
         {
             val agentDescriptor = AgentDescriptor.buildFromDescriptor(descriptor)
             agentPaths.add(agentDescriptor)
@@ -1079,24 +1271,35 @@ class Manifold : P2PInterface
             throw Exception("Manager budget control is enabled, but no effective manager budget could be resolved.")
         }
 
-        //Activate all the worker pipes to ensure they are ready to make llm calls.
-        for(workerPipe in workerPipelines)
+        //Activate all the worker pipelines/agents to ensure they are ready to make LLM calls or receive P2P requests.
+        for(workerComponent in workerComponents)
         {
-            workerPipe.setContainerObject(this)
-            workerPipe.setParentInterface(this)
-            
-            // Setup tracing propagation to worker pipelines if enabled
-            if(tracingEnabled)
+            workerComponent.setContainerObject(this)
+            workerComponent.setParentInterface(this)
+
+            // Setup tracing propagation to Pipeline-shaped workers. Higher-order containers
+            // (Junction, DistributionGrid, PumpStation) carry their own tracing configuration
+            // and propagate internally; we leave them untouched here so the user's per-child
+            // tracing settings survive.
+            if(tracingEnabled && workerComponent is Pipeline)
             {
-                workerPipe.enableTracing(traceConfig)
+                workerComponent.enableTracing(traceConfig)
                 // Set currentPipelineId on individual pipes in the worker pipeline
-                for(pipe in workerPipe.getPipes())
+                for(pipe in workerComponent.getPipes())
                 {
                     pipe.currentPipelineId = manifoldId
                 }
             }
-            
-            workerPipe.init(true)
+
+            // Pipeline-shaped workers carry their own init(true) recursion point. Higher-order
+            // containers (Junction, DistributionGrid, PumpStation, nested Manifold) carry their
+            // own init() lifecycle and should NOT have init(true) called by the outer Manifold
+            // because each of those containers manages its participants internally. We dispatch
+            // to their P2PInit() default (no-op) by skipping explicit init here.
+            if(workerComponent is Pipeline)
+            {
+                workerComponent.init(true)
+            }
         }
 
     }
@@ -1187,9 +1390,11 @@ class Manifold : P2PInterface
      */
     private fun validateWorkerPipelineOverflowProtection()
     {
-        val unprotectedWorkers = workerPipelines.filter { pipeline ->
-            !pipeline.hasContextOverflowProtectionConfigured()
-        }
+        val unprotectedWorkers = workerComponents
+            .filterIsInstance<Pipeline>()
+            .filter { pipeline ->
+                !pipeline.hasContextOverflowProtectionConfigured()
+            }
         if(unprotectedWorkers.isEmpty())
         {
             return
@@ -1710,14 +1915,15 @@ class Manifold : P2PInterface
                 // Accumulate worker tokens after execution
                 if(killSwitch != null)
                 {
-                    val workerPipeline = workerPipelinesByAgentName[agentRequest.agentName] ?: workerPipelines.find { pipeline ->
-                        pipeline.getP2pDescription()?.agentName == agentRequest.agentName ||
-                            pipeline.getP2pTransport()?.transportAddress == agentRequest.agentName
-                    }
-                    if(workerPipeline != null)
+                    val workerComponent = workerComponentsByAgentName[agentRequest.agentName]
+                        ?: workerComponents.find { pipeline ->
+                            pipeline.getP2pDescription()?.agentName == agentRequest.agentName ||
+                                pipeline.getP2pTransport()?.transportAddress == agentRequest.agentName
+                        }
+                    if(workerComponent is Pipeline)
                     {
-                        killSwitchInputAccumulator += workerPipeline.inputTokensSpent
-                        killSwitchOutputAccumulator += workerPipeline.outputTokensSpent
+                        killSwitchInputAccumulator += workerComponent.inputTokensSpent
+                        killSwitchOutputAccumulator += workerComponent.outputTokensSpent
                     }
                     val elapsedMs = System.currentTimeMillis() - killSwitchExecutionStartTime
                     checkKillSwitch(killSwitchInputAccumulator, killSwitchOutputAccumulator, elapsedMs)
@@ -1778,14 +1984,22 @@ class Manifold : P2PInterface
                     trace(TraceEventType.VALIDATION_START, TracePhase.ORCHESTRATION,
                         metadata = mapOf("validatorFunction" to workerValidatorFunction.toString()))
 
-                    //Get the worker pipeline that just executed
-                    val workerPipeline = workerPipelinesByAgentName[agentRequest.agentName] ?: workerPipelines.find { pipeline ->
-                        pipeline.getP2pDescription()?.agentName == agentRequest.agentName ||
-                            pipeline.getP2pTransport()?.transportAddress == agentRequest.agentName
-                    }
+                    /**
+                     * Resolve the worker that just executed. Prefer the local worker-pipelines map (covers
+                     * the historical case where workers are in-process Pipelines). Fall back to the
+                     * P2PRegistry for remote workers. If neither resolves, skip the user-supplied
+                     * validator/failure functions for this iteration (preserves the prior short-circuit
+                     * semantics — these functions were silently skipped before when no local worker
+                     * matched).
+                     */
+                    val workerAgent: P2PInterface? =
+                        workerComponentsByAgentName[agentRequest.agentName] ?: workerComponents.find { pipeline ->
+                            pipeline.getP2pDescription()?.agentName == agentRequest.agentName ||
+                                pipeline.getP2pTransport()?.transportAddress == agentRequest.agentName
+                        } ?: P2PRegistry.findAgentByName(agentRequest.agentName)
 
                     //Handle branch failure state if our validation function did not pass.
-                    if(workerPipeline != null && workerValidatorFunction?.invoke(response.output!!, workerPipeline, this) == false)
+                    if(workerAgent != null && workerValidatorFunction?.invoke(response.output!!, workerAgent, this) == false)
                     {
                         //Execute branch failure if provided. This gives one last chance to not end the manifold.
                         if(failureFunction != null)
@@ -1794,7 +2008,7 @@ class Manifold : P2PInterface
                                 metadata = mapOf("failureFunction" to failureFunction.toString()))
 
                             //Bail on the manifold if we can't pass this. Otherwise, we can resume the task.
-                            if(failureFunction?.invoke(response.output!!, workerPipeline, this) == false)
+                            if(workerAgent != null && failureFunction?.invoke(response.output!!, workerAgent, this) == false)
                             {
                                 val errorMessage = response.output?.metadata?.get("error") ?: "Unable to recover using branch failure function."
 
@@ -1952,6 +2166,36 @@ class Manifold : P2PInterface
                     {
                         SummaryMode.APPEND -> runningSummary += summaryText
                         SummaryMode.REGENERATE -> runningSummary = summaryText
+                    }
+
+                    // === NEW: MiniBank auto-injection ===
+                    if (injectSummaryIntoMiniBank)
+                    {
+                        val miniBankKey = summaryMiniBankKey
+                        when (summaryMode)
+                        {
+                            SummaryMode.APPEND ->
+                            {
+                                val existing = workingContentObject.miniBankContext.contextMap[miniBankKey]
+                                    ?: ContextWindow().also { workingContentObject.miniBankContext.contextMap[miniBankKey] = it }
+                                existing.addLoreBookEntry(
+                                    key = "manifold.summary.append.${loopIterationCount}",
+                                    value = summaryText,
+                                    weight = 0,
+                                )
+                            }
+                            SummaryMode.REGENERATE ->
+                            {
+                                workingContentObject.miniBankContext.contextMap.remove(miniBankKey)
+                                val freshWindow = ContextWindow()
+                                freshWindow.addLoreBookEntry(
+                                    key = "manifold.summary.regenerate.${loopIterationCount}",
+                                    value = summaryText,
+                                    weight = 0,
+                                )
+                                workingContentObject.miniBankContext.contextMap[miniBankKey] = freshWindow
+                            }
+                        }
                     }
                 }
             }
@@ -2120,7 +2364,7 @@ class Manifold : P2PInterface
             {
                 metadata["manifoldId"] = manifoldId
                 metadata["managerPipeline"] = managerPipeline.pipelineName
-                metadata["workerCount"] = workerPipelines.size
+                metadata["workerCount"] = workerComponents.size
                 metadata["loopIteration"] = loopIterationCount
                 if(error != null)
                 {
@@ -2134,7 +2378,9 @@ class Manifold : P2PInterface
                 metadata["manifoldClass"] = this::class.qualifiedName ?: "Manifold"
                 metadata["manifoldId"] = manifoldId
                 metadata["managerPipeline"] = managerPipeline.pipelineName
-                metadata["workerPipelines"] = workerPipelines.map { it.pipelineName }
+                metadata["workerPipelines"] = workerComponents
+                    .filterIsInstance<Pipeline>()
+                    .map { it.pipelineName }
                 metadata["agentPaths"] = agentPaths.map { it.agentName }
                 metadata["loopIteration"] = loopIterationCount
                 metadata["taskComplete"] = currentTaskProgress.isTaskComplete
@@ -2153,7 +2399,9 @@ class Manifold : P2PInterface
                 metadata["manifoldClass"] = this::class.qualifiedName ?: "Manifold"
                 metadata["manifoldId"] = manifoldId
                 metadata["managerPipeline"] = managerPipeline.pipelineName
-                metadata["workerPipelines"] = workerPipelines.map { it.pipelineName }
+                metadata["workerPipelines"] = workerComponents
+                    .filterIsInstance<Pipeline>()
+                    .map { it.pipelineName }
                 metadata["agentPaths"] = agentPaths.map { "${it.agentName}:${it.description}" }
                 metadata["agentPipeNames"] = agentPipeNames
                 metadata["loopIteration"] = loopIterationCount
