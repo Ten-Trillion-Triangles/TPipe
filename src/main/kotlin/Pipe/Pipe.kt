@@ -1493,6 +1493,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
     var preInvokeFunction: (suspend (content: MultimodalContent) -> Boolean)? = null
 
     /**
+     * DITL hook to capture the reasoning output from a reasoning pipe prior to it's injectoin stage and being
+     * converted to natural prose in the parent pipe. This is intended for allowing visual capture of the data
+     * to be rendered out to UI/UX systems such as gui or tui applications using TPipe.
+     */
+    @kotlinx.serialization.Transient
+    var reasoningCaptureFunction: (suspend (content: MultimodalContent, reasoning: String) -> Unit)? = null
+
+    /**
      * Post-generate function that is called exactly after the llm call has ran to generate content.
      * Allows for immediate action to be taken by the developer prior to the execution of any DITL validator
      * functions or pipes. This is especially useful for caching output in complex validator pipe/function
@@ -1522,6 +1530,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     @kotlinx.serialization.Transient
     var transformationFunction: (suspend (content: MultimodalContent) -> MultimodalContent)? = null
+
+    /**
+     * UI capture function to pull the final state of the content object for sending to ui/ux systems built
+     * using TPipe serves a similar purpose to [reasoningCaptureFunction]
+     */
+    @kotlinx.serialization.Transient
+    var finalCaptureFunction: (suspend (content: MultimodalContent) -> Unit)? = null
 
     /**
      * Optional function to handle validation failures. If the function returns a valid MultimodalContent,
@@ -4373,6 +4388,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
         return this
     }
 
+    
+
     /**
      * Sets the post generation function that is called immediately after the llm has generated an output.
      * @see [postGenerateFunction]
@@ -4382,7 +4399,35 @@ abstract class Pipe : P2PInterface, ProviderInterface
         postGenerateFunction = func
         return this
     }
-    
+
+    /**
+     * Sets the reasoning capture function that is invoked when a reasoning pipe produces output, prior to that
+     * reasoning being injected as natural prose into the parent pipe. The supplied content object is the parent
+     * pipe's content at the point of injection, and the reasoning string is the raw reasoning output that is about
+     * to be unraveled. Intended for routing reasoning content to ui/ux sinks (gui, tui) without disrupting the
+     * existing injection pipeline.
+     *
+     * @see [reasoningCaptureFunction]
+     */
+    fun setReasoningCaptureFunction(func: suspend (content: MultimodalContent, reasoning: String) -> Unit) : Pipe
+    {
+        reasoningCaptureFunction = func
+        return this
+    }
+
+    /**
+     * Sets the final capture function that observes the final state of the content object just before it is
+     * returned to the caller / exits to the parent pipe. Useful for routing the final content state to ui/ux
+     * sinks in parallel with the normal pipeline return path.
+     *
+     * @see [finalCaptureFunction]
+     */
+    fun setFinalCaptureFunction(func: suspend (content: MultimodalContent) -> Unit) : Pipe
+    {
+        finalCaptureFunction = func
+        return this
+    }
+
     /**
      * Legacy transformation function for backward compatibility with string-based transformation.
      */
@@ -6571,6 +6616,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, finalResult,
                               metadata = mapOf("outputText" to if(isExecutingAsReasoningPipe) "" else finalResult.text))
                         val cleanedFinal = finalResult.apply { text = cleanResponseText(finalResult.text) }
+                        finalCaptureFunction?.invoke(cleanedFinal)
                         return@coroutineScope embedContentIntoInternalConverse(cleanedFinal).takeIf { wrapContentWithConverseHistory } ?: cleanedFinal
                     }
 
@@ -6650,6 +6696,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, finalResult,
                           metadata = mapOf("outputText" to if(isExecutingAsReasoningPipe) "" else finalResult.text))
                     val cleanedFinal = finalResult.apply { text = cleanResponseText(finalResult.text) }
+                    finalCaptureFunction?.invoke(cleanedFinal)
                     return@coroutineScope embedContentIntoInternalConverse(cleanedFinal).takeIf { wrapContentWithConverseHistory } ?: cleanedFinal
                 }
             }
@@ -6758,6 +6805,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                                 PipeTimeoutManager.clearRetryCount(this@Pipe)
                             }
 
+                            finalCaptureFunction?.invoke(branchResult)
                             return@coroutineScope embedContentIntoInternalConverse(branchResult).takeIf { wrapContentWithConverseHistory } ?: branchResult
                         }
                         
@@ -6821,6 +6869,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                             PipeTimeoutManager.clearRetryCount(this@Pipe)
                         }
 
+                        finalCaptureFunction?.invoke(failureResult)
                         return@coroutineScope embedContentIntoInternalConverse(failureResult).takeIf { wrapContentWithConverseHistory } ?: failureResult
                     }
                 }
@@ -6831,14 +6880,16 @@ abstract class Pipe : P2PInterface, ProviderInterface
             trace(TraceEventType.PIPE_FAILURE, TracePhase.CLEANUP, inputContent)
             val failedContent = MultimodalContent()
             failedContent.pipeError = lastError
+            finalCaptureFunction?.invoke(failedContent)
             return@coroutineScope failedContent
-            
+
         }
         catch(e: Exception)
         {
             trace(TraceEventType.PIPE_FAILURE, TracePhase.CLEANUP, inputContent, error = e)
             val failedContent = MultimodalContent("")
             failedContent.pipeError = lastError
+            finalCaptureFunction?.invoke(failedContent)
             return@coroutineScope failedContent
         } finally {
             PipeTimeoutManager.stopTracking(this@Pipe)
@@ -7411,13 +7462,26 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * Second step of addressing TPipe reasoning support. We now need to inject the result of reasoning into the user
      * prompt or system prompt depending on the setting dispatched in order get it to affect the actual llm prediction.
      *
+     * Suspends to allow the [reasoningCaptureFunction] DITL hook to fire with the raw reasoning output prior to
+     * any injection variant mutating the content object. The hook is optional and is awaited in-line so that any
+     * UI/UX sink receives the captured reasoning in deterministic order relative to the injection that follows.
+     *
      * @param content Content object passed forward during the execution step. This should only ever be invoked
      * during executeMultimodal so it's largely safe to assume that it's the working content object at that given
      * time.
      */
-    private fun injectTPipeReasoning(content: MultimodalContent)
+    private suspend fun injectTPipeReasoning(content: MultimodalContent)
     {
         val reasoningOutput = content.modelReasoning
+
+        /**
+         * Fire the reasoning capture hook with the raw reasoning string BEFORE any injection variant mutates
+         * content. Sits at the top of injectTPipeReasoning so all downstream injection branches
+         * (SystemPrompt, BeforeUserPrompt, BeforeUserPromptWithConverse, AfterUserPrompt,
+         * AfterUserPromptWithConverse, AsContext) see the captured reasoning and any UI/UX sink gets a
+         * consistent single-fire signal. The hook is optional and suspending; awaited inline.
+         */
+        reasoningCaptureFunction?.invoke(content, reasoningOutput)
 
         //Circular reference issue here. We need to get this to string form or something.
         val reasoningMethod = reasoningPipe?.pipeMetadata["injectionMethod"] as? String ?: ""
