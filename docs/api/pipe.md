@@ -927,6 +927,16 @@ Sets function to execute immediately after AI generates content.
 
 **Behavior:** Called right after AI generation, before any validation or transformation. Useful for caching raw output, logging, or capturing content before validation steps modify it.
 
+#### `setReasoningCaptureFunction(func: suspend (MultimodalContent, String) -> Unit): Pipe`
+Sets function to capture the raw reasoning output before it is converted into the parent pipe's prompt.
+
+**Behavior:** Fires inside the reasoning-injection stage when a parent pipe has a reasoning pipe attached. Receives the parent pipe's content object and the raw reasoning string BEFORE the injection method (SystemPrompt, BeforeUserPrompt, BeforeUserPromptWithConverse, AfterUserPrompt, AfterUserPromptWithConverse, AsContext) mutates the content to convert the reasoning into natural prose. This is the only point at which the raw reasoning output is observable. Implemented at `Pipe.kt:4412`.
+
+#### `setFinalCaptureFunction(func: suspend (MultimodalContent) -> Unit): Pipe`
+Sets function to capture the final content object just before it exits to the parent pipe.
+
+**Behavior:** Fires on the actual content object that exits the pipe, on all return paths of `executeMultimodal` (success, branch success, failure-recovery success, terminated, exception-caught). Unlike `setOnFailure`, fires regardless of whether execution succeeded or failed — observes the terminal content of every invocation. Useful for outer-scaffolding / agent-harness interception that needs to mirror pipe output to a UI/UX sink without altering the pipeline. Implemented at `Pipe.kt:4425`.
+
 #### `setOnFailure(func: suspend (MultimodalContent, MultimodalContent) -> MultimodalContent): Pipe`
 Sets function to handle validation failures.
 

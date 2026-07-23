@@ -6091,6 +6091,17 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 miniContextBank.merge(parentPipeRef!!.miniContextBank.deepCopy(), emplaceLorebook, appendLoreBook, emplaceConverseHistory, emplaceConverseHistoryOnlyIfNull)
             }
 
+            if(readFromPumpStationContext)
+            {
+                val pumpStationParent = getNearestPumpStationParent()
+                pumpStationParent?.getContextWindowFromInterface()?.let { pumpStationContext ->
+                    contextWindow.merge(pumpStationContext.deepCopy(), emplaceLorebook, appendLoreBook, emplaceConverseHistory, emplaceConverseHistoryOnlyIfNull)
+                }
+                pumpStationParent?.getMiniBankFromInterface()?.let { pumpStationMiniBank ->
+                    miniContextBank.merge(pumpStationMiniBank.deepCopy(), emplaceLorebook, appendLoreBook, emplaceConverseHistory, emplaceConverseHistoryOnlyIfNull)
+                }
+            }
+
             /**
              * If enabled, apply the pre-validation function to the context window before the user prompt is merged.
              * This allows for context window modifications that are not dependent on the user prompt. This may be desired

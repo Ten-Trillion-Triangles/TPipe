@@ -12,15 +12,17 @@
 - [Post-Generate Function](#post-generate-function)
 - [Validator Function](#validator-function)
 - [On-Failure Function](#on-failure-function)
+- [Reasoning Capture Function](#reasoning-capture-function)
+- [Final Capture Function](#final-capture-function)
 - [Transformation Function - The Most Critical DITL Function](#transformation-function---the-most-critical-ditl-function)
 - [Flow Control Methods](#flow-control-methods)
 - [Pipeline-Level Pre-Validation](#pipeline-level-pre-validation)
 
-TPipe provides sophisticated developer-in-the-loop (DITL) capabilities through a series of intervention points in the pipe execution lifecycle. These functions allow developers to inject custom logic, validation, and error handling at critical stages of AI processing.
+TPipe offers sophisticated developer-in-the-loop (DITL) capabilities through a series of intervention points in the pipe execution lifecycle. These functions allow developers to inject custom logic, validation, and error handling at critical stages of AI processing.
 
 ## Overview of DITL Functions
 
-TPipe offers seven key intervention points during pipe execution:
+TPipe offers nine key intervention points during pipe execution:
 
 1. **Pre-Init Function**: Execute before any processing begins
 2. **Pre-Validation Function**: Modify context after it's loaded but before AI call
@@ -29,11 +31,12 @@ TPipe offers seven key intervention points during pipe execution:
 5. **Validator Function**: Validate AI output and control pipeline flow
 6. **Transformation Function**: **Most Critical** - Transform AI output after validation
 7. **On-Failure Function**: Handle errors and provide recovery logic
-
+8. **Reasoning Capture Function**: Observe raw reasoning output before it is unraveled into the parent pipe's prompt
+9. **Final Capture Function**: Observe the final content object just before it exits to the parent
 ## Execution Order
 
 ```
-Input → Pre-Init → Context Loading → Pre-Validation → Pre-Invoke → AI Call → Post-Generate → Validator → Transformation → On-Failure (if needed) → Output
+Input → Pre-Init → Context Loading → Pre-Validation → Pre-Invoke → AI Call → [Reasoning Capture, if reasoning pipe present] → Post-Generate → Validator → Transformation → On-Failure (if needed) → Final Capture → Output
 ```
 
 
@@ -175,10 +178,36 @@ pipe.setValidatorFunction { content ->
 pipe.setOnFailure { originalContent, processedContent ->
     // Log the failure and provide fallback content
     logger.error("Processing failed for: ${originalContent.text.take(50)}")
-    
+
     MultimodalContent(
         text = "I apologize, but I couldn't process your request: '${originalContent.text}'. Please try rephrasing."
     )
+}
+```
+
+## Reasoning Capture Function
+
+**What it does**: Fires inside the reasoning-injection stage when a parent pipe has a reasoning pipe attached. Receives the parent pipe's content object and the raw reasoning string BEFORE the injection method (SystemPrompt, BeforeUserPrompt, BeforeUserPromptWithConverse, AfterUserPrompt, AfterUserPromptWithConverse, AsContext) mutates the content to convert the reasoning into natural prose. This is the only point at which the raw reasoning output is observable.
+
+**When to use**: Routing reasoning content to UI/UX sinks (GUI, TUI) for visual display without disrupting the existing injection pipeline. Capturing reasoning for auditing or telemetry. Building a side-channel that needs to know what the reasoning model thought before it was unrolled into the prompt.
+
+```kotlin
+pipe.setReasoningCaptureFunction { content, reasoning ->
+    // Push the raw reasoning to a UI sink for visual display
+    reasoningTuiPanel.appendReasoning(reasoning)
+}
+```
+
+## Final Capture Function
+
+**What it does**: Fires on the actual content object that exits the pipe to the parent, after transformation, branch, failure-recovery, and exception-caught paths. Unlike `setOnFailure`, it fires regardless of whether execution succeeded or failed — it observes the terminal content of every `executeMultimodal` invocation. Useful for outer-scaffolding / agent-harness interception where the consumer wants to see terminal state without having to instrument every return path.
+
+**When to use**: Routing final pipe output to UI/UX sinks in parallel with the normal pipeline return. Capturing the actual outgoing content for audit, replay, or downstream mirroring. Outer scaffolding for agent harnesses that need to observe terminal state without altering the pipeline.
+
+```kotlin
+pipe.setFinalCaptureFunction { content ->
+    // Mirror the final pipe output into a parallel UI channel
+    finalContentSink.publish(content)
 }
 ```
 

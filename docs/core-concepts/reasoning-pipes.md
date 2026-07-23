@@ -594,8 +594,9 @@ val mainPipe = BedrockPipe()
 
 1. The reasoning pipe executes normally and generates its output
 2. Before injection, TPipe checks the `skipReasoningPipe` flag
-3. If `true`, `injectTPipeReasoning` returns immediately — no reasoning content is added to the system prompt, user prompt, or context
-4. The parent pipe's main LLM call proceeds without any reasoning context
+3. If a `reasoningCaptureFunction` DITL hook is set on the parent pipe, it fires now with the raw reasoning string and the parent pipe's content object. This is the only point at which the raw reasoning is observable before it is converted into natural prose by the injection method.
+4. If `true`, `injectTPipeReasoning` returns immediately — no reasoning content is added to the system prompt, user prompt, or context
+5. The parent pipe's main LLM call proceeds without any reasoning context
 
 > ⚠️ **Note:** The reasoning pipe still executes when `skipReasoningPipe` is set. The flag prevents injection of the reasoning output, not execution. To skip execution entirely, use `setPreInvokeFunction` to bypass the whole pipe before it runs.
 

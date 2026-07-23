@@ -1459,6 +1459,131 @@ class SafePruneBlock(private val builder: PumpStationBuilder<*>)
 }
 
 /**
+ * Standalone DSL builder for [PathObject]. Mirrors [PathBlock]'s surface but is NOT parented to a
+ * [PumpStationBuilder]. Use [pathObject] for the entry point or [pathObjectBuilder] for staged construction.
+ *
+ * The resulting [PathObject] can be attached to a [PumpStation] via [PumpStation.addPath] or constructed
+ * once and reused across multiple harnesses.
+ *
+ * @param pathName Unique name for the path. Will be set on [PathObject.pathName].
+ */
+@PumpStationDslMarker
+class PathBuilder(internal val pathName: String)
+{
+    val pathObject = PathObject()
+
+    init { pathObject.pathName = pathName }
+
+    var description: String
+        get() = pathObject.pathDescription
+        set(value) { pathObject.pathDescription = value }
+
+    var risk: PathRiskLevel
+        get() = pathObject.riskLevel
+        set(value) { pathObject.riskLevel = value }
+
+    var dispatchHint: String
+        get() = pathObject.dispatchHint
+        set(value) { pathObject.dispatchHint = value }
+
+    /**
+     * Mark this path as one that runs in the background. When true, the harness is expected to launch
+     * the path on its background scheduler rather than awaiting the result inline.
+     */
+    var runsInBackground: Boolean
+        get() = pathObject.isRunsInBackground
+        set(value) { pathObject.setRunsInBackground(value) }
+
+    /**
+     * When true, an async path will NOT append its result to turnHistory on completion. The path still
+     * fires the PathCompleted event so observers can see the result, but the foreground drain will skip
+     * the history merge. Only takes effect when runsInBackground is also true.
+     */
+    var suppressHistoryEmit: Boolean
+        get() = pathObject.isSuppressHistoryEmit
+        set(value) { pathObject.setSuppressHistoryEmit(value) }
+
+    /**
+     * JSON schema used by the dispatch agent when this path is not bound to a PCP function. Mirrors
+     * [PathObject.pathSchema].
+     */
+    var schema: String
+        get() = pathObject.pathSchema
+        set(value) { pathObject.pathSchema = value }
+
+    /**
+     * Optional pre-built PCP schema. If the developer wants full control over the [PcpContext] (e.g. to
+     * merge external tools or pre-load options), set this directly. The [bindFunction] helper appends to
+     * whatever schema is already set, so binding a function after this assignment is additive.
+     */
+    var pcpSchema: PcpContext?
+        get() = pathObject.pcpSchema
+        set(value) { pathObject.pcpSchema = value }
+
+    /**
+     * Developer-supplied metadata map. Travels with the [PathObject] into the built station and can be
+     * read by the path's own execution closure or by DITL hooks.
+     */
+    var pathMetadata: MutableMap<Any, Any>
+        get() = pathObject.pathMetadata
+        set(value) { pathObject.pathMetadata.clear(); pathObject.pathMetadata.putAll(value) }
+
+    /**
+     * Bind a Kotlin function to this path, registering it in [FunctionRegistry] and populating the PCP
+     * schema under the function's own name.
+     */
+    fun bindFunction(function: KFunction<*>)
+    {
+        pathObject.bindFunction(function.name, function)
+    }
+
+    /**
+     * Bind a Kotlin function to this path under an explicit name. Use this overload when the registered
+     * PCP function name should differ from [KFunction.name].
+     */
+    fun bindFunction(name: String, function: KFunction<*>)
+    {
+        pathObject.bindFunction(name, function)
+    }
+
+    /**
+     * Set an internal agent to execute this path. When assigned, the agent builder function is skipped
+     * at execution time.
+     */
+    fun setInternalAgent(agent: P2PInterface)
+    {
+        pathObject.setInternalAgent(agent)
+    }
+
+    /**
+     * Set the raw execution function for this path. This is the fallback when no internal agent or
+     * agent builder is present.
+     */
+    fun setExecutionFunction(function: (suspend (MultimodalContent, PumpStation, ConverseHistory?, String) -> MultimodalContent)?)
+    {
+        pathObject.setExecutionFunction(function)
+    }
+
+    /**
+     * Sets the output capture function that observes the final [MultimodalContent] just before it returns
+     * from the path to the caller. Fires on every successful return from [PathObject.execute] (PCP,
+     * executionFunction, internalAgent, agentBuilderFunction) and from [PathObject.executeLocal]. Awaited
+     * inline so consumers observe content in deterministic order.
+     *
+     * @see PathObject.outputCaptureFunction
+     */
+    fun setOutputCaptureFunction(func: suspend (content: MultimodalContent) -> Unit)
+    {
+        pathObject.setOutputCaptureFunction(func)
+    }
+
+    /**
+     * Build and return the configured [PathObject]. Idempotent — safe to call multiple times.
+     */
+    fun build(): PathObject = pathObject
+}
+
+/**
  * Builder for path configuration.
  */
 @PumpStationDslMarker
@@ -1575,6 +1700,19 @@ class PathBlock(private val pathName: String, private val builder: PumpStationBu
     fun setExecutionFunction(function: (suspend (MultimodalContent, PumpStation, ConverseHistory?, String) -> MultimodalContent)?)
     {
         pathObject.setExecutionFunction(function)
+    }
+
+    /**
+     * Sets the output capture function that observes the final [MultimodalContent] just before it returns
+     * from the path to the caller. Fires on every successful return from [PathObject.execute] (PCP,
+     * executionFunction, internalAgent, agentBuilderFunction) and from [PathObject.executeLocal]. Awaited
+     * inline so consumers observe content in deterministic order.
+     *
+     * @see PathObject.outputCaptureFunction
+     */
+    fun setOutputCaptureFunction(func: suspend (content: MultimodalContent) -> Unit)
+    {
+        pathObject.setOutputCaptureFunction(func)
     }
 
     /**
@@ -1808,6 +1946,33 @@ fun pumpStation(name: String, block: PumpStationBuilder<PumpStationStage.Initial
 fun pumpStationBuilder(name: String): PumpStationBuilder<PumpStationStage.Initial>
 {
     return PumpStationBuilder<PumpStationStage.Initial>(name)
+}
+
+/**
+ * Standalone entry point for constructing a [PathObject] outside the [pumpStation] harness context.
+ * Mirrors the [pumpStation] / [pumpStationBuilder] dual pattern in a single call. The returned [PathObject]
+ * is fully configured and ready to attach to any harness via [PumpStation.addPath].
+ *
+ * @param pathName Unique name for the path.
+ * @param block Builder block that configures the path.
+ * @return Fully configured [PathObject].
+ */
+fun pathObject(pathName: String, block: PathBuilder.() -> Unit): PathObject
+{
+    val builder = PathBuilder(pathName)
+    builder.block()
+    return builder.build()
+}
+
+/**
+ * Factory function to create a standalone [PathBuilder] for staged/manual construction. Mirrors
+ * [pumpStationBuilder] for the path-level DSL.
+ *
+ * @param pathName Unique name for the path.
+ */
+fun pathObjectBuilder(pathName: String): PathBuilder
+{
+    return PathBuilder(pathName)
 }
 
 //=========================================Tracing DSL================================================================

@@ -330,6 +330,16 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     val pathMetadata: MutableMap<Any, Any> = mutableMapOf()
 
     /**
+     * DITL hook that fires on the actual [MultimodalContent] about to exit the path, immediately before it
+     * returns to the caller. Useful for outer-scaffolding UI/UX sinks that want to mirror path output
+     * without altering the dispatch flow. Suspends; the dispatch awaits the capture inline so consumers
+     * observe content in deterministic order. Fires on every successful return from [execute]
+     * (PCP, executionFunction, internalAgent, agentBuilderFunction) and from [executeLocal].
+     */
+    @kotlinx.serialization.Transient
+    var outputCaptureFunction: (suspend (content: MultimodalContent) -> Unit)? = null
+
+    /**
      * Optional internal agent. Stored as a P2P interface to allow any possible TPipe agent type to be stored internally
      * this includes embedding another [PumpStation] inside the path object that can be called by an outer PumpStation.
      * When assigned, the agent builder function will be skipped over.
@@ -554,6 +564,21 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Sets the output capture function that observes the final [MultimodalContent] just before it returns from
+     * the path to the caller. Fires on every successful return from [execute] (PCP, executionFunction,
+     * internalAgent, agentBuilderFunction) and from [executeLocal]. The dispatch awaits the capture inline
+     * so consumers observe content in deterministic order. Intended for routing path output to UI/UX sinks
+     * in parallel with the normal dispatch return path.
+     *
+     * @see [outputCaptureFunction]
+     */
+    fun setOutputCaptureFunction(func: suspend (content: MultimodalContent) -> Unit): PathObject
+    {
+        outputCaptureFunction = func
+        return this
+    }
+
+    /**
      * True if this path suppresses its async result from being appended to
      * the harness [turnHistory]. Mirrors the mutable [setSuppressHistoryEmit]
      * setting.
@@ -607,6 +632,7 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
                 {
                     val pcpResult = MultimodalContent(text = result.output)
                     pcpResult.metadata["pcpOutput"] = result.output
+                    outputCaptureFunction?.invoke(pcpResult)
                     return pcpResult
                 }
                 else
@@ -621,14 +647,18 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
         // Priority 2: execution function
         if (executionFunction != null)
         {
-            return executionFunction!!.invoke(content, station, turnHistory, turnSummary)
+            val execResult = executionFunction!!.invoke(content, station, turnHistory, turnSummary)
+            outputCaptureFunction?.invoke(execResult)
+            return execResult
         }
 
         // Priority 3: internal agent
         if (internalAgent != null)
         {
             internalAgent!!.setParentInterface(station)
-            return internalAgent!!.executeLocal(content)
+            val internalResult = internalAgent!!.executeLocal(content)
+            outputCaptureFunction?.invoke(internalResult)
+            return internalResult
         }
 
         // Priority 4: agent builder function
@@ -637,7 +667,9 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
             val agent = agentBuilderFunction!!.invoke(null)
             agent.setParentInterface(station)
             agent.P2PInit()
-            return agent.executeLocal(content)
+            val builderResult = agent.executeLocal(content)
+            outputCaptureFunction?.invoke(builderResult)
+            return builderResult
         }
 
         // No execution mechanism available
