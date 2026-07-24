@@ -275,7 +275,7 @@ class PumpStationPostGoalLiveTest
         try
         {
             stub.loopEnqueue("judge") { stubJson(isComplete = false) }
-            stub.loopEnqueue("dispatch") { stubResponsesJson("""{"path":"report"}""") }
+            stub.loopEnqueue("dispatch") { stubResponsesJson("""{"pathName":"report","inputData":{}}""") }
             stub.loopEnqueue("pathSafety") { stubResponsesJson("""{"safe":true,"reason":"ok"}""") }
             stub.loopEnqueue("report") { "Brief on Kotlin coroutines." }
             runPostGoalHarness(
@@ -302,7 +302,7 @@ class PumpStationPostGoalLiveTest
         try
         {
             stub.loopEnqueue("judge") { stubJson(isComplete = true) }
-            stub.loopEnqueue("dispatch") { stubResponsesJson("""{"path":"report"}""") }
+            stub.loopEnqueue("dispatch") { stubResponsesJson("""{"pathName":"report","inputData":{}}""") }
             stub.loopEnqueue("report") { "Brief on Kotlin coroutines." }
             runPostGoalHarness(
                 testName = "stub-05-flag-triggered-judge",
@@ -328,7 +328,7 @@ class PumpStationPostGoalLiveTest
         try
         {
             stub.loopEnqueue("judge") { stubJson(isComplete = false) }
-            stub.loopEnqueue("dispatch") { stubResponsesJson("""{"path":"report"}""") }
+            stub.loopEnqueue("dispatch") { stubResponsesJson("""{"pathName":"report","inputData":{}}""") }
             stub.loopEnqueue("report") { "Brief on Kotlin coroutines." }
             stub.loopEnqueue("summary") { "Concise summary of conversation history." }
             runPostGoalHarness(
