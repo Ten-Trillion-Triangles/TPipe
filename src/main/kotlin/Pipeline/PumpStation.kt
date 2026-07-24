@@ -1757,6 +1757,14 @@ private fun pathKey(name: String): String = name.lowercase()
      */
     private var maxTotalPathCallsPerPath: Int? = null
 
+    /**
+     * Loop guard: maximum consecutive dispatches of unregistered path names
+     * before halting with [PumpStationExitReason.LoopGuardTripped]. Null (the
+     * default) preserves today's unbounded behavior — the harness will keep
+     * retrying a non-existent path until the turn budget exhausts.
+     */
+    private var maxConsecutiveUnknownPaths: Int? = null
+
 //=====================================Group Q: SafePrune (optional deterministic cleanup)==========================
 
     /**
@@ -1842,6 +1850,13 @@ private fun pathKey(name: String): String = name.lowercase()
      * Counts consecutive turns on the same path for [maxConsecutiveSamePath] enforcement.
      */
     private var consecutivePathCount = 0
+
+    /**
+     * Counts consecutive [PumpStationError.UnknownPath] outcomes for
+     * [maxConsecutiveUnknownPaths] enforcement. Reset to 0 on any successful
+     * path resolution or on a guard trip.
+     */
+    private var consecutiveUnknownPathCount: Int = 0
 
     /**
      * Name of the last selected path, used to detect same-path repetition.
@@ -2534,6 +2549,10 @@ private fun pathKey(name: String): String = name.lowercase()
     internal val consecutivePathCountInternal: Int
         get() = consecutivePathCount
     internal val lastSelectedPathNameInternal get() = lastSelectedPathName
+    internal val consecutiveUnknownPathCountInternal: Int
+        get() = consecutiveUnknownPathCount
+    internal val maxConsecutiveUnknownPathsInternal: Int?
+        get() = maxConsecutiveUnknownPaths
 
     //=====================================Tracing Accessors================================================
     // Internal accessors so PumpStationHelpers.kt and PumpStationLoop.kt extension functions can read
@@ -4192,6 +4211,21 @@ private fun pathKey(name: String): String = name.lowercase()
     fun setMaxTotalPathCallsPerPath(max: Int?): PumpStation
     {
         this.maxTotalPathCallsPerPath = max
+        return this
+    }
+
+    /**
+     * Sets the maximum number of consecutive dispatches of unregistered path
+     * names before the loop guard fires with
+     * [PumpStationExitReason.LoopGuardTripped].
+     *
+     * @param max The maximum consecutive UnknownPath dispatches, or null to
+     *   disable the guard (preserves today's unbounded behavior).
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxConsecutiveUnknownPaths(max: Int?): PumpStation
+    {
+        this.maxConsecutiveUnknownPaths = max
         return this
     }
 

@@ -557,6 +557,14 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var maxTotalPathCallsPerPath: Int? = null
 
     /**
+     * Loop guard: maximum consecutive dispatches of unregistered path names
+     * before halting with [PumpStationExitReason.LoopGuardTripped]. Null
+     * (the default) preserves today's unbounded behavior — the harness
+     * will keep retrying a non-existent path until the turn budget exhausts.
+     */
+    var maxConsecutiveUnknownPaths: Int? = null
+
+    /**
      * Policy for how the harness responds when [maxTotalPathCallsPerPath] is exceeded.
      */
     var pathLimitExceededPolicy: PathLimitExceededPolicy = PathLimitExceededPolicy.Skip
@@ -1030,6 +1038,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         failurePolicy = source.failurePolicy
         maxConsecutiveSamePath = source.maxConsecutiveSamePath
         maxTotalPathCallsPerPath = source.maxTotalPathCallsPerPath
+        maxConsecutiveUnknownPaths = source.maxConsecutiveUnknownPaths
         pathLimitExceededPolicy = source.pathLimitExceededPolicy
         pathLimitExceededFunction = source.pathLimitExceededFunction
         judgeJsonContractEnabled = source.judgeJsonContractEnabled
@@ -1227,6 +1236,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         station
             .setMaxConsecutiveSamePath(maxConsecutiveSamePath)
             .setMaxTotalPathCallsPerPath(maxTotalPathCallsPerPath)
+            .setMaxConsecutiveUnknownPaths(maxConsecutiveUnknownPaths)
             .setPathLimitExceededFunction(pathLimitExceededFunction)
 
         // pathLimitExceededPolicy is a public var on PumpStation

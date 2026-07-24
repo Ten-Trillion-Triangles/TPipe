@@ -60,7 +60,7 @@ class PumpStationUnknownPathLoopGuardTest
             // Two UnknownPath dispatches: counter at 2.
             station.runPathFlow(PathRequest(pathName = "flarble"))
             station.runPathFlow(PathRequest(pathName = "baz"))
-            assertEquals(2, station.consecutiveUnknownPathCount,
+            assertEquals(2, station.consecutiveUnknownPathCountInternal,
                 "Counter should be 2 after two UnknownPath dispatches")
 
             // One resolved dispatch: counter resets to 0.
@@ -68,7 +68,7 @@ class PumpStationUnknownPathLoopGuardTest
             assertNotNull(resolved, "Resolved path must return non-null content")
             assertFalse(resolved.terminatePipeline,
                 "Resolved path must not signal termination")
-            assertEquals(0, station.consecutiveUnknownPathCount,
+            assertEquals(0, station.consecutiveUnknownPathCountInternal,
                 "Counter should reset to 0 after a resolved path runs")
 
             // Now 3 more UnknownPath dispatches should trip the guard (counter restarts from 0).
@@ -98,7 +98,7 @@ class PumpStationUnknownPathLoopGuardTest
                 val result = station.runPathFlow(PathRequest(pathName = "flarble-$it"))
                 assertNull(result, "Without the guard, UnknownPath must return null (no termination)")
             }
-            assertEquals(5, station.consecutiveUnknownPathCount,
+            assertEquals(5, station.consecutiveUnknownPathCountInternal,
                 "Counter should accumulate all 5 unknown dispatches when the guard is null")
             assertNull(station.taskState.exitReason,
                 "Without the guard, exitReason must not be set by UnknownPath dispatches")
