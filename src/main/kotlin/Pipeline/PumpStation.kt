@@ -2207,19 +2207,19 @@ private fun pathKey(name: String): String = name.lowercase()
             val shouldReveal = path.revealWhen.invoke(taskState, externalContext)
             if (shouldReveal)
             {
-                val firstReveal = path.pathName !in revealedReservePaths
-                revealedReservePaths.add(path.pathName)
+                val firstReveal = pathKey(path.pathName) !in revealedReservePaths
+                revealedReservePaths.add(pathKey(path.pathName))
                 if(firstReveal)
                 {
                     emitEvent(ReservePathRevealed(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         pathName = path.pathName,
-                        reservePathNames = reservePaths.keys.toList()
+                        reservePathNames = reservePaths.values.map { it.pathName }
                     ))
                 }
             }
-            if (revealedReservePaths.contains(path.pathName))
+            if (revealedReservePaths.contains(pathKey(path.pathName)))
             {
                 val desc = PathDescriptionData(
                     name = path.pathName,

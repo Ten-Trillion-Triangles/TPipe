@@ -1,6 +1,7 @@
 package com.TTT.Pipeline
 
 import com.TTT.Pipe.MultimodalContent
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
@@ -87,6 +88,30 @@ class PumpStationPathCaseInsensitiveTest
             "end-to-end: dispatching 'giveUp' must resolve the path registered as 'giveUp'")
         assertEquals("giveUp", resolved.pathName,
             "the resolved path's pathName preserves the original casing for display")
+    }
+
+    @Test
+    fun `revealing a reserve path with mixed case populates the visible list with original casing`() {
+        val station = pumpStation("reserve-case-${System.nanoTime()}") {
+            dispatchAgent = Pipeline()
+            path("sentinel") {
+                risk = PathRiskLevel.Low
+                setExecutionFunction { content, _, _, _ -> content }
+            }
+            reservePath("hiddenOne") {
+                risk = PathRiskLevel.Low
+                revealWhen { _, _ -> true }
+                setInternalAgent(SgTestAgent(agentTag = "hiddenOne-agent"))
+            }
+        }
+        // Drive the harness through P2PInit() then getPaths() so the reserve-reveal
+        // loop in [getVisiblePathDescriptorsInternal] runs and populates
+        // [revealedReservePaths] for this station.
+        runBlocking { station.P2PInit() }
+        station.getPaths()
+        val visible = station.getVisiblePathNames()
+        assertEquals(listOf("sentinel", "hiddenOne"), visible,
+            "visible-paths list must contain both the normal path and the revealed reserve path, each with original casing")
     }
 
     private fun pathRequest(name: String): PathRequest =
