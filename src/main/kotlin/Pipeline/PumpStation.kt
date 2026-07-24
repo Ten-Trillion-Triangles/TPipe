@@ -804,6 +804,17 @@ class PumpStation(
      */
     val steeringService: PumpStationSteeringService get() = _steeringService
 
+    /**
+     * The interrupt service instance used by the harness loop to receive
+     * out-of-band messages that stop the active turn and re-enter from
+     * BeforeJudge. Always non-null — defaults to an empty
+     * [PumpStationInterruptService] when no `interruptPolicy { }` is configured.
+     *
+     * Accessed by the harness loop's phase-boundary interrupt poll points and
+     * by external producer code that wants to send an interrupt.
+     */
+    val interruptService: PumpStationInterruptService = PumpStationInterruptService()
+
 //=====================================Steering Runtime API (Group S)=================================================
 
 /**
@@ -917,6 +928,42 @@ suspend fun drainSteeringForPhase(phase: PumpStationPausePhase): List<Multimodal
         updated.metadata = mergedMetadata
         updated
     }
+}
+
+//=====================================Interrupt Runtime API (Group I)=================================================
+
+/**
+ * Enqueue an interrupt. Fires at the next occurrence of [phase] in the
+ * harness loop. Unlike [steer], an interrupt stops the active turn, rewinds
+ * the harness state to the BeforeJudge of the current turn, and re-enters
+ * the turn loop from the top with the interrupt message appended to
+ * turnHistory (with the canonical `metadata["interrupt"]` envelope).
+ *
+ * Combination semantics when multiple [interrupt] calls queue for the same
+ * phase before the next poll:
+ *   - The first entry becomes the active interrupt (the rewind target).
+ *   - Subsequent entries are forwarded to [steer] for the same phase as
+ *     one-shot steering instructions. If [steer] is not configured for
+ *     the phase, the overflow is silently dropped AND an
+ *     [InterruptOverflowDropped] event is emitted for observability.
+ *
+ * Thread-safe: may be called from any thread or coroutine context.
+ *
+ * @param phase The PumpStationPausePhase boundary at which to interrupt
+ * @param content The MultimodalContent to inject into turnHistory on rewind
+ */
+suspend fun interrupt(phase: PumpStationPausePhase, content: MultimodalContent)
+{
+    interruptService.enqueue(phase, content)
+}
+
+/**
+ * Convenience overload accepting a plain text string. Constructs a
+ * MultimodalContent with the given text and enqueues it.
+ */
+suspend fun interrupt(phase: PumpStationPausePhase, text: String)
+{
+    interrupt(phase, MultimodalContent(text = text))
 }
 
 //======================================Properties======================================================================
