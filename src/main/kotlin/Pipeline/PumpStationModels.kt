@@ -1008,6 +1008,26 @@ data class HarnessResumed(
 ) : PumpStationEvent
 
 /**
+ * Emitted by [PumpStation.injectInterruptForPhase] when one or more queued
+ * interrupt entries were dropped because the steering service is not configured
+ * for the phase. The first queued entry was thrown as the active interrupt;
+ * the rest had no destination.
+ *
+ * Operators use this event to detect when a caller is firing more interrupts
+ * than the harness can process and the overflow is being silently absorbed.
+ */
+@kotlinx.serialization.Serializable
+data class InterruptOverflowDropped(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Judge,
+    val boundaryPhase: PumpStationPausePhase,
+    val droppedCount: Int,
+    val firstDroppedText: String?
+) : PumpStationEvent
+
+/**
  * A reserve path's reveal predicate evaluated to true, making the path visible to the
  * dispatch agent. Sticky — once revealed, the path stays visible until the harness resets.
  */

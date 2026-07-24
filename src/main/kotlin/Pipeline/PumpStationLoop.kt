@@ -18,6 +18,7 @@ import com.TTT.Debug.TraceFormat
 import com.TTT.Util.serialize
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
+import java.util.UUID
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -187,6 +188,79 @@ internal suspend fun PumpStation.injectSteeringForPhase(phase: PumpStationPauseP
     entries.forEach { entry ->
         turnHistory.add(ConverseData(role = ConverseRole.harness, content = entry))
     }
+}
+
+/**
+ * Poll the interrupt service for [phase]. If a pending entry exists, throw
+ * [PumpStationInterruptException] carrying the entry's content and [snapshot]
+ * (the [PumpStationInterruptSnapshot] taken at the most recent BeforeJudge of
+ * the current turn). If no entry is pending, this is a no-op.
+ *
+ * The exception is caught at the top of [runHarnessLoop] around the [runTurn]
+ * invocation. The catch handler restores the snapshot, appends the entry to
+ * turnHistory with the canonical `metadata["interrupt"]` envelope, and
+ * re-invokes [runTurn] without incrementing `taskState.turnIndex`.
+ *
+ * Combination semantics: if the service has more than one entry queued, the
+ * first is thrown as the interrupt; the rest are forwarded to the steering
+ * service as one-shot steering instructions. If the steering service is not
+ * configured for the phase (or throws), the overflow entries are silently
+ * dropped and an [InterruptOverflowDropped] event is emitted for observability
+ * (operator-confirmed requirement, 2026-07-24).
+ */
+internal suspend fun PumpStation.injectInterruptForPhase(
+    phase: PumpStationPausePhase,
+    snapshot: PumpStationInterruptSnapshot
+)
+{
+    val first = interruptService.drainForPhase(phase) ?: return
+
+    // Stamp the canonical interrupt envelope onto the entry before it goes
+    // out to the catch handler. The envelope uses the `interrupt` key so the
+    // judge LLM and trace visualizer can branch on producer type.
+    val now = System.currentTimeMillis()
+    val envelope: Map<String, Any> = mapOf(
+        "phase" to phase.name,
+        "wasRewound" to true,
+        "injectionId" to UUID.randomUUID().toString(),
+        "timestamp" to now
+    )
+    val mergedMetadata: MutableMap<Any, Any> = mutableMapOf()
+    first.metadata.forEach { (k, v) -> mergedMetadata[k] = v }
+    mergedMetadata["interrupt"] = envelope
+    val stamped = first.copy()
+    stamped.metadata = mergedMetadata
+
+    // Forward any overflow entries to steering. Best-effort: if the steering
+    // service has no one-shot channel and no persistent overlay for the phase,
+    // the entries are silently dropped AND an InterruptOverflowDropped event
+    // is emitted for observability (operator-confirmed requirement).
+    val overflow = interruptService.drainAllForPhase(phase)
+    var droppedCount = 0
+    var firstDroppedText: String? = null
+    overflow.forEach { extra ->
+        try
+        {
+            steeringService.enqueueOneShot(phase, extra)
+        }
+        catch (_: Throwable)
+        {
+            droppedCount++
+            if (firstDroppedText == null) firstDroppedText = extra.text.take(200)
+        }
+    }
+    if (droppedCount > 0)
+    {
+        emitEventInternal(InterruptOverflowDropped(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            boundaryPhase = phase,
+            droppedCount = droppedCount,
+            firstDroppedText = firstDroppedText
+        ))
+    }
+
+    throw PumpStationInterruptException(stamped, snapshot)
 }
 
 /**

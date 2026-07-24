@@ -165,6 +165,14 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
         }
         is HarnessResumed -> eventType = TraceEventType.PUMP_STATION_RESUMED
 
+        is InterruptOverflowDropped ->
+        {
+            eventType = TraceEventType.PUMP_STATION_INTERRUPT_OVERFLOW_DROPPED
+            baseMetadata["boundaryPhase"] = event.boundaryPhase.name
+            baseMetadata["droppedCount"] = event.droppedCount
+            baseMetadata["firstDroppedText"] = event.firstDroppedText ?: ""
+        }
+
         is HealthCheckStarted -> eventType = TraceEventType.PUMP_STATION_HEALTH_CHECK_STARTED
         is HealthCheckCompleted ->
         {
