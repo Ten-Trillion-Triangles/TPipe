@@ -19,8 +19,8 @@ import com.TTT.Pipe.MultimodalContent
  *   - [selectedPathName] — taskState.selectedPathName at BeforeJudge
  *   - [originalInput] — taskState.originalInput at BeforeJudge
  *   - [turnHistoryCopy] — deep copy of turnHistory.history at BeforeJudge.
- *     Deep-copied so subsequent in-flight turns mutating turnHistory do
- *     not bleed into the snapshot.
+ *     Always copied on construction so subsequent in-flight turns mutating
+ *     turnHistory do not bleed into the snapshot.
  *
  * Not captured (intentionally — these don't change during a single turn):
  *   - rawTurnHistory — the full event log; preserving in-flight events is
@@ -28,11 +28,14 @@ import com.TTT.Pipe.MultimodalContent
  *   - contextWindow, miniBank — unchanged by a turn's in-flight work
  *   - visiblePathNames, reservePathNames — unchanged
  */
-data class PumpStationInterruptSnapshot(
+class PumpStationInterruptSnapshot(
     val turnIndex: Int,
     val latestContent: MultimodalContent?,
     val lastPathResult: MultimodalContent?,
     val selectedPathName: String?,
     val originalInput: MultimodalContent?,
-    val turnHistoryCopy: List<ConverseData>
+    turnHistory: List<ConverseData>
 )
+{
+    val turnHistoryCopy: List<ConverseData> = turnHistory.toList()
+}

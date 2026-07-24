@@ -16,7 +16,7 @@ class PumpStationInterruptExceptionTest
             lastPathResult = null,
             selectedPathName = "worker-a",
             originalInput = MultimodalContent(text = "user's original ask"),
-            turnHistoryCopy = mutableListOf()
+            turnHistory = mutableListOf()
         )
         val ex = PumpStationInterruptException(content, snapshot)
         assertSame(content, ex.content)
