@@ -891,6 +891,33 @@ class PumpStationPostGoalLiveTest
                 MultimodalContent(text = "Brief on: ${content.text}\n\n## Done.")
             }
         }
+        // Hypothesis-test escape valve (added 2026-07-23): if the LLM cannot make
+        // progress on the work paths (e.g. the user's input is too vague for any
+        // work path to act on), it can pick giveUp to terminate the harness with
+        // a clear "I cannot complete this task" signal. Without this path, the
+        // dispatch contract forces a selection from {gather, analyze, report} and
+        // the harness can cycle indefinitely.
+        //
+        // The passPipeline + terminatePipeline flags are Transient var fields on
+        // MultimodalContent (BinaryContent.kt:121, 153), not constructor params,
+        // so they must be set after construction via .also { } (the established
+        // pattern at PumpStation.kt:3081 and BinaryContent.kt examples).
+        path("giveUp")
+        {
+            description = "Use this path when the task cannot be completed with the " +
+                "available information. Sets passPipeline=true and terminatePipeline=true " +
+                "so the judge accepts the abandonment as task-complete AND the harness " +
+                "exits the loop. The result text will start with GIVEUP: so the test " +
+                "harness can detect the escape."
+            risk = PathRiskLevel.Low
+            setExecutionFunction { content, _, _, _ ->
+                MultimodalContent(text = "GIVEUP: I cannot complete this task. ${content.text}")
+                    .also {
+                        it.passPipeline = true
+                        it.terminatePipeline = true
+                    }
+            }
+        }
     }
 
     private fun PumpStationBuilder<*>.registerFlagTriggeredReportPath()

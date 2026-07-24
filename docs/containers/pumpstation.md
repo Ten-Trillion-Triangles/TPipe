@@ -1459,6 +1459,138 @@ After `restoreSnapshot`, `harnessIsReady` is set to `true` and a `HarnessResumed
 
 Pause phases: `BeforeJudge`, `AfterJudge`, `BeforeDispatch`, `AfterDispatch`, `BeforePathSafety`, `BeforePathExecution`, `AfterPathExecution`, `BeforeMemoryUpdate`, `BeforeCompaction`, `BeforeGoalValidation`, `BeforeExit`.
 
+## Steering: Mid-Loop Context Injection
+
+The steering feature lets external callers inject `MultimodalContent` into the agent's visible `turnHistory` at configurable `PumpStationPausePhase` boundaries without disrupting the running loop. Unlike `pauseAt()`, steering does not halt the harness — the injection is non-blocking and thread-safe under the existing `Mutex`-protected history writes.
+
+### Configuration Surface (DSL)
+
+Configure initial persistent overlays and one-shot instructions inside the `pumpStation { }` block:
+
+```kotlin
+pumpStation("my-station") {
+    path("search") { /* ... */ }
+
+    steeringPolicy {
+        // Persistent overlay — fires on every BeforeJudge
+        persistentOverlay(PumpStationPausePhase.BeforeJudge) {
+            text("Always verify the user's last request before proceeding.")
+        }
+
+        // One-shot — fires once at the next AfterDispatch, then discarded
+        phaseBoundContent(PumpStationPausePhase.AfterDispatch) {
+            text("Check the async channel for pending path results.")
+        }
+    }
+}
+```
+
+The `SteeringPolicyBuilder` exposes two overloads per method:
+- `persistentOverlay(phase, content: MultimodalContent)` / `persistentOverlay(phase, text: String)`
+- `phaseBoundContent(phase, content: MultimodalContent)` / `phaseBoundContent(phase, text: String)`
+
+### Runtime API
+
+Push new instructions at runtime without halting the loop:
+
+```kotlin
+// One-shot — fires at the next occurrence of the phase, then discarded
+station.steer(PumpStationPausePhase.BeforeJudge) {
+    text("User just asked: focus on the security audit.")
+}
+
+// Persistent — fires on every occurrence until cleared or replaced
+station.steerPersistent(PumpStationPausePhase.BeforeJudge) {
+    text("Budget is $50. Do not exceed.")
+}
+
+// Clear the persistent overlay
+station.clearSteering(PumpStationPausePhase.BeforeJudge)
+```
+
+All three methods are `suspend` and may be called concurrently with the running loop from any thread or coroutine context.
+
+### Phase Boundaries (11 chokepoints)
+
+Steering is injected at every one of the 11 `PumpStationPausePhase` boundaries in the harness loop. Each chokepoint is wired via the `injectSteeringForPhase(phase)` extension on `PumpStation`, called at the right semantic boundary in `PumpStationLoop.kt`:
+
+| Phase | Location | Purpose |
+|-------|----------|---------|
+| `BeforeJudge` | `runTurn` before `runJudgePhase()` | Inject guidance before the judge LLM decides |
+| `AfterJudge` | `runTurn` after `runJudgePhase()` | Inject guidance after the judge returns |
+| `BeforeDispatch` | `runTurn` before `runDispatchPhase()` | Inject guidance before the dispatch LLM picks a path |
+| `AfterDispatch` | `runTurn` after `runDispatchPhase()` | Inject guidance after dispatch returns |
+| `BeforePathSafety` | `invokePath` before path safety check | Inject guidance before the safety check |
+| `BeforePathExecution` | `runTurn` before `invokePath()` | Inject guidance before the path runs |
+| `AfterPathExecution` | `runTurn` after `invokePath()` | Inject guidance after the path completes |
+| `BeforeMemoryUpdate` | `runTurn` before memory update | Inject guidance before history is written |
+| `BeforeCompaction` | `runTurn` before compaction | Inject guidance before compaction runs |
+| `BeforeGoalValidation` | `runExitFlow` | Inject guidance before goal validation |
+| `BeforeExit` | `runExitFlow` before harness exit | Inject guidance on the exit path |
+
+### Combination Semantics
+
+At each phase boundary, the drain returns a list ordered as:
+1. **Persistent overlay first** (if set for that phase) — fires on every match
+2. **One-shot instructions** in FIFO order — fire once, then discarded
+
+After the drain, the persistent overlay remains in place; the one-shot queue is empty for that phase.
+
+### Metadata Provenance
+
+Every injected entry carries a canonical `metadata["steering"]` envelope with four fields:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `phase` | `String` | The `PumpStationPausePhase.name` at which the entry was drained |
+| `persistent` | `Boolean` | `true` if the entry was a persistent overlay, `false` if one-shot |
+| `injectionId` | `String` | UUID for tracing and audit |
+| `timestamp` | `Long` | Epoch milliseconds at drain time |
+
+This envelope is namespaced under `"steering"` and merges with any existing `MultimodalContent.metadata` keys without overwriting them. Downstream features (summarization exclusion, audit trails, debugging overlays) can inspect this envelope to distinguish steered entries from regular user-role history.
+
+### How It Works
+
+1. **Producer side** (`steer` / `steerPersistent` / `clearSteering` / DSL `steeringPolicy` block): writes to `PumpStationSteeringService`, a thread-safe store using `Mutex` + `Channel` + `ConcurrentHashMap`.
+2. **Consumer side** (harness loop at each phase boundary): calls `pumpStation.drainSteeringForPhase(phase)`, which:
+   - Combines persistent overlay (if set) + one-shot queue (FIFO)
+   - Stamps each entry with the canonical `metadata["steering"]` envelope
+   - Returns a `List<MultimodalContent>` ready for `turnHistory.add()`
+3. **Loop wiring**: `injectSteeringForPhase(phase)` wraps the drain + append, sitting at the right semantic boundary in `PumpStationLoop.kt` (see Phase Boundaries table above).
+
+The loop is never halted, never signaled, never awaited. Concurrent `steer()` calls are safe under the service's `Mutex`.
+
+### Reference Locations
+
+| Component | File |
+|-----------|------|
+| Model classes (one-shot, persistent, configuration) | `src/main/kotlin/Pipeline/PumpStationSteeringModels.kt` |
+| Thread-safe service | `src/main/kotlin/Pipeline/PumpStationSteeringService.kt` |
+| DSL block (`steeringPolicy { }`, `SteeringPolicyBuilder`) | `src/main/kotlin/Pipeline/PumpStationDsl.kt` |
+| Runtime API + drain helper | `src/main/kotlin/Pipeline/PumpStation.kt` (lines ~807-920) |
+| 11 chokepoint injections | `src/main/kotlin/Pipeline/PumpStationLoop.kt` (10 sites) + `src/main/kotlin/Pipeline/PumpStation.kt` (1 site) |
+| Regression tests (27 tests across 3 classes) | `src/test/kotlin/Pipeline/PumpStationSteering{Service,Dsl,Runtime}Test.kt` |
+
+### Example: Hybrid Persistent + One-Shot
+
+```kotlin
+pumpStation("hybrid-station") {
+    path("search") { /* ... */ }
+
+    steeringPolicy {
+        // Persistent: budget reminder fires on every BeforeJudge
+        persistentOverlay(PumpStationPausePhase.BeforeJudge, "Budget: $50. Track spend.")
+    }
+}
+
+// At runtime, push a one-shot nudge for a specific turn
+station.steer(PumpStationPausePhase.BeforeJudge) {
+    text("User just asked about a refund — be empathetic.")
+}
+
+// At every BeforeJudge: the persistent overlay fires + the one-shot fires once
+// At the next BeforeJudge: only the persistent overlay fires
+```
 
 ## Tracing Support
 

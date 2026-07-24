@@ -56,6 +56,12 @@ var jsonOutput: String = ""
 ```
 JSON schema for expected output structure. Used for validation and response formatting.
 
+**`systemContextInjectionPoint`**
+```kotlin
+var systemContextInjectionPoint: SystemContextInjectionPoint? = null
+```
+Optional system-prompt placement for prepared context. `null` preserves the default user-prompt context route.
+
 **`saveSnapshot`**
 ```kotlin
 var saveSnapshot: Boolean = false
@@ -271,6 +277,16 @@ Sets prompt injected between input and output JSON schemas in the system prompt.
 Sets prompt added to the end of the system prompt after all other injections.
 
 **Behavior:** The footer prompt is appended as the final element when `applySystemPrompt()` is called, appearing after JSON schemas, PCP context, P2P agents, and all other automatic injections. Ideal for final instructions or formatting requirements.
+
+#### `setSystemContextInjectionPoint(injectionPoint: SystemContextInjectionPoint): Pipe`
+Selects where prepared context is installed in the rebuilt system prompt.
+
+**Values:**
+- `Beginning`: before the raw system prompt
+- `Middle`: between JSON input and output requirements
+- `Footer`: before the explicit `footerPrompt`
+
+**Behavior:** Enables system-prompt context injection and disables `.autoInjectContext(...)` user-prompt injection. The selected `ContextWindow` or `MiniBank` is serialized after retrieval and truncation. Context instructions use the existing `contextInstructions` configuration.
 
 #### `copySystemPromptToUserPrompt(): Pipe`
 Copies system prompt to user prompt for models that handle user prompts better.
@@ -507,7 +523,9 @@ Updates pipeline context when pipe completes.
 #### `autoInjectContext(instruction: String): Pipe`
 Automatically injects context into user prompt.
 
-**Behavior:** Context is injected as text into the user prompt during execution. The instruction parameter explains how to interpret the context.
+**Behavior:** Context is injected as text into the user prompt during execution. The instruction parameter explains how to interpret the context. This route disables system-prompt context injection.
+
+System-prompt context injection and user-prompt context injection are mutually exclusive. Calling `setSystemContextInjectionPoint(...)` selects the system-prompt route; calling `autoInjectContext(...)` selects the user-prompt route.
 
 #### `autoTruncateContext(fillMode: Boolean = false, fillAndSplitMode: Boolean = false): Pipe`
 Enables automatic context truncation with optional fill or fill-and-split selection.

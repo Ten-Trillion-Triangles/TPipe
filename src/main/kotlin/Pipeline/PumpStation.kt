@@ -43,6 +43,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Contextual
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -758,7 +759,10 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
  * For a one-call factory that wires judge + dispatch + killSwitch + memory defaults,
  * see `Defaults.PumpStationDefaults.withOpenRouter(config)`.
  */
-class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
+class PumpStation(
+    killSwitch: KillSwitch? = null,
+    steeringService: PumpStationSteeringService = PumpStationSteeringService()
+) : P2PInterface
 {
     //=====================================KillSwitch (Group O)========================================================
     /**
@@ -769,6 +773,8 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      * and [DistributionGrid].
      */
     private var _killSwitch: KillSwitch? = killSwitch
+
+    private val _steeringService: PumpStationSteeringService = steeringService
 
     /**
      * Kill switch attached to this PumpStation. The default [KillSwitch.onTripped] callback throws
@@ -787,6 +793,131 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
             pathList.values.forEach { it.killSwitch = value }
             reservePaths.values.forEach { it.killSwitch = value }
         }
+
+    /**
+     * The steering service instance used by the harness loop to inject [MultimodalContent]
+     * into turnHistory at [PumpStationPausePhase] boundaries. Always non-null — defaults
+     * to an empty [PumpStationSteeringService] when no `steeringPolicy { }` is configured.
+     *
+     * Accessed by the harness loop's phase-boundary injection points and by external
+     * observability surfaces.
+     */
+    val steeringService: PumpStationSteeringService get() = _steeringService
+
+//=====================================Steering Runtime API (Group S)=================================================
+
+/**
+ * Enqueue a one-shot steering instruction. Fires at the next occurrence of
+ * [phase] in the harness loop, then is automatically discarded.
+ *
+ * Thread-safe: may be called from any thread or coroutine context concurrently
+ * with the running loop. The instruction is queued asynchronously and will not
+ * block the caller.
+ *
+ * @param phase The PumpStationPausePhase boundary to inject at
+ * @param content The MultimodalContent to append to turnHistory
+ */
+suspend fun steer(phase: PumpStationPausePhase, content: MultimodalContent)
+{
+    steeringService.enqueueOneShot(phase, content)
+}
+
+/**
+ * Convenience overload accepting a plain text string. Constructs a MultimodalContent
+ * with the given text and enqueues it as a one-shot.
+ */
+suspend fun steer(phase: PumpStationPausePhase, text: String)
+{
+    steer(phase, MultimodalContent(text = text))
+}
+
+/**
+ * Set or replace the persistent overlay for [phase]. Fires on every occurrence of
+ * [phase] until replaced by another `steerPersistent` call or cleared via `clearSteering`.
+ *
+ * Thread-safe: may be called concurrently with the running loop.
+ *
+ * @param phase The PumpStationPausePhase boundary to inject at
+ * @param content The MultimodalContent to append to turnHistory on every match
+ */
+suspend fun steerPersistent(phase: PumpStationPausePhase, content: MultimodalContent)
+{
+    steeringService.setPersistent(phase, content)
+}
+
+/**
+ * Convenience overload accepting a plain text string. Constructs a MultimodalContent
+ * with the given text and registers it as a persistent overlay.
+ */
+suspend fun steerPersistent(phase: PumpStationPausePhase, text: String)
+{
+    steerPersistent(phase, MultimodalContent(text = text))
+}
+
+/**
+ * Clear the persistent overlay for [phase]. Subsequent occurrences of [phase]
+ * will not be steered unless a new overlay is set.
+ *
+ * Thread-safe: may be called concurrently with the running loop.
+ *
+ * @param phase The PumpStationPausePhase boundary to clear
+ */
+suspend fun clearSteering(phase: PumpStationPausePhase)
+{
+    steeringService.clearPersistent(phase)
+}
+
+//=====================================Steering Drain Helper (Group S)=================================================
+
+/**
+ * Drain all pending steering instructions for [phase] and prepare them for
+ * insertion into turnHistory. Returns a list of MultimodalContent with the
+ * canonical `metadata["steering"]` envelope stamped on each entry.
+ *
+ * Combination semantics at drain time:
+ *   1. Persistent overlay (if set) is emitted first, with `metadata["steering"].persistent = true`
+ *   2. One-shot instructions are emitted in FIFO order, each with `metadata["steering"].persistent = false`
+ *
+ * After the drain, the persistent overlay remains in place (fires again on next
+ * phase match); the one-shot queue is empty for [phase].
+ *
+ * Returns an empty list if no overlay is set and no one-shots are queued.
+ *
+ * Thread-safe: the underlying service uses a Mutex to coordinate concurrent
+ * producer-side calls.
+ *
+ * @param phase The PumpStationPausePhase to drain
+ * @return List of MultimodalContent with steering metadata applied (empty list if nothing pending)
+ */
+suspend fun drainSteeringForPhase(phase: PumpStationPausePhase): List<MultimodalContent>
+{
+    val drained = steeringService.drainForPhase(phase)
+    val now = System.currentTimeMillis()
+    return drained.mapIndexed { index, content ->
+        val isPersistent = if (index == 0 && steeringService.hasPersistentOverlay(phase)) {
+            // First entry is the persistent overlay if it was set
+            true
+        } else {
+            false
+        }
+        val steeringMetadata: Map<String, Any> = mapOf(
+            "phase" to phase.name,
+            "persistent" to isPersistent,
+            "injectionId" to UUID.randomUUID().toString(),
+            "timestamp" to now
+        )
+        // Build a fresh MutableMap<Any, Any> that merges existing metadata with the steering envelope.
+        // MultimodalContent.metadata is declared as MutableMap<Any, Any> as a body-level var
+        // (not a primary-constructor property), so data-class copy() cannot override it.
+        // We use copy() to clone all primary-constructor properties, then reassign metadata.
+        val mergedMetadata: MutableMap<Any, Any> = mutableMapOf()
+        content.metadata.forEach { (k, v) -> mergedMetadata[k] = v }
+        mergedMetadata["steering"] = steeringMetadata
+        val updated = content.copy()
+        updated.metadata = mergedMetadata
+        updated
+    }
+}
 
 //======================================Properties======================================================================
 
@@ -2850,6 +2981,12 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
             // Previously the flag check was the only gate, which made the safety check a
             // degenerate always-approve (LLMs don't normally set terminatePipeline on a
             // safety verdict response).
+            // Phase boundary: BeforePathSafety — drain steering before the path-safety
+            // gate runs. Persistent overlays / one-shot instructions for this phase are
+            // appended to turnHistory so they are visible to the safety LLM (when one is
+            // configured) and to downstream observers. The drain is non-blocking and
+            // does not influence the safety verdict.
+            injectSteeringForPhase(PumpStationPausePhase.BeforePathSafety)
             val approved = checkPathSafety(path, input)
             // Capture the rejection reason from the safety verdict (when the agent
             // path was used). pathSafetyFunction users don't carry a reason —

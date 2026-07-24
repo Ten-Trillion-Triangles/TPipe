@@ -6,6 +6,7 @@ import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Enums.PromptMode
 import com.TTT.Enums.PipeRole
 import com.TTT.Enums.ProviderName
+import com.TTT.Enums.SystemContextInjectionPoint
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.PipeContextProtocol.PcpContext
@@ -39,6 +40,7 @@ data class PipeSettings(
     var readFromPipelineContext: Boolean? = null,
     var updatePipelineContextOnExit: Boolean? = null,
     var autoInjectContext: Boolean? = null,
+    var systemContextInjectionPoint: SystemContextInjectionPoint? = null,
     var autoTruncateContext: Boolean? = null,
     var emplaceLorebook: Boolean? = null,
     var appendLoreBook: Boolean? = null,

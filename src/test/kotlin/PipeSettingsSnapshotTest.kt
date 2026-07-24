@@ -5,6 +5,7 @@ import com.TTT.Context.MiniBank
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Enums.PromptMode
 import com.TTT.Enums.ProviderName
+import com.TTT.Enums.SystemContextInjectionPoint
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.TokenBudgetSettings
@@ -56,6 +57,7 @@ class PipeSettingsSnapshotTest
             setAlwaysSplitIfWholeWordExists(true)
             setCountSubWordsIfSplit(true)
             setNonWordSplitCount(7)
+            setSystemContextInjectionPoint(SystemContextInjectionPoint.Middle)
             setTokenBudget(
                 TokenBudgetSettings(
                     contextWindowSize = 4096,
@@ -129,7 +131,8 @@ class PipeSettingsSnapshotTest
             readFromGlobalContext = true,
             readFromPipelineContext = true,
             updatePipelineContextOnExit = true,
-            autoInjectContext = true,
+            autoInjectContext = false,
+            systemContextInjectionPoint = SystemContextInjectionPoint.Middle,
             autoTruncateContext = true,
             emplaceLorebook = false,
             appendLoreBook = true,
@@ -195,7 +198,8 @@ class PipeSettingsSnapshotTest
         assertTrue(applied.readFromGlobalContext!!)
         assertTrue(applied.readFromPipelineContext!!)
         assertTrue(applied.updatePipelineContextOnExit!!)
-        assertTrue(applied.autoInjectContext!!)
+        assertFalse(applied.autoInjectContext!!)
+        assertEquals(SystemContextInjectionPoint.Middle, applied.systemContextInjectionPoint)
         assertTrue(applied.autoTruncateContext!!)
         assertFalse(applied.emplaceLorebook!!)
         assertTrue(applied.appendLoreBook!!)
@@ -221,6 +225,8 @@ class PipeSettingsSnapshotTest
         assertEquals("pipe-1", applied.pipeId)
         assertEquals("pipeline-1", applied.currentPipelineId)
         assertEquals(mapOf("alpha" to 1.0), applied.tokenBudgetSettings!!.pageWeights)
+        assertEquals(SystemContextInjectionPoint.Middle, applied.systemContextInjectionPoint)
+        assertFalse(applied.autoInjectContext == true)
 
         assertTrue(applied.contextWindow !== source.contextWindow)
         assertTrue(applied.miniContextBank !== source.miniContextBank)

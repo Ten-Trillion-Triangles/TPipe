@@ -11,6 +11,7 @@
 - [Key Properties](#key-properties)
 - [Method Chaining](#method-chaining)
 - [System Prompt Processing](#system-prompt-processing)
+- [System-Prompt Context Placement](#system-prompt-context-placement)
 - [Conversation History Wrapping](#conversation-history-wrapping)
 - [Best Practices](#best-practices)
 - [Next Steps](#next-steps)
@@ -213,8 +214,9 @@ The system prompt undergoes several processing steps:
 2. **PCP Context**: Pipe Context Protocol additions (if enabled)
 3. **JSON Requirements**: JSON formatting instructions (if needed)
 4. **Middle Prompt**: Prompt that sits between json input, and json output.
-5. **Context Instructions**: Auto-injected context (if enabled)
-6. **Footer Prompt**: Additional instructions appended at the end
+5. **Context Instructions**: Context schema guidance when `.autoInjectContext(...)` is enabled
+6. **System-Prompt Context Block**: Selected context data when `setSystemContextInjectionPoint(...)` is enabled
+7. **Footer Prompt**: Additional instructions appended at the end
 
 ```kotlin
 // The final system prompt may include additional instructions
@@ -222,6 +224,23 @@ The system prompt undergoes several processing steps:
 pipe.setSystemPrompt("You are an automated security auditor.")
 // Final prompt might be: "You are an automated security auditor.\n\n[JSON instructions]\n\n[Context instructions]"
 ```
+
+## System-Prompt Context Placement
+
+Use `SystemContextInjectionPoint` for models whose attention behavior benefits from placing context in the system prompt:
+
+```kotlin
+import com.TTT.Enums.SystemContextInjectionPoint
+
+val pipe = BedrockPipe()
+    .setSystemPrompt("You are a manuscript orchestrator.")
+    .pullGlobalContext()
+    .setSystemContextInjectionPoint(SystemContextInjectionPoint.Beginning)
+```
+
+`Beginning`, `Middle`, and `Footer` select the context block position. The block is rebuilt through `applySystemPrompt()` after context retrieval and truncation. The system-prompt route disables `.autoInjectContext(...)`, so the serialized context is sent once.
+
+`contextInstructions` remains the customization point for model-specific guidance. The generated block marks context as data and preserves the surrounding system prompt as the higher-priority instruction source.
 
 ## Conversation History Wrapping
 

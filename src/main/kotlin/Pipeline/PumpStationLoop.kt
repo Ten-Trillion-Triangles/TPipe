@@ -169,6 +169,27 @@ internal fun PumpStation.notifyResume()
 }
 
 /**
+ * Drain the steering service for [phase] and append each returned entry to
+ * turnHistory. Called at every phase boundary in the harness loop, BEFORE
+ * the phase-specific work begins. The drain is non-blocking and does not
+ * halt the loop.
+ *
+ * Persistent overlays (when set) fire on every occurrence; one-shot
+ * instructions fire once and are then discarded. Each injected entry
+ * carries a canonical `metadata["steering"]` envelope stamped by
+ * [PumpStation.drainSteeringForPhase].
+ *
+ * @param phase The PumpStationPausePhase boundary to inject at
+ */
+internal suspend fun PumpStation.injectSteeringForPhase(phase: PumpStationPausePhase)
+{
+    val entries = drainSteeringForPhase(phase)
+    entries.forEach { entry ->
+        turnHistory.add(ConverseData(role = ConverseRole.user, content = entry))
+    }
+}
+
+/**
  * Generic DITL wrap helper. Runs the preHook, then operation, then postHook.
  * If preHook is null, runs operation directly. If postHook is null, returns operation result.
  */
@@ -2556,6 +2577,8 @@ internal suspend fun PumpStation.runExitFlow(): TurnResult
 {
         return TurnResult.Halt(PumpStationExitReason.KillSwitchTripped)
     }
+    // Phase boundary: BeforeGoalValidation — drain steering before the goal agent runs.
+    injectSteeringForPhase(PumpStationPausePhase.BeforeGoalValidation)
     if (goalAgent == null)
 {
         val exitContent = buildGoalContent()
@@ -2803,19 +2826,27 @@ internal suspend fun PumpStation.runTurn(): TurnResult
     runHealthCheckPhase()
     detectAndHandleContextBlowout(PumpStationPhase.HealthCheck)
 
+    // Phase boundary: BeforeJudge — drain steering before the judge LLM runs.
+    injectSteeringForPhase(PumpStationPausePhase.BeforeJudge)
     val judgeVerdict = runJudgePhase()
     detectAndHandleContextBlowout(PumpStationPhase.Judge)
+    // Phase boundary: AfterJudge — drain steering after the judge LLM returns.
+    injectSteeringForPhase(PumpStationPausePhase.AfterJudge)
     if (judgeVerdict.shouldHalt)
 {
         return TurnResult.Halt(judgeVerdict.reason ?: PumpStationExitReason.TerminateSignal)
     }
     if (judgeVerdict.isComplete) return runExitFlow()
 
+    // Phase boundary: BeforeDispatch — drain steering before the dispatch LLM runs.
+    injectSteeringForPhase(PumpStationPausePhase.BeforeDispatch)
     val pathRequest = when (pathExecutionShapeInternal)
     {
         PathExecutionShape.SinglePath -> runDispatchPhase()
         PathExecutionShape.MultiPath -> runDispatchPhaseMulti()
     } ?: return TurnResult.Continue
+    // Phase boundary: AfterDispatch — drain steering after the dispatch LLM returns.
+    injectSteeringForPhase(PumpStationPausePhase.AfterDispatch)
     detectAndHandleContextBlowout(PumpStationPhase.Dispatch)
     // Note: runDispatchPhase now returns null when pathName is blank (treated as a
     // harness error, with a hint appended to turn history). The previous sentinel
@@ -2826,7 +2857,13 @@ internal suspend fun PumpStation.runTurn(): TurnResult
 {
         return TurnResult.Halt(PumpStationExitReason.KillSwitchTripped)
     }
+    // Phase boundary: BeforePathExecution — drain steering before the path runs.
+    // The injection is sequenced after the pause guard so a suspended harness
+    // does not accumulate one-shot entries on every resume cycle.
+    injectSteeringForPhase(PumpStationPausePhase.BeforePathExecution)
     val pathResult = runPathFlow(pathRequest)
+    // Phase boundary: AfterPathExecution — drain steering after the path returns.
+    injectSteeringForPhase(PumpStationPausePhase.AfterPathExecution)
     detectAndHandleContextBlowout(PumpStationPhase.PathExecution)
     // Capture the path's output as [taskState.latestContent] so:
     //   1. The next phase (memory update, foreground agents, etc.) sees the
@@ -2870,7 +2907,11 @@ internal suspend fun PumpStation.runTurn(): TurnResult
     detectAndHandleContextBlowout(PumpStationPhase.ForegroundAgents)
 
     runBackgroundAgentsPhase()
+    // Phase boundary: BeforeMemoryUpdate — drain steering before turnHistory is updated.
+    injectSteeringForPhase(PumpStationPausePhase.BeforeMemoryUpdate)
     runMemoryUpdatePhase()
+    // Phase boundary: BeforeCompaction — drain steering before compaction runs.
+    injectSteeringForPhase(PumpStationPausePhase.BeforeCompaction)
     runCompactionPhase()
 
     return TurnResult.Continue
@@ -2929,6 +2970,10 @@ internal fun PumpStation.pruneRawTurnHistory()
  */
 internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
 {
+    // Phase boundary: BeforeExit — drain steering before the loop exits and the
+    // final output is returned. This is the last opportunity to inject content
+    // that the post-finalization observers may need to see.
+    injectSteeringForPhase(PumpStationPausePhase.BeforeExit)
     // 1. Drain async turn results from in-flight async paths / harness
     //    agents. We do this BEFORE the cancel so any work that has already
     //    enqueued a PendingTurnEntry gets merged into turnHistory.

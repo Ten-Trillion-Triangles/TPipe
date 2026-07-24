@@ -71,6 +71,14 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      */
     var compactionConfiguration: CompactionBlock? = null
 
+    /**
+     * Optional steering configuration. Set via the `steeringPolicy { }` DSL block;
+     * applied to the built station in [build] by constructing a [PumpStationSteeringService]
+     * from this configuration and passing it to the [PumpStation] constructor.
+     * Null when the user did not configure steering.
+     */
+    var steeringConfiguration: PumpStationSteeringConfiguration? = null
+
 //=========================================Agent Assignments=========================================================
 
     /**
@@ -836,6 +844,20 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     }
 
     /**
+     * Configure steering instructions. Inside the block, declare per-phase persistent
+     * overlays and one-shot instructions. The configured rules are applied to the
+     * built station as a [PumpStationSteeringService] at construction time.
+     */
+    fun steeringPolicy(block: SteeringPolicyBuilder.() -> Unit): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        val builder = SteeringPolicyBuilder()
+        builder.block()
+        targetBuilder.steeringConfiguration = builder.build()
+        return this
+    }
+
+    /**
      * Configure compaction for the harness. The captured configuration is applied
      * to the built station via [build] so the per-attempt orchestrator picks up
      * the developer-chosen strategy, fan-out mode, retry budget, chunk budget, and
@@ -957,6 +979,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         tracingConfiguration = source.tracingConfiguration
         killSwitchConfiguration = source.killSwitchConfiguration
         compactionConfiguration = source.compactionConfiguration
+        steeringConfiguration = source.steeringConfiguration
         judgeAgent = source.judgeAgent
         dispatchAgent = source.dispatchAgent
         interventionAgent = source.interventionAgent
@@ -1079,7 +1102,9 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             "Path names must be unique (case-insensitive)"
         }
 
-        val station = PumpStation()
+        val steeringService = steeringConfiguration?.let { PumpStationSteeringService(it) }
+            ?: PumpStationSteeringService()
+        val station = PumpStation(steeringService = steeringService)
 
         // Apply all configuration to the station using the public fluent setters.
         station
@@ -2074,6 +2099,83 @@ class PumpStationTracingDsl
      * Build the immutable [TraceConfig] captured by this DSL block.
      */
     fun build(): TraceConfig = config
+}
+
+//=========================================Steering Policy Builder===================================================
+
+/**
+ * DSL builder for the steering policy block. Holds initial persistent overlays
+ * and one-shot instructions to be applied when the PumpStation is built.
+ *
+ * Usage:
+ * ```
+ * pumpStation("example") {
+ *     steeringPolicy {
+ *         persistentOverlay(
+ *             PumpStationPausePhase.BeforeJudge,
+ *             MultimodalContent(text = "Always verify the user's last request.")
+ *         )
+ *         phaseBoundContent(
+ *             PumpStationPausePhase.AfterDispatch,
+ *             MultimodalContent(text = "Check the async channel for pending path results.")
+ *         )
+ *     }
+ * }
+ * ```
+ */
+@PumpStationDslMarker
+class SteeringPolicyBuilder
+{
+    private val persistentOverlays: MutableMap<PumpStationPausePhase, MultimodalContent> = mutableMapOf()
+    private val oneShotInstructions: MutableMap<PumpStationPausePhase, MutableList<MultimodalContent>> = mutableMapOf()
+
+    /**
+     * Set a persistent overlay for [phase]. The instruction fires on every occurrence
+     * of [phase] until replaced by another `persistentOverlay` call or cleared at runtime.
+     */
+    fun persistentOverlay(phase: PumpStationPausePhase, content: MultimodalContent)
+    {
+        persistentOverlays[phase] = content
+    }
+
+    /**
+     * Convenience overload accepting a plain text string. Constructs a [MultimodalContent]
+     * with the given text and registers it as a persistent overlay.
+     */
+    fun persistentOverlay(phase: PumpStationPausePhase, text: String)
+    {
+        persistentOverlays[phase] = MultimodalContent(text = text)
+    }
+
+    /**
+     * Enqueue a one-shot instruction for [phase]. It fires at the next occurrence of
+     * [phase] and is then discarded.
+     */
+    fun phaseBoundContent(phase: PumpStationPausePhase, content: MultimodalContent)
+    {
+        oneShotInstructions.getOrPut(phase) { mutableListOf() }.add(content)
+    }
+
+    /**
+     * Convenience overload accepting a plain text string. Constructs a [MultimodalContent]
+     * with the given text and enqueues it as a one-shot.
+     */
+    fun phaseBoundContent(phase: PumpStationPausePhase, text: String)
+    {
+        oneShotInstructions.getOrPut(phase) { mutableListOf() }.add(MultimodalContent(text = text))
+    }
+
+    /**
+     * Build the configuration object that the [PumpStationBuilder.build] method
+     * will pass to the [PumpStationSteeringService] constructor.
+     */
+    internal fun build(): PumpStationSteeringConfiguration
+    {
+        return PumpStationSteeringConfiguration(
+            initialPersistentOverlays = persistentOverlays.toMap(),
+            initialOneShotInstructions = oneShotInstructions.mapValues { it.value.toList() }
+        )
+    }
 }
 
 //=========================================KillSwitch Block========================================================
