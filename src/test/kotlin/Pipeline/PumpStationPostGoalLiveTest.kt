@@ -275,8 +275,8 @@ class PumpStationPostGoalLiveTest
         try
         {
             stub.loopEnqueue("judge") { stubJson(isComplete = false) }
-            stub.loopEnqueue("dispatch") { """{"path":"report"}""" }
-            stub.loopEnqueue("pathSafety") { """{"safe":true,"reason":"ok"}""" }
+            stub.loopEnqueue("dispatch") { stubResponsesJson("""{"path":"report"}""") }
+            stub.loopEnqueue("pathSafety") { stubResponsesJson("""{"safe":true,"reason":"ok"}""") }
             stub.loopEnqueue("report") { "Brief on Kotlin coroutines." }
             runPostGoalHarness(
                 testName = "stub-04-multi-path-risk-levels",
@@ -302,7 +302,7 @@ class PumpStationPostGoalLiveTest
         try
         {
             stub.loopEnqueue("judge") { stubJson(isComplete = true) }
-            stub.loopEnqueue("dispatch") { """{"path":"report"}""" }
+            stub.loopEnqueue("dispatch") { stubResponsesJson("""{"path":"report"}""") }
             stub.loopEnqueue("report") { "Brief on Kotlin coroutines." }
             runPostGoalHarness(
                 testName = "stub-05-flag-triggered-judge",
@@ -328,7 +328,7 @@ class PumpStationPostGoalLiveTest
         try
         {
             stub.loopEnqueue("judge") { stubJson(isComplete = false) }
-            stub.loopEnqueue("dispatch") { """{"path":"report"}""" }
+            stub.loopEnqueue("dispatch") { stubResponsesJson("""{"path":"report"}""") }
             stub.loopEnqueue("report") { "Brief on Kotlin coroutines." }
             stub.loopEnqueue("summary") { "Concise summary of conversation history." }
             runPostGoalHarness(
@@ -1150,16 +1150,31 @@ class PumpStationPostGoalLiveTest
         passPipeline: Boolean = false
     ): String
     {
-        val parts = mutableListOf<String>()
-        parts += "\"isComplete\":$isComplete"
-        parts += "\"shouldTerminate\":$passPipeline"
-        return """{"output":[{
+        return stubResponsesJson("{\"isComplete\":$isComplete,\"shouldTerminate\":$passPipeline}")
+    }
+
+    /**
+     * Wrap arbitrary text content in a valid OpenAI Responses API envelope.
+     *
+     * The stub server returns raw strings, but the harness pipe runs in
+     * [ApiMode.OpenAIResponses] mode and routes every response body through
+     * [genericOpenAIPipe.api.OpenAIResponsesResponseParser], which is strict
+     * about the [OpenAIResponsesResponse] wire shape (requires `id`, `model`,
+     * and a polymorphic `output` list of typed items). A raw snippet like
+     * `{"path":"report"}` deserializes to `null` and trips
+     * `P2PException: Failed to deserialize OpenAI Responses body`.
+     *
+     * This helper produces a minimal but valid envelope that the parser
+     * accepts; the `text` is what the dispatch / pathSafety / summary agent
+     * would have returned in the live-mode test.
+     */
+    private fun stubResponsesJson(text: String): String
+    {
+        val escaped = text.replace("\\", "\\\\").replace("\"", "\\\"")
+        return """{"id":"stub-resp","object":"response","created_at":0,"status":"completed","model":"stub","output":[{
             "type":"message",
-            "content":[{"type":"output_text","text":"stub response"}],
-            "response":{
-                "isComplete":$isComplete,
-                "shouldTerminate":$passPipeline
-            }
+            "role":"assistant",
+            "content":[{"type":"output_text","text":"$escaped"}]
         }]}"""
     }
 
