@@ -3064,7 +3064,7 @@ private fun pathKey(name: String): String = name.lowercase()
                         " Select a different path from the visible list on your next dispatch."
                     turnHistory.add(
                         ConverseData(
-                            role = ConverseRole.user,
+                            role = ConverseRole.harness,
                             content = MultimodalContent(text = hintMessage)
                         )
                     )

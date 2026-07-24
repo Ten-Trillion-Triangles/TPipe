@@ -185,7 +185,7 @@ internal suspend fun PumpStation.injectSteeringForPhase(phase: PumpStationPauseP
 {
     val entries = drainSteeringForPhase(phase)
     entries.forEach { entry ->
-        turnHistory.add(ConverseData(role = ConverseRole.user, content = entry))
+        turnHistory.add(ConverseData(role = ConverseRole.harness, content = entry))
     }
 }
 
@@ -416,7 +416,7 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
                     "passPipeline=true on its result, not an empty pathName."
                 turnHistory.add(
                     ConverseData(
-                        role = ConverseRole.user,
+                        role = ConverseRole.harness,
                         content = MultimodalContent(text = hintMessage)
                     )
                 )
@@ -911,7 +911,7 @@ internal fun PumpStation.buildPathInput(path: PathObject, request: PathRequest):
              */
             turnHistory.add(
                 ConverseData(
-                    role = ConverseRole.user,
+                    role = ConverseRole.harness,
                     content = MultimodalContent(
                         text = buildPathSchemaFallbackMessage(
                             mapOf(
@@ -3271,7 +3271,7 @@ internal fun PumpStation.applyRationaleNudgeIfNeeded(
 
     this.turnHistory.add(
         ConverseData(
-            role = ConverseRole.user,
+            role = ConverseRole.harness,
             content = MultimodalContent(text = hintMessage)
         )
     )
