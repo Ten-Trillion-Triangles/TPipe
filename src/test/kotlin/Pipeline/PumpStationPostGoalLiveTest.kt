@@ -889,6 +889,7 @@ class PumpStationPostGoalLiveTest
             risk = PathRiskLevel.High
             setExecutionFunction { content, _, _, _ ->
                 MultimodalContent(text = "Brief on: ${content.text}\n\n## Done.")
+                    .apply { passPipeline = true }
             }
         }
         // Hypothesis-test escape valve (added 2026-07-23): if the LLM cannot make
