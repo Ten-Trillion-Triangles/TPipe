@@ -2802,18 +2802,23 @@ private fun pathKey(name: String): String = name.lowercase()
 
     /**
      * Returns names of all currently visible paths (normal paths + revealed reserve paths).
+     * Names preserve the original casing of [PathObject.pathName] for each path so the
+     * LLM-facing menu matches the casing shown in the path descriptors block.
      */
     fun getVisiblePathNames(): List<String>
     {
-        val names = pathList.keys.toMutableList()
-        names.addAll(revealedReservePaths)
+        val names = pathList.values.map { it.pathName }.toMutableList()
+        for (key in revealedReservePaths)
+        {
+            reservePaths[key]?.pathName?.let { names.add(it) }
+        }
         return names
     }
 
     /**
      * Returns names of all reserve paths (whether revealed or not).
      */
-    fun getReservePathNames(): List<String> = reservePaths.keys.toList()
+    fun getReservePathNames(): List<String> = reservePaths.values.map { it.pathName }
 
     /**
      * Saves a snapshot of the current harness state at a high-risk boundary
