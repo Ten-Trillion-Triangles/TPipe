@@ -716,8 +716,53 @@ internal suspend fun PumpStation.runPathFlow(request: PathRequest): MultimodalCo
                 mapOf("pathName" to request.pathName, "availablePaths" to getVisiblePathNames())
             )
         )
+        // maxConsecutiveUnknownPaths guard: bump the streak counter and trip
+        // when the limit is reached. Mirrors the maxConsecutiveSamePath trip
+        // at PumpStation.kt:3074-3098 — emit LoopGuardTripped, set the
+        // exitReason + lastError, mark latestContent.terminatePipeline so
+        // the runTurn halt path at PumpStationLoop.kt:2897-2900 stops the
+        // harness. Reset the counter on the trip so a subsequent run on
+        // a different station doesn't inherit the streak.
+        consecutiveUnknownPathCount += 1
+        val limit = maxConsecutiveUnknownPathsInternal
+        if (limit != null && consecutiveUnknownPathCount >= limit)
+        {
+            emitEventInternal(LoopGuardTripped(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                guard = "maxConsecutiveUnknownPaths",
+                pathName = request.pathName,
+                detail = "consecutive=$consecutiveUnknownPathCount, limit=$limit",
+                metric = "consecutive",
+                observed = consecutiveUnknownPathCount,
+                limit = limit
+            ))
+            emitEventInternal(PathFailed(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                phase = PumpStationPhase.PathExecution,
+                pathName = request.pathName,
+                riskLevel = PathRiskLevel.Low,
+                error = PumpStationError.LoopGuardTriggered,
+                errorMessage = "maxConsecutiveUnknownPaths exceeded for path '${request.pathName}'"
+            ))
+            taskState.latestContent = (taskState.latestContent ?: MultimodalContent())
+                .also { it.terminatePipeline = true }
+            taskState.lastError = PumpStationError.LoopGuardTriggered
+            taskState.exitReason = PumpStationExitReason.LoopGuardTripped
+            consecutiveUnknownPathCount = 0
+            // Return a non-null result with terminatePipeline set so the
+            // runTurn halt path at PumpStationLoop.kt:2897-2900 (which reads
+            // `pathResult.terminatePipeline`) stops the harness. Mirrors the
+            // maxConsecutiveSamePath trip mechanic at PumpStation.kt:3093-3098.
+            return MultimodalContent(text = request.pathName)
+                .also { it.terminatePipeline = true }
+        }
         return null
     }
+    // Resolved path — the LLM picked a real name. Reset the streak so a
+    // subsequent run of unknown paths starts a fresh count.
+    consecutiveUnknownPathCount = 0
     val input = buildPathInput(path, request)
 
     // Async path: launch on the station-scoped scope, enqueue a PendingTurnEntry

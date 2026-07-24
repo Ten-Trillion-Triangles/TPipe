@@ -1854,9 +1854,11 @@ private fun pathKey(name: String): String = name.lowercase()
     /**
      * Counts consecutive [PumpStationError.UnknownPath] outcomes for
      * [maxConsecutiveUnknownPaths] enforcement. Reset to 0 on any successful
-     * path resolution or on a guard trip.
+     * path resolution or on a guard trip. Internal so [runPathFlow] in
+     * [PumpStationLoop.kt] can mutate the counter without a setter helper;
+     * the public API for the guard is the DSL `maxConsecutiveUnknownPaths` field.
      */
-    private var consecutiveUnknownPathCount: Int = 0
+    internal var consecutiveUnknownPathCount: Int = 0
 
     /**
      * Name of the last selected path, used to detect same-path repetition.
@@ -2549,8 +2551,6 @@ private fun pathKey(name: String): String = name.lowercase()
     internal val consecutivePathCountInternal: Int
         get() = consecutivePathCount
     internal val lastSelectedPathNameInternal get() = lastSelectedPathName
-    internal val consecutiveUnknownPathCountInternal: Int
-        get() = consecutiveUnknownPathCount
     internal val maxConsecutiveUnknownPathsInternal: Int?
         get() = maxConsecutiveUnknownPaths
 

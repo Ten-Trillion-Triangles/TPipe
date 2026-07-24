@@ -1,8 +1,6 @@
 package com.TTT.Pipeline
 
 import com.TTT.Pipe.MultimodalContent
-import com.TTT.Debug.PipeTracer
-import com.TTT.Debug.TraceEventType
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -60,7 +58,7 @@ class PumpStationUnknownPathLoopGuardTest
             // Two UnknownPath dispatches: counter at 2.
             station.runPathFlow(PathRequest(pathName = "flarble"))
             station.runPathFlow(PathRequest(pathName = "baz"))
-            assertEquals(2, station.consecutiveUnknownPathCountInternal,
+            assertEquals(2, station.consecutiveUnknownPathCount,
                 "Counter should be 2 after two UnknownPath dispatches")
 
             // One resolved dispatch: counter resets to 0.
@@ -68,7 +66,7 @@ class PumpStationUnknownPathLoopGuardTest
             assertNotNull(resolved, "Resolved path must return non-null content")
             assertFalse(resolved.terminatePipeline,
                 "Resolved path must not signal termination")
-            assertEquals(0, station.consecutiveUnknownPathCountInternal,
+            assertEquals(0, station.consecutiveUnknownPathCount,
                 "Counter should reset to 0 after a resolved path runs")
 
             // Now 3 more UnknownPath dispatches should trip the guard (counter restarts from 0).
@@ -98,7 +96,7 @@ class PumpStationUnknownPathLoopGuardTest
                 val result = station.runPathFlow(PathRequest(pathName = "flarble-$it"))
                 assertNull(result, "Without the guard, UnknownPath must return null (no termination)")
             }
-            assertEquals(5, station.consecutiveUnknownPathCountInternal,
+            assertEquals(5, station.consecutiveUnknownPathCount,
                 "Counter should accumulate all 5 unknown dispatches when the guard is null")
             assertNull(station.taskState.exitReason,
                 "Without the guard, exitReason must not be set by UnknownPath dispatches")
@@ -107,8 +105,10 @@ class PumpStationUnknownPathLoopGuardTest
 
     @Test
     fun `guard trip event names the dispatched path`() {
+        val events = mutableListOf<PumpStationEvent>()
         val station = pumpStation("unknown-path-event-${System.nanoTime()}") {
             dispatchAgent = Pipeline()
+            eventObserver = { ev -> synchronized(events) { events.add(ev) } }
             maxConsecutiveUnknownPaths = 1
             path("realPath") {
                 risk = PathRiskLevel.Low
@@ -122,17 +122,15 @@ class PumpStationUnknownPathLoopGuardTest
             assertTrue(result.terminatePipeline)
         }
 
-        // PipeTracer exposes the dispatched pathName in the loop-guard event's metadata.
-        val allTraces = PipeTracer.getAllTraces()
-        val stationTraces = allTraces[station.taskState.runId].orEmpty()
-        val tripEvent = stationTraces.firstOrNull {
-            it.eventType == TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED &&
-                it.metadata["guard"] == "maxConsecutiveUnknownPaths"
+        val tripEvent = synchronized(events) {
+            events.filterIsInstance<LoopGuardTripped>().firstOrNull()
         }
         assertNotNull(tripEvent, "LoopGuardTripped event for maxConsecutiveUnknownPaths must be emitted")
-        assertEquals("specificName", tripEvent.metadata["pathName"],
+        assertEquals("maxConsecutiveUnknownPaths", tripEvent.guard,
+            "Trip event's guard field must name the loop-guard that fired")
+        assertEquals("specificName", tripEvent.pathName,
             "LoopGuardTripped event must carry the actual dispatched path name")
-        assertEquals(1, tripEvent.metadata["observed"])
-        assertEquals(1, tripEvent.metadata["limit"])
+        assertEquals(1, tripEvent.observed)
+        assertEquals(1, tripEvent.limit)
     }
 }
