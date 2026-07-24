@@ -100,6 +100,24 @@ interface P2PInterface
     fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit) {}
 
     /**
+     * Sets the converse role on every leaf pipe in this interface's
+     * agent tree. Mirrors the propagation behaviour of
+     * [setTokenBudgetRecursive] and [setStreamingCallbackRecursive].
+     *
+     * Default no-op so non-Pipeline implementations (which is to say
+     * non-LLM-bearing wrappers) don't have to opt in. Pipeline
+     * overrides this to drill through [getPipes] and assign the
+     * role on each pipe.
+     *
+     * The role discriminates the pipe's LLM turns in the per-call
+     * converse history. Use [com.TTT.Context.ConverseRole.supervisor]
+     * for authoritative agents (judge, dispatch, goal, path-safety,
+     * etc.) and [com.TTT.Context.ConverseRole.agent] for worker pipes
+     * (memory maintainers, etc.).
+     */
+    fun setConverseRoleRecursive(role: com.TTT.Context.ConverseRole) {}
+
+    /**
      * Sets the parent interface to any child P2PInterface object. This useful for generic pass of this data
      * during complex container classes.
      */

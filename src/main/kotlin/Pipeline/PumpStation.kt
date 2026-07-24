@@ -2076,6 +2076,21 @@ private fun pathKey(name: String): String = name.lowercase()
             }
         }
 
+        // Assign per-agent converse roles. Authoritative agents (judge,
+        // dispatch, intervention, goal, path-safety, health, preInit)
+        // gate the harness flow and get [ConverseRole.supervisor] so the
+        // LLM API and downstream tooling can distinguish their turns
+        // from worker-pipe turns. Memory workers (lorebook, summary)
+        // keep the default [ConverseRole.agent] — they maintain state
+        // but do not gate flow.
+        judgeAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+        dispatchAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+        interventionAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+        goalAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+        pathSafetyAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+        healthAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+        preInitAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+
         // Initialize all agents
         judgeAgent?.P2PInit()
         dispatchAgent?.P2PInit()
@@ -2478,6 +2493,11 @@ private fun pathKey(name: String): String = name.lowercase()
     internal val healthAgentBuilderFunctionInternal get() = healthAgentBuilderFunction
     internal val healthAgentTurnIntervalInternal get() = healthAgentTurnInterval
     internal val healthAgentErrorRatioThresholdInternal get() = healthAgentErrorRatioThreshold
+    internal val judgeAgentInternal get() = judgeAgent
+    internal val dispatchAgentInternal get() = dispatchAgent
+    internal val interventionAgentInternal get() = interventionAgent
+    internal val goalAgentInternal get() = goalAgent
+    internal val pathSafetyAgentInternal get() = pathSafetyAgent
     internal var lastHealthCheckTurnInternal: Int
         get() = lastHealthCheckTurn
         set(value) { lastHealthCheckTurn = value }

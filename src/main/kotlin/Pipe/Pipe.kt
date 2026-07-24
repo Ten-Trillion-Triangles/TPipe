@@ -1719,8 +1719,35 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
     /**
      * Defines the converse role this pipe uses if we're wrapping content automatically.
+     * Default [ConverseRole.agent] — a worker pipe. Set to [ConverseRole.supervisor]
+     * for authoritative agents (judge, dispatch, goal, path-safety, etc.) that
+     * gate the harness flow. Set to [ConverseRole.tool_response] / [ConverseRole.pcp_response]
+     * / [ConverseRole.mcp_response] for tool / PCP / MCP result pipes.
      */
     protected var converseRole: ConverseRole = ConverseRole.agent
+
+    /**
+     * Set the converse role this pipe uses for the per-call converse history
+     * sent to the LLM API. Does NOT flip [wrapContentWithConverseHistory] —
+     * callers that want auto-wrapping should use [wrapContentWithConverse]
+     * instead. This setter is for setting the role without changing the
+     * auto-wrap behavior (e.g. when the caller manages converse history
+     * construction manually but wants the pipe's emitted turns tagged
+     * with the correct role).
+     */
+    fun setConverseRole(role: ConverseRole): Pipe
+    {
+        this.converseRole = role
+        return this
+    }
+
+    /**
+     * Test-only accessor for the converse role. Internal so production
+     * code keeps the `protected` encapsulation; tests in the same
+     * module can read the role to assert the per-agent role contract.
+     */
+    internal val converseRoleForTest: ConverseRole
+        get() = converseRole
 
     /**
      * Allow arbitrary data to be stored on this pipe class. Useful for advanced features such as tracking
