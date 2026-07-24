@@ -2907,6 +2907,46 @@ private fun pathKey(name: String): String = name.lowercase()
         ))
     }
 
+    //=====================================Interrupt Snapshot Helpers==================================================
+
+    /**
+     * Capture a snapshot of the harness state for later rewind on interrupt.
+     * Called at the top of every [runTurn] and stashed for the duration of the
+     * turn. The snapshot covers the fields that an in-flight turn's work can
+     * mutate — turnHistory and the four [taskState] fields listed below. Other
+     * [taskState] fields (status, phase, lastError, exitReason, etc.) are not
+     * affected by a turn's in-flight work and are NOT in the snapshot; the
+     * rewind preserves them.
+     */
+    internal fun takeInterruptSnapshot(): PumpStationInterruptSnapshot
+    {
+        return PumpStationInterruptSnapshot(
+            turnIndex = taskState.turnIndex,
+            latestContent = taskState.latestContent,
+            lastPathResult = taskState.lastPathResult,
+            selectedPathName = taskState.selectedPathName,
+            originalInput = taskState.originalInput,
+            turnHistory = turnHistory.history
+        )
+    }
+
+    /**
+     * Restore the harness state from [snapshot]. Called from the
+     * [PumpStationInterruptException] catch handler at the top of [runTurn].
+     * Replaces the four [taskState] fields and turnHistory contents with the
+     * snapshot's stored values. Does NOT touch other [taskState] fields.
+     */
+    internal fun restoreFromInterruptSnapshot(snapshot: PumpStationInterruptSnapshot)
+    {
+        taskState.turnIndex = snapshot.turnIndex
+        taskState.latestContent = snapshot.latestContent
+        taskState.lastPathResult = snapshot.lastPathResult
+        taskState.selectedPathName = snapshot.selectedPathName
+        taskState.originalInput = snapshot.originalInput
+        turnHistory.history.clear()
+        turnHistory.history.addAll(snapshot.turnHistoryCopy)
+    }
+
     /**
      * Pauses the harness at the specified phase boundaries for external inspection
      * or intervention. Calling this replaces any previously set pause phases.
