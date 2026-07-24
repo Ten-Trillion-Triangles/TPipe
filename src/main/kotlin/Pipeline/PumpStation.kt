@@ -1187,6 +1187,13 @@ suspend fun drainSteeringForPhase(phase: PumpStationPausePhase): List<Multimodal
      */
     internal val reservePaths: MutableMap<String, PathObject> = mutableMapOf()
 
+/**
+ * Normalize a path-name key for the [PumpStation.pathList] and
+ * [PumpStation.reservePaths] maps. Path lookup is case-insensitive
+ * per the contract documented on [PumpStation.pathList].
+ */
+private fun pathKey(name: String): String = name.lowercase()
+
 
 
 //--------------------------------------------------Config--------------------------------------------------------------
@@ -2758,8 +2765,9 @@ suspend fun drainSteeringForPhase(phase: PumpStationPausePhase): List<Multimodal
 
     /**
      * Returns a path by name, searching both normal and reserve paths.
+     * Lookup is case-insensitive per the contract documented on [pathList].
      */
-    fun getPath(name: String): PathObject? = pathList[name] ?: reservePaths[name]
+    fun getPath(name: String): PathObject? = pathList[pathKey(name)] ?: reservePaths[pathKey(name)]
 
     /**
      * Adds a path to the normal path list (not reserve). The path's parent is set to this station,
@@ -2770,26 +2778,26 @@ suspend fun drainSteeringForPhase(phase: PumpStationPausePhase): List<Multimodal
     {
         path.setParentInterface(this)
         path.killSwitch = _killSwitch
-        pathList[path.pathName] = path
+        pathList[pathKey(path.pathName)] = path
     }
 
     /**
-     * Removes a path from the normal path list by name.
+     * Removes a path from the normal path list by name. Lookup is case-insensitive.
      */
     fun removePath(name: String)
     {
-        pathList.remove(name)
+        pathList.remove(pathKey(name))
     }
 
     /**
      * Moves a path from the normal path list to reserve, making it invisible to dispatch
-     * until explicitly revealed or the harness resets.
+     * until explicitly revealed or the harness resets. Lookup is case-insensitive.
      */
     private fun movePathToReserve(name: String)
     {
-        val path = pathList.remove(name) ?: return
+        val path = pathList.remove(pathKey(name)) ?: return
         path.revealWhen = { _, _ -> false }
-        reservePaths[name] = path
+        reservePaths[pathKey(name)] = path
     }
 
     /**
@@ -4667,7 +4675,7 @@ suspend fun drainSteeringForPhase(phase: PumpStationPausePhase): List<Multimodal
                     // is configured to suppress history emission. The flag
                     // is set on the path, not the entry, so we resolve
                     // pathName -> path object here.
-                    val path = entry.pathName?.let { name -> pathList[name] ?: reservePaths[name] }
+                    val path = entry.pathName?.let { name -> pathList[pathKey(name)] ?: reservePaths[pathKey(name)] }
                     val suppressed = path?.isSuppressHistoryEmit == true
                     if (suppressed) continue
                     val turnEntry = ConverseData(
@@ -4684,7 +4692,7 @@ suspend fun drainSteeringForPhase(phase: PumpStationPausePhase): List<Multimodal
         // merge at the granularity of a single path / agent completion.
         for (entry in drained)
         {
-            val path = entry.pathName?.let { name -> pathList[name] ?: reservePaths[name] }
+            val path = entry.pathName?.let { name -> pathList[pathKey(name)] ?: reservePaths[pathKey(name)] }
             if (path?.isSuppressHistoryEmit == true) continue
             emitEventInternal(AsyncTurnAppended(
                 runId = taskState.runId,
@@ -5149,7 +5157,7 @@ suspend fun drainSteeringForPhase(phase: PumpStationPausePhase): List<Multimodal
     {
         path.setParentInterface(this)
         path.killSwitch = _killSwitch
-        reservePaths[path.pathName] = path
+        reservePaths[pathKey(path.pathName)] = path
         return this
     }
 
