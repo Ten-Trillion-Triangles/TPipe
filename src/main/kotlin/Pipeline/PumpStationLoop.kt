@@ -2690,13 +2690,17 @@ internal suspend fun PumpStation.detectAndHandleContextBlowout(afterPhase: PumpS
  * Run the exit flow. If judge said complete, optionally validate with goal agent.
  * On goal fail, append to history and continue. On goal pass or no goal, halt.
  */
-internal suspend fun PumpStation.runExitFlow(): TurnResult
+internal suspend fun PumpStation.runExitFlow(turnSnapshot: PumpStationInterruptSnapshot): TurnResult
 {
     if (!checkPauseGuards(PumpStationPausePhase.BeforeGoalValidation))
 {
         return TurnResult.Halt(PumpStationExitReason.KillSwitchTripped)
     }
-    // Phase boundary: BeforeGoalValidation — drain steering before the goal agent runs.
+    // Phase boundary: BeforeGoalValidation — poll interrupt then drain steering
+    // before the goal agent runs. The turnSnapshot is captured at the top of
+    // runTurn; if the goal flow throws an interrupt, the catch in
+    // runHarnessLoop will use it to rewind the turn.
+    injectInterruptForPhase(PumpStationPausePhase.BeforeGoalValidation, turnSnapshot)
     injectSteeringForPhase(PumpStationPausePhase.BeforeGoalValidation)
     if (goalAgent == null)
 {
@@ -2902,6 +2906,25 @@ internal suspend fun PumpStation.runHarnessLoop(): KillSwitchException?
     while (taskState.turnIndex < maxTurnsInternal && taskState.status == PumpStationStatus.Running)
 {
         if (!checkPauseGuards(PumpStationPausePhase.BeforeJudge)) break
+        // Outer snapshot for the new turn. If an interrupt fires during
+        // finalization or between turns, the catch handler below restores
+        // this snapshot and re-enters the loop with the same turnIndex.
+        val turnSnapshot = takeInterruptSnapshot()
+        // Phase boundary: BeforeJudge — poll interrupt BEFORE runTurn is
+        // entered. If an interrupt arrived between turns, this is the catch
+        // point.
+        try
+        {
+            injectInterruptForPhase(PumpStationPausePhase.BeforeJudge, turnSnapshot)
+        }
+        catch (e: PumpStationInterruptException)
+        {
+            // Catch here (before runTurn is entered). Rewind, inject, and
+            // restart the while loop with the same turnIndex.
+            restoreFromInterruptSnapshot(e.snapshot)
+            turnHistory.add(ConverseData(role = ConverseRole.harness, content = e.content))
+            continue
+        }
         val result = try
         {
             runTurn()
@@ -2912,6 +2935,16 @@ internal suspend fun PumpStation.runHarnessLoop(): KillSwitchException?
             taskState.exitReason = PumpStationExitReason.KillSwitchTripped
             tripException = e
             break
+        }
+        catch (e: PumpStationInterruptException)
+        {
+            // Inner catch: interrupt fired DURING runTurn. The inner
+            // turnSnapshot (taken at the top of runTurn) is the rewind
+            // target. turnIndex is NOT advanced; the loop re-enters the
+            // same slot with the interrupt message in turnHistory.
+            restoreFromInterruptSnapshot(e.snapshot)
+            turnHistory.add(ConverseData(role = ConverseRole.harness, content = e.content))
+            continue
         }
         if (result is TurnResult.Halt)
 {
@@ -2938,6 +2971,10 @@ internal suspend fun PumpStation.runHarnessLoop(): KillSwitchException?
  */
 internal suspend fun PumpStation.runTurn(): TurnResult
 {
+    // Inner snapshot for the current turn. If an interrupt fires during this
+    // turn, the catch handler in runHarnessLoop restores this snapshot and
+    // re-enters runTurn from BeforeJudge without incrementing turnIndex.
+    val turnSnapshot = takeInterruptSnapshot()
     refreshAgentInstances()
     refreshPipelinesPrompts()
     refreshSettingsPropagation()
@@ -2945,72 +2982,60 @@ internal suspend fun PumpStation.runTurn(): TurnResult
     runHealthCheckPhase()
     detectAndHandleContextBlowout(PumpStationPhase.HealthCheck)
 
-    // Phase boundary: BeforeJudge — drain steering before the judge LLM runs.
+    // Phase boundary: BeforeJudge — poll interrupt (higher priority than
+    // steering) then drain steering.
+    injectInterruptForPhase(PumpStationPausePhase.BeforeJudge, turnSnapshot)
     injectSteeringForPhase(PumpStationPausePhase.BeforeJudge)
     val judgeVerdict = runJudgePhase()
     detectAndHandleContextBlowout(PumpStationPhase.Judge)
-    // Phase boundary: AfterJudge — drain steering after the judge LLM returns.
+    // Phase boundary: AfterJudge.
+    injectInterruptForPhase(PumpStationPausePhase.AfterJudge, turnSnapshot)
     injectSteeringForPhase(PumpStationPausePhase.AfterJudge)
     if (judgeVerdict.shouldHalt)
 {
         return TurnResult.Halt(judgeVerdict.reason ?: PumpStationExitReason.TerminateSignal)
     }
-    if (judgeVerdict.isComplete) return runExitFlow()
+    if (judgeVerdict.isComplete) return runExitFlow(turnSnapshot)
 
-    // Phase boundary: BeforeDispatch — drain steering before the dispatch LLM runs.
+    // Phase boundary: BeforeDispatch.
+    injectInterruptForPhase(PumpStationPausePhase.BeforeDispatch, turnSnapshot)
     injectSteeringForPhase(PumpStationPausePhase.BeforeDispatch)
     val pathRequest = when (pathExecutionShapeInternal)
     {
         PathExecutionShape.SinglePath -> runDispatchPhase()
         PathExecutionShape.MultiPath -> runDispatchPhaseMulti()
     } ?: return TurnResult.Continue
-    // Phase boundary: AfterDispatch — drain steering after the dispatch LLM returns.
+    // Phase boundary: AfterDispatch.
+    injectInterruptForPhase(PumpStationPausePhase.AfterDispatch, turnSnapshot)
     injectSteeringForPhase(PumpStationPausePhase.AfterDispatch)
     detectAndHandleContextBlowout(PumpStationPhase.Dispatch)
-    // Note: runDispatchPhase now returns null when pathName is blank (treated as a
-    // harness error, with a hint appended to turn history). The previous sentinel
-    // shortcut (`if (pathRequest.pathName.isBlank()) return TurnResult.Continue`) was
-    // removed when empty pathName stopped being a valid "I'm done" signal.
 
     if (!checkPauseGuards(PumpStationPausePhase.BeforePathExecution))
 {
         return TurnResult.Halt(PumpStationExitReason.KillSwitchTripped)
     }
-    // Phase boundary: BeforePathExecution — drain steering before the path runs.
-    // The injection is sequenced after the pause guard so a suspended harness
-    // does not accumulate one-shot entries on every resume cycle.
+    // Phase boundary: BeforePathExecution — sequenced after the pause guard
+    // so a suspended harness does not accumulate one-shot interrupt entries
+    // on every resume cycle.
+    injectInterruptForPhase(PumpStationPausePhase.BeforePathExecution, turnSnapshot)
     injectSteeringForPhase(PumpStationPausePhase.BeforePathExecution)
     val pathResult = runPathFlow(pathRequest)
-    // Phase boundary: AfterPathExecution — drain steering after the path returns.
+    // Phase boundary: AfterPathExecution.
+    injectInterruptForPhase(PumpStationPausePhase.AfterPathExecution, turnSnapshot)
     injectSteeringForPhase(PumpStationPausePhase.AfterPathExecution)
     detectAndHandleContextBlowout(PumpStationPhase.PathExecution)
-    // Capture the path's output as [taskState.latestContent] so:
-    //   1. The next phase (memory update, foreground agents, etc.) sees the
-    //      path's actual output, not the previous phase's stale value.
-    //   2. The final [runFinalizationPhase] result — what [executeLocal] returns
-    //      to its caller — is the path's output (the "deliverable" of the harness),
-    //      not the dispatch's path request or the judge's verdict.
-    //   3. Halt-via-passPipeline / terminatePipeline still works because we check
-    //      those flags *before* the latestContent assignment can be observed by
-    //      runFinalizationPhase (we return immediately on the halt path).
-    //
-    // Without this, the harness's result is always the judge's last LLM call,
-    // which means caller-visible state silently drops the work each path did.
     if (pathResult != null)
     {
         taskState.latestContent = pathResult
         if (pathResult.passPipeline)
         {
-            // If a goal agent is configured, run the standard exit flow (goal validation).
-            // Otherwise exit directly with PassSignal — the path's flag is the exit
-            // signal, not a judge verdict.
             return if (goalAgent == null)
             {
                 TurnResult.Halt(PumpStationExitReason.PassSignal)
             }
             else
             {
-                runExitFlow()
+                runExitFlow(turnSnapshot)
             }
         }
         if (pathResult.terminatePipeline)
@@ -3026,10 +3051,12 @@ internal suspend fun PumpStation.runTurn(): TurnResult
     detectAndHandleContextBlowout(PumpStationPhase.ForegroundAgents)
 
     runBackgroundAgentsPhase()
-    // Phase boundary: BeforeMemoryUpdate — drain steering before turnHistory is updated.
+    // Phase boundary: BeforeMemoryUpdate.
+    injectInterruptForPhase(PumpStationPausePhase.BeforeMemoryUpdate, turnSnapshot)
     injectSteeringForPhase(PumpStationPausePhase.BeforeMemoryUpdate)
     runMemoryUpdatePhase()
-    // Phase boundary: BeforeCompaction — drain steering before compaction runs.
+    // Phase boundary: BeforeCompaction.
+    injectInterruptForPhase(PumpStationPausePhase.BeforeCompaction, turnSnapshot)
     injectSteeringForPhase(PumpStationPausePhase.BeforeCompaction)
     runCompactionPhase()
 
@@ -3089,9 +3116,25 @@ internal fun PumpStation.pruneRawTurnHistory()
  */
 internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
 {
-    // Phase boundary: BeforeExit — drain steering before the loop exits and the
-    // final output is returned. This is the last opportunity to inject content
-    // that the post-finalization observers may need to see.
+    // Phase boundary: BeforeExit — poll interrupt then drain steering before
+    // the loop exits and the final output is returned. This is the last
+    // opportunity to inject content that the post-finalization observers may
+    // need to see.
+    val finalSnapshot = takeInterruptSnapshot()
+    try
+    {
+        injectInterruptForPhase(PumpStationPausePhase.BeforeExit, finalSnapshot)
+    }
+    catch (e: PumpStationInterruptException)
+    {
+        // Interrupt fired during finalization. Rewind, inject, and the harness
+        // re-enters runHarnessLoop from BeforeJudge (note: the harness loop
+        // has already returned by the time finalization runs, so the re-entry
+        // is not possible here — instead, the interrupt is logged and the
+        // finalization proceeds with the interrupt message appended).
+        restoreFromInterruptSnapshot(e.snapshot)
+        turnHistory.add(ConverseData(role = ConverseRole.harness, content = e.content))
+    }
     injectSteeringForPhase(PumpStationPausePhase.BeforeExit)
     // 1. Drain async turn results from in-flight async paths / harness
     //    agents. We do this BEFORE the cancel so any work that has already
