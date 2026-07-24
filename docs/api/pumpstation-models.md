@@ -469,7 +469,7 @@ The full event taxonomy is documented below. Each event has a corresponding `Tra
 | Event | Data | Phase | Description |
 |-------|------|-------|-------------|
 | `ReservePathRevealed` | `pathName: String`, `reservePathNames: List<String>` | `Dispatch` | Emitted on the first turn a reserve path becomes visible. |
-| `LoopGuardTripped` | `guard: String`, `pathName: String`, `detail: String` | `PathExecution` | Emitted when a loop guard fires (`maxConsecutiveSamePath` or `maxTotalPathCallsPerPath`). |
+| `LoopGuardTripped` | `guard: String`, `pathName: String`, `detail: String`, `metric: String`, `observed: Int`, `limit: Int` | `PathExecution` | Emitted when a loop guard fires. The `guard` field discriminates which guard tripped: `maxConsecutiveSamePath` (same path dispatched N consecutive turns), `maxTotalPathCallsPerPath` (path call-count cap exceeded), or `maxConsecutiveUnknownPaths` (N consecutive dispatches of unregistered path names). |
 | `ContextBlowoutDetected` | `fillRatio: Double`, `threshold: Double`, `afterPhase: PumpStationPhase` | `MemoryUpdate` | Emitted when context-window fill ratio exceeds `blowoutThreshold` at a phase boundary. |
 
 ### Stash and Reserve Path Events

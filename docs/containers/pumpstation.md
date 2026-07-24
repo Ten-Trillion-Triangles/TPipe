@@ -649,6 +649,7 @@ The `pumpStation { }` builder supports these top-level blocks and setters.
 | `judgeJsonContractEnabled` | `Boolean`                                | `true`  | When false, judge verdict comes from flags only. |
 | `pathSafetyJsonContractEnabled` | `Boolean`                            | `true`  | When false, path-safety verdict comes from flags only. |
 | `maxConsecutiveSamePath` | `Int`                                      | `3`     | Loop guard on consecutive same-path dispatch. |
+| `maxConsecutiveUnknownPaths` | `Int?`                                 | `null`  | Loop guard on consecutive dispatches of unregistered path names; null disables. |
 | `maxTotalPathCallsPerPath` | `Int?`                                   | `null`  | Loop guard on total calls per path; null disables. |
 | `pathLimitExceededPolicy` | `PathLimitExceededPolicy`                 | `Skip`  | `Skip`, `Halt`, or `Continue` when the per-path limit is hit. |
 | `requirePathSelectionRationale` | `Boolean`                            | `true`  | When true, the harness appends a one-shot reminder to the next dispatch prompt if the LLM returned a null `pathSelectionRationale`. See [Dispatch Contract: `pathSelectionRationale`](#dispatch-contract-pathselectionrationale). |
@@ -1276,13 +1277,23 @@ path("dangerous") {
 
 ## Loop Guards
 
-Two guards run before each path call:
+Three guards run before each path call. All three share the same wiring: on trip, the harness emits a `LoopGuardTripped` event with `guard` naming the guard that fired, sets `taskState.exitReason = LoopGuardTripped` and `taskState.lastError = LoopGuardTriggered`, and halts via `latestContent.terminatePipeline`. The trace visualizer renders all three under the same `ps-bg-warning` background pill and warning fact card, distinguishing them only by the `guard` metadata field on the emitted event.
 
 ### `maxConsecutiveSamePath`
 
 Default `3`. When the dispatch agent selects the same path `N` consecutive turns, the harness emits a `LoopGuardTripped` event, optionally invokes `interventionAgent` (if set), and proceeds with the call. The developer can detect this in DITL hooks or in their intervention agent.
 
 After a `LoopGuardTripped`, the consecutive-same-path counter resets to zero rather than staying at the threshold. The next dispatch turn starts fresh and a future return to the tripping path gets the full `maxConsecutiveSamePath` budget again.
+
+### `maxConsecutiveUnknownPaths`
+
+Default `null` (disabled). When the dispatch agent picks a path name that doesn't resolve to any registered path (a name the harness never knew about — for example, a hallucination like `flarble` or a stale name from a prompt that listed removed paths), the harness emits `PathFailed(error=UnknownPath)` and the dispatch loop retries on the next turn. When that failure has happened `N` consecutive turns in a row, the harness trips the new guard.
+
+The counter increments only on `UnknownPath` outcomes and resets on every successful path resolution (any path, including paths that later hit the path-safety gate or trip `maxConsecutiveSamePath`). The guard is also reset when it trips, so a subsequent run of a different station on the same PumpStation instance does not inherit the streak.
+
+This guard is the safety net for the LLM-stuck-on-unknown-path failure mode that the existing loop guards do not cover. `maxConsecutiveSamePath` and `maxTotalPathCallsPerPath` only fire on a path that successfully resolves; if the LLM dispatches a name that never existed in the registry, those guards never see it. `maxConsecutiveUnknownPaths` closes that gap.
+
+The trace event carries `metadata.guard = "maxConsecutiveUnknownPaths"`, `metadata.pathName` is the actual name the LLM dispatched, and `metadata.detail = "consecutive=<n>, limit=<n>"`.
 
 ### `maxTotalPathCallsPerPath`
 
@@ -1296,7 +1307,7 @@ Default `null` (disabled). When set, after the call count for a path exceeds the
 
 The `pathLimitExceededFunction` DITL hook can override the static policy with a dynamic result.
 
-Both loop guard events are emitted on `PumpStationPhase.PathExecution`.
+All three loop-guard events are emitted on `PumpStationPhase.PathExecution` and share the same wire shape — see [`LoopGuardTripped`](api/pumpstation-models.md#path-and-loop-guard-events) for the field-level contract and the `guard` discriminator.
 
 
 ## Reserve Paths
