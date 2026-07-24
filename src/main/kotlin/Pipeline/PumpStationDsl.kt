@@ -12,6 +12,7 @@ import com.TTT.P2P.KillSwitchContext
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.PcpContext
+import kotlinx.coroutines.runBlocking
 import kotlin.reflect.KFunction
 
 /**
@@ -78,6 +79,13 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      * Null when the user did not configure steering.
      */
     var steeringConfiguration: PumpStationSteeringConfiguration? = null
+
+    /**
+     * Configuration captured from the `interruptPolicy { ... }` DSL block.
+     * Null when the user did not configure interrupts. Applied at construction
+     * time by seeding [PumpStationInterruptService].
+     */
+    var interruptConfiguration: PumpStationInterruptConfiguration? = null
 
 //=========================================Agent Assignments=========================================================
 
@@ -866,6 +874,29 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     }
 
     /**
+     * Configure interrupt instructions. Inside the block, declare per-phase
+     * initial queue entries. The configured rules are applied to the built
+     * station's [PumpStationInterruptService] at construction time.
+     *
+     * Example:
+     * ```
+     * pumpStation {
+     *     interruptPolicy {
+     *         initialQueue[BeforeJudge] = listOf(MultimodalContent(text = "preloaded"))
+     *     }
+     * }
+     * ```
+     */
+    fun interruptPolicy(block: PumpStationInterruptPolicyBuilder.() -> Unit): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        val builder = PumpStationInterruptPolicyBuilder()
+        builder.block()
+        targetBuilder.interruptConfiguration = builder.build()
+        return this
+    }
+
+    /**
      * Configure compaction for the harness. The captured configuration is applied
      * to the built station via [build] so the per-attempt orchestrator picks up
      * the developer-chosen strategy, fan-out mode, retry budget, chunk budget, and
@@ -988,6 +1019,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         killSwitchConfiguration = source.killSwitchConfiguration
         compactionConfiguration = source.compactionConfiguration
         steeringConfiguration = source.steeringConfiguration
+        interruptConfiguration = source.interruptConfiguration
         judgeAgent = source.judgeAgent
         dispatchAgent = source.dispatchAgent
         interventionAgent = source.interventionAgent
@@ -1114,6 +1146,16 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         val steeringService = steeringConfiguration?.let { PumpStationSteeringService(it) }
             ?: PumpStationSteeringService()
         val station = PumpStation(steeringService = steeringService)
+
+        // Seed the interrupt service with the configured initial queue.
+        // The service is created in PumpStation's primary constructor as an
+        // empty PumpStationInterruptService, so this is the only place to
+        // populate it before executeLocal runs.
+        runBlocking {
+            interruptConfiguration?.initialQueue?.forEach { (phase, contents) ->
+                contents.forEach { station.interruptService.enqueue(phase, it) }
+            }
+        }
 
         // Apply all configuration to the station using the public fluent setters.
         station
@@ -2184,6 +2226,57 @@ class SteeringPolicyBuilder
         return PumpStationSteeringConfiguration(
             initialPersistentOverlays = persistentOverlays.toMap(),
             initialOneShotInstructions = oneShotInstructions.mapValues { it.value.toList() }
+        )
+    }
+}
+
+//=========================================Interrupt Policy Block====================================================
+
+/**
+ * Configuration block set via `pumpStation { interruptPolicy { ... } }`. Holds
+ * the initial interrupts queued at construction time. Unlike steering, there
+ * is no persistent overlay — interrupts are inherently discrete.
+ */
+data class PumpStationInterruptConfiguration(
+    val initialQueue: Map<PumpStationPausePhase, List<MultimodalContent>> = emptyMap()
+)
+
+/**
+ * DSL block for seeding [PumpStationInterruptService] at construction time.
+ * Mirrors the shape of [SteeringPolicyBuilder] but for interrupts.
+ *
+ * Usage:
+ * ```
+ * pumpStation {
+ *     interruptPolicy {
+ *         initialQueue[BeforeJudge] = listOf(MultimodalContent(text = "preloaded"))
+ *     }
+ * }
+ * ```
+ */
+@PumpStationDslMarker
+class PumpStationInterruptPolicyBuilder
+{
+    /**
+     * Initial queue, exposed as a MutableMap so the DSL caller can use both
+     * the function-call form (`initialQueue(phase, contents)`) and the
+     * indexer form (`initialQueue[BeforeJudge] = listOf(...)`).
+     */
+    val initialQueue: MutableMap<PumpStationPausePhase, List<MultimodalContent>> = mutableMapOf()
+
+    /**
+     * Seed the initial queue for [phase]. The entries are enqueued in order at
+     * construction time, so the first one fires as the first interrupt.
+     */
+    fun initialQueue(phase: PumpStationPausePhase, contents: List<MultimodalContent>)
+    {
+        initialQueue[phase] = contents
+    }
+
+    internal fun build(): PumpStationInterruptConfiguration
+    {
+        return PumpStationInterruptConfiguration(
+            initialQueue = initialQueue.toMap()
         )
     }
 }
