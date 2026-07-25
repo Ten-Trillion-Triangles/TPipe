@@ -459,6 +459,14 @@ class Pipeline : P2PInterface
         }
     }
 
+    override fun setConverseRoleRecursive(role: com.TTT.Context.ConverseRole)
+    {
+        for (pipe in getPipes())
+        {
+            pipe.setConverseRole(role)
+        }
+    }
+
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
         /** Start as "this" but we may need to alter our target if we need to copy "this" due to some change the

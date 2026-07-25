@@ -21,7 +21,19 @@ enum class ConverseRole
     assistant,
     tool_response,
     pcp_response,
-    mcp_response
+    mcp_response,
+    /**
+     * Messages emitted by the PumpStation harness itself: path-safety
+     * rejection hints, empty-pathName hints, empty-rationale nudges,
+     * pathSchema-fallback hints, DITL steering entries. Distinct from
+     * [system] (which is pruned to the most-recent message by the
+     * context-trimming rule at PumpStationLoop.kt:1015 — a behavior
+     * intentional for the LLM's system prompt but wrong for harness
+     * corrections, which must survive context pressure) and from [user]
+     * (which is the LLM provider's contract for human-user input —
+     * harness corrections are not user intent).
+     */
+    harness
 }
 
 /**

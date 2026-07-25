@@ -13,7 +13,7 @@ class RunExitFlowTest
     {
         val station = PumpStation()
         runBlocking {
-            val result = station.runExitFlow()
+            val result = station.runExitFlow(station.takeInterruptSnapshot())
             assertTrue(result is TurnResult.Halt)
             assertEquals(PumpStationExitReason.JudgeComplete, (result as TurnResult.Halt).reason)
         }
@@ -30,7 +30,7 @@ class RunExitFlowTest
         station.setMaxGoalFailAttempts(3)
 
         runBlocking {
-            val result = station.runExitFlow()
+            val result = station.runExitFlow(station.takeInterruptSnapshot())
             assertTrue(result is TurnResult.Continue)
             assertEquals(1, station.getTaskState().goalFailCount)
         }
@@ -48,7 +48,7 @@ class RunExitFlowTest
         station.getTaskState().goalFailCount = 1  // already over
 
         runBlocking {
-            val result = station.runExitFlow()
+            val result = station.runExitFlow(station.takeInterruptSnapshot())
             assertTrue(result is TurnResult.Halt)
             assertEquals(PumpStationExitReason.GoalValidationFailed, (result as TurnResult.Halt).reason)
         }

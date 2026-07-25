@@ -7,12 +7,13 @@
 - [What is Automatic Context Injection?](#what-is-automatic-context-injection)
 - [Context Sources](#context-sources)
 - [Context Injection Methods](#context-injection-methods)
+- [System-Prompt Context Injection](#system-prompt-context-injection)
 - [Context Flow Patterns](#context-flow-patterns)
 - [Context Injection Timing](#context-injection-timing)
 - [Practical Examples](#practical-examples)
 - [Best Practices](#best-practices)
 
-TPipe provides powerful automatic context injection capabilities that seamlessly integrate context data into AI model prompts. This system handles context retrieval, formatting, and injection without requiring manual prompt construction.
+TPipe provides automatic context injection capabilities that integrate context data into AI model prompts. The system handles context retrieval, formatting, truncation, and injection without requiring manual prompt construction.
 
 ## What is Automatic Context Injection?
 
@@ -124,6 +125,31 @@ val pipe = BedrockPipe()
     .autoInjectContext("Use the provided context, which has been optimized for relevance.")
 ```
 
+## System-Prompt Context Injection
+
+Models with sparse or position-sensitive attention can receive prepared context in the system prompt instead of the user prompt. Select one placement point:
+
+```kotlin
+import com.TTT.Enums.SystemContextInjectionPoint
+
+val pipe = BedrockPipe()
+    .setSystemPrompt("You are a research assistant.")
+    .pullPipelineContext()
+    .setSystemContextInjectionPoint(SystemContextInjectionPoint.Footer)
+```
+
+| Placement | Position |
+|---|---|
+| `Beginning` | Before the raw system prompt. |
+| `Middle` | Between JSON input and JSON output requirements. |
+| `Footer` | Before `footerPrompt`, preserving the explicit footer as the final instruction. |
+
+The context block is rebuilt through `applySystemPrompt()` after context retrieval and truncation. It uses explicit delimiters and identifies embedded context instructions as data. Existing `contextInstructions` supplies model-specific guidance.
+
+System-prompt injection and `.autoInjectContext(...)` are mutually exclusive. Calling `setSystemContextInjectionPoint(...)` disables user-prompt context injection. Calling `.autoInjectContext(...)` disables system-prompt context injection.
+
+The active serialized representation follows the existing context path: `ContextWindow` when no mini-bank pages are active, otherwise `MiniBank`.
+
 ## Context Flow Patterns
 
 ### Pipeline Context Sharing
@@ -183,8 +209,8 @@ val pipe = BedrockPipe()
 
 ## Context Injection Timing
 
-### System Prompt Integration (Schema Only)
-The context **schema** is automatically injected into the system prompt in this order:
+### System Prompt Integration
+With `.autoInjectContext(...)`, the context schema is injected into the system prompt and the actual data is appended to the user prompt in this order:
 
 1. **Original system prompt**
 2. **Context instructions** (from `autoInjectContext()`)
@@ -233,9 +259,9 @@ Context injection happens in two parts during pipe execution:
 
 1. **Pre-execution**: Context is pulled from specified sources
 2. **Pre-validation**: Context can be modified by pre-validation functions
-3. **Schema injection**: Context schema is injected into system prompt
-4. **Data injection**: Actual context data is injected into user prompt
-5. **AI call**: Model receives both schema (in system) and data (in user prompt)
+3. **Pre-invocation rebuild**: System-prompt context injection rebuilds the prompt after final context preparation when enabled
+4. **Injection**: The selected route receives the context data
+5. **AI call**: The model receives the prepared context in the configured prompt channel
 
 ## Practical Examples
 

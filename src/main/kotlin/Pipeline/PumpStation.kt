@@ -26,6 +26,7 @@ import com.TTT.Debug.TraceEvent
 import com.TTT.Debug.TraceFormat
 import com.TTT.Util.serialize
 import com.TTT.Util.writeStringToFile
+import com.TTT.Util.deepCopy
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -43,6 +44,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Contextual
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -330,6 +332,16 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     val pathMetadata: MutableMap<Any, Any> = mutableMapOf()
 
     /**
+     * DITL hook that fires on the actual [MultimodalContent] about to exit the path, immediately before it
+     * returns to the caller. Useful for outer-scaffolding UI/UX sinks that want to mirror path output
+     * without altering the dispatch flow. Suspends; the dispatch awaits the capture inline so consumers
+     * observe content in deterministic order. Fires on every successful return from [execute]
+     * (PCP, executionFunction, internalAgent, agentBuilderFunction) and from [executeLocal].
+     */
+    @kotlinx.serialization.Transient
+    var outputCaptureFunction: (suspend (content: MultimodalContent) -> Unit)? = null
+
+    /**
      * Optional internal agent. Stored as a P2P interface to allow any possible TPipe agent type to be stored internally
      * this includes embedding another [PumpStation] inside the path object that can be called by an outer PumpStation.
      * When assigned, the agent builder function will be skipped over.
@@ -554,6 +566,21 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Sets the output capture function that observes the final [MultimodalContent] just before it returns from
+     * the path to the caller. Fires on every successful return from [execute] (PCP, executionFunction,
+     * internalAgent, agentBuilderFunction) and from [executeLocal]. The dispatch awaits the capture inline
+     * so consumers observe content in deterministic order. Intended for routing path output to UI/UX sinks
+     * in parallel with the normal dispatch return path.
+     *
+     * @see [outputCaptureFunction]
+     */
+    fun setOutputCaptureFunction(func: suspend (content: MultimodalContent) -> Unit): PathObject
+    {
+        outputCaptureFunction = func
+        return this
+    }
+
+    /**
      * True if this path suppresses its async result from being appended to
      * the harness [turnHistory]. Mirrors the mutable [setSuppressHistoryEmit]
      * setting.
@@ -607,6 +634,7 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
                 {
                     val pcpResult = MultimodalContent(text = result.output)
                     pcpResult.metadata["pcpOutput"] = result.output
+                    outputCaptureFunction?.invoke(pcpResult)
                     return pcpResult
                 }
                 else
@@ -621,14 +649,18 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
         // Priority 2: execution function
         if (executionFunction != null)
         {
-            return executionFunction!!.invoke(content, station, turnHistory, turnSummary)
+            val execResult = executionFunction!!.invoke(content, station, turnHistory, turnSummary)
+            outputCaptureFunction?.invoke(execResult)
+            return execResult
         }
 
         // Priority 3: internal agent
         if (internalAgent != null)
         {
             internalAgent!!.setParentInterface(station)
-            return internalAgent!!.executeLocal(content)
+            val internalResult = internalAgent!!.executeLocal(content)
+            outputCaptureFunction?.invoke(internalResult)
+            return internalResult
         }
 
         // Priority 4: agent builder function
@@ -637,7 +669,9 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
             val agent = agentBuilderFunction!!.invoke(null)
             agent.setParentInterface(station)
             agent.P2PInit()
-            return agent.executeLocal(content)
+            val builderResult = agent.executeLocal(content)
+            outputCaptureFunction?.invoke(builderResult)
+            return builderResult
         }
 
         // No execution mechanism available
@@ -726,7 +760,10 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
  * For a one-call factory that wires judge + dispatch + killSwitch + memory defaults,
  * see `Defaults.PumpStationDefaults.withOpenRouter(config)`.
  */
-class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
+class PumpStation(
+    killSwitch: KillSwitch? = null,
+    steeringService: PumpStationSteeringService = PumpStationSteeringService()
+) : P2PInterface
 {
     //=====================================KillSwitch (Group O)========================================================
     /**
@@ -737,6 +774,8 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      * and [DistributionGrid].
      */
     private var _killSwitch: KillSwitch? = killSwitch
+
+    private val _steeringService: PumpStationSteeringService = steeringService
 
     /**
      * Kill switch attached to this PumpStation. The default [KillSwitch.onTripped] callback throws
@@ -755,6 +794,179 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
             pathList.values.forEach { it.killSwitch = value }
             reservePaths.values.forEach { it.killSwitch = value }
         }
+
+    /**
+     * The steering service instance used by the harness loop to inject [MultimodalContent]
+     * into turnHistory at [PumpStationPausePhase] boundaries. Always non-null — defaults
+     * to an empty [PumpStationSteeringService] when no `steeringPolicy { }` is configured.
+     *
+     * Accessed by the harness loop's phase-boundary injection points and by external
+     * observability surfaces.
+     */
+    val steeringService: PumpStationSteeringService get() = _steeringService
+
+    /**
+     * The interrupt service instance used by the harness loop to receive
+     * out-of-band messages that stop the active turn and re-enter from
+     * BeforeJudge. Always non-null — defaults to an empty
+     * [PumpStationInterruptService] when no `interruptPolicy { }` is configured.
+     *
+     * Accessed by the harness loop's phase-boundary interrupt poll points and
+     * by external producer code that wants to send an interrupt.
+     */
+    val interruptService: PumpStationInterruptService = PumpStationInterruptService()
+
+//=====================================Steering Runtime API (Group S)=================================================
+
+/**
+ * Enqueue a one-shot steering instruction. Fires at the next occurrence of
+ * [phase] in the harness loop, then is automatically discarded.
+ *
+ * Thread-safe: may be called from any thread or coroutine context concurrently
+ * with the running loop. The instruction is queued asynchronously and will not
+ * block the caller.
+ *
+ * @param phase The PumpStationPausePhase boundary to inject at
+ * @param content The MultimodalContent to append to turnHistory
+ */
+suspend fun steer(phase: PumpStationPausePhase, content: MultimodalContent)
+{
+    steeringService.enqueueOneShot(phase, content)
+}
+
+/**
+ * Convenience overload accepting a plain text string. Constructs a MultimodalContent
+ * with the given text and enqueues it as a one-shot.
+ */
+suspend fun steer(phase: PumpStationPausePhase, text: String)
+{
+    steer(phase, MultimodalContent(text = text))
+}
+
+/**
+ * Set or replace the persistent overlay for [phase]. Fires on every occurrence of
+ * [phase] until replaced by another `steerPersistent` call or cleared via `clearSteering`.
+ *
+ * Thread-safe: may be called concurrently with the running loop.
+ *
+ * @param phase The PumpStationPausePhase boundary to inject at
+ * @param content The MultimodalContent to append to turnHistory on every match
+ */
+suspend fun steerPersistent(phase: PumpStationPausePhase, content: MultimodalContent)
+{
+    steeringService.setPersistent(phase, content)
+}
+
+/**
+ * Convenience overload accepting a plain text string. Constructs a MultimodalContent
+ * with the given text and registers it as a persistent overlay.
+ */
+suspend fun steerPersistent(phase: PumpStationPausePhase, text: String)
+{
+    steerPersistent(phase, MultimodalContent(text = text))
+}
+
+/**
+ * Clear the persistent overlay for [phase]. Subsequent occurrences of [phase]
+ * will not be steered unless a new overlay is set.
+ *
+ * Thread-safe: may be called concurrently with the running loop.
+ *
+ * @param phase The PumpStationPausePhase boundary to clear
+ */
+suspend fun clearSteering(phase: PumpStationPausePhase)
+{
+    steeringService.clearPersistent(phase)
+}
+
+//=====================================Steering Drain Helper (Group S)=================================================
+
+/**
+ * Drain all pending steering instructions for [phase] and prepare them for
+ * insertion into turnHistory. Returns a list of MultimodalContent with the
+ * canonical `metadata["steering"]` envelope stamped on each entry.
+ *
+ * Combination semantics at drain time:
+ *   1. Persistent overlay (if set) is emitted first, with `metadata["steering"].persistent = true`
+ *   2. One-shot instructions are emitted in FIFO order, each with `metadata["steering"].persistent = false`
+ *
+ * After the drain, the persistent overlay remains in place (fires again on next
+ * phase match); the one-shot queue is empty for [phase].
+ *
+ * Returns an empty list if no overlay is set and no one-shots are queued.
+ *
+ * Thread-safe: the underlying service uses a Mutex to coordinate concurrent
+ * producer-side calls.
+ *
+ * @param phase The PumpStationPausePhase to drain
+ * @return List of MultimodalContent with steering metadata applied (empty list if nothing pending)
+ */
+suspend fun drainSteeringForPhase(phase: PumpStationPausePhase): List<MultimodalContent>
+{
+    val drained = steeringService.drainForPhase(phase)
+    val now = System.currentTimeMillis()
+    return drained.mapIndexed { index, content ->
+        val isPersistent = if (index == 0 && steeringService.hasPersistentOverlay(phase)) {
+            // First entry is the persistent overlay if it was set
+            true
+        } else {
+            false
+        }
+        val steeringMetadata: Map<String, Any> = mapOf(
+            "phase" to phase.name,
+            "persistent" to isPersistent,
+            "injectionId" to UUID.randomUUID().toString(),
+            "timestamp" to now
+        )
+        // Build a fresh MutableMap<Any, Any> that merges existing metadata with the steering envelope.
+        // Use deepCopy() (com.TTT.Util.deepCopy) instead of data-class .copy() so body-level
+        // var current values (passPipeline, currentPipe, modelReasoning, pipeError, etc.) are
+        // preserved on the returned content. A shallow data-class .copy() re-runs the body
+        // initializer and substitutes the defaults, silently dropping the source's body state.
+        val mergedMetadata: MutableMap<Any, Any> = mutableMapOf()
+        content.metadata.forEach { (k, v) -> mergedMetadata[k] = v }
+        mergedMetadata["steering"] = steeringMetadata
+        val updated = content.deepCopy()
+        updated.metadata = mergedMetadata
+        updated
+    }
+}
+
+//=====================================Interrupt Runtime API (Group I)=================================================
+
+/**
+ * Enqueue an interrupt. Fires at the next occurrence of [phase] in the
+ * harness loop. Unlike [steer], an interrupt stops the active turn, rewinds
+ * the harness state to the BeforeJudge of the current turn, and re-enters
+ * the turn loop from the top with the interrupt message appended to
+ * turnHistory (with the canonical `metadata["interrupt"]` envelope).
+ *
+ * Combination semantics when multiple [interrupt] calls queue for the same
+ * phase before the next poll:
+ *   - The first entry becomes the active interrupt (the rewind target).
+ *   - Subsequent entries are forwarded to [steer] for the same phase as
+ *     one-shot steering instructions. If [steer] is not configured for
+ *     the phase, the overflow is silently dropped AND an
+ *     [InterruptOverflowDropped] event is emitted for observability.
+ *
+ * Thread-safe: may be called from any thread or coroutine context.
+ *
+ * @param phase The PumpStationPausePhase boundary at which to interrupt
+ * @param content The MultimodalContent to inject into turnHistory on rewind
+ */
+suspend fun interrupt(phase: PumpStationPausePhase, content: MultimodalContent)
+{
+    interruptService.enqueue(phase, content)
+}
+
+/**
+ * Convenience overload accepting a plain text string. Constructs a
+ * MultimodalContent with the given text and enqueues it.
+ */
+suspend fun interrupt(phase: PumpStationPausePhase, text: String)
+{
+    interrupt(phase, MultimodalContent(text = text))
+}
 
 //======================================Properties======================================================================
 
@@ -1023,6 +1235,13 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      * exist both in reserve, and in the main [pathList] at the same time.
      */
     internal val reservePaths: MutableMap<String, PathObject> = mutableMapOf()
+
+/**
+ * Normalize a path-name key for the [PumpStation.pathList] and
+ * [PumpStation.reservePaths] maps. Path lookup is case-insensitive
+ * per the contract documented on [PumpStation.pathList].
+ */
+private fun pathKey(name: String): String = name.lowercase()
 
 
 
@@ -1587,6 +1806,14 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      */
     private var maxTotalPathCallsPerPath: Int? = null
 
+    /**
+     * Loop guard: maximum consecutive dispatches of unregistered path names
+     * before halting with [PumpStationExitReason.LoopGuardTripped]. Null (the
+     * default) preserves today's unbounded behavior — the harness will keep
+     * retrying a non-existent path until the turn budget exhausts.
+     */
+    private var maxConsecutiveUnknownPaths: Int? = null
+
 //=====================================Group Q: SafePrune (optional deterministic cleanup)==========================
 
     /**
@@ -1672,6 +1899,15 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
      * Counts consecutive turns on the same path for [maxConsecutiveSamePath] enforcement.
      */
     private var consecutivePathCount = 0
+
+    /**
+     * Counts consecutive [PumpStationError.UnknownPath] outcomes for
+     * [maxConsecutiveUnknownPaths] enforcement. Reset to 0 on any successful
+     * path resolution or on a guard trip. Internal so [runPathFlow] in
+     * [PumpStationLoop.kt] can mutate the counter without a setter helper;
+     * the public API for the guard is the DSL `maxConsecutiveUnknownPaths` field.
+     */
+    internal var consecutiveUnknownPathCount: Int = 0
 
     /**
      * Name of the last selected path, used to detect same-path repetition.
@@ -1889,6 +2125,21 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
             }
         }
 
+        // Assign per-agent converse roles. Authoritative agents (judge,
+        // dispatch, intervention, goal, path-safety, health, preInit)
+        // gate the harness flow and get [ConverseRole.supervisor] so the
+        // LLM API and downstream tooling can distinguish their turns
+        // from worker-pipe turns. Memory workers (lorebook, summary)
+        // keep the default [ConverseRole.agent] — they maintain state
+        // but do not gate flow.
+        judgeAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+        dispatchAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+        interventionAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+        goalAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+        pathSafetyAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+        healthAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+        preInitAgent?.setConverseRoleRecursive(ConverseRole.supervisor)
+
         // Initialize all agents
         judgeAgent?.P2PInit()
         dispatchAgent?.P2PInit()
@@ -2037,19 +2288,19 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
             val shouldReveal = path.revealWhen.invoke(taskState, externalContext)
             if (shouldReveal)
             {
-                val firstReveal = path.pathName !in revealedReservePaths
-                revealedReservePaths.add(path.pathName)
+                val firstReveal = pathKey(path.pathName) !in revealedReservePaths
+                revealedReservePaths.add(pathKey(path.pathName))
                 if(firstReveal)
                 {
                     emitEvent(ReservePathRevealed(
                         runId = taskState.runId,
                         turnIndex = taskState.turnIndex,
                         pathName = path.pathName,
-                        reservePathNames = reservePaths.keys.toList()
+                        reservePathNames = reservePaths.values.map { it.pathName }
                     ))
                 }
             }
-            if (revealedReservePaths.contains(path.pathName))
+            if (revealedReservePaths.contains(pathKey(path.pathName)))
             {
                 val desc = PathDescriptionData(
                     name = path.pathName,
@@ -2291,6 +2542,11 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     internal val healthAgentBuilderFunctionInternal get() = healthAgentBuilderFunction
     internal val healthAgentTurnIntervalInternal get() = healthAgentTurnInterval
     internal val healthAgentErrorRatioThresholdInternal get() = healthAgentErrorRatioThreshold
+    internal val judgeAgentInternal get() = judgeAgent
+    internal val dispatchAgentInternal get() = dispatchAgent
+    internal val interventionAgentInternal get() = interventionAgent
+    internal val goalAgentInternal get() = goalAgent
+    internal val pathSafetyAgentInternal get() = pathSafetyAgent
     internal var lastHealthCheckTurnInternal: Int
         get() = lastHealthCheckTurn
         set(value) { lastHealthCheckTurn = value }
@@ -2364,6 +2620,8 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     internal val consecutivePathCountInternal: Int
         get() = consecutivePathCount
     internal val lastSelectedPathNameInternal get() = lastSelectedPathName
+    internal val maxConsecutiveUnknownPathsInternal: Int?
+        get() = maxConsecutiveUnknownPaths
 
     //=====================================Tracing Accessors================================================
     // Internal accessors so PumpStationHelpers.kt and PumpStationLoop.kt extension functions can read
@@ -2595,8 +2853,9 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
 
     /**
      * Returns a path by name, searching both normal and reserve paths.
+     * Lookup is case-insensitive per the contract documented on [pathList].
      */
-    fun getPath(name: String): PathObject? = pathList[name] ?: reservePaths[name]
+    fun getPath(name: String): PathObject? = pathList[pathKey(name)] ?: reservePaths[pathKey(name)]
 
     /**
      * Adds a path to the normal path list (not reserve). The path's parent is set to this station,
@@ -2607,42 +2866,47 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     {
         path.setParentInterface(this)
         path.killSwitch = _killSwitch
-        pathList[path.pathName] = path
+        pathList[pathKey(path.pathName)] = path
     }
 
     /**
-     * Removes a path from the normal path list by name.
+     * Removes a path from the normal path list by name. Lookup is case-insensitive.
      */
     fun removePath(name: String)
     {
-        pathList.remove(name)
+        pathList.remove(pathKey(name))
     }
 
     /**
      * Moves a path from the normal path list to reserve, making it invisible to dispatch
-     * until explicitly revealed or the harness resets.
+     * until explicitly revealed or the harness resets. Lookup is case-insensitive.
      */
     private fun movePathToReserve(name: String)
     {
-        val path = pathList.remove(name) ?: return
+        val path = pathList.remove(pathKey(name)) ?: return
         path.revealWhen = { _, _ -> false }
-        reservePaths[name] = path
+        reservePaths[pathKey(name)] = path
     }
 
     /**
      * Returns names of all currently visible paths (normal paths + revealed reserve paths).
+     * Names preserve the original casing of [PathObject.pathName] for each path so the
+     * LLM-facing menu matches the casing shown in the path descriptors block.
      */
     fun getVisiblePathNames(): List<String>
     {
-        val names = pathList.keys.toMutableList()
-        names.addAll(revealedReservePaths)
+        val names = pathList.values.map { it.pathName }.toMutableList()
+        for (key in revealedReservePaths)
+        {
+            reservePaths[key]?.pathName?.let { names.add(it) }
+        }
         return names
     }
 
     /**
      * Returns names of all reserve paths (whether revealed or not).
      */
-    fun getReservePathNames(): List<String> = reservePaths.keys.toList()
+    fun getReservePathNames(): List<String> = reservePaths.values.map { it.pathName }
 
     /**
      * Saves a snapshot of the current harness state at a high-risk boundary
@@ -2690,6 +2954,46 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
             turnIndex = taskState.turnIndex,
             phase = taskState.phase
         ))
+    }
+
+    //=====================================Interrupt Snapshot Helpers==================================================
+
+    /**
+     * Capture a snapshot of the harness state for later rewind on interrupt.
+     * Called at the top of every [runTurn] and stashed for the duration of the
+     * turn. The snapshot covers the fields that an in-flight turn's work can
+     * mutate — turnHistory and the four [taskState] fields listed below. Other
+     * [taskState] fields (status, phase, lastError, exitReason, etc.) are not
+     * affected by a turn's in-flight work and are NOT in the snapshot; the
+     * rewind preserves them.
+     */
+    internal fun takeInterruptSnapshot(): PumpStationInterruptSnapshot
+    {
+        return PumpStationInterruptSnapshot(
+            turnIndex = taskState.turnIndex,
+            latestContent = taskState.latestContent,
+            lastPathResult = taskState.lastPathResult,
+            selectedPathName = taskState.selectedPathName,
+            originalInput = taskState.originalInput,
+            turnHistory = turnHistory.history
+        )
+    }
+
+    /**
+     * Restore the harness state from [snapshot]. Called from the
+     * [PumpStationInterruptException] catch handler at the top of [runTurn].
+     * Replaces the four [taskState] fields and turnHistory contents with the
+     * snapshot's stored values. Does NOT touch other [taskState] fields.
+     */
+    internal fun restoreFromInterruptSnapshot(snapshot: PumpStationInterruptSnapshot)
+    {
+        taskState.turnIndex = snapshot.turnIndex
+        taskState.latestContent = snapshot.latestContent
+        taskState.lastPathResult = snapshot.lastPathResult
+        taskState.selectedPathName = snapshot.selectedPathName
+        taskState.originalInput = snapshot.originalInput
+        turnHistory.history.clear()
+        turnHistory.history.addAll(snapshot.turnHistoryCopy)
     }
 
     /**
@@ -2818,6 +3122,12 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
             // Previously the flag check was the only gate, which made the safety check a
             // degenerate always-approve (LLMs don't normally set terminatePipeline on a
             // safety verdict response).
+            // Phase boundary: BeforePathSafety — drain steering before the path-safety
+            // gate runs. Persistent overlays / one-shot instructions for this phase are
+            // appended to turnHistory so they are visible to the safety LLM (when one is
+            // configured) and to downstream observers. The drain is non-blocking and
+            // does not influence the safety verdict.
+            injectSteeringForPhase(PumpStationPausePhase.BeforePathSafety)
             val approved = checkPathSafety(path, input)
             // Capture the rejection reason from the safety verdict (when the agent
             // path was used). pathSafetyFunction users don't carry a reason —
@@ -2863,7 +3173,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                         " Select a different path from the visible list on your next dispatch."
                     turnHistory.add(
                         ConverseData(
-                            role = ConverseRole.user,
+                            role = ConverseRole.harness,
                             content = MultimodalContent(text = hintMessage)
                         )
                     )
@@ -4014,6 +4324,21 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     }
 
     /**
+     * Sets the maximum number of consecutive dispatches of unregistered path
+     * names before the loop guard fires with
+     * [PumpStationExitReason.LoopGuardTripped].
+     *
+     * @param max The maximum consecutive UnknownPath dispatches, or null to
+     *   disable the guard (preserves today's unbounded behavior).
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMaxConsecutiveUnknownPaths(max: Int?): PumpStation
+    {
+        this.maxConsecutiveUnknownPaths = max
+        return this
+    }
+
+    /**
      * Sets the maximum number of [ConverseHistory] elements allowed in the turn history.
      *
      * @param max The maximum turn history size.
@@ -4498,7 +4823,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
                     // is configured to suppress history emission. The flag
                     // is set on the path, not the entry, so we resolve
                     // pathName -> path object here.
-                    val path = entry.pathName?.let { name -> pathList[name] ?: reservePaths[name] }
+                    val path = entry.pathName?.let { name -> pathList[pathKey(name)] ?: reservePaths[pathKey(name)] }
                     val suppressed = path?.isSuppressHistoryEmit == true
                     if (suppressed) continue
                     val turnEntry = ConverseData(
@@ -4515,7 +4840,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
         // merge at the granularity of a single path / agent completion.
         for (entry in drained)
         {
-            val path = entry.pathName?.let { name -> pathList[name] ?: reservePaths[name] }
+            val path = entry.pathName?.let { name -> pathList[pathKey(name)] ?: reservePaths[pathKey(name)] }
             if (path?.isSuppressHistoryEmit == true) continue
             emitEventInternal(AsyncTurnAppended(
                 runId = taskState.runId,
@@ -4980,7 +5305,7 @@ class PumpStation(killSwitch: KillSwitch? = null) : P2PInterface
     {
         path.setParentInterface(this)
         path.killSwitch = _killSwitch
-        reservePaths[path.pathName] = path
+        reservePaths[pathKey(path.pathName)] = path
         return this
     }
 

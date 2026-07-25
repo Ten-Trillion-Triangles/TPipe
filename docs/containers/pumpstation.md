@@ -649,6 +649,7 @@ The `pumpStation { }` builder supports these top-level blocks and setters.
 | `judgeJsonContractEnabled` | `Boolean`                                | `true`  | When false, judge verdict comes from flags only. |
 | `pathSafetyJsonContractEnabled` | `Boolean`                            | `true`  | When false, path-safety verdict comes from flags only. |
 | `maxConsecutiveSamePath` | `Int`                                      | `3`     | Loop guard on consecutive same-path dispatch. |
+| `maxConsecutiveUnknownPaths` | `Int?`                                 | `null`  | Loop guard on consecutive dispatches of unregistered path names; null disables. |
 | `maxTotalPathCallsPerPath` | `Int?`                                   | `null`  | Loop guard on total calls per path; null disables. |
 | `pathLimitExceededPolicy` | `PathLimitExceededPolicy`                 | `Skip`  | `Skip`, `Halt`, or `Continue` when the per-path limit is hit. |
 | `requirePathSelectionRationale` | `Boolean`                            | `true`  | When true, the harness appends a one-shot reminder to the next dispatch prompt if the LLM returned a null `pathSelectionRationale`. See [Dispatch Contract: `pathSelectionRationale`](#dispatch-contract-pathselectionrationale). |
@@ -1276,13 +1277,23 @@ path("dangerous") {
 
 ## Loop Guards
 
-Two guards run before each path call:
+Three guards run before each path call. All three share the same wiring: on trip, the harness emits a `LoopGuardTripped` event with `guard` naming the guard that fired, sets `taskState.exitReason = LoopGuardTripped` and `taskState.lastError = LoopGuardTriggered`, and halts via `latestContent.terminatePipeline`. The trace visualizer renders all three under the same `ps-bg-warning` background pill and warning fact card, distinguishing them only by the `guard` metadata field on the emitted event.
 
 ### `maxConsecutiveSamePath`
 
 Default `3`. When the dispatch agent selects the same path `N` consecutive turns, the harness emits a `LoopGuardTripped` event, optionally invokes `interventionAgent` (if set), and proceeds with the call. The developer can detect this in DITL hooks or in their intervention agent.
 
 After a `LoopGuardTripped`, the consecutive-same-path counter resets to zero rather than staying at the threshold. The next dispatch turn starts fresh and a future return to the tripping path gets the full `maxConsecutiveSamePath` budget again.
+
+### `maxConsecutiveUnknownPaths`
+
+Default `null` (disabled). When the dispatch agent picks a path name that doesn't resolve to any registered path (a name the harness never knew about — for example, a hallucination like `flarble` or a stale name from a prompt that listed removed paths), the harness emits `PathFailed(error=UnknownPath)` and the dispatch loop retries on the next turn. When that failure has happened `N` consecutive turns in a row, the harness trips the new guard.
+
+The counter increments only on `UnknownPath` outcomes and resets on every successful path resolution (any path, including paths that later hit the path-safety gate or trip `maxConsecutiveSamePath`). The guard is also reset when it trips, so a subsequent run of a different station on the same PumpStation instance does not inherit the streak.
+
+This guard is the safety net for the LLM-stuck-on-unknown-path failure mode that the existing loop guards do not cover. `maxConsecutiveSamePath` and `maxTotalPathCallsPerPath` only fire on a path that successfully resolves; if the LLM dispatches a name that never existed in the registry, those guards never see it. `maxConsecutiveUnknownPaths` closes that gap.
+
+The trace event carries `metadata.guard = "maxConsecutiveUnknownPaths"`, `metadata.pathName` is the actual name the LLM dispatched, and `metadata.detail = "consecutive=<n>, limit=<n>"`.
 
 ### `maxTotalPathCallsPerPath`
 
@@ -1296,7 +1307,7 @@ Default `null` (disabled). When set, after the call count for a path exceeds the
 
 The `pathLimitExceededFunction` DITL hook can override the static policy with a dynamic result.
 
-Both loop guard events are emitted on `PumpStationPhase.PathExecution`.
+All three loop-guard events are emitted on `PumpStationPhase.PathExecution` and share the same wire shape — see [`LoopGuardTripped`](api/pumpstation-models.md#path-and-loop-guard-events) for the field-level contract and the `guard` discriminator.
 
 
 ## Reserve Paths
@@ -1459,6 +1470,313 @@ After `restoreSnapshot`, `harnessIsReady` is set to `true` and a `HarnessResumed
 
 Pause phases: `BeforeJudge`, `AfterJudge`, `BeforeDispatch`, `AfterDispatch`, `BeforePathSafety`, `BeforePathExecution`, `AfterPathExecution`, `BeforeMemoryUpdate`, `BeforeCompaction`, `BeforeGoalValidation`, `BeforeExit`.
 
+## Steering: Mid-Loop Context Injection
+
+The steering feature lets external callers inject `MultimodalContent` into the agent's visible `turnHistory` at configurable `PumpStationPausePhase` boundaries without disrupting the running loop. Unlike `pauseAt()`, steering does not halt the harness — the injection is non-blocking and thread-safe under the existing `Mutex`-protected history writes.
+
+### Configuration Surface (DSL)
+
+Configure initial persistent overlays and one-shot instructions inside the `pumpStation { }` block:
+
+```kotlin
+pumpStation("my-station") {
+    path("search") { /* ... */ }
+
+    steeringPolicy {
+        // Persistent overlay — fires on every BeforeJudge
+        persistentOverlay(PumpStationPausePhase.BeforeJudge) {
+            text("Always verify the user's last request before proceeding.")
+        }
+
+        // One-shot — fires once at the next AfterDispatch, then discarded
+        phaseBoundContent(PumpStationPausePhase.AfterDispatch) {
+            text("Check the async channel for pending path results.")
+        }
+    }
+}
+```
+
+The `SteeringPolicyBuilder` exposes two overloads per method:
+- `persistentOverlay(phase, content: MultimodalContent)` / `persistentOverlay(phase, text: String)`
+- `phaseBoundContent(phase, content: MultimodalContent)` / `phaseBoundContent(phase, text: String)`
+
+### Runtime API
+
+Push new instructions at runtime without halting the loop:
+
+```kotlin
+// One-shot — fires at the next occurrence of the phase, then discarded
+station.steer(PumpStationPausePhase.BeforeJudge) {
+    text("User just asked: focus on the security audit.")
+}
+
+// Persistent — fires on every occurrence until cleared or replaced
+station.steerPersistent(PumpStationPausePhase.BeforeJudge) {
+    text("Budget is $50. Do not exceed.")
+}
+
+// Clear the persistent overlay
+station.clearSteering(PumpStationPausePhase.BeforeJudge)
+```
+
+All three methods are `suspend` and may be called concurrently with the running loop from any thread or coroutine context.
+
+### Phase Boundaries (11 chokepoints)
+
+Steering is injected at every one of the 11 `PumpStationPausePhase` boundaries in the harness loop. Each chokepoint is wired via the `injectSteeringForPhase(phase)` extension on `PumpStation`, called at the right semantic boundary in `PumpStationLoop.kt`:
+
+| Phase | Location | Purpose |
+|-------|----------|---------|
+| `BeforeJudge` | `runTurn` before `runJudgePhase()` | Inject guidance before the judge LLM decides |
+| `AfterJudge` | `runTurn` after `runJudgePhase()` | Inject guidance after the judge returns |
+| `BeforeDispatch` | `runTurn` before `runDispatchPhase()` | Inject guidance before the dispatch LLM picks a path |
+| `AfterDispatch` | `runTurn` after `runDispatchPhase()` | Inject guidance after dispatch returns |
+| `BeforePathSafety` | `invokePath` before path safety check | Inject guidance before the safety check |
+| `BeforePathExecution` | `runTurn` before `invokePath()` | Inject guidance before the path runs |
+| `AfterPathExecution` | `runTurn` after `invokePath()` | Inject guidance after the path completes |
+| `BeforeMemoryUpdate` | `runTurn` before memory update | Inject guidance before history is written |
+| `BeforeCompaction` | `runTurn` before compaction | Inject guidance before compaction runs |
+| `BeforeGoalValidation` | `runExitFlow` | Inject guidance before goal validation |
+| `BeforeExit` | `runExitFlow` before harness exit | Inject guidance on the exit path |
+
+### Combination Semantics
+
+At each phase boundary, the drain returns a list ordered as:
+1. **Persistent overlay first** (if set for that phase) — fires on every match
+2. **One-shot instructions** in FIFO order — fire once, then discarded
+
+After the drain, the persistent overlay remains in place; the one-shot queue is empty for that phase.
+
+### Metadata Provenance
+
+Every injected entry carries a canonical `metadata["steering"]` envelope with four fields:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `phase` | `String` | The `PumpStationPausePhase.name` at which the entry was drained |
+| `persistent` | `Boolean` | `true` if the entry was a persistent overlay, `false` if one-shot |
+| `injectionId` | `String` | UUID for tracing and audit |
+| `timestamp` | `Long` | Epoch milliseconds at drain time |
+
+This envelope is namespaced under `"steering"` and merges with any existing `MultimodalContent.metadata` keys without overwriting them. Downstream features (summarization exclusion, audit trails, debugging overlays) can inspect this envelope to distinguish steered entries from regular user-role history.
+
+### How It Works
+
+1. **Producer side** (`steer` / `steerPersistent` / `clearSteering` / DSL `steeringPolicy` block): writes to `PumpStationSteeringService`, a thread-safe store using `Mutex` + `Channel` + `ConcurrentHashMap`.
+2. **Consumer side** (harness loop at each phase boundary): calls `pumpStation.drainSteeringForPhase(phase)`, which:
+   - Combines persistent overlay (if set) + one-shot queue (FIFO)
+   - Stamps each entry with the canonical `metadata["steering"]` envelope
+   - Returns a `List<MultimodalContent>` ready for `turnHistory.add()`
+3. **Loop wiring**: `injectSteeringForPhase(phase)` wraps the drain + append, sitting at the right semantic boundary in `PumpStationLoop.kt` (see Phase Boundaries table above).
+
+The loop is never halted, never signaled, never awaited. Concurrent `steer()` calls are safe under the service's `Mutex`.
+
+### Reference Locations
+
+| Component | File |
+|-----------|------|
+| Model classes (one-shot, persistent, configuration) | `src/main/kotlin/Pipeline/PumpStationSteeringModels.kt` |
+| Thread-safe service | `src/main/kotlin/Pipeline/PumpStationSteeringService.kt` |
+| DSL block (`steeringPolicy { }`, `SteeringPolicyBuilder`) | `src/main/kotlin/Pipeline/PumpStationDsl.kt` |
+| Runtime API + drain helper | `src/main/kotlin/Pipeline/PumpStation.kt` (lines ~807-920) |
+| 11 chokepoint injections | `src/main/kotlin/Pipeline/PumpStationLoop.kt` (10 sites) + `src/main/kotlin/Pipeline/PumpStation.kt` (1 site) |
+| Regression tests (27 tests across 3 classes) | `src/test/kotlin/Pipeline/PumpStationSteering{Service,Dsl,Runtime}Test.kt` |
+
+### Example: Hybrid Persistent + One-Shot
+
+```kotlin
+pumpStation("hybrid-station") {
+    path("search") { /* ... */ }
+
+    steeringPolicy {
+        // Persistent: budget reminder fires on every BeforeJudge
+        persistentOverlay(PumpStationPausePhase.BeforeJudge, "Budget: $50. Track spend.")
+    }
+}
+
+// At runtime, push a one-shot nudge for a specific turn
+station.steer(PumpStationPausePhase.BeforeJudge) {
+    text("User just asked about a refund — be empathetic.")
+}
+
+// At every BeforeJudge: the persistent overlay fires + the one-shot fires once
+// At the next BeforeJudge: only the persistent overlay fires
+```
+
+## Interrupt: Hard Rewind-and-Restart
+
+The interrupt feature is a sibling to steering with opposite semantics. Where steering **adds** content to the running turn, an interrupt **stops the active turn mid-flight, rewinds the harness state to the BeforeJudge of the current turn, and re-enters `runTurn` from the top** — the same turn slot, same `turnIndex`, but with the interrupt message injected into `turnHistory` and the in-flight turn's partial work discarded. This is the equivalent of a hard interrupt in other LLM harnesses (OpenAI Agents SDK, Claude Code).
+
+Like steering, interrupts are thread-safe, fire at the same 11 `PumpStationPausePhase` boundaries, and never block the producer caller. Unlike steering, interrupts are inherently one-shot: there is no persistent overlay because a "persistent interrupt" is just steering under a different name.
+
+### When To Use Interrupt vs Steering
+
+| Concern | Use steering | Use interrupt |
+|---------|--------------|---------------|
+| "Add a hint to the next judge call" | ✓ | |
+| "Add a one-shot reminder to the next dispatch" | ✓ | |
+| "User pressed the stop button" | | ✓ |
+| "A watchdog decided the path is looping — kill it and try a different strategy" | | ✓ |
+| "Framework sent a new instruction that must be seen BEFORE the in-flight turn's path completes" | | ✓ |
+| "Periodic nudge the agent should see on every turn" | ✓ (`steerPersistent`) | |
+
+### Configuration Surface (DSL)
+
+Seed the interrupt queue at construction time. Unlike steering, there is no persistent overlay — only an initial queue:
+
+```kotlin
+pumpStation("my-station") {
+    path("search") { /* ... */ }
+
+    interruptPolicy {
+        // Seed the queue: the first entry fires as the first interrupt,
+        // the rest are forwarded to the steering service or dropped (see
+        // Combination Semantics below).
+        initialQueue[PumpStationPausePhase.BeforeJudge] = listOf(
+            MultimodalContent(text = "preloaded: switch to a cheaper model")
+        )
+    }
+}
+```
+
+The `PumpStationInterruptPolicyBuilder` exposes the `initialQueue` map directly (function-call form also available: `initialQueue(phase, contents)`). Indexer form `initialQueue[BeforeJudge] = ...` is the idiomatic shape.
+
+### Runtime API
+
+Push a new interrupt at runtime without waiting for the loop:
+
+```kotlin
+// Standard: pass a MultimodalContent payload
+station.interrupt(PumpStationPausePhase.BeforeJudge, MultimodalContent(
+    text = "halt the in-flight turn and switch to a different path"
+))
+
+// Convenience overload: pass a plain string
+station.interrupt(PumpStationPausePhase.AfterDispatch, "stop and pivot")
+
+// Inspect the queue depth at any phase
+val pending = station.interruptService.queueDepth(PumpStationPausePhase.BeforeJudge)
+```
+
+Both methods are `suspend` and may be called concurrently with the running loop from any thread or coroutine context. The interrupt is queued asynchronously; the caller does not block.
+
+### Rewind Mechanics
+
+When an interrupt fires at a phase boundary:
+
+1. The harness throws `PumpStationInterruptException(content, snapshot)` carrying the interrupt message (with the canonical `metadata["interrupt"]` envelope) and the `PumpStationInterruptSnapshot` taken at the top of the current `runTurn` (`BeforeJudge`).
+2. The catch handler in `runHarnessLoop` (around the `runTurn` invocation) restores the snapshot — `turnHistory` and the four `taskState` fields (`latestContent`, `lastPathResult`, `selectedPathName`, `originalInput`) — appends the interrupt message to `turnHistory` with the `metadata["interrupt"]` envelope, and `continue`s the `while` loop.
+3. `taskState.turnIndex` is **not** advanced. The interrupted turn slot is re-attempted. The judge LLM sees the interrupt message plus the pre-turn history on re-entry.
+4. The in-flight turn's partial work — judge LLM call output, dispatch output, path output, foreground agents — is discarded by the rewind.
+
+For interrupts that arrive BEFORE `runTurn` is entered (during finalization or between turns), an outer-snapshot pattern in `runHarnessLoop` catches them at the outer loop's `BeforeJudge` poll.
+
+### Phase Boundaries (11 chokepoints)
+
+Interrupts are polled at every one of the 11 `PumpStationPausePhase` boundaries in the harness loop, paired with the existing steering drain call:
+
+| Phase | Location | Purpose |
+|-------|----------|---------|
+| `BeforeJudge` | `runHarnessLoop` outer poll + `runTurn` start | Catch interrupts that arrive between turns or at the very start of a turn |
+| `AfterJudge` | `runTurn` after `runJudgePhase()` | Cancel the in-flight turn after the judge returns |
+| `BeforeDispatch` | `runTurn` before `runDispatchPhase()` | Cancel before dispatch picks a path |
+| `AfterDispatch` | `runTurn` after `runDispatchPhase()` | Cancel after dispatch returns but before path execution |
+| `BeforePathSafety` | `invokePath` before path safety check | Cancel before safety check |
+| `BeforePathExecution` | `runTurn` before `invokePath()` | Cancel before the path runs |
+| `AfterPathExecution` | `runTurn` after `invokePath()` | Cancel after the path completes (rejects the path's result) |
+| `BeforeMemoryUpdate` | `runTurn` before memory update | Cancel before history is written |
+| `BeforeCompaction` | `runTurn` before compaction | Cancel before compaction runs |
+| `BeforeGoalValidation` | `runExitFlow` | Cancel before goal validation |
+| `BeforeExit` | `runFinalizationPhase` | Cancel on the exit path before finalization completes |
+
+The BeforeExit poll is special: the harness loop has already returned by the time finalization runs, so re-entry is not possible. The interrupt message is appended to `turnHistory` and finalization proceeds with the message in context.
+
+### Combination Semantics
+
+Multiple `interrupt()` calls queued for the same phase before the next poll:
+
+1. The first entry becomes the active interrupt (the rewind target). The harness stops, rewinds, and re-enters with this entry in `turnHistory`.
+2. Subsequent entries are forwarded to `steer()` for the same phase as one-shot steering instructions. They fire at the next phase boundary if the rewind re-enters the loop.
+3. If the steering service is not configured for the phase (no one-shot channel and no persistent overlay), the overflow entries are silently dropped AND an `InterruptOverflowDropped` event is emitted with `droppedCount` and `firstDroppedText` for observability. Caller's contract: if guarantees are needed, also call `steer()` with the same content.
+
+### Metadata Provenance
+
+Every injected interrupt message carries a canonical `metadata["interrupt"]` envelope:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `phase` | `String` | The `PumpStationPausePhase.name` at which the interrupt was drained |
+| `wasRewound` | `Boolean` | `true` — the harness rewound and re-entered the turn on receipt |
+| `injectionId` | `String` | UUID for tracing and audit |
+| `timestamp` | `Long` | Epoch milliseconds at drain time |
+
+This envelope is namespaced under `"interrupt"` and merges with any existing `MultimodalContent.metadata` keys without overwriting them. The `wasRewound` flag is the key differentiator from steering (which uses `metadata["steering"].persistent` instead).
+
+### How It Works
+
+1. **Producer side** (`interrupt` / DSL `interruptPolicy` block): writes to `PumpStationInterruptService`, a thread-safe store using `Mutex` + per-phase `Channel<MultimodalContent>` + `ConcurrentHashMap`.
+2. **Consumer side** (harness loop at each phase boundary): calls `pumpStation.injectInterruptForPhase(phase, snapshot)`, which:
+   - Drains the first entry for the phase (or no-op if empty)
+   - Forwards overflow entries to the steering service (or drops them with an `InterruptOverflowDropped` event)
+   - Stamps the entry with the canonical `metadata["interrupt"]` envelope
+   - Throws `PumpStationInterruptException(stamped, snapshot)`
+3. **Catch handler** in `runHarnessLoop`: restores the snapshot (turnHistory + 4 taskState fields), appends the interrupt message to `turnHistory`, and `continue`s the `while` loop. `taskState.turnIndex` is not advanced.
+
+The in-flight turn is aborted at the throw site. There is no graceful-shutdown path; the catch handler immediately rewinds.
+
+### Reference Locations
+
+| Component | File |
+|-----------|------|
+| Exception (`PumpStationInterruptException`) | `src/main/kotlin/Pipeline/PumpStationInterruptException.kt` |
+| Snapshot (`PumpStationInterruptSnapshot`) | `src/main/kotlin/Pipeline/PumpStationInterruptSnapshot.kt` |
+| Configuration (`PumpStationInterruptConfiguration`) | `src/main/kotlin/Pipeline/PumpStationSteeringModels.kt` (sibling to `PumpStationSteeringConfiguration`) |
+| DSL block (`interruptPolicy { }`, `PumpStationInterruptPolicyBuilder`) | `src/main/kotlin/Pipeline/PumpStationDsl.kt` |
+| Thread-safe service | `src/main/kotlin/Pipeline/PumpStationInterruptService.kt` |
+| Runtime API + interrupt snapshot helpers | `src/main/kotlin/Pipeline/PumpStation.kt` (lines ~807-967) |
+| 11 chokepoint poll calls + rewind catch | `src/main/kotlin/Pipeline/PumpStationLoop.kt` (10 sites inside `runTurn` / `runExitFlow` + 1 site in `runFinalizationPhase` + outer-snapshot catch in `runHarnessLoop`) |
+| Regression tests (12 tests across 6 classes) | `src/test/kotlin/Pipeline/PumpStationInterrupt{Exception,Service,Snapshot,Api,Dsl,Integration}Test.kt` + `src/test/kotlin/Pipeline/PumpStationInjectInterruptTest.kt` |
+
+### Example: User-Initiated Stop Button
+
+```kotlin
+pumpStation("interactive-station") {
+    path("search") { /* ... */ }
+    path("summarize") { /* ... */ }
+}
+
+// External UI / framework code — fire from any thread at any time:
+fun onUserPressedStop() {
+    val station = ... // get the running station reference
+    runBlocking {
+        station.interrupt(
+            PumpStationPausePhase.BeforeJudge,
+            "user pressed stop: drop the current path and report progress so far"
+        )
+    }
+}
+
+// Effect: the in-flight turn is discarded, the harness rewinds to the
+// most recent BeforeJudge, the judge LLM sees the user-stop message in
+// turnHistory, and the re-entered turn proceeds with that context.
+```
+
+### Example: Watchdog Cancelling a Looping Path
+
+```kotlin
+val watchdogJob = launch {
+    while (isActive) {
+        delay(60_000)  // 1-minute check
+        if (station.taskState.latestContent?.text?.contains("retrying forever")) {
+            station.interrupt(
+                PumpStationPausePhase.BeforeJudge,
+                "watchdog: path appears to be looping, switching strategy"
+            )
+            break
+        }
+    }
+}
+```
 
 ## Tracing Support
 

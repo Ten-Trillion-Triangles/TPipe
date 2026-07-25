@@ -16,8 +16,10 @@ import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.RemoteTraceConfig
 import com.TTT.Debug.TraceFormat
 import com.TTT.Util.serialize
+import com.TTT.Util.deepCopy
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
+import java.util.UUID
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -166,6 +168,138 @@ private suspend fun PumpStation.awaitResumeSignal()
 internal fun PumpStation.notifyResume()
 {
     resumeSignal.trySend(Unit)
+}
+
+/**
+ * Drain the steering service for [phase] and append each returned entry to
+ * turnHistory. Called at every phase boundary in the harness loop, BEFORE
+ * the phase-specific work begins. The drain is non-blocking and does not
+ * halt the loop.
+ *
+ * Persistent overlays (when set) fire on every occurrence; one-shot
+ * instructions fire once and are then discarded. Each injected entry
+ * carries a canonical `metadata["steering"]` envelope stamped by
+ * [PumpStation.drainSteeringForPhase].
+ *
+ * @param phase The PumpStationPausePhase boundary to inject at
+ */
+internal suspend fun PumpStation.injectSteeringForPhase(phase: PumpStationPausePhase)
+{
+    val entries = drainSteeringForPhase(phase)
+    entries.forEach { entry ->
+        turnHistory.add(ConverseData(role = ConverseRole.harness, content = entry))
+        // Emit one trace event per drained entry so the visualizer can render
+        // the canonical envelope as labeled rows in the pump HTML. The
+        // envelope is already stamped on entry.metadata["steering"] by
+        // drainSteeringForPhase (see PumpStation.kt:904).
+        @Suppress("UNCHECKED_CAST")
+        val envelope = entry.metadata["steering"] as? Map<String, Any>
+        val injectionId = (envelope?.get("injectionId") as? String) ?: java.util.UUID.randomUUID().toString()
+        val persistent = (envelope?.get("persistent") as? Boolean) ?: false
+        val contentPreview = entry.text.take(160)
+        emitEventInternal(
+            SteeringInjected(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                phase = taskState.phase,
+                boundaryPhase = phase,
+                persistent = persistent,
+                injectionId = injectionId,
+                contentPreview = contentPreview
+            )
+        )
+    }
+}
+
+/**
+ * Poll the interrupt service for [phase]. If a pending entry exists, throw
+ * [PumpStationInterruptException] carrying the entry's content and [snapshot]
+ * (the [PumpStationInterruptSnapshot] taken at the most recent BeforeJudge of
+ * the current turn). If no entry is pending, this is a no-op.
+ *
+ * The exception is caught at the top of [runHarnessLoop] around the [runTurn]
+ * invocation. The catch handler restores the snapshot, appends the entry to
+ * turnHistory with the canonical `metadata["interrupt"]` envelope, and
+ * re-invokes [runTurn] without incrementing `taskState.turnIndex`.
+ *
+ * Combination semantics: if the service has more than one entry queued, the
+ * first is thrown as the interrupt; the rest are forwarded to the steering
+ * service as one-shot steering instructions. If the steering service is not
+ * configured for the phase (or throws), the overflow entries are silently
+ * dropped and an [InterruptOverflowDropped] event is emitted for observability
+ * (operator-confirmed requirement, 2026-07-24).
+ */
+internal suspend fun PumpStation.injectInterruptForPhase(
+    phase: PumpStationPausePhase,
+    snapshot: PumpStationInterruptSnapshot
+)
+{
+    val first = interruptService.drainForPhase(phase) ?: return
+
+    // Stamp the canonical interrupt envelope onto the entry before it goes
+    // out to the catch handler. The envelope uses the `interrupt` key so the
+    // judge LLM and trace visualizer can branch on producer type.
+    val now = System.currentTimeMillis()
+    val envelope: Map<String, Any> = mapOf(
+        "phase" to phase.name,
+        "wasRewound" to true,
+        "injectionId" to UUID.randomUUID().toString(),
+        "timestamp" to now
+    )
+    val mergedMetadata: MutableMap<Any, Any> = mutableMapOf()
+    first.metadata.forEach { (k, v) -> mergedMetadata[k] = v }
+    mergedMetadata["interrupt"] = envelope
+    // Use deepCopy() (com.TTT.Util.deepCopy) instead of data-class .copy() so the
+    // body-level var current values (passPipeline, currentPipe, modelReasoning,
+    // pipeError, etc.) are preserved on the interrupt content. A shallow
+    // data-class .copy() re-runs the body initializer and substitutes the defaults.
+    val stamped = first.deepCopy()
+    stamped.metadata = mergedMetadata
+
+    // Emit the InterruptFired trace event BEFORE throwing so the visualizer
+    // can render the canonical envelope as labeled rows in the pump HTML.
+    // The catch handlers in runHarnessLoop / runFinalizationPhase do not
+    // need to emit — the event is already on the trace path.
+    emitEventInternal(InterruptFired(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex,
+        phase = taskState.phase,
+        boundaryPhase = phase,
+        wasRewound = true,
+        injectionId = envelope["injectionId"] as String,
+        contentPreview = stamped.text.take(160)
+    ))
+
+    // Forward any overflow entries to steering. Best-effort: if the steering
+    // service has no one-shot channel and no persistent overlay for the phase,
+    // the entries are silently dropped AND an InterruptOverflowDropped event
+    // is emitted for observability (operator-confirmed requirement).
+    val overflow = interruptService.drainAllForPhase(phase)
+    var droppedCount = 0
+    var firstDroppedText: String? = null
+    overflow.forEach { extra ->
+        try
+        {
+            steeringService.enqueueOneShot(phase, extra)
+        }
+        catch (_: Throwable)
+        {
+            droppedCount++
+            if (firstDroppedText == null) firstDroppedText = extra.text.take(200)
+        }
+    }
+    if (droppedCount > 0)
+    {
+        emitEventInternal(InterruptOverflowDropped(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            boundaryPhase = phase,
+            droppedCount = droppedCount,
+            firstDroppedText = firstDroppedText
+        ))
+    }
+
+    throw PumpStationInterruptException(stamped, snapshot)
 }
 
 /**
@@ -395,7 +529,7 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
                     "passPipeline=true on its result, not an empty pathName."
                 turnHistory.add(
                     ConverseData(
-                        role = ConverseRole.user,
+                        role = ConverseRole.harness,
                         content = MultimodalContent(text = hintMessage)
                     )
                 )
@@ -695,8 +829,53 @@ internal suspend fun PumpStation.runPathFlow(request: PathRequest): MultimodalCo
                 mapOf("pathName" to request.pathName, "availablePaths" to getVisiblePathNames())
             )
         )
+        // maxConsecutiveUnknownPaths guard: bump the streak counter and trip
+        // when the limit is reached. Mirrors the maxConsecutiveSamePath trip
+        // at PumpStation.kt:3074-3098 — emit LoopGuardTripped, set the
+        // exitReason + lastError, mark latestContent.terminatePipeline so
+        // the runTurn halt path at PumpStationLoop.kt:2897-2900 stops the
+        // harness. Reset the counter on the trip so a subsequent run on
+        // a different station doesn't inherit the streak.
+        consecutiveUnknownPathCount += 1
+        val limit = maxConsecutiveUnknownPathsInternal
+        if (limit != null && consecutiveUnknownPathCount >= limit)
+        {
+            emitEventInternal(LoopGuardTripped(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                guard = "maxConsecutiveUnknownPaths",
+                pathName = request.pathName,
+                detail = "consecutive=$consecutiveUnknownPathCount, limit=$limit",
+                metric = "consecutive",
+                observed = consecutiveUnknownPathCount,
+                limit = limit
+            ))
+            emitEventInternal(PathFailed(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                phase = PumpStationPhase.PathExecution,
+                pathName = request.pathName,
+                riskLevel = PathRiskLevel.Low,
+                error = PumpStationError.LoopGuardTriggered,
+                errorMessage = "maxConsecutiveUnknownPaths exceeded for path '${request.pathName}'"
+            ))
+            taskState.latestContent = (taskState.latestContent ?: MultimodalContent())
+                .also { it.terminatePipeline = true }
+            taskState.lastError = PumpStationError.LoopGuardTriggered
+            taskState.exitReason = PumpStationExitReason.LoopGuardTripped
+            consecutiveUnknownPathCount = 0
+            // Return a non-null result with terminatePipeline set so the
+            // runTurn halt path at PumpStationLoop.kt:2897-2900 (which reads
+            // `pathResult.terminatePipeline`) stops the harness. Mirrors the
+            // maxConsecutiveSamePath trip mechanic at PumpStation.kt:3093-3098.
+            return MultimodalContent(text = request.pathName)
+                .also { it.terminatePipeline = true }
+        }
         return null
     }
+    // Resolved path — the LLM picked a real name. Reset the streak so a
+    // subsequent run of unknown paths starts a fresh count.
+    consecutiveUnknownPathCount = 0
     val input = buildPathInput(path, request)
 
     // Async path: launch on the station-scoped scope, enqueue a PendingTurnEntry
@@ -845,7 +1024,7 @@ internal fun PumpStation.buildPathInput(path: PathObject, request: PathRequest):
              */
             turnHistory.add(
                 ConverseData(
-                    role = ConverseRole.user,
+                    role = ConverseRole.harness,
                     content = MultimodalContent(
                         text = buildPathSchemaFallbackMessage(
                             mapOf(
@@ -1001,7 +1180,7 @@ internal fun PumpStation.defaultPrePruneForCompaction(rawTurns: List<ConverseDat
             if (kept.size == turn.content.metadata.size) turn
             else
             {
-                val c = turn.content.copy()
+                val c = turn.content.deepCopy()
                 c.metadata.clear()
                 c.metadata.putAll(kept)
                 ConverseData(role = turn.role, content = c)
@@ -1015,7 +1194,7 @@ internal fun PumpStation.defaultPrePruneForCompaction(rawTurns: List<ConverseDat
         if (normalized == turn.content.text) turn
         else
         {
-            val c = turn.content.copy()
+            val c = turn.content.deepCopy()
             c.text = normalized
             ConverseData(role = turn.role, content = c)
         }
@@ -1196,7 +1375,7 @@ internal fun applyReplaceWithSummaryRef(
             val text = turn.content.text
             if (text.isNotBlank() && summaryLower.contains(text.lowercase()))
             {
-                val rewritten = turn.content.copy()
+                val rewritten = turn.content.deepCopy()
                 rewritten.text = "[See turnSummary]"
                 ConverseData(role = turn.role, content = rewritten)
             }
@@ -1347,7 +1526,7 @@ internal fun applyStripLongToolArguments(
         {
             val name = extractToolName(turn.content.text)
             val stub = "[tool-call: $name — args truncated, was ${turn.content.text.length} chars]"
-            val rewritten = turn.content.copy()
+            val rewritten = turn.content.deepCopy()
             rewritten.text = stub
             ConverseData(role = turn.role, content = rewritten)
         }
@@ -2550,12 +2729,18 @@ internal suspend fun PumpStation.detectAndHandleContextBlowout(afterPhase: PumpS
  * Run the exit flow. If judge said complete, optionally validate with goal agent.
  * On goal fail, append to history and continue. On goal pass or no goal, halt.
  */
-internal suspend fun PumpStation.runExitFlow(): TurnResult
+internal suspend fun PumpStation.runExitFlow(turnSnapshot: PumpStationInterruptSnapshot): TurnResult
 {
     if (!checkPauseGuards(PumpStationPausePhase.BeforeGoalValidation))
 {
         return TurnResult.Halt(PumpStationExitReason.KillSwitchTripped)
     }
+    // Phase boundary: BeforeGoalValidation — poll interrupt then drain steering
+    // before the goal agent runs. The turnSnapshot is captured at the top of
+    // runTurn; if the goal flow throws an interrupt, the catch in
+    // runHarnessLoop will use it to rewind the turn.
+    injectInterruptForPhase(PumpStationPausePhase.BeforeGoalValidation, turnSnapshot)
+    injectSteeringForPhase(PumpStationPausePhase.BeforeGoalValidation)
     if (goalAgent == null)
 {
         val exitContent = buildGoalContent()
@@ -2760,6 +2945,25 @@ internal suspend fun PumpStation.runHarnessLoop(): KillSwitchException?
     while (taskState.turnIndex < maxTurnsInternal && taskState.status == PumpStationStatus.Running)
 {
         if (!checkPauseGuards(PumpStationPausePhase.BeforeJudge)) break
+        // Outer snapshot for the new turn. If an interrupt fires during
+        // finalization or between turns, the catch handler below restores
+        // this snapshot and re-enters the loop with the same turnIndex.
+        val turnSnapshot = takeInterruptSnapshot()
+        // Phase boundary: BeforeJudge — poll interrupt BEFORE runTurn is
+        // entered. If an interrupt arrived between turns, this is the catch
+        // point.
+        try
+        {
+            injectInterruptForPhase(PumpStationPausePhase.BeforeJudge, turnSnapshot)
+        }
+        catch (e: PumpStationInterruptException)
+        {
+            // Catch here (before runTurn is entered). Rewind, inject, and
+            // restart the while loop with the same turnIndex.
+            restoreFromInterruptSnapshot(e.snapshot)
+            turnHistory.add(ConverseData(role = ConverseRole.harness, content = e.content))
+            continue
+        }
         val result = try
         {
             runTurn()
@@ -2770,6 +2974,16 @@ internal suspend fun PumpStation.runHarnessLoop(): KillSwitchException?
             taskState.exitReason = PumpStationExitReason.KillSwitchTripped
             tripException = e
             break
+        }
+        catch (e: PumpStationInterruptException)
+        {
+            // Inner catch: interrupt fired DURING runTurn. The inner
+            // turnSnapshot (taken at the top of runTurn) is the rewind
+            // target. turnIndex is NOT advanced; the loop re-enters the
+            // same slot with the interrupt message in turnHistory.
+            restoreFromInterruptSnapshot(e.snapshot)
+            turnHistory.add(ConverseData(role = ConverseRole.harness, content = e.content))
+            continue
         }
         if (result is TurnResult.Halt)
 {
@@ -2796,6 +3010,10 @@ internal suspend fun PumpStation.runHarnessLoop(): KillSwitchException?
  */
 internal suspend fun PumpStation.runTurn(): TurnResult
 {
+    // Inner snapshot for the current turn. If an interrupt fires during this
+    // turn, the catch handler in runHarnessLoop restores this snapshot and
+    // re-enters runTurn from BeforeJudge without incrementing turnIndex.
+    val turnSnapshot = takeInterruptSnapshot()
     refreshAgentInstances()
     refreshPipelinesPrompts()
     refreshSettingsPropagation()
@@ -2803,58 +3021,60 @@ internal suspend fun PumpStation.runTurn(): TurnResult
     runHealthCheckPhase()
     detectAndHandleContextBlowout(PumpStationPhase.HealthCheck)
 
+    // Phase boundary: BeforeJudge — poll interrupt (higher priority than
+    // steering) then drain steering.
+    injectInterruptForPhase(PumpStationPausePhase.BeforeJudge, turnSnapshot)
+    injectSteeringForPhase(PumpStationPausePhase.BeforeJudge)
     val judgeVerdict = runJudgePhase()
     detectAndHandleContextBlowout(PumpStationPhase.Judge)
+    // Phase boundary: AfterJudge.
+    injectInterruptForPhase(PumpStationPausePhase.AfterJudge, turnSnapshot)
+    injectSteeringForPhase(PumpStationPausePhase.AfterJudge)
     if (judgeVerdict.shouldHalt)
 {
         return TurnResult.Halt(judgeVerdict.reason ?: PumpStationExitReason.TerminateSignal)
     }
-    if (judgeVerdict.isComplete) return runExitFlow()
+    if (judgeVerdict.isComplete) return runExitFlow(turnSnapshot)
 
+    // Phase boundary: BeforeDispatch.
+    injectInterruptForPhase(PumpStationPausePhase.BeforeDispatch, turnSnapshot)
+    injectSteeringForPhase(PumpStationPausePhase.BeforeDispatch)
     val pathRequest = when (pathExecutionShapeInternal)
     {
         PathExecutionShape.SinglePath -> runDispatchPhase()
         PathExecutionShape.MultiPath -> runDispatchPhaseMulti()
     } ?: return TurnResult.Continue
+    // Phase boundary: AfterDispatch.
+    injectInterruptForPhase(PumpStationPausePhase.AfterDispatch, turnSnapshot)
+    injectSteeringForPhase(PumpStationPausePhase.AfterDispatch)
     detectAndHandleContextBlowout(PumpStationPhase.Dispatch)
-    // Note: runDispatchPhase now returns null when pathName is blank (treated as a
-    // harness error, with a hint appended to turn history). The previous sentinel
-    // shortcut (`if (pathRequest.pathName.isBlank()) return TurnResult.Continue`) was
-    // removed when empty pathName stopped being a valid "I'm done" signal.
 
     if (!checkPauseGuards(PumpStationPausePhase.BeforePathExecution))
 {
         return TurnResult.Halt(PumpStationExitReason.KillSwitchTripped)
     }
+    // Phase boundary: BeforePathExecution — sequenced after the pause guard
+    // so a suspended harness does not accumulate one-shot interrupt entries
+    // on every resume cycle.
+    injectInterruptForPhase(PumpStationPausePhase.BeforePathExecution, turnSnapshot)
+    injectSteeringForPhase(PumpStationPausePhase.BeforePathExecution)
     val pathResult = runPathFlow(pathRequest)
+    // Phase boundary: AfterPathExecution.
+    injectInterruptForPhase(PumpStationPausePhase.AfterPathExecution, turnSnapshot)
+    injectSteeringForPhase(PumpStationPausePhase.AfterPathExecution)
     detectAndHandleContextBlowout(PumpStationPhase.PathExecution)
-    // Capture the path's output as [taskState.latestContent] so:
-    //   1. The next phase (memory update, foreground agents, etc.) sees the
-    //      path's actual output, not the previous phase's stale value.
-    //   2. The final [runFinalizationPhase] result — what [executeLocal] returns
-    //      to its caller — is the path's output (the "deliverable" of the harness),
-    //      not the dispatch's path request or the judge's verdict.
-    //   3. Halt-via-passPipeline / terminatePipeline still works because we check
-    //      those flags *before* the latestContent assignment can be observed by
-    //      runFinalizationPhase (we return immediately on the halt path).
-    //
-    // Without this, the harness's result is always the judge's last LLM call,
-    // which means caller-visible state silently drops the work each path did.
     if (pathResult != null)
     {
         taskState.latestContent = pathResult
         if (pathResult.passPipeline)
         {
-            // If a goal agent is configured, run the standard exit flow (goal validation).
-            // Otherwise exit directly with PassSignal — the path's flag is the exit
-            // signal, not a judge verdict.
             return if (goalAgent == null)
             {
                 TurnResult.Halt(PumpStationExitReason.PassSignal)
             }
             else
             {
-                runExitFlow()
+                runExitFlow(turnSnapshot)
             }
         }
         if (pathResult.terminatePipeline)
@@ -2870,7 +3090,13 @@ internal suspend fun PumpStation.runTurn(): TurnResult
     detectAndHandleContextBlowout(PumpStationPhase.ForegroundAgents)
 
     runBackgroundAgentsPhase()
+    // Phase boundary: BeforeMemoryUpdate.
+    injectInterruptForPhase(PumpStationPausePhase.BeforeMemoryUpdate, turnSnapshot)
+    injectSteeringForPhase(PumpStationPausePhase.BeforeMemoryUpdate)
     runMemoryUpdatePhase()
+    // Phase boundary: BeforeCompaction.
+    injectInterruptForPhase(PumpStationPausePhase.BeforeCompaction, turnSnapshot)
+    injectSteeringForPhase(PumpStationPausePhase.BeforeCompaction)
     runCompactionPhase()
 
     return TurnResult.Continue
@@ -2929,6 +3155,26 @@ internal fun PumpStation.pruneRawTurnHistory()
  */
 internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
 {
+    // Phase boundary: BeforeExit — poll interrupt then drain steering before
+    // the loop exits and the final output is returned. This is the last
+    // opportunity to inject content that the post-finalization observers may
+    // need to see.
+    val finalSnapshot = takeInterruptSnapshot()
+    try
+    {
+        injectInterruptForPhase(PumpStationPausePhase.BeforeExit, finalSnapshot)
+    }
+    catch (e: PumpStationInterruptException)
+    {
+        // Interrupt fired during finalization. Rewind, inject, and the harness
+        // re-enters runHarnessLoop from BeforeJudge (note: the harness loop
+        // has already returned by the time finalization runs, so the re-entry
+        // is not possible here — instead, the interrupt is logged and the
+        // finalization proceeds with the interrupt message appended).
+        restoreFromInterruptSnapshot(e.snapshot)
+        turnHistory.add(ConverseData(role = ConverseRole.harness, content = e.content))
+    }
+    injectSteeringForPhase(PumpStationPausePhase.BeforeExit)
     // 1. Drain async turn results from in-flight async paths / harness
     //    agents. We do this BEFORE the cancel so any work that has already
     //    enqueued a PendingTurnEntry gets merged into turnHistory.
@@ -3181,7 +3427,7 @@ internal fun PumpStation.applyRationaleNudgeIfNeeded(
 
     this.turnHistory.add(
         ConverseData(
-            role = ConverseRole.user,
+            role = ConverseRole.harness,
             content = MultimodalContent(text = hintMessage)
         )
     )

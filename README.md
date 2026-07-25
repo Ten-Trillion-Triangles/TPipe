@@ -76,7 +76,8 @@ Real-world patterns and comparisons:
 - [Context Window - Memory Storage and Retrieval](docs/core-concepts/context-window.md) - TPipe's memory system
 - [Context and Tokens - Token Management](docs/core-concepts/context-and-tokens.md) - Managing token usage and limits
 - [Token Counting, Truncation, and Tokenizer Tuning](docs/core-concepts/token-counting-and-truncation.md) - Advanced token handling
-- [Automatic Context Injection](docs/core-concepts/automatic-context-injection.md) - Seamless context integration
+- [Automatic Context Injection](docs/core-concepts/automatic-context-injection.md) - Context retrieval and prompt integration
+- [System-Prompt Context Placement](docs/core-concepts/automatic-context-injection.md#system-prompt-context-injection) - Place prepared context at the beginning, middle, or footer of the system prompt
 - [Semantic Compression - Prompt Token Reduction](docs/core-concepts/semantic-compression.md) - Legend-backed prompt compression for natural language
 
 #### Global Context Management

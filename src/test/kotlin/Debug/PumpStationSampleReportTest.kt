@@ -201,6 +201,35 @@ class PumpStationSampleReportTest
         events += event(1, TraceEventType.PUMP_STATION_PATH_HIDDEN, runId, now,
             mapOf("pathName" to "search", "reason" to "Loop guard tripped"))
 
+        //---- Turn 2: LLM gets stuck dispatching a non-existent path; maxConsecutiveUnknownPaths trips ----
+        // Three consecutive UnknownPath failures, then the guard fires.
+        events += event(2, TraceEventType.PUMP_STATION_JUDGE_COMPLETED, runId, now,
+            mapOf("isComplete" to false, "shouldTerminate" to false)); now += 10
+        for (i in 1..3)
+        {
+            events += event(2, TraceEventType.PUMP_STATION_DISPATCH_STARTED, runId, now); now += 5
+            events += event(2, TraceEventType.PUMP_STATION_DISPATCH_COMPLETED, runId, now,
+                mapOf("selectedPathName" to "flarble",
+                    "pathRequest" to """{"pathName":"flarble","inputData":{}}""")); now += 5
+            events += event(2, TraceEventType.PUMP_STATION_PATH_FAILED, runId, now,
+                mapOf("pathName" to "flarble", "riskLevel" to "LOW",
+                    "error" to "UnknownPath",
+                    "errorMessage" to "Path 'flarble' not found")); now += 5
+        }
+        // The third consecutive UnknownPath trips the new maxConsecutiveUnknownPaths guard.
+        events += event(2, TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED, runId, now,
+            mapOf("guard" to "maxConsecutiveUnknownPaths", "pathName" to "flarble",
+                "detail" to "consecutive=3, limit=3", "metric" to "consecutive",
+                "observed" to 3, "limit" to 3)); now += 5
+        events += event(2, TraceEventType.PUMP_STATION_PATH_FAILED, runId, now,
+            mapOf("pathName" to "flarble", "riskLevel" to "LOW",
+                "error" to "LoopGuardTriggered",
+                "errorMessage" to "maxConsecutiveUnknownPaths exceeded for path 'flarble'")); now += 5
+        events += event(2, TraceEventType.PUMP_STATION_FAILED, runId, now,
+            mapOf("error" to "LoopGuardTriggered",
+                "errorMessage" to "maxConsecutiveUnknownPaths exceeded for path 'flarble'",
+                "exitReason" to "LoopGuardTripped"))
+
         // Context pressure climbs hard and trips the blowout detector. Stash catches the output.
         events += event(1, TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED, runId, now,
             mapOf("fillRatio" to 0.94, "threshold" to 0.90, "afterPhase" to "PathExecution")); now += 10

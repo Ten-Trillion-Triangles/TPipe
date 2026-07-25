@@ -1008,6 +1008,26 @@ data class HarnessResumed(
 ) : PumpStationEvent
 
 /**
+ * Emitted by [PumpStation.injectInterruptForPhase] when one or more queued
+ * interrupt entries were dropped because the steering service is not configured
+ * for the phase. The first queued entry was thrown as the active interrupt;
+ * the rest had no destination.
+ *
+ * Operators use this event to detect when a caller is firing more interrupts
+ * than the harness can process and the overflow is being silently absorbed.
+ */
+@kotlinx.serialization.Serializable
+data class InterruptOverflowDropped(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Judge,
+    val boundaryPhase: PumpStationPausePhase,
+    val droppedCount: Int,
+    val firstDroppedText: String?
+) : PumpStationEvent
+
+/**
  * A reserve path's reveal predicate evaluated to true, making the path visible to the
  * dispatch agent. Sticky — once revealed, the path stays visible until the harness resets.
  */
@@ -1053,6 +1073,51 @@ data class ContextBlowoutDetected(
     val fillRatio: Double,
     val threshold: Double,
     val afterPhase: PumpStationPhase
+) : PumpStationEvent
+
+/**
+ * The steering service drained an entry and injected it into turnHistory at the
+ * current phase boundary. The canonical envelope (phase, persistent, injectionId,
+ * timestamp) is stamped on the emitted `metadata["steering"]` field of the
+ * corresponding [TraceEvent] so the [com.TTT.Debug.TraceVisualizer] can render
+ * the envelope as labeled rows in the pump HTML.
+ *
+ * One event fires per drained entry; multiple one-shot hints at the same
+ * phase produce one event each, each with a distinct `injectionId`.
+ */
+@kotlinx.serialization.Serializable
+data class SteeringInjected(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase,
+    val boundaryPhase: PumpStationPausePhase,
+    val persistent: Boolean,
+    val injectionId: String,
+    val contentPreview: String
+) : PumpStationEvent
+
+/**
+ * The interrupt service drained an entry and threw [PumpStationInterruptException].
+ * The harness's catch handler in [runHarnessLoop] restores the turn snapshot,
+ * appends the interrupt message to turnHistory, and re-invokes [runTurn] without
+ * incrementing [com.TTT.Pipeline.PumpStationTaskState.turnIndex].
+ *
+ * The envelope (phase, wasRewound, injectionId, timestamp) is stamped on the
+ * emitted `metadata["interrupt"]` field of the corresponding [TraceEvent] so
+ * the [com.TTT.Debug.TraceVisualizer] can render the rewind-and-restart
+ * decision as labeled rows in the pump HTML.
+ */
+@kotlinx.serialization.Serializable
+data class InterruptFired(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase,
+    val boundaryPhase: PumpStationPausePhase,
+    val wasRewound: Boolean,
+    val injectionId: String,
+    val contentPreview: String
 ) : PumpStationEvent
 
 /**

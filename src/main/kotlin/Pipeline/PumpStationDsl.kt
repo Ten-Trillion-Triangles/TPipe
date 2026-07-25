@@ -12,6 +12,7 @@ import com.TTT.P2P.KillSwitchContext
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.PcpContext
+import kotlinx.coroutines.runBlocking
 import kotlin.reflect.KFunction
 
 /**
@@ -70,6 +71,21 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      * configured values). Null when the developer did not configure compaction.
      */
     var compactionConfiguration: CompactionBlock? = null
+
+    /**
+     * Optional steering configuration. Set via the `steeringPolicy { }` DSL block;
+     * applied to the built station in [build] by constructing a [PumpStationSteeringService]
+     * from this configuration and passing it to the [PumpStation] constructor.
+     * Null when the user did not configure steering.
+     */
+    var steeringConfiguration: PumpStationSteeringConfiguration? = null
+
+    /**
+     * Configuration captured from the `interruptPolicy { ... }` DSL block.
+     * Null when the user did not configure interrupts. Applied at construction
+     * time by seeding [PumpStationInterruptService].
+     */
+    var interruptConfiguration: PumpStationInterruptConfiguration? = null
 
 //=========================================Agent Assignments=========================================================
 
@@ -549,6 +565,14 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var maxTotalPathCallsPerPath: Int? = null
 
     /**
+     * Loop guard: maximum consecutive dispatches of unregistered path names
+     * before halting with [PumpStationExitReason.LoopGuardTripped]. Null
+     * (the default) preserves today's unbounded behavior — the harness
+     * will keep retrying a non-existent path until the turn budget exhausts.
+     */
+    var maxConsecutiveUnknownPaths: Int? = null
+
+    /**
      * Policy for how the harness responds when [maxTotalPathCallsPerPath] is exceeded.
      */
     var pathLimitExceededPolicy: PathLimitExceededPolicy = PathLimitExceededPolicy.Skip
@@ -836,6 +860,43 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     }
 
     /**
+     * Configure steering instructions. Inside the block, declare per-phase persistent
+     * overlays and one-shot instructions. The configured rules are applied to the
+     * built station as a [PumpStationSteeringService] at construction time.
+     */
+    fun steeringPolicy(block: SteeringPolicyBuilder.() -> Unit): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        val builder = SteeringPolicyBuilder()
+        builder.block()
+        targetBuilder.steeringConfiguration = builder.build()
+        return this
+    }
+
+    /**
+     * Configure interrupt instructions. Inside the block, declare per-phase
+     * initial queue entries. The configured rules are applied to the built
+     * station's [PumpStationInterruptService] at construction time.
+     *
+     * Example:
+     * ```
+     * pumpStation {
+     *     interruptPolicy {
+     *         initialQueue[BeforeJudge] = listOf(MultimodalContent(text = "preloaded"))
+     *     }
+     * }
+     * ```
+     */
+    fun interruptPolicy(block: PumpStationInterruptPolicyBuilder.() -> Unit): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        val builder = PumpStationInterruptPolicyBuilder()
+        builder.block()
+        targetBuilder.interruptConfiguration = builder.build()
+        return this
+    }
+
+    /**
      * Configure compaction for the harness. The captured configuration is applied
      * to the built station via [build] so the per-attempt orchestrator picks up
      * the developer-chosen strategy, fan-out mode, retry budget, chunk budget, and
@@ -957,6 +1018,8 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         tracingConfiguration = source.tracingConfiguration
         killSwitchConfiguration = source.killSwitchConfiguration
         compactionConfiguration = source.compactionConfiguration
+        steeringConfiguration = source.steeringConfiguration
+        interruptConfiguration = source.interruptConfiguration
         judgeAgent = source.judgeAgent
         dispatchAgent = source.dispatchAgent
         interventionAgent = source.interventionAgent
@@ -1007,6 +1070,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         failurePolicy = source.failurePolicy
         maxConsecutiveSamePath = source.maxConsecutiveSamePath
         maxTotalPathCallsPerPath = source.maxTotalPathCallsPerPath
+        maxConsecutiveUnknownPaths = source.maxConsecutiveUnknownPaths
         pathLimitExceededPolicy = source.pathLimitExceededPolicy
         pathLimitExceededFunction = source.pathLimitExceededFunction
         judgeJsonContractEnabled = source.judgeJsonContractEnabled
@@ -1079,7 +1143,19 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             "Path names must be unique (case-insensitive)"
         }
 
-        val station = PumpStation()
+        val steeringService = steeringConfiguration?.let { PumpStationSteeringService(it) }
+            ?: PumpStationSteeringService()
+        val station = PumpStation(steeringService = steeringService)
+
+        // Seed the interrupt service with the configured initial queue.
+        // The service is created in PumpStation's primary constructor as an
+        // empty PumpStationInterruptService, so this is the only place to
+        // populate it before executeLocal runs.
+        runBlocking {
+            interruptConfiguration?.initialQueue?.forEach { (phase, contents) ->
+                contents.forEach { station.interruptService.enqueue(phase, it) }
+            }
+        }
 
         // Apply all configuration to the station using the public fluent setters.
         station
@@ -1202,6 +1278,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         station
             .setMaxConsecutiveSamePath(maxConsecutiveSamePath)
             .setMaxTotalPathCallsPerPath(maxTotalPathCallsPerPath)
+            .setMaxConsecutiveUnknownPaths(maxConsecutiveUnknownPaths)
             .setPathLimitExceededFunction(pathLimitExceededFunction)
 
         // pathLimitExceededPolicy is a public var on PumpStation
@@ -1459,6 +1536,131 @@ class SafePruneBlock(private val builder: PumpStationBuilder<*>)
 }
 
 /**
+ * Standalone DSL builder for [PathObject]. Mirrors [PathBlock]'s surface but is NOT parented to a
+ * [PumpStationBuilder]. Use [pathObject] for the entry point or [pathObjectBuilder] for staged construction.
+ *
+ * The resulting [PathObject] can be attached to a [PumpStation] via [PumpStation.addPath] or constructed
+ * once and reused across multiple harnesses.
+ *
+ * @param pathName Unique name for the path. Will be set on [PathObject.pathName].
+ */
+@PumpStationDslMarker
+class PathBuilder(internal val pathName: String)
+{
+    val pathObject = PathObject()
+
+    init { pathObject.pathName = pathName }
+
+    var description: String
+        get() = pathObject.pathDescription
+        set(value) { pathObject.pathDescription = value }
+
+    var risk: PathRiskLevel
+        get() = pathObject.riskLevel
+        set(value) { pathObject.riskLevel = value }
+
+    var dispatchHint: String
+        get() = pathObject.dispatchHint
+        set(value) { pathObject.dispatchHint = value }
+
+    /**
+     * Mark this path as one that runs in the background. When true, the harness is expected to launch
+     * the path on its background scheduler rather than awaiting the result inline.
+     */
+    var runsInBackground: Boolean
+        get() = pathObject.isRunsInBackground
+        set(value) { pathObject.setRunsInBackground(value) }
+
+    /**
+     * When true, an async path will NOT append its result to turnHistory on completion. The path still
+     * fires the PathCompleted event so observers can see the result, but the foreground drain will skip
+     * the history merge. Only takes effect when runsInBackground is also true.
+     */
+    var suppressHistoryEmit: Boolean
+        get() = pathObject.isSuppressHistoryEmit
+        set(value) { pathObject.setSuppressHistoryEmit(value) }
+
+    /**
+     * JSON schema used by the dispatch agent when this path is not bound to a PCP function. Mirrors
+     * [PathObject.pathSchema].
+     */
+    var schema: String
+        get() = pathObject.pathSchema
+        set(value) { pathObject.pathSchema = value }
+
+    /**
+     * Optional pre-built PCP schema. If the developer wants full control over the [PcpContext] (e.g. to
+     * merge external tools or pre-load options), set this directly. The [bindFunction] helper appends to
+     * whatever schema is already set, so binding a function after this assignment is additive.
+     */
+    var pcpSchema: PcpContext?
+        get() = pathObject.pcpSchema
+        set(value) { pathObject.pcpSchema = value }
+
+    /**
+     * Developer-supplied metadata map. Travels with the [PathObject] into the built station and can be
+     * read by the path's own execution closure or by DITL hooks.
+     */
+    var pathMetadata: MutableMap<Any, Any>
+        get() = pathObject.pathMetadata
+        set(value) { pathObject.pathMetadata.clear(); pathObject.pathMetadata.putAll(value) }
+
+    /**
+     * Bind a Kotlin function to this path, registering it in [FunctionRegistry] and populating the PCP
+     * schema under the function's own name.
+     */
+    fun bindFunction(function: KFunction<*>)
+    {
+        pathObject.bindFunction(function.name, function)
+    }
+
+    /**
+     * Bind a Kotlin function to this path under an explicit name. Use this overload when the registered
+     * PCP function name should differ from [KFunction.name].
+     */
+    fun bindFunction(name: String, function: KFunction<*>)
+    {
+        pathObject.bindFunction(name, function)
+    }
+
+    /**
+     * Set an internal agent to execute this path. When assigned, the agent builder function is skipped
+     * at execution time.
+     */
+    fun setInternalAgent(agent: P2PInterface)
+    {
+        pathObject.setInternalAgent(agent)
+    }
+
+    /**
+     * Set the raw execution function for this path. This is the fallback when no internal agent or
+     * agent builder is present.
+     */
+    fun setExecutionFunction(function: (suspend (MultimodalContent, PumpStation, ConverseHistory?, String) -> MultimodalContent)?)
+    {
+        pathObject.setExecutionFunction(function)
+    }
+
+    /**
+     * Sets the output capture function that observes the final [MultimodalContent] just before it returns
+     * from the path to the caller. Fires on every successful return from [PathObject.execute] (PCP,
+     * executionFunction, internalAgent, agentBuilderFunction) and from [PathObject.executeLocal]. Awaited
+     * inline so consumers observe content in deterministic order.
+     *
+     * @see PathObject.outputCaptureFunction
+     */
+    fun setOutputCaptureFunction(func: suspend (content: MultimodalContent) -> Unit)
+    {
+        pathObject.setOutputCaptureFunction(func)
+    }
+
+    /**
+     * Build and return the configured [PathObject]. Idempotent — safe to call multiple times.
+     */
+    fun build(): PathObject = pathObject
+}
+
+/**
  * Builder for path configuration.
  */
 @PumpStationDslMarker
@@ -1575,6 +1777,19 @@ class PathBlock(private val pathName: String, private val builder: PumpStationBu
     fun setExecutionFunction(function: (suspend (MultimodalContent, PumpStation, ConverseHistory?, String) -> MultimodalContent)?)
     {
         pathObject.setExecutionFunction(function)
+    }
+
+    /**
+     * Sets the output capture function that observes the final [MultimodalContent] just before it returns
+     * from the path to the caller. Fires on every successful return from [PathObject.execute] (PCP,
+     * executionFunction, internalAgent, agentBuilderFunction) and from [PathObject.executeLocal]. Awaited
+     * inline so consumers observe content in deterministic order.
+     *
+     * @see PathObject.outputCaptureFunction
+     */
+    fun setOutputCaptureFunction(func: suspend (content: MultimodalContent) -> Unit)
+    {
+        pathObject.setOutputCaptureFunction(func)
     }
 
     /**
@@ -1810,6 +2025,33 @@ fun pumpStationBuilder(name: String): PumpStationBuilder<PumpStationStage.Initia
     return PumpStationBuilder<PumpStationStage.Initial>(name)
 }
 
+/**
+ * Standalone entry point for constructing a [PathObject] outside the [pumpStation] harness context.
+ * Mirrors the [pumpStation] / [pumpStationBuilder] dual pattern in a single call. The returned [PathObject]
+ * is fully configured and ready to attach to any harness via [PumpStation.addPath].
+ *
+ * @param pathName Unique name for the path.
+ * @param block Builder block that configures the path.
+ * @return Fully configured [PathObject].
+ */
+fun pathObject(pathName: String, block: PathBuilder.() -> Unit): PathObject
+{
+    val builder = PathBuilder(pathName)
+    builder.block()
+    return builder.build()
+}
+
+/**
+ * Factory function to create a standalone [PathBuilder] for staged/manual construction. Mirrors
+ * [pumpStationBuilder] for the path-level DSL.
+ *
+ * @param pathName Unique name for the path.
+ */
+fun pathObjectBuilder(pathName: String): PathBuilder
+{
+    return PathBuilder(pathName)
+}
+
 //=========================================Tracing DSL================================================================
 
 /**
@@ -1909,6 +2151,134 @@ class PumpStationTracingDsl
      * Build the immutable [TraceConfig] captured by this DSL block.
      */
     fun build(): TraceConfig = config
+}
+
+//=========================================Steering Policy Builder===================================================
+
+/**
+ * DSL builder for the steering policy block. Holds initial persistent overlays
+ * and one-shot instructions to be applied when the PumpStation is built.
+ *
+ * Usage:
+ * ```
+ * pumpStation("example") {
+ *     steeringPolicy {
+ *         persistentOverlay(
+ *             PumpStationPausePhase.BeforeJudge,
+ *             MultimodalContent(text = "Always verify the user's last request.")
+ *         )
+ *         phaseBoundContent(
+ *             PumpStationPausePhase.AfterDispatch,
+ *             MultimodalContent(text = "Check the async channel for pending path results.")
+ *         )
+ *     }
+ * }
+ * ```
+ */
+@PumpStationDslMarker
+class SteeringPolicyBuilder
+{
+    private val persistentOverlays: MutableMap<PumpStationPausePhase, MultimodalContent> = mutableMapOf()
+    private val oneShotInstructions: MutableMap<PumpStationPausePhase, MutableList<MultimodalContent>> = mutableMapOf()
+
+    /**
+     * Set a persistent overlay for [phase]. The instruction fires on every occurrence
+     * of [phase] until replaced by another `persistentOverlay` call or cleared at runtime.
+     */
+    fun persistentOverlay(phase: PumpStationPausePhase, content: MultimodalContent)
+    {
+        persistentOverlays[phase] = content
+    }
+
+    /**
+     * Convenience overload accepting a plain text string. Constructs a [MultimodalContent]
+     * with the given text and registers it as a persistent overlay.
+     */
+    fun persistentOverlay(phase: PumpStationPausePhase, text: String)
+    {
+        persistentOverlays[phase] = MultimodalContent(text = text)
+    }
+
+    /**
+     * Enqueue a one-shot instruction for [phase]. It fires at the next occurrence of
+     * [phase] and is then discarded.
+     */
+    fun phaseBoundContent(phase: PumpStationPausePhase, content: MultimodalContent)
+    {
+        oneShotInstructions.getOrPut(phase) { mutableListOf() }.add(content)
+    }
+
+    /**
+     * Convenience overload accepting a plain text string. Constructs a [MultimodalContent]
+     * with the given text and enqueues it as a one-shot.
+     */
+    fun phaseBoundContent(phase: PumpStationPausePhase, text: String)
+    {
+        oneShotInstructions.getOrPut(phase) { mutableListOf() }.add(MultimodalContent(text = text))
+    }
+
+    /**
+     * Build the configuration object that the [PumpStationBuilder.build] method
+     * will pass to the [PumpStationSteeringService] constructor.
+     */
+    internal fun build(): PumpStationSteeringConfiguration
+    {
+        return PumpStationSteeringConfiguration(
+            initialPersistentOverlays = persistentOverlays.toMap(),
+            initialOneShotInstructions = oneShotInstructions.mapValues { it.value.toList() }
+        )
+    }
+}
+
+//=========================================Interrupt Policy Block====================================================
+
+/**
+ * Configuration block set via `pumpStation { interruptPolicy { ... } }`. Holds
+ * the initial interrupts queued at construction time. Unlike steering, there
+ * is no persistent overlay — interrupts are inherently discrete.
+ */
+data class PumpStationInterruptConfiguration(
+    val initialQueue: Map<PumpStationPausePhase, List<MultimodalContent>> = emptyMap()
+)
+
+/**
+ * DSL block for seeding [PumpStationInterruptService] at construction time.
+ * Mirrors the shape of [SteeringPolicyBuilder] but for interrupts.
+ *
+ * Usage:
+ * ```
+ * pumpStation {
+ *     interruptPolicy {
+ *         initialQueue[BeforeJudge] = listOf(MultimodalContent(text = "preloaded"))
+ *     }
+ * }
+ * ```
+ */
+@PumpStationDslMarker
+class PumpStationInterruptPolicyBuilder
+{
+    /**
+     * Initial queue, exposed as a MutableMap so the DSL caller can use both
+     * the function-call form (`initialQueue(phase, contents)`) and the
+     * indexer form (`initialQueue[BeforeJudge] = listOf(...)`).
+     */
+    val initialQueue: MutableMap<PumpStationPausePhase, List<MultimodalContent>> = mutableMapOf()
+
+    /**
+     * Seed the initial queue for [phase]. The entries are enqueued in order at
+     * construction time, so the first one fires as the first interrupt.
+     */
+    fun initialQueue(phase: PumpStationPausePhase, contents: List<MultimodalContent>)
+    {
+        initialQueue[phase] = contents
+    }
+
+    internal fun build(): PumpStationInterruptConfiguration
+    {
+        return PumpStationInterruptConfiguration(
+            initialQueue = initialQueue.toMap()
+        )
+    }
 }
 
 //=========================================KillSwitch Block========================================================
