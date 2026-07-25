@@ -1,71 +1,57 @@
-name: Publish to CodeArtifact
-
-# =====================================================================
-# Publishes TPipe Community / Startup editions to AWS CodeArtifact.
-# Triggers on tag push of the form `TPipe-Community-X.Y.Z` or
-# `TPipe-Startup-X.Y.Z`. The tag's edition prefix picks which branch
-# to build from and which CodeArtifact repo to publish into.
-#
-# Auth: a CodeArtifact publish-only auth token is stored as the
-# `CODEARTIFACT_PUBLISH_TOKEN` GitHub secret. The token has a 12-hour
-# lifetime; rotate it just before cutting a release tag.
-# =====================================================================
+name: Publish Maven Artifact
 
 on:
   push:
     tags:
-      - 'TPipe-Community-*'
-      - 'TPipe-Startup-*'
-  workflow_dispatch:
+      - 'TPipe-*'
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: write
 
     steps:
-      - name: Determine edition, branch, version, and target repo
-        id: target
-        run: |
-          TAG_NAME="${GITHUB_REF#refs/tags/}"
-          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
-          if [[ "$TAG_NAME" == TPipe-Community-* ]]; then
-            echo "edition=Community" >> $GITHUB_OUTPUT
-            echo "branch=main" >> $GITHUB_OUTPUT
-            echo "repo=tpipe-community-maven" >> $GITHUB_OUTPUT
-          elif [[ "$TAG_NAME" == TPipe-Startup-* ]]; then
-            echo "edition=Startup" >> $GITHUB_OUTPUT
-            echo "branch=startup-license" >> $GITHUB_OUTPUT
-            echo "repo=tpipe-startup-maven" >> $GITHUB_OUTPUT
-          else
-            echo "ERROR: unrecognized tag format: $TAG_NAME" >&2
-            echo "  expected TPipe-Community-X.Y.Z or TPipe-Startup-X.Y.Z" >&2
-            exit 1
-          fi
-          VERSION="${TAG_NAME#TPipe-*-}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Checkout the branch the tag was on
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ steps.target.outputs.branch }}
           fetch-depth: 0
 
       - name: Set up JDK 24
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
           java-version: '24'
+          distribution: 'temurin'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Publish ${{ steps.target.outputs.edition }} ${{ steps.target.outputs.version }} to ${{ steps.target.outputs.repo }}
+      - name: Build jars
+        run: ./gradlew assemble --no-daemon
+
+      - name: Set up Maven
+        uses: actions/setup-java@v4
+        with:
+          java-version: '24'
+          distribution: 'temurin'
+          maven-version: '3.9.9'
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Deploy Community artifact
         env:
-          CODEARTIFACT_AUTH_TOKEN: ${{ secrets.CODEARTIFACT_PUBLISH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ./gradlew publishMavenPublicationToCodeArtifactRepository \
-              -PpublishVersion=${{ steps.target.outputs.version }} \
-              -PcodeArtifactRepoUrl=https://tpipe-521369004927.d.codeartifact.us-east-1.amazonaws.com/maven/${{ steps.target.outputs.repo }}/ \
-              --no-daemon
+          ./gradlew :publishToMavenLocal --no-daemon -Pversion=${{ steps.version.outputs.VERSION }} -Pgroup=com.github.ten-trillion-triangles
+          mvn deploy:deploy-file \
+            -Dfile=build/libs/TPipe-1.0.0.jar \
+            -DgroupId=com.github.ten-trillion-triangles \
+            -DartifactId=TPipe \
+            -Dversion=${{ steps.version.outputs.VERSION }} \
+            -Dpackaging=jar \
+            -Durl=https://maven.pkg.github.com/Ten-Trillion-Triangles/TPipe \
+            -DrepositoryId=github \
+            -DgeneratePom=true \
+            -Dtoken=$GITHUB_TOKEN
