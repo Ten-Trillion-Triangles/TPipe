@@ -530,6 +530,34 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             event.outputTokens?.let { baseMetadata["outputTokens"] = it }
             event.totalTokens?.let { baseMetadata["totalTokens"] = it }
         }
+        is SteeringInjected ->
+        {
+            eventType = TraceEventType.PUMP_STATION_STEERING_INJECTED
+            baseMetadata["boundaryPhase"] = event.boundaryPhase.name
+            baseMetadata["persistent"] = event.persistent
+            baseMetadata["injectionId"] = event.injectionId
+            baseMetadata["steering"] = mapOf(
+                "phase" to event.boundaryPhase.name,
+                "persistent" to event.persistent,
+                "injectionId" to event.injectionId,
+                "timestamp" to event.timestamp
+            )
+            baseMetadata["contentPreview"] = event.contentPreview
+        }
+        is InterruptFired ->
+        {
+            eventType = TraceEventType.PUMP_STATION_INTERRUPT_FIRED
+            baseMetadata["boundaryPhase"] = event.boundaryPhase.name
+            baseMetadata["wasRewound"] = event.wasRewound
+            baseMetadata["injectionId"] = event.injectionId
+            baseMetadata["interrupt"] = mapOf(
+                "phase" to event.boundaryPhase.name,
+                "wasRewound" to event.wasRewound,
+                "injectionId" to event.injectionId,
+                "timestamp" to event.timestamp
+            )
+            baseMetadata["contentPreview"] = event.contentPreview
+        }
     }
 
     return TraceEvent(

@@ -176,6 +176,8 @@ class TraceVisualizer
                 TraceEventType.PUMP_STATION_STASH_CREATED -> "📦"
                 TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED -> "💥"
                 TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED -> "⚠"
+                TraceEventType.PUMP_STATION_STEERING_INJECTED -> "🧭"
+                TraceEventType.PUMP_STATION_INTERRUPT_FIRED -> "⛔"
 
                 else -> "ℹ️"
             }
@@ -1537,10 +1539,35 @@ class TraceVisualizer
             } else ""
             val metaRows = event.metadata.entries
                 .filter { it.key != "turnIndex" && it.key != "phase" && it.key != "runId" }
-                .joinToString("") { (k, v) ->
-                    "<div class='ps-meta-row'><span class='ps-meta-key'>$k:</span>" +
-                        "<span class='ps-meta-val'>${escapeHtml(v.toString())}</span></div>"
+                .flatMap { (k, v) ->
+                    // Envelope keys (steering, interrupt, etc.) carry a
+                    // Map<String, Any> as the metadata value. Render the
+                    // envelope's sub-fields as separate labeled rows so
+                    // operators can see WHY the entry was steered or
+                    // interrupted (phase, persistent, wasRewound, injectionId,
+                    // timestamp). Without this expansion the envelope
+                    // collapses to "steering: {phase=BeforeJudge, ...}" as
+                    // one opaque row, which is hard to scan visually.
+                    if (v is Map<*, *>)
+                    {
+                        listOf(
+                            "<div class='ps-meta-row'><span class='ps-meta-key'>$k:</span>" +
+                                "<span class='ps-meta-val'>{envelope: ${v.size} field(s)}</span></div>"
+                        ) + v.entries.map { (subK, subV) ->
+                            "<div class='ps-meta-row ps-meta-row-envelope'>" +
+                                "<span class='ps-meta-key'>&nbsp;&nbsp;$k.$subK:</span>" +
+                                "<span class='ps-meta-val'>${escapeHtml(subV.toString())}</span></div>"
+                        }
+                    }
+                    else
+                    {
+                        listOf(
+                            "<div class='ps-meta-row'><span class='ps-meta-key'>$k:</span>" +
+                                "<span class='ps-meta-val'>${escapeHtml(v.toString())}</span></div>"
+                        )
+                    }
                 }
+                .joinToString("")
             val extras = buildPumpStationEventExtras(event)
             "<div class='ps-detail-row'>" +
                 "<div class='ps-detail-label'>$label <span class='ps-detail-type'>(${event.eventType.name})</span></div>" +
@@ -2534,6 +2561,8 @@ class TraceVisualizer
         TraceEventType.PUMP_STATION_STASH_CREATED -> "Stash"
         TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED -> "Blowout"
         TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED -> "LoopGuard"
+        TraceEventType.PUMP_STATION_STEERING_INJECTED -> "Steer"
+        TraceEventType.PUMP_STATION_INTERRUPT_FIRED -> "Interrupt"
         TraceEventType.PUMP_STATION_SAFE_PRUNE_APPLIED -> "SafePrune✂"
         TraceEventType.PUMP_STATION_SAFE_PRUNE_DRY_RUN_COMPLETED -> "SafePrune(dry)🔍"
         else -> eventType.name.removePrefix("PUMP_STATION_")

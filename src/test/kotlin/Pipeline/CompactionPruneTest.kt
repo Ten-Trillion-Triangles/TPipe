@@ -185,4 +185,106 @@ class CompactionPruneTest
         assertTrue(out[0].content.text.startsWith("[t] "))
         assertTrue(out[1].content.text.startsWith("[t] "))
     }
+
+    /**
+     * Regression pin: Rule 6's `c = turn.content.copy(); c.metadata.clear(); c.metadata.putAll(kept)`
+     * mutates the source's metadata map because `MultimodalContent.copy()` does not
+     * deep-copy the body-level `var metadata: MutableMap<Any, Any>` field. After the
+     * rule fires, the input turn's metadata is wiped, not just the output's.
+     *
+     * The pre-condition is structural: the source list passed in is used as the
+     * source of truth by upstream callers (e.g. rawTurnHistory), and a future
+     * iteration that reads the source metadata expecting `pathName`/`requestId` to
+     * still be there will see a wiped map.
+     *
+     * This test pins the contract: source metadata must be unchanged after the rule
+     * runs. Fix: replace `c.metadata.clear(); c.metadata.putAll(kept)` with
+     * `c.metadata = mutableMapOf<Any, Any>().apply { putAll(kept) }` to break the
+     * aliasing.
+     */
+    @Test
+    fun testRule6DoesNotMutateSourceTurnMetadata() = runBlocking {
+        val station = PumpStation().setDispatchAgent(Pipeline())
+        val sourceTurn = turn(
+            ConverseRole.assistant, "hi",
+            metadata = mapOf("pathName" to "p1", "requestId" to "r1", "timestamp" to "now")
+        )
+        val sourceMetadataKeysBefore = sourceTurn.content.metadata.keys.toSet()
+        val sourceMetadataSizeBefore = sourceTurn.content.metadata.size
+        val sourceRequestIdBefore = sourceTurn.content.metadata["requestId"]
+
+        val input = listOf(sourceTurn)
+        val out = station.defaultPrePruneForCompaction(input)
+
+        // Output must still have the filtered metadata.
+        val outMeta = out[0].content.metadata
+        assertTrue("pathName" in outMeta, "output should keep pathName")
+        assertTrue("requestId" !in outMeta, "output should drop requestId")
+        assertTrue("timestamp" !in outMeta, "output should drop timestamp")
+
+        // The source turn's metadata must be UNCHANGED. The bug under test: the
+        // source map is aliased into the output, then cleared+repopulated on the
+        // output — which also clears+repopulates the source. After the fix, the
+        // source retains all three keys.
+        val sourceMetadataKeysAfter = sourceTurn.content.metadata.keys.toSet()
+        val sourceMetadataSizeAfter = sourceTurn.content.metadata.size
+        val sourceRequestIdAfter = sourceTurn.content.metadata["requestId"]
+
+        assertEquals(
+            sourceMetadataKeysBefore, sourceMetadataKeysAfter,
+            "source turn metadata keys were mutated by Rule 6 — copy() does not " +
+                "deep-copy the body-level `var metadata` field, so clear()+" +
+                "putAll() on the copy also mutates the source"
+        )
+        assertEquals(
+            sourceMetadataSizeBefore, sourceMetadataSizeAfter,
+            "source turn metadata size was mutated by Rule 6"
+        )
+        assertEquals(
+            sourceRequestIdBefore, sourceRequestIdAfter,
+            "source turn metadata value for 'requestId' was mutated by Rule 6"
+        )
+    }
+
+    /**
+     * Regression pin: Rule 6 / Rule 7 / Rule 8 / tool-call-truncation all use
+     * `turn.content.copy()` (data-class shallow copy). The body-level `var`
+     * fields on `MultimodalContent` — `passPipeline`, `currentPipe`, `pipeError`,
+     * `modelReasoning`, etc. — are NOT preserved by `.copy()` because the body
+     * initializer re-runs on the copy and substitutes the DEFAULT values.
+     *
+     * User-visible impact: a rewritten turn loses its `passPipeline = true`
+     * signal (or its `currentPipe` reference), so downstream finalization code
+     * that checks `content.passPipeline` after the pre-prune step sees `false`
+     * and the harness does not exit via the path's pass signal.
+     *
+     * This test pins the contract: when Rule 7 (whitespace normalization) rewrites
+     * a turn whose source had `passPipeline = true`, the REWRITTEN turn must
+     * also have `passPipeline = true`.
+     *
+     * Fix: replace `turn.content.copy()` with `turn.content.deepCopy()` (the
+     * `com.TTT.Util.deepCopy` extension) at all 4 pre-prune rule sites
+     * (PumpStationLoop.kt:1144, 1158, 1339, 1490). The extension walks the
+     * primary-ctor fields and the body-level `KMutableProperty1` members via
+     * reflection, preserving current values instead of substituting defaults.
+     */
+    @Test
+    fun testRule7PreservesPassPipelineAcrossRewrite() = runBlocking {
+        val station = PumpStation().setDispatchAgent(Pipeline())
+        val sourceTurn = turn(ConverseRole.assistant, "hello\n\n\n\n\nworld   ")
+        // The source turn's path signaled passPipeline=true (the canonical
+        // signal for "this path completed and the harness should exit").
+        sourceTurn.content.passPipeline = true
+
+        val input = listOf(sourceTurn)
+        val out = station.defaultPrePruneForCompaction(input)
+
+        assertEquals(1, out.size)
+        assertTrue(
+            out[0].content.passPipeline,
+            "Rule 7 rewrite must preserve passPipeline from the source turn " +
+                "(MultimodalContent.copy() drops body-level var current values " +
+                "and substitutes defaults; .deepCopy() preserves them)"
+        )
+    }
 }

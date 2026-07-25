@@ -1,5 +1,8 @@
 package com.TTT.Pipeline
 
+import com.TTT.Debug.PipeTracer
+import com.TTT.Debug.TraceConfig
+import com.TTT.Debug.TraceEventType
 import com.TTT.Pipe.MultimodalContent
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -251,5 +254,66 @@ class PumpStationSteeringRuntimeTest
         // but all 20 must be drained exactly once)
         val oneShots = drained.drop(1).map { it.text }.toSet()
         assertEquals(20, oneShots.size, "all 20 one-shots must be drained exactly once")
+    }
+
+    //=====================================Trace emission: envelope rendering========================
+
+    @Test
+    fun injectSteeringForPhaseEmitsTraceEventWithEnvelopeMetadata()
+    {
+        // Pin the trace-emission contract: when injectSteeringForPhase drains
+        // an entry from the steering service, the harness MUST emit a
+        // PUMP_STATION_STEERING_INJECTED event into the PipeTracer with the
+        // canonical envelope (phase, persistent, injectionId, timestamp) in
+        // event.metadata["steering"]. Without this emission, the visualizer
+        // cannot render the envelope and operators can't see why a turn was
+        // steered (gap closed: 2026-07-24).
+        runTest {
+            val station = buildStation()
+            // Trace emission gates on tracingEnabledInternal AND a non-blank
+            // taskState.runId. The buildStation() helper doesn't execute the
+            // harness, so runId stays "" — explicitly set it so the new
+            // PUMP_STATION_STEERING_INJECTED event reaches the PipeTracer.
+            station.taskState.runId = "test-steer-${System.nanoTime()}"
+            // Enable tracing so the new event reaches the PipeTracer.
+            station.enableTracing(TraceConfig(enabled = true))
+            val phase = PumpStationPausePhase.BeforeJudge
+            val runId = station.taskState.runId
+
+            // Snapshot the trace size BEFORE the inject so we can find the new event.
+            val traceBefore = PipeTracer.getAllTraces().values.flatten()
+            val sizeBefore = traceBefore.size
+
+            station.steer(phase, "user just asked: focus on memory overhead, not throughput")
+            station.injectSteeringForPhase(phase)
+
+            val traceAfter = PipeTracer.getAllTraces().values.flatten()
+            val newEvents = traceAfter
+                .filter { it.metadata["runId"] == runId }
+            val steeringEvents = newEvents.filter {
+                it.eventType == TraceEventType.PUMP_STATION_STEERING_INJECTED
+            }
+            assertEquals(
+                1, steeringEvents.size,
+                "expected exactly 1 PUMP_STATION_STEERING_INJECTED event in trace; " +
+                    "got ${steeringEvents.size} new events of type " +
+                    TraceEventType.PUMP_STATION_STEERING_INJECTED.name
+            )
+
+            val ev = steeringEvents[0]
+            assertEquals(runId, ev.metadata["runId"], "runId must match the harness's runId")
+            // The envelope must be present in metadata["steering"] as a Map
+            // with the four canonical fields.
+            @Suppress("UNCHECKED_CAST")
+            val envelope = ev.metadata["steering"] as? Map<String, Any>
+            assertNotNull(envelope, "PUMP_STATION_STEERING_INJECTED event missing " +
+                "metadata['steering'] envelope; metadata keys: ${ev.metadata.keys}")
+            assertEquals(phase.name, envelope!!["phase"])
+            assertEquals(false, envelope["persistent"], "one-shot steering must be persistent=false")
+            assertTrue((envelope["injectionId"] as? String)?.isNotBlank() == true,
+                "envelope injectionId must be non-blank")
+            assertTrue((envelope["timestamp"] as? Long) ?: 0L > 0L,
+                "envelope timestamp must be positive epoch millis")
+        }
     }
 }

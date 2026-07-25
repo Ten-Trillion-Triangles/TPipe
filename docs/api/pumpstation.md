@@ -347,6 +347,65 @@ The enums referenced by the API are documented in full in **[PumpStation Models 
 Default prompts are documented in **[PumpStation Magic Contracts](../core-concepts/pumpstation-magic-contracts.md)**.
 
 
+## Steering and Interrupt Runtime API
+
+Two complementary runtime mechanisms for out-of-band producer calls into the running harness loop. Both are thread-safe and never block the caller; both fire at the same 11 `PumpStationPausePhase` boundaries. They differ in effect: **steering ADDS content** to the running turn, **interrupt REWINDS and RESTARTS** the turn from the top.
+
+### Steering: add content to the running turn
+
+Use `steer(...)` to inject a `MultimodalContent` into `turnHistory` at a future phase boundary without halting the loop. Persistent variants fire on every occurrence; one-shot variants fire once and are discarded.
+
+```kotlin
+// One-shot — fires at the next BeforeJudge, then discarded
+station.steer(PumpStationPausePhase.BeforeJudge, "user just asked: focus on security")
+
+// Persistent — fires on every BeforeJudge until cleared
+station.steerPersistent(PumpStationPausePhase.BeforeJudge, "always check the user's last message")
+
+// Clear the persistent overlay for a phase
+station.clearSteering(PumpStationPausePhase.BeforeJudge)
+
+// Drain helper — returns the entries that WOULD be injected at the next
+// phase boundary, with the canonical metadata["steering"] envelope applied
+val entries: List<MultimodalContent> = station.drainSteeringForPhase(PumpStationPausePhase.BeforeJudge)
+```
+
+All three are `suspend` extensions on `PumpStation`; the underlying `PumpStationSteeringService` uses a `Mutex` plus per-phase `Channel<MultimodalContent>` for thread safety. See [Steering: Mid-Loop Context Injection](../containers/pumpstation.md#steering-mid-loop-context-injection) in the container doc for the full design.
+
+### Interrupt: rewind and restart the turn
+
+Use `interrupt(...)` to stop the active turn mid-flight, inject the message into `turnHistory`, and re-enter `runTurn` from the BeforeJudge of the same turn slot. The in-flight turn's partial work is discarded.
+
+```kotlin
+// Standard: pass a MultimodalContent payload
+station.interrupt(
+    PumpStationPausePhase.BeforeJudge,
+    MultimodalContent(text = "halt: switch to a different path")
+)
+
+// Convenience: pass a plain text string
+station.interrupt(PumpStationPausePhase.AfterDispatch, "stop and pivot")
+```
+
+Both are `suspend` extensions on `PumpStation`. The underlying `PumpStationInterruptService` is a thread-safe per-phase FIFO queue (`Mutex` plus `Channel<MultimodalContent>` plus `ConcurrentHashMap`). The `interruptService` property exposes the service for inspection:
+
+```kotlin
+val pending = station.interruptService.queueDepth(PumpStationPausePhase.BeforeJudge)
+```
+
+The first interrupt queued for a phase becomes the active rewind target. Subsequent interrupts queued before the next poll are forwarded to the steering service as one-shot entries (or silently dropped with an `InterruptOverflowDropped` event if steering is also not configured for that phase). See [Interrupt: Hard Rewind-and-Restart](../containers/pumpstation.md#interrupt-hard-rewind-and-restart) in the container doc for the full design.
+
+### When to use which
+
+| Use case | Steering | Interrupt |
+|----------|----------|-----------|
+| Add a hint to the next judge call | yes | |
+| Periodic nudge the agent should see on every turn | yes (`steerPersistent`) | |
+| User pressed the stop button | | yes |
+| Watchdog decided a path is looping | | yes |
+| Framework sent a new instruction that must preempt the in-flight turn | | yes |
+
+
 ## Cross-References
 
 - **[PumpStation Container Doc](../containers/pumpstation.md)** — Architecture, execution flow, design philosophy

@@ -302,6 +302,97 @@ data class PathLimitExceededResult(
 Allows dynamic runtime policy instead of the static `PathLimitExceededPolicy`.
 
 
+## Interrupt Models
+
+The interrupt feature (sibling of steering) uses a small set of supporting types. The exception carries the interrupt content + the rewind snapshot; the snapshot captures the harness state at the top of `runTurn` for rewind-on-receive; the configuration data class is the DSL block's serializable form; the policy builder is the user-facing DSL surface; the event surfaces silent overflow drops for observability.
+
+### PumpStationInterruptException
+
+`src/main/kotlin/Pipeline/PumpStationInterruptException.kt` — Runtime exception thrown by `PumpStation.injectInterruptForPhase` when the interrupt service has a queued entry for the polled phase. Caught at the top of `runHarnessLoop` around the `runTurn` invocation.
+
+```kotlin
+class PumpStationInterruptException(
+    val content: MultimodalContent,           // stamped with the canonical metadata["interrupt"] envelope
+    val snapshot: PumpStationInterruptSnapshot  // harness state at the most recent BeforeJudge
+) : RuntimeException("PumpStation interrupt fired at turnIndex=${snapshot.turnIndex}")
+```
+
+The catch handler restores `snapshot` (turnHistory + four taskState fields), appends `content` to `turnHistory` with the `metadata["interrupt"]` envelope, and `continue`s the `while` loop without advancing `taskState.turnIndex`.
+
+### PumpStationInterruptSnapshot
+
+`src/main/kotlin/Pipeline/PumpStationInterruptSnapshot.kt` — Harness state captured at the top of every `runTurn` for rewind-on-receive. The constructor takes the source list for `turnHistory` and constructs a fresh `turnHistoryCopy` via `.toList()` so subsequent in-flight mutations to the live `ConverseHistory` do not bleed into the snapshot.
+
+```kotlin
+class PumpStationInterruptSnapshot(
+    val turnIndex: Int,
+    val latestContent: MultimodalContent?,
+    val lastPathResult: MultimodalContent?,
+    val selectedPathName: String?,
+    val originalInput: MultimodalContent?,
+    turnHistory: List<ConverseData>           // constructor parameter; produces fresh turnHistoryCopy
+)
+{
+    val turnHistoryCopy: List<ConverseData> = turnHistory.toList()
+}
+```
+
+Captured fields cover the four `taskState` fields that a turn's in-flight work can mutate. Fields NOT captured (status, phase, lastError, exitReason, etc.) are not affected by a turn's in-flight work and are preserved by the rewind unchanged. `rawTurnHistory`, `contextWindow`, `miniBank`, `visiblePathNames`, `reservePathNames` are also NOT captured — they don't change during a single turn and `rawTurnHistory` is intentionally the full event log.
+
+### PumpStationInterruptConfiguration
+
+`src/main/kotlin/Pipeline/PumpStationSteeringModels.kt` — Configuration block set via `pumpStation { interruptPolicy { ... } }`. Holds the initial interrupts queued at construction time. Unlike steering, there is no persistent overlay.
+
+```kotlin
+data class PumpStationInterruptConfiguration(
+    val initialQueue: Map<PumpStationPausePhase, List<MultimodalContent>> = emptyMap()
+)
+```
+
+### PumpStationInterruptPolicyBuilder
+
+`src/main/kotlin/Pipeline/PumpStationDsl.kt` — DSL block for seeding `PumpStationInterruptService` at construction time. Mirrors the shape of `SteeringPolicyBuilder` but for interrupts.
+
+```kotlin
+@PumpStationDslMarker
+class PumpStationInterruptPolicyBuilder
+{
+    val initialQueue: MutableMap<PumpStationPausePhase, List<MultimodalContent>> = mutableMapOf()
+
+    fun initialQueue(phase: PumpStationPausePhase, contents: List<MultimodalContent>)
+    {
+        initialQueue[phase] = contents
+    }
+
+    internal fun build(): PumpStationInterruptConfiguration
+    {
+        return PumpStationInterruptConfiguration(initialQueue = initialQueue.toMap())
+    }
+}
+```
+
+Both function-call form `initialQueue(phase, contents)` and indexer form `initialQueue[BeforeJudge] = listOf(...)` are supported.
+
+### InterruptOverflowDropped (event)
+
+`src/main/kotlin/Pipeline/PumpStationModels.kt` — Emitted by `injectInterruptForPhase` when one or more queued interrupt entries were dropped because the steering service is not configured for the phase. The first queued entry was thrown as the active interrupt; the rest had no destination.
+
+```kotlin
+@Serializable
+data class InterruptOverflowDropped(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Judge,
+    val boundaryPhase: PumpStationPausePhase,
+    val droppedCount: Int,
+    val firstDroppedText: String?
+) : PumpStationEvent
+```
+
+`firstDroppedText` is truncated to 200 characters to keep the event payload bounded. Operators use this event to detect when a caller is firing more interrupts than the harness can process and the overflow is being silently absorbed. See `TraceEventType.PUMP_STATION_INTERRUPT_OVERFLOW_DROPPED` for the trace-side mirror.
+
+
 ## Task State and Sealed Events
 
 ### PumpStationTaskState
@@ -362,8 +453,9 @@ The full event taxonomy is documented below. Each event has a corresponding `Tra
 | `HarnessCompleted` | `exitReason: PumpStationExitReason`, `finalOutput: MultimodalContent?` | `Exit` | Emitted on successful finalization. |
 | `HarnessFailed` | `error: PumpStationError`, `errorMessage: String?`, `exitReason: PumpStationExitReason` | `Exit` | Emitted when `lastError` is set. |
 | `HarnessSuspended` | `pausedAt: Set<PumpStationPausePhase>`, `reason: String?` | `Exit` | Emitted when the harness pauses at a phase boundary. |
-| `HarnessResumed` | (no extra fields) | `Exit` | Emitted when the harness resumes from a pause. |
-| `HarnessWarning` | `code: WarningCode`, `message: String`, `mechanisms: List<ExitMechanism>` | `PreInit` | Advisory. Currently only `NoExitSignalConfigured`. |
+|| `HarnessResumed` | (no extra fields) | `Exit` | Emitted when the harness resumes from a pause. |
+|| `HarnessWarning` | `code: WarningCode`, `message: String`, `mechanisms: List<ExitMechanism>` | `PreInit` | Advisory. Currently only `NoExitSignalConfigured`. |
+|| `InterruptOverflowDropped` | `boundaryPhase: PumpStationPausePhase`, `droppedCount: Int`, `firstDroppedText: String?` | `Judge` | Emitted by `injectInterruptForPhase` when one or more queued interrupt entries were dropped because the steering service is not configured for the phase. The first queued entry was thrown as the active interrupt; the rest had no destination. Operators use this to detect overflow conditions. |
 
 ### Judge Phase Events
 

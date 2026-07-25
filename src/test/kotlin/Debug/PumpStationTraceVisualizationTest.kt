@@ -565,6 +565,99 @@ class PumpStationTraceVisualizationTest
             "Header must hide the token card when zero events carry token metadata")
     }
 
+    @Test
+    fun reportRendersSteeringEnvelopeAsLabeledMetaRow()
+    {
+        // Pin: when a ConverseData event has metadata["steering"] = Map<String, Any>,
+        // the visualizer must render the envelope's four canonical fields as
+        // labeled meta rows so operators can see WHY an entry was steered.
+        val steeringEnvelope: Map<String, Any> = mapOf(
+            "phase" to "BeforeJudge",
+            "persistent" to false,
+            "injectionId" to "12345678-1234-1234-1234-123456789abc",
+            "timestamp" to 1718371200000L
+        )
+        val trace = listOf(
+            createEvent(0, TraceEventType.PUMP_STATION_STARTED, mapOf("runId" to "ps-test")),
+            createEvent(1, TraceEventType.PUMP_STATION_PATH_COMPLETED, mapOf(
+                "runId" to "ps-test",
+                "pathName" to "search",
+                "riskLevel" to "LOW",
+                "steering" to steeringEnvelope
+            ))
+        )
+        val html = visualizer.generateHtmlReport(trace)
+        // The envelope key must be surfaced as a labeled row in the turn
+        // details card (not collapsed into contentPreview or hidden).
+        // The visualizer emits single-quoted HTML attribute strings
+        // (`class='ps-meta-key'>...`), so we look for that exact form.
+        assertTrue(
+            html.contains("ps-meta-key'>steering:") ||
+                html.contains("ps-meta-key'>steering."),
+            "envelope key 'steering' must be rendered as a labeled meta row; " +
+                "got HTML length ${html.length}"
+        )
+        // Each of the four envelope sub-fields must be visible in the rendered
+        // HTML. The visualizer renders each as a `ps-meta-key'>  <envelopeKey>.<subKey>:`
+        // row (e.g. `steering.phase:`, `steering.persistent:`) with the value next to it.
+        for (subKey in listOf("phase", "persistent", "injectionId", "timestamp"))
+        {
+            assertTrue(
+                html.contains("steering.$subKey:") || html.contains("steering.$subKey."),
+                "envelope sub-key 'steering.$subKey' must be rendered; missing from HTML"
+            )
+        }
+        assertTrue(
+            html.contains("BeforeJudge"),
+            "envelope phase value 'BeforeJudge' must be rendered"
+        )
+        assertTrue(
+            html.contains("12345678-1234-1234-1234-123456789abc"),
+            "envelope injectionId value must be rendered"
+        )
+    }
+
+    @Test
+    fun reportRendersInterruptEnvelopeAsLabeledMetaRow()
+    {
+        // Pin: when a ConverseData event has metadata["interrupt"] = Map<String, Any>,
+        // the visualizer must render the envelope's four canonical fields as
+        // labeled meta rows so operators can see the interrupt was rewind-and-restart.
+        val interruptEnvelope: Map<String, Any> = mapOf(
+            "phase" to "BeforeJudge",
+            "wasRewound" to true,
+            "injectionId" to "abcdef00-1234-1234-1234-123456789abc",
+            "timestamp" to 1718371200000L
+        )
+        val trace = listOf(
+            createEvent(0, TraceEventType.PUMP_STATION_STARTED, mapOf("runId" to "ps-test")),
+            createEvent(1, TraceEventType.PUMP_STATION_PATH_COMPLETED, mapOf(
+                "runId" to "ps-test",
+                "pathName" to "search",
+                "riskLevel" to "LOW",
+                "interrupt" to interruptEnvelope
+            ))
+        )
+        val html = visualizer.generateHtmlReport(trace)
+        assertTrue(
+            html.contains("ps-meta-key'>interrupt:") ||
+                html.contains("ps-meta-key'>interrupt."),
+            "envelope key 'interrupt' must be rendered as a labeled meta row; " +
+                "got HTML length ${html.length}"
+        )
+        for (subKey in listOf("phase", "wasRewound", "injectionId", "timestamp"))
+        {
+            assertTrue(
+                html.contains("interrupt.$subKey:") || html.contains("interrupt.$subKey."),
+                "envelope sub-key 'interrupt.$subKey' must be rendered; missing from HTML"
+            )
+        }
+        assertTrue(
+            html.contains("abcdef00-1234-1234-1234-123456789abc"),
+            "envelope injectionId value must be rendered"
+        )
+    }
+
     private fun createEvent(
         turnIndex: Int,
         eventType: TraceEventType,

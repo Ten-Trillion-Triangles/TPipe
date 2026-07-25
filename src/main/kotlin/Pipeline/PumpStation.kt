@@ -26,6 +26,7 @@ import com.TTT.Debug.TraceEvent
 import com.TTT.Debug.TraceFormat
 import com.TTT.Util.serialize
 import com.TTT.Util.writeStringToFile
+import com.TTT.Util.deepCopy
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -918,13 +919,14 @@ suspend fun drainSteeringForPhase(phase: PumpStationPausePhase): List<Multimodal
             "timestamp" to now
         )
         // Build a fresh MutableMap<Any, Any> that merges existing metadata with the steering envelope.
-        // MultimodalContent.metadata is declared as MutableMap<Any, Any> as a body-level var
-        // (not a primary-constructor property), so data-class copy() cannot override it.
-        // We use copy() to clone all primary-constructor properties, then reassign metadata.
+        // Use deepCopy() (com.TTT.Util.deepCopy) instead of data-class .copy() so body-level
+        // var current values (passPipeline, currentPipe, modelReasoning, pipeError, etc.) are
+        // preserved on the returned content. A shallow data-class .copy() re-runs the body
+        // initializer and substitutes the defaults, silently dropping the source's body state.
         val mergedMetadata: MutableMap<Any, Any> = mutableMapOf()
         content.metadata.forEach { (k, v) -> mergedMetadata[k] = v }
         mergedMetadata["steering"] = steeringMetadata
-        val updated = content.copy()
+        val updated = content.deepCopy()
         updated.metadata = mergedMetadata
         updated
     }

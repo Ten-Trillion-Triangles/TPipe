@@ -1076,6 +1076,51 @@ data class ContextBlowoutDetected(
 ) : PumpStationEvent
 
 /**
+ * The steering service drained an entry and injected it into turnHistory at the
+ * current phase boundary. The canonical envelope (phase, persistent, injectionId,
+ * timestamp) is stamped on the emitted `metadata["steering"]` field of the
+ * corresponding [TraceEvent] so the [com.TTT.Debug.TraceVisualizer] can render
+ * the envelope as labeled rows in the pump HTML.
+ *
+ * One event fires per drained entry; multiple one-shot hints at the same
+ * phase produce one event each, each with a distinct `injectionId`.
+ */
+@kotlinx.serialization.Serializable
+data class SteeringInjected(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase,
+    val boundaryPhase: PumpStationPausePhase,
+    val persistent: Boolean,
+    val injectionId: String,
+    val contentPreview: String
+) : PumpStationEvent
+
+/**
+ * The interrupt service drained an entry and threw [PumpStationInterruptException].
+ * The harness's catch handler in [runHarnessLoop] restores the turn snapshot,
+ * appends the interrupt message to turnHistory, and re-invokes [runTurn] without
+ * incrementing [com.TTT.Pipeline.PumpStationTaskState.turnIndex].
+ *
+ * The envelope (phase, wasRewound, injectionId, timestamp) is stamped on the
+ * emitted `metadata["interrupt"]` field of the corresponding [TraceEvent] so
+ * the [com.TTT.Debug.TraceVisualizer] can render the rewind-and-restart
+ * decision as labeled rows in the pump HTML.
+ */
+@kotlinx.serialization.Serializable
+data class InterruptFired(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase,
+    val boundaryPhase: PumpStationPausePhase,
+    val wasRewound: Boolean,
+    val injectionId: String,
+    val contentPreview: String
+) : PumpStationEvent
+
+/**
  * A nested P2P request — `executeP2PRequest(...)` was invoked from within a path — completed.
  *
  * Nested P2P calls happen when a path internally dispatches to a child agent (e.g. a research

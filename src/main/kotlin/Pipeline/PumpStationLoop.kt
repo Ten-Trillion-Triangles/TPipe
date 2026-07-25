@@ -16,6 +16,7 @@ import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.RemoteTraceConfig
 import com.TTT.Debug.TraceFormat
 import com.TTT.Util.serialize
+import com.TTT.Util.deepCopy
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import java.util.UUID
@@ -187,6 +188,26 @@ internal suspend fun PumpStation.injectSteeringForPhase(phase: PumpStationPauseP
     val entries = drainSteeringForPhase(phase)
     entries.forEach { entry ->
         turnHistory.add(ConverseData(role = ConverseRole.harness, content = entry))
+        // Emit one trace event per drained entry so the visualizer can render
+        // the canonical envelope as labeled rows in the pump HTML. The
+        // envelope is already stamped on entry.metadata["steering"] by
+        // drainSteeringForPhase (see PumpStation.kt:904).
+        @Suppress("UNCHECKED_CAST")
+        val envelope = entry.metadata["steering"] as? Map<String, Any>
+        val injectionId = (envelope?.get("injectionId") as? String) ?: java.util.UUID.randomUUID().toString()
+        val persistent = (envelope?.get("persistent") as? Boolean) ?: false
+        val contentPreview = entry.text.take(160)
+        emitEventInternal(
+            SteeringInjected(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                phase = taskState.phase,
+                boundaryPhase = phase,
+                persistent = persistent,
+                injectionId = injectionId,
+                contentPreview = contentPreview
+            )
+        )
     }
 }
 
@@ -228,8 +249,26 @@ internal suspend fun PumpStation.injectInterruptForPhase(
     val mergedMetadata: MutableMap<Any, Any> = mutableMapOf()
     first.metadata.forEach { (k, v) -> mergedMetadata[k] = v }
     mergedMetadata["interrupt"] = envelope
-    val stamped = first.copy()
+    // Use deepCopy() (com.TTT.Util.deepCopy) instead of data-class .copy() so the
+    // body-level var current values (passPipeline, currentPipe, modelReasoning,
+    // pipeError, etc.) are preserved on the interrupt content. A shallow
+    // data-class .copy() re-runs the body initializer and substitutes the defaults.
+    val stamped = first.deepCopy()
     stamped.metadata = mergedMetadata
+
+    // Emit the InterruptFired trace event BEFORE throwing so the visualizer
+    // can render the canonical envelope as labeled rows in the pump HTML.
+    // The catch handlers in runHarnessLoop / runFinalizationPhase do not
+    // need to emit — the event is already on the trace path.
+    emitEventInternal(InterruptFired(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex,
+        phase = taskState.phase,
+        boundaryPhase = phase,
+        wasRewound = true,
+        injectionId = envelope["injectionId"] as String,
+        contentPreview = stamped.text.take(160)
+    ))
 
     // Forward any overflow entries to steering. Best-effort: if the steering
     // service has no one-shot channel and no persistent overlay for the phase,
@@ -1141,7 +1180,7 @@ internal fun PumpStation.defaultPrePruneForCompaction(rawTurns: List<ConverseDat
             if (kept.size == turn.content.metadata.size) turn
             else
             {
-                val c = turn.content.copy()
+                val c = turn.content.deepCopy()
                 c.metadata.clear()
                 c.metadata.putAll(kept)
                 ConverseData(role = turn.role, content = c)
@@ -1155,7 +1194,7 @@ internal fun PumpStation.defaultPrePruneForCompaction(rawTurns: List<ConverseDat
         if (normalized == turn.content.text) turn
         else
         {
-            val c = turn.content.copy()
+            val c = turn.content.deepCopy()
             c.text = normalized
             ConverseData(role = turn.role, content = c)
         }
@@ -1336,7 +1375,7 @@ internal fun applyReplaceWithSummaryRef(
             val text = turn.content.text
             if (text.isNotBlank() && summaryLower.contains(text.lowercase()))
             {
-                val rewritten = turn.content.copy()
+                val rewritten = turn.content.deepCopy()
                 rewritten.text = "[See turnSummary]"
                 ConverseData(role = turn.role, content = rewritten)
             }
@@ -1487,7 +1526,7 @@ internal fun applyStripLongToolArguments(
         {
             val name = extractToolName(turn.content.text)
             val stub = "[tool-call: $name — args truncated, was ${turn.content.text.length} chars]"
-            val rewritten = turn.content.copy()
+            val rewritten = turn.content.deepCopy()
             rewritten.text = stub
             ConverseData(role = turn.role, content = rewritten)
         }
