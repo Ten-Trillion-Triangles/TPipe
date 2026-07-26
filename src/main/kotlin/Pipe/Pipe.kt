@@ -178,7 +178,14 @@ data class TokenBudgetSettings(
     /**
      * Determines whether empty pages still reserve a portion of the budget.
      */
-    var reserveEmptyPageBudget: Boolean = true
+    var reserveEmptyPageBudget: Boolean = true,
+    /**
+     * Optional tuning override applied by the provider module during context truncation. When non-null, the
+     * values inside this object are written to the pipe instance fields before the provider's model-default
+     * truncation block runs, ensuring user-specified tokenizer behavior survives any model defaults the
+     * provider might otherwise apply. Null means the provider falls back to its model-default tuning.
+     */
+    var truncationSettings: TruncationSettings? = null
 )
 {
     /**
@@ -3200,6 +3207,29 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     private fun setTokenBudgetInternal(budget: TokenBudgetSettings, liveContent: MultimodalContent? = null) : Pipe
     {
+
+        /**
+         * If the user supplied a TruncationSettings override through the budget, apply it to the pipe instance
+         * fields BEFORE any token counting or truncation math runs. This ensures that downstream calls to
+         * getTruncationSettings() and Dictionary.countTokens() reflect the user-supplied tokenizer tuning,
+         * not whatever model defaults the provider's truncateModuleContext() block would otherwise apply.
+         *
+         * This guard is also re-applied at the top of each provider's truncateModuleContext() implementation
+         * to survive the model-default reset that runs at execution time inside generateText().
+         */
+        budget.truncationSettings?.let { settings ->
+            multiplyWindowSizeBy = settings.multiplyWindowSizeBy
+            countSubWordsInFirstWord = settings.countSubWordsInFirstWord
+            favorWholeWords = settings.favorWholeWords
+            countOnlyFirstWordFound = settings.countOnlyFirstWordFound
+            splitForNonWordChar = settings.splitForNonWordChar
+            alwaysSplitIfWholeWordExists = settings.alwaysSplitIfWholeWordExists
+            countSubWordsIfSplit = settings.countSubWordsIfSplit
+            nonWordSplitCount = settings.nonWordSplitCount
+            tokenCountingBias = settings.tokenCountingBias
+            loreBookFillMode = settings.fillMode
+            loreBookFillAndSplitMode = settings.fillAndSplitMode
+        }
 
         /**
          * Now fetch our truncation settings so we that we can proceed with dictionary counting.

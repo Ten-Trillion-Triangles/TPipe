@@ -1967,7 +1967,7 @@ The path was not called. The original input flows through as the turn's result s
 - **[Developer-in-the-Loop Functions](../core-concepts/developer-in-the-loop.md)** — Hook system overview
 - **[Tracing and Debugging](../core-concepts/tracing-and-debugging.md)** — Global tracing system
 - **[P2P Interface](../api/p2p-interface.md)** — P2P contract for TPipe containers
-- **[Pipe Context Protocol](pipe-context-protocol.md)** — PCP for bound functions on paths
+- **[Pipe Context Protocol](../advanced-concepts/pipe-context-protocol.md)** — PCP for bound functions on paths
 - **[TPipe-Defaults Package](../api/tpipe-defaults-package.md)** — `PumpStationDefaults` factory reference
 
 ---

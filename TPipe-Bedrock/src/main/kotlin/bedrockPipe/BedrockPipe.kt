@@ -1215,7 +1215,25 @@ open class BedrockPipe : Pipe()
                   "truncateAsString" to truncateContextAsString,
                   "contextWindowTruncation" to contextWindowTruncation.name
               ))
-        
+
+        // Apply user-supplied TruncationSettings override from TokenBudgetSettings BEFORE the model-default
+        // when block runs. This guard ensures user-specified tokenizer tuning survives whatever the provider's
+        // model-default reset would otherwise apply on this call (and re-applies at runtime in generateText()).
+        tokenBudgetSettings?.truncationSettings?.let { settings ->
+            multiplyWindowSizeBy = settings.multiplyWindowSizeBy
+            countSubWordsInFirstWord = settings.countSubWordsInFirstWord
+            favorWholeWords = settings.favorWholeWords
+            countOnlyFirstWordFound = settings.countOnlyFirstWordFound
+            splitForNonWordChar = settings.splitForNonWordChar
+            alwaysSplitIfWholeWordExists = settings.alwaysSplitIfWholeWordExists
+            countSubWordsIfSplit = settings.countSubWordsIfSplit
+            nonWordSplitCount = settings.nonWordSplitCount
+            tokenCountingBias = settings.tokenCountingBias
+            loreBookFillMode = settings.fillMode
+            loreBookFillAndSplitMode = settings.fillAndSplitMode
+            return this
+        }
+
         // Use default Claude model if none specified
         val modelId = model.ifEmpty { "anthropic.claude-3-sonnet-20240229-v1:0" }
         
@@ -1317,9 +1335,7 @@ open class BedrockPipe : Pipe()
             modelId.contains("deepseek") -> {
                 when {
                     isDeepSeekR1(modelId) -> {
-                        // R1 settings (preserve existing)
-                        contextWindowSize = 126000
-                        multiplyWindowSizeBy = 0
+                        // R1 settings — contextWindowSize and multiplyWindowSizeBy left for user configuration
                         contextWindowTruncation = ContextWindowSettings.TruncateTop
                         countSubWordsInFirstWord = true
                         favorWholeWords = true
@@ -1329,11 +1345,9 @@ open class BedrockPipe : Pipe()
                         countSubWordsIfSplit = false
                         nonWordSplitCount = 2
                     }
-                    
+
                     isDeepSeekV31(modelId) -> {
-                        // V3.1 settings (larger context window)
-                        contextWindowSize = 128000  // V3.1 has larger context window
-                        multiplyWindowSizeBy = 0
+                        // V3.1 settings — contextWindowSize and multiplyWindowSizeBy left for user configuration
                         contextWindowTruncation = ContextWindowSettings.TruncateTop
                         countSubWordsInFirstWord = true
                         favorWholeWords = true
@@ -1343,18 +1357,15 @@ open class BedrockPipe : Pipe()
                         countSubWordsIfSplit = false
                         nonWordSplitCount = 2
                     }
-                    
+
                     else -> {
-                        // Default DeepSeek settings
-                        contextWindowSize = 126000
-                        multiplyWindowSizeBy = 0
+                        // Default DeepSeek settings — contextWindowSize left for user configuration
                         contextWindowTruncation = ContextWindowSettings.TruncateTop
                     }
                 }
             }
             modelId.contains("writer.palmyra-x4") -> {
-                contextWindowSize = 128000
-                multiplyWindowSizeBy = 0
+                // contextWindowSize left for user configuration
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1375,8 +1386,7 @@ open class BedrockPipe : Pipe()
                 nonWordSplitCount = 2
             }
             modelId.contains("openai.gpt-oss") -> {
-                contextWindowSize = 126000
-                multiplyWindowSizeBy = 0
+                // contextWindowSize left for user configuration
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1387,7 +1397,7 @@ open class BedrockPipe : Pipe()
                 nonWordSplitCount = 2
             }
             isGlmModel(modelId) -> {
-                multiplyWindowSizeBy = 0
+                // contextWindowSize and multiplyWindowSizeBy left for user configuration
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1451,6 +1461,24 @@ open class BedrockPipe : Pipe()
                 "truncateAsString" to truncateContextAsString,
                 "contextWindowTruncation" to contextWindowTruncation.name
             ))
+
+        // Apply user-supplied TruncationSettings override from TokenBudgetSettings BEFORE the model-default
+        // when block runs. Same guard as truncateModuleContext() — keeps the override intact at the runtime
+        // call site inside generateText().
+        tokenBudgetSettings?.truncationSettings?.let { settings ->
+            multiplyWindowSizeBy = settings.multiplyWindowSizeBy
+            countSubWordsInFirstWord = settings.countSubWordsInFirstWord
+            favorWholeWords = settings.favorWholeWords
+            countOnlyFirstWordFound = settings.countOnlyFirstWordFound
+            splitForNonWordChar = settings.splitForNonWordChar
+            alwaysSplitIfWholeWordExists = settings.alwaysSplitIfWholeWordExists
+            countSubWordsIfSplit = settings.countSubWordsIfSplit
+            nonWordSplitCount = settings.nonWordSplitCount
+            tokenCountingBias = settings.tokenCountingBias
+            loreBookFillMode = settings.fillMode
+            loreBookFillAndSplitMode = settings.fillAndSplitMode
+            return this
+        }
 
         val modelId = model.ifEmpty { "anthropic.claude-3-sonnet-20240229-v1:0" }
 
@@ -1563,8 +1591,7 @@ open class BedrockPipe : Pipe()
                 {
                     isDeepSeekR1(modelId) ->
                     {
-                        contextWindowSize = 126000
-                        multiplyWindowSizeBy = 0
+                        // contextWindowSize and multiplyWindowSizeBy left for user configuration
                         contextWindowTruncation = ContextWindowSettings.TruncateTop
                         countSubWordsInFirstWord = true
                         favorWholeWords = true
@@ -1577,8 +1604,7 @@ open class BedrockPipe : Pipe()
 
                     isDeepSeekV31(modelId) ->
                     {
-                        contextWindowSize = 128000
-                        multiplyWindowSizeBy = 0
+                        // contextWindowSize and multiplyWindowSizeBy left for user configuration
                         contextWindowTruncation = ContextWindowSettings.TruncateTop
                         countSubWordsInFirstWord = true
                         favorWholeWords = true
@@ -1591,16 +1617,14 @@ open class BedrockPipe : Pipe()
 
                     else ->
                     {
-                        contextWindowSize = 126000
-                        multiplyWindowSizeBy = 0
+                        // contextWindowSize left for user configuration
                         contextWindowTruncation = ContextWindowSettings.TruncateTop
                     }
                 }
             }
             modelId.contains("writer.palmyra-x4") ->
             {
-                contextWindowSize = 128000
-                multiplyWindowSizeBy = 0
+                // contextWindowSize left for user configuration
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1623,8 +1647,7 @@ open class BedrockPipe : Pipe()
             }
             modelId.contains("openai.gpt-oss") ->
             {
-                contextWindowSize = 126000
-                multiplyWindowSizeBy = 0
+                // contextWindowSize left for user configuration
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1636,7 +1659,7 @@ open class BedrockPipe : Pipe()
             }
             isGlmModel(modelId) ->
             {
-                multiplyWindowSizeBy = 0
+                // contextWindowSize and multiplyWindowSizeBy left for user configuration
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
