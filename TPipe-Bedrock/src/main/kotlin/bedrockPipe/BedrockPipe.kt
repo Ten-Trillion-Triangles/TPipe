@@ -55,7 +55,8 @@ enum class BedrockPriorityTier
 private const val QWEN_TUNED_TOKEN_COUNTING_BIAS = -0.036641221374045754
 
 /** Per-block citation reassembly accumulator. */
-private class BlockCitationAcc {
+private class BlockCitationAcc
+{
     var title: String? = null
     var source: String? = null
     var location: aws.sdk.kotlin.services.bedrockruntime.model.CitationLocation? = null

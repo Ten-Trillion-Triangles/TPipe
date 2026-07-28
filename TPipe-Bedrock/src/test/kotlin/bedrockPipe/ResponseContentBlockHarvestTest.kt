@@ -254,7 +254,8 @@ private class FakeConverseClient(
         block: suspend (InvokeModelWithBidirectionalStreamResponse) -> T
     ): T = throw UnsupportedOperationException("invokeModelWithBidirectionalStream not exercised in ResponseContentBlockHarvestTest")
 
-    override fun close() {
+    override fun close()
+    {
         // no-op; the fake owns no resources
     }
 }

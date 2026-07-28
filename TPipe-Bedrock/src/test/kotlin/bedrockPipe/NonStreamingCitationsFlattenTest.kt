@@ -216,7 +216,8 @@ private class FakeConverseClientWithCitations(
         block: suspend (InvokeModelWithBidirectionalStreamResponse) -> T
     ): T = throw UnsupportedOperationException("invokeModelWithBidirectionalStream not exercised in NonStreamingCitationsFlattenTest")
 
-    override fun close() {
+    override fun close()
+    {
         // no-op; the fake owns no resources
     }
 }

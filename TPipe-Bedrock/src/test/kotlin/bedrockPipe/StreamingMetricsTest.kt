@@ -190,7 +190,8 @@ private class FakeBedrockRuntimeClientStreamingMetrics(
         block: suspend (InvokeModelWithBidirectionalStreamResponse) -> T
     ): T = throw UnsupportedOperationException("invokeModelWithBidirectionalStream not exercised in StreamingMetricsTest")
 
-    override fun close() {
+    override fun close()
+    {
         // no-op; the fake owns no resources
     }
 }
