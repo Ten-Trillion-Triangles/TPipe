@@ -738,6 +738,12 @@ open class BedrockPipe : Pipe()
     }
 
     /**
+     * @return The currently configured guardrail identifier (ID or ARN), or empty
+     *         string if no guardrail is configured. Reads [guardrailIdentifier].
+     */
+    fun getGuardrailIdentifier(): String = guardrailIdentifier
+
+    /**
      * Evaluates content against the configured guardrail without invoking foundation models.
      * This allows independent content validation at any stage of your application flow.
      *
@@ -810,6 +816,74 @@ open class BedrockPipe : Pipe()
         } catch (e: Exception) {
             trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
                   metadata = mapOf("error" to (e.message ?: "Unknown error") as Any), error = e)
+            null
+        }
+    }
+
+    /**
+     * Pre-flight guardrail check using [invokeGuardrailChecks] (added in
+     * aws-sdk-kotlin bedrockruntime 1.6.107, operation introduced to support
+     * inline guardrail policy evaluation without invoking any model).
+     *
+     * The 1.6.107 `InvokeGuardrailChecksRequest` has a fundamentally different
+     * shape than the older `ApplyGuardrailRequest`: it takes inline `checks`
+     * (a policy config specifying which categories/types to evaluate) and
+     * `messages` (a list of role+content messages), NOT the managed
+     * `guardrailIdentifier`/`guardrailVersion`/`source`/`content` of the
+     * managed-guardrail-by-ID API. For managed-guardrail evaluation, use
+     * [applyGuardrailStandalone] instead.
+     *
+     * This implementation honours the [setGuardrail] precondition as a guard:
+     * if no guardrail has been configured on the pipe, the method throws
+     * [IllegalStateException] rather than silently no-op (silent no-op would
+     * let unsafe prompts through without a guardrail). The wire-level request
+     * uses only the inline API; the configured identifier/version is not
+     * sent.
+     *
+     * @param content The content to screen. Only the text portion is included
+     *                as a single User-role message in the request.
+     * @return [aws.sdk.kotlin.services.bedrockruntime.model.InvokeGuardrailChecksResponse]
+     *         containing the assessments for each configured policy, or null
+     *         if the call failed (no client, transport error, etc.).
+     * @throws IllegalStateException If no guardrail has been configured via
+     *         [setGuardrail].
+     * @see setGuardrail to satisfy the precondition before calling this method.
+     * @see applyGuardrailStandalone for managed-guardrail standalone evaluation.
+     * @since Requires aws-sdk-kotlin bedrockruntime 1.6.107 or later.
+     */
+    suspend fun applyGuardrailPrecheck(
+        content: MultimodalContent
+    ): aws.sdk.kotlin.services.bedrockruntime.model.InvokeGuardrailChecksResponse?
+    {
+        if(guardrailIdentifier.isEmpty())
+        {
+            throw IllegalStateException(
+                "Guardrail must be configured before calling applyGuardrailPrecheck. Use setGuardrail() first."
+            )
+        }
+
+        return try
+        {
+            val request = aws.sdk.kotlin.services.bedrockruntime.model.InvokeGuardrailChecksRequest {
+                messages = listOf(
+                    aws.sdk.kotlin.services.bedrockruntime.model.GuardrailChecksMessage {
+                        role = aws.sdk.kotlin.services.bedrockruntime.model.GuardrailChecksRole.User
+                        this.content = listOf(
+                            aws.sdk.kotlin.services.bedrockruntime.model.GuardrailChecksContentBlock.Text(content.text)
+                        )
+                    }
+                )
+            }
+            bedrockClient?.invokeGuardrailChecks(request)
+        }
+        catch(e: Exception)
+        {
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                  error = e,
+                  metadata = mapOf(
+                      "method" to "applyGuardrailPrecheck",
+                      "guardrailIdentifier" to guardrailIdentifier
+                  ))
             null
         }
     }
