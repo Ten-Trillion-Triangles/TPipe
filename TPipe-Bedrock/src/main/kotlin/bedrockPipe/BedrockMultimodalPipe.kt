@@ -222,7 +222,11 @@ open class BedrockMultimodalPipe : BedrockPipe()
         // finished ConverseRequest (idempotent when not set; the parent builders already
         // call applyPerformanceConfig() on the Builder, but this is the single explicit
         // site where the multimodal pipe guarantees the wiring is applied).
-        val converseRequest = applyPerformanceConfig(when {
+        // applyRequestMetadata() does the same for per-call request metadata (CloudTrail
+        // attribution). Same defensive pattern — the 14 parent builders already call the
+        // builder-extension form, this is the single explicit site on the multimodal
+        // path that guarantees the folding.
+        val converseRequest = applyRequestMetadata(applyPerformanceConfig(when {
             modelId.contains("qwen") -> buildQwenConverseRequest(contentBlocks)
             modelId.contains("deepseek") -> buildDeepSeekConverseRequestObject(modelId, contentBlocks)
             isGlmModel(modelId) -> buildGlmConverseRequest(contentBlocks)
@@ -237,7 +241,7 @@ open class BedrockMultimodalPipe : BedrockPipe()
             modelId.contains("mistral") -> buildMistralConverseRequest(contentBlocks)
             modelId.contains("openai.gpt-oss") -> buildGptOssConverseRequest(modelId, contentBlocks)
             else -> buildGenericConverseRequest(contentBlocks)
-        })
+        }))
         
         // Check for streaming first
         if(streamingEnabled)

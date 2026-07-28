@@ -36,6 +36,7 @@ import env.bedrockEnv
 import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.json.*
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.builtins.serializer
 import kotlin.text.RegexOption
 import kotlin.time.Duration.Companion.seconds
 
@@ -197,6 +198,51 @@ open class BedrockPipe : Pipe()
     }
 
     /**
+     * Per-call request metadata that flows to [CloudTrail][https://docs.aws.amazon.com/bedrock/latest/userguide/logging-cloudtrail.html]
+     * invocation logs. Useful for cost attribution, multi-tenant routing
+     * attribution, and request tracing across the request lifecycle. The map is
+     * merged additively across calls to [setRequestMetadata] on the same pipe;
+     * later calls override earlier values for the same key.
+     */
+    @kotlinx.serialization.Transient
+    private var requestMetadata: MutableMap<String, String> = mutableMapOf()
+
+    /**
+     * Sets per-call request metadata that flows to CloudTrail invocation logs.
+     * Merges [metadata] into the existing map; existing keys are overwritten.
+     * Pass an empty map to leave existing entries untouched (use
+     * [clearRequestMetadata] to reset).
+     *
+     * @param metadata Map of string key-value pairs. Keys are user-defined;
+     *                 values are visible in CloudTrail.
+     * @return This pipe instance for method chaining.
+     */
+    fun setRequestMetadata(metadata: Map<String, String>): BedrockPipe
+    {
+        this.requestMetadata.putAll(metadata)
+        return this
+    }
+
+    /**
+     * @return A defensive copy of the current per-call request metadata. The
+     *         returned map is independent of the pipe's internal state — mutations
+     *         on the returned map do NOT affect subsequent calls. The map is empty
+     *         when no metadata has been set.
+     */
+    fun getRequestMetadata(): Map<String, String> = requestMetadata.toMap()
+
+    /**
+     * Clears all per-call request metadata.
+     *
+     * @return This pipe instance for method chaining.
+     */
+    fun clearRequestMetadata(): BedrockPipe
+    {
+        this.requestMetadata.clear()
+        return this
+    }
+
+    /**
      * Applies the pipe's [performanceConfig] to a finished [ConverseRequest], if set.
      * Used by extensions (e.g. [BedrockMultimodalPipe]) that build the request via
      * delegated [build*ConverseRequest] methods and still want a single, explicit
@@ -209,6 +255,21 @@ open class BedrockPipe : Pipe()
     protected fun applyPerformanceConfig(converseRequest: aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest): aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest {
         val cfg = performanceConfig ?: return converseRequest
         return converseRequest.copy { performanceConfig = cfg }
+    }
+
+    /**
+     * Applies the pipe's [requestMetadata] to a finished [ConverseRequest], if any
+     * entries are set. Used by extensions (e.g. [BedrockMultimodalPipe]) that build the
+     * request via delegated [build*ConverseRequest] methods and want a single,
+     * explicit site where the wire-level metadata is folded in (same defensive
+     * pattern as [applyPerformanceConfig]).
+     *
+     * Idempotent: overwrites any metadata already set on the request. Safe to
+     * call when no metadata has been configured — returns the request unchanged.
+     */
+    protected fun applyRequestMetadata(converseRequest: aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest): aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest {
+        if (requestMetadata.isEmpty()) return converseRequest
+        return converseRequest.copy { requestMetadata = this@BedrockPipe.requestMetadata.toMap() }
     }
 
     /**
@@ -1186,6 +1247,7 @@ open class BedrockPipe : Pipe()
             body = requestJson.toByteArray()
             contentType = "application/json"
             serviceTier = mapServiceTier()
+            applyRequestMetadata()
 
             // Add guardrail configuration if set
             if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
@@ -2219,6 +2281,59 @@ put("system", if(enableCaching && cacheControl != null) {
         this@BedrockPipe.performanceConfig?.let { this.performanceConfig = it }
     }
 
+    /**
+     * Applies the pipe's [requestMetadata] to the ConverseRequest builder, if any
+     * entries are set. The [ConverseRequest.requestMetadata] field is typed
+     * `Map<String, String>?` (added 1.6.13) and is forwarded directly into the
+     * request body. Used by every [build*ConverseRequest] method.
+     */
+    protected fun aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest.Builder.applyRequestMetadata() {
+        if (this@BedrockPipe.requestMetadata.isNotEmpty()) {
+            this.requestMetadata = this@BedrockPipe.requestMetadata.toMap()
+        }
+    }
+
+    /**
+     * Applies the pipe's [requestMetadata] to an InvokeModelRequest builder.
+     *
+     * [InvokeModelRequest.requestMetadata] is typed `String?` (NOT a Map field
+     * like on ConverseRequest) — the wire format uses an HTTP header
+     * `X-Amzn-Bedrock-Request-Metadata` that carries a JSON-encoded string of
+     * the form `{"key":"value"}`. We serialize our defensive-copy Map and
+     * assign the resulting string.
+     *
+     * Throws nothing — silently skips when the pipe has no metadata.
+     */
+    protected fun aws.sdk.kotlin.services.bedrockruntime.model.InvokeModelRequest.Builder.applyRequestMetadata() {
+        if (this@BedrockPipe.requestMetadata.isNotEmpty()) {
+            this.requestMetadata = this@BedrockPipe.requestMetadata.asJsonString()
+        }
+    }
+
+    /**
+     * Streaming sibling of [InvokeModelRequest]. [InvokeModelWithResponseStreamRequest.requestMetadata]
+     * is also a `String?` header field, so we JSON-encode the pipe's map the same way.
+     */
+    protected fun aws.sdk.kotlin.services.bedrockruntime.model.InvokeModelWithResponseStreamRequest.Builder.applyRequestMetadata() {
+        if (this@BedrockPipe.requestMetadata.isNotEmpty()) {
+            this.requestMetadata = this@BedrockPipe.requestMetadata.asJsonString()
+        }
+    }
+
+    /**
+     * Serializes a `Map<String, String>` to the JSON-encoded string format
+     * expected by the `X-Amzn-Bedrock-Request-Metadata` HTTP header on the
+     * Invoke API paths (InvokeModel / InvokeModelWithResponseStream).
+     */
+    private fun Map<String, String>.asJsonString(): String =
+        kotlinx.serialization.json.Json.encodeToString(
+            kotlinx.serialization.builtins.MapSerializer(
+                String.serializer(),
+                String.serializer()
+            ),
+            this
+        )
+
     fun buildGptOssConverseRequest(modelId: String, contentBlocks: List<ContentBlock>): ConverseRequest {
         // For ContentBlocks, we need to extract text to reuse existing JSON logic
         val promptText = contentBlocks.filterIsInstance<ContentBlock.Text>()
@@ -2275,6 +2390,7 @@ put("system", if(enableCaching && cacheControl != null) {
             
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -2379,6 +2495,7 @@ put("system", if(enableCaching && cacheControl != null) {
 
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -2703,6 +2820,7 @@ put("system", if(enableCaching && cacheControl != null) {
             
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -3156,6 +3274,7 @@ put("system", if(enableCaching && cacheControl != null) {
             
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -3210,6 +3329,7 @@ put("system", if(enableCaching && cacheControl != null) {
             
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -3264,6 +3384,7 @@ put("system", if(enableCaching && cacheControl != null) {
 
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -3535,6 +3656,7 @@ put("system", if(enableCaching && cacheControl != null) {
 
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -3750,6 +3872,7 @@ put("system", if(enableCaching && cacheControl != null) {
             
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -3811,6 +3934,7 @@ put("system", if(enableCaching && cacheControl != null) {
             
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -3858,6 +3982,7 @@ put("system", if(enableCaching && cacheControl != null) {
             
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -3908,6 +4033,7 @@ put("system", if(enableCaching && cacheControl != null) {
             
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -3959,6 +4085,7 @@ put("system", if(enableCaching && cacheControl != null) {
             
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -4002,6 +4129,7 @@ put("system", if(enableCaching && cacheControl != null) {
             
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -4074,6 +4202,7 @@ put("system", if(enableCaching && cacheControl != null) {
             
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
+            applyRequestMetadata()
             applyGuardrailConfig()
         }
     }
@@ -4578,6 +4707,12 @@ put("system", if(enableCaching && cacheControl != null) {
                 this.guardrailVersion = this@BedrockPipe.guardrailVersion
                 this.trace = aws.sdk.kotlin.services.bedrockruntime.model.Trace.fromValue(guardrailTrace)
             }
+
+            // Per-call request metadata for CloudTrail invocation-log filtering.
+            // Serializes the pipe's Map<String,String> to the JSON-encoded header
+            // string that InvokeModelRequest / InvokeModelWithResponseStreamRequest
+            // put in the X-Amzn-Bedrock-Request-Metadata HTTP header.
+            applyRequestMetadata()
         }
 
         return try {
