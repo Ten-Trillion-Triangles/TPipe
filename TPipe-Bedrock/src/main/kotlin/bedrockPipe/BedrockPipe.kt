@@ -130,7 +130,7 @@ open class BedrockPipe : Pipe()
      * @see generateText for client usage in API calls
      */
     @kotlinx.serialization.Transient
-    protected var bedrockClient: BedrockRuntimeClient? = null
+    internal var bedrockClient: BedrockRuntimeClient? = null
 
     /**
      * Stores the last Converse API response for reasoning content extraction.
