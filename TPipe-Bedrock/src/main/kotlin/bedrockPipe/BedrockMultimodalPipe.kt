@@ -218,7 +218,11 @@ open class BedrockMultimodalPipe : BedrockPipe()
         }
         
         // Use parent class builders (ELIMINATES duplicate logic)
-        val converseRequest = when {
+        // applyPerformanceConfig() folds the pipe's per-call performanceConfig into the
+        // finished ConverseRequest (idempotent when not set; the parent builders already
+        // call applyPerformanceConfig() on the Builder, but this is the single explicit
+        // site where the multimodal pipe guarantees the wiring is applied).
+        val converseRequest = applyPerformanceConfig(when {
             modelId.contains("qwen") -> buildQwenConverseRequest(contentBlocks)
             modelId.contains("deepseek") -> buildDeepSeekConverseRequestObject(modelId, contentBlocks)
             isGlmModel(modelId) -> buildGlmConverseRequest(contentBlocks)
@@ -233,7 +237,7 @@ open class BedrockMultimodalPipe : BedrockPipe()
             modelId.contains("mistral") -> buildMistralConverseRequest(contentBlocks)
             modelId.contains("openai.gpt-oss") -> buildGptOssConverseRequest(modelId, contentBlocks)
             else -> buildGenericConverseRequest(contentBlocks)
-        }
+        })
         
         // Check for streaming first
         if(streamingEnabled)

@@ -21,6 +21,8 @@ import aws.sdk.kotlin.services.bedrockruntime.model.GuardrailContentSource
 import aws.sdk.kotlin.services.bedrockruntime.model.GuardrailTrace
 import aws.sdk.kotlin.services.bedrockruntime.model.ServiceTierType
 import aws.sdk.kotlin.services.bedrockruntime.model.ServiceTier
+import aws.sdk.kotlin.services.bedrockruntime.model.PerformanceConfigLatency
+import aws.sdk.kotlin.services.bedrockruntime.model.PerformanceConfiguration
 import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
 import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import aws.smithy.kotlin.runtime.http.engine.okhttp.OkHttpEngine
@@ -152,6 +154,61 @@ open class BedrockPipe : Pipe()
     {
         lastCallMetadata = null
         return this
+    }
+
+    /**
+     * Per-call performance configuration. When set, Bedrock allocates dedicated
+     * inference capacity for the call. Optimized latency costs more than Standard
+     * but reduces tail latency for time-sensitive workloads.
+     *
+     * Default null — service decides performance characteristics based on the
+     * service tier setting.
+     */
+    @kotlinx.serialization.Transient
+    private var performanceConfig: PerformanceConfiguration? = null
+
+    /**
+     * Configures performance characteristics for subsequent Bedrock calls.
+     *
+     * @param latency The latency tier. [PerformanceConfigLatency.Optimized] reserves
+     *                dedicated capacity; [PerformanceConfigLatency.Standard] uses
+     *                shared capacity at lower cost.
+     * @return This pipe instance for method chaining.
+     */
+    fun setPerformanceConfig(latency: PerformanceConfigLatency): BedrockPipe
+    {
+        this.performanceConfig = PerformanceConfiguration { this.latency = latency }
+        return this
+    }
+
+    /**
+     * @return The current performance configuration, or null if not set.
+     */
+    fun getPerformanceConfig(): PerformanceConfiguration? = performanceConfig
+
+    /**
+     * Clears the performance configuration. Subsequent calls will use default
+     * (service-decided) performance.
+     */
+    fun clearPerformanceConfig(): BedrockPipe
+    {
+        this.performanceConfig = null
+        return this
+    }
+
+    /**
+     * Applies the pipe's [performanceConfig] to a finished [ConverseRequest], if set.
+     * Used by extensions (e.g. [BedrockMultimodalPipe]) that build the request via
+     * delegated [build*ConverseRequest] methods and still want a single, explicit
+     * site where the wire-level performance config is folded in.
+     *
+     * Idempotent: if the request already has a performanceConfig, the value is
+     * overwritten with the pipe's current setting. Safe to call when no
+     * performanceConfig is set — returns the request unchanged.
+     */
+    protected fun applyPerformanceConfig(converseRequest: aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest): aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest {
+        val cfg = performanceConfig ?: return converseRequest
+        return converseRequest.copy { performanceConfig = cfg }
     }
 
     /**
@@ -2154,6 +2211,14 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
+    /**
+     * Applies the pipe's [performanceConfig] to the builder, if set.
+     * Used by every [build*ConverseRequest] method and by [toStreamRequest].
+     */
+    protected fun aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest.Builder.applyPerformanceConfig() {
+        this@BedrockPipe.performanceConfig?.let { this.performanceConfig = it }
+    }
+
     fun buildGptOssConverseRequest(modelId: String, contentBlocks: List<ContentBlock>): ConverseRequest {
         // For ContentBlocks, we need to extract text to reuse existing JSON logic
         val promptText = contentBlocks.filterIsInstance<ContentBlock.Text>()
@@ -2209,6 +2274,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
@@ -2312,6 +2378,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
 
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
@@ -2635,6 +2702,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
@@ -3087,6 +3155,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
@@ -3140,6 +3209,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
@@ -3193,6 +3263,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
 
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
@@ -3463,6 +3534,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
 
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
@@ -3677,6 +3749,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
@@ -3737,6 +3810,7 @@ put("system", if(enableCaching && cacheControl != null) {
             additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
@@ -3783,6 +3857,7 @@ put("system", if(enableCaching && cacheControl != null) {
             additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
@@ -3832,6 +3907,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
@@ -3882,6 +3958,7 @@ put("system", if(enableCaching && cacheControl != null) {
             additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
@@ -3924,6 +4001,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
@@ -3995,6 +4073,7 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
             applyGuardrailConfig()
         }
     }
