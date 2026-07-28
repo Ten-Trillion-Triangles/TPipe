@@ -54,6 +54,14 @@ enum class BedrockPriorityTier
 
 private const val QWEN_TUNED_TOKEN_COUNTING_BIAS = -0.036641221374045754
 
+/** Per-block citation reassembly accumulator. */
+private class BlockCitationAcc {
+    var title: String? = null
+    var source: String? = null
+    var location: aws.sdk.kotlin.services.bedrockruntime.model.CitationLocation? = null
+    val textBuilder: StringBuilder = StringBuilder()
+}
+
 
 /**
  * AWS Bedrock provider implementation for TPipe framework.
@@ -4775,6 +4783,15 @@ put("system", if(enableCaching && cacheControl != null) {
         var currentBlockIndex = 0
         val toolUseAccumulator = mutableMapOf<Int, StringBuilder>()          // blockIndex -> accumulated input JSON
         val collectedToolUse = mutableListOf<aws.sdk.kotlin.services.bedrockruntime.model.ToolUseBlock>()
+
+        // Per-block citation reassembly state.
+        // AWS streaming pattern (verified via AWS docs): a single content block carries
+        // a single citation, accumulated via multiple CitationsDelta events. Each delta
+        // updates the citation's metadata (title/source/location) and appends a
+        // sourceContent.text fragment. We accumulate per-block and emit one or more
+        // Citation objects on ContentBlockStop.
+        val collectedCitations = mutableListOf<aws.sdk.kotlin.services.bedrockruntime.model.Citation>()
+        val perBlockCitationAcc = mutableMapOf<Int, BlockCitationAcc>()
 
         return try {
             // Execute the streaming Converse API call
