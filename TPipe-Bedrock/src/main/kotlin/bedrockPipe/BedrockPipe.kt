@@ -243,6 +243,59 @@ open class BedrockPipe : Pipe()
     }
 
     /**
+     * Server-side prompt template variables. When set, Bedrock performs prompt
+     * template substitution on the server BEFORE sending the request to the
+     * model. This is useful for stable prompt-cache keys — the template is
+     * cacheable, only the variables change per-call.
+     *
+     * The map is merged additively across [setPromptVariables] calls; later
+     * calls override earlier values for the same key. The user-facing getter
+     * ([getPromptVariables]) returns null when no variables have ever been set,
+     * and an empty defensive copy after [clearPromptVariables].
+     */
+    @kotlinx.serialization.Transient
+    private var promptVariables: MutableMap<String, String>? = null
+
+    /**
+     * Sets server-side prompt template variables for substitution before the
+     * request reaches the model. Merges [variables] into the existing map;
+     * existing keys are overwritten. Pass an empty map to leave existing
+     * entries untouched (use [clearPromptVariables] to reset).
+     *
+     * @param variables Map of variable-name to template-value pairs. The
+     *                  variable names must match the `{{name}}` placeholders
+     *                  in the model's prompt template.
+     * @return This pipe instance for method chaining.
+     */
+    fun setPromptVariables(variables: Map<String, String>): BedrockPipe
+    {
+        val current = this.promptVariables ?: mutableMapOf()
+        current.putAll(variables)
+        this.promptVariables = current
+        return this
+    }
+
+    /**
+     * @return A defensive copy of the current prompt template variables, or
+     *         null when no variables have ever been set on this pipe. The
+     *         returned map (when non-null) is independent of the pipe's
+     *         internal state — mutations on the returned map do NOT affect
+     *         subsequent calls.
+     */
+    fun getPromptVariables(): Map<String, String>? = promptVariables?.toMap()
+
+    /**
+     * Clears all prompt template variables.
+     *
+     * @return This pipe instance for method chaining.
+     */
+    fun clearPromptVariables(): BedrockPipe
+    {
+        this.promptVariables = null
+        return this
+    }
+
+    /**
      * Applies the pipe's [performanceConfig] to a finished [ConverseRequest], if set.
      * Used by extensions (e.g. [BedrockMultimodalPipe]) that build the request via
      * delegated [build*ConverseRequest] methods and still want a single, explicit
@@ -271,6 +324,37 @@ open class BedrockPipe : Pipe()
         if (requestMetadata.isEmpty()) return converseRequest
         return converseRequest.copy { requestMetadata = this@BedrockPipe.requestMetadata.toMap() }
     }
+
+    /**
+     * Applies the pipe's [promptVariables] to a finished [ConverseRequest], if any
+     * entries are set. Used by extensions (e.g. [BedrockMultimodalPipe]) that build
+     * the request via delegated [build*ConverseRequest] methods and want a single,
+     * explicit site where wire-level prompt template variables are folded in (same
+     * defensive pattern as [applyRequestMetadata]).
+     *
+     * Idempotent: overwrites any promptVariables already set on the request. Safe
+     * to call when no variables have been configured — returns the request
+     * unchanged.
+     */
+    protected fun applyPromptVariables(converseRequest: aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest): aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest {
+        val vars = promptVariables ?: return converseRequest
+        if (vars.isEmpty()) return converseRequest
+        return converseRequest.copy {
+            promptVariables = vars.toPromptVariableValuesMap()
+        }
+    }
+
+    /**
+     * Wraps each `String` value in the pipe's user-facing promptVariables map into
+     * the SDK's [aws.sdk.kotlin.services.bedrockruntime.model.PromptVariableValues]
+     * sealed-class instance. The wire field on [aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest]
+     * and [aws.sdk.kotlin.services.bedrockruntime.model.ConverseStreamRequest] is typed
+     * `Map<String, PromptVariableValues>?` — the user-facing builder stores plain
+     * `String` values and we wrap them into `PromptVariableValues.Text(value)`
+     * at the wire boundary.
+     */
+    private fun Map<String, String>.toPromptVariableValuesMap(): Map<String, aws.sdk.kotlin.services.bedrockruntime.model.PromptVariableValues> =
+        mapValues { (_, v) -> aws.sdk.kotlin.services.bedrockruntime.model.PromptVariableValues.Text(v) }
 
     /**
      * Canonical model identifier that the user asked for before inference profiles/ARN binding.
@@ -2294,6 +2378,20 @@ put("system", if(enableCaching && cacheControl != null) {
     }
 
     /**
+     * Applies the pipe's [promptVariables] to the ConverseRequest builder, if any
+     * entries are set. The [ConverseRequest.promptVariables] field is typed
+     * `Map<String, String>?` (added 1.6.x with system-prompt template support)
+     * and is forwarded directly into the request body. Used by every
+     * [build*ConverseRequest] method.
+     */
+    protected fun aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest.Builder.applyPromptVariables() {
+        val vars = this@BedrockPipe.promptVariables ?: return
+        if (vars.isNotEmpty()) {
+            this.promptVariables = vars.toPromptVariableValuesMap()
+        }
+    }
+
+    /**
      * Applies the pipe's [requestMetadata] to an InvokeModelRequest builder.
      *
      * [InvokeModelRequest.requestMetadata] is typed `String?` (NOT a Map field
@@ -2391,6 +2489,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -2496,6 +2595,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -2821,6 +2921,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3275,6 +3376,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3330,6 +3432,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3385,6 +3488,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3657,6 +3761,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3873,6 +3978,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3935,6 +4041,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3983,6 +4090,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -4034,6 +4142,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -4086,6 +4195,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -4130,6 +4240,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -4203,6 +4314,7 @@ put("system", if(enableCaching && cacheControl != null) {
             serviceTier = ServiceTier { type = mapServiceTier() }
             applyPerformanceConfig()
             applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }

@@ -226,7 +226,12 @@ open class BedrockMultimodalPipe : BedrockPipe()
         // attribution). Same defensive pattern — the 14 parent builders already call the
         // builder-extension form, this is the single explicit site on the multimodal
         // path that guarantees the folding.
-        val converseRequest = applyRequestMetadata(applyPerformanceConfig(when {
+        // applyPromptVariables() does the same for per-call server-side prompt template
+        // variables. ConverseRequest.promptVariables (added 1.6.x) is typed
+        // Map<String, PromptVariableValues>? and only exists on the Converse API —
+        // Invoke API has no promptVariables field, so we do NOT wire this on
+        // BedrockPipe's Invoke path.
+        val rawRequest = applyRequestMetadata(applyPerformanceConfig(when {
             modelId.contains("qwen") -> buildQwenConverseRequest(contentBlocks)
             modelId.contains("deepseek") -> buildDeepSeekConverseRequestObject(modelId, contentBlocks)
             isGlmModel(modelId) -> buildGlmConverseRequest(contentBlocks)
@@ -242,6 +247,7 @@ open class BedrockMultimodalPipe : BedrockPipe()
             modelId.contains("openai.gpt-oss") -> buildGptOssConverseRequest(modelId, contentBlocks)
             else -> buildGenericConverseRequest(contentBlocks)
         }))
+        val converseRequest = applyPromptVariables(rawRequest)
         
         // Check for streaming first
         if(streamingEnabled)
