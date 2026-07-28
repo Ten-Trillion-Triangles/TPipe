@@ -56,15 +56,18 @@ object McpBridgeHttpHost {
                             }
                         }
                     }
-                    routing {
+                }
+                routing {
+                    if (!authKey.isNullOrBlank())
+                    {
                         authenticate("mcp-auth") {
                             mcpStreamableHttp("/mcp/bridge") { host.getServer() }
                         }
                     }
-                }
-                else
-                {
-                    mcpStreamableHttp("/mcp/bridge") { host.getServer() }
+                    else
+                    {
+                        mcpStreamableHttp("/mcp/bridge") { host.getServer() }
+                    }
                 }
             }.start(wait = true)
         }

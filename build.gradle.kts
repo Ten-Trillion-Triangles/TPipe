@@ -11,7 +11,7 @@ import org.gradle.authentication.http.BasicAuthentication
  */
 
 plugins {
-    alias(libs.plugins.kotlin.jvm) version "2.2.20"
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ktor)
     alias(libs.plugins.kotlin.plugin.serialization)
     alias(libs.plugins.shadow)

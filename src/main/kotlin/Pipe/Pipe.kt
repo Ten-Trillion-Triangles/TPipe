@@ -4958,7 +4958,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         }
         
         if(!tracingEnabled) return
-        
+
         // Check if this event should be traced based on detail level
         if(!EventPriorityMapper.shouldTrace(eventType, traceConfig.detailLevel)) return
         
@@ -5054,11 +5054,16 @@ abstract class Pipe : P2PInterface, ProviderInterface
         if(pipeId in visitedPipes) return
         visitedPipes.add(pipeId)
 
-        if(!tracingEnabled) return
-
         listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { childPipe ->
             childPipe.enableTracing(traceConfig)
             childPipe.currentPipelineId = currentPipelineId
+            // Propagate the pipeline's trace ID to the child so the child's
+            // `trace()` calls (which iterate `activeTraceIds` to broadcast
+            // events to PipeTracer) actually emit under the pipeline's trace.
+            // Without this, child pipe events are silently dropped because
+            // Pipeline.execute() only adds the trace ID to the top-level
+            // pipe it adds directly.
+            activeTraceIds.toList().forEach { id -> childPipe.addTraceId(id) }
             childPipe.propagateTracingRecursively(visitedPipes)
         }
     }

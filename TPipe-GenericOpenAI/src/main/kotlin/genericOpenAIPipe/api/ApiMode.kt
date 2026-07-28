@@ -47,6 +47,6 @@ sealed class ApiMode
         /**
          * Default API mode for backward compatibility.
          */
-        val DEFAULT: ApiMode = OpenAI
+        val DEFAULT: ApiMode by lazy { OpenAI }
     }
 }

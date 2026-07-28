@@ -135,7 +135,7 @@ class PumpStationPathSchemaValidationTest
             // [Harness Notice] wrapper AND references pathSchema, so the next
             // dispatch LLM learns to leave the field blank.
             val hintEntries = station.turnHistory.history.filter { cd ->
-                cd.role == ConverseRole.user &&
+                cd.role == ConverseRole.harness &&
                     cd.content.text.contains("[Harness Notice]", ignoreCase = true) &&
                     cd.content.text.contains("pathSchema", ignoreCase = true)
             }

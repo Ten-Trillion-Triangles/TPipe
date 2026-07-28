@@ -2,6 +2,7 @@ package bedrockPipe
 
 import bedrockPipe.BedrockPipe
 import com.TTT.Enums.ProviderName
+import com.TTT.Pipe.Pipe
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -227,7 +228,7 @@ class DeepSeekV31Test {
         // Test that V3.1 gets 128k context window
         v31Pipe.truncateModuleContext()
         
-        val contextWindowSizeField = BedrockPipe::class.java.getDeclaredField("contextWindowSize")
+        val contextWindowSizeField = Pipe::class.java.getDeclaredField("contextWindowSize")
         contextWindowSizeField.isAccessible = true
         val v31ContextSize = contextWindowSizeField.get(v31Pipe) as Int
         
@@ -239,7 +240,7 @@ class DeepSeekV31Test {
         // Test that R1 preserves existing 126k context window
         r1Pipe.truncateModuleContext()
         
-        val contextWindowSizeField = BedrockPipe::class.java.getDeclaredField("contextWindowSize")
+        val contextWindowSizeField = Pipe::class.java.getDeclaredField("contextWindowSize")
         contextWindowSizeField.isAccessible = true
         val r1ContextSize = contextWindowSizeField.get(r1Pipe) as Int
         
@@ -257,7 +258,7 @@ class DeepSeekV31Test {
         assertTrue(shouldEnableMethod.invoke(v31Pipe, "deepseek.v3-v1:0") as Boolean)
         
         // V3.1 with reasoning disabled should return false (set field directly)
-        val useModelReasoningField = BedrockPipe::class.java.getDeclaredField("useModelReasoning")
+        val useModelReasoningField = Pipe::class.java.getDeclaredField("useModelReasoning")
         useModelReasoningField.isAccessible = true
         useModelReasoningField.set(v31Pipe, false)
         assertFalse(shouldEnableMethod.invoke(v31Pipe, "deepseek.v3-v1:0") as Boolean)
