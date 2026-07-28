@@ -4742,14 +4742,55 @@ put("system", if(enableCaching && cacheControl != null) {
         var overflowDetected = false
         val usageMetadata = mutableMapOf<String, Any>()
 
+        // Per-block tracking for streaming tool-call capture.
+        // ConverseStream may contain several content blocks per message — we want
+        // to capture each tool-use block with its full input (which is delivered
+        // across multiple ContentBlockDelta events as JSON fragments).
+        //
+        // Block index from the wire event drives all of these maps, so a stream
+        // that reorders blocks or interleaves text + tool-use blocks is still
+        // reassembled correctly.
+        val perBlockToolUseIds = mutableMapOf<Int, String>()                // blockIndex -> toolUseId
+        val perBlockToolUseNames = mutableMapOf<Int, String>()               // blockIndex -> tool name
+        val perBlockStopReasons = mutableMapOf<Int, String>()                // blockIndex -> stop reason (Task 7; reserved for future use)
+        var currentBlockIndex = 0
+        val toolUseAccumulator = mutableMapOf<Int, StringBuilder>()          // blockIndex -> accumulated input JSON
+        val collectedToolUse = mutableListOf<aws.sdk.kotlin.services.bedrockruntime.model.ToolUseBlock>()
+
         return try {
             // Execute the streaming Converse API call
             val finalText = client.converseStream(request.toStreamRequest()) { response ->
                 // Process the streaming response events
                 response.stream?.collect { event ->
-                    
-                    // Handle content block deltas (text and reasoning chunks)
+
+                    // NEW: MessageStart — first block of the assistant message.
+                    // We don't currently track anything here beyond acknowledging
+                    // it for future tracing; included so the streaming contract
+                    // is fully covered.
+                    event.asMessageStartOrNull()?.let {
+                        // no-op for now
+                    }
+
+                    // NEW: ContentBlockStart — capture toolUseId + name per block.
+                    // Sets perBlockToolUseIds[blockIndex] + perBlockToolUseNames[blockIndex]
+                    // when the start event announces a tool-use block. Text blocks
+                    // also produce a start event with start = null; the let-chain
+                    // on asToolUseOrNull() handles that cleanly.
+                    event.asContentBlockStartOrNull()?.let { startEvent ->
+                        currentBlockIndex = startEvent.contentBlockIndex
+                        startEvent.start?.asToolUseOrNull()?.let { toolStart ->
+                            perBlockToolUseIds[currentBlockIndex] = toolStart.toolUseId
+                            perBlockToolUseNames[currentBlockIndex] = toolStart.name
+                            // Pre-create the accumulator so the first delta appends
+                            // to an empty builder rather than never appending if a
+                            // zero-fragment tool-use happens (rare but well-defined).
+                            toolUseAccumulator.getOrPut(currentBlockIndex) { StringBuilder() }
+                        }
+                    }
+
+                    // Handle content block deltas (text, reasoning, AND tool-use input chunks)
                     event.asContentBlockDeltaOrNull()?.let { deltaEvent ->
+                        val blockIndex = deltaEvent.contentBlockIndex
                         // Extract text deltas and emit to callback
                         deltaEvent.delta?.asTextOrNull()?.let { deltaText ->
                             textBuilder.append(deltaText)
@@ -4762,6 +4803,45 @@ put("system", if(enableCaching && cacheControl != null) {
                             {
                                 emitStreamingChunk(reasoningDelta)
                             }
+                        }
+                        // NEW: ToolUse delta — accumulate input JSON fragments.
+                        // ConverseStream splits tool-use input across many delta events;
+                        // we reassemble per blockIndex and finalize at ContentBlockStop.
+                        deltaEvent.delta?.asToolUseOrNull()?.let { toolDelta ->
+                            val acc = toolUseAccumulator.getOrPut(blockIndex) { StringBuilder() }
+                            acc.append(toolDelta.input)
+                        }
+                    }
+
+                    // NEW: ContentBlockStop — finalize per-block tool-use captures
+                    // and capture per-block stop reason (the message-level stop
+                    // reason is captured at MessageStop below).
+                    event.asContentBlockStopOrNull()?.let { stopEvent ->
+                        val blockIndex = stopEvent.contentBlockIndex
+                        perBlockToolUseIds[blockIndex]?.let { toolId ->
+                            // The name and input JSON fragments were captured above;
+                            // assemble the closed ToolUseBlock and record it.
+                            val toolName = perBlockToolUseNames[blockIndex] ?: ""
+                            val inputJson = toolUseAccumulator[blockIndex]?.toString() ?: ""
+                            collectedToolUse.add(
+                                aws.sdk.kotlin.services.bedrockruntime.model.ToolUseBlock {
+                                    this.toolUseId = toolId
+                                    this.name = toolName
+                                    // Bedrock's ToolUseBlock.input is a Document.
+                                    // For raw string JSON input, wrap in a String Document.
+                                    this.input = if(inputJson.isNotEmpty())
+                                    {
+                                        aws.smithy.kotlin.runtime.content.Document(inputJson)
+                                    }
+                                    else
+                                    {
+                                        null
+                                    }
+                                }
+                            )
+                            // Per-block stop reason (informational; MessageStop is the source of truth).
+                            // Reserved for future use when Bedrock emits per-block reasons.
+                            perBlockStopReasons[blockIndex] = "tool_use_block_closed"
                         }
                     }
 
@@ -4786,6 +4866,18 @@ put("system", if(enableCaching && cacheControl != null) {
                 // Return the accumulated text
                 textBuilder.toString()
             }
+
+            // NEW: Populate BedrockCallMetadata with per-call wire-level details.
+            // This must come AFTER `finalText` so we have everything from the stream.
+            // The ToolUseBlock list, cache tokens, and stop reason survive the call;
+            // a subsequent call will overwrite them (same race semantics as
+            // lastConverseResponse).
+            lastCallMetadata = BedrockCallMetadata(
+                toolUse = collectedToolUse.toList(),
+                cacheReadInputTokens = (usageMetadata["cacheReadInputTokens"] as? Long),
+                cacheWriteInputTokens = (usageMetadata["cacheWriteInputTokens"] as? Long),
+                stopReason = stopReason.ifEmpty { null }
+            )
 
             // Build comprehensive metadata for tracing
             val metadata = mutableMapOf<String, Any>(
@@ -4859,6 +4951,70 @@ put("system", if(enableCaching && cacheControl != null) {
                   error = e,
                   metadata = mapOf("apiType" to apiLabel, "modelId" to modelId, "streaming" to true))
             null
+        }
+    }
+
+    /**
+     * Test seam for [executeConverseStream]. Identical behavior to the protected version
+     * but takes the [client] as a parameter so same-package tests can inject a fake.
+     *
+     * The seam accepts a [ConverseStreamRequest] rather than a [ConverseRequest] to mirror
+     * the surface that production code paths build. Internally it reverses the
+     * `ConverseRequest.toStreamRequest()` mapping via the private
+     * [toConverseRequestForTest] extension before delegating to the protected
+     * [executeConverseStream].
+     *
+     * @param client The BedrockRuntimeClient to use (production passes `bedrockClient`;
+     *               tests pass a fake).
+     * @param modelId The model ID to attribute this call to (used in trace metadata).
+     * @param request The full streaming request, including `modelId`, `messages`,
+     *                and optional `toolConfig` / `guardrailConfig` / `performanceConfig` /
+     *                `promptVariables` / `requestMetadata`.
+     * @param apiLabel Trace label (e.g. "ConverseStream").
+     * @return The aggregated [MultimodalContent] from the call, or null on failure /
+     *         overflow without `allowMaxTokenOverflow`. Per-call wire details land in
+     *         [getLastCallMetadata].
+     */
+    internal suspend fun executeConverseStreamForTest(
+        client: BedrockRuntimeClient,
+        modelId: String,
+        request: ConverseStreamRequest,
+        apiLabel: String
+    ): MultimodalContent? = executeConverseStream(
+        client,
+        modelId,
+        request.toConverseRequestForTest(),
+        apiLabel
+    )
+
+    /**
+     * Test seam for [toStreamRequest]. Reverses the `ConverseRequest.toStreamRequest()`
+     * mapping so [executeConverseStreamForTest] can pass a fully-configured
+     * [ConverseStreamRequest] through to the protected [executeConverseStream].
+     *
+     * Copy direction matches `toStreamRequest()` field-by-field. GuardrailConfig is
+     * rebuilt from the stream variant.
+     */
+    private fun ConverseStreamRequest.toConverseRequestForTest(): ConverseRequest
+    {
+        return ConverseRequest {
+            this.modelId = this@toConverseRequestForTest.modelId
+            this.messages = this@toConverseRequestForTest.messages
+            this.inferenceConfig = this@toConverseRequestForTest.inferenceConfig
+            this.system = this@toConverseRequestForTest.system
+            this.additionalModelRequestFields = this@toConverseRequestForTest.additionalModelRequestFields
+            this.additionalModelResponseFieldPaths = this@toConverseRequestForTest.additionalModelResponseFieldPaths
+            this.performanceConfig = this@toConverseRequestForTest.performanceConfig
+            this.promptVariables = this@toConverseRequestForTest.promptVariables
+            this.requestMetadata = this@toConverseRequestForTest.requestMetadata
+            this.toolConfig = this@toConverseRequestForTest.toolConfig
+            this@toConverseRequestForTest.guardrailConfig?.let { gc ->
+                this.guardrailConfig = aws.sdk.kotlin.services.bedrockruntime.model.GuardrailConfiguration {
+                    guardrailIdentifier = gc.guardrailIdentifier
+                    guardrailVersion = gc.guardrailVersion
+                    trace = gc.trace
+                }
+            }
         }
     }
 
