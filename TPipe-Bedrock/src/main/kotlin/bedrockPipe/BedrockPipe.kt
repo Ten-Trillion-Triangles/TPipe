@@ -4901,9 +4901,21 @@ put("system", if(enableCaching && cacheControl != null) {
                             // Reserved for future use when Bedrock emits per-block reasons.
                             perBlockStopReasons[blockIndex] = "tool_use_block_closed"
                         }
-                    }
 
-                    // Handle message stop events to capture stop reason
+                        // Finalize citations for this block. The accumulator holds
+                        // (title, source, location, accumulatedText).
+                        perBlockCitationAcc.remove(stopEvent.contentBlockIndex)?.let { acc ->
+                            val citation = aws.sdk.kotlin.services.bedrockruntime.model.Citation {
+                                this.title = acc.title ?: ""
+                                this.source = acc.source ?: ""
+                                this.location = acc.location
+                                this.sourceContent = listOf(
+                                    aws.sdk.kotlin.services.bedrockruntime.model.CitationSourceContent.Text(acc.textBuilder.toString())
+                                )
+                            }
+                            collectedCitations.add(citation)
+                        }
+                    }
                     event.asMessageStopOrNull()?.let { stopEvent ->
                         stopEvent.stopReason?.value?.let {
                             stopReason = it
