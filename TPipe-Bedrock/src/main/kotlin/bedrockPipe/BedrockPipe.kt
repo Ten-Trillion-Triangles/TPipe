@@ -4811,6 +4811,30 @@ put("system", if(enableCaching && cacheControl != null) {
                             val acc = toolUseAccumulator.getOrPut(blockIndex) { StringBuilder() }
                             acc.append(toolDelta.input)
                         }
+                        // Task 8: Citation delta — capture citation fragments into
+                        // usageMetadata["citations"] as a List<String> for the trace.
+                        //
+                        // The canonical SDK extension is `asCitationOrNull()` returning
+                        // `CitationsDelta` (verified via javap on bedrockruntime-jvm-1.6.107.jar —
+                        // the plan's `asCitationsContentOrNull()` was incorrect). Each
+                        // CitationsDelta carries per-fragment location/title/source/raw text
+                        // fields; the FULL Citation reassembly from streaming fragments is
+                        // deferred to a follow-up — for now we just collect the wire-level
+                        // title + source so traces show that citations were streamed in.
+                        //
+                        // KNOWN LIMITATION: BedrockCallMetadata.citations (the typed List<Citation>
+                        // field) is populated ONLY from the non-streaming path (Task 9). Streaming
+                        // citation reassembly across multiple fragmented deltas into typed
+                        // Citation objects is intentionally out of scope for Task 8.
+                        deltaEvent.delta?.asCitationOrNull()?.let { citationsDelta ->
+                            val citationsList = usageMetadata.getOrPut("citations") {
+                                mutableListOf<String>()
+                            } as MutableList<String>
+                            val title = citationsDelta.title
+                            val source = citationsDelta.source
+                            val text = citationsDelta.sourceContent?.joinToString("") { it.text ?: "" }
+                            citationsList.add("title=$title;source=$source;text=$text")
+                        }
                     }
 
                     // NEW: ContentBlockStop — finalize per-block tool-use captures
@@ -4853,13 +4877,27 @@ put("system", if(enableCaching && cacheControl != null) {
                         }
                     }
 
-                    // Handle metadata events for token usage tracking
-                    event.asMetadataOrNull()?.usage?.let { usage ->
-                        usageMetadata["inputTokens"] = usage.inputTokens
-                        usageMetadata["outputTokens"] = usage.outputTokens
-                        usageMetadata["totalTokens"] = usage.totalTokens
-                        usage.cacheReadInputTokens?.let { usageMetadata["cacheReadInputTokens"] = it }
-                        usage.cacheWriteInputTokens?.let { usageMetadata["cacheWriteInputTokens"] = it }
+                    // Handle metadata events for token usage tracking AND wire-level latency.
+                    // Task 8 adds latency capture from `metrics.latencyMs` (ConverseStreamMetrics
+                    // was introduced in 1.5.x and exposes `getLatencyMs()` — a primitive `Long`,
+                    // so we cannot use Kotlin nullability to detect absence; instead the SDK
+                    // returns null for `getMetrics()` itself when no metrics block was sent).
+                    event.asMetadataOrNull()?.let { metaEvent ->
+                        metaEvent.usage?.let { usage ->
+                            usageMetadata["inputTokens"] = usage.inputTokens
+                            usageMetadata["outputTokens"] = usage.outputTokens
+                            usageMetadata["totalTokens"] = usage.totalTokens
+                            usage.cacheReadInputTokens?.let { usageMetadata["cacheReadInputTokens"] = it }
+                            usage.cacheWriteInputTokens?.let { usageMetadata["cacheWriteInputTokens"] = it }
+                        }
+                        // Task 8: capture per-call latency from ConverseStreamMetrics.
+                        // Bedrock always populates this for streaming Converse (it's the
+                        // server-side measurement) — surfacing it as `latencyMs` in
+                        // usageMetadata flows the value through to the trace and into
+                        // `BedrockCallMetadata.latencyMs` below.
+                        metaEvent.metrics?.latencyMs?.let { latency ->
+                            usageMetadata["latencyMs"] = latency
+                        }
                     }
                 }
 
@@ -4874,8 +4912,15 @@ put("system", if(enableCaching && cacheControl != null) {
             // lastConverseResponse).
             lastCallMetadata = BedrockCallMetadata(
                 toolUse = collectedToolUse.toList(),
+                // Streaming citations arrive as fragments that need reassembly
+                // into typed Citation objects — out of scope for Task 8. Populated
+                // from the typed `ConverseResponse.output.content` path in Task 9.
+                citations = emptyList(),
                 cacheReadInputTokens = (usageMetadata["cacheReadInputTokens"] as? Long),
                 cacheWriteInputTokens = (usageMetadata["cacheWriteInputTokens"] as? Long),
+                // Task 8: surface server-side per-call latency from
+                // ConverseStreamMetrics.latencyMs into BedrockCallMetadata.latencyMs.
+                latencyMs = (usageMetadata["latencyMs"] as? Long),
                 stopReason = stopReason.ifEmpty { null }
             )
 
