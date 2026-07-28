@@ -128,6 +128,33 @@ open class BedrockPipe : Pipe()
     private var lastConverseResponse: aws.sdk.kotlin.services.bedrockruntime.model.ConverseResponse? = null
 
     /**
+     * Per-call metadata harvested from the most recent Bedrock response. Populated
+     * by [generateContent] and the streaming variants. Cleared at the start of each
+     * call. Use [getLastCallMetadata] to read it after a call returns.
+     *
+     * NOT serialized in toPipeSettings — it's a per-call observation, not a configuration.
+     * NOT thread-safe — concurrent calls on a shared pipe will race this field, same
+     * race that exists for [lastConverseResponse].
+     */
+    @kotlinx.serialization.Transient
+    private var lastCallMetadata: BedrockCallMetadata? = null
+
+    /**
+     * @return Per-call metadata from the most recent Bedrock response, or null if no
+     *         call has been made yet on this pipe instance.
+     */
+    fun getLastCallMetadata(): BedrockCallMetadata? = lastCallMetadata
+
+    /**
+     * Clears the cached per-call metadata. Returns the pipe for chaining.
+     */
+    fun clearLastCallMetadata(): BedrockPipe
+    {
+        lastCallMetadata = null
+        return this
+    }
+
+    /**
      * Canonical model identifier that the user asked for before inference profiles/ARN binding.
      * Used to keep the per-family builders and extractors aligned with the requested model.
      */
