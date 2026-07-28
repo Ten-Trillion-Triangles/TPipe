@@ -4847,29 +4847,27 @@ put("system", if(enableCaching && cacheControl != null) {
                             val acc = toolUseAccumulator.getOrPut(blockIndex) { StringBuilder() }
                             acc.append(toolDelta.input)
                         }
-                        // Task 8: Citation delta — capture citation fragments into
-                        // usageMetadata["citations"] as a List<String> for the trace.
+                        // Citation delta — accumulate per-block for reassembly.
                         //
-                        // The canonical SDK extension is `asCitationOrNull()` returning
-                        // `CitationsDelta` (verified via javap on bedrockruntime-jvm-1.6.107.jar —
-                        // the plan's `asCitationsContentOrNull()` was incorrect). Each
-                        // CitationsDelta carries per-fragment location/title/source/raw text
-                        // fields; the FULL Citation reassembly from streaming fragments is
-                        // deferred to a follow-up — for now we just collect the wire-level
-                        // title + source so traces show that citations were streamed in.
+                        // AWS streaming pattern (verified via AWS docs):
+                        // "CitationsDelta contains incremental updates to citation
+                        // information during streaming responses. This allows
+                        // clients to build up citation data progressively as the
+                        // response is generated." — so multiple CitationsDelta
+                        // events within a single content block are fragments of
+                        // ONE citation (same metadata, accumulating text).
                         //
-                        // KNOWN LIMITATION: BedrockCallMetadata.citations (the typed List<Citation>
-                        // field) is populated ONLY from the non-streaming path (Task 9). Streaming
-                        // citation reassembly across multiple fragmented deltas into typed
-                        // Citation objects is intentionally out of scope for Task 8.
+                        // Reassembly key: (title, source, location). All three are
+                        // optional per AWS docs; last non-null value wins.
                         deltaEvent.delta?.asCitationOrNull()?.let { citationsDelta ->
-                            val citationsList = usageMetadata.getOrPut("citations") {
-                                mutableListOf<String>()
-                            } as MutableList<String>
-                            val title = citationsDelta.title
-                            val source = citationsDelta.source
-                            val text = citationsDelta.sourceContent?.joinToString("") { it.text ?: "" }
-                            citationsList.add("title=$title;source=$source;text=$text")
+                            val blockIndex = deltaEvent.contentBlockIndex ?: 0
+                            val acc = perBlockCitationAcc.getOrPut(blockIndex) { BlockCitationAcc() }
+                            citationsDelta.title?.let { acc.title = it }
+                            citationsDelta.source?.let { acc.source = it }
+                            citationsDelta.location?.let { acc.location = it }
+                            citationsDelta.sourceContent?.forEach { fragment ->
+                                fragment.text?.let { acc.textBuilder.append(it) }
+                            }
                         }
                     }
 
