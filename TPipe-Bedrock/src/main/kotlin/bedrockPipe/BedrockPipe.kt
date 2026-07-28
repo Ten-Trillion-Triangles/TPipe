@@ -4958,10 +4958,7 @@ put("system", if(enableCaching && cacheControl != null) {
             // lastConverseResponse).
             lastCallMetadata = BedrockCallMetadata(
                 toolUse = collectedToolUse.toList(),
-                // Streaming citations arrive as fragments that need reassembly
-                // into typed Citation objects — out of scope for Task 8. Populated
-                // from the typed `ConverseResponse.output.content` path in Task 9.
-                citations = emptyList(),
+                citations = collectedCitations,
                 cacheReadInputTokens = (usageMetadata["cacheReadInputTokens"] as? Long),
                 cacheWriteInputTokens = (usageMetadata["cacheWriteInputTokens"] as? Long),
                 // Task 8: surface server-side per-call latency from
