@@ -138,9 +138,28 @@ open class BedrockPipe : Pipe()
      * NOT serialized in toPipeSettings — it's a per-call observation, not a configuration.
      * NOT thread-safe — concurrent calls on a shared pipe will race this field, same
      * race that exists for [lastConverseResponse].
+     *
+     * Visibility: the field stays private. Subclass write access (e.g.
+     * [BedrockMultimodalPipe] populating it from its non-streaming harvester) goes
+     * through [updateLastCallMetadata]. This avoids the platform-declaration clash
+     * between a property's synthetic getter and the explicit [getLastCallMetadata]
+     * accessor below.
      */
     @kotlinx.serialization.Transient
     private var lastCallMetadata: BedrockCallMetadata? = null
+
+    /**
+     * Sets [lastCallMetadata] from a subclass context. Visible to subclasses so they
+     * can populate per-call metadata from their own non-streaming harvesters (Task 9).
+     *
+     * NOT intended to be called from outside the inheritance chain; the public
+     * surface for clearing is [clearLastCallMetadata] and the public read accessor
+     * is [getLastCallMetadata].
+     */
+    protected fun updateLastCallMetadata(metadata: BedrockCallMetadata?)
+    {
+        this.lastCallMetadata = metadata
+    }
 
     /**
      * @return Per-call metadata from the most recent Bedrock response, or null if no

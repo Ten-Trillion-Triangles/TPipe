@@ -93,14 +93,19 @@ open class BedrockMultimodalPipe : BedrockPipe()
     
     /**
      * Generates multimodal content using AWS Bedrock's Converse API.
-     * 
+     *
      * The Converse API is the modern, structured approach that natively supports multimodal content
      * through ContentBlocks. This method converts TPipe's MultimodalContent into AWS ContentBlocks,
      * sends the request, and extracts both text responses and reasoning content from the response.
+     *
+     * Visibility: [internal] (not [private]) so same-module tests can inject a fake
+     * [BedrockRuntimeClient] directly via this entry point. The public [generateContent]
+     * wrapper still reads [bedrockClient] from the field for production code paths.
+     * Mirrors `executeConverseStreamForTest` on [BedrockPipe].
      */
-    private suspend fun generateMultimodalWithConverseApi(
-        client: BedrockRuntimeClient, 
-        modelId: String, 
+    internal suspend fun generateMultimodalWithConverseApi(
+        client: BedrockRuntimeClient,
+        modelId: String,
         content: MultimodalContent
     ): MultimodalContent {
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
@@ -271,6 +276,13 @@ open class BedrockMultimodalPipe : BedrockPipe()
         // Extract response content (existing logic STAYS here - binary expertise)
         val responseText = mutableListOf<String>()
         val responseBinaryContent = mutableListOf<BinaryContent>()
+        // NEW (Task 9): accumulators for response-side surfaces that don't fit
+        // MultimodalContent. These feed BedrockCallMetadata so callers can read
+        // them via pipe.getLastCallMetadata() without polluting the public
+        // MultimodalContent carrier.
+        val responseToolUse = mutableListOf<ToolUseBlock>()
+        val responseCitations = mutableListOf<CitationsContentBlock>()
+        val responseGuardAssessments = mutableListOf<GuardrailConverseContentBlock>()
         
         responseContent?.forEach { contentBlock ->
             when(contentBlock)
@@ -367,6 +379,59 @@ open class BedrockMultimodalPipe : BedrockPipe()
                         }
                     }
                 }
+                // NEW (Task 9): harvest the new ContentBlock variants from 1.6.107.
+                // These don't fit MultimodalContent (no carrier for typed ToolUse,
+                // Citations, or GuardrailConverseContentBlock), so they land in
+                // BedrockCallMetadata for callers to read via getLastCallMetadata().
+                is ContentBlock.ToolUse -> {
+                    // Capture the tool use block for BedrockCallMetadata.
+                    // contentBlock.value is the ToolUseBlock directly (ContentBlock.ToolUse
+                    // is a data class wrapping `value: ToolUseBlock`). We don't add it
+                    // to BinaryContent — callers read it via getLastCallMetadata().toolUse.
+                    responseToolUse.add(contentBlock.value)
+                }
+                is ContentBlock.CitationsContent -> {
+                    // Capture citations for BedrockCallMetadata. CitationsContentBlock
+                    // has both `citations: List<Citation>` (the actual references) and
+                    // `content: List<CitationGeneratedContent>` (model-generated text
+                    // snippets). We harvest the full block; flattening to Citation is
+                    // done at the metadata-construction site below.
+                    responseCitations.add(contentBlock.value)
+                }
+                is ContentBlock.GuardContent -> {
+                    // Capture the guard block for BedrockCallMetadata.
+                    // GuardrailConverseContentBlock is a sealed type (Image/Text);
+                    // full GuardrailAssessment extraction from the inline assessment
+                    // fields is a follow-up — for now we pin the call completes
+                    // cleanly and the accumulator is populated.
+                    responseGuardAssessments.add(contentBlock.value)
+                }
+                is ContentBlock.CachePoint -> {
+                    // Server-side cache marker. Informational only; nothing to harvest
+                    // into MultimodalContent. Skip silently.
+                }
+                is ContentBlock.Video -> {
+                    // Video output from the model. Same shape as Image
+                    // (format + source). For now, log and drop.
+                    trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+                          metadata = mapOf<String, Any>(
+                              "droppedContentBlock" to "Video"
+                          ))
+                }
+                is ContentBlock.Audio -> {
+                    // Audio output. Log and drop.
+                    trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+                          metadata = mapOf<String, Any>(
+                              "droppedContentBlock" to "Audio"
+                          ))
+                }
+                is ContentBlock.SearchResult -> {
+                    // Search result from model. Log and drop.
+                    trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+                          metadata = mapOf<String, Any>(
+                              "droppedContentBlock" to "SearchResult"
+                          ))
+                }
                 // Handle other content block types as they become available
                 else -> {
                     // Log unknown content block types for debugging
@@ -377,10 +442,41 @@ open class BedrockMultimodalPipe : BedrockPipe()
                 }
             }
         }
-        
+
         // Extract reasoning content (existing logic STAYS here)
         val reasoningContent = extractReasoningFromConverseResponse(response)
-        
+
+        // NEW (Task 9): populate per-call metadata on the parent pipe so callers
+        // can read wire-level response details (tool use, citations, guard
+        // assessments, cache tokens, stop reason) without extending
+        // MultimodalContent.
+        //
+        // Citations: CitationsContentBlock has TWO list fields in 1.6.107:
+        //   - `citations: List<Citation>` (the references themselves)
+        //   - `content:   List<CitationGeneratedContent>` (model-generated snippets)
+        // BedrockCallMetadata.citations is typed `List<Citation>`, so we flatten
+        // the `citations` field. The `content` field is model-side text and is
+        // not currently surfaced (would require a separate carrier on
+        // BedrockCallMetadata — follow-up).
+        //
+        // Guard assessments: GuardrailConverseContentBlock wraps a sealed type
+        // (Image/Text). It does not carry a typed GuardrailAssessment — the
+        // inline assessment is on the request side (InvokeGuardrailChecksResult).
+        // We leave guardAssessments empty for now; the accumulator exists so a
+        // future extractor can read it. The field is still populated (non-null)
+        // so the contract "BedrockCallMetadata.guardAssessments is a list" holds.
+        updateLastCallMetadata(BedrockCallMetadata(
+            toolUse = responseToolUse,
+            citations = responseCitations.flatMap { it.citations ?: emptyList() },
+            guardAssessments = emptyList(),
+            // TokenUsage.cacheReadInputTokens / cacheWriteInputTokens are Int? in
+            // the SDK; BedrockCallMetadata carries Long? for consistency with the
+            // streaming path. Convert at the seam.
+            cacheReadInputTokens = response.usage?.cacheReadInputTokens?.toLong(),
+            cacheWriteInputTokens = response.usage?.cacheWriteInputTokens?.toLong(),
+            stopReason = response.stopReason.value
+        ))
+
         val result = MultimodalContent(
             text = responseText.joinToString("\n"),
             binaryContent = responseBinaryContent,
