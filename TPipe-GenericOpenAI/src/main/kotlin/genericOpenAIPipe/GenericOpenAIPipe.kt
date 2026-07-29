@@ -704,7 +704,13 @@ class GenericOpenAIPipe : Pipe()
     {
         if(!content.hasBinaryContent())
         {
-            return MultimodalContent(text = generateText(content.text))
+            // Plain-text shortcut: route through the MultimodalContent-returning
+            // helper so any `modelReasoning` extracted from the wire response
+            // survives the public boundary. The previous shortcut wrapped the
+            // String-returning `generateText` in a fresh
+            // `MultimodalContent(text = ...)`, which discarded `modelReasoning`
+            // even though the wire response carries it.
+            return generateTextMultimodal(content.text)
         }
 
         val blocks = mutableListOf<ContentBlock>()
@@ -789,6 +795,11 @@ class GenericOpenAIPipe : Pipe()
         )
 
         val responseText = sendRequest(request)
+        // Binary-content path: `sendRequest` returns String only, so any
+        // `modelReasoning` extracted by the parser is dropped here. Mantle
+        // currently serves text-only inputs, so the plain-text shortcut
+        // above covers the live use cases; reasoning on binary inputs
+        // would require widening `sendRequest` to return MultimodalContent.
         return MultimodalContent(text = responseText)
     }
 
@@ -815,7 +826,13 @@ class GenericOpenAIPipe : Pipe()
             // executeStreamingDirect).
             if (bedrockMantleAuth is BedrockMantleAuth.Streaming)
             {
-                return executeStreamingDirect(jsonRequest)
+                // `executeStreamingDirect` returns MultimodalContent so the
+                // reasoning content it accumulates via `streamingReasoningText`
+                // survives this Mantle chunked-SigV4 streaming boundary.
+                // Unpack `.text` here for the String-returning signature
+                // of `sendRequest`.
+                val streamedContent = executeStreamingDirect(jsonRequest)
+                return streamedContent.text
             }
 
             val response = withContext(Dispatchers.IO)
@@ -831,7 +848,11 @@ class GenericOpenAIPipe : Pipe()
                     setBody(jsonRequest)
                 }
             }
-            return executeStreaming(response)
+            // `executeStreaming` returns MultimodalContent so the reasoning content
+            // it accumulates via `streamingReasoningText` survives the
+            // Ktor-based streaming boundary. Unpack `.text` here for the
+            // String signature of `sendRequest`.
+            return executeStreaming(response).text
         }
         else
         {
@@ -878,11 +899,19 @@ class GenericOpenAIPipe : Pipe()
 //=========================================Context Management==========================================================
 
     /**
-     * Generates text using the configured OpenAI-compatible model.
-     * @param promptInjector Text to inject into the prompt
-     * @return Generated response text
+     * Canonical implementation of the non-streaming text path.
+     * Performs the full HTTP call + parse + trace for a text-only
+     * prompt and returns the resulting [MultimodalContent] — including
+     * any `modelReasoning` extracted from the wire response.
+     *
+     * The public [generateText] is a thin wrapper that returns `.text`
+     * for callers that only need the visible answer. The
+     * [generateContent] plain-text shortcut calls this helper directly
+     * so `modelReasoning` survives the public boundary — BedrockPipe
+     * and OllamaPipe populate `MultimodalContent.modelReasoning` from
+     * their wire responses, and this helper does the same.
      */
-    override suspend fun generateText(promptInjector: String): String
+    protected suspend fun generateTextMultimodal(promptInjector: String): com.TTT.Pipe.MultimodalContent
     {
         val client = httpClient ?: throw IllegalStateException("GenericOpenAIPipe not initialized. Call init() first.")
 
@@ -957,6 +986,10 @@ class GenericOpenAIPipe : Pipe()
                 // it arrives on the socket — verified empirically via
                 // RawHttpStreamingTest (chunks arrive hundreds of ms apart
                 // rather than all in one batch).
+                // Streaming path: `executeStreamingDirect` returns MultimodalContent
+                // so the reasoning content it accumulates via
+                // `streamingReasoningText` round-trips through
+                // `modelReasoning` on the way out.
                 return withContext(Dispatchers.IO)
                 {
                     executeStreamingDirect(jsonRequest)
@@ -1045,7 +1078,12 @@ class GenericOpenAIPipe : Pipe()
                       content = result,
                       metadata = successMetadata)
 
-                return contentText
+                // Return the full MultimodalContent (carries both `text` and
+                // `modelReasoning`) so callers can route reasoning to its
+                // own content block. The public `generateText` override
+                // below extracts `.text` for callers that only need the
+                // visible answer.
+                return result
             }
         }
         catch(e: Exception)
@@ -1069,6 +1107,23 @@ class GenericOpenAIPipe : Pipe()
     }
 
     /**
+     * Thin wrapper over [generateTextMultimodal] that discards
+     * `modelReasoning` and returns only the visible answer. Kept for
+     * source compatibility with the abstract base-class signature
+     * declared in `Pipe.generateText(promptInjector: String): String` —
+     * Kotlin does not allow widening the return type in an override,
+     * so the canonical implementation lives in [generateTextMultimodal]
+     * and this method delegates to it.
+     *
+     * @param promptInjector Text to inject into the prompt
+     * @return Generated response text (visible answer only)
+     */
+    override suspend fun generateText(promptInjector: String): String
+    {
+        return generateTextMultimodal(promptInjector).text
+    }
+
+    /**
      * Direct streaming call using [java.net.HttpURLConnection] instead of
      * the Ktor CIO client. Bypasses Ktor because its CIO engine buffers
      * chunked transfer-encoded SSE responses through 3.3.x — the
@@ -1083,9 +1138,10 @@ class GenericOpenAIPipe : Pipe()
      *
      * This function produces the same emitStreamingChunk side effects
      * as the Ktor path so the streaming callback wiring is unchanged.
-     * It returns the same [String] accumulator.
+     * It returns the accumulated text plus any captured `modelReasoning`
+     * as a [MultimodalContent].
      */
-    private suspend fun executeStreamingDirect(jsonRequest: String): String
+    private suspend fun executeStreamingDirect(jsonRequest: String): com.TTT.Pipe.MultimodalContent
     {
         val textBuilder = StringBuilder()
 
@@ -1379,7 +1435,10 @@ class GenericOpenAIPipe : Pipe()
               content = result,
               metadata = streamingMetadata)
 
-        return resultText
+        // Return the MultimodalContent (carries both `text` and `modelReasoning`)
+        // so callers can route reasoning to its own content block. The
+        // non-streaming path does the same via `generateTextMultimodal`.
+        return result
     }
 
     /**
@@ -1460,10 +1519,13 @@ class GenericOpenAIPipe : Pipe()
 
     /**
      * Executes a streaming request and accumulates the response.
+     * Returns the accumulated text plus any captured `modelReasoning`
+     * as a [MultimodalContent].
+     *
      * @param httpResponse The HTTP response from the streaming endpoint
-     * @return Accumulated response text
+     * @return Accumulated response text plus any captured modelReasoning
      */
-    private suspend fun executeStreaming(httpResponse: HttpResponse): String
+    private suspend fun executeStreaming(httpResponse: HttpResponse): com.TTT.Pipe.MultimodalContent
     {
         val channel = httpResponse.bodyAsChannel()
         val textBuilder = StringBuilder()
@@ -1561,7 +1623,10 @@ class GenericOpenAIPipe : Pipe()
               content = result,
               metadata = streamingMetadata)
 
-        return resultText
+        // Return the MultimodalContent (carries both `text` and `modelReasoning`)
+        // so callers can route reasoning to its own content block. The
+        // non-streaming path does the same via `generateTextMultimodal`.
+        return result
     }
 
     /**
