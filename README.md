@@ -147,6 +147,7 @@ Integration guides for different AI providers:
 
 #### AWS Bedrock
 - [Getting Started with TPipe-Bedrock](docs/bedrock/getting-started.md) - Setup, configuration, and first steps
+- [Bedrock Mantle Getting Started](docs/bedrock/mantle.md) - OpenAI-compatible Bedrock endpoint surface (Bearer / SigV4 / chunked-streaming)
 - [AWS Bedrock Inference Binding](docs/bedrock/inference-binding.md) - Cross-region model access and configuration
 - [AWS Bedrock Guardrails](docs/bedrock/guardrails.md) - Content safety and moderation with Guardrails
 
@@ -184,7 +185,8 @@ Complete API documentation for all TPipe components:
 - [Lorebook API](docs/api/lorebook.md) - Knowledge base management
 
 #### Provider Pipe APIs
-- [GenericOpenAI Pipe API](docs/api/generic-openai-pipe.md) - Generic OpenAI-compatible provider interface
+- [GenericOpenAI Pipe API](docs/api/generic-openai-pipe.md) - Generic OpenAI-compatible provider interface (OpenAI, Anthropic Messages, OpenAI Responses, Bedrock Mantle)
+- [Bedrock Mantle API](docs/api/bedrock-mantle.md) - `BedrockMantleConfiguration`, `BedrockMantleAuth` (Bearer / SigV4 / Streaming variants), `BedrockMantleEnv` env-var precedence
 - [Ollama Pipe API](docs/api/ollama-pipe.md) - Local Ollama model interface
 - [OpenRouter Pipe API](docs/api/openrouter-pipe.md) - OpenRouter unified API interface
 
@@ -227,7 +229,7 @@ println(result.text)
 - **Context access control** with ContextLock enforcement for secure lorebook and page management
 - **Developer-in-the-loop integration** with code and AI-powered validation
 - **Chain-of-thought reasoning** with multiple strategies and focus points
-- **Multi-provider AI support** (AWS Bedrock, Ollama, OpenRouter, extensible architecture)
+- **Multi-provider AI support** (AWS Bedrock, AWS Bedrock Mantle, Ollama, OpenRouter, extensible architecture)
 - **Kotlin and JavaScript scripting** in PCP alongside Python and native functions
 - **Comprehensive debugging** with detailed tracing and monitoring
 - **Remote trace dashboard** with TraceServer for centralized real-time trace viewing

@@ -5,6 +5,7 @@
 - [ApiMode](#apimode)
 - [Public Functions](#public-functions)
   - [Authentication & Endpoint](#authentication--endpoint)
+  - [Bedrock Mantle](#bedrock-mantle)
   - [API Mode](#api-mode)
   - [Inference Settings](#inference-settings)
   - [Function Calling](#function-calling)
@@ -101,6 +102,66 @@ Sets the base URL. Defaults to `https://api.openai.com/v1`. Must use HTTPS — p
 .setBaseUrl("https://api.anthropic.com")        // Anthropic
 .setBaseUrl("https://openai.myenterprise.com") // Third-party proxy
 ```
+
+---
+
+### Bedrock Mantle
+
+Amazon Bedrock Mantle is a regional Bedrock endpoint surface that exposes selected foundation models over an OpenAI-compatible HTTP wire format. The Mantle endpoint pattern is `https://bedrock-mantle.{region}.api.aws/openai/v1`. Mantle models are reached through `GenericOpenAIPipe`, not through `BedrockPipe` — Mantle does not speak the AWS Converse API.
+
+Three builders configure Mantle on a pipe. The first two set the endpoint, region, and API mode; the third overrides the authentication shape that the pipe resolves from environment variables.
+
+#### `setBedrockMantle(region: String, modelId: String): GenericOpenAIPipe`
+Wires the pipe to the Mantle endpoint at `https://bedrock-mantle.{region}.api.aws/openai/v1`, sets `apiMode` to `ApiMode.OpenAI`, and resolves authentication. `region` is the AWS region code (e.g. `us-east-2`); `modelId` is the Bedrock model identifier (e.g. `google.gemma-4-31b`).
+
+**Example — Bearer auth via env var:**
+```kotlin
+val pipe = GenericOpenAIPipe()
+    .setBedrockMantle(region = "us-east-2", modelId = "google.gemma-4-31b")
+    .setMaxTokens(64)
+    .init()
+```
+
+**Example — SigV4 auth via standard AWS env vars (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`):**
+```kotlin
+val pipe = GenericOpenAIPipe()
+    .setBedrockMantle(region = "us-east-2", modelId = "google.gemma-4-31b")
+    .init()
+// pipe automatically picks SigV4 from AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY
+```
+
+#### `setBedrockMantleWithResponses(region: String, modelId: String): GenericOpenAIPipe`
+Mirrors `setBedrockMantle` but selects `ApiMode.OpenAIResponses`. Requests dispatch to `${baseUrl}/responses` and the parser accepts both OpenAI's `response.reasoning_text.delta` and Mantle's shorter `response.reasoning.delta` SSE event names.
+
+**Example — Responses API with reasoning:**
+```kotlin
+val pipe = GenericOpenAIPipe()
+    .setBedrockMantleWithResponses(region = "us-east-2", modelId = "google.gemma-4-31b")
+    .setMaxTokens(8192)
+    .setReasoningConfig(ReasoningConfig(effort = "high"))
+    .init()
+```
+
+#### `setBedrockMantleAuth(auth: BedrockMantleAuth?): GenericOpenAIPipe`
+Replaces the Mantle authentication shape that the pipe resolves from `BedrockMantleEnv`. Pass `null` to clear any previously-set Mantle auth and fall back to the bearer/x-api-key defaults produced by the generic `getAuthHeaders` path. The `BedrockMantleAuth` sealed class has three variants:
+
+- `BedrockMantleAuth.Bearer(apiKey)` — Bearer token authentication using a Bedrock API key. Sends `Authorization: Bearer <apiKey>`.
+- `BedrockMantleAuth.SigV4(signer)` — AWS SigV4 for non-streaming requests.
+- `BedrockMantleAuth.Streaming(initialSigner, chunkedSigner, decodedContentLength)` — AWS SigV4 chunked-encoding for streaming requests.
+
+The pipe picks `Streaming` automatically when streaming is enabled and SigV4 credentials are resolvable; it picks `SigV4` for non-streaming when SigV4 credentials are resolvable; otherwise it falls back to `Bearer`. Explicit `setBedrockMantleAuth(...)` overrides the auto-resolution.
+
+**Example — explicit Bearer auth from a Bedrock API key:**
+```kotlin
+val pipe = GenericOpenAIPipe()
+    .setBedrockMantle(region = "us-east-2", modelId = "google.gemma-4-31b")
+    .setBedrockMantleAuth(BedrockMantleAuth.bearer(System.getenv("BEDROCK_MANTLE_API_KEY")))
+    .init()
+```
+
+> **IAM actions for SigV4:** the AWS service identifier is `bedrock-mantle`. Required actions are documented in the AWS Bedrock Mantle IAM reference; the typical minimum is `bedrock-mantle:CreateInference` plus the standard `Get*` / `List*` actions for the model you are calling. Bearer-key users authenticate through the Bedrock API key gateway and do not require IAM permissions on the caller.
+
+The full reference for `BedrockMantleAuth` (every sealed-class variant, every companion-object factory, the SigV4 streaming chunk wire format), `BedrockMantleConfiguration`, and `BedrockMantleEnv` (env-var precedence) lives in [`docs/api/bedrock-mantle.md`](bedrock-mantle.md). The provider-level getting-started — env-var resolution chain, model catalog, streaming and reasoning examples, error mapping — lives in [`docs/bedrock/mantle.md`](../bedrock/mantle.md).
 
 ---
 
@@ -520,6 +581,8 @@ fun main() = runBlocking {
 
 ## Next Steps
 
+- [Bedrock Mantle Getting Started](../bedrock/mantle.md) — Amazon Bedrock Mantle provider guide: endpoint, authentication (Bearer / SigV4 / chunked-streaming), reasoning, streaming, error conditions.
+- [Bedrock Mantle API Reference](./bedrock-mantle.md) — `BedrockMantleConfiguration`, `BedrockMantleAuth` (Bearer / SigV4 / Streaming variants), `BedrockMantleEnv` env-var precedence.
 - [Getting Started with GenericOpenAI](../generic-openai/getting-started.md) — Provider recipes, comparison with `OllamaPipe` / `OpenRouterPipe` / `BedrockPipe`, and a troubleshooting guide.
 - [Pipe Context Protocol](../advanced-concepts/pipe-context-protocol.md) — Attach PCP tools to a `GenericOpenAIPipe` for sandboxed multi-language tool execution.
 - [Pipe Class API](./pipe.md) — Core pipe abstraction and base-class builders (`setModel`, `setTemperature`, `setMaxTokens`, `setSystemPrompt`, `setStopSequences`, `setSeed`, `setUser`, `setLogitBias`, `setN`, `setRepetitionPenalty`, `setPresencePenalty`, `setContextWindowSize`, `setTokenBudget`).
