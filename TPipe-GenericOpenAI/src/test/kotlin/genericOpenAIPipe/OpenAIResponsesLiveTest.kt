@@ -1,12 +1,16 @@
 package genericOpenAIPipe
 
 import com.TTT.Pipeline.Pipeline
+import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TracingBuilder
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Debug.TraceFormat
 import genericOpenAIPipe.api.ApiMode
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 
@@ -21,6 +25,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
  * ```
  */
 @EnabledIfEnvironmentVariable(named = "MINIMAX_API_KEY", matches = ".+")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class OpenAIResponsesLiveTest
 {
 
@@ -35,6 +40,20 @@ class OpenAIResponsesLiveTest
         return key!!
     }
 
+    @BeforeAll
+    fun enableTracingForAllTests()
+    {
+        setupTraceDirectory(OpenAIResponsesLiveTest::class.java)
+        PipeTracer.enable()
+    }
+
+    @AfterAll
+    fun disableTracingForAllTests()
+    {
+        PipeTracer.getAllTraces().keys.forEach { PipeTracer.clearTrace(it) }
+        PipeTracer.disable()
+    }
+
 //=========================================Non-Streaming=========================================
 
     @Test
@@ -42,7 +61,7 @@ class OpenAIResponsesLiveTest
     {
         val traceConfig = TracingBuilder()
             .enabled()
-            .detailLevel(TraceDetailLevel.VERBOSE)
+            .detailLevel(TraceDetailLevel.DEBUG)
             .outputFormat(TraceFormat.CONSOLE)
             .build()
 
@@ -83,7 +102,7 @@ class OpenAIResponsesLiveTest
         val chunks = mutableListOf<String>()
         val traceConfig = TracingBuilder()
             .enabled()
-            .detailLevel(TraceDetailLevel.VERBOSE)
+            .detailLevel(TraceDetailLevel.DEBUG)
             .outputFormat(TraceFormat.CONSOLE)
             .build()
 
@@ -125,7 +144,7 @@ class OpenAIResponsesLiveTest
     {
         val traceConfig = TracingBuilder()
             .enabled()
-            .detailLevel(TraceDetailLevel.VERBOSE)
+            .detailLevel(TraceDetailLevel.DEBUG)
             .outputFormat(TraceFormat.CONSOLE)
             .build()
 
@@ -174,6 +193,7 @@ class OpenAIResponsesLiveTest
         pipe.setSystemPrompt("You always respond with exactly 3 words.")
         pipe.setMaxTokens(maxTokens)
         pipe.setTemperature(0.0)
+        pipe.enableTracing(traceConfig())
 
         val pipeline = Pipeline()
         pipeline.add(pipe)
@@ -199,6 +219,7 @@ class OpenAIResponsesLiveTest
         pipe.setMaxTokens(maxTokens)
         pipe.setTemperature(0.0)
         pipe.setResponseFormat("json_object")
+        pipe.enableTracing(traceConfig())
 
         val pipeline = Pipeline()
         pipeline.add(pipe)

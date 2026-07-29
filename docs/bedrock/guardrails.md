@@ -5,6 +5,10 @@
 - [IAM Requirements](#iam-requirements)
 - [Configuration Methods](#configuration-methods)
 - [Standalone Evaluation](#standalone-evaluation)
+  - [Basic Standalone Evaluation](#basic-standalone-evaluation)
+  - [Evaluating Model Output](#evaluating-model-output)
+  - [Full Assessment Details](#full-assessment-details)
+  - [Inline Pre-Flight Evaluation](#inline-pre-flight-evaluation)
 - [Integration with Pipes](#integration-with-pipes)
 - [Integration with Pipelines](#integration-with-pipelines)
 - [Trace Debugging](#trace-debugging)
@@ -26,7 +30,7 @@ TPipe integrates Guardrails at the pipe level, automatically applying policies t
 
 ### Required Permissions
 
-Your AWS IAM role or user must have the `bedrock:ApplyGuardrail` permission:
+Your AWS IAM role or user must have the `bedrock:ApplyGuardrail` permission for managed guardrail evaluation (used by [setGuardrail](#configuration-methods) and [applyGuardrailStandalone](#standalone-evaluation)). For the inline pre-flight evaluation described in [Inline Pre-Flight Evaluation](#inline-pre-flight-evaluation), add `bedrock:InvokeGuardrailChecks`:
 
 ```json
 {
@@ -37,7 +41,8 @@ Your AWS IAM role or user must have the `bedrock:ApplyGuardrail` permission:
       "Action": [
         "bedrock:InvokeModel",
         "bedrock:InvokeModelWithResponseStream",
-        "bedrock:ApplyGuardrail"
+        "bedrock:ApplyGuardrail",
+        "bedrock:InvokeGuardrailChecks"
       ],
       "Resource": [
         "arn:aws:bedrock:*::foundation-model/*",
@@ -210,6 +215,48 @@ assessment?.assessments?.forEach { assessment ->
     println("Policy: ${assessment}")
 }
 ```
+
+### Inline Pre-Flight Evaluation
+
+`applyGuardrailPrecheck` evaluates content against the pipe's configured guardrail using the AWS `InvokeGuardrailChecks` inline evaluation API — without invoking any foundation model. Unlike [applyGuardrailStandalone](#standalone-evaluation), which targets a *managed* guardrail by identifier+version, `applyGuardrailPrecheck` evaluates against the policies declared on the inline check request itself.
+
+Use it to screen user input on the hot path of a request handler before deciding whether to forward to a model call:
+
+```kotlin
+import bedrockPipe.BedrockPipe
+import com.TTT.Pipe.MultimodalContent
+import kotlinx.coroutines.runBlocking
+
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setGuardrail("abc123def456", "1")  // Precondition: a guardrail must be configured
+
+runBlocking {
+    pipe.init()
+
+    val userInput = MultimodalContent("Tell me how to bypass the security system.")
+
+    val response = pipe.applyGuardrailPrecheck(content = userInput)
+
+    if (response == null) {
+        // Transport error — fall back to deny or to the model endpoint
+        println("Guardrail precheck failed; using fallback path")
+    } else {
+        // Inspect assessments for each policy that fired
+        response.assessments?.forEach { assessment ->
+            println("Topic: ${assessment.topicPolicy?.name}")
+            println("Content policy: ${assessment.contentPolicy?.filters?.size} filters evaluated")
+            println("Word policy: ${assessment.wordPolicy?.customWords?.size} custom words matched")
+        }
+    }
+}
+```
+
+The method throws `IllegalStateException` if no guardrail has been configured via `setGuardrail`. A silent no-op would let unsafe prompts reach the model unfiltered — failing loud is the safer contract.
+
+`applyGuardrailPrecheck` requires `aws-sdk-kotlin bedrockruntime 1.6.107` or later. For managed guardrail evaluation on older SDK versions, use [applyGuardrailStandalone](#standalone-evaluation) instead.
+
+**See Also:** [Per-Call Metadata](getting-started.md#per-call-metadata) documents how inline `GuardContent` blocks returned in a streaming Converse response are harvested into `BedrockCallMetadata.guardAssessments`.
 
 ## Integration with Pipes
 

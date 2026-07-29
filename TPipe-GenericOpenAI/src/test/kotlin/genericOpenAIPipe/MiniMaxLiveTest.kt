@@ -1,9 +1,13 @@
 package genericOpenAIPipe
 
+import com.TTT.Debug.PipeTracer
 import com.TTT.Pipeline.Pipeline
 import genericOpenAIPipe.api.ApiMode
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -15,6 +19,7 @@ import kotlin.test.assertTrue
  *
  * Run with: MINIMAX_API_KEY=... ./gradlew :TPipe-GenericOpenAI:test --tests "*.MiniMaxLiveTest"
  */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MiniMaxLiveTest
 {
     companion object
@@ -23,6 +28,20 @@ class MiniMaxLiveTest
         private const val MINIMAX_MODEL = "MiniMax-M2.7"
         private const val TEST_PROMPT = "Say 'Hello from MiniMax' in exactly those words."
         private const val MAX_TOKENS = 256
+    }
+
+    @BeforeAll
+    fun enableTracingForAllTests()
+    {
+        setupTraceDirectory(MiniMaxLiveTest::class.java)
+        PipeTracer.enable()
+    }
+
+    @AfterAll
+    fun disableTracingForAllTests()
+    {
+        PipeTracer.getAllTraces().keys.forEach { PipeTracer.clearTrace(it) }
+        PipeTracer.disable()
     }
 
     @Test
@@ -39,6 +58,7 @@ class MiniMaxLiveTest
             .setModel(MINIMAX_MODEL)
             .setMaxTokens(MAX_TOKENS)
             .setTemperature(0.0)
+            .enableTracing(traceConfig())
 
         val pipeline = Pipeline()
         pipeline.add(pipe)

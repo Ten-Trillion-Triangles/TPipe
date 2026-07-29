@@ -235,6 +235,11 @@ println(result.text)
 - **Unified authentication** with AuthRegistry for automatic credential injection across remote services
 - **Cross-region inference** with automatic profile binding for AWS Bedrock
 - **Service tier optimization** for AWS Bedrock (Reserved, Priority, Standard, Flex)
+- **Performance configuration** for AWS Bedrock (`Optimized` vs `Standard` latency per call)
+- **Request metadata** flowing into AWS CloudTrail for cost attribution and tenant routing
+- **Server-side prompt template variables** for stable prompt-cache keys across requests
+- **Per-call metadata harvesting** from AWS Bedrock Converse (tool use, citations, guardrail assessments, cache tokens, latency, stop reason)
+- **Streaming reassembly** of AWS Bedrock tool-use blocks, citations, and guard content across `ContentBlockDelta` events
 - **Content safety with AWS Bedrock Guardrails** for automatic content moderation and policy enforcement
 - **Enhanced security** with DNS rebinding protection, AST-based Python validation, and UUID session IDs
 - **Merged PCP + JSON mode** for simultaneous structured output and tool calling in a single response
@@ -242,7 +247,7 @@ println(result.text)
 ## Requirements
 
 - **Java 24** or higher (GraalVM CE 24 recommended)
-- **Kotlin 2.2.20** or higher
+- **Kotlin 2.3** or higher
 - **Gradle** with Kotlin DSL
 
 ## Installation

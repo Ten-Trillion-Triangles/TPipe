@@ -11,6 +11,9 @@ import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import genericOpenAIPipe.env.*
 import genericOpenAIPipe.api.*
+import genericOpenAIPipe.mantle.BedrockMantleAuth
+import genericOpenAIPipe.mantle.BedrockMantleConfiguration
+import genericOpenAIPipe.mantle.ChunkedSigV4Signer
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -223,6 +226,14 @@ class GenericOpenAIPipe : Pipe()
     @kotlinx.serialization.Transient
     private var apiModeLocked: Boolean = false
 
+    /**
+     * Optional Bedrock Mantle auth override. When set, takes precedence over
+     * the bearer / x-api-key headers produced by [getAuthHeaders]. The Mantle
+     * setter methods on this class populate this field.
+     */
+    @kotlinx.serialization.Transient
+    private var bedrockMantleAuth: BedrockMantleAuth? = null
+
     private val responseParser: ResponseParser = ResponseParser.Factory.create()
 
     private val requestSerializer: RequestSerializer = RequestSerializer.Factory.create()
@@ -233,10 +244,30 @@ class GenericOpenAIPipe : Pipe()
      * OpenAI mode uses Bearer token authentication.
      * Anthropic mode uses x-api-key header with anthropic-version header.
      *
-     * @return Map of header name to header value
+     * When [bedrockMantleAuth] is set, the Mantle auth shape takes precedence
+     * and its headers (computed against the supplied request method, URL, and
+     * body) are returned instead of the bearer / x-api-key defaults.
+     *
+     * @param method HTTP method of the outgoing request (uppercase).
+     * @param url Full URL of the outgoing request.
+     * @param body Request body bytes. May be empty.
+     * @return Map of header name to header value.
      */
-    private fun getAuthHeaders(): Map<String, String>
+    private fun getAuthHeaders(
+        method: String,
+        url: String,
+        body: ByteArray,
+    ): Map<String, String>
     {
+        bedrockMantleAuth?.let { auth ->
+            // SigV4 must sign the content-type and payload hash headers.
+            // Bearer-mode Mantle auth ignores them, but passing them is harmless.
+            val callerHeaders = mapOf(
+                "content-type" to "application/json",
+                "x-amz-content-sha256" to genericOpenAIPipe.mantle.SigV4Signer.sha256Hex(body),
+            )
+            return auth.authHeaders(method, url, body, callerHeaders)
+        }
         return when(apiMode)
         {
             is ApiMode.OpenAI -> mapOf("Authorization" to "Bearer $apiKey")
@@ -472,6 +503,100 @@ class GenericOpenAIPipe : Pipe()
         return this
     }
 
+    /**
+     * Configure the pipe to drive Amazon Bedrock Mantle in OpenAI Chat
+     * Completions mode.
+     *
+     * Wires [baseUrl] to the regional Mantle endpoint, sets [apiMode] to
+     * [ApiMode.OpenAI], and resolves authentication from
+     * [genericOpenAIPipe.env.BedrockMantleEnv] in the following order:
+     *   1. AWS SigV4 credentials (access key id + secret access key) when
+     *      both are resolvable, producing an [BedrockMantleAuth.SigV4] shape.
+     *   2. Bearer mode using whatever API key is currently set on the pipe.
+     *   3. Bearer mode using the `BEDROCK_MANTLE_API_KEY` env var.
+     *
+     * Callers who need fine-grained control should follow up with
+     * [setBedrockMantleAuth].
+     *
+     * @param region AWS region code (for example `us-east-1` or `us-west-2`).
+     * @param modelId The Bedrock model identifier to use
+     *               (for example `google.gemma-4-31b`).
+     * @return This pipe instance for fluent chaining.
+     */
+    fun setBedrockMantle(region: String, modelId: String): GenericOpenAIPipe
+    {
+        val config = BedrockMantleConfiguration.forRegion(region, modelId)
+        configureBedrockMantle(config)
+        return this
+    }
+
+    /**
+     * Configure the pipe to drive Amazon Bedrock Mantle in OpenAI Responses
+     * API mode.
+     *
+     * Mirrors [setBedrockMantle] but selects [ApiMode.OpenAIResponses] so
+     * requests dispatch to the `/v1/responses` endpoint.
+     *
+     * @param region AWS region code.
+     * @param modelId Bedrock model identifier.
+     * @return This pipe instance for fluent chaining.
+     */
+    fun setBedrockMantleWithResponses(region: String, modelId: String): GenericOpenAIPipe
+    {
+        val config = BedrockMantleConfiguration.forRegionWithResponses(region, modelId)
+        configureBedrockMantle(config)
+        return this
+    }
+
+    /**
+     * Replace the Mantle auth shape. Useful for tests that supply an explicit
+     * signer or bearer key, and for users who want to skip env-var
+     * resolution.
+     *
+     * Pass `null` to clear any previously set Mantle auth and fall back to
+     * the bearer / x-api-key defaults produced by [getAuthHeaders].
+     *
+     * @param auth Mantle auth shape, or `null` to disable Mantle auth.
+     * @return This pipe instance for fluent chaining.
+     */
+    fun setBedrockMantleAuth(auth: BedrockMantleAuth?): GenericOpenAIPipe
+    {
+        bedrockMantleAuth = auth
+        return this
+    }
+
+    /**
+     * Internal helper that wires baseUrl, apiMode, modelId, and auth for the
+     * given Mantle configuration. Resolves credentials via
+     * [genericOpenAIPipe.env.BedrockMantleEnv] and prefers SigV4 when both
+     * an access key id and a secret access key are available.
+     */
+    private fun configureBedrockMantle(config: BedrockMantleConfiguration)
+    {
+        setBaseUrl(config.endpoint())
+        setApiMode(config.apiMode)
+        setModel(config.modelId)
+
+        val sigV4Auth = BedrockMantleAuth.sigV4FromEnv(regionOverride = config.region)
+        if (sigV4Auth != null)
+        {
+            bedrockMantleAuth = sigV4Auth
+            return
+        }
+
+        // No IAM credentials resolvable; fall back to bearer mode. Prefer the
+        // programmatic apiKey the caller has already set (in case they
+        // configured one via setApiKey), then the env-var fallback.
+        val bearerKey = apiKey.takeIf { it.isNotBlank() }
+            ?: System.getenv("BEDROCK_MANTLE_API_KEY")
+            ?: ""
+        if (bearerKey.isNotBlank())
+        {
+            if (apiKey.isBlank()) apiKey = bearerKey
+            bedrockMantleAuth = BedrockMantleAuth.bearer(bearerKey)
+        }
+    }
+
 //=========================================Pipe Lifecycle Methods======================================================
 
     /**
@@ -491,10 +616,13 @@ class GenericOpenAIPipe : Pipe()
                   "model" to model
               ))
 
-        if(apiKey.isBlank())
+        // The apiKey field is only used for bearer / x-api-key auth.
+        // When a Mantle auth shape is set, it computes its own headers via
+        // [BedrockMantleAuth.authHeaders], so apiKey may legitimately be blank.
+        if (apiKey.isBlank() && bedrockMantleAuth == null)
         {
             val resolvedKey = GenericOpenAIEnv.resolveApiKey()
-            if(resolvedKey.isBlank())
+            if (resolvedKey.isBlank())
             {
                 throw IllegalStateException("GenericOpenAI API key is required. Call setApiKey(), genericOpenAIEnv.setApiKey(), or set GENERIC_OPENAI_API_KEY environment variable before init().")
             }
@@ -635,7 +763,7 @@ class GenericOpenAIPipe : Pipe()
             messages = messages,
             temperature = if(temperature > 0.0) temperature else null,
             topP = if(topP > 0.0) topP else null,
-            topK = topK,
+            topK = if(topK > 0) topK else null,
             maxTokens = if(maxTokens > 0) maxTokens else null,
             presencePenalty = if(presencePenalty != 0.0) presencePenalty else null,
             frequencyPenalty = frequencyPenalty,
@@ -677,12 +805,29 @@ class GenericOpenAIPipe : Pipe()
 
         if(streamingEnabled)
         {
+            // When Mantle chunked-encoding streaming SigV4 auth is active,
+            // route through the HttpURLConnection direct path because it
+            // gives us byte-level control over the chunked body writes
+            // (Ktor's setBody path doesn't expose per-chunk signing
+            // primitives in a way that lines up with the AWS streaming
+            // algorithm). The HttpURLConnection path is also more reliable
+            // for reading incremental SSE responses (see comment in
+            // executeStreamingDirect).
+            if (bedrockMantleAuth is BedrockMantleAuth.Streaming)
+            {
+                return executeStreamingDirect(jsonRequest)
+            }
+
             val response = withContext(Dispatchers.IO)
             {
                 client.post("$baseUrl${getEndpoint()}")
                 {
                     contentType(ContentType.Application.Json)
-                    getAuthHeaders().forEach { (name, value) -> header(name, value) }
+                    getAuthHeaders(
+                        method = "POST",
+                        url = "$baseUrl${getEndpoint()}",
+                        body = jsonRequest.toByteArray(Charsets.UTF_8),
+                    ).forEach { (name, value) -> header(name, value) }
                     setBody(jsonRequest)
                 }
             }
@@ -696,7 +841,11 @@ class GenericOpenAIPipe : Pipe()
                     client.post("$baseUrl${getEndpoint()}")
                     {
                         contentType(ContentType.Application.Json)
-                        getAuthHeaders().forEach { (name, value) -> header(name, value) }
+                        getAuthHeaders(
+                            method = "POST",
+                            url = "$baseUrl${getEndpoint()}",
+                            body = jsonRequest.toByteArray(Charsets.UTF_8),
+                        ).forEach { (name, value) -> header(name, value) }
                         setBody(jsonRequest)
                     }.bodyAsText()
                 }
@@ -768,7 +917,7 @@ class GenericOpenAIPipe : Pipe()
                 messages = messages,
                 temperature = if(temperature > 0.0) temperature else null,
                 topP = if(topP > 0.0) topP else null,
-                topK = topK,
+                topK = if(topK > 0) topK else null,
                 maxTokens = if(maxTokens > 0) maxTokens else null,
                 presencePenalty = if(presencePenalty != 0.0) presencePenalty else null,
                 frequencyPenalty = frequencyPenalty,
@@ -821,7 +970,11 @@ class GenericOpenAIPipe : Pipe()
                         client.post("$baseUrl${getEndpoint()}")
                         {
                             contentType(ContentType.Application.Json)
-                            getAuthHeaders().forEach { (name, value) -> header(name, value) }
+                            getAuthHeaders(
+                                method = "POST",
+                                url = "$baseUrl${getEndpoint()}",
+                                body = jsonRequest.toByteArray(Charsets.UTF_8),
+                            ).forEach { (name, value) -> header(name, value) }
 
                             setBody(jsonRequest)
                         }.bodyAsText()
@@ -950,14 +1103,34 @@ class GenericOpenAIPipe : Pipe()
             method = "POST",
             headers = buildMap {
                 put("Content-Type", "application/json")
-                putAll(getAuthHeaders())
+                putAll(
+                    getAuthHeaders(
+                        method = "POST",
+                        url = "$baseUrl${getEndpoint()}",
+                        body = jsonRequest.toByteArray(Charsets.UTF_8),
+                    )
+                )
             },
             connectTimeoutMs = 30_000,
             readTimeoutMs = 120_000
         )
 
-        // Write the body
-        conn.outputStream.use { it.write(jsonRequest.toByteArray(Charsets.UTF_8)) }
+        // Write the body. When Mantle streaming SigV4 auth is in use,
+        // write the body as chunked-encoded blocks per the AWS S3
+        // streaming spec (and the Mantle streaming docs). Otherwise,
+        // write the body in a single shot as today.
+        conn.outputStream.use { out ->
+            val bodyBytes = jsonRequest.toByteArray(Charsets.UTF_8)
+            val streamingAuth = bedrockMantleAuth as? BedrockMantleAuth.Streaming
+            if (streamingAuth != null)
+            {
+                writeChunkedRequestBody(out, bodyBytes, streamingAuth)
+            }
+            else
+            {
+                out.write(bodyBytes)
+            }
+        }
 
         val reasoningBuilder = StringBuilder()
         var totalInputTokens = 0
@@ -1207,6 +1380,82 @@ class GenericOpenAIPipe : Pipe()
               metadata = streamingMetadata)
 
         return resultText
+    }
+
+    /**
+     * Write [body] to [output] as AWS SigV4 chunked-transfer-encoded
+     * blocks for Mantle streaming. The wire format per chunk is:
+     *
+     * ```
+     * <size_hex>;<signature>\r\n
+     * <chunk_body>\r\n
+     * ```
+     *
+     * where `<size_hex>` is the chunk's byte length as 5-character
+     * lowercase hex, and `<signature>` is the per-chunk signature from
+     * the chain in [auth]. After the last body chunk a 0-byte
+     * terminator chunk is emitted (`0;<terminator-sig>\r\n\r\n`).
+     *
+     * The seed signature (the initial-request `Authorization` header
+     * value) is passed as the first argument to `auth.signChunk(...)`
+     * and is supplied by the caller via the headers map set up earlier
+     * in [executeStreamingDirect].
+     *
+     * @param output The OutputStream to write to (already-flushed response
+     *               body stream of an HttpURLConnection).
+     * @param body The request body bytes (the marshalled JSON).
+     * @param auth The chunked-encoding auth shape carrying the chunked
+     *             signer.
+     */
+    private fun writeChunkedRequestBody(
+        output: java.io.OutputStream,
+        body: ByteArray,
+        auth: BedrockMantleAuth.Streaming,
+    )
+    {
+        val chunkSize = ChunkedSigV4Signer.CHUNK_SIZE_BYTES
+        var previousSignature = extractStreamingSeedSignature(auth)
+        var offset = 0
+        while (offset < body.size)
+        {
+            val end = minOf(offset + chunkSize, body.size)
+            val chunk = body.copyOfRange(offset, end)
+            val chunkResult = auth.signChunk(previousSignature, chunk)
+            val sizeHex = chunk.size.toString(16).padStart(5, '0').lowercase()
+            output.write("$sizeHex;${chunkResult.signatureHex}\r\n".toByteArray(Charsets.US_ASCII))
+            output.write(chunk)
+            output.write("\r\n".toByteArray(Charsets.US_ASCII))
+            offset = end
+            previousSignature = chunkResult.signatureHex
+        }
+
+        // Final 0-byte terminator chunk. Its "previous" signature is the
+        // last body chunk's signature.
+        val terminator = auth.signChunk(previousSignature, ByteArray(0))
+        output.write("0;${terminator.signatureHex}\r\n\r\n".toByteArray(Charsets.US_ASCII))
+        output.flush()
+    }
+
+    /**
+     * Extract the seed signature (the `authorization` header value) from
+     * the [BedrockMantleAuth.Streaming] shape's `authHeaders` map. The
+     * seed signature is the initial-request SigV4 signature computed
+     * against the streaming constant as the payload hash.
+     */
+    private fun extractStreamingSeedSignature(auth: BedrockMantleAuth.Streaming): String
+    {
+        // Recompute the seed headers using the same method/url/body
+        // shape the streaming-direct path used. The authHeaders
+        // method computes the seed signature and returns the full
+        // header map; we only need the authorization header value.
+        val seedHeaders = auth.authHeaders(
+            method = "POST",
+            url = "$baseUrl${getEndpoint()}",
+            body = ByteArray(0),
+            headers = mapOf("Content-Type" to "application/json"),
+        )
+        return seedHeaders["authorization"]
+            ?: throw IllegalStateException("Streaming auth did not produce a seed signature")
     }
 
     /**
@@ -1784,7 +2033,8 @@ class GenericOpenAIPipe : Pipe()
      * Returns the auth headers the pipe would attach, for the current [apiMode].
      * Visible only to tests in the same module.
      */
-    fun internalGetAuthHeadersForTest(): Map<String, String> = getAuthHeaders()
+    fun internalGetAuthHeadersForTest(): Map<String, String> =
+        getAuthHeaders(method = "GET", url = baseUrl, body = ByteArray(0))
 
     /**
      * Replaces the internal Ktor [HttpClient] with a caller-supplied one. The pipe

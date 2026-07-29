@@ -1,5 +1,6 @@
 package genericOpenAIPipe
 
+import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Debug.TraceFormat
 import com.TTT.Debug.TracingBuilder
@@ -11,8 +12,11 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import java.nio.file.Files
 import java.nio.file.Path
@@ -51,6 +55,7 @@ import java.nio.file.Paths
  * ```
  */
 @EnabledIfEnvironmentVariable(named = "MINIMAX_API_KEY", matches = ".+")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MiniMaxFeaturesLiveTest
 {
 
@@ -89,6 +94,20 @@ class MiniMaxFeaturesLiveTest
                 )
             }
         }
+    }
+
+    @BeforeAll
+    fun enableTracingForAllTests()
+    {
+        setupTraceDirectory(MiniMaxFeaturesLiveTest::class.java)
+        PipeTracer.enable()
+    }
+
+    @AfterAll
+    fun disableTracingForAllTests()
+    {
+        PipeTracer.getAllTraces().keys.forEach { PipeTracer.clearTrace(it) }
+        PipeTracer.disable()
     }
 
 //=========================================Prompt Caching (Anthropic mode)============================

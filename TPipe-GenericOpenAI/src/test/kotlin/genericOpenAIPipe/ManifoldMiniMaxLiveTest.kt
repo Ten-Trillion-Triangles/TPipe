@@ -1,6 +1,7 @@
 package genericOpenAIPipe
 
 import com.TTT.Config.TPipeConfig
+import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Debug.TraceFormat
@@ -129,6 +130,10 @@ class ManifoldMiniMaxLiveTest
     @BeforeAll
     fun setup()
     {
+        // Always create the trace directory and enable the global tracer, so the
+        // @AfterAll cleanup is symmetric regardless of whether tests run.
+        setupTraceDirectory(ManifoldMiniMaxLiveTest::class.java)
+        PipeTracer.enable()
         if (System.getenv("TPIPE_LIVE_LLM_TEST") != "true") return
         val key = System.getenv("MINIMAX_API_KEY")
         if (key.isNullOrBlank()) return
@@ -141,6 +146,8 @@ class ManifoldMiniMaxLiveTest
     @AfterAll
     fun teardown()
     {
+        PipeTracer.getAllTraces().keys.forEach { PipeTracer.clearTrace(it) }
+        PipeTracer.disable()
         if (apiKeyCache != null)
         {
             GenericOpenAIEnv.clearApiKey()

@@ -256,6 +256,64 @@ pipe.streamingCallbacks {
 }
 ```
 
+## Bedrock Streaming: Tool Use, Citations, and Guard Assessments
+
+When `BedrockPipe.useConverseApi()` and `enableStreaming()` are both active, the AWS Converse stream delivers tool-use inputs, citation fragments, and inline guardrail content across multiple `ContentBlockDelta` events — each tagged with a `contentBlockIndex`. The pipe reassembles these per-block streams into typed artifacts, exposed through [Per-Call Metadata](../bedrock/getting-started.md#per-call-metadata) (`getLastCallMetadata()`) instead of through the streaming callback.
+
+```kotlin
+import aws.smithy.kotlin.runtime.content.Document
+import bedrockPipe.BedrockCallMetadata
+import bedrockPipe.BedrockPipe
+import kotlinx.coroutines.runBlocking
+
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .useConverseApi()
+    .enableStreaming()
+    .setStreamingCallback { chunk -> print(chunk) }
+    .setTools(listOf(/* Claude tool definitions */))
+
+runBlocking {
+    pipe.init()
+    pipe.execute("What is the warranty period for product X?")
+}
+
+val meta: BedrockCallMetadata? = pipe.getLastCallMetadata()
+
+// 1. Reassembled tool-use blocks — one per block, with full input JSON
+meta?.toolUse?.forEach { tool ->
+    println("Tool: ${tool.name} (id=${tool.toolUseId})")
+    println("Input: ${(tool.input as Document).toString()}")
+}
+
+// 2. Reassembled citations — title/source/location + concatenated sourceContent
+meta?.citations?.forEach { citation ->
+    println("Citation: ${citation.title} (source=${citation.source})")
+    println("Location: ${citation.location?.documentChar?.toString()}")
+    citation.sourceContent?.forEach { sc ->
+        // CitationSourceContent.Text(TextCitationLink)
+        // The .text fragment is accumulated across the block's deltas
+        println("Snippet: ${sc.text?.toString()}")
+    }
+}
+
+// 3. Inline guardrail assessments — one per GuardContent block
+meta?.guardAssessments?.forEach { assessment ->
+    println("Assessment topic: ${assessment.topicPolicy?.name}")
+    println("Filters: ${assessment.contentPolicy?.filters?.size}")
+}
+```
+
+The reassembly contract is:
+
+- Each `ContentBlockStart` event with a tool-use `start` payload seeds the accumulator for that block index.
+- Each `ContentBlockDelta` event with a `ToolUse` / `CitationsDelta` / `GuardContent` payload updates the accumulator for its block index.
+- Each `ContentBlockStop` event finalizes the accumulator for its block index into a typed artifact and appends it to the `BedrockCallMetadata` list.
+- A single stream may contain multiple content blocks (interleaved text, reasoning, tool-use, citations, guard) — block indices keep them separate during reassembly.
+
+Streaming latency is captured from `ConverseStreamMetrics.latencyMs` into `BedrockCallMetadata.latencyMs`. Prompt-cache hits show up in `cacheReadInputTokens` / `cacheWriteInputTokens`. The stop reason (`end_turn`, `max_tokens`, `tool_use`, etc.) is exposed as `BedrockCallMetadata.stopReason`.
+
 ## API Reference
 
 See [Pipe API Documentation](../api/pipe.md) for complete method signatures and details.
@@ -265,6 +323,8 @@ See [Pipe API Documentation](../api/pipe.md) for complete method signatures and 
 - [Pipe Class - Core Concepts](pipe-class.md)
 - [Tracing and Debugging](tracing-and-debugging.md)
 - [Bedrock Getting Started](../bedrock/getting-started.md)
+- [Bedrock Guardrails](../bedrock/guardrails.md)
+
 ## Next Steps
 
 - [Pipeline Flow Control](pipeline-flow-control.md) - Continue with routing and control flow.
