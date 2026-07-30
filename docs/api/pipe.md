@@ -758,6 +758,41 @@ manager.addCallback { chunk -> print(chunk) }
 manager.removeCallback(someCallback)
 ```
 
+#### `propagateStreamingCallback(callback: suspend (String) -> Unit, visited: MutableSet<String> = mutableSetOf()): Unit` (Pipe)
+Registers a streaming callback on this pipe and every descendant pipe (validator, transformation, branch, reasoning). This is the mechanism that ensures chunks emitted by any pipe in the tree flow through a callback registered on a parent.
+
+**Behavior:** Walks the pipe tree recursively, adding the callback to each pipe's manager via `obtainStreamingCallbackManager()`. Each pipe's manager dedups by reference equality, so the same lambda arriving via both parent-registration and child-propagation fires exactly once per chunk. The `visited` set prevents infinite recursion if the pipe tree contains a cycle.
+
+Calling `propagateStreamingCallback` on a parent pipe that already has child pipes attached immediately propagates the callback to those children.
+
+**Example:**
+```kotlin
+// Register on parent; automatically reaches validator and reasoning children
+val parent = GenericOpenAIPipe()
+    .setValidatorPipe(validator)
+    .setReasoningPipe(reasoning)
+
+parent.propagateStreamingCallback { chunk -> print(chunk) }
+
+// All three pipes now stream through the same callback
+parent.generateText("Explain quantum entanglement.")
+```
+
+#### `setStreamingEnabled(enabled: Boolean): Pipe` (Pipe)
+Enables or disables streaming on this pipe. The base `Pipe` implementation just flips the `streamingEnabled` flag; subclasses override to wire the flag into their API request.
+
+**Example:**
+```kotlin
+// Base pipe — flag only
+val basePipe: Pipe = someProviderPipe()
+basePipe.setStreamingEnabled(true)
+
+// Provider pipes override with their typed return for chaining
+val genericPipe = GenericOpenAIPipe()
+    .setStreamingEnabled(true)
+    .setStreamingCallback { chunk -> print(chunk) }
+```
+
 #### `streamingCallbacks(builder: StreamingCallbackBuilder.() -> Unit): Pipe` (BedrockPipe)
 Configures multiple streaming callbacks using builder pattern.
 

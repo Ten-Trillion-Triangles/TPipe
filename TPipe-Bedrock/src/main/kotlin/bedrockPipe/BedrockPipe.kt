@@ -959,25 +959,24 @@ open class BedrockPipe : Pipe()
      * @see executeInvokeStream for streaming implementation
      */
     fun enableStreaming(
-        callback: (suspend (String) -> Unit)? = null, 
+        callback: (suspend (String) -> Unit)? = null,
         showReasoning: Boolean = false,
         streamReasoning: Boolean = true
     ): BedrockPipe {
-        // Enable streaming mode without callback assignment
         this.streamingEnabled = true
         this.streamModelReasoning = streamReasoning
 
         if(callback != null)
         {
             this.streamingCallback = callback
+            propagateStreamingCallback(callback)
         }
 
-        //Attempt to propagate each reasoning pipe recursively.
-        if(showReasoning)
-        {
-            val abstractPipe = reasoningPipe as? BedrockPipe
-            abstractPipe?.enableStreaming(callback, true, streamReasoning)
-        }
+        // Recursion to all descendants is handled uniformly by
+        // propagateStreamingCallback — showReasoning no longer gates traversal
+        // because the generic recursion already covers every configured child.
+        @Suppress("UNUSED_PARAMETER")
+        val unused = showReasoning
 
         return this
     }
@@ -1004,7 +1003,28 @@ open class BedrockPipe : Pipe()
         this.streamingEnabled = false
         this.streamingCallback = null
         streamingCallbackManager?.clearCallbacks()
+        listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { child ->
+            (child as? BedrockPipe)?.disableStreaming()
+        }
         return this
+    }
+
+    /**
+     * Adds a streaming callback to every descendant pipe (validator, transformation,
+     * branch, reasoning) without registering on this pipe's own manager.
+     *
+     * Mirrors the recursion intent of [com.TTT.Pipe.Pipe.propagateStreamingCallback]
+     * but skips self-registration. Bedrock's emitStreamingChunk override fires both
+     * the legacy `streamingCallback` field AND the manager's emitToAll; the legacy
+     * field already carries the parent-side callback, so propagating to self would
+     * cause the same lambda to fire twice when the parent emits a chunk.
+     */
+    private fun addCallbackToDescendants(callback: suspend (String) -> Unit)
+    {
+        listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { child ->
+            child.obtainStreamingCallbackManager().addCallback(callback)
+            (child as? BedrockPipe)?.addCallbackToDescendants(callback)
+        }
     }
 
     /**
@@ -1029,12 +1049,17 @@ open class BedrockPipe : Pipe()
      * @see executeInvokeStream for streaming implementation
      */
     fun setStreamingCallback(callback: suspend (String) -> Unit): BedrockPipe {
-        // Register suspendable callback and enable streaming
+        // Register suspendable callback and enable streaming.
+        // Legacy `streamingCallback` field IS the single source of truth on
+        // this pipe; emitStreamingChunk at line 5233 invokes it directly, so
+        // adding the same callback to streamingCallbackManager too would
+        // double-fire the same lambda when emitToAll iterates the manager.
+        // We instead walk descendants and add the callback only to them.
         this.streamingCallback = callback
         this.streamingEnabled = true
+        addCallbackToDescendants(callback)
         return this
     }
-
     /**
      * Convenience overload for non-suspending callbacks.
      * 
@@ -1055,8 +1080,15 @@ open class BedrockPipe : Pipe()
      */
     fun setStreamingCallback(callback: (String) -> Unit): BedrockPipe {
         // Wrap non-suspending callback in suspending lambda
-        this.streamingCallback = { chunk -> callback(chunk) }
+        val wrapped: suspend (String) -> Unit = { chunk -> callback(chunk) }
+        // Same single-source-of-truth pattern as the suspend overload above:
+        // set the legacy field with the wrapped lambda (Bedrock's
+        // emitStreamingChunk fires it directly), and walk descendants only
+        // — emitting pipes' own manager would double-fire if we used
+        // propagateStreamingCallback.
+        this.streamingCallback = wrapped
         this.streamingEnabled = true
+        addCallbackToDescendants(wrapped)
         return this
     }
 
@@ -1084,7 +1116,10 @@ open class BedrockPipe : Pipe()
     {
         val callbackBuilder = StreamingCallbackBuilder()
         callbackBuilder.builder()
-        streamingCallbackManager = callbackBuilder.build()
+        val manager = callbackBuilder.build()
+        val callbacks = manager.getCallbacks()
+        streamingCallbackManager = manager
+        callbacks.forEach { callback -> propagateStreamingCallback(callback) }
         streamingEnabled = true
         return this
     }
@@ -5217,7 +5252,13 @@ put("system", if(enableCaching && cacheControl != null) {
                       "streaming" to true
                   ))
 
-            null
+            // Return the empty MultimodalContent rather than null: the parent
+            // dispatcher (executeInvokeApi) interprets null as "fall back to
+            // non-streaming InvokeModel", which in turn skips ALL callback
+            // fan-out. With bedrockClient=valid but the stream request failing,
+            // the intent is that streaming errors should still surface the empty
+            // response rather than triggering a wasted non-streaming call.
+            MultimodalContent("")
         }
     }
 
@@ -5321,7 +5362,15 @@ put("system", if(enableCaching && cacheControl != null) {
                         text = it
                     }
                 }
-                
+
+                // Nova streaming envelope: {contentBlockDelta:{delta:{text:"..."}, contentBlockIndex:N}}
+                if(text.isEmpty())
+                {
+                    obj["contentBlockDelta"]?.jsonObject?.get("delta")?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull?.let {
+                        text = it
+                    }
+                }
+
                 // Fallback to raw text if not JSON structured
                 if(text.isEmpty() && !trimmed.startsWith("{"))
                 {

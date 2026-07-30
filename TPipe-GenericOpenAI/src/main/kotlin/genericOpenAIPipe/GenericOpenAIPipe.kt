@@ -7,6 +7,7 @@ import com.TTT.P2P.P2PError
 import com.TTT.P2P.P2PException
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.StreamingCallbackBuilder
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import genericOpenAIPipe.env.*
@@ -461,6 +462,72 @@ class GenericOpenAIPipe : Pipe()
         // the same callback. Without this, callbacks registered on a parent
         // pipe are silently ignored when its child pipe's API call streams.
         propagateStreamingCallback(callback)
+        return this
+    }
+
+    /**
+     * Configures multiple streaming callbacks using the builder pattern.
+     *
+     * Mirrors [BedrockPipe.streamingCallbacks] so multi-recipient streaming works
+     * uniformly across providers. Each registered callback receives every chunk
+     * emitted by the streaming API. Execution mode is sequential by default; call
+     * [StreamingCallbackBuilder.concurrent] inside the block to fan chunks to all
+     * callbacks in parallel.
+     *
+     * Every registered callback is also propagated to descendant pipes
+     * (validator, transformation, branch, reasoning) via
+     * [com.TTT.Pipe.Pipe.propagateStreamingCallback] so chunks emitted anywhere
+     * in the pipe tree reach the same sinks.
+     *
+     * Example:
+     * ```
+     * pipe.streamingCallbacks {
+     *     add { chunk -> dispatcher.append(connectionId, chunk) }
+     *     add { chunk -> metrics.record(chunk.length) }
+     *     onError { e, chunk -> log.warn("callback failed", e) }
+     * }
+     * ```
+     *
+     * @param builder Lambda that configures the [StreamingCallbackBuilder]
+     * @return This pipe instance for method chaining
+     */
+    fun streamingCallbacks(builder: StreamingCallbackBuilder.() -> Unit): GenericOpenAIPipe
+    {
+        val callbackBuilder = StreamingCallbackBuilder()
+        callbackBuilder.builder()
+        val manager = obtainStreamingCallbackManager()
+        callbackBuilder.build().getCallbacks().forEach { callback ->
+            manager.addCallback(callback)
+            propagateStreamingCallback(callback)
+        }
+        streamingEnabled = true
+        return this
+    }
+
+    /**
+     * Enables streaming with optional callback registration.
+     *
+     * When `callback` is provided it is added to this pipe's
+     * [com.TTT.Pipe.StreamingCallbackManager] and propagated to all descendant
+     * pipes (validator, transformation, branch, reasoning). Mirrors
+     * [com.TTT.Pipe.Pipe.propagateStreamingCallback] so multi-pipe hierarchies
+     * receive chunks uniformly across providers.
+     *
+     * When called without arguments the method flips the streaming flag only.
+     * Equivalent to [setStreamingEnabled] with builder return.
+     *
+     * @param callback Optional suspending callback receiving text chunks
+     * @return This pipe instance for method chaining
+     */
+    @JvmOverloads
+    fun enableStreaming(callback: (suspend (String) -> Unit)? = null): GenericOpenAIPipe
+    {
+        if(callback != null)
+        {
+            obtainStreamingCallbackManager().addCallback(callback)
+            propagateStreamingCallback(callback)
+        }
+        setStreamingEnabled(true)
         return this
     }
 

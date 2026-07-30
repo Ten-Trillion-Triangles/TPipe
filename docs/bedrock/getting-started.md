@@ -435,7 +435,11 @@ pipe.clearLastCallMetadata()
 
 The metadata is per-call observation state — it is not thread-safe across concurrent calls on the same pipe (same constraint as `lastConverseResponse`) and it is not serialized in `toPipeSettings()`. Each field is nullable or empty-by-default so a call that did not produce a given artifact round-trips cleanly.
 
-Streaming Converse calls populate the same fields as non-streaming calls: tool-use blocks are reassembled from per-block deltas, citations are reassembled from `CitationsDelta` fragments per content block, and latency is captured from `ConverseStreamMetrics.latencyMs`.
+Streaming Converse calls populate the same fields as non-streaming calls: tool-use blocks are reassembled from per-block Start/Delta/Stop events, citations are reassembled from `CitationsDelta` fragments per content block, and latency is captured from `ConverseStreamMetrics.latencyMs`. The stream also acknowledges `MessageStart` for tracing coverage.
+
+### Test Seams
+
+The `executeConverseStreamForTest(client, modelId, request, apiLabel)` method on `BedrockPipe` is a test seam that wraps `executeConverseStream`. It accepts a `BedrockRuntimeClient` as its first parameter so tests can inject a fake client without touching the protected `bedrockClient` field. The seam accepts a `ConverseStreamRequest` and internally reverses the `ConverseRequest.toStreamRequest()` mapping before delegating to the protected version.
 
 ### JSON Schema Support
 ```kotlin

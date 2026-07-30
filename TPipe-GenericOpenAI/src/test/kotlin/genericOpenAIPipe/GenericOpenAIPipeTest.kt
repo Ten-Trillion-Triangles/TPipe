@@ -361,6 +361,150 @@ class GenericOpenAIPipeTest
         assertTrue(returned is GenericOpenAIPipe)
     }
 
+    @Test
+    fun testStreamingCallbacksBuilderReturnsPipe()
+    {
+        val pipe = GenericOpenAIPipe()
+        val cb: suspend (String) -> Unit = { _ -> }
+        val returned = pipe.streamingCallbacks {
+            add(cb)
+        }
+
+        assertNotNull(returned)
+        assertTrue(returned is GenericOpenAIPipe)
+    }
+
+    @Test
+    fun testEnableStreamingNoArgReturnsPipeAndFlipsFlag()
+    {
+        val pipe = GenericOpenAIPipe()
+        val returned = pipe.enableStreaming()
+
+        assertNotNull(returned)
+        assertTrue(returned is GenericOpenAIPipe)
+        assertTrue(pipe.streamingEnabled)
+    }
+
+    @Test
+    fun testEnableStreamingWithCallbackRegistersAndPropagates()
+    {
+        val received = mutableListOf<String>()
+        val callback: suspend (String) -> Unit = { chunk -> received.add(chunk) }
+        val pipe = GenericOpenAIPipe().enableStreaming(callback)
+
+        val manager = pipe.obtainStreamingCallbackManager()
+        assertTrue(pipe.streamingEnabled)
+        assertEquals(1, manager.callbackCount())
+
+        runBlocking { manager.emitToAll("hello") }
+        assertEquals(listOf("hello"), received)
+    }
+
+    @Test
+    fun testStreamingCallbacksSingleListenerReceivesChunks()
+    {
+        val received = mutableListOf<String>()
+        val cb: suspend (String) -> Unit = { chunk -> received.add(chunk) }
+        val pipe = GenericOpenAIPipe().streamingCallbacks {
+            add(cb)
+        }
+        val manager = pipe.obtainStreamingCallbackManager()
+
+        runBlocking {
+            manager.emitToAll("hello ")
+            manager.emitToAll("world")
+        }
+
+        assertEquals(1, manager.callbackCount())
+        assertEquals(listOf("hello ", "world"), received)
+    }
+
+    @Test
+    fun testStreamingCallbacksMultipleListenersDispatchSequentially()
+    {
+        val first = mutableListOf<String>()
+        val second = mutableListOf<String>()
+        val cb1: suspend (String) -> Unit = { chunk -> first.add(chunk) }
+        val cb2: suspend (String) -> Unit = { chunk -> second.add(chunk) }
+        val pipe = GenericOpenAIPipe().streamingCallbacks {
+            add(cb1)
+            add(cb2)
+        }
+        val manager = pipe.obtainStreamingCallbackManager()
+
+        runBlocking { manager.emitToAll("chunk-1") }
+
+        assertEquals(2, manager.callbackCount())
+        assertEquals(listOf("chunk-1"), first)
+        assertEquals(listOf("chunk-1"), second)
+    }
+
+    @Test
+    fun testStreamingCallbacksConcurrentModeFansOutInParallel()
+    {
+        val seen = mutableListOf<Pair<Int, String>>()
+        val latch = java.util.concurrent.CountDownLatch(2)
+        val cb1: suspend (String) -> Unit = { chunk ->
+            seen.add(1 to chunk)
+            latch.countDown()
+        }
+        val cb2: suspend (String) -> Unit = { chunk ->
+            seen.add(2 to chunk)
+            latch.countDown()
+        }
+        val pipe = GenericOpenAIPipe().streamingCallbacks {
+            add(cb1)
+            add(cb2)
+            concurrent()
+        }
+        val manager = pipe.obtainStreamingCallbackManager()
+
+        runBlocking {
+            manager.emitToAll("payload")
+            latch.await()
+        }
+
+        assertEquals(2, manager.callbackCount())
+        assertTrue(seen.any { it.first == 1 && it.second == "payload" })
+        assertTrue(seen.any { it.first == 2 && it.second == "payload" })
+    }
+
+    @Test
+    fun testStreamingCallbacksChunkOrderPreservedWithinListener()
+    {
+        val ordered = mutableListOf<String>()
+        val cb: suspend (String) -> Unit = { chunk -> ordered.add(chunk) }
+        val pipe = GenericOpenAIPipe().streamingCallbacks {
+            add(cb)
+        }
+        val manager = pipe.obtainStreamingCallbackManager()
+
+        runBlocking {
+            for(i in 1..5)
+            {
+                manager.emitToAll("chunk-$i")
+            }
+        }
+
+        assertEquals(listOf("chunk-1", "chunk-2", "chunk-3", "chunk-4", "chunk-5"), ordered)
+    }
+
+    @Test
+    fun testEnableStreamingPropagatesToValidator()
+    {
+        val received = mutableListOf<String>()
+        val callback: suspend (String) -> Unit = { chunk -> received.add(chunk) }
+        val parent = GenericOpenAIPipe()
+        val validator = GenericOpenAIPipe()
+
+        parent.setValidatorPipe(validator)
+        parent.enableStreaming(callback)
+
+        runBlocking { validator.obtainStreamingCallbackManager().emitToAll("from-validator") }
+
+        assertEquals(listOf("from-validator"), received)
+    }
+
 //=========================================Missing API Key Validation Tests===========================================
 
     @Test

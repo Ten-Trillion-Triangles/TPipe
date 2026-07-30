@@ -255,7 +255,7 @@ Enables Server-Sent Events (SSE) streaming. When enabled, the response is delive
 - `ApiMode.OpenAIResponses` → `OpenAIResponsesSseParser`
 
 #### `setStreamingCallback(callback: suspend (String) -> Unit): GenericOpenAIPipe`
-Registers a callback for streaming response chunks. Automatically enables streaming by flipping `streamingEnabled = true` and adding the callback via `obtainStreamingCallbackManager()`.
+Registers a callback for streaming response chunks. Automatically enables streaming by flipping `streamingEnabled = true`, adding the callback via `obtainStreamingCallbackManager()`, and propagating the callback to all descendant pipes (validator, transformation, branch, reasoning) via `propagateStreamingCallback`. This ensures chunks emitted by any pipe in the tree flow through the registered callback.
 
 **Example:**
 ```kotlin

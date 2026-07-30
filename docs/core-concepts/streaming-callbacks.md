@@ -31,7 +31,7 @@ fun main() = runBlocking {
         .setStreamingCallback { chunk ->
             print(chunk)  // Print each token as it arrives
         }
-    
+
     pipe.generateText("Tell me a short story.")
     println("\nDone!")
 }
@@ -202,6 +202,30 @@ val pipeline = Pipeline()
 streamPipelineOutputToTerminal(pipeline)  // Enables streaming on all pipes
 ```
 
+## Streaming Callback Propagation
+
+When a pipe has child pipes (validator, transformation, branch, or reasoning), registering a streaming callback on the parent pipe automatically propagates it to every descendant. This ensures that chunks emitted by any pipe in the tree flow through the same registered callback.
+
+```kotlin
+val parentPipe = GenericOpenAIPipe()
+    .setStreamingCallback { chunk -> print(chunk) }  // propagates to all children
+
+// These child pipes share the parent's streaming callback automatically
+val reasoning = GenericOpenAIPipe()
+    .setReasoning(ReasoningMethod.ExplicitCot)
+val validator = GenericOpenAIPipe()
+
+parentPipe.setReasoningPipe(reasoning)
+parentPipe.setValidatorPipe(validator)
+
+// All three pipes stream through the same callback
+parentPipe.generateText("What is 2+2?")
+```
+
+Child pipes that are attached after the parent already has callbacks inherit those callbacks automatically. The propagation is cycle-safe — if a pipe tree contains a cycle due to a misconfigured builder, the visited set prevents infinite recursion.
+
+Callback deduplication prevents double-firing: if the same lambda is registered both on the parent directly and again via a child's propagation path, it fires exactly once per chunk.
+
 ## Disabling Streaming
 
 Disable streaming and clear all callbacks:
@@ -260,6 +284,16 @@ pipe.streamingCallbacks {
 
 When `BedrockPipe.useConverseApi()` and `enableStreaming()` are both active, the AWS Converse stream delivers tool-use inputs, citation fragments, and inline guardrail content across multiple `ContentBlockDelta` events — each tagged with a `contentBlockIndex`. The pipe reassembles these per-block streams into typed artifacts, exposed through [Per-Call Metadata](../bedrock/getting-started.md#per-call-metadata) (`getLastCallMetadata()`) instead of through the streaming callback.
 
+### Per-Block Reassembly
+
+The Converse stream may interleave text, reasoning, tool-use, citations, and guard content across multiple content blocks. TPipe uses each block's `contentBlockIndex` as the key to keep each artifact's fragments separate during reassembly:
+
+- `ContentBlockStart` seeds the accumulator for that block index (captures `toolUseId` and name for tool-use blocks).
+- `ContentBlockDelta` appends `input` JSON fragments to the accumulator for its block index.
+- `ContentBlockStop` finalizes the accumulator into a typed artifact and appends it to `BedrockCallMetadata`.
+
+A single stream may contain any number of content blocks in any order — the block index keeps text deltas, tool-use input fragments, citation fragments, and guard content from different blocks from mixing with each other.
+
 ```kotlin
 import aws.smithy.kotlin.runtime.content.Document
 import bedrockPipe.BedrockCallMetadata
@@ -281,7 +315,7 @@ runBlocking {
 
 val meta: BedrockCallMetadata? = pipe.getLastCallMetadata()
 
-// 1. Reassembled tool-use blocks — one per block, with full input JSON
+// 1. Reassembled tool-use blocks — one per tool-use block, with full input JSON
 meta?.toolUse?.forEach { tool ->
     println("Tool: ${tool.name} (id=${tool.toolUseId})")
     println("Input: ${(tool.input as Document).toString()}")
@@ -305,14 +339,17 @@ meta?.guardAssessments?.forEach { assessment ->
 }
 ```
 
-The reassembly contract is:
+### Streaming Metadata Fields
 
-- Each `ContentBlockStart` event with a tool-use `start` payload seeds the accumulator for that block index.
-- Each `ContentBlockDelta` event with a `ToolUse` / `CitationsDelta` / `GuardContent` payload updates the accumulator for its block index.
-- Each `ContentBlockStop` event finalizes the accumulator for its block index into a typed artifact and appends it to the `BedrockCallMetadata` list.
-- A single stream may contain multiple content blocks (interleaved text, reasoning, tool-use, citations, guard) — block indices keep them separate during reassembly.
-
-Streaming latency is captured from `ConverseStreamMetrics.latencyMs` into `BedrockCallMetadata.latencyMs`. Prompt-cache hits show up in `cacheReadInputTokens` / `cacheWriteInputTokens`. The stop reason (`end_turn`, `max_tokens`, `tool_use`, etc.) is exposed as `BedrockCallMetadata.stopReason`.
+| Field | Source | Description |
+|-------|--------|-------------|
+| `latencyMs` | `ConverseStreamMetrics.latencyMs` | End-to-end stream latency |
+| `stopReason` | `MessageStop.stopReason` | `end_turn`, `max_tokens`, `tool_use`, etc. |
+| `cacheReadInputTokens` | `ContentBlockDelta` cache events | Prompt-cache read tokens |
+| `cacheWriteInputTokens` | `ContentBlockDelta` cache events | Prompt-cache write tokens |
+| `toolUse` | Per-block `ContentBlockStart/Delta/Stop` | Reassembled tool-use blocks |
+| `citations` | Per-block `ContentBlockDelta` citation fragments | Reassembled citations |
+| `guardAssessments` | Per-block `ContentBlockDelta` guard fragments | Inline guard assessments |
 
 ## API Reference
 
