@@ -292,4 +292,87 @@ class GenericOpenAIPipeTransportRetryTest
             pipe.abortForTest()
         }
     }
+
+//=========================================Abort / Retry Path=========================================
+
+    /**
+     * Pins the contract that after [GenericOpenAIPipe.abort] runs (the path
+     * [PipeTimeoutManager] takes at Pipe.kt:457-465), [httpClient] MUST remain
+     * non-null on the pipe instance so the retry path
+     * (`Pipe.execute` while-loop at Pipe.kt:5967-5974) can re-enter
+     * `generateTextMultimodal` without throwing
+     * `IllegalStateException: GenericOpenAIPipe not initialized. Call init() first.`
+     *
+     * Background: the previous `abort()` override closed and nulled the
+     * `httpClient` field at GenericOpenAIPipe.kt:773. The retry path re-enters
+     * `generateTextMultimodal` without calling `init()`, so the throw at
+     * GenericOpenAIPipe.kt:999 fired on every retry after a 3-min timeout.
+     * See BUG_GENERICOPENAI_ABORT_NULLS_HTTPCLIENT.md for the full trace.
+     *
+     * The fix is twofold: `abort()` recreates the pipe-owned client via the
+     * new `createHttpClient()` helper instead of nulling it, and the retry path
+     * therefore always has a usable handle. This test verifies the contract
+     * directly by calling `abortForTest()` on a pipe whose `httpClient` was
+     * created by `init()` (no test injection), then asserting the field is
+     * non-null afterwards. It does not make a real network call.
+     *
+     * The test-injected client path (where `injectHttpClientForTest` set
+     * `ownsHttpClient = false`) is left alone by `abort()` — that branch is
+     * covered by the 5 existing tests in this class which call `abortForTest()`
+     * in `finally {}` after assertions and would crash if `abort()` closed the
+     * MockEngine-backed client.
+     */
+    @Test
+    fun testAbortLeavesHttpClientUsableForRetryPath() = runBlocking<Unit>
+    {
+        // No test injection — let init() create the production CIO client so we
+        // exercise the ownsHttpClient=true branch.
+        val pipe = GenericOpenAIPipe()
+            .setApiKey("mock-key")
+            .setBaseUrl("https://mock.local/v1")
+            .setApiMode(ApiMode.OpenAI)
+            .apply {
+                setModel("MiniMax-M2.7")
+                setMaxTokens(64)
+                setStreamingEnabled(false)
+            }
+
+        // Pre-abort: httpClient should be null (init hasn't run yet).
+        Assertions.assertNull(
+            pipe.httpClientForTest(),
+            "httpClient must be null before init() — the production client should not leak"
+        )
+
+        // Init creates the production CIO client and flips ownsHttpClient=true.
+        pipe.initForTest()
+        Assertions.assertNotNull(
+            pipe.httpClientForTest(),
+            "init() must populate httpClient with a CIO-backed client"
+        )
+        val beforeAbort = pipe.httpClientForTest()
+
+        // Simulate what PipeTimeoutManager does at Pipe.kt:457-465: call
+        // abort() on the pipe. Pre-fix this would null httpClient; post-fix
+        // it stands up a fresh client via createHttpClient().
+        pipe.abortForTest()
+
+        // Post-abort: httpClient must remain non-null so the retry path can
+        // re-enter generateTextMultimodal. Pre-fix: null (ISE thrown at line 999).
+        // Post-fix: a fresh, just-constructed CIO client.
+        val afterAbort = pipe.httpClientForTest()
+        Assertions.assertNotNull(
+            afterAbort,
+            "abort() must leave httpClient non-null — the retry path depends on it"
+        )
+
+        // The recreate semantics — same createHttpClient() helper produces a new
+        // handle. A buggy implementation that reused the closed handle would
+        // still pass the non-null check but would surface IOException on retry;
+        // this reference-identity check catches that shape.
+        Assertions.assertNotSame(
+            beforeAbort,
+            afterAbort,
+            "abort() must replace httpClient with a fresh instance, not reuse the closed handle"
+        )
+    }
 }

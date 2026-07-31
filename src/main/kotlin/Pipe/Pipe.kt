@@ -8030,7 +8030,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun getMiddlePromptForReasoning() : String
     {
         if(reasoningPipe == null) return ""
-        val usingMiddlePrompt = reasoningPipe?.pipeMetadata["injectMiddlePrompt"] as Boolean
+        val usingMiddlePrompt = reasoningPipe?.pipeMetadata["injectMiddlePrompt"] as? Boolean ?: false
         if(!usingMiddlePrompt) return ""
         return middlePromptInstructions
     }
@@ -8044,7 +8044,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun getFooterPromptForReasoning() : String
     {
         if(reasoningPipe == null) return ""
-        val usingFooterPrompt = reasoningPipe?.pipeMetadata["injectFooterPrompt"] as Boolean
+        val usingFooterPrompt = reasoningPipe?.pipeMetadata["injectFooterPrompt"] as? Boolean ?: false
         if(!usingFooterPrompt) return ""
         return footerPrompt
     }

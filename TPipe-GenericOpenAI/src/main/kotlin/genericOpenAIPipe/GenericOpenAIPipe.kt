@@ -111,6 +111,16 @@ class GenericOpenAIPipe : Pipe()
     private var httpClient: HttpClient? = null
 
     /**
+     * Tracks whether the pipe created [httpClient] itself (true) or received
+     * it from a test seam (false). When false, [abort] must not close the
+     * client — the test caller owns it and will close it after the test exits.
+     * The default `true` is set in [init] and flipped to `false` by
+     * [injectHttpClientForTest].
+     */
+    @kotlinx.serialization.Transient
+    private var ownsHttpClient: Boolean = false
+
+    /**
      * Factory that opens the streaming-direct HTTP connection (used by
      * [executeStreamingDirect] for chunked SSE). The production default wraps
      * `java.net.URL(...).openConnection() as java.net.HttpURLConnection`; tests
@@ -637,12 +647,28 @@ class GenericOpenAIPipe : Pipe()
      * given Mantle configuration. Resolves credentials via
      * [genericOpenAIPipe.env.BedrockMantleEnv] and prefers SigV4 when both
      * an access key id and a secret access key are available.
+     *
+     * Also populates the reasoning-pipe metadata contract — the same keys
+     * written by `ReasoningBuilder.assignDefaults` for the four first-party
+     * builders (`reasonWithBedrock`, `reasonWithOllama`, `reasonWithOpenRouter`,
+     * `reasonWithGenericOpenAI`). Mantle-shaped reasoning pipes are first-class
+     * TPipe providers; the middle/footer prompt injection feature is provider-
+     * agnostic and reads only these metadata keys. Without this wiring the
+     * unguarded cast at `Pipe.kt:8033/8047` historically threw NPE on every
+     * Mantle reasoning invocation, with the retry loop absorbing the exception
+     * and degrading the visible reasoning output.
      */
     private fun configureBedrockMantle(config: BedrockMantleConfiguration)
     {
         setBaseUrl(config.endpoint())
         setApiMode(config.apiMode)
         setModel(config.modelId)
+
+        // Reasoning-pipe metadata contract — mirrors ReasoningBuilder.assignDefaults
+        // (TPipe-Defaults/src/main/kotlin/Defaults/reasoning/ReasoningBuilder.kt:317-318).
+        // Defaults to false to match `ReasoningSettings.injectMiddlePrompt = false`.
+        pipeMetadata["injectMiddlePrompt"] = false
+        pipeMetadata["injectFooterPrompt"] = false
 
         val sigV4Auth = BedrockMantleAuth.sigV4FromEnv(regionOverride = config.region)
         if (sigV4Auth != null)
@@ -704,15 +730,8 @@ class GenericOpenAIPipe : Pipe()
         // not allocated and the test's MockEngine (or other custom engine) is honoured.
         if(httpClient == null)
         {
-            httpClient = HttpClient(CIO)
-            {
-                install(HttpTimeout)
-                {
-                    requestTimeoutMillis = 120_000
-                    connectTimeoutMillis = 30_000
-                    socketTimeoutMillis = 120_000
-                }
-            }
+            httpClient = createHttpClient()
+            ownsHttpClient = true
         }
 
         // Default streaming-direct factory wraps java.net.URL + HttpURLConnection.
@@ -747,14 +766,30 @@ class GenericOpenAIPipe : Pipe()
 
     /**
      * Aborts any active generation and cleans up resources.
+     *
+     * Releases the in-flight Ktor client and stands up a fresh one so the retry
+     * path (`Pipe.execute` while-loop at Pipe.kt:5967-5974) has a usable handle
+     * when [PipeTimeoutManager] fires and the parent pipeline re-enters
+     * [generateTextMultimodal] on the same pipe instance. Closing and reusing
+     * the same handle is unsafe — Ktor's CIO engine may surface
+     * `IOException: connection closed` on the next request through a closed
+     * client. See BUG_GENERICOPENAI_ABORT_NULLS_HTTPCLIENT.md for the full
+     * trace evidence and the previous (`httpClient = null`) regression.
      */
     override suspend fun abort()
     {
         trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION,
               metadata = mapOf("action" to "abort", "provider" to "GenericOpenAI"))
 
-        httpClient?.close()
-        httpClient = null
+        // Release the in-flight client and stand up a fresh one so the retry
+        // path has a usable handle. Only the pipe-owned client is closed and
+        // recreated; a client injected via [injectHttpClientForTest] is owned
+        // by the test caller and must be left alone.
+        if(ownsHttpClient)
+        {
+            httpClient?.close()
+            httpClient = createHttpClient()
+        }
 
         super.abort()
     }
@@ -2175,7 +2210,32 @@ class GenericOpenAIPipe : Pipe()
      */
     fun injectHttpClientForTest(client: HttpClient)
     {
+        ownsHttpClient = false
         httpClient = client
+    }
+
+    /**
+     * Returns the current internal Ktor [HttpClient] for assertion in tests that
+     * verify the abort/retry-path contract. Production code MUST NOT use this.
+     */
+    fun httpClientForTest(): HttpClient? = httpClient
+
+    /**
+     * Builds the default Ktor [HttpClient] used by this pipe. Called from both
+     * [init] (when no test-supplied client is present) and [abort] (to give the
+     * retry path a fresh handle). Centralised here so the timeout configuration
+     * lives in one place — the previous inline copy in [init] and the
+     * `httpClient = null` regression in [abort] are the bugs this helper
+     * prevents recurring.
+     */
+    private fun createHttpClient(): HttpClient = HttpClient(CIO)
+    {
+        install(HttpTimeout)
+        {
+            requestTimeoutMillis = 120_000
+            connectTimeoutMillis = 30_000
+            socketTimeoutMillis = 120_000
+        }
     }
 
     /**
