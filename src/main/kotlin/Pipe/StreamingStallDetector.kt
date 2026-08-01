@@ -19,6 +19,7 @@ import kotlin.math.sqrt
  *                         Allows the model to reach steady-state throughput before detection
  *                         is active. Default 20.
  */
+@kotlinx.serialization.Serializable
 data class StreamingStallConfig(
     val windowSize: Int = 50,
     val stddevMultiplier: Double = 3.0,

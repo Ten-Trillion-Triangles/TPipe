@@ -841,6 +841,28 @@ abstract class Pipe : P2PInterface, ProviderInterface
     var applyTimeoutRecursively = true
 
     /**
+     * Stall detection configuration. When set, the pipe tracks token arrival timestamps
+     * during streaming and uses statistical deviation to detect abnormally long silences.
+     * When [enableStallDetector] is true, a [StreamingStallDetector] is created and wired
+     * into the streaming callback chain.
+     */
+    var enableStallDetector: Boolean = false
+
+    /**
+     * Configuration for the [StreamingStallDetector]. Defaults to [StreamingStallConfig]
+     * (window 50, stddev multiplier 3.0, min silence 10s, max retries 3, warmup 20 tokens).
+     */
+    var stallDetectorConfig: StreamingStallConfig = StreamingStallConfig()
+
+    /**
+     * User-supplied callback invoked when a stall is detected. The retry is handled
+     * separately via [PipeTimeoutManager.handleStallSignal]; this callback is for
+     * notification/monitoring only.
+     */
+    @kotlinx.serialization.Transient
+    var stallCallback: StallCallback? = null
+
+    /**
      * Defines the type of responce that should occur when a pipe timeout occurs. Failure, retry,
      * or bound custom logic.
      */
@@ -4389,6 +4411,44 @@ abstract class Pipe : P2PInterface, ProviderInterface
         //Default if retry is not on, or a custom handler is not provided.
         timeoutStrategy = PipeTimeoutStrategy.Fail
 
+        return this
+    }
+
+    /**
+     * Enables stall detection on this pipe. When enabled, the pipe will track token
+     * arrival timestamps during streaming and use statistical deviation (rolling
+     * mean + stddev) to detect abnormally long silences — typically a sign that the
+     * LLM has silently died without throwing an error.
+     *
+     * On stall detection, the user-supplied [callback] is invoked with a [StallEvent],
+     * and the retry is tripped through [PipeTimeoutManager.handleStallSignal].
+     *
+     * @param config Stall detection thresholds. Defaults to [StreamingStallConfig].
+     * @param callback Optional callback for stall notification (logging, metrics).
+     *                 The retry path is independent of this callback.
+     * @return This pipe for method chaining.
+     */
+    fun enableStallDetector(
+        config: StreamingStallConfig = StreamingStallConfig(),
+        callback: StallCallback? = null
+    ): Pipe
+    {
+        this.enableStallDetector = true
+        this.stallDetectorConfig = config
+        if(callback != null) this.stallCallback = callback
+        return this
+    }
+
+    /**
+     * Sets a callback that will be invoked when a stall is detected. The callback is for
+     * notification only — the retry is tripped independently via [PipeTimeoutManager].
+     *
+     * @param callback The stall callback.
+     * @return This pipe for method chaining.
+     */
+    fun setStallCallback(callback: StallCallback): Pipe
+    {
+        this.stallCallback = callback
         return this
     }
 
