@@ -450,6 +450,9 @@ object PipeTimeoutManager
     private val timedOutPipes = java.util.Collections.synchronizedSet(mutableSetOf<Pipe>())
     private val retryAttempts = java.util.concurrent.ConcurrentHashMap<Pipe, Int>()
 
+    // Stall detection tracking (parallel to timeout tracking, keyed on StreamingStallDetector)
+    private val stallRetryAttempts = java.util.concurrent.ConcurrentHashMap<Pipe, Int>()
+
     /**
      * Starts a timer for the given pipe. If the timer expires, the pipe's abort() method
      * is called, and the pipe is marked as timed out.
@@ -541,9 +544,91 @@ object PipeTimeoutManager
             // or we could potentially invoke it here.
             content
         }
-        else 
+        else
         {
             pipe.timeoutTrace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, error = Exception("Pipe timed out after ${attempts} retries."))
+            content.terminate()
+            content
+        }
+    }
+
+    /**
+     * Gets the current stall retry count for a pipe.
+     */
+    fun getStallRetryCount(pipe: Pipe): Int = stallRetryAttempts.getOrDefault(pipe, 0)
+
+    /**
+     * Increments the stall retry count for a pipe.
+     */
+    fun incrementStallRetryCount(pipe: Pipe)
+    {
+        stallRetryAttempts[pipe] = getStallRetryCount(pipe) + 1
+    }
+
+    /**
+     * Resets the stall retry count for a pipe.
+     */
+    fun clearStallRetryCount(pipe: Pipe)
+    {
+        stallRetryAttempts.remove(pipe)
+    }
+
+    /**
+     * Determines the next action for a pipe that has experienced a detected stall.
+     * Mirrors [handleTimeoutSignal] but keyed on stall detection (separate retry counter).
+     *
+     * Retry behavior:
+     * - If attempts < [StreamingStallConfig.maxStallRetries]: restore from snapshot,
+     *   set [com.TTT.Pipe.MultimodalContent.repeatPipe] to true so the pipe re-executes.
+     * - Otherwise: terminate the pipeline with a PIPE_FAILURE trace event.
+     *
+     * @param pipe The pipe that stalled.
+     * @param content The input content at time of stall.
+     * @param stallEvent The stall event describing the stall conditions.
+     * @return Content to continue with (snapshot with repeatPipe=true, or terminated).
+     */
+    fun handleStallSignal(pipe: Pipe, content: MultimodalContent, stallEvent: StallEvent): MultimodalContent
+    {
+        val attempts = getStallRetryCount(pipe)
+        val maxRetries = pipe.stallDetectorConfig.maxStallRetries
+
+        return if(attempts < maxRetries)
+        {
+            incrementStallRetryCount(pipe)
+            pipe.timeoutTrace(
+                TraceEventType.PIPE_RETRY, TracePhase.EXECUTION,
+                metadata = mapOf(
+                    "attempt" to getStallRetryCount(pipe),
+                    "stallElapsedMs" to stallEvent.elapsedMs,
+                    "stallTokensSeen" to stallEvent.tokensSeen,
+                    "stallSilenceMs" to stallEvent.silenceMs,
+                    "stallExpectedIntervalMs" to stallEvent.expectedIntervalMs,
+                    "stallActualIntervalMs" to stallEvent.actualIntervalMs
+                )
+            )
+
+            val snapshot = content.getSnapshot()
+            if(snapshot != null)
+            {
+                snapshot.repeatPipe = true
+                snapshot
+            }
+            else
+            {
+                pipe.timeoutTrace(
+                    TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION,
+                    error = Exception("Stall retry failed: No snapshot available to restore state.")
+                )
+                content.terminate()
+                content
+            }
+        }
+        else
+        {
+            pipe.timeoutTrace(
+                TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION,
+                error = Exception("Pipe stalled ${attempts} times and gave up.")
+            )
             content.terminate()
             content
         }
