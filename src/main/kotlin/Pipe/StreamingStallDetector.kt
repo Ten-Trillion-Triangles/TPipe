@@ -1,5 +1,7 @@
 package com.TTT.Pipe
 
+import kotlin.math.sqrt
+
 /**
  * Configuration for [StreamingStallDetector].
  *
@@ -70,3 +72,129 @@ internal data class StatsSnapshot(
     val n: Int,
     val isArmed: Boolean
 )
+
+/**
+ * Streaming stall detector that tracks token arrival timestamps and uses
+ * statistical deviation to detect abnormally long silences.
+ *
+ * Algorithm:
+ * 1. Maintain a ring buffer of the last [StreamingStallConfig.windowSize] inter-token intervals.
+ * 2. Maintain running sum and sum-of-squares for O(1) population mean and variance.
+ * 3. After [StreamingStallConfig.warmupTokenCount] tokens, the statistical test arms.
+ * 4. Each new token arrival tests:
+ *      silence > max(mean + stddevMultiplier × stddev, stallMinSilenceMs)
+ *    YES → stall detected, fire [onStall] callback with a [StallEvent].
+ *    NO  → update rolling stats and continue.
+ *
+ * The [StreamingStallConfig.stallMinSilenceMs] floor prevents false positives during temporary
+ * network hiccups that don't violate the statistical profile.
+ * The statistical test (μ + kσ) handles models with variable but bounded throughput.
+ * The [StreamingStallConfig.warmupTokenCount] prevents false positives during cold-start throughput ramp-up.
+ *
+ * @param pipeName Display name for this detector's pipe (used in stall events and logging).
+ * @param config Detection thresholds and window parameters.
+ * @param onStall Callback fired when a stall is detected. The retry is handled
+ *                separately via [PipeTimeoutManager.handleStallSignal] (see Pipe.kt); this
+ *                callback is for notification/monitoring only.
+ */
+class StreamingStallDetector(
+    val pipeName: String,
+    val config: StreamingStallConfig = StreamingStallConfig(),
+    private val onStall: StallCallback
+) {
+    private val intervalBuffer: LongArray = LongArray(config.windowSize)
+    private var bufferIndex = 0
+    private var bufferCount = 0
+
+    // Running aggregates for O(1) population mean and variance.
+    // sumIntervals = Σx, sumSquares = Σx².
+    private var sumIntervals: Long = 0L
+    private var sumSquares: Long = 0L
+
+    private var lastTokenTimestamp: Long = -1L
+    private var tokensSeen: Int = 0
+    private var lastInterval: Long = 0L
+
+    /**
+     * Whether the statistical stall test is armed.
+     * True once [StreamingStallConfig.warmupTokenCount] intervals have been observed.
+     */
+    internal val isArmed: Boolean get() = bufferCount >= config.warmupTokenCount
+
+    /**
+     * Returns a snapshot of the current rolling statistics. Test-only visibility.
+     */
+    internal fun getStatsSnapshot(): StatsSnapshot {
+        val n = bufferCount.coerceAtLeast(1)
+        val mean = sumIntervals.toDouble() / n
+        val variance = (sumSquares.toDouble() / n) - (mean * mean)
+        val stddev = if (variance > 0.0) sqrt(variance) else 0.0
+        return StatsSnapshot(mean = mean, stddev = stddev, n = bufferCount, isArmed = isArmed)
+    }
+
+    /**
+     * Called by the streaming callback for each token received.
+     *
+     * @param tokenText The token text (ignored for timing — only the timestamp matters).
+     * @param timestamp Epoch milliseconds at which this token arrived.
+     */
+    fun onTokenReceived(tokenText: String, timestamp: Long) {
+        if (lastTokenTimestamp < 0L) {
+            // First token — record but don't compute an interval or test.
+            lastTokenTimestamp = timestamp
+            tokensSeen++
+            return
+        }
+
+        val interval = timestamp - lastTokenTimestamp
+        // Capture the previous token's timestamp before updating so checkForStall
+        // can compute silence = currentTimestamp - lastArrivedTokenTimestamp.
+        val previousTimestamp = lastTokenTimestamp
+        lastTokenTimestamp = timestamp
+        lastInterval = interval
+        tokensSeen++
+
+        // Update ring buffer and aggregates.
+        if (bufferCount < config.windowSize) {
+            bufferCount++
+        } else {
+            // Evict oldest value from aggregates before overwriting.
+            val oldest = intervalBuffer[bufferIndex]
+            sumIntervals -= oldest
+            sumSquares -= oldest * oldest
+        }
+        intervalBuffer[bufferIndex] = interval
+        sumIntervals += interval
+        sumSquares += interval * interval
+        bufferIndex = (bufferIndex + 1) % config.windowSize
+
+        if (isArmed) {
+            checkForStall(timestamp, previousTimestamp)
+        }
+    }
+
+    private fun checkForStall(currentTimestamp: Long, previousTokenTimestamp: Long) {
+        val silenceMs = currentTimestamp - previousTokenTimestamp
+        val n = bufferCount.coerceAtLeast(1)
+        val mean = sumIntervals.toDouble() / n
+        val variance = (sumSquares.toDouble() / n) - (mean * mean)
+        val stddev = if (variance > 0.0) sqrt(variance) else 0.0
+        val threshold = maxOf(mean + config.stddevMultiplier * stddev, config.stallMinSilenceMs.toDouble())
+
+        if (silenceMs > threshold) {
+            onStall(
+                StallEvent(
+                    pipeName = pipeName,
+                    elapsedMs = currentTimestamp,
+                    tokensSeen = tokensSeen,
+                    lastTokenTimestamp = previousTokenTimestamp,
+                    silenceMs = silenceMs,
+                    expectedIntervalMs = mean,
+                    actualIntervalMs = lastInterval,
+                    stddevMultiplier = config.stddevMultiplier,
+                    retryAttempt = 0
+                )
+            )
+        }
+    }
+}
