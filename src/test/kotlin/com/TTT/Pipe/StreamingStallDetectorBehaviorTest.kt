@@ -1,14 +1,33 @@
 package com.TTT.Pipe
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
-import kotlin.test.assertEquals
+import org.junit.jupiter.api.Assertions.assertEquals
 import kotlin.test.assertTrue
 
 /**
  * Behavioral tests for StreamingStallDetector stall-detection logic.
  * Verifies that the algorithm fires on real stalls and does not fire on slow-but-alive streams.
+ *
+ * Note: Because the production onStall callback fires via GlobalScope.launch (so that
+ * suspend-typed callbacks can call abort()/handleStallSignal without forcing checkForStall
+ * to be suspend), tests must briefly wait for the async launch to complete before asserting.
  */
 class StreamingStallDetectorBehaviorTest {
+
+    /**
+     * Waits up to 1s for [predicate] to become true, polling every 10ms.
+     * Used to bridge the GlobalScope.launch boundary for stall callbacks.
+     */
+    private fun waitFor(predicate: () -> Boolean) {
+        runBlocking {
+            val deadline = System.currentTimeMillis() + 1000L
+            while (!predicate() && System.currentTimeMillis() < deadline) {
+                delay(10)
+            }
+        }
+    }
 
     @Test
     fun `stall fires on 150ms gap post-warmup when statistical test dominates`() {
@@ -31,6 +50,7 @@ class StreamingStallDetectorBehaviorTest {
         for (i in 0..15) { detector.onTokenReceived("x", i * 100L) }
         // Token 17 arrives 150ms late (gap from t=1500 to t=1650 = 150ms)
         detector.onTokenReceived("x", 1650L)
+        waitFor { events.size >= 1 }
         assertEquals(1, events.size, "150ms gap > max(100+0, 50)=100ms → stall")
     }
 
@@ -52,6 +72,7 @@ class StreamingStallDetectorBehaviorTest {
         for (i in 0..25) { detector.onTokenReceived("x", i * 10L) }
         // Next token 12 seconds later (silence = 12000ms)
         detector.onTokenReceived("x", 25 * 10L + 12_000L)
+        waitFor { events.size >= 1 }
         assertEquals(1, events.size, "12s silence > 10s floor → stall")
         assertEquals(12_000L, events[0].silenceMs)
     }
@@ -86,6 +107,8 @@ class StreamingStallDetectorBehaviorTest {
         for (i in 0..15) { detector.onTokenReceived("x", i * 2000L) }
         // Slow but alive: next token 3s later
         detector.onTokenReceived("x", 15 * 2000L + 3_000L)
+        // No stall expected, but give the launch a chance anyway
+        runBlocking { delay(50) }
         assertEquals(0, events.size, "3s gap < 10s floor → no stall (slow but alive)")
     }
 
@@ -106,6 +129,7 @@ class StreamingStallDetectorBehaviorTest {
         for (i in 0..15) { detector.onTokenReceived("x", i * 2000L) }
         // Dead: next token 11s later
         detector.onTokenReceived("x", 15 * 2000L + 11_000L)
+        waitFor { events.size >= 1 }
         assertEquals(1, events.size, "11s > 10s floor → stall")
         assertEquals(11_000L, events[0].silenceMs)
     }
@@ -127,6 +151,7 @@ class StreamingStallDetectorBehaviorTest {
         for (i in 0..15) { detector.onTokenReceived("x", i * 100L) }
         // Fire stall: gap = 200ms (token 17 expected at 1700ms, arrives at 1900ms)
         detector.onTokenReceived("x", 17 * 100L + 200L)
+        waitFor { events.size >= 1 }
         assertEquals(1, events.size)
         val ev = events[0]
         assertEquals("metaTest", ev.pipeName)
@@ -157,6 +182,7 @@ class StreamingStallDetectorBehaviorTest {
         for (i in 0 until 30) {
             detector.onTokenReceived("x", i * 1000L)
         }
+        runBlocking { delay(50) }
         assertEquals(0, events.size, "No stall should fire before warmup completes")
     }
 }

@@ -880,6 +880,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
     @kotlinx.serialization.Transient
     private var activeJob: kotlinx.coroutines.Job? = null
 
+    /**
+     * The active stall detector for the current execution. Null between executions.
+     * Cleared on abort and on successful execution.
+     */
+    @kotlinx.serialization.Transient
+    private var activeStallDetector: StreamingStallDetector? = null
+
 //============================================= properties ===========================================================//
 
     /**
@@ -6125,6 +6132,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     open suspend fun abort() {
         activeJob?.cancel()
         activeJob = null
+        activeStallDetector = null
     }
 
     /**
@@ -6169,6 +6177,36 @@ abstract class Pipe : P2PInterface, ProviderInterface
             if(timeoutStrategy == PipeTimeoutStrategy.Retry && maxRetryAttempts > 0)
             {
                 inputContent.saveSnapshot()
+            }
+        }
+
+        // Wire up the stall detector: create the detector, register a per-token
+        // timestamp callback with the streaming callback manager. On stall:
+        //   1. Fire the user-supplied stallCallback.
+        //   2. Call PipeTimeoutManager.handleStallSignal to compute the retry/terminate decision.
+        //   3. Call abort() to cancel the in-flight streaming transport so the retry
+        //      can re-execute via the outer execute() loop's repeatPipe check.
+        if(enableStallDetector && streamingEnabled)
+        {
+            val detector = StreamingStallDetector(
+                pipeName = this@Pipe.pipeName,
+                config = stallDetectorConfig,
+                onStall = { stallEvent ->
+                    // 1. Fire user callback.
+                    stallCallback?.invoke(stallEvent)
+
+                    // 2. Compute retry/terminate decision via PipeTimeoutManager.
+                    PipeTimeoutManager.handleStallSignal(this@Pipe, inputContent, stallEvent)
+
+                    // 3. Abort the in-flight stream so the outer loop's repeatPipe check re-executes.
+                    abort()
+                }
+            )
+            activeStallDetector = detector
+
+            // Register a per-chunk timestamp callback with the streaming manager.
+            obtainStreamingCallbackManager().addCallback { chunk ->
+                detector.onTokenReceived(chunk, System.currentTimeMillis())
             }
         }
 
@@ -6679,6 +6717,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     generatedContent = result.await()
                 } finally {
                     activeJob = null
+                    activeStallDetector = null
                 }
             }
             catch(e: Exception)

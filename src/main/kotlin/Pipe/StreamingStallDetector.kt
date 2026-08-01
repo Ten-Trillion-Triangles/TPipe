@@ -1,5 +1,10 @@
 package com.TTT.Pipe
 
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlin.math.sqrt
 
 /**
@@ -60,8 +65,10 @@ data class StallEvent(
  * Note: The retry is handled separately via [PipeTimeoutManager.handleStallSignal].
  * This callback is for notification/monitoring only — it should not throw exceptions,
  * and it should return quickly (heavy work belongs on a separate dispatcher).
+ *
+ * Marked suspend so the caller can fire-and-forget retries (e.g. `pipe.abort()`).
  */
-typealias StallCallback = (StallEvent) -> Unit
+typealias StallCallback = suspend (StallEvent) -> Unit
 
 /**
  * Exposes rolling statistics for test verification.
@@ -183,19 +190,28 @@ class StreamingStallDetector(
         val threshold = maxOf(mean + config.stddevMultiplier * stddev, config.stallMinSilenceMs.toDouble())
 
         if (silenceMs > threshold) {
-            onStall(
-                StallEvent(
-                    pipeName = pipeName,
-                    elapsedMs = currentTimestamp,
-                    tokensSeen = tokensSeen,
-                    lastTokenTimestamp = previousTokenTimestamp,
-                    silenceMs = silenceMs,
-                    expectedIntervalMs = mean,
-                    actualIntervalMs = lastInterval,
-                    stddevMultiplier = config.stddevMultiplier,
-                    retryAttempt = 0
-                )
+            val event = StallEvent(
+                pipeName = pipeName,
+                elapsedMs = currentTimestamp,
+                tokensSeen = tokensSeen,
+                lastTokenTimestamp = previousTokenTimestamp,
+                silenceMs = silenceMs,
+                expectedIntervalMs = mean,
+                actualIntervalMs = lastInterval,
+                stddevMultiplier = config.stddevMultiplier,
+                retryAttempt = 0
             )
+            // Fire the callback in a fire-and-forget coroutine so that the
+            // suspend-typed onStall can perform abort()/handleStallSignal without
+            // forcing checkForStall to be suspend itself.
+            GlobalScope.launch(
+                Dispatchers.Default +
+                SupervisorJob() +
+                CoroutineExceptionHandler { _, _ -> /* swallow — onStall failures
+                    must never propagate into the streaming chunk loop */ }
+            ) {
+                try { onStall(event) } catch (_: Exception) { /* never propagate */ }
+            }
         }
     }
 }

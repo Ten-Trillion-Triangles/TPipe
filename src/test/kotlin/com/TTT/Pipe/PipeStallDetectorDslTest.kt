@@ -1,5 +1,6 @@
 package com.TTT.Pipe
 
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -48,7 +49,7 @@ class PipeStallDetectorDslTest {
         pipe.enableStallDetector(callback = { callbackFired = true })
         assertNotNull(pipe.stallCallback)
         // Invoke to verify wiring
-        pipe.stallCallback!!.invoke(
+        runBlocking { pipe.stallCallback!!.invoke(
             StallEvent(
                 pipeName = "test",
                 elapsedMs = 0L,
@@ -60,7 +61,7 @@ class PipeStallDetectorDslTest {
                 stddevMultiplier = 3.0,
                 retryAttempt = 0
             )
-        )
+        ) }
         assertTrue(callbackFired)
     }
 
@@ -72,7 +73,7 @@ class PipeStallDetectorDslTest {
         assertNotNull(pipe.stallCallback)
         // enableStallDetector is still false unless enableStallDetector() was called
         assertEquals(false, pipe.enableStallDetector)
-        pipe.stallCallback!!.invoke(
+        runBlocking { pipe.stallCallback!!.invoke(
             StallEvent(
                 pipeName = "x",
                 elapsedMs = 0L,
@@ -84,7 +85,7 @@ class PipeStallDetectorDslTest {
                 stddevMultiplier = 3.0,
                 retryAttempt = 0
             )
-        )
+        ) }
         assertTrue(fired)
     }
 
