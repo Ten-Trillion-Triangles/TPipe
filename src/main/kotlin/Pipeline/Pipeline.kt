@@ -465,6 +465,16 @@ class Pipeline : P2PInterface
             pipe.propagateStreamingCallback(callback)
         }
     }
+    override fun enableStallDetectorRecursive(
+        config: com.TTT.Pipe.StreamingStallConfig,
+        callback: com.TTT.Pipe.StallCallback?
+    )
+    {
+        for (pipe in getPipes())
+        {
+            pipe.propagateStallDetection(config, callback)
+        }
+    }
 
     override fun setConverseRoleRecursive(role: com.TTT.Context.ConverseRole)
     {

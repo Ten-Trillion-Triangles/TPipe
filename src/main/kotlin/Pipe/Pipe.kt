@@ -1970,6 +1970,40 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
+     * Enables stall detection on this pipe and recurses into every child pipe
+     * (validator, transformation, branch, reasoning). Mirrors the propagation
+     * shape of [propagateStreamingCallback] so a single call at a container
+     * root reaches the entire pipe tree.
+     *
+     * Each leaf pipe receives the [config] and [callback] via [enableStallDetector];
+     * the per-pipe stats invariant is preserved because every leaf owns its own
+     * StreamingStallDetector.
+     *
+     * @param config Detection thresholds applied to every leaf pipe in the tree.
+     * @param callback Optional notification callback fired on stall events.
+     * @param visited Internal — tracks already-walked pipes to prevent cycles
+     *                when a pipe is referenced from multiple parents.
+     */
+    fun propagateStallDetection(
+        config: com.TTT.Pipe.StreamingStallConfig,
+        callback: com.TTT.Pipe.StallCallback?,
+        visited: MutableSet<String> = mutableSetOf()
+    )
+    {
+        if(pipeId in visited) return
+        visited.add(pipeId)
+
+        enableStallDetector(config, callback)
+
+        listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { child ->
+            if(child.pipeId !in visited)
+            {
+                child.propagateStallDetection(config, callback, visited)
+            }
+        }
+    }
+
+    /**
      * Emits a streaming chunk to all registered callbacks.
      * Provides default no-op implementation for providers that don't support streaming.
      * Subclasses can override to add provider-specific behavior.
