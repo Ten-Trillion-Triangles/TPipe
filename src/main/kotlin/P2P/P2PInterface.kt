@@ -100,6 +100,37 @@ interface P2PInterface
     fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit) {}
 
     /**
+     * Enables stall detection on every leaf pipe in this interface's
+     * agent tree. Mirrors the propagation behaviour of
+     * [setStreamingCallbackRecursive] and [setConverseRoleRecursive].
+     *
+     * Default no-op so non-Pipeline implementations (which is to say
+     * non-LLM-bearing wrappers) don't have to opt in. Each container
+     * (Pipeline, Manifold, Junction, Splitter, Connector, MultiConnector,
+     * DistributionGrid, PumpStation) overrides this to drill through its
+     * children and call [com.TTT.Pipe.Pipe.enableStallDetector] on every
+     * leaf pipe.
+     *
+     * Parent-override-wins semantics: when a child has been configured
+     * with a different [StreamingStallConfig] or [StallCallback] before
+     * the recursive call, the recursive call replaces the child's config.
+     * This matches the direct-child propagation in [Pipeline.init] and
+     * gives the root caller a single source of truth for stall behavior
+     * across the entire agent tree.
+     *
+     * @param config Detection thresholds applied to every leaf pipe. Each
+     *               pipe owns its own StreamingStallDetector instance so
+     *               per-pipe stats remain per-pipe state.
+     * @param callback Optional notification callback fired on stall events.
+     *                 The retry path is independent — see
+     *                 [com.TTT.Pipe.PipeTimeoutManager.handleStallSignal].
+     */
+    fun enableStallDetectorRecursive(
+        config: com.TTT.Pipe.StreamingStallConfig = com.TTT.Pipe.StreamingStallConfig(),
+        callback: com.TTT.Pipe.StallCallback? = null
+    ) {}
+
+    /**
      * Sets the converse role on every leaf pipe in this interface's
      * agent tree. Mirrors the propagation behaviour of
      * [setTokenBudgetRecursive] and [setStreamingCallbackRecursive].
