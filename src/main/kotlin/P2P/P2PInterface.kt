@@ -2,7 +2,16 @@ package com.TTT.P2P
 
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
+// Stall-detection types imported from com.TTT.Pipe even though Pipe.kt also
+// imports P2PInterface. The P2P <-> Pipe package coupling is already
+// two-way (see MultimodalContent + TokenBudgetSettings above, and Pipe.kt:26's
+// import of P2PInterface itself), so adding StreamingStallConfig + StallCallback
+// to this side does not introduce a new cycle — it just follows the established
+// convention. FQN-on-parameter would also work but the import matches the
+// bulk of this file's cross-package references.
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.StallCallback
+import com.TTT.Pipe.StreamingStallConfig
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipeline.Pipeline
 import com.TTT.Pipeline.PumpStation
@@ -126,8 +135,8 @@ interface P2PInterface
      *                 [com.TTT.Pipe.PipeTimeoutManager.handleStallSignal].
      */
     fun enableStallDetectorRecursive(
-        config: com.TTT.Pipe.StreamingStallConfig = com.TTT.Pipe.StreamingStallConfig(),
-        callback: com.TTT.Pipe.StallCallback? = null
+        config: StreamingStallConfig = StreamingStallConfig(),
+        callback: StallCallback? = null
     ) {}
 
     /**

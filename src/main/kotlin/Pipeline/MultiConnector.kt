@@ -11,9 +11,11 @@ import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PResponse
 import com.TTT.P2P.P2PTransport
+import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.StallCallback
+import com.TTT.Pipe.StreamingStallConfig
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Structs.PipeSettings
-import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.RuntimeState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -133,8 +135,8 @@ class MultiConnector : P2PInterface
     }
 
     override fun enableStallDetectorRecursive(
-        config: com.TTT.Pipe.StreamingStallConfig,
-        callback: com.TTT.Pipe.StallCallback?
+        config: StreamingStallConfig,
+        callback: StallCallback?
     )
     {
         for (connector in connectors)

@@ -37,14 +37,16 @@ import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
-import com.TTT.Pipe.TokenBudgetSettings
-import com.TTT.Structs.PipeSettings
 import com.TTT.Pipe.PipeError
+import com.TTT.Pipe.StallCallback
+import com.TTT.Pipe.StreamingStallConfig
+import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipe.TruncationSettings
 import com.TTT.Pipe.hasError
 import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.PipeContextProtocol.StdioContextOptions
 import com.TTT.PipeContextProtocol.Transport
+import com.TTT.Structs.PipeSettings
 import com.TTT.Util.deserialize
 import com.TTT.Util.deepCopy
 import com.TTT.Util.serialize
@@ -646,8 +648,8 @@ class DistributionGrid : P2PInterface
     }
 
     override fun enableStallDetectorRecursive(
-        config: com.TTT.Pipe.StreamingStallConfig,
-        callback: com.TTT.Pipe.StallCallback?
+        config: StreamingStallConfig,
+        callback: StallCallback?
     )
     {
         entryPipeline?.enableStallDetectorRecursive(config, callback)

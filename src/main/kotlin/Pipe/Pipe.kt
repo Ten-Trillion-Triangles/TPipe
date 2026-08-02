@@ -1985,8 +1985,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
      *                when a pipe is referenced from multiple parents.
      */
     fun propagateStallDetection(
-        config: com.TTT.Pipe.StreamingStallConfig,
-        callback: com.TTT.Pipe.StallCallback?,
+        config: StreamingStallConfig,
+        callback: StallCallback?,
         visited: MutableSet<String> = mutableSetOf()
     )
     {

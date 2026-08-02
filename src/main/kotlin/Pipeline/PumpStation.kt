@@ -13,6 +13,8 @@ import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PResponse
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.Pipe
+import com.TTT.Pipe.StallCallback
+import com.TTT.Pipe.StreamingStallConfig
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipe.TruncationSettings
 import com.TTT.Structs.PipeSettings
@@ -2437,8 +2439,8 @@ private fun pathKey(name: String): String = name.lowercase()
     }
 
     override fun enableStallDetectorRecursive(
-        config: com.TTT.Pipe.StreamingStallConfig,
-        callback: com.TTT.Pipe.StallCallback?
+        config: StreamingStallConfig,
+        callback: StallCallback?
     )
     {
         judgeAgent?.enableStallDetectorRecursive(config, callback)

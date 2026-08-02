@@ -466,8 +466,8 @@ class Pipeline : P2PInterface
         }
     }
     override fun enableStallDetectorRecursive(
-        config: com.TTT.Pipe.StreamingStallConfig,
-        callback: com.TTT.Pipe.StallCallback?
+        config: StreamingStallConfig,
+        callback: StallCallback?
     )
     {
         for (pipe in getPipes())

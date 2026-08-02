@@ -20,6 +20,8 @@ import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.StallCallback
+import com.TTT.Pipe.StreamingStallConfig
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Structs.PipeSettings
 import com.TTT.Pipe.deepCopy
@@ -227,8 +229,8 @@ class Manifold : P2PInterface
     }
 
     override fun enableStallDetectorRecursive(
-        config: com.TTT.Pipe.StreamingStallConfig,
-        callback: com.TTT.Pipe.StallCallback?
+        config: StreamingStallConfig,
+        callback: StallCallback?
     )
     {
         managerPipeline.enableStallDetectorRecursive(config, callback)

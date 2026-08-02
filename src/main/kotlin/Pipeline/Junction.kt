@@ -23,6 +23,8 @@ import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.StallCallback
+import com.TTT.Pipe.StreamingStallConfig
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipe.TruncationSettings
 import com.TTT.Structs.PipeSettings
@@ -335,8 +337,8 @@ class Junction : P2PInterface
     }
 
     override fun enableStallDetectorRecursive(
-        config: com.TTT.Pipe.StreamingStallConfig,
-        callback: com.TTT.Pipe.StallCallback?
+        config: StreamingStallConfig,
+        callback: StallCallback?
     )
     {
         moderatorBinding?.component?.enableStallDetectorRecursive(config, callback)
