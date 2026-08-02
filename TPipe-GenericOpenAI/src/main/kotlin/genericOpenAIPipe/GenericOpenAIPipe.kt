@@ -30,6 +30,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -138,6 +139,20 @@ class GenericOpenAIPipe : Pipe()
     private var streamingInputTokens: Int = 0
     private var streamingOutputTokens: Int = 0
     private var streamingReasoningTokens: Int = 0
+    /**
+     * The finish_reason captured from the first terminal chunk of the
+     * most recent OpenAI Chat Completions streaming call, or null if
+     * the stream ended without one (e.g. on `[DONE]` only, or on a
+     * mid-stream transport failure). Exposed to downstream consumers
+     * via [streamingFinishReason] and surfaced in the
+     * API_CALL_SUCCESS trace metadata under the same key.
+     *
+     * Reset to null at the top of every [executeStreamingDirect] call
+     * so stale values from a prior request do not leak into the
+     * next request's success metadata.
+     */
+    var streamingFinishReason: String? = null
+        private set
 
     /**
      * Function calling tool definitions.
@@ -577,6 +592,25 @@ class GenericOpenAIPipe : Pipe()
     {
         check(!apiModeLocked) { "apiMode cannot be changed after the first API request" }
         apiMode = mode
+        return this
+    }
+
+    /**
+     * Sets the [streamingFinishReason] field. Use this to seed an
+     * expected reason before a streaming call, or to clear it (pass
+     * null) between requests. The field is also reset to null
+     * automatically at the top of every [executeStreamingDirect]
+     * call and then overwritten with the captured terminal reason
+     * when the call returns.
+     *
+     * @param value The expected finish_reason ("stop", "length",
+     *              "tool_calls", "content_filter", ...), or null to
+     *              clear.
+     * @return This pipe instance for fluent chaining.
+     */
+    fun setStreamingFinishReason(value: String?): GenericOpenAIPipe
+    {
+        streamingFinishReason = value
         return this
     }
 
@@ -1255,6 +1289,52 @@ class GenericOpenAIPipe : Pipe()
      * as the Ktor path so the streaming callback wiring is unchanged.
      * It returns the accumulated text plus any captured `modelReasoning`
      * as a [MultimodalContent].
+     *
+     * AWS Mantle workaround — the [DONE] early-return guard at the
+     * top of the SSE `data:` branch and the `finish_reason` terminal
+     * capture in the OpenAI branch below exist because AWS Bedrock
+     * Mantle's chunked-SigV4 streaming transport keeps the TCP
+     * connection alive after the model has finished generating. The
+     * 65,536-byte signed body chunks carry trailing bytes (heartbeat,
+     * chunked-SigV4 terminator, partial retry traffic) that hold the
+     * socket open indefinitely. Without these explicit termination
+     * signals the parser would rely on socket EOF that never arrives,
+     * and the pipe would hang for the full
+     * [HttpURLConnection.readTimeoutMs] (`120_000` ms) instead of
+     * returning within milliseconds of the model's [DONE] sentinel.
+     * If AWS fixes the chunked-SigV4 keepalive-after-`[DONE]`
+     * behavior, these guards become redundant but harmless — the
+     * parser will still terminate on [DONE] before EOF regardless of
+     * whether the server flushes the socket. Revisit this KDoc and
+     * the [DONE]/finish_reason guards only when the streaming
+     * timeout has been empirically confirmed to no longer be the
+     * primary failure mode against Mantle in production.
+     *
+     * Exposed surface — the captured terminal reason is written to
+     * [streamingFinishReason] (a `var` on this class with a public
+     * `private set`) and to the API_CALL_SUCCESS trace metadata
+     * under the same key, so downstream consumers can read the
+     * reason without re-parsing the SSE stream. Seed or clear the
+     * field via [setStreamingFinishReason].
+     *
+     * Mid-stream failure policy — when the read loop throws
+     * `IOException` (e.g. Mantle mid-stream network blip, socket
+     * reset, broken pipe), the catch emits API_CALL_FAILURE with
+     * a diagnostic metadata block (`streamingFinishReason`,
+     * `partialTextLength`, `elapsedMs`, `transportErrorKind`,
+     * `transportErrorMessage`) and throws
+     * `P2PException(P2PError.transport, ...)`. The `retryable`
+     * flag in the metadata is `true` only when the caller has
+     * configured TPipe's generic pipe retry policy
+     * (`timeoutStrategy = PipeTimeoutStrategy.Retry` AND
+     * `maxRetryAttempts > 0`). When `retryable` is false (the
+     * TPipe default — `PipeTimeoutStrategy.Fail`), the failure
+     * is terminal and the trace file is the visible error record;
+     * when true, TPipe's [com.TTT.Pipe.PipeTimeoutManager] catches
+     * the propagated exception and schedules another attempt per
+     * its own retry policy. There is no streaming-internal retry
+     * loop — every retry attempt is owned by TPipe's generic
+     * retry layer, not this code.
      */
     private suspend fun executeStreamingDirect(jsonRequest: String): com.TTT.Pipe.MultimodalContent
     {
@@ -1307,29 +1387,75 @@ class GenericOpenAIPipe : Pipe()
         var totalInputTokens = 0
         var totalOutputTokens = 0
         var totalReasoningTokens = 0
+        // Captured from the first non-null finish_reason across the
+        // choices[]. Defensive termination signal — the spec lets a
+        // server emit finish_reason on the terminal chunk without
+        // sending a separate `data: [DONE]` sentinel. We break out
+        // of the SSE loop on the first non-null value so the parser
+        // does not block waiting for socket EOF after the model has
+        // finished generating. See the [DONE] guard below for the
+        // primary termination trigger.
+        var streamingFinishReason: String? = null
 
         // Read SSE events line by line. lineSequence() reads from the
         // BufferedReader one line at a time, which blocks per-line —
         // so each SSE delta fires emitStreamingChunk as it arrives on
         // the socket. This is the key behavior the Ktor bodyAsChannel
         // path does NOT exhibit.
-        java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { reader ->
+        // Flag that the consumer has explicitly terminated the SSE loop
+        // (either via the [DONE] guard or a non-null finish_reason).
+        // Sequence.forEach cannot be broken out of via return@label —
+        // Kotlin's sequence iteration is a while(hasNext()) loop and
+        // returning from the action lambda only returns from the
+        // action. The iterator's hasNext() call then blocks on
+        // readLine() waiting for more data that never arrives (the
+        // connection is alive but the SSE stream has terminated via
+        // [DONE] or finish_reason). We use a labeled while loop on
+        // the iterator directly so `break@lineLoop` exits the loop
+        // without another iterator.hasNext() call.
+        // Reset the exposed terminal reason at the top of every
+        // streaming call so stale values from a prior request do
+        // not leak into the next request's success metadata.
+        this.streamingFinishReason = null
+        // Track the start of the streaming read so the catch block
+        // below can report elapsed time in the failure metadata.
+        val streamingStartMs = System.currentTimeMillis()
+        try
+        {
+            java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { reader ->
             var lastEventType: String? = null
-            reader.lineSequence().forEach { rawLine ->
+            val lineIterator = reader.lineSequence().iterator()
+            lineLoop@ while(lineIterator.hasNext())
+            {
+                val rawLine = lineIterator.next()
                 val line = rawLine.trimEnd()
                 if(line.isEmpty())
                 {
                     // blank separator between events
-                    return@forEach
+                    continue@lineLoop
                 }
                 if(line.startsWith("event: "))
                 {
                     lastEventType = line.substringAfter("event: ").trim()
-                    return@forEach
+                    continue@lineLoop
                 }
                 if(line.startsWith("data: "))
                 {
                     val dataLine = line.substringAfter("data: ")
+                    // OpenAI Chat Completions spec mandates `data: [DONE]`
+                    // as the terminal sentinel. Without this guard, the
+                    // sentinel reaches the JSON parser below and throws;
+                    // the silent catch swallows the throw and the parser
+                    // waits for socket EOF. Against AWS Mantle (which
+                    // keeps the TCP connection alive after [DONE] because
+                    // of its chunked-SigV4 transport) the parser hangs for
+                    // the full readTimeoutMs instead of terminating within
+                    // milliseconds. See the function-level KDoc for the
+                    // AWS workaround note.
+                    if(dataLine.trim() == "[DONE]")
+                    {
+                        break@lineLoop
+                    }
                     when(apiMode)
                     {
                         is ApiMode.OpenAIResponses ->
@@ -1407,6 +1533,24 @@ class GenericOpenAIPipe : Pipe()
                                         textBuilder.append(content)
                                         emitStreamingChunk(content)
                                     }
+                                    // Terminal-chunk detection: spec lets the
+                                    // server emit finish_reason on the final
+                                    // chunk without a follow-up `data: [DONE]`
+                                    // sentinel. Capture the first non-null value
+                                    // and stop the SSE loop — otherwise the
+                                    // parser waits for socket EOF that may not
+                                    // arrive before the 120-second readTimeoutMs
+                                    // (Mantle chunked-SigV4 keeps the socket
+                                    // alive). The primary termination trigger is
+                                    // the [DONE] guard above; this is the
+                                    // belt-and-suspenders layer.
+                                    val finishReasonEl = choiceObj?.get("finish_reason")
+                                    val finishReason = (finishReasonEl as? JsonPrimitive)?.contentOrNull
+                                    if(finishReason != null && streamingFinishReason == null)
+                                    {
+                                        streamingFinishReason = finishReason
+                                        break@lineLoop
+                                    }
                                 }
                             }
                             catch(_: Exception)
@@ -1464,11 +1608,63 @@ class GenericOpenAIPipe : Pipe()
                 lastEventType = null
             }
         }
+        }
+        catch(e: java.io.IOException)
+        {
+            // Mid-stream transport failure during the SSE read loop.
+            // The loop has read whatever bytes had already arrived, so
+            // textBuilder and streamingFinishReason reflect partial
+            // state. Emit an API_CALL_FAILURE with the diagnostic
+            // metadata block, then throw P2PException so the call
+            // site propagates a typed transport failure.
+            //
+            // The `retryable` flag tells TPipe's PipeTimeoutManager
+            // whether the configured timeoutStrategy=Retry +
+            // maxRetryAttempts>0 path should fire. When retryable is
+            // false (the default for callers who haven't opted in),
+            // PipeTimeoutManager treats the failure as terminal and
+            // the trace file is the visible error record.
+            val retryable = this.timeoutStrategy == com.TTT.Pipe.PipeTimeoutStrategy.Retry
+                && this.maxRetryAttempts > 0
+            val elapsedMs = System.currentTimeMillis() - streamingStartMs
+            val partialTextLength = textBuilder.length
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                  error = e,
+                  metadata = mapOf(
+                      "reason" to "midStreamTransportFailure",
+                      "streaming" to true,
+                      "apiType" to when(apiMode)
+                      {
+                          is ApiMode.OpenAI -> "ChatAPI"
+                          is ApiMode.OpenAIResponses -> "ResponsesAPI"
+                          is ApiMode.Anthropic -> "AnthropicAPI"
+                      },
+                      "transport" to "HttpURLConnection",
+                      "retryable" to retryable,
+                      "transportErrorKind" to (e::class.simpleName ?: "IOException"),
+                      "transportErrorMessage" to (e.message ?: ""),
+                      "elapsedMs" to elapsedMs,
+                      "partialTextLength" to partialTextLength,
+                      "streamingFinishReason" to (this.streamingFinishReason ?: "null")
+                  ))
+            throw P2PException(
+                P2PError.transport,
+                "Streaming read failed mid-stream after ${partialTextLength} chars / ${elapsedMs}ms " +
+                    "(${e::class.simpleName}: ${e.message}). retryable=$retryable",
+                e
+            )
+        }
 
         streamingReasoning = reasoningBuilder.toString()
         streamingInputTokens = totalInputTokens
         streamingOutputTokens = totalOutputTokens
         streamingReasoningTokens = totalReasoningTokens
+        // Expose the captured terminal reason on the class field so
+        // downstream consumers (validators, post-call analytics,
+        // streaming callbacks) can read it without parsing the SSE
+        // stream themselves. null when the stream terminated on
+        // [DONE] without a finish_reason chunk.
+        this.streamingFinishReason = streamingFinishReason
 
         val resultText = textBuilder.toString()
 
@@ -1536,6 +1732,17 @@ class GenericOpenAIPipe : Pipe()
                 is ApiMode.Anthropic -> "AnthropicAPI"
             }
         )
+        // Surface the captured terminal reason when the chat-completions
+        // API emitted one. This is the most operationally relevant
+        // signal for OpenAI ChatAPI callers: a null finish_reason means
+        // the stream terminated on the [DONE] sentinel without a
+        // finish_reason chunk (rare but valid); "stop" is the normal
+        // case; "length" indicates the model hit the token cap;
+        // "content_filter" means the response was filtered mid-stream.
+        if(this.streamingFinishReason != null)
+        {
+            streamingMetadata["streamingFinishReason"] = this.streamingFinishReason!!
+        }
         if(streamingReasoningText.isNotEmpty())
         {
             streamingMetadata["reasoningLength"] = streamingReasoningText.length
