@@ -334,6 +334,18 @@ class Junction : P2PInterface
         }
     }
 
+    override fun enableStallDetectorRecursive(
+        config: com.TTT.Pipe.StreamingStallConfig,
+        callback: com.TTT.Pipe.StallCallback?
+    )
+    {
+        moderatorBinding?.component?.enableStallDetectorRecursive(config, callback)
+        for (binding in participantBindings)
+        {
+            binding.component.enableStallDetectorRecursive(config, callback)
+        }
+    }
+
 //----------------------------------------------Configuration------------------------------------------------------------
 
     /**

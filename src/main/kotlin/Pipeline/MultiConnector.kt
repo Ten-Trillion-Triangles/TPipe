@@ -132,6 +132,17 @@ class MultiConnector : P2PInterface
         }
     }
 
+    override fun enableStallDetectorRecursive(
+        config: com.TTT.Pipe.StreamingStallConfig,
+        callback: com.TTT.Pipe.StallCallback?
+    )
+    {
+        for (connector in connectors)
+        {
+            connector.enableStallDetectorRecursive(config, callback)
+        }
+    }
+
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {
         // Execute P2P request using the first available connector in sequential mode

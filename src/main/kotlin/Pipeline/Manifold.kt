@@ -226,6 +226,18 @@ class Manifold : P2PInterface
         }
     }
 
+    override fun enableStallDetectorRecursive(
+        config: com.TTT.Pipe.StreamingStallConfig,
+        callback: com.TTT.Pipe.StallCallback?
+    )
+    {
+        managerPipeline.enableStallDetectorRecursive(config, callback)
+        for (workerComponent in workerComponents)
+        {
+            workerComponent.enableStallDetectorRecursive(config, callback)
+        }
+    }
+
 //=============================================Properties===============================================================
 
     private var managerPipeline: Pipeline = Pipeline()

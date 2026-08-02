@@ -2436,6 +2436,26 @@ private fun pathKey(name: String): String = name.lowercase()
         }
     }
 
+    override fun enableStallDetectorRecursive(
+        config: com.TTT.Pipe.StreamingStallConfig,
+        callback: com.TTT.Pipe.StallCallback?
+    )
+    {
+        judgeAgent?.enableStallDetectorRecursive(config, callback)
+        dispatchAgent?.enableStallDetectorRecursive(config, callback)
+        interventionAgent?.enableStallDetectorRecursive(config, callback)
+        healthAgent?.enableStallDetectorRecursive(config, callback)
+        lorebookAgent?.enableStallDetectorRecursive(config, callback)
+        summaryAgent?.enableStallDetectorRecursive(config, callback)
+        goalAgent?.enableStallDetectorRecursive(config, callback)
+        preInitAgent?.enableStallDetectorRecursive(config, callback)
+        pathSafetyAgent?.enableStallDetectorRecursive(config, callback)
+        for (slot in additionalHarnessAgentSlots)
+        {
+            slot.agent?.enableStallDetectorRecursive(config, callback)
+        }
+    }
+
     /**
      * Returns the current task state for inspection.
      */

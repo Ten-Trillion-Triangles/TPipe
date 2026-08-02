@@ -112,6 +112,17 @@ class Connector : P2PInterface
         }
     }
 
+    override fun enableStallDetectorRecursive(
+        config: com.TTT.Pipe.StreamingStallConfig,
+        callback: com.TTT.Pipe.StallCallback?
+    )
+    {
+        for (pipeline in branches.values)
+        {
+            pipeline.enableStallDetectorRecursive(config, callback)
+        }
+    }
+
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {

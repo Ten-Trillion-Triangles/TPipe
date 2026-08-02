@@ -116,6 +116,20 @@ class Splitter: P2PInterface
         }
     }
 
+    override fun enableStallDetectorRecursive(
+        config: com.TTT.Pipe.StreamingStallConfig,
+        callback: com.TTT.Pipe.StallCallback?
+    )
+    {
+        for (activatorValue in activatorKeys.values)
+        {
+            for (pipeline in activatorValue.pipelines)
+            {
+                pipeline.enableStallDetectorRecursive(config, callback)
+            }
+        }
+    }
+
 //-------------------------------------------Properties--------------------------------------------------------------------
 
 

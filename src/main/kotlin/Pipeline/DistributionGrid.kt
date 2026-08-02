@@ -645,6 +645,16 @@ class DistributionGrid : P2PInterface
         workerPipelines?.forEach { it.setStreamingCallbackRecursive(callback) }
     }
 
+    override fun enableStallDetectorRecursive(
+        config: com.TTT.Pipe.StreamingStallConfig,
+        callback: com.TTT.Pipe.StallCallback?
+    )
+    {
+        entryPipeline?.enableStallDetectorRecursive(config, callback)
+        judgePipeline?.enableStallDetectorRecursive(config, callback)
+        workerPipelines?.forEach { it.enableStallDetectorRecursive(config, callback) }
+    }
+
     /**
      * Execute the local DistributionGrid runtime path directly.
      *
