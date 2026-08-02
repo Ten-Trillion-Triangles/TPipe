@@ -11,7 +11,9 @@
 - [Structured Outputs](#structured-outputs)
 - [Function Calling](#function-calling)
 - [Reasoning Models](#reasoning-models)
+  - [Bedrock Mantle Reasoning](#bedrock-mantle-reasoning)
 - [Streaming](#streaming)
+  - [Streaming Trace Events and Token Reporting](#streaming-trace-events-and-token-reporting)
 - [Anthropic-Style Caching](#anthropic-style-caching)
 - [Multimodal Content](#multimodal-content)
 - [Comparison with Other Providers](#comparison-with-other-providers)
@@ -356,6 +358,60 @@ fun main() = runBlocking {
 
 Reasoning effort enum values: `"xhigh" | "high" | "medium" | "low" | "minimal" | "none"`. The Responses API mode (OpenAI) additionally populates `streamingReasoningTokens` from the wire and exposes them via tracing metadata.
 
+### Bedrock Mantle Reasoning
+
+For AWS Bedrock Mantle models, configure via `BedrockMantleConfiguration` and `BedrockMantleAuth`:
+
+```kotlin
+import genericOpenAIPipe.GenericOpenAIPipe
+import genericOpenAIPipe.env.BedrockMantleConfiguration
+import genericOpenAIPipe.env.BedrockMantleAuth
+import kotlinx.coroutines.runBlocking
+
+fun main() = runBlocking {
+    val pipe = GenericOpenAIPipe()
+        .setApiKey(System.getenv("AWS_ACCESS_KEY_ID"))       // not used for Mantle auth
+        .setModel("google.gemma-4-e2b")
+        .configureBedrockMantle(
+            BedrockMantleConfiguration(
+                modelId = "google.gemma-4-e2b",
+                region  = "us-east-1"
+            )
+        )
+        .init()
+
+    val result = pipe.execute("Explain the CAP theorem in one sentence.")
+    println(result.text)
+}
+```
+
+`configureBedrockMantle` is available on `GenericOpenAIPipe` after the `BedrockMantleConfiguration` import. It wires SigV4 credentials from the environment (AWS access key + secret, or an attached IAM role) and sets the internal `ApiMode` to `Anthropic`.
+
+The function also populates the reasoning-pipe metadata contract that TPipe's `getMiddlePromptForReasoning()` and `getFooterPromptForReasoning()` read at execution time:
+
+| Metadata key | Value | Corresponding `ReasoningSettings` default |
+|:---|:---|:---|
+| `injectMiddlePrompt` | `false` | `ReasoningSettings:142` |
+| `injectFooterPrompt` | `false` | `ReasoningSettings:143` |
+| `reinforceSystemPrompt` | `false` | `ReasoningSettings:144` |
+
+These defaults match the TPipe `ReasoningSettings` defaults. Mantle has no `ReasoningBuilder`-style settings object — the values are written by hand inside `configureBedrockMantle`.
+
+If you require a JSON-completion footer prompt (for example, to force structured output), set `injectFooterPrompt = true` on the pipe after construction and call `setFooterPrompt(...)` yourself:
+
+```kotlin
+val pipe = GenericOpenAIPipe()
+    .setModel("google.gemma-4-e2b")
+    .configureBedrockMantle(BedrockMantleConfiguration(modelId = "google.gemma-4-e2b", region = "us-east-1"))
+    .apply {
+        pipeMetadata["injectFooterPrompt"] = true
+        setFooterPrompt("You must respond with valid JSON matching the following schema...")
+    }
+    .init()
+```
+
+`getFooterPromptForReasoning()` reads `footerPrompt` only when `injectFooterPrompt` is `true`; without that flag, the footer is silent at the wire.
+
 ## Streaming
 
 Both `setStreamingEnabled(true)` and `setStreamingCallback { ... }` enable Server-Sent Events streaming. The callback receives text chunks as they arrive and the pipe also accumulates them into the final result:
@@ -385,6 +441,35 @@ SSE format is mode-specific:
 - `ApiMode.OpenAIResponses` — `response.created` / `response.output_text.delta` / `response.completed` events parsed by `OpenAIResponsesSseParser`.
 
 The pipe automatically routes to the right parser based on the active `ApiMode`.
+
+### Streaming Trace Events and Token Reporting
+
+When tracing is enabled, each streaming turn emits an `API_CALL_SUCCESS` event whose metadata carries `inputTokens`, `outputTokens`, and `totalTokens` as reported by the provider.
+
+For `ApiMode.Anthropic` (including Mantle via `configureBedrockMantle`), the pipe reads `input_tokens` from the `message_start.usage` SSE event — the official provider source — and carries that value into the trace. The SSE loop does not discard `message_start` for token purposes; the first accurate value is captured and not overwritten by a later `message_delta` that carries `input_tokens: 0`.
+
+For `ApiMode.OpenAIResponses`, `inputTokens` flows from `response.completed.usage.input_tokens`. This path has always been correct and is pinned by a regression test.
+
+For `ApiMode.OpenAI`, token counts are read from the non-streaming response body after the SSE loop completes.
+
+The `totalTokens` field in the trace is the arithmetic sum `inputTokens + outputTokens` for all three modes.
+
+```
+// Enable tracing to see token metadata on every call
+pipe.enableTracing(TraceConfig(enabled = true, includeMetadata = true))
+pipe.addTraceId("my-pipeline")
+pipe.init()
+
+val result = pipe.execute("Hello")
+// After the call, read the trace:
+//   PipeTracer.getTrace("my-pipeline")
+//   → API_CALL_SUCCESS
+//   → metadata.inputTokens   = provider-billed input tokens
+//   → metadata.outputTokens  = provider-billed output tokens
+//   → metadata.totalTokens   = inputTokens + outputTokens
+```
+
+If you observe `inputTokens = 0` for an Anthropic streaming call in the trace, the pipe is not reading `message_start.usage.input_tokens` from the SSE stream correctly. Verify that the SSE loop captures that event before the first `content_block_delta`.
 
 ## Anthropic-Style Caching
 

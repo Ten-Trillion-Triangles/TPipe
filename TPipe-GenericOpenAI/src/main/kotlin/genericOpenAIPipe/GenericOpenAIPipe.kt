@@ -648,15 +648,28 @@ class GenericOpenAIPipe : Pipe()
      * [genericOpenAIPipe.env.BedrockMantleEnv] and prefers SigV4 when both
      * an access key id and a secret access key are available.
      *
-     * Also populates the reasoning-pipe metadata contract — the same keys
-     * written by `ReasoningBuilder.assignDefaults` for the four first-party
-     * builders (`reasonWithBedrock`, `reasonWithOllama`, `reasonWithOpenRouter`,
-     * `reasonWithGenericOpenAI`). Mantle-shaped reasoning pipes are first-class
-     * TPipe providers; the middle/footer prompt injection feature is provider-
-     * agnostic and reads only these metadata keys. Without this wiring the
-     * unguarded cast at `Pipe.kt:8033/8047` historically threw NPE on every
-     * Mantle reasoning invocation, with the retry loop absorbing the exception
-     * and degrading the visible reasoning output.
+     * Also populates the reasoning-pipe metadata contract keys that
+     * [Pipe.getMiddlePromptForReasoning] (Pipe.kt:8033), [Pipe.getFooterPromptForReasoning]
+     * (Pipe.kt:8047), and [Pipe.applySystemPrompt] (Pipe.kt:7166-7168) read at
+     * execution time. Without these keys present the unguarded casts at
+     * Pipe.kt:8033 / 8047 historically threw NPE on every Mantle reasoning
+     * invocation; the retry loop absorbed the exception and degraded the
+     * visible reasoning output. Mantle has no settings object (it is wired
+     * directly, not through `ReasoningBuilder.assignDefaults`), so we write
+     * the [Defaults.reasoning.ReasoningSettings] defaults by hand here:
+     *
+     *   injectMiddlePrompt     = false  (ReasoningSettings:142 default)
+     *   injectFooterPrompt     = false  (ReasoningSettings:143 default)
+     *   reinforceSystemPrompt  = false  (ReasoningSettings:144 default)
+     *
+     * Note: the JSON-completion footer prompt that `assignDefaults` installs
+     * at ReasoningBuilder.kt:321-325 via setFooterPrompt(...) is intentionally
+     * NOT wired here. getFooterPromptForReasoning() (Pipe.kt:8047) only reads
+     * `footerPrompt` when the caller has opted in via injectFooterPrompt=true,
+     * so the footer would be dead code at the wire unless a Mantle builder
+     * flips that gate. Callers that want JSON-completion enforcement on a
+     * Mantle reasoning pipe should set injectFooterPrompt=true after
+     * construction and then call setFooterPrompt(...) themselves.
      */
     private fun configureBedrockMantle(config: BedrockMantleConfiguration)
     {
@@ -664,11 +677,11 @@ class GenericOpenAIPipe : Pipe()
         setApiMode(config.apiMode)
         setModel(config.modelId)
 
-        // Reasoning-pipe metadata contract — mirrors ReasoningBuilder.assignDefaults
-        // (TPipe-Defaults/src/main/kotlin/Defaults/reasoning/ReasoningBuilder.kt:317-318).
-        // Defaults to false to match `ReasoningSettings.injectMiddlePrompt = false`.
+        // Reasoning-pipe metadata contract — defaults match ReasoningSettings
+        // (TPipe-Defaults/src/main/kotlin/Defaults/reasoning/ReasoningBuilder.kt:142-144).
         pipeMetadata["injectMiddlePrompt"] = false
         pipeMetadata["injectFooterPrompt"] = false
+        pipeMetadata["reinforceSystemPrompt"] = false
 
         val sigV4Auth = BedrockMantleAuth.sigV4FromEnv(regionOverride = config.region)
         if (sigV4Auth != null)

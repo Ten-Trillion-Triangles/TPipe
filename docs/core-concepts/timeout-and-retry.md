@@ -244,6 +244,198 @@ val attempts = PipeTimeoutManager.getRetryCount(pipe)
 println("Pipe has retried $attempts times")
 ```
 
+## Streaming Stall Detector
+
+TPipe also ships a **streaming stall detector** that watches inter-token arrival intervals during SSE streaming and triggers retry when the model falls silent abnormally — a different failure mode from wall-clock timeouts.
+
+A stalled stream and a timed-out pipe are not the same thing. A timeout fires after a fixed duration regardless of progress. A stall detector fires when the most recent token arrived more than `N` standard deviations later than the rolling mean, after a warmup period. Both feed into `PipeTimeoutManager.handleStallSignal` and share the same retry infrastructure.
+
+### Core Component
+
+`StreamingStallDetector` tracks token arrival timestamps in a ring buffer and computes rolling population mean and standard deviation in O(1) per token. After `warmupTokenCount` tokens have been observed, the statistical test arms. Each subsequent token arrival checks:
+
+```
+silence_ms > max(mean + stddevMultiplier × stddev, stallMinSilenceMs)
+```
+
+If true, a stall is detected.
+
+### Configuration
+
+#### Pipe-Level
+
+```kotlin
+// Minimal: detect stalls with defaults
+pipe.enableStallDetector()
+
+// Custom thresholds
+pipe.enableStallDetector(
+    config = StreamingStallConfig(
+        windowSize = 50,           // tokens to track (default 50)
+        stddevMultiplier = 3.0,    // k in μ + kσ threshold (default 3.0)
+        stallMinSilenceMs = 10_000L, // absolute floor in ms (default 10000)
+        maxStallRetries = 3,       // max stall retries (default 3)
+        warmupTokenCount = 20      // tokens before detection arms (default 20)
+    )
+)
+
+// Register a callback for monitoring/logging
+pipe.enableStallDetector(
+    config = StreamingStallConfig(maxStallRetries = 3)
+) { stallEvent ->
+    println("STALL: ${stallEvent.tokensSeen} tokens, ${stallEvent.silenceMs}ms silence")
+}
+
+// Or set the callback separately
+pipe.setStallCallback { stallEvent ->
+    myMetricService.recordStall(stallEvent)
+}
+```
+
+#### Pipeline-Level
+
+```kotlin
+pipeline.enableStallDetector(
+    applyRecursively = true,  // propagate to all child pipes (default false)
+    config = StreamingStallConfig(maxStallRetries = 2)
+) { stallEvent ->
+    println("Stall in pipeline: ${stallEvent.pipeName}")
+}
+```
+
+When `applyRecursively = true`, every pipe added to the pipeline receives the stall config and callback during `init()`. Each pipe owns its own `StreamingStallDetector` instance with its own per-pipe statistics.
+
+### How It Works
+
+```
+Token arrives → update ring buffer & rolling stats → (if armed) check threshold
+                                                              ↓
+                                              silence > max(μ+kσ, stallMinSilenceMs)
+                                                              ↓
+                                                          STALL DETECTED
+                                                              ↓
+                                          GlobalScope.launch { onStall(StallEvent) }
+                                                              ↓
+                                          PipeTimeoutManager.handleStallSignal(...)
+                                                              ↓
+                                          attempts < maxStallRetries?
+                                              YES → snapshot restored, repeatPipe=true, re-execute
+                                              NO  → PIPE_FAILURE, stream terminated
+```
+
+The stall detector runs inside the streaming SSE callback loop. `onStall` fires asynchronously via `GlobalScope.launch(Dispatchers.Default)` so that a `suspend`-typed callback can call `pipe.abort()` without forcing the callback itself to be suspend. Failures in the callback are caught and never propagate into the chunk loop.
+
+`StallEvent` fields:
+
+| Field | Type | Description |
+|:---|:---|:---|
+| `pipeName` | `String` | Display name of the pipe experiencing the stall |
+| `elapsedMs` | `Long` | Epoch milliseconds since the stream started |
+| `tokensSeen` | `Int` | Token count at the moment of stall |
+| `lastTokenTimestamp` | `Long` | Epoch ms of the last token received before the stall |
+| `silenceMs` | `Long` | Gap that triggered the stall (ms) |
+| `expectedIntervalMs` | `Double` | Rolling mean inter-token interval (μ) |
+| `actualIntervalMs` | `Long` | Observed interval for the stalled period |
+| `stddevMultiplier` | `Double` | k used in the μ + kσ threshold |
+| `retryAttempt` | `Int` | Current stall retry attempt number (0 = first stall) |
+
+### Relationship to Timeout Retry
+
+Stall detection and wall-clock timeout operate independently and can be used together. They share `PipeTimeoutManager.handleStallSignal` but maintain separate retry counters (`stallRetryAttempts` vs `retryAttempts`) in separate `ConcurrentHashMap` entries.
+
+```
+Timeout fires → handleTimeoutSignal → uses retryAttempts counter
+Stall fires   → handleStallSignal  → uses stallRetryAttempts counter
+```
+
+Both can fire on the same stream. After `maxStallRetries` exhausted, the stall path terminates with `PIPE_FAILURE`. After `maxRetryAttempts` exhausted, the timeout path terminates the same way. They do not share a counter.
+
+### Tracing
+
+```
+PIPE_RETRY    — stall retry triggered, attempts incremented, snapshot restored
+PIPE_FAILURE  — stall retry exhausted, stream terminated
+```
+
+Both events carry full stall metadata in the trace event.
+
+### Threshold Selection
+
+| Scenario | `stddevMultiplier` | `stallMinSilenceMs` | `warmupTokenCount` |
+|:---|:---|:---|:---|
+| Stable high-throughput models | 3.0 (default) | 10_000 (default) | 20 (default) |
+| Variable/bursty models | 4.0–5.0 | 15_000–20_000 | 30–50 |
+| Low-latency local models | 2.0–2.5 | 3_000–5_000 | 10–15 |
+| High-latency remote APIs | 3.0–4.0 | 20_000–30_000 | 20–30 |
+
+The `stallMinSilenceMs` floor is the primary guard against false positives from network jitter. The `stddevMultiplier` handles models whose token arrival rate varies legitimately. Set `warmupTokenCount` high enough that cold-start ramp-up does not trigger a false stall before the model reaches steady-state throughput.
+
+### Examples
+
+#### Basic Stall Detection with Automatic Retry
+
+```kotlin
+val pipe = BedrockPipe()
+    .setModel("anthropic.claude-3-5-sonnet-20241022-v1:0")
+    .setStreamingEnabled(true)
+    .enableStallDetector(
+        config = StreamingStallConfig(
+            maxStallRetries = 3,
+            stallMinSilenceMs = 15_000L,
+            stddevMultiplier = 3.0
+        )
+    )
+
+val result = pipe.execute("Explain the history of the internet.")
+```
+
+#### Stall Detection with Monitoring Callback
+
+```kotlin
+import com.TTT.Pipe.StallEvent
+import com.TTT.Pipe.StallCallback
+
+val myAlertService = MyAlertService()
+
+val onStall: StallCallback = { event ->
+    myAlertService.alert(
+        level = if (event.retryAttempt >= 2) "critical" else "warning",
+        message = "Stall on ${event.pipeName}: ${event.silenceMs}ms silence " +
+            "after ${event.tokensSeen} tokens (μ=${event.expectedIntervalMs.toLong()}ms, " +
+            "k=${event.stddevMultiplier})"
+    )
+}
+
+val pipe = BedrockPipe()
+    .setModel("anthropic.claude-3-5-sonnet-20241022-v1:0")
+    .setStreamingCallback { chunk -> print(chunk) }
+    .enableStallDetector(
+        config = StreamingStallConfig(maxStallRetries = 3),
+        callback = onStall
+    )
+    .init()
+
+pipe.execute("Give me a detailed history of computing.")
+```
+
+#### Pipeline-Level Propagation
+
+```kotlin
+val pipeline = Pipeline()
+    .enableStallDetector(
+        applyRecursively = true,
+        config = StreamingStallConfig(maxStallRetries = 2)
+    ) { event ->
+        println("[${event.pipeName}] stalled: ${event.silenceMs}ms")
+    }
+    .addPipe(classifierPipe)
+    .addPipe(generatorPipe)
+    .addPipe(evaluatorPipe)
+    .init()
+```
+
+Every pipe in the pipeline inherits the same stall config and callback. Each pipe maintains its own rolling statistics — a stall on `classifierPipe` does not reset the statistics on `generatorPipe`.
+
 ## Critical Warnings
 
 ### ⚠️ Pre-Execution DITL Function Side Effects
