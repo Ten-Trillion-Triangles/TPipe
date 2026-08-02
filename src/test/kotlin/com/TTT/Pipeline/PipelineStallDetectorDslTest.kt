@@ -15,7 +15,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 class PipelineStallDetectorDslTest {
 
     @Test
-    fun `enableStallDetector sets pipeline-level flag and config`() {
+    fun `enableStallDetector sets pipeline-level flag and config`()
+    {
         val pipeline = Pipeline()
         pipeline.enableStallDetector(
             config = StreamingStallConfig(windowSize = 25, stallMinSilenceMs = 5_000L),
@@ -36,7 +37,8 @@ class PipelineStallDetectorDslTest {
     }
 
     @Test
-    fun `enableStallDetector propagates callback to children`() {
+    fun `enableStallDetector propagates callback to children`()
+    {
         val pipeline = Pipeline()
         var firedCount = 0
         pipeline.enableStallDetector(callback = { firedCount++ })
@@ -60,7 +62,8 @@ class PipelineStallDetectorDslTest {
     }
 
     @Test
-    fun `init does not propagate stall config when enableStallDetector not called`() {
+    fun `init does not propagate stall config when enableStallDetector not called`()
+    {
         val pipeline = Pipeline()
         val pipe = DummyPipe()
         pipeline.add(pipe)

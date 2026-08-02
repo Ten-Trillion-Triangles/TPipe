@@ -20,17 +20,20 @@ class StreamingStallDetectorBehaviorTest {
      * Waits up to 1s for [predicate] to become true, polling every 10ms.
      * Used to bridge the GlobalScope.launch boundary for stall callbacks.
      */
-    private fun waitFor(predicate: () -> Boolean) {
+    private fun waitFor(predicate: () -> Boolean)
+    {
         runBlocking {
             val deadline = System.currentTimeMillis() + 1000L
-            while (!predicate() && System.currentTimeMillis() < deadline) {
+            while (!predicate() && System.currentTimeMillis() < deadline)
+            {
                 delay(10)
             }
         }
     }
 
     @Test
-    fun `stall fires on 150ms gap post-warmup when statistical test dominates`() {
+    fun `stall fires on 150ms gap post-warmup when statistical test dominates`()
+    {
         // Tokens at 100ms intervals → mean=100ms, stddev≈0.
         // minSilenceMs = 50ms (low floor so statistical test dominates).
         // After warmup: 3σ ≈ 0. threshold = max(100+0, 50) = 100ms.
@@ -55,7 +58,8 @@ class StreamingStallDetectorBehaviorTest {
     }
 
     @Test
-    fun `stall fires on 12 second silence post-warmup regardless of statistics`() {
+    fun `stall fires on 12 second silence post-warmup regardless of statistics`()
+    {
         // Fast tokens at 10ms → mean≈10ms, stddev≈0.
         // minSilenceMs=10s. A 12s gap > 10s floor → stall.
         val events = mutableListOf<StallEvent>()
@@ -78,7 +82,8 @@ class StreamingStallDetectorBehaviorTest {
     }
 
     @Test
-    fun `no stall during steady throughput for 10 seconds`() {
+    fun `no stall during steady throughput for 10 seconds`()
+    {
         // Steady 50ms intervals for 10 seconds = 200 tokens.
         val detector = StreamingStallDetector(
             pipeName = "steady",
@@ -90,7 +95,8 @@ class StreamingStallDetectorBehaviorTest {
     }
 
     @Test
-    fun `slow but alive model — 3s gap with 10s floor does not fire`() {
+    fun `slow but alive model — 3s gap with 10s floor does not fire`()
+    {
         // Slow model: tokens every 2s. 3s gap < 10s floor → no stall.
         val events = mutableListOf<StallEvent>()
         val detector = StreamingStallDetector(
@@ -113,7 +119,8 @@ class StreamingStallDetectorBehaviorTest {
     }
 
     @Test
-    fun `slow model truly dead — 11s gap with 10s floor fires stall`() {
+    fun `slow model truly dead — 11s gap with 10s floor fires stall`()
+    {
         // Slow model dies: 2s intervals, then 11s silence.
         val events = mutableListOf<StallEvent>()
         val detector = StreamingStallDetector(
@@ -135,7 +142,8 @@ class StreamingStallDetectorBehaviorTest {
     }
 
     @Test
-    fun `stall event carries correct statistical metadata`() {
+    fun `stall event carries correct statistical metadata`()
+    {
         val events = mutableListOf<StallEvent>()
         val detector = StreamingStallDetector(
             pipeName = "metaTest",
@@ -164,7 +172,8 @@ class StreamingStallDetectorBehaviorTest {
     }
 
     @Test
-    fun `no stall before warmup completes`() {
+    fun `no stall before warmup completes`()
+    {
         // warmupTokenCount = 50. Emit 30 tokens with crazy gaps.
         // No stall should fire because the statistical test is not armed.
         val events = mutableListOf<StallEvent>()
@@ -179,7 +188,8 @@ class StreamingStallDetectorBehaviorTest {
             onStall = { events.add(it) }
         )
         // 30 tokens with 1-second gaps each
-        for (i in 0 until 30) {
+        for (i in 0 until 30)
+        {
             detector.onTokenReceived("x", i * 1000L)
         }
         runBlocking { delay(50) }

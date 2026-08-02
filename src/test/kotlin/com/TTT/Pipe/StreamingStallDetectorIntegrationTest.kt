@@ -62,12 +62,14 @@ class StreamingStallDetectorIntegrationTest {
 
         // The onStall fires asynchronously via GlobalScope.launch — wait for it.
         val deadline = System.currentTimeMillis() + 1000L
-        while (callbackInvocations == 0 && System.currentTimeMillis() < deadline) {
+        while (callbackInvocations == 0 && System.currentTimeMillis() < deadline)
+        {
             kotlinx.coroutines.delay(10)
         }
         // Wait a little more for handleStallSignal (also async)
         val deadline2 = System.currentTimeMillis() + 1000L
-        while (PipeTimeoutManager.getStallRetryCount(pipe) == 0 && System.currentTimeMillis() < deadline2) {
+        while (PipeTimeoutManager.getStallRetryCount(pipe) == 0 && System.currentTimeMillis() < deadline2)
+        {
             kotlinx.coroutines.delay(10)
         }
 

@@ -109,7 +109,8 @@ class StreamingStallDetector(
     val pipeName: String,
     val config: StreamingStallConfig = StreamingStallConfig(),
     private val onStall: StallCallback
-) {
+)
+{
     private val intervalBuffer: LongArray = LongArray(config.windowSize)
     private var bufferIndex = 0
     private var bufferCount = 0
@@ -146,8 +147,10 @@ class StreamingStallDetector(
      * @param tokenText The token text (ignored for timing — only the timestamp matters).
      * @param timestamp Epoch milliseconds at which this token arrived.
      */
-    fun onTokenReceived(tokenText: String, timestamp: Long) {
-        if (lastTokenTimestamp < 0L) {
+    fun onTokenReceived(tokenText: String, timestamp: Long)
+    {
+        if (lastTokenTimestamp < 0L)
+        {
             // First token — record but don't compute an interval or test.
             lastTokenTimestamp = timestamp
             tokensSeen++
@@ -163,9 +166,12 @@ class StreamingStallDetector(
         tokensSeen++
 
         // Update ring buffer and aggregates.
-        if (bufferCount < config.windowSize) {
+        if (bufferCount < config.windowSize)
+        {
             bufferCount++
-        } else {
+        }
+        else
+        {
             // Evict oldest value from aggregates before overwriting.
             val oldest = intervalBuffer[bufferIndex]
             sumIntervals -= oldest
@@ -176,12 +182,14 @@ class StreamingStallDetector(
         sumSquares += interval * interval
         bufferIndex = (bufferIndex + 1) % config.windowSize
 
-        if (isArmed) {
+        if (isArmed)
+        {
             checkForStall(timestamp, previousTimestamp)
         }
     }
 
-    private fun checkForStall(currentTimestamp: Long, previousTokenTimestamp: Long) {
+    private fun checkForStall(currentTimestamp: Long, previousTokenTimestamp: Long)
+    {
         val silenceMs = currentTimestamp - previousTokenTimestamp
         val n = bufferCount.coerceAtLeast(1)
         val mean = sumIntervals.toDouble() / n
@@ -189,7 +197,8 @@ class StreamingStallDetector(
         val stddev = if (variance > 0.0) sqrt(variance) else 0.0
         val threshold = maxOf(mean + config.stddevMultiplier * stddev, config.stallMinSilenceMs.toDouble())
 
-        if (silenceMs > threshold) {
+        if (silenceMs > threshold)
+        {
             val event = StallEvent(
                 pipeName = pipeName,
                 elapsedMs = currentTimestamp,

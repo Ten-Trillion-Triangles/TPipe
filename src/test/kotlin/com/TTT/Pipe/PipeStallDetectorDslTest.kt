@@ -13,7 +13,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 class PipeStallDetectorDslTest {
 
     @Test
-    fun `enableStallDetector with default config sets flag and defaults`() {
+    fun `enableStallDetector with default config sets flag and defaults`()
+    {
         val pipe = DummyPipe()
         pipe.enableStallDetector()
         assertTrue(pipe.enableStallDetector)
@@ -23,7 +24,8 @@ class PipeStallDetectorDslTest {
     }
 
     @Test
-    fun `enableStallDetector with custom config sets fields`() {
+    fun `enableStallDetector with custom config sets fields`()
+    {
         val pipe = DummyPipe()
         pipe.enableStallDetector(
             config = StreamingStallConfig(
@@ -43,7 +45,8 @@ class PipeStallDetectorDslTest {
     }
 
     @Test
-    fun `enableStallDetector with callback registers it`() {
+    fun `enableStallDetector with callback registers it`()
+    {
         val pipe = DummyPipe()
         var callbackFired = false
         pipe.enableStallDetector(callback = { callbackFired = true })
@@ -66,7 +69,8 @@ class PipeStallDetectorDslTest {
     }
 
     @Test
-    fun `setStallCallback registers without enabling detector`() {
+    fun `setStallCallback registers without enabling detector`()
+    {
         val pipe = DummyPipe()
         var fired = false
         pipe.setStallCallback { fired = true }
@@ -90,7 +94,8 @@ class PipeStallDetectorDslTest {
     }
 
     @Test
-    fun `default state has stall detector disabled and no callback`() {
+    fun `default state has stall detector disabled and no callback`()
+    {
         val pipe = DummyPipe()
         assertEquals(false, pipe.enableStallDetector)
         assertNull(pipe.stallCallback)

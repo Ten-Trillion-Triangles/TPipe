@@ -12,7 +12,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 class PipeTimeoutManagerStallTest {
 
     @Test
-    fun `handleStallSignal increments stall retry count and returns repeatPipe content`() {
+    fun `handleStallSignal increments stall retry count and returns repeatPipe content`()
+    {
         val pipe = DummyPipe()
         pipe.enableStallDetector(StreamingStallConfig(maxStallRetries = 3))
 
@@ -37,7 +38,8 @@ class PipeTimeoutManagerStallTest {
     }
 
     @Test
-    fun `handleStallSignal without snapshot terminates content`() {
+    fun `handleStallSignal without snapshot terminates content`()
+    {
         val pipe = DummyPipe()
         pipe.enableStallDetector(StreamingStallConfig(maxStallRetries = 3))
 
@@ -63,7 +65,8 @@ class PipeTimeoutManagerStallTest {
     }
 
     @Test
-    fun `handleStallSignal terminates after maxStallRetries exceeded`() {
+    fun `handleStallSignal terminates after maxStallRetries exceeded`()
+    {
         val pipe = DummyPipe()
         pipe.enableStallDetector(StreamingStallConfig(maxStallRetries = 2))
 
@@ -103,7 +106,8 @@ class PipeTimeoutManagerStallTest {
     }
 
     @Test
-    fun `clearStallRetryCount resets counter`() {
+    fun `clearStallRetryCount resets counter`()
+    {
         val pipe = DummyPipe()
         pipe.enableStallDetector(StreamingStallConfig(maxStallRetries = 5))
 
