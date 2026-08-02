@@ -305,6 +305,27 @@ pipeline.enableStallDetector(
 
 When `applyRecursively = true`, every pipe added to the pipeline receives the stall config and callback during `init()`. Each pipe owns its own `StreamingStallDetector` instance with its own per-pipe statistics.
 
+#### Recursive Across the Full Container Tree
+
+For multi-container hierarchies (Manifold, Junction, Splitter, Connector, MultiConnector, DistributionGrid, PumpStation), use `enableStallDetectorRecursive` on any P2PInterface root. The call walks the entire container tree: each container override recurses into its own child P2PInterface references, and at the leaf each `Pipe` is wired via `Pipe.propagateStallDetection(config, callback)`, which further walks the pipe's validator / transformation / branch / reasoning child pipes.
+
+```kotlin
+// One call at the top of the agent tree, all leaves get stall detection.
+val agentTree: P2PInterface = manifold { /* ... */ }
+agentTree.enableStallDetectorRecursive(
+    config = StreamingStallConfig(maxStallRetries = 2)
+) { stallEvent ->
+    metrics.recordStall(stallEvent.pipeName, stallEvent.silenceMs)
+}
+```
+
+Semantics:
+
+- **Parent override wins** — a child that was previously configured with a different `StreamingStallConfig` or callback has both replaced by the recursive call's arguments. This matches the direct-child propagation in `Pipeline.init` and gives the root caller a single source of truth for stall behavior across the whole tree.
+- **Per-pipe stats invariant** — every leaf pipe keeps its own `StreamingStallDetector` instance with its own ring buffer. The recursive call wires more leaves to detectors, it does NOT share a single detector across pipes.
+- **Cycle-safe** — `propagateStallDetection` uses a `visited` set keyed by `pipeId` so a pipe referenced from multiple containers is wired exactly once.
+- **Default config** — calling `enableStallDetectorRecursive()` with no arguments propagates `StreamingStallConfig()` defaults and a `null` callback to every leaf.
+
 ### How It Works
 
 ```
