@@ -553,15 +553,7 @@ class OpenRouterPipe : Pipe()
 
         provider = ProviderName.OpenRouter
 
-        httpClient = HttpClient(CIO)
-        {
-            install(HttpTimeout)
-            {
-                requestTimeoutMillis = 120_000
-                connectTimeoutMillis = 30_000
-                socketTimeoutMillis = 120_000
-            }
-        }
+        httpClient = createHttpClient()
 
         trace(TraceEventType.PIPE_SUCCESS, TracePhase.INITIALIZATION,
               metadata = mapOf("initialized" to true))
@@ -578,7 +570,7 @@ class OpenRouterPipe : Pipe()
               metadata = mapOf("action" to "abort", "provider" to "OpenRouter"))
 
         httpClient?.close()
-        httpClient = null
+        httpClient = createHttpClient()
 
         super.abort()
     }
@@ -1065,6 +1057,22 @@ class OpenRouterPipe : Pipe()
     override suspend fun truncateModuleContextSuspend(): Pipe
     {
         return truncateModuleContext()
+    }
+
+//=========================================HTTP Client Factory=======================================================
+
+    /**
+     * Factory for the HTTP client. Extracted to enable abort() to recreate the client
+     * instead of nulling it — matching the pattern established in GenericOpenAIPipe.kt:837-838.
+     * The prior regression (nulling the client after close) left the pipe in a dead state where
+     * the next generateText() call threw IllegalStateException without a retry path.
+     */
+    private fun createHttpClient(): HttpClient = HttpClient(CIO) {
+        install(HttpTimeout) {
+            requestTimeoutMillis = 120_000
+            connectTimeoutMillis = 30_000
+            socketTimeoutMillis = 120_000
+        }
     }
 
 //=========================================ProviderInterface==========================================================
