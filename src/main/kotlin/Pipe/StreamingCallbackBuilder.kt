@@ -20,6 +20,18 @@ class StreamingCallbackBuilder
     private val manager = StreamingCallbackManager()
 
     /**
+     * Whether to propagate callbacks to validator, transformation, and branch pipes.
+     * Defaults to true.
+     */
+    var propagateToChildren: Boolean = true
+
+    /**
+     * Whether to propagate callbacks to the reasoning pipe.
+     * Defaults to true.
+     */
+    var propagateToReasoning: Boolean = true
+
+    /**
      * Adds a suspendable callback to the manager.
      *
      * @param callback Suspendable function that receives streaming chunks

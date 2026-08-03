@@ -1010,7 +1010,7 @@ open class BedrockPipe : Pipe()
     }
 
     /**
-     * Adds a streaming callback to every descendant pipe (validator, transformation,
+     * Adds a streaming callback to descendant pipes (validator, transformation,
      * branch, reasoning) without registering on this pipe's own manager.
      *
      * Mirrors the recursion intent of [com.TTT.Pipe.Pipe.propagateStreamingCallback]
@@ -1018,91 +1018,123 @@ open class BedrockPipe : Pipe()
      * the legacy `streamingCallback` field AND the manager's emitToAll; the legacy
      * field already carries the parent-side callback, so propagating to self would
      * cause the same lambda to fire twice when the parent emits a chunk.
+     *
+     * @param callback Suspendable callback to propagate
+     * @param propagateToChildren Whether to propagate to validator, transformation,
+     *                            and branch pipes. Defaults to true.
+     * @param propagateToReasoning Whether to propagate to the reasoning pipe.
+     *                             Defaults to true.
      */
-    private fun addCallbackToDescendants(callback: suspend (String) -> Unit)
+    private fun addCallbackToDescendants(
+        callback: suspend (String) -> Unit,
+        propagateToChildren: Boolean = true,
+        propagateToReasoning: Boolean = true,
+    )
     {
-        listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { child ->
-            child.obtainStreamingCallbackManager().addCallback(callback)
-            (child as? BedrockPipe)?.addCallbackToDescendants(callback)
+        if(propagateToChildren)
+        {
+            listOfNotNull(validatorPipe, transformationPipe, branchPipe).forEach { child ->
+                child.obtainStreamingCallbackManager().addCallback(callback)
+                (child as? BedrockPipe)?.addCallbackToDescendants(callback, propagateToChildren, propagateToReasoning)
+            }
+        }
+
+        if(propagateToReasoning)
+        {
+            reasoningPipe?.let { reasoning ->
+                reasoning.obtainStreamingCallbackManager().addCallback(callback)
+                (reasoning as? BedrockPipe)?.addCallbackToDescendants(callback, propagateToChildren, propagateToReasoning)
+            }
         }
     }
 
     /**
      * Registers a suspendable callback invoked for each streamed text delta.
-     * 
+     *
      * Sets up a callback function that receives individual token chunks as they
      * arrive from the streaming API. The callback must be suspendable to handle
      * async operations like UI updates, logging, or further processing.
-     * 
+     *
      * Callback characteristics:
      * - Invoked once per token/chunk received
      * - Receives raw text deltas (not cumulative text)
      * - Must handle suspending operations properly
      * - Should be fast to avoid blocking the stream
-     * 
+     *
      * Automatically enables streaming mode when a callback is registered.
      * Exceptions in the callback are caught and traced but don't stop streaming.
-     * 
+     *
      * @param callback Suspendable function that processes each text chunk
+     * @param propagateToChildren Whether to propagate the callback to validator,
+     *                            transformation, and branch pipes. Defaults to true.
+     * @param propagateToReasoning Whether to propagate the callback to the reasoning
+     *                             pipe. Defaults to true.
      * @return This pipe instance for method chaining
      * @see emitStreamingChunk for callback invocation mechanism
      * @see executeInvokeStream for streaming implementation
      */
-    fun setStreamingCallback(callback: suspend (String) -> Unit): BedrockPipe {
-        // Register suspendable callback and enable streaming.
-        // Legacy `streamingCallback` field IS the single source of truth on
-        // this pipe; emitStreamingChunk at line 5233 invokes it directly, so
-        // adding the same callback to streamingCallbackManager too would
-        // double-fire the same lambda when emitToAll iterates the manager.
-        // We instead walk descendants and add the callback only to them.
+    fun setStreamingCallback(
+        callback: suspend (String) -> Unit,
+        propagateToChildren: Boolean = true,
+        propagateToReasoning: Boolean = true,
+    ): BedrockPipe {
         this.streamingCallback = callback
         this.streamingEnabled = true
-        addCallbackToDescendants(callback)
+        addCallbackToDescendants(callback, propagateToChildren, propagateToReasoning)
         return this
     }
+
     /**
      * Convenience overload for non-suspending callbacks.
-     * 
+     *
      * Wraps a regular (non-suspending) callback function to work with the
      * streaming system. Useful for simple callbacks that don't need async operations:
-     * 
+     *
      * - UI updates that are synchronous
      * - Simple logging or printing
      * - Basic text accumulation or processing
-     * 
+     *
      * The callback is automatically wrapped in a suspending lambda for compatibility
      * with the streaming infrastructure. For async operations, use the suspending
      * version of setStreamingCallback instead.
-     * 
+     *
      * @param callback Regular function that processes each text chunk
+     * @param propagateToChildren Whether to propagate the callback to validator,
+     *                            transformation, and branch pipes. Defaults to true.
+     * @param propagateToReasoning Whether to propagate the callback to the reasoning
+     *                             pipe. Defaults to true.
      * @return This pipe instance for method chaining
      * @see setStreamingCallback for suspendable callback version
      */
-    fun setStreamingCallback(callback: (String) -> Unit): BedrockPipe {
-        // Wrap non-suspending callback in suspending lambda
+    fun setStreamingCallback(
+        callback: (String) -> Unit,
+        propagateToChildren: Boolean = true,
+        propagateToReasoning: Boolean = true,
+    ): BedrockPipe {
         val wrapped: suspend (String) -> Unit = { chunk -> callback(chunk) }
-        // Same single-source-of-truth pattern as the suspend overload above:
-        // set the legacy field with the wrapped lambda (Bedrock's
-        // emitStreamingChunk fires it directly), and walk descendants only
-        // — emitting pipes' own manager would double-fire if we used
-        // propagateStreamingCallback.
         this.streamingCallback = wrapped
         this.streamingEnabled = true
-        addCallbackToDescendants(wrapped)
+        addCallbackToDescendants(wrapped, propagateToChildren, propagateToReasoning)
         return this
     }
 
     /**
      * Configures multiple streaming callbacks using builder pattern.
-     * 
+     *
      * Allows registering multiple independent callbacks to receive streaming chunks.
      * Each callback can perform different operations (UI updates, logging, metrics)
      * without interfering with each other. Supports configurable execution mode
      * (sequential or concurrent) and automatic error isolation.
      *
+     * Propagation to descendant pipes can be gated via
+     * [StreamingCallbackBuilder.propagateToChildren] and
+     * [StreamingCallbackBuilder.propagateToReasoning].
+     *
      * Example usage:
      * ```
      * pipe.streamingCallbacks {
+     *     propagateToReasoning = false
+     *     propagateToChildren = true
      *     add { chunk -> print(chunk) }
      *     add { chunk -> logToFile(chunk) }
      *     concurrent()
@@ -1119,7 +1151,14 @@ open class BedrockPipe : Pipe()
         val manager = callbackBuilder.build()
         val callbacks = manager.getCallbacks()
         streamingCallbackManager = manager
-        callbacks.forEach { callback -> propagateStreamingCallback(callback) }
+        callbacks.forEach { callback ->
+            propagateStreamingCallback(
+                callback,
+                mutableSetOf(),
+                callbackBuilder.propagateToChildren,
+                callbackBuilder.propagateToReasoning,
+            )
+        }
         streamingEnabled = true
         return this
     }

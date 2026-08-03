@@ -1932,21 +1932,27 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
-     * Registers a streaming callback on this pipe AND every descendant pipe
-     * (validator, transformation, branch, reasoning). This is required because
-     * each pipe has its own [StreamingCallbackManager]; without propagation, a
-     * callback registered on a parent pipe would not fire when a child pipe's
-     * API call streams chunks. Mirrors [propagateTracingRecursively].
+     * Registers a streaming callback on this pipe AND optionally on descendant
+     * pipes (validator, transformation, branch, reasoning). This is required
+     * because each pipe has its own [StreamingCallbackManager]; without
+     * propagation, a callback registered on a parent pipe would not fire when
+     * a child pipe's API call streams chunks. Mirrors [propagateTracingRecursively].
      *
      * The callback is added (idempotent) to each pipe's manager. If the same
      * pipe has already received the callback, no duplicate is added.
      *
      * @param callback Suspendable callback receiving text chunks
      * @param visited Internal — tracks already-walked pipes to prevent cycles
+     * @param propagateToChildren Whether to propagate the callback to validator,
+     *                            transformation, and branch pipes. Defaults to true.
+     * @param propagateToReasoning Whether to propagate the callback to the reasoning
+     *                             pipe. Defaults to true.
      */
     fun propagateStreamingCallback(
         callback: suspend (String) -> Unit,
-        visited: MutableSet<String> = mutableSetOf()
+        visited: MutableSet<String> = mutableSetOf(),
+        propagateToChildren: Boolean = true,
+        propagateToReasoning: Boolean = true,
     )
     {
         if(pipeId in visited) return
@@ -1960,11 +1966,24 @@ abstract class Pipe : P2PInterface, ProviderInterface
         // just flips the flag.
         setStreamingEnabled(true)
 
-        // Recurse into every child pipe.
-        listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { child ->
-            if(child.pipeId !in visited)
-            {
-                child.propagateStreamingCallback(callback, visited)
+        // Recurse into child pipes based on gating flags.
+        if(propagateToChildren)
+        {
+            listOfNotNull(validatorPipe, transformationPipe, branchPipe).forEach { child ->
+                if(child.pipeId !in visited)
+                {
+                    child.propagateStreamingCallback(callback, visited, propagateToChildren, propagateToReasoning)
+                }
+            }
+        }
+
+        if(propagateToReasoning)
+        {
+            reasoningPipe?.let { reasoning ->
+                if(reasoning.pipeId !in visited)
+                {
+                    reasoning.propagateStreamingCallback(callback, visited, propagateToChildren, propagateToReasoning)
+                }
             }
         }
     }

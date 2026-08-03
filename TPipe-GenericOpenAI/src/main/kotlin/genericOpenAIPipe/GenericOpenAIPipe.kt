@@ -475,18 +475,23 @@ class GenericOpenAIPipe : Pipe()
     /**
      * Registers a callback for streaming response chunks.
      * Automatically enables streaming mode.
+     *
      * @param callback Suspendable callback receiving text chunks
+     * @param propagateToChildren Whether to propagate the callback to validator,
+     *                            transformation, and branch pipes. Defaults to true.
+     * @param propagateToReasoning Whether to propagate the callback to the reasoning
+     *                             pipe. Defaults to true.
      * @return This pipe instance for fluent chaining
      */
-    fun setStreamingCallback(callback: suspend (String) -> Unit): GenericOpenAIPipe
+    fun setStreamingCallback(
+        callback: suspend (String) -> Unit,
+        propagateToChildren: Boolean = true,
+        propagateToReasoning: Boolean = true,
+    ): GenericOpenAIPipe
     {
         this.streamingEnabled = true
         obtainStreamingCallbackManager().addCallback(callback)
-        // Propagate to every descendant pipe so chunks emitted by child
-        // pipes (validator, transformation, branch, reasoning) flow through
-        // the same callback. Without this, callbacks registered on a parent
-        // pipe are silently ignored when its child pipe's API call streams.
-        propagateStreamingCallback(callback)
+        propagateStreamingCallback(callback, mutableSetOf(), propagateToChildren, propagateToReasoning)
         return this
     }
 
@@ -502,11 +507,15 @@ class GenericOpenAIPipe : Pipe()
      * Every registered callback is also propagated to descendant pipes
      * (validator, transformation, branch, reasoning) via
      * [com.TTT.Pipe.Pipe.propagateStreamingCallback] so chunks emitted anywhere
-     * in the pipe tree reach the same sinks.
+     * in the pipe tree reach the same sinks. Propagation can be gated via
+     * [StreamingCallbackBuilder.propagateToChildren] and
+     * [StreamingCallbackBuilder.propagateToReasoning].
      *
      * Example:
      * ```
      * pipe.streamingCallbacks {
+     *     propagateToReasoning = false
+     *     propagateToChildren = true
      *     add { chunk -> dispatcher.append(connectionId, chunk) }
      *     add { chunk -> metrics.record(chunk.length) }
      *     onError { e, chunk -> log.warn("callback failed", e) }
@@ -523,7 +532,12 @@ class GenericOpenAIPipe : Pipe()
         val manager = obtainStreamingCallbackManager()
         callbackBuilder.build().getCallbacks().forEach { callback ->
             manager.addCallback(callback)
-            propagateStreamingCallback(callback)
+            propagateStreamingCallback(
+                callback,
+                mutableSetOf(),
+                callbackBuilder.propagateToChildren,
+                callbackBuilder.propagateToReasoning,
+            )
         }
         streamingEnabled = true
         return this
