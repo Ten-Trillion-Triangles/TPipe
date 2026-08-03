@@ -38,7 +38,16 @@ data class OpenAIResponsesRequest(
     val parallelToolCalls: Boolean? = null,
     val text: OpenAIResponsesTextConfig? = null,
     val reasoning: OpenAIResponsesReasoning? = null,
-    val user: String? = null
+    val user: String? = null,
+    /**
+     * Bedrock Mantle GPT-5.6 prompt cache top-level options. Null on every
+     * non-Mantle-GPT-5.6 target so the wire shape is unchanged. Populated by
+     * [genericOpenAIPipe.api.OpenAIResponsesRequestSerializer] when the pipe
+     * carries [genericOpenAIPipe.mantle.MantleMetadataKeys.GPT56_PROMPT_CACHING]
+     * metadata.
+     */
+    @SerialName("prompt_cache_options")
+    val promptCacheOptions: PromptCacheOptions? = null,
 )
 
 /**

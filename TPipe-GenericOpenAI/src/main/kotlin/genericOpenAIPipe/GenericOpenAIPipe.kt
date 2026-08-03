@@ -1134,7 +1134,15 @@ class GenericOpenAIPipe : Pipe()
                 stream = streamingEnabled
             )
 
-            val jsonRequest = requestSerializer.serialize(request, apiMode)
+            val jsonRequest = requestSerializer.serialize(
+                request, apiMode,
+                // pipeMetadata is `MutableMap<Any, Any>` on the base Pipe class.
+                // RequestSerializationOptions expects `Map<String, Any?>` — keys
+                // are string constants in practice (see MantleMetadataKeys), values
+                // are typed objects. The cast is safe because callers use string keys.
+                @Suppress("UNCHECKED_CAST")
+                RequestSerializationOptions(metadata = pipeMetadata as Map<String, Any?>),
+            )
 
             if(streamingEnabled)
             {

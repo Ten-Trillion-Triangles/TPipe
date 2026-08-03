@@ -254,10 +254,15 @@ Enables Server-Sent Events (SSE) streaming. When enabled, the response is delive
 - `ApiMode.Anthropic` → `AnthropicSseParser`
 - `ApiMode.OpenAIResponses` → `OpenAIResponsesSseParser`
 
-#### `setStreamingCallback(callback: suspend (String) -> Unit): GenericOpenAIPipe`
-Registers a callback for streaming response chunks. Automatically enables streaming by flipping `streamingEnabled = true`, adding the callback via `obtainStreamingCallbackManager()`, and propagating the callback to all descendant pipes (validator, transformation, branch, reasoning) via `propagateStreamingCallback`. This ensures chunks emitted by any pipe in the tree flow through the registered callback.
+#### `setStreamingCallback(callback: suspend (String) -> Unit, propagateToChildren: Boolean = true, propagateToReasoning: Boolean = true): GenericOpenAIPipe`
+Registers a callback for streaming response chunks. Automatically enables streaming by flipping `streamingEnabled = true`, adding the callback via `obtainStreamingCallbackManager()`, and propagating the callback to descendant pipes (validator, transformation, branch, reasoning) via `propagateStreamingCallback`. This ensures chunks emitted by any pipe in the tree flow through the registered callback.
 
-**Example:**
+**Parameters:**
+- **`callback`**: Suspendable callback receiving text chunks as they arrive
+- **`propagateToChildren`**: Whether to propagate to validator, transformation, and branch pipes. Defaults to `true`. Set to `false` to restrict propagation to the reasoning pipe only.
+- **`propagateToReasoning`**: Whether to propagate to the reasoning pipe. Defaults to `true`. Set to `false` to exclude the reasoning pipe.
+
+**Example — default propagation (all descendants):**
 ```kotlin
 pipe.setStreamingCallback { chunk ->
     print(chunk)
@@ -265,7 +270,25 @@ pipe.setStreamingCallback { chunk ->
 }
 ```
 
----
+**Example — propagate to children but not to reasoning:**
+```kotlin
+pipe.setStreamingCallback(
+    { chunk -> print(chunk) },
+    propagateToChildren = true,
+    propagateToReasoning = false
+)
+```
+
+**Example — propagate to reasoning only:**
+```kotlin
+pipe.setStreamingCallback(
+    { chunk -> display(chunk) },
+    propagateToChildren = false,
+    propagateToReasoning = true
+)
+```
+
+**See Also:** [Streaming Callbacks Guide](../core-concepts/streaming-callbacks.md)
 
 ### Reasoning
 

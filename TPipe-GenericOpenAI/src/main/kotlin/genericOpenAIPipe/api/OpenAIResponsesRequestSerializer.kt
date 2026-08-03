@@ -12,9 +12,15 @@ import genericOpenAIPipe.env.OpenAIResponsesRequest
 import genericOpenAIPipe.env.OpenAIResponsesTextConfig
 import genericOpenAIPipe.env.OpenAIResponsesTextFormat
 import genericOpenAIPipe.env.OpenAIResponsesTool
+import genericOpenAIPipe.env.PromptCacheBreakpoint
+import genericOpenAIPipe.env.PromptCacheOptions
 import genericOpenAIPipe.env.ReasoningConfig
 import genericOpenAIPipe.env.ResponseFormat
 import genericOpenAIPipe.env.ToolDefinition
+import genericOpenAIPipe.mantle.MantleGpt56CacheBoundary
+import genericOpenAIPipe.mantle.MantleGpt56PromptCacheMetadata
+import genericOpenAIPipe.mantle.MantleMetadataKeys
+import genericOpenAIPipe.mantle.requireMantleGpt56ExplicitCachingSupport
 
 /**
  * [RequestSerializer] implementation that emits the OpenAI Responses wire spec
@@ -44,15 +50,25 @@ class OpenAIResponsesRequestSerializer : RequestSerializer
      *
      * @param request The normalised in-process request
      * @param apiMode Must be [ApiMode.OpenAIResponses]
+     * @param options Caller-supplied serializer hints. The Responses serializer
+     *                reads the Mantle GPT-5.6 prompt-cache metadata key from
+     *                [options.metadata] and emits the corresponding
+     *                `prompt_cache_options` top-level field plus any per-block
+     *                `prompt_cache_breakpoint` markers. Empty options bag
+     *                preserves today's wire shape exactly.
      * @return JSON string ready for HTTP POST body
      * @throws IllegalArgumentException if [apiMode] is not [ApiMode.OpenAIResponses]
      */
-    override fun serialize(request: GenericOpenAIChatRequest, apiMode: ApiMode): String
+    override fun serialize(
+        request: GenericOpenAIChatRequest,
+        apiMode: ApiMode,
+        options: RequestSerializationOptions,
+    ): String
     {
         require(apiMode is ApiMode.OpenAIResponses)
         { "OpenAIResponsesRequestSerializer only supports ApiMode.OpenAIResponses, got $apiMode" }
 
-        val responsesRequest = convert(request)
+        val responsesRequest = convert(request, options)
         return serialize(responsesRequest, encodedefault = false)
     }
 
@@ -60,17 +76,54 @@ class OpenAIResponsesRequestSerializer : RequestSerializer
      * Pure conversion: [GenericOpenAIChatRequest] -> [OpenAIResponsesRequest].
      *
      * Exposed package-private for unit-test reuse without re-serializing to JSON.
+     *
+     * When [options.metadata] carries
+     * [genericOpenAIPipe.mantle.MantleMetadataKeys.GPT56_PROMPT_CACHING] and the
+     * target model is a Mantle GPT-5.6 variant on the Responses API, the
+     * resulting wire request includes:
+     *
+     *   - a top-level `prompt_cache_options` block with `mode` and `ttl`
+     *   - when the boundary is [genericOpenAIPipe.mantle.MantleGpt56CacheBoundary.AFTER_INSTRUCTIONS],
+     *     a `developer`-role input message containing the system prompt with a
+     *     `prompt_cache_breakpoint: { mode: "explicit" }` marker on its
+     *     `input_text` part (and `instructions` set to null instead of the
+     *     system text)
      */
-    internal fun convert(request: GenericOpenAIChatRequest): OpenAIResponsesRequest
+    internal fun convert(
+        request: GenericOpenAIChatRequest,
+        options: RequestSerializationOptions = RequestSerializationOptions(),
+    ): OpenAIResponsesRequest
     {
+        val cacheMeta = readMantlePromptCacheMetadata(request.model, apiMode = ApiMode.OpenAIResponses, options)
+        val boundary = cacheMeta?.boundary ?: MantleGpt56CacheBoundary.NONE
         val (instructions, inputMessages) = splitSystemAndInput(request.messages)
 
-        val input = inputMessages.map { convertMessage(it) }
+        val input = buildList<OpenAIResponsesMessageItem> {
+            if (boundary == MantleGpt56CacheBoundary.AFTER_INSTRUCTIONS && instructions != null)
+            {
+                // Emit the system prompt as a developer-role input message
+                // carrying the explicit breakpoint marker, so Mantle places the
+                // cache entry at the boundary between stable system content and
+                // dynamic user/assistant turns.
+                add(
+                    OpenAIResponsesMessageItem(
+                        role = "developer",
+                        content = listOf(
+                            OpenAIResponsesInputPart.InputTextPart(
+                                text = instructions,
+                                promptCacheBreakpoint = PromptCacheBreakpoint(mode = "explicit"),
+                            )
+                        ),
+                    )
+                )
+            }
+            inputMessages.forEach { add(convertMessage(it)) }
+        }
 
         return OpenAIResponsesRequest(
             model = request.model,
             input = input,
-            instructions = instructions,
+            instructions = if (boundary == MantleGpt56CacheBoundary.AFTER_INSTRUCTIONS) null else instructions,
             maxOutputTokens = request.maxTokens ?: request.maxCompletionTokens,
             temperature = request.temperature,
             topP = request.topP,
@@ -80,8 +133,30 @@ class OpenAIResponsesRequestSerializer : RequestSerializer
             parallelToolCalls = request.parallelToolCalls,
             text = convertResponseFormat(request.responseFormat),
             reasoning = convertReasoning(request.reasoning),
-            user = request.user
+            user = request.user,
+            promptCacheOptions = cacheMeta?.let { PromptCacheOptions(mode = it.mode, ttl = it.ttl) },
         )
+    }
+
+    /**
+     * Reads the Mantle GPT-5.6 prompt-cache metadata key from [options.metadata].
+     *
+     * Returns `null` when the key is absent so today's wire shape is preserved.
+     * When present, validates the (model, apiMode) combination via
+     * [requireMantleGpt56ExplicitCachingSupport] — throws
+     * [IllegalStateException] if the metadata is set on a target that Mantle
+     * does not support (e.g. a non-Responses API mode or a non-GPT-5.6 model).
+     */
+    private fun readMantlePromptCacheMetadata(
+        model: String,
+        apiMode: ApiMode,
+        options: RequestSerializationOptions,
+    ): MantleGpt56PromptCacheMetadata?
+    {
+        val raw = options.metadata[MantleMetadataKeys.GPT56_PROMPT_CACHING] as? MantleGpt56PromptCacheMetadata
+            ?: return null
+        requireMantleGpt56ExplicitCachingSupport(model = model, apiMode = apiMode)
+        return raw
     }
 
     /**
@@ -93,7 +168,7 @@ class OpenAIResponsesRequestSerializer : RequestSerializer
      *  - Everything else becomes a `Message` input item, in original order.
      */
     private fun splitSystemAndInput(
-        messages: List<ChatMessage>
+        messages: List<ChatMessage>,
     ): Pair<String?, List<ChatMessage>>
     {
         val systemParts = messages

@@ -20,9 +20,17 @@ interface RequestSerializer
      *
      * @param request The normalized [GenericOpenAIChatRequest] to serialize
      * @param apiMode The target [ApiMode] determining serialization format
+     * @param options Caller-supplied serializer hints. Default empty so
+     *                existing call sites preserve today's wire shape. The
+     *                OpenAI Responses serializer reads Mantle GPT-5.6 keys;
+     *                every other serializer ignores the bag.
      * @return JSON string ready for HTTP POST body
      */
-    fun serialize(request: GenericOpenAIChatRequest, apiMode: ApiMode): String
+    fun serialize(
+        request: GenericOpenAIChatRequest,
+        apiMode: ApiMode,
+        options: RequestSerializationOptions = RequestSerializationOptions(),
+    ): String
 
     companion object Factory
     {
@@ -32,13 +40,17 @@ interface RequestSerializer
 
         fun create(): RequestSerializer = object : RequestSerializer
         {
-            override fun serialize(request: GenericOpenAIChatRequest, apiMode: ApiMode): String
+            override fun serialize(
+                request: GenericOpenAIChatRequest,
+                apiMode: ApiMode,
+                options: RequestSerializationOptions,
+            ): String
             {
                 return when(apiMode)
                 {
-                    is ApiMode.OpenAI -> openAIRequestSerializer.serialize(request, apiMode)
-                    is ApiMode.Anthropic -> anthropicRequestSerializer.serialize(request, apiMode)
-                    is ApiMode.OpenAIResponses -> openAIResponsesRequestSerializer.serialize(request, apiMode)
+                    is ApiMode.OpenAI -> openAIRequestSerializer.serialize(request, apiMode, options)
+                    is ApiMode.Anthropic -> anthropicRequestSerializer.serialize(request, apiMode, options)
+                    is ApiMode.OpenAIResponses -> openAIResponsesRequestSerializer.serialize(request, apiMode, options)
                 }
             }
         }

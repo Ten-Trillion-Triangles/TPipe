@@ -9,10 +9,14 @@ import genericOpenAIPipe.env.GenericOpenAIEnv
 import genericOpenAIPipe.env.MessageContent
 import genericOpenAIPipe.env.OpenAIResponsesInputPart
 import genericOpenAIPipe.env.OpenAIResponsesRequest
+import genericOpenAIPipe.env.PromptCacheOptions
 import genericOpenAIPipe.env.ReasoningConfig
 import genericOpenAIPipe.env.ResponseFormat
 import genericOpenAIPipe.env.ToolDefinition
 import genericOpenAIPipe.env.FunctionSchema
+import genericOpenAIPipe.mantle.MantleGpt56CacheBoundary
+import genericOpenAIPipe.mantle.MantleGpt56PromptCacheMetadata
+import genericOpenAIPipe.mantle.MantleMetadataKeys
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Test
@@ -334,5 +338,126 @@ class OpenAIResponsesRequestSerializerTest
 
         Assertions.assertThrows(IllegalArgumentException::class.java) { serializer.serialize(request, ApiMode.OpenAI) }
         Assertions.assertThrows(IllegalArgumentException::class.java) { serializer.serialize(request, ApiMode.Anthropic) }
+    }
+
+//=========================================Mantle GPT-5.6 Prompt Caching=========================================
+
+    @Test
+    fun testPromptCacheOptionsAbsentWhenMetadataAbsent()
+    {
+        val request = GenericOpenAIChatRequest(
+            model = "openai.gpt-5.6-luna",
+            messages = listOf(
+                ChatMessage(role = "system", content = MessageContent.TextContent("Stable rules.")),
+                ChatMessage(role = "user", content = MessageContent.TextContent("hi")),
+            )
+        )
+
+        val json = serializer.serialize(
+            request, ApiMode.OpenAIResponses,
+            RequestSerializationOptions(),
+        )
+        val parsedJson = deserialize<JsonObject>(json)
+
+        Assertions.assertFalse(
+            parsedJson!!.containsKey("prompt_cache_options"),
+            "Expected no prompt_cache_options field when Mantle metadata is absent; got: $json",
+        )
+    }
+
+    @Test
+    fun testPromptCacheOptionsEmittedWhenMetadataPresent()
+    {
+        val request = GenericOpenAIChatRequest(
+            model = "openai.gpt-5.6-luna",
+            messages = listOf(
+                ChatMessage(role = "system", content = MessageContent.TextContent("Stable rules.")),
+                ChatMessage(role = "user", content = MessageContent.TextContent("hi")),
+            )
+        )
+        val options = RequestSerializationOptions(
+            metadata = mapOf(
+                MantleMetadataKeys.GPT56_PROMPT_CACHING to MantleGpt56PromptCacheMetadata(
+                    mode = "explicit", ttl = "30m", boundary = MantleGpt56CacheBoundary.NONE,
+                )
+            )
+        )
+
+        val json = serializer.serialize(request, ApiMode.OpenAIResponses, options)
+        val parsedJson = deserialize<JsonObject>(json)
+
+        Assertions.assertNotNull(parsedJson)
+        Assertions.assertTrue(
+            parsedJson!!.containsKey("prompt_cache_options"),
+            "Expected prompt_cache_options at top level; got: $json",
+        )
+        val cacheOptions = parsedJson["prompt_cache_options"] as JsonObject
+        Assertions.assertEquals("explicit", (cacheOptions["mode"] as JsonPrimitive).content)
+        Assertions.assertEquals("30m", (cacheOptions["ttl"] as JsonPrimitive).content)
+    }
+
+    @Test
+    fun testPromptCacheBreakpointOnInputTextWhenBoundaryIsAfterInstructions()
+    {
+        val request = GenericOpenAIChatRequest(
+            model = "openai.gpt-5.6-luna",
+            messages = listOf(
+                ChatMessage(role = "system", content = MessageContent.TextContent("Stable rules.")),
+                ChatMessage(role = "user", content = MessageContent.TextContent("hi")),
+            )
+        )
+        val options = RequestSerializationOptions(
+            metadata = mapOf(
+                MantleMetadataKeys.GPT56_PROMPT_CACHING to MantleGpt56PromptCacheMetadata(
+                    mode = "explicit", ttl = "30m", boundary = MantleGpt56CacheBoundary.AFTER_INSTRUCTIONS,
+                )
+            )
+        )
+
+        val json = serializer.serialize(request, ApiMode.OpenAIResponses, options)
+        val parsed = deserialize<OpenAIResponsesRequest>(json)
+
+        Assertions.assertNotNull(parsed)
+        Assertions.assertNull(
+            parsed!!.instructions,
+            "Expected instructions to be null when boundary=AFTER_INSTRUCTIONS routes system to a developer input block",
+        )
+        Assertions.assertTrue(
+            parsed.input.isNotEmpty(),
+            "Expected at least one input message after boundary transformation",
+        )
+        val first = parsed.input.first()
+        Assertions.assertEquals("developer", first.role, "Expected first input item to be a developer-role message")
+        Assertions.assertEquals(1, first.content.size)
+        val part = first.content.first() as OpenAIResponsesInputPart.InputTextPart
+        Assertions.assertEquals("Stable rules.", part.text)
+        Assertions.assertNotNull(
+            part.promptCacheBreakpoint,
+            "Expected promptCacheBreakpoint to be set on the developer-role input_text part",
+        )
+        Assertions.assertEquals("explicit", part.promptCacheBreakpoint!!.mode)
+    }
+
+    @Test
+    fun testPromptCacheBreakpointThrowsWhenModelIsNotGpt56()
+    {
+        val request = GenericOpenAIChatRequest(
+            model = "google.gemma-4-e2b",
+            messages = listOf(
+                ChatMessage(role = "system", content = MessageContent.TextContent("Stable rules.")),
+                ChatMessage(role = "user", content = MessageContent.TextContent("hi")),
+            )
+        )
+        val options = RequestSerializationOptions(
+            metadata = mapOf(
+                MantleMetadataKeys.GPT56_PROMPT_CACHING to MantleGpt56PromptCacheMetadata(
+                    mode = "explicit", ttl = "30m", boundary = MantleGpt56CacheBoundary.NONE,
+                )
+            )
+        )
+
+        Assertions.assertThrows(IllegalStateException::class.java) {
+            serializer.serialize(request, ApiMode.OpenAIResponses, options)
+        }
     }
 }

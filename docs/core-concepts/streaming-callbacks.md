@@ -226,6 +226,55 @@ Child pipes that are attached after the parent already has callbacks inherit tho
 
 Callback deduplication prevents double-firing: if the same lambda is registered both on the parent directly and again via a child's propagation path, it fires exactly once per chunk.
 
+### Propagation Gating
+
+By default, streaming callbacks propagate to all descendant pipes — validator, transformation, branch, and reasoning. You can disable propagation selectively using two boolean parameters:
+
+| Parameter | Default | Effect when false |
+|----------|--------|-------------------|
+| `propagateToChildren` | `true` | Callback is not propagated to validator, transformation, or branch pipes |
+| `propagateToReasoning` | `true` | Callback is not propagated to the reasoning pipe |
+
+**Gating on `setStreamingCallback`:**
+
+```kotlin
+// Propagate to validator/transformation/branch, but not to reasoning
+pipe.setStreamingCallback(
+    { chunk -> print(chunk) },
+    propagateToChildren = true,
+    propagateToReasoning = false
+)
+
+// Propagate to reasoning only — useful when the parent streams
+// the final output and the reasoning pipe handles intermediate steps
+pipe.setStreamingCallback(
+    { chunk -> display(chunk) },
+    propagateToChildren = false,
+    propagateToReasoning = true
+)
+
+// Disable all propagation — callback fires on this pipe only
+pipe.setStreamingCallback(
+    { chunk -> logOnly(chunk) },
+    propagateToChildren = false,
+    propagateToReasoning = false
+)
+```
+
+**Gating on `streamingCallbacks` builder:**
+
+```kotlin
+pipe.streamingCallbacks {
+    propagateToReasoning = false  // Do not reach reasoning pipe
+    propagateToChildren = true     // Reach validator/transformation/branch
+    add { chunk -> print(chunk) }
+    add { chunk -> logToFile(chunk) }
+    concurrent()
+}
+```
+
+Both parameters are independent. Setting both to `false` means the callback fires only on the pipe where it was registered — neither the parent's children nor the reasoning pipe receive it.
+
 ## Disabling Streaming
 
 Disable streaming and clear all callbacks:

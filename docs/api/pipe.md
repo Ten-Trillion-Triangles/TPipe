@@ -758,24 +758,44 @@ manager.addCallback { chunk -> print(chunk) }
 manager.removeCallback(someCallback)
 ```
 
-#### `propagateStreamingCallback(callback: suspend (String) -> Unit, visited: MutableSet<String> = mutableSetOf()): Unit` (Pipe)
-Registers a streaming callback on this pipe and every descendant pipe (validator, transformation, branch, reasoning). This is the mechanism that ensures chunks emitted by any pipe in the tree flow through a callback registered on a parent.
+#### `propagateStreamingCallback(callback: suspend (String) -> Unit, visited: MutableSet<String> = mutableSetOf(), propagateToChildren: Boolean = true, propagateToReasoning: Boolean = true): Unit` (Pipe)
+Registers a streaming callback on this pipe and optionally on descendant pipes (validator, transformation, branch, reasoning). This is the mechanism that ensures chunks emitted by any pipe in the tree flow through a callback registered on a parent.
 
-**Behavior:** Walks the pipe tree recursively, adding the callback to each pipe's manager via `obtainStreamingCallbackManager()`. Each pipe's manager dedups by reference equality, so the same lambda arriving via both parent-registration and child-propagation fires exactly once per chunk. The `visited` set prevents infinite recursion if the pipe tree contains a cycle.
+**Parameters:**
+- **`callback`**: Suspendable callback function receiving text chunks
+- **`visited`**: Mutable set used internally to prevent infinite recursion when the pipe tree contains a cycle. Callers pass the default empty set.
+- **`propagateToChildren`**: Whether to propagate to validator, transformation, and branch pipes. Defaults to `true` (all children). Set to `false` to restrict propagation to reasoning only.
+- **`propagateToReasoning`**: Whether to propagate to the reasoning pipe. Defaults to `true`. Set to `false` to exclude the reasoning pipe from the propagation path.
 
-Calling `propagateStreamingCallback` on a parent pipe that already has child pipes attached immediately propagates the callback to those children.
+**Behavior:** Walks the pipe tree recursively. When `propagateToChildren` is `true`, adds the callback to validator, transformation, and branch pipes, then recurses into each. When `propagateToReasoning` is `true`, adds the callback to the reasoning pipe, then recurses. Each pipe's manager dedups by reference equality, so the same lambda arriving via both parent-registration and child-propagation fires exactly once per chunk. The `visited` set prevents infinite recursion if the pipe tree contains a cycle.
+
+Calling `propagateStreamingCallback` on a parent pipe that already has child pipes attached immediately propagates the callback to those children, subject to the gating parameters.
 
 **Example:**
 ```kotlin
-// Register on parent; automatically reaches validator and reasoning children
+// Register on parent with default propagation (all descendants)
 val parent = GenericOpenAIPipe()
     .setValidatorPipe(validator)
     .setReasoningPipe(reasoning)
 
 parent.propagateStreamingCallback { chunk -> print(chunk) }
-
 // All three pipes now stream through the same callback
-parent.generateText("Explain quantum entanglement.")
+
+// Propagate to children but not to reasoning
+parent.propagateStreamingCallback(
+    { chunk -> print(chunk) },
+    mutableSetOf(),
+    propagateToChildren = true,
+    propagateToReasoning = false
+)
+
+// Propagate to reasoning only
+parent.propagateStreamingCallback(
+    { chunk -> display(chunk) },
+    mutableSetOf(),
+    propagateToChildren = false,
+    propagateToReasoning = true
+)
 ```
 
 #### `setStreamingEnabled(enabled: Boolean): Pipe` (Pipe)
@@ -798,19 +818,36 @@ Configures multiple streaming callbacks using builder pattern.
 
 **Behavior:** Registers multiple independent callbacks to receive streaming chunks. Each callback can perform different operations (UI updates, logging, metrics) without interfering with each other. Supports configurable execution mode (sequential or concurrent) and automatic error isolation. Automatically enables streaming mode.
 
-**Example:**
+The builder supports two propagation-gating fields:
+
+- **`propagateToChildren`**: Whether to propagate callbacks to validator, transformation, and branch pipes. Defaults to `true`. Set to `false` to restrict propagation to the reasoning pipe only.
+- **`propagateToReasoning`**: Whether to propagate callbacks to the reasoning pipe. Defaults to `true`. Set to `false` to exclude the reasoning pipe.
+
+**Example — all callbacks propagate to children but not to reasoning:**
 ```kotlin
 pipe.streamingCallbacks {
+    propagateToReasoning = false
+    propagateToChildren = true
     add { chunk -> print(chunk) }
     add { chunk -> logToFile(chunk) }
     add { chunk -> updateMetrics(chunk) }
-    concurrent()  // or sequential()
+    concurrent()
     onError { e, chunk -> println("Error: ${e.message}") }
 }
 ```
 
+**Example — all callbacks propagate to reasoning only:**
+```kotlin
+pipe.streamingCallbacks {
+    propagateToChildren = false
+    propagateToReasoning = true
+    add { chunk -> display(chunk) }
+    add { chunk -> record(chunk) }
+    sequential()
+}
+```
 **Parameters:**
-- **`builder`**: Lambda that configures the StreamingCallbackBuilder
+- **`builder`**: Lambda that configures the StreamingCallbackBuilder. Set `propagateToChildren` and `propagateToReasoning` inside the lambda to gate propagation for all callbacks registered in that block.
 
 **Returns:** This pipe instance for method chaining
 
