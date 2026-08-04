@@ -1,2 +1,11 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Startup-license boundary — these three files belong to the Startup
+# edition and must not be replaced by main's AGPL-3.0 / Community shapes
+# during a `git merge main`. Keeping them stable also protects the
+# cross-branch license backlinks that the Startup README + LICENSE
+# carry to tentrilliontriangles.com.
+LICENSE merge=ours
+README.md merge=ours
+build.gradle.kts merge=ours
