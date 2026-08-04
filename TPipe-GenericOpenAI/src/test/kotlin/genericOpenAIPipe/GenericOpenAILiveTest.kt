@@ -1,11 +1,15 @@
 package genericOpenAIPipe
 
 import com.TTT.Pipeline.Pipeline
+import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TracingBuilder
 import com.TTT.Debug.TraceFormat
 import com.TTT.Debug.TraceDetailLevel
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.Disabled
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -22,8 +26,23 @@ import kotlin.test.assertTrue
  * To run: ./gradlew :TPipe-GenericOpenAI:test --tests "*.GenericOpenAILiveTest"
  */
 @Disabled("Live test — enable manually by removing @Disabled annotation")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 
 class GenericOpenAILiveTest {
+
+    @BeforeAll
+    fun enableTracingForAllTests()
+    {
+        setupTraceDirectory(GenericOpenAILiveTest::class.java)
+        PipeTracer.enable()
+    }
+
+    @AfterAll
+    fun disableTracingForAllTests()
+    {
+        PipeTracer.getAllTraces().keys.forEach { PipeTracer.clearTrace(it) }
+        PipeTracer.disable()
+    }
 
     private fun getApiKey(): String? {
         return System.getenv("TOGETHER_API_KEY")
@@ -70,7 +89,7 @@ class GenericOpenAILiveTest {
 
         val traceConfig = TracingBuilder()
             .enabled()
-            .detailLevel(TraceDetailLevel.VERBOSE)
+            .detailLevel(TraceDetailLevel.DEBUG)
             .outputFormat(TraceFormat.CONSOLE)
             .build()
 
@@ -188,7 +207,7 @@ class GenericOpenAILiveTest {
 
         val traceConfig = TracingBuilder()
             .enabled()
-            .detailLevel(TraceDetailLevel.VERBOSE)
+            .detailLevel(TraceDetailLevel.DEBUG)
             .outputFormat(TraceFormat.HTML)
             .autoExport(true, "~/.TPipe-Debug/traces/")
             .build()

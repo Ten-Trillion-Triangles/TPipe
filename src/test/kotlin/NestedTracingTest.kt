@@ -24,6 +24,44 @@ class NestedTracingTest {
         PipeTracer.disable()
     }
 
+    /**
+     * Pins the bug at Pipe.kt:5052-5062: propagateTracingRecursively sets
+     * childPipe.tracingEnabled = true but does NOT propagate the trace ID via
+     * childPipe.addTraceId(...). Without the trace ID, child pipes' `trace()`
+     * calls iterate an empty `activeTraceIds` set and silently drop every
+     * event they emit. This test asserts that a child reasoning pipe's events
+     * are visible in PipeTracer under the pipeline's trace ID.
+     */
+    @Test
+    fun childReasoningPipeEventsAreRecordedUnderPipelineTraceId() = runBlocking {
+        val childReasoning = DummyPipe("Visible-Child-Reasoning")
+        val rootPipe = DummyPipe("Visible-Root").apply {
+            setReasoningPipe(childReasoning)
+        }
+
+        val pipeline = Pipeline()
+            .enableTracing()
+            .add(rootPipe)
+
+        pipeline.execute(MultimodalContent("trigger"))
+
+        val traceId = pipeline.getTraceId()
+        val trace = PipeTracer.getTrace(traceId)
+        val pipeNames = trace.map { it.pipeName }.toSet()
+
+        // Bug indicator: if propagateTracingRecursively failed to add the trace
+        // ID to the child reasoning pipe, its events are recorded against an
+        // empty activeTraceIds set and never appear under the pipeline's trace.
+        assertTrue(
+            pipeNames.contains("Visible-Child-Reasoning"),
+            "Child reasoning pipe events must be recorded under the pipeline's trace ID; got pipeNames=$pipeNames"
+        )
+        assertTrue(
+            pipeNames.contains("Visible-Root"),
+            "Root pipe events must be recorded under the pipeline's trace ID; got pipeNames=$pipeNames"
+        )
+    }
+
     @Test
     fun testNestedReasoningPipeTracing() = runBlocking {
         val nestedReasoning = DummyPipe("Reasoning-Level-2")
@@ -69,7 +107,6 @@ class NestedTracingTest {
 
         val trace = PipeTracer.getTrace(pipeline.getTraceId())
         val pipeNames = trace.map { it.pipeName }.toSet()
-
         assertTrue(pipeNames.contains("CycleRoot"))
         assertTrue(pipeNames.contains("CycleChild"))
     }

@@ -13,6 +13,8 @@ import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PResponse
 import com.TTT.P2P.P2PTransport
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.StallCallback
+import com.TTT.Pipe.StreamingStallConfig
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Structs.PipeSettings
 import com.TTT.Util.RuntimeState
@@ -109,6 +111,17 @@ class Connector : P2PInterface
         for (pipeline in branches.values)
         {
             pipeline.setStreamingCallbackRecursive(callback)
+        }
+    }
+
+    override fun enableStallDetectorRecursive(
+        config: StreamingStallConfig,
+        callback: StallCallback?
+    )
+    {
+        for (pipeline in branches.values)
+        {
+            pipeline.enableStallDetectorRecursive(config, callback)
         }
     }
 

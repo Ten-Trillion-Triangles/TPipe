@@ -21,7 +21,17 @@ sealed class OpenAIResponsesInputPart
      */
     @Serializable
     @SerialName("input_text")
-    data class InputTextPart(val text: String) : OpenAIResponsesInputPart()
+    data class InputTextPart(
+        val text: String,
+        /**
+         * Bedrock Mantle GPT-5.6 per-input-block prompt cache breakpoint.
+         * Null on every other target so the wire shape is unchanged.
+         * Mantle accepts this only on `input_text`, `input_image`, and
+         * `input_file` parts inside Responses-API `input` items.
+         */
+        @SerialName("prompt_cache_breakpoint")
+        val promptCacheBreakpoint: PromptCacheBreakpoint? = null,
+    ) : OpenAIResponsesInputPart()
 
     /**
      * Image part of a `Message` (URL or `data:` URI).

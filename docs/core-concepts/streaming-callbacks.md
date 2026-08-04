@@ -31,7 +31,7 @@ fun main() = runBlocking {
         .setStreamingCallback { chunk ->
             print(chunk)  // Print each token as it arrives
         }
-    
+
     pipe.generateText("Tell me a short story.")
     println("\nDone!")
 }
@@ -202,6 +202,79 @@ val pipeline = Pipeline()
 streamPipelineOutputToTerminal(pipeline)  // Enables streaming on all pipes
 ```
 
+## Streaming Callback Propagation
+
+When a pipe has child pipes (validator, transformation, branch, or reasoning), registering a streaming callback on the parent pipe automatically propagates it to every descendant. This ensures that chunks emitted by any pipe in the tree flow through the same registered callback.
+
+```kotlin
+val parentPipe = GenericOpenAIPipe()
+    .setStreamingCallback { chunk -> print(chunk) }  // propagates to all children
+
+// These child pipes share the parent's streaming callback automatically
+val reasoning = GenericOpenAIPipe()
+    .setReasoning(ReasoningMethod.ExplicitCot)
+val validator = GenericOpenAIPipe()
+
+parentPipe.setReasoningPipe(reasoning)
+parentPipe.setValidatorPipe(validator)
+
+// All three pipes stream through the same callback
+parentPipe.generateText("What is 2+2?")
+```
+
+Child pipes that are attached after the parent already has callbacks inherit those callbacks automatically. The propagation is cycle-safe — if a pipe tree contains a cycle due to a misconfigured builder, the visited set prevents infinite recursion.
+
+Callback deduplication prevents double-firing: if the same lambda is registered both on the parent directly and again via a child's propagation path, it fires exactly once per chunk.
+
+### Propagation Gating
+
+By default, streaming callbacks propagate to all descendant pipes — validator, transformation, branch, and reasoning. You can disable propagation selectively using two boolean parameters:
+
+| Parameter | Default | Effect when false |
+|----------|--------|-------------------|
+| `propagateToChildren` | `true` | Callback is not propagated to validator, transformation, or branch pipes |
+| `propagateToReasoning` | `true` | Callback is not propagated to the reasoning pipe |
+
+**Gating on `setStreamingCallback`:**
+
+```kotlin
+// Propagate to validator/transformation/branch, but not to reasoning
+pipe.setStreamingCallback(
+    { chunk -> print(chunk) },
+    propagateToChildren = true,
+    propagateToReasoning = false
+)
+
+// Propagate to reasoning only — useful when the parent streams
+// the final output and the reasoning pipe handles intermediate steps
+pipe.setStreamingCallback(
+    { chunk -> display(chunk) },
+    propagateToChildren = false,
+    propagateToReasoning = true
+)
+
+// Disable all propagation — callback fires on this pipe only
+pipe.setStreamingCallback(
+    { chunk -> logOnly(chunk) },
+    propagateToChildren = false,
+    propagateToReasoning = false
+)
+```
+
+**Gating on `streamingCallbacks` builder:**
+
+```kotlin
+pipe.streamingCallbacks {
+    propagateToReasoning = false  // Do not reach reasoning pipe
+    propagateToChildren = true     // Reach validator/transformation/branch
+    add { chunk -> print(chunk) }
+    add { chunk -> logToFile(chunk) }
+    concurrent()
+}
+```
+
+Both parameters are independent. Setting both to `false` means the callback fires only on the pipe where it was registered — neither the parent's children nor the reasoning pipe receive it.
+
 ## Disabling Streaming
 
 Disable streaming and clear all callbacks:
@@ -256,6 +329,77 @@ pipe.streamingCallbacks {
 }
 ```
 
+## Bedrock Streaming: Tool Use, Citations, and Guard Assessments
+
+When `BedrockPipe.useConverseApi()` and `enableStreaming()` are both active, the AWS Converse stream delivers tool-use inputs, citation fragments, and inline guardrail content across multiple `ContentBlockDelta` events — each tagged with a `contentBlockIndex`. The pipe reassembles these per-block streams into typed artifacts, exposed through [Per-Call Metadata](../bedrock/getting-started.md#per-call-metadata) (`getLastCallMetadata()`) instead of through the streaming callback.
+
+### Per-Block Reassembly
+
+The Converse stream may interleave text, reasoning, tool-use, citations, and guard content across multiple content blocks. TPipe uses each block's `contentBlockIndex` as the key to keep each artifact's fragments separate during reassembly:
+
+- `ContentBlockStart` seeds the accumulator for that block index (captures `toolUseId` and name for tool-use blocks).
+- `ContentBlockDelta` appends `input` JSON fragments to the accumulator for its block index.
+- `ContentBlockStop` finalizes the accumulator into a typed artifact and appends it to `BedrockCallMetadata`.
+
+A single stream may contain any number of content blocks in any order — the block index keeps text deltas, tool-use input fragments, citation fragments, and guard content from different blocks from mixing with each other.
+
+```kotlin
+import aws.smithy.kotlin.runtime.content.Document
+import bedrockPipe.BedrockCallMetadata
+import bedrockPipe.BedrockPipe
+import kotlinx.coroutines.runBlocking
+
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .useConverseApi()
+    .enableStreaming()
+    .setStreamingCallback { chunk -> print(chunk) }
+    .setTools(listOf(/* Claude tool definitions */))
+
+runBlocking {
+    pipe.init()
+    pipe.execute("What is the warranty period for product X?")
+}
+
+val meta: BedrockCallMetadata? = pipe.getLastCallMetadata()
+
+// 1. Reassembled tool-use blocks — one per tool-use block, with full input JSON
+meta?.toolUse?.forEach { tool ->
+    println("Tool: ${tool.name} (id=${tool.toolUseId})")
+    println("Input: ${(tool.input as Document).toString()}")
+}
+
+// 2. Reassembled citations — title/source/location + concatenated sourceContent
+meta?.citations?.forEach { citation ->
+    println("Citation: ${citation.title} (source=${citation.source})")
+    println("Location: ${citation.location?.documentChar?.toString()}")
+    citation.sourceContent?.forEach { sc ->
+        // CitationSourceContent.Text(TextCitationLink)
+        // The .text fragment is accumulated across the block's deltas
+        println("Snippet: ${sc.text?.toString()}")
+    }
+}
+
+// 3. Inline guardrail assessments — one per GuardContent block
+meta?.guardAssessments?.forEach { assessment ->
+    println("Assessment topic: ${assessment.topicPolicy?.name}")
+    println("Filters: ${assessment.contentPolicy?.filters?.size}")
+}
+```
+
+### Streaming Metadata Fields
+
+| Field | Source | Description |
+|-------|--------|-------------|
+| `latencyMs` | `ConverseStreamMetrics.latencyMs` | End-to-end stream latency |
+| `stopReason` | `MessageStop.stopReason` | `end_turn`, `max_tokens`, `tool_use`, etc. |
+| `cacheReadInputTokens` | `ContentBlockDelta` cache events | Prompt-cache read tokens |
+| `cacheWriteInputTokens` | `ContentBlockDelta` cache events | Prompt-cache write tokens |
+| `toolUse` | Per-block `ContentBlockStart/Delta/Stop` | Reassembled tool-use blocks |
+| `citations` | Per-block `ContentBlockDelta` citation fragments | Reassembled citations |
+| `guardAssessments` | Per-block `ContentBlockDelta` guard fragments | Inline guard assessments |
+
 ## API Reference
 
 See [Pipe API Documentation](../api/pipe.md) for complete method signatures and details.
@@ -265,6 +409,8 @@ See [Pipe API Documentation](../api/pipe.md) for complete method signatures and 
 - [Pipe Class - Core Concepts](pipe-class.md)
 - [Tracing and Debugging](tracing-and-debugging.md)
 - [Bedrock Getting Started](../bedrock/getting-started.md)
+- [Bedrock Guardrails](../bedrock/guardrails.md)
+
 ## Next Steps
 
 - [Pipeline Flow Control](pipeline-flow-control.md) - Continue with routing and control flow.

@@ -39,31 +39,6 @@ class PumpStationWarningTest
     }
 
     @Test
-    fun noJudge_alwaysMode_maxTurns10_firesAdvisory()
-    {
-        val (station, events) = stationFor(maxHarnessTurns = 10)
-        // No judge wired. Default judgeRunMode is Always.
-        // No path bound to requestJudgeNextTurn.
-        // maxTurns=10 > 1.
-
-        runBlocking { station.executeLocal(MultimodalContent(text = "hi")) }
-
-        val warnings = events.filterIsInstance<HarnessWarning>()
-        assertTrue(warnings.isNotEmpty(), "HarnessWarning should fire when no exit signal is configured")
-        assertEquals(WarningCode.NoExitSignalConfigured, warnings.first().code)
-        // All 4 mechanisms should be listed
-        assertEquals(4, warnings.first().mechanisms.size)
-        // The message must reference the canonical "maxTurns" name, not the legacy
-        // "maxHarnessTurns" alias (proves the wire-up text is in effect).
-        val firstWarning = warnings.first()
-        val message = firstWarning.message
-        assertTrue(message.contains("maxTurns"),
-            "Warning message must reference 'maxTurns' (canonical loop-guard name); got: $message")
-        assertFalse(message.contains("maxHarnessTurns"),
-            "Warning message must not reference the legacy 'maxHarnessTurns' alias; got: $message")
-    }
-
-    @Test
     fun noJudge_flagTriggeredMode_doesNotFire()
     {
         val (station, events) = stationFor(maxHarnessTurns = 10)

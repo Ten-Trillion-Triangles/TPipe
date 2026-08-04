@@ -2,9 +2,11 @@ package com.TTT.Pipeline
 
 import com.TTT.Debug.*
 import com.TTT.P2P.P2PInterface
+import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.StallCallback
+import com.TTT.Pipe.StreamingStallConfig
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Structs.PipeSettings
-import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import com.TTT.Util.RuntimeState
@@ -112,6 +114,20 @@ class Splitter: P2PInterface
             for (pipeline in activatorValue.pipelines)
             {
                 pipeline.setStreamingCallbackRecursive(callback)
+            }
+        }
+    }
+
+    override fun enableStallDetectorRecursive(
+        config: StreamingStallConfig,
+        callback: StallCallback?
+    )
+    {
+        for (activatorValue in activatorKeys.values)
+        {
+            for (pipeline in activatorValue.pipelines)
+            {
+                pipeline.enableStallDetectorRecursive(config, callback)
             }
         }
     }

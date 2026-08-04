@@ -232,17 +232,87 @@ class StreamingCallbackTest
     }
 
     @Test
+    fun testSetStreamingCallbackPropagatesToValidator()
+    {
+        runBlocking {
+            val received = mutableListOf<String>()
+            val callback: (String) -> Unit = { chunk -> received.add(chunk) }
+            val pipe = TestBedrockPipe()
+            val validator = TestBedrockPipe()
+            pipe.setValidatorPipe(validator)
+            pipe.setStreamingCallback(callback)
+
+            validator.testEmit("from-validator")
+            assertEquals(listOf("from-validator"), received)
+        }
+    }
+
+    @Test
+    fun testStreamingCallbacksPropagatesToReasoning()
+    {
+        runBlocking {
+            val received = mutableListOf<String>()
+            val reasoningPipe = TestBedrockPipe()
+            val parent = TestBedrockPipe()
+            parent.setReasoningPipe(reasoningPipe)
+
+            parent.streamingCallbacks {
+                add(suspend { chunk: String -> received.add(chunk) })
+            }
+
+            reasoningPipe.testEmit("from-reasoning")
+            assertEquals(listOf("from-reasoning"), received)
+        }
+    }
+
+    @Test
+    fun testEnableStreamingCallbackPropagatesToTransformation()
+    {
+        runBlocking {
+            val received = mutableListOf<String>()
+            val callback: suspend (String) -> Unit = { chunk -> received.add(chunk) }
+            val transformation = TestBedrockPipe()
+            val parent = TestBedrockPipe()
+            parent.setTransformationPipe(transformation)
+            parent.enableStreaming(callback)
+
+            transformation.testEmit("from-transformation")
+            assertEquals(listOf("from-transformation"), received)
+        }
+    }
+
+    @Test
+    fun testDisableStreamingClearsDescendants()
+    {
+        runBlocking {
+            val received = mutableListOf<String>()
+            val callback: suspend (String) -> Unit = { chunk -> received.add(chunk) }
+            val transformation = TestBedrockPipe()
+            val parent = TestBedrockPipe()
+            parent.setTransformationPipe(transformation)
+            parent.streamingCallbacks {
+                add(callback)
+            }
+
+            parent.disableStreaming()
+
+            transformation.testEmit("should-not-fire")
+            assertEquals(0, received.size)
+        }
+    }
+
+    @Test
     fun testCallbackManager()
     {
         runBlocking {
             val results = mutableListOf<String>()
             val pipe = TestBedrockPipe()
-            
+
             val manager = pipe.obtainStreamingCallbackManager()
             manager.addCallback { chunk -> results.add("direct: $chunk") }
-            
+
             pipe.testEmit("test")
-            
+
             assertEquals(1, results.size)
             assertEquals("direct: test", results[0])
         }

@@ -27,6 +27,11 @@ class MagicContractOptOutTest
     fun judgeJsonParserRunsByDefault()
     {
         val station = buildTestStation()
+        // Disable the first-turn skip guard so the judge actually runs and
+        // we can observe the parser's verdict. Without this, runJudgePhase()
+        // returns JudgeVerdict.empty() on turn 0 (the default skip behaviour)
+        // and the test's isComplete assertion fails.
+        station.setSkipJudgeOnFirstTurn(false)
         val judgePipe = ScriptedTestPipe(response = """{"isComplete": true, "shouldTerminate": false}""")
         val judge = Pipeline().apply { add(judgePipe) }
         station.setJudgeAgent(judge)
@@ -63,6 +68,11 @@ class MagicContractOptOutTest
     fun judgeFlagsDriveVerdictWhenContractDisabled()
     {
         val station = buildTestStation()
+        // Disable the first-turn skip guard so the judge actually runs and
+        // the post-judge hook fires. Without this, runJudgePhase() returns
+        // JudgeVerdict.empty() on turn 0 and the test's shouldHalt assertion
+        // fails.
+        station.setSkipJudgeOnFirstTurn(false)
         // Agent returns text saying isComplete=false, but a post-judge hook sets terminatePipeline.
         val judgePipe = ScriptedTestPipe(response = """{"isComplete": false, "shouldTerminate": false}""")
         val judge = Pipeline().apply { add(judgePipe) }

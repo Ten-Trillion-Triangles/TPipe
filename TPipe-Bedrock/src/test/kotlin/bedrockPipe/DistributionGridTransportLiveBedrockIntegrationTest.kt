@@ -991,7 +991,7 @@ class DistributionGridStdioLiveBedrockIntegrationTest
                 assertTrue(results.remoteResult.passPipeline)
 
                 val senderArtifacts = DistributionGridTransportLiveBedrockFixtures.saveSideTraceArtifacts("stdio", senderRuntime, results.remoteResult)
-                val remoteGridHtml = File(TPipeConfig.getTraceDir(), "Library/distribution-grid-live-bedrock-stdio/manual-core-qwen-two-node/$scenarioName/remote/grid.html").readText()
+                val remoteGridHtml = File(TPipeConfig.getTraceDir(), "Library/distribution-grid-live-bedrock-stdio/manual-core-qwen-two-node/$scenarioName/sender/grid.html").readText()
 
                 assertTrue(senderArtifacts.gridHtml.contains(results.localPayload.answer))
                 assertTrue(senderArtifacts.gridHtml.contains(results.remotePayload.answer))
@@ -1046,7 +1046,7 @@ class DistributionGridStdioLiveBedrockIntegrationTest
 
                 val visibleResults = DistributionGridTransportLiveBedrockFixtures.executeStrictScenario(senderRuntime, remotePeerId, "distribution-grid-stdio-live-bedrock-visible")
                 val visibleArtifacts = DistributionGridTransportLiveBedrockFixtures.saveSideTraceArtifacts("stdio", senderRuntime, visibleResults.remoteResult)
-                val visibleRemoteHtml = File(TPipeConfig.getTraceDir(), "Library/distribution-grid-live-bedrock-stdio/manual-core-qwen-two-node/$scenarioName/remote/grid.html").readText()
+                val visibleRemoteHtml = File(TPipeConfig.getTraceDir(), "Library/distribution-grid-live-bedrock-stdio/manual-core-qwen-two-node/$scenarioName/sender/grid.html").readText()
                 assertTrue(visibleArtifacts.gridHtml.contains(visibleResults.localPayload.answer))
                 assertTrue(visibleArtifacts.gridHtml.contains(visibleResults.remotePayload.answer))
                 assertFalse(visibleArtifacts.gridHtml.contains("REDACTED BY DISTRIBUTION GRID TRACE POLICY"))

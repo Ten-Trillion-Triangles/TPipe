@@ -21,6 +21,8 @@ import aws.sdk.kotlin.services.bedrockruntime.model.GuardrailContentSource
 import aws.sdk.kotlin.services.bedrockruntime.model.GuardrailTrace
 import aws.sdk.kotlin.services.bedrockruntime.model.ServiceTierType
 import aws.sdk.kotlin.services.bedrockruntime.model.ServiceTier
+import aws.sdk.kotlin.services.bedrockruntime.model.PerformanceConfigLatency
+import aws.sdk.kotlin.services.bedrockruntime.model.PerformanceConfiguration
 import aws.sdk.kotlin.runtime.auth.credentials.StaticCredentialsProvider
 import aws.smithy.kotlin.runtime.auth.awscredentials.Credentials
 import aws.smithy.kotlin.runtime.http.engine.okhttp.OkHttpEngine
@@ -34,6 +36,7 @@ import env.bedrockEnv
 import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.json.*
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.builtins.serializer
 import kotlin.text.RegexOption
 import kotlin.time.Duration.Companion.seconds
 
@@ -50,6 +53,15 @@ enum class BedrockPriorityTier
 }
 
 private const val QWEN_TUNED_TOKEN_COUNTING_BIAS = -0.036641221374045754
+
+/** Per-block citation reassembly accumulator. */
+private class BlockCitationAcc
+{
+    var title: String? = null
+    var source: String? = null
+    var location: aws.sdk.kotlin.services.bedrockruntime.model.CitationLocation? = null
+    val textBuilder: StringBuilder = StringBuilder()
+}
 
 
 /**
@@ -119,13 +131,258 @@ open class BedrockPipe : Pipe()
      * @see generateText for client usage in API calls
      */
     @kotlinx.serialization.Transient
-    protected var bedrockClient: BedrockRuntimeClient? = null
+    internal var bedrockClient: BedrockRuntimeClient? = null
 
     /**
      * Stores the last Converse API response for reasoning content extraction.
      */
     @kotlinx.serialization.Transient
     private var lastConverseResponse: aws.sdk.kotlin.services.bedrockruntime.model.ConverseResponse? = null
+
+    /**
+     * Per-call metadata harvested from the most recent Bedrock response. Populated
+     * by [generateContent] and the streaming variants. Cleared at the start of each
+     * call. Use [getLastCallMetadata] to read it after a call returns.
+     *
+     * NOT serialized in toPipeSettings — it's a per-call observation, not a configuration.
+     * NOT thread-safe — concurrent calls on a shared pipe will race this field, same
+     * race that exists for [lastConverseResponse].
+     *
+     * Visibility: the field stays private. Subclass write access (e.g.
+     * [BedrockMultimodalPipe] populating it from its non-streaming harvester) goes
+     * through [updateLastCallMetadata]. This avoids the platform-declaration clash
+     * between a property's synthetic getter and the explicit [getLastCallMetadata]
+     * accessor below.
+     */
+    @kotlinx.serialization.Transient
+    private var lastCallMetadata: BedrockCallMetadata? = null
+
+    /**
+     * Sets [lastCallMetadata] from a subclass context. Visible to subclasses so they
+     * can populate per-call metadata from their own non-streaming harvesters (Task 9).
+     *
+     * NOT intended to be called from outside the inheritance chain; the public
+     * surface for clearing is [clearLastCallMetadata] and the public read accessor
+     * is [getLastCallMetadata].
+     */
+    protected fun updateLastCallMetadata(metadata: BedrockCallMetadata?)
+    {
+        this.lastCallMetadata = metadata
+    }
+
+    /**
+     * @return Per-call metadata from the most recent Bedrock response, or null if no
+     *         call has been made yet on this pipe instance.
+     */
+    fun getLastCallMetadata(): BedrockCallMetadata? = lastCallMetadata
+
+    /**
+     * Clears the cached per-call metadata. Returns the pipe for chaining.
+     */
+    fun clearLastCallMetadata(): BedrockPipe
+    {
+        lastCallMetadata = null
+        return this
+    }
+
+    /**
+     * Per-call performance configuration. When set, Bedrock allocates dedicated
+     * inference capacity for the call. Optimized latency costs more than Standard
+     * but reduces tail latency for time-sensitive workloads.
+     *
+     * Default null — service decides performance characteristics based on the
+     * service tier setting.
+     */
+    @kotlinx.serialization.Transient
+    private var performanceConfig: PerformanceConfiguration? = null
+
+    /**
+     * Configures performance characteristics for subsequent Bedrock calls.
+     *
+     * @param latency The latency tier. [PerformanceConfigLatency.Optimized] reserves
+     *                dedicated capacity; [PerformanceConfigLatency.Standard] uses
+     *                shared capacity at lower cost.
+     * @return This pipe instance for method chaining.
+     */
+    fun setPerformanceConfig(latency: PerformanceConfigLatency): BedrockPipe
+    {
+        this.performanceConfig = PerformanceConfiguration { this.latency = latency }
+        return this
+    }
+
+    /**
+     * @return The current performance configuration, or null if not set.
+     */
+    fun getPerformanceConfig(): PerformanceConfiguration? = performanceConfig
+
+    /**
+     * Clears the performance configuration. Subsequent calls will use default
+     * (service-decided) performance.
+     */
+    fun clearPerformanceConfig(): BedrockPipe
+    {
+        this.performanceConfig = null
+        return this
+    }
+
+    /**
+     * Per-call request metadata that flows to [CloudTrail][https://docs.aws.amazon.com/bedrock/latest/userguide/logging-cloudtrail.html]
+     * invocation logs. Useful for cost attribution, multi-tenant routing
+     * attribution, and request tracing across the request lifecycle. The map is
+     * merged additively across calls to [setRequestMetadata] on the same pipe;
+     * later calls override earlier values for the same key.
+     */
+    @kotlinx.serialization.Transient
+    private var requestMetadata: MutableMap<String, String> = mutableMapOf()
+
+    /**
+     * Sets per-call request metadata that flows to CloudTrail invocation logs.
+     * Merges [metadata] into the existing map; existing keys are overwritten.
+     * Pass an empty map to leave existing entries untouched (use
+     * [clearRequestMetadata] to reset).
+     *
+     * @param metadata Map of string key-value pairs. Keys are user-defined;
+     *                 values are visible in CloudTrail.
+     * @return This pipe instance for method chaining.
+     */
+    fun setRequestMetadata(metadata: Map<String, String>): BedrockPipe
+    {
+        this.requestMetadata.putAll(metadata)
+        return this
+    }
+
+    /**
+     * @return A defensive copy of the current per-call request metadata. The
+     *         returned map is independent of the pipe's internal state — mutations
+     *         on the returned map do NOT affect subsequent calls. The map is empty
+     *         when no metadata has been set.
+     */
+    fun getRequestMetadata(): Map<String, String> = requestMetadata.toMap()
+
+    /**
+     * Clears all per-call request metadata.
+     *
+     * @return This pipe instance for method chaining.
+     */
+    fun clearRequestMetadata(): BedrockPipe
+    {
+        this.requestMetadata.clear()
+        return this
+    }
+
+    /**
+     * Server-side prompt template variables. When set, Bedrock performs prompt
+     * template substitution on the server BEFORE sending the request to the
+     * model. This is useful for stable prompt-cache keys — the template is
+     * cacheable, only the variables change per-call.
+     *
+     * The map is merged additively across [setPromptVariables] calls; later
+     * calls override earlier values for the same key. The user-facing getter
+     * ([getPromptVariables]) returns null when no variables have ever been set,
+     * and an empty defensive copy after [clearPromptVariables].
+     */
+    @kotlinx.serialization.Transient
+    private var promptVariables: MutableMap<String, String>? = null
+
+    /**
+     * Sets server-side prompt template variables for substitution before the
+     * request reaches the model. Merges [variables] into the existing map;
+     * existing keys are overwritten. Pass an empty map to leave existing
+     * entries untouched (use [clearPromptVariables] to reset).
+     *
+     * @param variables Map of variable-name to template-value pairs. The
+     *                  variable names must match the `{{name}}` placeholders
+     *                  in the model's prompt template.
+     * @return This pipe instance for method chaining.
+     */
+    fun setPromptVariables(variables: Map<String, String>): BedrockPipe
+    {
+        val current = this.promptVariables ?: mutableMapOf()
+        current.putAll(variables)
+        this.promptVariables = current
+        return this
+    }
+
+    /**
+     * @return A defensive copy of the current prompt template variables, or
+     *         null when no variables have ever been set on this pipe. The
+     *         returned map (when non-null) is independent of the pipe's
+     *         internal state — mutations on the returned map do NOT affect
+     *         subsequent calls.
+     */
+    fun getPromptVariables(): Map<String, String>? = promptVariables?.toMap()
+
+    /**
+     * Clears all prompt template variables.
+     *
+     * @return This pipe instance for method chaining.
+     */
+    fun clearPromptVariables(): BedrockPipe
+    {
+        this.promptVariables = null
+        return this
+    }
+
+    /**
+     * Applies the pipe's [performanceConfig] to a finished [ConverseRequest], if set.
+     * Used by extensions (e.g. [BedrockMultimodalPipe]) that build the request via
+     * delegated [build*ConverseRequest] methods and still want a single, explicit
+     * site where the wire-level performance config is folded in.
+     *
+     * Idempotent: if the request already has a performanceConfig, the value is
+     * overwritten with the pipe's current setting. Safe to call when no
+     * performanceConfig is set — returns the request unchanged.
+     */
+    protected fun applyPerformanceConfig(converseRequest: aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest): aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest {
+        val cfg = performanceConfig ?: return converseRequest
+        return converseRequest.copy { performanceConfig = cfg }
+    }
+
+    /**
+     * Applies the pipe's [requestMetadata] to a finished [ConverseRequest], if any
+     * entries are set. Used by extensions (e.g. [BedrockMultimodalPipe]) that build the
+     * request via delegated [build*ConverseRequest] methods and want a single,
+     * explicit site where the wire-level metadata is folded in (same defensive
+     * pattern as [applyPerformanceConfig]).
+     *
+     * Idempotent: overwrites any metadata already set on the request. Safe to
+     * call when no metadata has been configured — returns the request unchanged.
+     */
+    protected fun applyRequestMetadata(converseRequest: aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest): aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest {
+        if (requestMetadata.isEmpty()) return converseRequest
+        return converseRequest.copy { requestMetadata = this@BedrockPipe.requestMetadata.toMap() }
+    }
+
+    /**
+     * Applies the pipe's [promptVariables] to a finished [ConverseRequest], if any
+     * entries are set. Used by extensions (e.g. [BedrockMultimodalPipe]) that build
+     * the request via delegated [build*ConverseRequest] methods and want a single,
+     * explicit site where wire-level prompt template variables are folded in (same
+     * defensive pattern as [applyRequestMetadata]).
+     *
+     * Idempotent: overwrites any promptVariables already set on the request. Safe
+     * to call when no variables have been configured — returns the request
+     * unchanged.
+     */
+    protected fun applyPromptVariables(converseRequest: aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest): aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest {
+        val vars = promptVariables ?: return converseRequest
+        if (vars.isEmpty()) return converseRequest
+        return converseRequest.copy {
+            promptVariables = vars.toPromptVariableValuesMap()
+        }
+    }
+
+    /**
+     * Wraps each `String` value in the pipe's user-facing promptVariables map into
+     * the SDK's [aws.sdk.kotlin.services.bedrockruntime.model.PromptVariableValues]
+     * sealed-class instance. The wire field on [aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest]
+     * and [aws.sdk.kotlin.services.bedrockruntime.model.ConverseStreamRequest] is typed
+     * `Map<String, PromptVariableValues>?` — the user-facing builder stores plain
+     * `String` values and we wrap them into `PromptVariableValues.Text(value)`
+     * at the wire boundary.
+     */
+    private fun Map<String, String>.toPromptVariableValuesMap(): Map<String, aws.sdk.kotlin.services.bedrockruntime.model.PromptVariableValues> =
+        mapValues { (_, v) -> aws.sdk.kotlin.services.bedrockruntime.model.PromptVariableValues.Text(v) }
 
     /**
      * Canonical model identifier that the user asked for before inference profiles/ARN binding.
@@ -509,6 +766,12 @@ open class BedrockPipe : Pipe()
     }
 
     /**
+     * @return The currently configured guardrail identifier (ID or ARN), or empty
+     *         string if no guardrail is configured. Reads [guardrailIdentifier].
+     */
+    fun getGuardrailIdentifier(): String = guardrailIdentifier
+
+    /**
      * Evaluates content against the configured guardrail without invoking foundation models.
      * This allows independent content validation at any stage of your application flow.
      *
@@ -585,6 +848,74 @@ open class BedrockPipe : Pipe()
         }
     }
 
+    /**
+     * Pre-flight guardrail check using [invokeGuardrailChecks] (added in
+     * aws-sdk-kotlin bedrockruntime 1.6.107, operation introduced to support
+     * inline guardrail policy evaluation without invoking any model).
+     *
+     * The 1.6.107 `InvokeGuardrailChecksRequest` has a fundamentally different
+     * shape than the older `ApplyGuardrailRequest`: it takes inline `checks`
+     * (a policy config specifying which categories/types to evaluate) and
+     * `messages` (a list of role+content messages), NOT the managed
+     * `guardrailIdentifier`/`guardrailVersion`/`source`/`content` of the
+     * managed-guardrail-by-ID API. For managed-guardrail evaluation, use
+     * [applyGuardrailStandalone] instead.
+     *
+     * This implementation honours the [setGuardrail] precondition as a guard:
+     * if no guardrail has been configured on the pipe, the method throws
+     * [IllegalStateException] rather than silently no-op (silent no-op would
+     * let unsafe prompts through without a guardrail). The wire-level request
+     * uses only the inline API; the configured identifier/version is not
+     * sent.
+     *
+     * @param content The content to screen. Only the text portion is included
+     *                as a single User-role message in the request.
+     * @return [aws.sdk.kotlin.services.bedrockruntime.model.InvokeGuardrailChecksResponse]
+     *         containing the assessments for each configured policy, or null
+     *         if the call failed (no client, transport error, etc.).
+     * @throws IllegalStateException If no guardrail has been configured via
+     *         [setGuardrail].
+     * @see setGuardrail to satisfy the precondition before calling this method.
+     * @see applyGuardrailStandalone for managed-guardrail standalone evaluation.
+     * @since Requires aws-sdk-kotlin bedrockruntime 1.6.107 or later.
+     */
+    suspend fun applyGuardrailPrecheck(
+        content: MultimodalContent
+    ): aws.sdk.kotlin.services.bedrockruntime.model.InvokeGuardrailChecksResponse?
+    {
+        if(guardrailIdentifier.isEmpty())
+        {
+            throw IllegalStateException(
+                "Guardrail must be configured before calling applyGuardrailPrecheck. Use setGuardrail() first."
+            )
+        }
+
+        return try
+        {
+            val request = aws.sdk.kotlin.services.bedrockruntime.model.InvokeGuardrailChecksRequest {
+                messages = listOf(
+                    aws.sdk.kotlin.services.bedrockruntime.model.GuardrailChecksMessage {
+                        role = aws.sdk.kotlin.services.bedrockruntime.model.GuardrailChecksRole.User
+                        this.content = listOf(
+                            aws.sdk.kotlin.services.bedrockruntime.model.GuardrailChecksContentBlock.Text(content.text)
+                        )
+                    }
+                )
+            }
+            bedrockClient?.invokeGuardrailChecks(request)
+        }
+        catch(e: Exception)
+        {
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                  error = e,
+                  metadata = mapOf(
+                      "method" to "applyGuardrailPrecheck",
+                      "guardrailIdentifier" to guardrailIdentifier
+                  ))
+            null
+        }
+    }
+
     fun setServiceTier(tier: BedrockPriorityTier): BedrockPipe
     {
         this.serviceTier = tier
@@ -628,25 +959,24 @@ open class BedrockPipe : Pipe()
      * @see executeInvokeStream for streaming implementation
      */
     fun enableStreaming(
-        callback: (suspend (String) -> Unit)? = null, 
+        callback: (suspend (String) -> Unit)? = null,
         showReasoning: Boolean = false,
         streamReasoning: Boolean = true
     ): BedrockPipe {
-        // Enable streaming mode without callback assignment
         this.streamingEnabled = true
         this.streamModelReasoning = streamReasoning
 
         if(callback != null)
         {
             this.streamingCallback = callback
+            propagateStreamingCallback(callback)
         }
 
-        //Attempt to propagate each reasoning pipe recursively.
-        if(showReasoning)
-        {
-            val abstractPipe = reasoningPipe as? BedrockPipe
-            abstractPipe?.enableStreaming(callback, true, streamReasoning)
-        }
+        // Recursion to all descendants is handled uniformly by
+        // propagateStreamingCallback — showReasoning no longer gates traversal
+        // because the generic recursion already covers every configured child.
+        @Suppress("UNUSED_PARAMETER")
+        val unused = showReasoning
 
         return this
     }
@@ -673,73 +1003,138 @@ open class BedrockPipe : Pipe()
         this.streamingEnabled = false
         this.streamingCallback = null
         streamingCallbackManager?.clearCallbacks()
+        listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { child ->
+            (child as? BedrockPipe)?.disableStreaming()
+        }
         return this
     }
 
     /**
+     * Adds a streaming callback to descendant pipes (validator, transformation,
+     * branch, reasoning) without registering on this pipe's own manager.
+     *
+     * Mirrors the recursion intent of [com.TTT.Pipe.Pipe.propagateStreamingCallback]
+     * but skips self-registration. Bedrock's emitStreamingChunk override fires both
+     * the legacy `streamingCallback` field AND the manager's emitToAll; the legacy
+     * field already carries the parent-side callback, so propagating to self would
+     * cause the same lambda to fire twice when the parent emits a chunk.
+     *
+     * @param callback Suspendable callback to propagate
+     * @param propagateToChildren Whether to propagate to validator, transformation,
+     *                            and branch pipes. Defaults to true.
+     * @param propagateToReasoning Whether to propagate to the reasoning pipe.
+     *                             Defaults to true.
+     */
+    private fun addCallbackToDescendants(
+        callback: suspend (String) -> Unit,
+        propagateToChildren: Boolean = true,
+        propagateToReasoning: Boolean = true,
+    )
+    {
+        if(propagateToChildren)
+        {
+            listOfNotNull(validatorPipe, transformationPipe, branchPipe).forEach { child ->
+                child.obtainStreamingCallbackManager().addCallback(callback)
+                (child as? BedrockPipe)?.addCallbackToDescendants(callback, propagateToChildren, propagateToReasoning)
+            }
+        }
+
+        if(propagateToReasoning)
+        {
+            reasoningPipe?.let { reasoning ->
+                reasoning.obtainStreamingCallbackManager().addCallback(callback)
+                (reasoning as? BedrockPipe)?.addCallbackToDescendants(callback, propagateToChildren, propagateToReasoning)
+            }
+        }
+    }
+
+    /**
      * Registers a suspendable callback invoked for each streamed text delta.
-     * 
+     *
      * Sets up a callback function that receives individual token chunks as they
      * arrive from the streaming API. The callback must be suspendable to handle
      * async operations like UI updates, logging, or further processing.
-     * 
+     *
      * Callback characteristics:
      * - Invoked once per token/chunk received
      * - Receives raw text deltas (not cumulative text)
      * - Must handle suspending operations properly
      * - Should be fast to avoid blocking the stream
-     * 
+     *
      * Automatically enables streaming mode when a callback is registered.
      * Exceptions in the callback are caught and traced but don't stop streaming.
-     * 
+     *
      * @param callback Suspendable function that processes each text chunk
+     * @param propagateToChildren Whether to propagate the callback to validator,
+     *                            transformation, and branch pipes. Defaults to true.
+     * @param propagateToReasoning Whether to propagate the callback to the reasoning
+     *                             pipe. Defaults to true.
      * @return This pipe instance for method chaining
      * @see emitStreamingChunk for callback invocation mechanism
      * @see executeInvokeStream for streaming implementation
      */
-    fun setStreamingCallback(callback: suspend (String) -> Unit): BedrockPipe {
-        // Register suspendable callback and enable streaming
+    fun setStreamingCallback(
+        callback: suspend (String) -> Unit,
+        propagateToChildren: Boolean = true,
+        propagateToReasoning: Boolean = true,
+    ): BedrockPipe {
         this.streamingCallback = callback
         this.streamingEnabled = true
+        addCallbackToDescendants(callback, propagateToChildren, propagateToReasoning)
         return this
     }
 
     /**
      * Convenience overload for non-suspending callbacks.
-     * 
+     *
      * Wraps a regular (non-suspending) callback function to work with the
      * streaming system. Useful for simple callbacks that don't need async operations:
-     * 
+     *
      * - UI updates that are synchronous
      * - Simple logging or printing
      * - Basic text accumulation or processing
-     * 
+     *
      * The callback is automatically wrapped in a suspending lambda for compatibility
      * with the streaming infrastructure. For async operations, use the suspending
      * version of setStreamingCallback instead.
-     * 
+     *
      * @param callback Regular function that processes each text chunk
+     * @param propagateToChildren Whether to propagate the callback to validator,
+     *                            transformation, and branch pipes. Defaults to true.
+     * @param propagateToReasoning Whether to propagate the callback to the reasoning
+     *                             pipe. Defaults to true.
      * @return This pipe instance for method chaining
      * @see setStreamingCallback for suspendable callback version
      */
-    fun setStreamingCallback(callback: (String) -> Unit): BedrockPipe {
-        // Wrap non-suspending callback in suspending lambda
-        this.streamingCallback = { chunk -> callback(chunk) }
+    fun setStreamingCallback(
+        callback: (String) -> Unit,
+        propagateToChildren: Boolean = true,
+        propagateToReasoning: Boolean = true,
+    ): BedrockPipe {
+        val wrapped: suspend (String) -> Unit = { chunk -> callback(chunk) }
+        this.streamingCallback = wrapped
         this.streamingEnabled = true
+        addCallbackToDescendants(wrapped, propagateToChildren, propagateToReasoning)
         return this
     }
 
     /**
      * Configures multiple streaming callbacks using builder pattern.
-     * 
+     *
      * Allows registering multiple independent callbacks to receive streaming chunks.
      * Each callback can perform different operations (UI updates, logging, metrics)
      * without interfering with each other. Supports configurable execution mode
      * (sequential or concurrent) and automatic error isolation.
      *
+     * Propagation to descendant pipes can be gated via
+     * [StreamingCallbackBuilder.propagateToChildren] and
+     * [StreamingCallbackBuilder.propagateToReasoning].
+     *
      * Example usage:
      * ```
      * pipe.streamingCallbacks {
+     *     propagateToReasoning = false
+     *     propagateToChildren = true
      *     add { chunk -> print(chunk) }
      *     add { chunk -> logToFile(chunk) }
      *     concurrent()
@@ -753,7 +1148,17 @@ open class BedrockPipe : Pipe()
     {
         val callbackBuilder = StreamingCallbackBuilder()
         callbackBuilder.builder()
-        streamingCallbackManager = callbackBuilder.build()
+        val manager = callbackBuilder.build()
+        val callbacks = manager.getCallbacks()
+        streamingCallbackManager = manager
+        callbacks.forEach { callback ->
+            propagateStreamingCallback(
+                callback,
+                mutableSetOf(),
+                callbackBuilder.propagateToChildren,
+                callbackBuilder.propagateToReasoning,
+            )
+        }
         streamingEnabled = true
         return this
     }
@@ -1102,6 +1507,7 @@ open class BedrockPipe : Pipe()
             body = requestJson.toByteArray()
             contentType = "application/json"
             serviceTier = mapServiceTier()
+            applyRequestMetadata()
 
             // Add guardrail configuration if set
             if (this@BedrockPipe.guardrailIdentifier.isNotEmpty()) {
@@ -1215,7 +1621,25 @@ open class BedrockPipe : Pipe()
                   "truncateAsString" to truncateContextAsString,
                   "contextWindowTruncation" to contextWindowTruncation.name
               ))
-        
+
+        // Apply user-supplied TruncationSettings override from TokenBudgetSettings BEFORE the model-default
+        // when block runs. This guard ensures user-specified tokenizer tuning survives whatever the provider's
+        // model-default reset would otherwise apply on this call (and re-applies at runtime in generateText()).
+        tokenBudgetSettings?.truncationSettings?.let { settings ->
+            multiplyWindowSizeBy = settings.multiplyWindowSizeBy
+            countSubWordsInFirstWord = settings.countSubWordsInFirstWord
+            favorWholeWords = settings.favorWholeWords
+            countOnlyFirstWordFound = settings.countOnlyFirstWordFound
+            splitForNonWordChar = settings.splitForNonWordChar
+            alwaysSplitIfWholeWordExists = settings.alwaysSplitIfWholeWordExists
+            countSubWordsIfSplit = settings.countSubWordsIfSplit
+            nonWordSplitCount = settings.nonWordSplitCount
+            tokenCountingBias = settings.tokenCountingBias
+            loreBookFillMode = settings.fillMode
+            loreBookFillAndSplitMode = settings.fillAndSplitMode
+            return this
+        }
+
         // Use default Claude model if none specified
         val modelId = model.ifEmpty { "anthropic.claude-3-sonnet-20240229-v1:0" }
         
@@ -1317,9 +1741,7 @@ open class BedrockPipe : Pipe()
             modelId.contains("deepseek") -> {
                 when {
                     isDeepSeekR1(modelId) -> {
-                        // R1 settings (preserve existing)
-                        contextWindowSize = 126000
-                        multiplyWindowSizeBy = 0
+                        // R1 settings — contextWindowSize and multiplyWindowSizeBy left for user configuration
                         contextWindowTruncation = ContextWindowSettings.TruncateTop
                         countSubWordsInFirstWord = true
                         favorWholeWords = true
@@ -1329,11 +1751,9 @@ open class BedrockPipe : Pipe()
                         countSubWordsIfSplit = false
                         nonWordSplitCount = 2
                     }
-                    
+
                     isDeepSeekV31(modelId) -> {
-                        // V3.1 settings (larger context window)
-                        contextWindowSize = 128000  // V3.1 has larger context window
-                        multiplyWindowSizeBy = 0
+                        // V3.1 settings — contextWindowSize and multiplyWindowSizeBy left for user configuration
                         contextWindowTruncation = ContextWindowSettings.TruncateTop
                         countSubWordsInFirstWord = true
                         favorWholeWords = true
@@ -1343,18 +1763,15 @@ open class BedrockPipe : Pipe()
                         countSubWordsIfSplit = false
                         nonWordSplitCount = 2
                     }
-                    
+
                     else -> {
-                        // Default DeepSeek settings
-                        contextWindowSize = 126000
-                        multiplyWindowSizeBy = 0
+                        // Default DeepSeek settings — contextWindowSize left for user configuration
                         contextWindowTruncation = ContextWindowSettings.TruncateTop
                     }
                 }
             }
             modelId.contains("writer.palmyra-x4") -> {
-                contextWindowSize = 128000
-                multiplyWindowSizeBy = 0
+                // contextWindowSize left for user configuration
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1375,8 +1792,7 @@ open class BedrockPipe : Pipe()
                 nonWordSplitCount = 2
             }
             modelId.contains("openai.gpt-oss") -> {
-                contextWindowSize = 126000
-                multiplyWindowSizeBy = 0
+                // contextWindowSize left for user configuration
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1387,7 +1803,7 @@ open class BedrockPipe : Pipe()
                 nonWordSplitCount = 2
             }
             isGlmModel(modelId) -> {
-                multiplyWindowSizeBy = 0
+                // contextWindowSize and multiplyWindowSizeBy left for user configuration
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1451,6 +1867,24 @@ open class BedrockPipe : Pipe()
                 "truncateAsString" to truncateContextAsString,
                 "contextWindowTruncation" to contextWindowTruncation.name
             ))
+
+        // Apply user-supplied TruncationSettings override from TokenBudgetSettings BEFORE the model-default
+        // when block runs. Same guard as truncateModuleContext() — keeps the override intact at the runtime
+        // call site inside generateText().
+        tokenBudgetSettings?.truncationSettings?.let { settings ->
+            multiplyWindowSizeBy = settings.multiplyWindowSizeBy
+            countSubWordsInFirstWord = settings.countSubWordsInFirstWord
+            favorWholeWords = settings.favorWholeWords
+            countOnlyFirstWordFound = settings.countOnlyFirstWordFound
+            splitForNonWordChar = settings.splitForNonWordChar
+            alwaysSplitIfWholeWordExists = settings.alwaysSplitIfWholeWordExists
+            countSubWordsIfSplit = settings.countSubWordsIfSplit
+            nonWordSplitCount = settings.nonWordSplitCount
+            tokenCountingBias = settings.tokenCountingBias
+            loreBookFillMode = settings.fillMode
+            loreBookFillAndSplitMode = settings.fillAndSplitMode
+            return this
+        }
 
         val modelId = model.ifEmpty { "anthropic.claude-3-sonnet-20240229-v1:0" }
 
@@ -1563,8 +1997,7 @@ open class BedrockPipe : Pipe()
                 {
                     isDeepSeekR1(modelId) ->
                     {
-                        contextWindowSize = 126000
-                        multiplyWindowSizeBy = 0
+                        // contextWindowSize and multiplyWindowSizeBy left for user configuration
                         contextWindowTruncation = ContextWindowSettings.TruncateTop
                         countSubWordsInFirstWord = true
                         favorWholeWords = true
@@ -1577,8 +2010,7 @@ open class BedrockPipe : Pipe()
 
                     isDeepSeekV31(modelId) ->
                     {
-                        contextWindowSize = 128000
-                        multiplyWindowSizeBy = 0
+                        // contextWindowSize and multiplyWindowSizeBy left for user configuration
                         contextWindowTruncation = ContextWindowSettings.TruncateTop
                         countSubWordsInFirstWord = true
                         favorWholeWords = true
@@ -1591,16 +2023,14 @@ open class BedrockPipe : Pipe()
 
                     else ->
                     {
-                        contextWindowSize = 126000
-                        multiplyWindowSizeBy = 0
+                        // contextWindowSize left for user configuration
                         contextWindowTruncation = ContextWindowSettings.TruncateTop
                     }
                 }
             }
             modelId.contains("writer.palmyra-x4") ->
             {
-                contextWindowSize = 128000
-                multiplyWindowSizeBy = 0
+                // contextWindowSize left for user configuration
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1623,8 +2053,7 @@ open class BedrockPipe : Pipe()
             }
             modelId.contains("openai.gpt-oss") ->
             {
-                contextWindowSize = 126000
-                multiplyWindowSizeBy = 0
+                // contextWindowSize left for user configuration
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -1636,7 +2065,7 @@ open class BedrockPipe : Pipe()
             }
             isGlmModel(modelId) ->
             {
-                multiplyWindowSizeBy = 0
+                // contextWindowSize and multiplyWindowSizeBy left for user configuration
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
                 countSubWordsInFirstWord = true
                 favorWholeWords = true
@@ -2104,6 +2533,81 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
+    /**
+     * Applies the pipe's [performanceConfig] to the builder, if set.
+     * Used by every [build*ConverseRequest] method and by [toStreamRequest].
+     */
+    protected fun aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest.Builder.applyPerformanceConfig() {
+        this@BedrockPipe.performanceConfig?.let { this.performanceConfig = it }
+    }
+
+    /**
+     * Applies the pipe's [requestMetadata] to the ConverseRequest builder, if any
+     * entries are set. The [ConverseRequest.requestMetadata] field is typed
+     * `Map<String, String>?` (added 1.6.13) and is forwarded directly into the
+     * request body. Used by every [build*ConverseRequest] method.
+     */
+    protected fun aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest.Builder.applyRequestMetadata() {
+        if (this@BedrockPipe.requestMetadata.isNotEmpty()) {
+            this.requestMetadata = this@BedrockPipe.requestMetadata.toMap()
+        }
+    }
+
+    /**
+     * Applies the pipe's [promptVariables] to the ConverseRequest builder, if any
+     * entries are set. The [ConverseRequest.promptVariables] field is typed
+     * `Map<String, String>?` (added 1.6.x with system-prompt template support)
+     * and is forwarded directly into the request body. Used by every
+     * [build*ConverseRequest] method.
+     */
+    protected fun aws.sdk.kotlin.services.bedrockruntime.model.ConverseRequest.Builder.applyPromptVariables() {
+        val vars = this@BedrockPipe.promptVariables ?: return
+        if (vars.isNotEmpty()) {
+            this.promptVariables = vars.toPromptVariableValuesMap()
+        }
+    }
+
+    /**
+     * Applies the pipe's [requestMetadata] to an InvokeModelRequest builder.
+     *
+     * [InvokeModelRequest.requestMetadata] is typed `String?` (NOT a Map field
+     * like on ConverseRequest) — the wire format uses an HTTP header
+     * `X-Amzn-Bedrock-Request-Metadata` that carries a JSON-encoded string of
+     * the form `{"key":"value"}`. We serialize our defensive-copy Map and
+     * assign the resulting string.
+     *
+     * Throws nothing — silently skips when the pipe has no metadata.
+     */
+    protected fun aws.sdk.kotlin.services.bedrockruntime.model.InvokeModelRequest.Builder.applyRequestMetadata() {
+        if (this@BedrockPipe.requestMetadata.isNotEmpty()) {
+            this.requestMetadata = this@BedrockPipe.requestMetadata.asJsonString()
+        }
+    }
+
+    /**
+     * Streaming sibling of [InvokeModelRequest]. [InvokeModelWithResponseStreamRequest.requestMetadata]
+     * is also a `String?` header field, so we JSON-encode the pipe's map the same way.
+     */
+    protected fun aws.sdk.kotlin.services.bedrockruntime.model.InvokeModelWithResponseStreamRequest.Builder.applyRequestMetadata() {
+        if (this@BedrockPipe.requestMetadata.isNotEmpty()) {
+            this.requestMetadata = this@BedrockPipe.requestMetadata.asJsonString()
+        }
+    }
+
+    /**
+     * Serializes a `Map<String, String>` to the JSON-encoded string format
+     * expected by the `X-Amzn-Bedrock-Request-Metadata` HTTP header on the
+     * Invoke API paths (InvokeModel / InvokeModelWithResponseStream).
+     */
+    private fun Map<String, String>.asJsonString(): String =
+        kotlinx.serialization.json.Json.encodeToString(
+            kotlinx.serialization.builtins.MapSerializer(
+                String.serializer(),
+                String.serializer()
+            ),
+            this
+        )
+
     fun buildGptOssConverseRequest(modelId: String, contentBlocks: List<ContentBlock>): ConverseRequest {
         // For ContentBlocks, we need to extract text to reuse existing JSON logic
         val promptText = contentBlocks.filterIsInstance<ContentBlock.Text>()
@@ -2159,6 +2663,9 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -2262,6 +2769,9 @@ put("system", if(enableCaching && cacheControl != null) {
             }
 
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -2585,6 +3095,9 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3037,6 +3550,9 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3090,6 +3606,9 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3143,6 +3662,9 @@ put("system", if(enableCaching && cacheControl != null) {
             }
 
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3413,6 +3935,9 @@ put("system", if(enableCaching && cacheControl != null) {
             }
 
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3627,6 +4152,9 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3687,6 +4215,9 @@ put("system", if(enableCaching && cacheControl != null) {
             additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3733,6 +4264,9 @@ put("system", if(enableCaching && cacheControl != null) {
             additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3782,6 +4316,9 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3832,6 +4369,9 @@ put("system", if(enableCaching && cacheControl != null) {
             additionalModelRequestFields = Document.Map(documentMap)
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3874,6 +4414,9 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -3945,6 +4488,9 @@ put("system", if(enableCaching && cacheControl != null) {
             }
             
             serviceTier = ServiceTier { type = mapServiceTier() }
+            applyPerformanceConfig()
+            applyRequestMetadata()
+            applyPromptVariables()
             applyGuardrailConfig()
         }
     }
@@ -4298,14 +4844,64 @@ put("system", if(enableCaching && cacheControl != null) {
         var overflowDetected = false
         val usageMetadata = mutableMapOf<String, Any>()
 
+        // Per-block tracking for streaming tool-call capture.
+        // ConverseStream may contain several content blocks per message — we want
+        // to capture each tool-use block with its full input (which is delivered
+        // across multiple ContentBlockDelta events as JSON fragments).
+        //
+        // Block index from the wire event drives all of these maps, so a stream
+        // that reorders blocks or interleaves text + tool-use blocks is still
+        // reassembled correctly.
+        val perBlockToolUseIds = mutableMapOf<Int, String>()                // blockIndex -> toolUseId
+        val perBlockToolUseNames = mutableMapOf<Int, String>()               // blockIndex -> tool name
+        val perBlockStopReasons = mutableMapOf<Int, String>()                // blockIndex -> stop reason (Task 7; reserved for future use)
+        var currentBlockIndex = 0
+        val toolUseAccumulator = mutableMapOf<Int, StringBuilder>()          // blockIndex -> accumulated input JSON
+        val collectedToolUse = mutableListOf<aws.sdk.kotlin.services.bedrockruntime.model.ToolUseBlock>()
+
+        // Per-block citation reassembly state.
+        // AWS streaming pattern (verified via AWS docs): a single content block carries
+        // a single citation, accumulated via multiple CitationsDelta events. Each delta
+        // updates the citation's metadata (title/source/location) and appends a
+        // sourceContent.text fragment. We accumulate per-block and emit one or more
+        // Citation objects on ContentBlockStop.
+        val collectedCitations = mutableListOf<aws.sdk.kotlin.services.bedrockruntime.model.Citation>()
+        val perBlockCitationAcc = mutableMapOf<Int, BlockCitationAcc>()
+
         return try {
             // Execute the streaming Converse API call
             val finalText = client.converseStream(request.toStreamRequest()) { response ->
                 // Process the streaming response events
                 response.stream?.collect { event ->
-                    
-                    // Handle content block deltas (text and reasoning chunks)
+
+                    // NEW: MessageStart — first block of the assistant message.
+                    // We don't currently track anything here beyond acknowledging
+                    // it for future tracing; included so the streaming contract
+                    // is fully covered.
+                    event.asMessageStartOrNull()?.let {
+                        // no-op for now
+                    }
+
+                    // NEW: ContentBlockStart — capture toolUseId + name per block.
+                    // Sets perBlockToolUseIds[blockIndex] + perBlockToolUseNames[blockIndex]
+                    // when the start event announces a tool-use block. Text blocks
+                    // also produce a start event with start = null; the let-chain
+                    // on asToolUseOrNull() handles that cleanly.
+                    event.asContentBlockStartOrNull()?.let { startEvent ->
+                        currentBlockIndex = startEvent.contentBlockIndex
+                        startEvent.start?.asToolUseOrNull()?.let { toolStart ->
+                            perBlockToolUseIds[currentBlockIndex] = toolStart.toolUseId
+                            perBlockToolUseNames[currentBlockIndex] = toolStart.name
+                            // Pre-create the accumulator so the first delta appends
+                            // to an empty builder rather than never appending if a
+                            // zero-fragment tool-use happens (rare but well-defined).
+                            toolUseAccumulator.getOrPut(currentBlockIndex) { StringBuilder() }
+                        }
+                    }
+
+                    // Handle content block deltas (text, reasoning, AND tool-use input chunks)
                     event.asContentBlockDeltaOrNull()?.let { deltaEvent ->
+                        val blockIndex = deltaEvent.contentBlockIndex
                         // Extract text deltas and emit to callback
                         deltaEvent.delta?.asTextOrNull()?.let { deltaText ->
                             textBuilder.append(deltaText)
@@ -4319,9 +4915,82 @@ put("system", if(enableCaching && cacheControl != null) {
                                 emitStreamingChunk(reasoningDelta)
                             }
                         }
+                        // NEW: ToolUse delta — accumulate input JSON fragments.
+                        // ConverseStream splits tool-use input across many delta events;
+                        // we reassemble per blockIndex and finalize at ContentBlockStop.
+                        deltaEvent.delta?.asToolUseOrNull()?.let { toolDelta ->
+                            val acc = toolUseAccumulator.getOrPut(blockIndex) { StringBuilder() }
+                            acc.append(toolDelta.input)
+                        }
+                        // Citation delta — accumulate per-block for reassembly.
+                        //
+                        // AWS streaming pattern (verified via AWS docs):
+                        // "CitationsDelta contains incremental updates to citation
+                        // information during streaming responses. This allows
+                        // clients to build up citation data progressively as the
+                        // response is generated." — so multiple CitationsDelta
+                        // events within a single content block are fragments of
+                        // ONE citation (same metadata, accumulating text).
+                        //
+                        // Reassembly key: (title, source, location). All three are
+                        // optional per AWS docs; last non-null value wins.
+                        deltaEvent.delta?.asCitationOrNull()?.let { citationsDelta ->
+                            val blockIndex = deltaEvent.contentBlockIndex ?: 0
+                            val acc = perBlockCitationAcc.getOrPut(blockIndex) { BlockCitationAcc() }
+                            citationsDelta.title?.let { acc.title = it }
+                            citationsDelta.source?.let { acc.source = it }
+                            citationsDelta.location?.let { acc.location = it }
+                            citationsDelta.sourceContent?.forEach { fragment ->
+                                fragment.text?.let { acc.textBuilder.append(it) }
+                            }
+                        }
                     }
 
-                    // Handle message stop events to capture stop reason
+                    // NEW: ContentBlockStop — finalize per-block tool-use captures
+                    // and capture per-block stop reason (the message-level stop
+                    // reason is captured at MessageStop below).
+                    event.asContentBlockStopOrNull()?.let { stopEvent ->
+                        val blockIndex = stopEvent.contentBlockIndex
+                        perBlockToolUseIds[blockIndex]?.let { toolId ->
+                            // The name and input JSON fragments were captured above;
+                            // assemble the closed ToolUseBlock and record it.
+                            val toolName = perBlockToolUseNames[blockIndex] ?: ""
+                            val inputJson = toolUseAccumulator[blockIndex]?.toString() ?: ""
+                            collectedToolUse.add(
+                                aws.sdk.kotlin.services.bedrockruntime.model.ToolUseBlock {
+                                    this.toolUseId = toolId
+                                    this.name = toolName
+                                    // Bedrock's ToolUseBlock.input is a Document.
+                                    // For raw string JSON input, wrap in a String Document.
+                                    this.input = if(inputJson.isNotEmpty())
+                                    {
+                                        aws.smithy.kotlin.runtime.content.Document(inputJson)
+                                    }
+                                    else
+                                    {
+                                        null
+                                    }
+                                }
+                            )
+                            // Per-block stop reason (informational; MessageStop is the source of truth).
+                            // Reserved for future use when Bedrock emits per-block reasons.
+                            perBlockStopReasons[blockIndex] = "tool_use_block_closed"
+                        }
+
+                        // Finalize citations for this block. The accumulator holds
+                        // (title, source, location, accumulatedText).
+                        perBlockCitationAcc.remove(stopEvent.contentBlockIndex)?.let { acc ->
+                            val citation = aws.sdk.kotlin.services.bedrockruntime.model.Citation {
+                                this.title = acc.title ?: ""
+                                this.source = acc.source ?: ""
+                                this.location = acc.location
+                                this.sourceContent = listOf(
+                                    aws.sdk.kotlin.services.bedrockruntime.model.CitationSourceContent.Text(acc.textBuilder.toString())
+                                )
+                            }
+                            collectedCitations.add(citation)
+                        }
+                    }
                     event.asMessageStopOrNull()?.let { stopEvent ->
                         stopEvent.stopReason?.value?.let {
                             stopReason = it
@@ -4329,19 +4998,49 @@ put("system", if(enableCaching && cacheControl != null) {
                         }
                     }
 
-                    // Handle metadata events for token usage tracking
-                    event.asMetadataOrNull()?.usage?.let { usage ->
-                        usageMetadata["inputTokens"] = usage.inputTokens
-                        usageMetadata["outputTokens"] = usage.outputTokens
-                        usageMetadata["totalTokens"] = usage.totalTokens
-                        usage.cacheReadInputTokens?.let { usageMetadata["cacheReadInputTokens"] = it }
-                        usage.cacheWriteInputTokens?.let { usageMetadata["cacheWriteInputTokens"] = it }
+                    // Handle metadata events for token usage tracking AND wire-level latency.
+                    // Task 8 adds latency capture from `metrics.latencyMs` (ConverseStreamMetrics
+                    // was introduced in 1.5.x and exposes `getLatencyMs()` — a primitive `Long`,
+                    // so we cannot use Kotlin nullability to detect absence; instead the SDK
+                    // returns null for `getMetrics()` itself when no metrics block was sent).
+                    event.asMetadataOrNull()?.let { metaEvent ->
+                        metaEvent.usage?.let { usage ->
+                            usageMetadata["inputTokens"] = usage.inputTokens
+                            usageMetadata["outputTokens"] = usage.outputTokens
+                            usageMetadata["totalTokens"] = usage.totalTokens
+                            usage.cacheReadInputTokens?.let { usageMetadata["cacheReadInputTokens"] = it }
+                            usage.cacheWriteInputTokens?.let { usageMetadata["cacheWriteInputTokens"] = it }
+                        }
+                        // Task 8: capture per-call latency from ConverseStreamMetrics.
+                        // Bedrock always populates this for streaming Converse (it's the
+                        // server-side measurement) — surfacing it as `latencyMs` in
+                        // usageMetadata flows the value through to the trace and into
+                        // `BedrockCallMetadata.latencyMs` below.
+                        metaEvent.metrics?.latencyMs?.let { latency ->
+                            usageMetadata["latencyMs"] = latency
+                        }
                     }
                 }
 
                 // Return the accumulated text
                 textBuilder.toString()
             }
+
+            // NEW: Populate BedrockCallMetadata with per-call wire-level details.
+            // This must come AFTER `finalText` so we have everything from the stream.
+            // The ToolUseBlock list, cache tokens, and stop reason survive the call;
+            // a subsequent call will overwrite them (same race semantics as
+            // lastConverseResponse).
+            lastCallMetadata = BedrockCallMetadata(
+                toolUse = collectedToolUse.toList(),
+                citations = collectedCitations,
+                cacheReadInputTokens = (usageMetadata["cacheReadInputTokens"] as? Long),
+                cacheWriteInputTokens = (usageMetadata["cacheWriteInputTokens"] as? Long),
+                // Task 8: surface server-side per-call latency from
+                // ConverseStreamMetrics.latencyMs into BedrockCallMetadata.latencyMs.
+                latencyMs = (usageMetadata["latencyMs"] as? Long),
+                stopReason = stopReason.ifEmpty { null }
+            )
 
             // Build comprehensive metadata for tracing
             val metadata = mutableMapOf<String, Any>(
@@ -4418,6 +5117,70 @@ put("system", if(enableCaching && cacheControl != null) {
         }
     }
 
+    /**
+     * Test seam for [executeConverseStream]. Identical behavior to the protected version
+     * but takes the [client] as a parameter so same-package tests can inject a fake.
+     *
+     * The seam accepts a [ConverseStreamRequest] rather than a [ConverseRequest] to mirror
+     * the surface that production code paths build. Internally it reverses the
+     * `ConverseRequest.toStreamRequest()` mapping via the private
+     * [toConverseRequestForTest] extension before delegating to the protected
+     * [executeConverseStream].
+     *
+     * @param client The BedrockRuntimeClient to use (production passes `bedrockClient`;
+     *               tests pass a fake).
+     * @param modelId The model ID to attribute this call to (used in trace metadata).
+     * @param request The full streaming request, including `modelId`, `messages`,
+     *                and optional `toolConfig` / `guardrailConfig` / `performanceConfig` /
+     *                `promptVariables` / `requestMetadata`.
+     * @param apiLabel Trace label (e.g. "ConverseStream").
+     * @return The aggregated [MultimodalContent] from the call, or null on failure /
+     *         overflow without `allowMaxTokenOverflow`. Per-call wire details land in
+     *         [getLastCallMetadata].
+     */
+    internal suspend fun executeConverseStreamForTest(
+        client: BedrockRuntimeClient,
+        modelId: String,
+        request: ConverseStreamRequest,
+        apiLabel: String
+    ): MultimodalContent? = executeConverseStream(
+        client,
+        modelId,
+        request.toConverseRequestForTest(),
+        apiLabel
+    )
+
+    /**
+     * Test seam for [toStreamRequest]. Reverses the `ConverseRequest.toStreamRequest()`
+     * mapping so [executeConverseStreamForTest] can pass a fully-configured
+     * [ConverseStreamRequest] through to the protected [executeConverseStream].
+     *
+     * Copy direction matches `toStreamRequest()` field-by-field. GuardrailConfig is
+     * rebuilt from the stream variant.
+     */
+    private fun ConverseStreamRequest.toConverseRequestForTest(): ConverseRequest
+    {
+        return ConverseRequest {
+            this.modelId = this@toConverseRequestForTest.modelId
+            this.messages = this@toConverseRequestForTest.messages
+            this.inferenceConfig = this@toConverseRequestForTest.inferenceConfig
+            this.system = this@toConverseRequestForTest.system
+            this.additionalModelRequestFields = this@toConverseRequestForTest.additionalModelRequestFields
+            this.additionalModelResponseFieldPaths = this@toConverseRequestForTest.additionalModelResponseFieldPaths
+            this.performanceConfig = this@toConverseRequestForTest.performanceConfig
+            this.promptVariables = this@toConverseRequestForTest.promptVariables
+            this.requestMetadata = this@toConverseRequestForTest.requestMetadata
+            this.toolConfig = this@toConverseRequestForTest.toolConfig
+            this@toConverseRequestForTest.guardrailConfig?.let { gc ->
+                this.guardrailConfig = aws.sdk.kotlin.services.bedrockruntime.model.GuardrailConfiguration {
+                    guardrailIdentifier = gc.guardrailIdentifier
+                    guardrailVersion = gc.guardrailVersion
+                    trace = gc.trace
+                }
+            }
+        }
+    }
+
     private suspend fun executeInvokeStream(
         client: BedrockRuntimeClient,
         modelId: String,
@@ -4449,6 +5212,12 @@ put("system", if(enableCaching && cacheControl != null) {
                 this.guardrailVersion = this@BedrockPipe.guardrailVersion
                 this.trace = aws.sdk.kotlin.services.bedrockruntime.model.Trace.fromValue(guardrailTrace)
             }
+
+            // Per-call request metadata for CloudTrail invocation-log filtering.
+            // Serializes the pipe's Map<String,String> to the JSON-encoded header
+            // string that InvokeModelRequest / InvokeModelWithResponseStreamRequest
+            // put in the X-Amzn-Bedrock-Request-Metadata HTTP header.
+            applyRequestMetadata()
         }
 
         return try {
@@ -4522,7 +5291,13 @@ put("system", if(enableCaching && cacheControl != null) {
                       "streaming" to true
                   ))
 
-            null
+            // Return the empty MultimodalContent rather than null: the parent
+            // dispatcher (executeInvokeApi) interprets null as "fall back to
+            // non-streaming InvokeModel", which in turn skips ALL callback
+            // fan-out. With bedrockClient=valid but the stream request failing,
+            // the intent is that streaming errors should still surface the empty
+            // response rather than triggering a wasted non-streaming call.
+            MultimodalContent("")
         }
     }
 
@@ -4626,7 +5401,15 @@ put("system", if(enableCaching && cacheControl != null) {
                         text = it
                     }
                 }
-                
+
+                // Nova streaming envelope: {contentBlockDelta:{delta:{text:"..."}, contentBlockIndex:N}}
+                if(text.isEmpty())
+                {
+                    obj["contentBlockDelta"]?.jsonObject?.get("delta")?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull?.let {
+                        text = it
+                    }
+                }
+
                 // Fallback to raw text if not JSON structured
                 if(text.isEmpty() && !trimmed.startsWith("{"))
                 {

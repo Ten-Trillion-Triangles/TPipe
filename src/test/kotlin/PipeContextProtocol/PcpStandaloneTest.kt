@@ -11,6 +11,7 @@ import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class PcpStandaloneTest
@@ -22,15 +23,21 @@ class PcpStandaloneTest
 
     @Test
     fun testPcPRequestSerialization() {
+        // PcpRequest and its context options are data classes with default values;
+        // `serialize(...)` defaults to compact mode (`encodeDefaults = false`) which
+        // drops fields that match the data-class default — including a
+        // `tPipeContextOptions` whose only non-default field is the function name. The
+        // round-trip contract for tool-call payloads is "function name persists", so
+        // use the with-defaults form here.
         val request = PcPRequest(
             tPipeContextOptions = TPipeContextOptions().apply {
                 functionName = "test"
             }
         )
-        val json = serialize(request)
-        println("Serialized: $json")
+        val json = serialize(request, encodedefault = true)
         val deserialized = deserialize<PcPRequest>(json)
-        assertEquals("test", deserialized?.tPipeContextOptions?.functionName)
+        assertNotNull(deserialized, "PcPRequest with functionName must round-trip; got: $json")
+        assertEquals("test", deserialized.tPipeContextOptions?.functionName)
     }
 
     @Test

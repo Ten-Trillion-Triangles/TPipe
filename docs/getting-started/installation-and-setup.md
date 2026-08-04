@@ -140,9 +140,20 @@ dependencies {
 |--------|-------------|-----------------|
 | `TPipe` | Main library with core classes and interfaces | Always required |
 | `TPipe-Bedrock` | AWS Bedrock integration | When using AWS Bedrock models |
+| `TPipe-GenericOpenAI` | OpenAI-compatible HTTP pipe (incl. Bedrock Mantle) | When using OpenAI, Anthropic Messages, OpenAI Responses, or Bedrock Mantle |
 | `TPipe-Ollama` | Ollama integration | When using local Ollama models |
 | `TPipe-MCP` | Model Context Protocol support | When using MCP servers |
 | `TPipe-Defaults` | Default configurations and utilities | Optional, provides sensible defaults |
+
+### Bedrock Mantle
+
+To call Amazon Bedrock Mantle, add `TPipe-GenericOpenAI` to your project (it hosts the Mantle integration alongside OpenAI/Anthropic/Responses support) and provide one of the following authentication shapes:
+
+- **Bedrock API key** — set `BEDROCK_MANTLE_API_KEY` in the environment.
+- **AWS SigV4 credentials** — set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and (optionally) `AWS_REGION`. The Mantle service identifier is `bedrock-mantle`. The required IAM actions are documented in the AWS Bedrock Mantle IAM reference (typically `bedrock-mantle:CreateInference` plus the standard `Get*` / `List*` actions for the model).
+- **Mantle-specific env vars** — `BEDROCK_MANTLE_ACCESS_KEY_ID`, `BEDROCK_MANTLE_SECRET_ACCESS_KEY`, `BEDROCK_MANTLE_REGION` take precedence over the standard AWS env vars when set.
+
+The full setup walkthrough lives in [Bedrock Mantle Getting Started](../bedrock/mantle.md).
 
 ## Required JVM Configuration
 

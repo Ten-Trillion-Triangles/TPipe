@@ -12,7 +12,7 @@ import org.gradle.external.javadoc.StandardJavadocDocletOptions
  */
 
 plugins {
-    alias(libs.plugins.kotlin.jvm) version "2.2.20"
+    alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ktor)
     alias(libs.plugins.kotlin.plugin.serialization)
     alias(libs.plugins.shadow)
@@ -191,10 +191,13 @@ publishing {
     }
 }
 
-// Pre-existing test files that the kotlin 2.2.20 serialization compiler plugin refuses to
-// compile (it cannot read the kotlinx-serialization-core version from the classpath and bails
-// with "kotlinx.serialization core version is 2.2.20, while ... requires at least 1.0-M1-SNAPSHOT").
-// Quarantined so the rest of the suite (including PumpStationMiniMaxLiveTest) can compile and run.
+// The kotlin 2.2.20 serialization compiler plugin previously refused to compile
+// CoercionTest and JsonRepairTest because it could not read the kotlinx-serialization-core
+// version from the classpath. With the Kotlin 2.3 readiness test set in place
+// (see .hermes/plans/kotlin-23-test-readiness/plan.md) we are NOT removing the
+// quarantine here — these tests still fail to compile under Kotlin 2.2.20 and
+// that is a pre-existing on-main condition, not a regression from this plan.
+// Re-enabling them is a separate task for the actual Kotlin 2.3 upgrade.
 sourceSets.test {
     kotlin.exclude(
         "**/CoercionTest.kt",

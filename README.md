@@ -143,6 +143,7 @@ Integration guides for different AI providers:
 
 #### AWS Bedrock
 - [Getting Started with TPipe-Bedrock](docs/bedrock/getting-started.md) - Setup, configuration, and first steps
+- [Bedrock Mantle Getting Started](docs/bedrock/mantle.md) - OpenAI-compatible Bedrock endpoint surface (Bearer / SigV4 / chunked-streaming)
 - [AWS Bedrock Inference Binding](docs/bedrock/inference-binding.md) - Cross-region model access and configuration
 - [AWS Bedrock Guardrails](docs/bedrock/guardrails.md) - Content safety and moderation with Guardrails
 
@@ -169,7 +170,8 @@ Integration guides for different AI providers:
 - [Lorebook API](docs/api/lorebook.md) - Knowledge base management
 
 #### Provider Pipe APIs
-- [GenericOpenAI Pipe API](docs/api/generic-openai-pipe.md) - Generic OpenAI-compatible provider interface
+- [GenericOpenAI Pipe API](docs/api/generic-openai-pipe.md) - Generic OpenAI-compatible provider interface (OpenAI, Anthropic Messages, OpenAI Responses, Bedrock Mantle)
+- [Bedrock Mantle API](docs/api/bedrock-mantle.md) - `BedrockMantleConfiguration`, `BedrockMantleAuth` (Bearer / SigV4 / Streaming variants), `BedrockMantleEnv` env-var precedence
 - [Ollama Pipe API](docs/api/ollama-pipe.md) - Local Ollama model interface
 - [OpenRouter Pipe API](docs/api/openrouter-pipe.md) - OpenRouter unified API interface
 
@@ -212,7 +214,7 @@ println(result.text)
 - **Context access control** with ContextLock enforcement for secure lorebook and page management
 - **Developer-in-the-loop integration** with code and AI-powered validation
 - **Chain-of-thought reasoning** with multiple strategies and focus points
-- **Multi-provider AI support** (AWS Bedrock, Ollama, OpenRouter, extensible architecture)
+- **Multi-provider AI support** (AWS Bedrock, AWS Bedrock Mantle, Ollama, OpenRouter, extensible architecture)
 - **Kotlin and JavaScript scripting** in PCP alongside Python and native functions
 - **Comprehensive debugging** with detailed tracing and monitoring
 - **Remote trace dashboard** with TraceServer for centralized real-time trace viewing
@@ -220,6 +222,11 @@ println(result.text)
 - **Unified authentication** with AuthRegistry for automatic credential injection across remote services
 - **Cross-region inference** with automatic profile binding for AWS Bedrock
 - **Service tier optimization** for AWS Bedrock (Reserved, Priority, Standard, Flex)
+- **Performance configuration** for AWS Bedrock (`Optimized` vs `Standard` latency per call)
+- **Request metadata** flowing into AWS CloudTrail for cost attribution and tenant routing
+- **Server-side prompt template variables** for stable prompt-cache keys across requests
+- **Per-call metadata harvesting** from AWS Bedrock Converse (tool use, citations, guardrail assessments, cache tokens, latency, stop reason)
+- **Streaming reassembly** of AWS Bedrock tool-use blocks, citations, and guard content across `ContentBlockDelta` events
 - **Content safety with AWS Bedrock Guardrails** for automatic content moderation and policy enforcement
 - **Enhanced security** with DNS rebinding protection, AST-based Python validation, and UUID session IDs
 - **Merged PCP + JSON mode** for simultaneous structured output and tool calling in a single response
@@ -227,7 +234,7 @@ println(result.text)
 ## Requirements
 
 - **Java 24** or higher (GraalVM CE 24 recommended)
-- **Kotlin 2.2.20** or higher
+- **Kotlin 2.3** or higher
 - **Gradle** with Kotlin DSL
 
 ## Installation

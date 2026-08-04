@@ -18,6 +18,8 @@ import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenUsage
 import com.TTT.Pipe.PipeTimeoutStrategy
 import com.TTT.Pipe.TokenBudgetSettings
+import com.TTT.Pipe.StallCallback
+import com.TTT.Pipe.StreamingStallConfig
 import com.TTT.Structs.PipeSettings
 import com.TTT.Util.copyPipeline
 import com.TTT.Util.deepCopy
@@ -251,6 +253,11 @@ class Pipeline : P2PInterface
     private var pipeRetryFunction: (suspend (pipe: Pipe, content: MultimodalContent) -> Boolean)? = null
     private var applyTimeoutRecursively = true
 
+    // Stall Detection Configuration Properties
+    private var enablePipelineStallDetector = false
+    private var pipelineStallDetectorConfig: StreamingStallConfig = StreamingStallConfig()
+    private var pipelineStallCallback: StallCallback? = null
+
 
 
 //============================================== P2PInterface ==========================================================
@@ -456,6 +463,16 @@ class Pipeline : P2PInterface
         for (pipe in getPipes())
         {
             pipe.propagateStreamingCallback(callback)
+        }
+    }
+    override fun enableStallDetectorRecursive(
+        config: StreamingStallConfig,
+        callback: StallCallback?
+    )
+    {
+        for (pipe in getPipes())
+        {
+            pipe.propagateStallDetection(config, callback)
         }
     }
 
@@ -694,7 +711,34 @@ class Pipeline : P2PInterface
         {
              this.timeoutStrategy = PipeTimeoutStrategy.Fail
         }
-        
+
+        return this
+    }
+
+    /**
+     * Enables stall detection for all pipes in this pipeline. When the pipeline is
+     * initialized, every pipe receives the [config] and (optionally) the [callback].
+     *
+     * Stall detection tracks token arrival timestamps during streaming and uses
+     * statistical deviation (rolling mean + stddev) to detect abnormally long silences
+     * — typically a sign that the LLM has silently died without throwing an error.
+     *
+     * Each pipe owns its own StreamingStallDetector (per-pipe stats are per-pipe state);
+     * the config is propagated to every child.
+     *
+     * @param config Detection thresholds. Defaults to [StreamingStallConfig].
+     * @param callback Optional callback invoked on stall (logging/metrics). The retry
+     *                 path is independent — see [PipeTimeoutManager.handleStallSignal].
+     * @return This pipeline for chaining.
+     */
+    fun enableStallDetector(
+        config: StreamingStallConfig = StreamingStallConfig(),
+        callback: StallCallback? = null
+    ): Pipeline
+    {
+        this.enablePipelineStallDetector = true
+        this.pipelineStallDetectorConfig = config
+        if(callback != null) this.pipelineStallCallback = callback
         return this
     }
 
@@ -1167,7 +1211,7 @@ class Pipeline : P2PInterface
             pipe.setParentInterface(this)
 
             // Apply pipeline-level timeout settings if enabled
-            if(enablePipeTimeout) 
+            if(enablePipeTimeout)
             {
                 pipe.enablePipeTimeout(
                     applyRecursively = applyTimeoutRecursively,
@@ -1178,6 +1222,17 @@ class Pipeline : P2PInterface
                 pipe.enablePipeTimeout = true
                 pipe.timeoutStrategy = timeoutStrategy
                 pipe.setRetryFunction(pipeRetryFunction)
+            }
+
+            // Apply pipeline-level stall detection settings if enabled.
+            // Note: stall detection does NOT recursively cascade by default — each pipe
+            // owns its own StreamingStallDetector since per-pipe stats need per-pipe state.
+            // The config and callback are simply propagated to every child.
+            if(enablePipelineStallDetector)
+            {
+                val stallCallback = pipelineStallCallback
+                pipe.enableStallDetector(pipelineStallDetectorConfig)
+                if(stallCallback != null) pipe.setStallCallback(stallCallback)
             }
             
             if(initPipes)

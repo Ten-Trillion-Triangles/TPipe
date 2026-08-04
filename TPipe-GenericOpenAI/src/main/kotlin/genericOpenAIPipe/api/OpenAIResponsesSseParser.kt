@@ -75,6 +75,14 @@ object OpenAIResponsesSseParser
             "response.output_text.done" -> parseOutputTextDone(dataJson, raw)
             "response.reasoning_text.delta" -> parseReasoningTextDelta(dataJson, raw)
             "response.reasoning_text.done" -> parseReasoningTextDone(dataJson, raw)
+            // Mantle emits the shorter event names on its `/v1/responses`
+            // SSE wire (`response.reasoning.delta` / `response.reasoning.done`)
+            // instead of OpenAI's `response.reasoning_text.delta` /
+            // `…_done`. Both shapes decode to the same wire payload — a
+            // `TextDeltaWrapper`/`TextDoneWrapper` carrying `delta`/`text`
+            // — so they share the existing parsers without changes.
+            "response.reasoning.delta" -> parseReasoningTextDelta(dataJson, raw)
+            "response.reasoning.done" -> parseReasoningTextDone(dataJson, raw)
             "response.function_call_arguments.delta" -> parseFunctionCallArgumentsDelta(dataJson, raw)
             "response.function_call_arguments.done" -> parseFunctionCallArgumentsDone(dataJson, raw)
             "error" -> throwError(dataJson)

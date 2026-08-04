@@ -1,9 +1,13 @@
 package genericOpenAIPipe
 
+import com.TTT.Debug.PipeTracer
 import com.TTT.Pipeline.Pipeline
 import genericOpenAIPipe.api.ApiMode
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -24,6 +28,7 @@ import kotlin.test.assertTrue
  * reasoning block. Earlier versions used 256 tokens which is insufficient
  * for M2.7's thinking output.
  */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AnthropicStreamingLiveTest
 {
     companion object
@@ -32,6 +37,20 @@ class AnthropicStreamingLiveTest
         private const val MINIMAX_MODEL = "MiniMax-M2.7"
         private const val TEST_PROMPT = "Respond with exactly the word: HELLO"
         private const val MAX_TOKENS = 2048
+    }
+
+    @BeforeAll
+    fun enableTracingForAllTests()
+    {
+        setupTraceDirectory(AnthropicStreamingLiveTest::class.java)
+        PipeTracer.enable()
+    }
+
+    @AfterAll
+    fun disableTracingForAllTests()
+    {
+        PipeTracer.getAllTraces().keys.forEach { PipeTracer.clearTrace(it) }
+        PipeTracer.disable()
     }
 
     @Test
@@ -56,7 +75,8 @@ class AnthropicStreamingLiveTest
             .setApiMode(ApiMode.Anthropic)
             .setModel(MINIMAX_MODEL)
             .setMaxTokens(MAX_TOKENS)
-            .setTemperature(0.0) as GenericOpenAIPipe
+            .setTemperature(0.0)
+            .enableTracing(traceConfig()) as GenericOpenAIPipe
 
         pipe.setStreamingCallback(callback)
 

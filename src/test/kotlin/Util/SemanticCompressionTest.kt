@@ -106,40 +106,51 @@ class SemanticCompressionTest
         )
 
         // 3 tokens: must occur 4 times
+        // The original test used "Alpha Beta Gamma" but all three are common
+        // English words (alpha, beta, gamma are dictionary entries), so the
+        // production `phraseHasNonCommonEnglishToken` filter at line 1035
+        // rejects the candidate. Replaced with uncommon proper-noun tokens
+        // ("Xyzqwert", "Betaz", "Gammaz") that are NOT in COMMON_ENGLISH_WORDS.
         assertTrue(
             semanticCompress(
-                "He said, Alpha Beta Gamma. ".repeat(3).trim()
+                "He said, Xyzqwert Betaz Gammaz. ".repeat(3).trim()
             ).legend.isEmpty(),
             "Three-token proper nouns should not be coded before 4 occurrences"
         )
 
         assertTrue(
             semanticCompress(
-                "He said, Alpha Beta Gamma. ".repeat(4).trim()
-            ).legend.contains("AA: Alpha Beta Gamma"),
+                "He said, Xyzqwert Betaz Gammaz. ".repeat(4).trim()
+            ).legend.contains("AA: Xyzqwert Betaz Gammaz"),
             "Three-token proper nouns should code at 4 occurrences"
         )
 
         // 4 tokens: must occur 3 times
+        // Same rationale as the 3-token case: use uncommon 4-token phrase to
+        // pass the `phraseHasNonCommonEnglishToken` filter. "Xyzqwert" is
+        // not in COMMON_ENGLISH_WORDS.
         assertTrue(
             semanticCompress(
-                "He said, Alpha Beta Gamma Delta. ".repeat(2).trim()
+                "He said, Xyzqwert Betaz Gammaz Deltaz. ".repeat(2).trim()
             ).legend.isEmpty(),
             "Four-token proper nouns should not be coded before 3 occurrences"
         )
 
         assertTrue(
             semanticCompress(
-                "He said, Alpha Beta Gamma Delta. ".repeat(3).trim()
-            ).legend.contains("AA: Alpha Beta Gamma Delta"),
+                "He said, Xyzqwert Betaz Gammaz Deltaz. ".repeat(3).trim()
+            ).legend.contains("AA: Xyzqwert Betaz Gammaz Deltaz"),
             "Four-token proper nouns should code at 3 occurrences"
         )
 
         // 6+ tokens: must occur 2 times
+        // Same rationale: use uncommon 6-token phrase to pass the
+        // `phraseHasNonCommonEnglishToken` filter. "Xyzqwert" is not in
+        // COMMON_ENGLISH_WORDS.
         assertTrue(
             semanticCompress(
-                "He said, One Two Three Four Five Six. ".repeat(2).trim()
-            ).legend.contains("AA: One Two Three Four Five Six"),
+                "He said, Xyzqwert Betaz Gammaz Deltaz Epsilonz Zetaz. ".repeat(2).trim()
+            ).legend.contains("AA: Xyzqwert Betaz Gammaz Deltaz Epsilonz Zetaz"),
             "Six-token proper nouns should code at 2 occurrences"
         )
     }
@@ -216,16 +227,22 @@ class SemanticCompressionTest
     fun semanticCompressionLegendCodesStartAtAaAndAdvanceDeterministically()
     {
         val input = buildString {
-            repeat(6) { append("Alice Johnson ") }
-            repeat(6) { append("Bob Smith ") }
+            // Prefix with a lowercase connector word so the proper nouns appear
+            // mid-sentence. Production requires `seenNotAtSentenceStart = true`
+            // for a candidate to be coded; placing the proper noun after a
+            // non-uppercase-start token satisfies that filter. A capitalised
+            // prefix would itself be treated as a proper-noun token.
+            append("and ")
+            repeat(6) { append("Xyzqwert Betaz ") }
+            repeat(6) { append("Quuxwerty Foobarz ") }
         }.trim()
 
         val result = semanticCompress(input)
         val legendLines = result.legend.lines()
 
         assertTrue(result.legend.startsWith("Legend:"), "Legend should still begin with the expected header")
-        assertTrue(legendLines.any { it.startsWith("AA: Alice Johnson") }, "First legend entry should use AA")
-        assertTrue(legendLines.any { it.startsWith("AB: Bob Smith") }, "Second legend entry should use AB")
+        assertTrue(legendLines.any { it.startsWith("AA: Xyzqwert Betaz") }, "First legend entry should use AA")
+        assertTrue(legendLines.any { it.startsWith("AB: Quuxwerty Foobarz") }, "Second legend entry should use AB")
     }
 
     @Test

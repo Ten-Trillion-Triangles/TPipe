@@ -108,16 +108,20 @@ fun dispatchScriptedResponse(
 fun testPath(
     name: String,
     returnText: String = "test result",
-    callCount: IntArray? = null
+    callCount: IntArray? = null,
+    withExecutionFunction: Boolean = true
 ): PathObject {
-    return PathObject().apply {
+    val path = PathObject().apply {
         pathName = name
         pathDescription = "Test path: $name"
-        setExecutionFunction { content, _, _, _ ->
-            callCount?.set(0, callCount[0] + 1)
-            MultimodalContent(text = returnText, context = content.context)
+        if (withExecutionFunction) {
+            setExecutionFunction { content, _, _, _ ->
+                callCount?.set(0, callCount[0] + 1)
+                MultimodalContent(text = returnText, context = content.context)
+            }
         }
     }
+    return path
 }
 
 /**

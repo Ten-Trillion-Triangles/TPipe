@@ -7,8 +7,17 @@ import genericOpenAIPipe.env.MessageContent
 
 class AnthropicRequestSerializer : RequestSerializer
 {
-    override fun serialize(request: GenericOpenAIChatRequest, apiMode: ApiMode): String
+    override fun serialize(
+        request: GenericOpenAIChatRequest,
+        apiMode: ApiMode,
+        options: RequestSerializationOptions,
+    ): String
     {
+        // options is intentionally unused — Anthropic wire has its own cache
+        // control mechanism (request.cacheControl) and does not honor Mantle
+        // GPT-5.6 prompt-cache extensions.
+        @Suppress("UNUSED_PARAMETER")
+        val ignored = options
         require(apiMode is ApiMode.Anthropic)
         { "AnthropicRequestSerializer only supports ApiMode.Anthropic, got $apiMode" }
 

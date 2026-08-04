@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.serializer
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.util.IdentityHashMap
 import kotlin.reflect.KClass
 import kotlin.reflect.KMutableProperty1
 import kotlin.reflect.KProperty1
@@ -544,9 +545,9 @@ fun deepCopyInternal(obj: Any?, kClass: KClass<*>): Any?
         obj is String || obj is Number || obj is Boolean || obj is Char -> obj
         
         // Handle collections
-        obj is List<*> -> obj.map { deepCopyInternal(it, it?.let { it::class } ?: Any::class) }
-        obj is Set<*> -> obj.map { deepCopyInternal(it, it?.let { it::class } ?: Any::class) }.toSet()
-        obj is Map<*, *> -> obj.mapValues { deepCopyInternal(it.value, it.value?.let { it::class } ?: Any::class) }
+        obj is List<*> -> obj.map { deepCopyInternal(it, it?.let { it::class } ?: Any::class) }.toMutableList()
+        obj is Set<*> -> obj.map { deepCopyInternal(it, it?.let { it::class } ?: Any::class) }.toMutableSet()
+        obj is Map<*, *> -> obj.mapValues { deepCopyInternal(it.value, it.value?.let { it::class } ?: Any::class) }.toMutableMap()
         
         // Handle data classes
         kClass.isData -> 
@@ -584,6 +585,9 @@ fun deepCopyInternal(obj: Any?, kClass: KClass<*>): Any?
     }
 }
 
+/** Maximum recursion depth for [cloneValueBounded] before bailing out to a shared-by-reference fallback. */
+private const val CLONE_RECURSION_CAP: Int = 16
+
 /**
  * Clone any TPipe object by creating a fresh instance via its no-arg constructor and copying all mutable
  * configuration properties via reflection. Properties annotated with [RuntimeState] or `@Transient` are
@@ -602,20 +606,84 @@ fun deepCopyInternal(obj: Any?, kClass: KClass<*>): Any?
  * @return A fresh instance with identical configuration and default runtime state.
  */
 @Suppress("UNCHECKED_CAST")
-fun <T : Any> cloneInstance(template: T): T
+fun <T : Any> cloneInstance(template: T): T = cloneInstanceWith(template, IdentityHashMap())
+
+/**
+ * Internal recursive clone that threads a shared identity-visited map across the entire clone
+ * tree. This breaks cycles that would otherwise blow the stack — for example a [com.TTT.Pipeline.Manifold]
+ * whose `workerPipelines` point at a [com.TTT.Pipeline.Pipeline] whose `pipes` carry a [com.TTT.PipeContextProtocol.PcpContext]
+ * whose `tpipeOptions` reference the original Manifold. The visited map is populated with the
+ * in-flight clone pair at the start of each [cloneInstanceWith] call so that a re-encounter during
+ * property walking returns the same clone, and recursion is bounded by [CLONE_RECURSION_CAP] as a
+ * safety net.
+ */
+@Suppress("UNCHECKED_CAST")
+private fun <T : Any> cloneInstanceWith(template: T, visited: MutableMap<Any, Any>): T
 {
+    // If we have already started cloning this template in this call tree, return the
+    // in-flight clone so cycles terminate.
+    (visited[template] as? T)?.let { return it }
+
     val kClass = template::class
 
-    val newInstance = try
+    val newInstance: Any = if(kClass.isData)
     {
-        val constructor = kClass.java.getDeclaredConstructor()
-        constructor.isAccessible = true
-        constructor.newInstance()
+        // Data classes — instantiate via the primary constructor with each primary-ctor
+        // parameter's cloned value, so primary-ctor `val` properties are populated on the
+        // fresh instance. Then walk body-level `KMutableProperty1` members and assign the
+        // cloned values, skipping @RuntimeState and @Transient.
+        try
+        {
+            val ctor = kClass.primaryConstructor
+                ?: throw IllegalStateException("Data class ${kClass.simpleName} has no primary constructor")
+            ctor.isAccessible = true
+            val args = mutableMapOf<kotlin.reflect.KParameter, Any?>()
+            for(param in ctor.parameters)
+            {
+                val prop = kClass.memberProperties.firstOrNull { it.name == param.name } ?: continue
+                // Skip @RuntimeState and @Transient body-level vars whose values should
+                // not carry over to the clone. The primary-ctor default value is used
+                // instead (typically a no-op initializer that resets the field).
+                val isRuntimeState = prop.annotations.any { it.annotationClass == RuntimeState::class }
+                val isTransient = prop.annotations.any {
+                    it.annotationClass.qualifiedName?.contains("Transient") == true
+                }
+                if(isRuntimeState || isTransient) continue
+                prop.isAccessible = true
+                @Suppress("UNCHECKED_CAST")
+                val templateValue = (prop as KProperty1<Any, Any?>).get(template)
+                if(templateValue == null)
+                {
+                    // Leave the entry absent so the primary-ctor default is used.
+                    continue
+                }
+                args[param] = cloneValueBounded(templateValue, visited, depth = 1)
+            }
+            ctor.callBy(args)
+        }
+        catch(e: Exception)
+        {
+            throw IllegalStateException("cloneInstance failed to instantiate data class ${kClass.simpleName}: ${e.message}", e)
+        }
     }
-    catch(e: Exception)
+    else
     {
-        throw IllegalStateException("cloneInstance failed to create ${kClass.simpleName}: ${e.message}", e)
+        try
+        {
+            val constructor = kClass.java.getDeclaredConstructor()
+            constructor.isAccessible = true
+            constructor.newInstance()
+        }
+        catch(e: Exception)
+        {
+            throw IllegalStateException("cloneInstance failed to create ${kClass.simpleName}: ${e.message}", e)
+        }
     }
+
+    // Register the template→clone pair BEFORE walking properties so the recursion through
+    // Manifold → workerPipeline → pipes → P2PInterface can short-circuit when a property
+    // cycles back to an object already in-flight on this clone call.
+    visited[template] = newInstance
 
     kClass.memberProperties.forEach { prop ->
         val isRuntimeState = prop.annotations.any { it.annotationClass == RuntimeState::class }
@@ -625,6 +693,19 @@ fun <T : Any> cloneInstance(template: T): T
         if(isRuntimeState || isTransient)
         {
             return@forEach
+        }
+
+        // For data classes, primary-ctor vals were already set via the primary constructor.
+        // Walking them again would re-set a val on a data class instance, which is a no-op
+        // for primary-ctor vals (they have getters only) and would throw for the
+        // KMutableProperty1 cast below. Skip them here.
+        if(kClass.isData)
+        {
+            val isPrimaryCtorParam = kClass.primaryConstructor?.parameters?.any { it.name == prop.name } == true
+            if(isPrimaryCtorParam)
+            {
+                return@forEach
+            }
         }
 
         try
@@ -641,7 +722,10 @@ fun <T : Any> cloneInstance(template: T): T
                 }
                 else
                 {
-                    (prop as KMutableProperty1<Any, Any?>).set(newInstance, cloneValue(templateValue))
+                    (prop as KMutableProperty1<Any, Any?>).set(
+                        newInstance,
+                        cloneValueBounded(templateValue, visited, depth = 1)
+                    )
                 }
             }
             else
@@ -656,21 +740,31 @@ fun <T : Any> cloneInstance(template: T): T
                     {
                         val target = newValue as? MutableList<Any?> ?: return@forEach
                         target.clear()
-                        templateValue.forEach { item -> target.add(if(item != null) cloneValue(item) else null) }
+                        templateValue.forEach { item ->
+                            target.add(
+                                if(item != null) cloneValueBounded(item, visited, depth = 1) else null
+                            )
+                        }
                     }
 
                     is MutableMap<*, *> ->
                     {
                         val target = newValue as? MutableMap<Any?, Any?> ?: return@forEach
                         target.clear()
-                        templateValue.forEach { (k, v) -> target[k] = if(v != null) cloneValue(v) else null }
+                        templateValue.forEach { (k, v) ->
+                            target[k] = if(v != null) cloneValueBounded(v, visited, depth = 1) else null
+                        }
                     }
 
                     is MutableSet<*> ->
                     {
                         val target = newValue as? MutableSet<Any?> ?: return@forEach
                         target.clear()
-                        templateValue.forEach { item -> target.add(if(item != null) cloneValue(item) else null) }
+                        templateValue.forEach { item ->
+                            target.add(
+                                if(item != null) cloneValueBounded(item, visited, depth = 1) else null
+                            )
+                        }
                     }
                 }
             }
@@ -681,6 +775,7 @@ fun <T : Any> cloneInstance(template: T): T
         }
     }
 
+    @Suppress("UNCHECKED_CAST")
     return newInstance as T
 }
 
@@ -734,10 +829,21 @@ fun <T : Any> T.isDefault(): Boolean
 
 /**
  * Classify and copy a single property value according to the P2P concurrency isolation property classification.
+ *
+ * `visited` is a template→clone identity map seeded by the caller (typically [cloneInstance]) so that
+ * self-referential property graphs — for example a [com.TTT.Pipeline.Manifold] holding a worker
+ * [com.TTT.Pipeline.Pipeline] holding a [Pipe] whose context references the same Manifold — terminate
+ * instead of recursing forever. On revisit, the already-built clone is returned; on exceeding
+ * [CLONE_RECURSION_CAP], the value is shared by reference as a safety net.
  */
 @Suppress("UNCHECKED_CAST")
-private fun cloneValue(value: Any): Any
+private fun cloneValueBounded(value: Any, visited: MutableMap<Any, Any>, depth: Int): Any
 {
+    if(depth > CLONE_RECURSION_CAP) return value
+
+    //Short-circuit on identity: if we are already inside this template's clone, return the in-flight clone.
+    visited[value]?.let { return it }
+
     return when
     {
         // Immutable primitives — copy directly
@@ -748,23 +854,23 @@ private fun cloneValue(value: Any): Any
 
         // Pipe subclasses — recursive clone using the actual runtime class (not constructPipeFromTemplate
         // which uses the reified type parameter and would create a base Pipe instead of the subclass)
-        value is Pipe -> cloneInstance(value)
+        value is Pipe -> cloneInstanceWith(value, visited)
         // P2PInterface implementations (Pipeline, Manifold, Junction, DistributionGrid, etc.) — recursive clone
-        value is com.TTT.P2P.P2PInterface -> cloneInstance(value)
+        value is com.TTT.P2P.P2PInterface -> cloneInstanceWith(value, visited)
 
         // Data classes — use existing deepCopy
         value::class.isData -> value.deepCopy()
 
         // Mutable collections — deep copy contents
-        value is MutableList<*> -> value.map { item -> if(item != null) cloneValue(item) else null }.toMutableList()
-        value is List<*> -> value.map { item -> if(item != null) cloneValue(item) else null }
-        value is MutableSet<*> -> value.map { item -> if(item != null) cloneValue(item) else null }.toMutableSet()
-        value is Set<*> -> value.map { item -> if(item != null) cloneValue(item) else null }.toSet()
+        value is MutableList<*> -> value.map { item -> if(item != null) cloneValueBounded(item, visited, depth + 1) else null }.toMutableList()
+        value is List<*> -> value.map { item -> if(item != null) cloneValueBounded(item, visited, depth + 1) else null }
+        value is MutableSet<*> -> value.map { item -> if(item != null) cloneValueBounded(item, visited, depth + 1) else null }.toMutableSet()
+        value is Set<*> -> value.map { item -> if(item != null) cloneValueBounded(item, visited, depth + 1) else null }.toSet()
         value is MutableMap<*, *> -> (value as MutableMap<Any?, Any?>).entries.associate { (k, v) ->
-            k to if(v != null) cloneValue(v) else null
+            k to if(v != null) cloneValueBounded(v, visited, depth + 1) else null
         }.toMutableMap()
         value is Map<*, *> -> value.entries.associate { (k, v) ->
-            k to if(v != null) cloneValue(v) else null
+            k to if(v != null) cloneValueBounded(v, visited, depth + 1) else null
         }
 
         // Non-data class with no-arg constructor — recursive structural clone
@@ -774,7 +880,7 @@ private fun cloneValue(value: Any): Any
             {
                 val constructor = value::class.java.getDeclaredConstructor()
                 constructor.isAccessible = true
-                cloneInstance(value)
+                cloneInstanceWith(value, visited)
             }
             catch(_: NoSuchMethodException)
             {

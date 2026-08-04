@@ -178,7 +178,14 @@ data class TokenBudgetSettings(
     /**
      * Determines whether empty pages still reserve a portion of the budget.
      */
-    var reserveEmptyPageBudget: Boolean = true
+    var reserveEmptyPageBudget: Boolean = true,
+    /**
+     * Optional tuning override applied by the provider module during context truncation. When non-null, the
+     * values inside this object are written to the pipe instance fields before the provider's model-default
+     * truncation block runs, ensuring user-specified tokenizer behavior survives any model defaults the
+     * provider might otherwise apply. Null means the provider falls back to its model-default tuning.
+     */
+    var truncationSettings: TruncationSettings? = null
 )
 {
     /**
@@ -443,6 +450,9 @@ object PipeTimeoutManager
     private val timedOutPipes = java.util.Collections.synchronizedSet(mutableSetOf<Pipe>())
     private val retryAttempts = java.util.concurrent.ConcurrentHashMap<Pipe, Int>()
 
+    // Stall detection tracking (parallel to timeout tracking, keyed on StreamingStallDetector)
+    private val stallRetryAttempts = java.util.concurrent.ConcurrentHashMap<Pipe, Int>()
+
     /**
      * Starts a timer for the given pipe. If the timer expires, the pipe's abort() method
      * is called, and the pipe is marked as timed out.
@@ -534,9 +544,91 @@ object PipeTimeoutManager
             // or we could potentially invoke it here.
             content
         }
-        else 
+        else
         {
             pipe.timeoutTrace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, error = Exception("Pipe timed out after ${attempts} retries."))
+            content.terminate()
+            content
+        }
+    }
+
+    /**
+     * Gets the current stall retry count for a pipe.
+     */
+    fun getStallRetryCount(pipe: Pipe): Int = stallRetryAttempts.getOrDefault(pipe, 0)
+
+    /**
+     * Increments the stall retry count for a pipe.
+     */
+    fun incrementStallRetryCount(pipe: Pipe)
+    {
+        stallRetryAttempts[pipe] = getStallRetryCount(pipe) + 1
+    }
+
+    /**
+     * Resets the stall retry count for a pipe.
+     */
+    fun clearStallRetryCount(pipe: Pipe)
+    {
+        stallRetryAttempts.remove(pipe)
+    }
+
+    /**
+     * Determines the next action for a pipe that has experienced a detected stall.
+     * Mirrors [handleTimeoutSignal] but keyed on stall detection (separate retry counter).
+     *
+     * Retry behavior:
+     * - If attempts < [StreamingStallConfig.maxStallRetries]: restore from snapshot,
+     *   set [com.TTT.Pipe.MultimodalContent.repeatPipe] to true so the pipe re-executes.
+     * - Otherwise: terminate the pipeline with a PIPE_FAILURE trace event.
+     *
+     * @param pipe The pipe that stalled.
+     * @param content The input content at time of stall.
+     * @param stallEvent The stall event describing the stall conditions.
+     * @return Content to continue with (snapshot with repeatPipe=true, or terminated).
+     */
+    fun handleStallSignal(pipe: Pipe, content: MultimodalContent, stallEvent: StallEvent): MultimodalContent
+    {
+        val attempts = getStallRetryCount(pipe)
+        val maxRetries = pipe.stallDetectorConfig.maxStallRetries
+
+        return if(attempts < maxRetries)
+        {
+            incrementStallRetryCount(pipe)
+            pipe.timeoutTrace(
+                TraceEventType.PIPE_RETRY, TracePhase.EXECUTION,
+                metadata = mapOf(
+                    "attempt" to getStallRetryCount(pipe),
+                    "stallElapsedMs" to stallEvent.elapsedMs,
+                    "stallTokensSeen" to stallEvent.tokensSeen,
+                    "stallSilenceMs" to stallEvent.silenceMs,
+                    "stallExpectedIntervalMs" to stallEvent.expectedIntervalMs,
+                    "stallActualIntervalMs" to stallEvent.actualIntervalMs
+                )
+            )
+
+            val snapshot = content.getSnapshot()
+            if(snapshot != null)
+            {
+                snapshot.repeatPipe = true
+                snapshot
+            }
+            else
+            {
+                pipe.timeoutTrace(
+                    TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION,
+                    error = Exception("Stall retry failed: No snapshot available to restore state.")
+                )
+                content.terminate()
+                content
+            }
+        }
+        else
+        {
+            pipe.timeoutTrace(
+                TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION,
+                error = Exception("Pipe stalled ${attempts} times and gave up.")
+            )
             content.terminate()
             content
         }
@@ -788,6 +880,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
     @kotlinx.serialization.Transient
     private var activeJob: kotlinx.coroutines.Job? = null
 
+    /**
+     * The active stall detector for the current execution. Null between executions.
+     * Cleared on abort and on successful execution.
+     */
+    @kotlinx.serialization.Transient
+    private var activeStallDetector: StreamingStallDetector? = null
+
 //============================================= properties ===========================================================//
 
     /**
@@ -832,6 +931,28 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * Propagates pipe timeouts to all child pipes recursively.
      */
     var applyTimeoutRecursively = true
+
+    /**
+     * Stall detection configuration. When set, the pipe tracks token arrival timestamps
+     * during streaming and uses statistical deviation to detect abnormally long silences.
+     * When [enableStallDetector] is true, a [StreamingStallDetector] is created and wired
+     * into the streaming callback chain.
+     */
+    var enableStallDetector: Boolean = false
+
+    /**
+     * Configuration for the [StreamingStallDetector]. Defaults to [StreamingStallConfig]
+     * (window 50, stddev multiplier 3.0, min silence 10s, max retries 3, warmup 20 tokens).
+     */
+    var stallDetectorConfig: StreamingStallConfig = StreamingStallConfig()
+
+    /**
+     * User-supplied callback invoked when a stall is detected. The retry is handled
+     * separately via [PipeTimeoutManager.handleStallSignal]; this callback is for
+     * notification/monitoring only.
+     */
+    @kotlinx.serialization.Transient
+    var stallCallback: StallCallback? = null
 
     /**
      * Defines the type of responce that should occur when a pipe timeout occurs. Failure, retry,
@@ -1811,21 +1932,27 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
-     * Registers a streaming callback on this pipe AND every descendant pipe
-     * (validator, transformation, branch, reasoning). This is required because
-     * each pipe has its own [StreamingCallbackManager]; without propagation, a
-     * callback registered on a parent pipe would not fire when a child pipe's
-     * API call streams chunks. Mirrors [propagateTracingRecursively].
+     * Registers a streaming callback on this pipe AND optionally on descendant
+     * pipes (validator, transformation, branch, reasoning). This is required
+     * because each pipe has its own [StreamingCallbackManager]; without
+     * propagation, a callback registered on a parent pipe would not fire when
+     * a child pipe's API call streams chunks. Mirrors [propagateTracingRecursively].
      *
      * The callback is added (idempotent) to each pipe's manager. If the same
      * pipe has already received the callback, no duplicate is added.
      *
      * @param callback Suspendable callback receiving text chunks
      * @param visited Internal — tracks already-walked pipes to prevent cycles
+     * @param propagateToChildren Whether to propagate the callback to validator,
+     *                            transformation, and branch pipes. Defaults to true.
+     * @param propagateToReasoning Whether to propagate the callback to the reasoning
+     *                             pipe. Defaults to true.
      */
     fun propagateStreamingCallback(
         callback: suspend (String) -> Unit,
-        visited: MutableSet<String> = mutableSetOf()
+        visited: MutableSet<String> = mutableSetOf(),
+        propagateToChildren: Boolean = true,
+        propagateToReasoning: Boolean = true,
     )
     {
         if(pipeId in visited) return
@@ -1839,11 +1966,58 @@ abstract class Pipe : P2PInterface, ProviderInterface
         // just flips the flag.
         setStreamingEnabled(true)
 
-        // Recurse into every child pipe.
+        // Recurse into child pipes based on gating flags.
+        if(propagateToChildren)
+        {
+            listOfNotNull(validatorPipe, transformationPipe, branchPipe).forEach { child ->
+                if(child.pipeId !in visited)
+                {
+                    child.propagateStreamingCallback(callback, visited, propagateToChildren, propagateToReasoning)
+                }
+            }
+        }
+
+        if(propagateToReasoning)
+        {
+            reasoningPipe?.let { reasoning ->
+                if(reasoning.pipeId !in visited)
+                {
+                    reasoning.propagateStreamingCallback(callback, visited, propagateToChildren, propagateToReasoning)
+                }
+            }
+        }
+    }
+
+    /**
+     * Enables stall detection on this pipe and recurses into every child pipe
+     * (validator, transformation, branch, reasoning). Mirrors the propagation
+     * shape of [propagateStreamingCallback] so a single call at a container
+     * root reaches the entire pipe tree.
+     *
+     * Each leaf pipe receives the [config] and [callback] via [enableStallDetector];
+     * the per-pipe stats invariant is preserved because every leaf owns its own
+     * StreamingStallDetector.
+     *
+     * @param config Detection thresholds applied to every leaf pipe in the tree.
+     * @param callback Optional notification callback fired on stall events.
+     * @param visited Internal — tracks already-walked pipes to prevent cycles
+     *                when a pipe is referenced from multiple parents.
+     */
+    fun propagateStallDetection(
+        config: StreamingStallConfig,
+        callback: StallCallback?,
+        visited: MutableSet<String> = mutableSetOf()
+    )
+    {
+        if(pipeId in visited) return
+        visited.add(pipeId)
+
+        enableStallDetector(config, callback)
+
         listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { child ->
             if(child.pipeId !in visited)
             {
-                child.propagateStreamingCallback(callback, visited)
+                child.propagateStallDetection(config, callback, visited)
             }
         }
     }
@@ -3202,6 +3376,29 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
 
         /**
+         * If the user supplied a TruncationSettings override through the budget, apply it to the pipe instance
+         * fields BEFORE any token counting or truncation math runs. This ensures that downstream calls to
+         * getTruncationSettings() and Dictionary.countTokens() reflect the user-supplied tokenizer tuning,
+         * not whatever model defaults the provider's truncateModuleContext() block would otherwise apply.
+         *
+         * This guard is also re-applied at the top of each provider's truncateModuleContext() implementation
+         * to survive the model-default reset that runs at execution time inside generateText().
+         */
+        budget.truncationSettings?.let { settings ->
+            multiplyWindowSizeBy = settings.multiplyWindowSizeBy
+            countSubWordsInFirstWord = settings.countSubWordsInFirstWord
+            favorWholeWords = settings.favorWholeWords
+            countOnlyFirstWordFound = settings.countOnlyFirstWordFound
+            splitForNonWordChar = settings.splitForNonWordChar
+            alwaysSplitIfWholeWordExists = settings.alwaysSplitIfWholeWordExists
+            countSubWordsIfSplit = settings.countSubWordsIfSplit
+            nonWordSplitCount = settings.nonWordSplitCount
+            tokenCountingBias = settings.tokenCountingBias
+            loreBookFillMode = settings.fillMode
+            loreBookFillAndSplitMode = settings.fillAndSplitMode
+        }
+
+        /**
          * Now fetch our truncation settings so we that we can proceed with dictionary counting.
          * Beware that this is leveraging known tokenizer configurations for providers and models.
          * Should a provider or model be used that is not known to TPipe the generic counter will be used
@@ -4363,6 +4560,44 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
+     * Enables stall detection on this pipe. When enabled, the pipe will track token
+     * arrival timestamps during streaming and use statistical deviation (rolling
+     * mean + stddev) to detect abnormally long silences — typically a sign that the
+     * LLM has silently died without throwing an error.
+     *
+     * On stall detection, the user-supplied [callback] is invoked with a [StallEvent],
+     * and the retry is tripped through [PipeTimeoutManager.handleStallSignal].
+     *
+     * @param config Stall detection thresholds. Defaults to [StreamingStallConfig].
+     * @param callback Optional callback for stall notification (logging, metrics).
+     *                 The retry path is independent of this callback.
+     * @return This pipe for method chaining.
+     */
+    fun enableStallDetector(
+        config: StreamingStallConfig = StreamingStallConfig(),
+        callback: StallCallback? = null
+    ): Pipe
+    {
+        this.enableStallDetector = true
+        this.stallDetectorConfig = config
+        if(callback != null) this.stallCallback = callback
+        return this
+    }
+
+    /**
+     * Sets a callback that will be invoked when a stall is detected. The callback is for
+     * notification only — the retry is tripped independently via [PipeTimeoutManager].
+     *
+     * @param callback The stall callback.
+     * @return This pipe for method chaining.
+     */
+    fun setStallCallback(callback: StallCallback): Pipe
+    {
+        this.stallCallback = callback
+        return this
+    }
+
+    /**
      * Sets the validator function for the pipe. This function will be used to validate the multimodal output
      * of the AI model. If the function returns true, the pipeline will continue to the next pipe.
      * If the function returns false, the pipeline will exit here.
@@ -4928,7 +5163,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         }
         
         if(!tracingEnabled) return
-        
+
         // Check if this event should be traced based on detail level
         if(!EventPriorityMapper.shouldTrace(eventType, traceConfig.detailLevel)) return
         
@@ -5024,11 +5259,16 @@ abstract class Pipe : P2PInterface, ProviderInterface
         if(pipeId in visitedPipes) return
         visitedPipes.add(pipeId)
 
-        if(!tracingEnabled) return
-
         listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { childPipe ->
             childPipe.enableTracing(traceConfig)
             childPipe.currentPipelineId = currentPipelineId
+            // Propagate the pipeline's trace ID to the child so the child's
+            // `trace()` calls (which iterate `activeTraceIds` to broadcast
+            // events to PipeTracer) actually emit under the pipeline's trace.
+            // Without this, child pipe events are silently dropped because
+            // Pipeline.execute() only adds the trace ID to the top-level
+            // pipe it adds directly.
+            activeTraceIds.toList().forEach { id -> childPipe.addTraceId(id) }
             childPipe.propagateTracingRecursively(visitedPipes)
         }
     }
@@ -5945,6 +6185,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     open suspend fun abort() {
         activeJob?.cancel()
         activeJob = null
+        activeStallDetector = null
     }
 
     /**
@@ -5989,6 +6230,36 @@ abstract class Pipe : P2PInterface, ProviderInterface
             if(timeoutStrategy == PipeTimeoutStrategy.Retry && maxRetryAttempts > 0)
             {
                 inputContent.saveSnapshot()
+            }
+        }
+
+        // Wire up the stall detector: create the detector, register a per-token
+        // timestamp callback with the streaming callback manager. On stall:
+        //   1. Fire the user-supplied stallCallback.
+        //   2. Call PipeTimeoutManager.handleStallSignal to compute the retry/terminate decision.
+        //   3. Call abort() to cancel the in-flight streaming transport so the retry
+        //      can re-execute via the outer execute() loop's repeatPipe check.
+        if(enableStallDetector && streamingEnabled)
+        {
+            val detector = StreamingStallDetector(
+                pipeName = this@Pipe.pipeName,
+                config = stallDetectorConfig,
+                onStall = { stallEvent ->
+                    // 1. Fire user callback.
+                    stallCallback?.invoke(stallEvent)
+
+                    // 2. Compute retry/terminate decision via PipeTimeoutManager.
+                    PipeTimeoutManager.handleStallSignal(this@Pipe, inputContent, stallEvent)
+
+                    // 3. Abort the in-flight stream so the outer loop's repeatPipe check re-executes.
+                    abort()
+                }
+            )
+            activeStallDetector = detector
+
+            // Register a per-chunk timestamp callback with the streaming manager.
+            obtainStreamingCallbackManager().addCallback { chunk ->
+                detector.onTokenReceived(chunk, System.currentTimeMillis())
             }
         }
 
@@ -6499,6 +6770,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     generatedContent = result.await()
                 } finally {
                     activeJob = null
+                    activeStallDetector = null
                 }
             }
             catch(e: Exception)
@@ -7995,7 +8267,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun getMiddlePromptForReasoning() : String
     {
         if(reasoningPipe == null) return ""
-        val usingMiddlePrompt = reasoningPipe?.pipeMetadata["injectMiddlePrompt"] as Boolean
+        val usingMiddlePrompt = reasoningPipe?.pipeMetadata["injectMiddlePrompt"] as? Boolean ?: false
         if(!usingMiddlePrompt) return ""
         return middlePromptInstructions
     }
@@ -8009,7 +8281,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun getFooterPromptForReasoning() : String
     {
         if(reasoningPipe == null) return ""
-        val usingFooterPrompt = reasoningPipe?.pipeMetadata["injectFooterPrompt"] as Boolean
+        val usingFooterPrompt = reasoningPipe?.pipeMetadata["injectFooterPrompt"] as? Boolean ?: false
         if(!usingFooterPrompt) return ""
         return footerPrompt
     }

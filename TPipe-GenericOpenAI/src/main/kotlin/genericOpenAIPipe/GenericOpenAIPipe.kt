@@ -7,10 +7,14 @@ import com.TTT.P2P.P2PError
 import com.TTT.P2P.P2PException
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.StreamingCallbackBuilder
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import genericOpenAIPipe.env.*
 import genericOpenAIPipe.api.*
+import genericOpenAIPipe.mantle.BedrockMantleAuth
+import genericOpenAIPipe.mantle.BedrockMantleConfiguration
+import genericOpenAIPipe.mantle.ChunkedSigV4Signer
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -26,6 +30,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -107,6 +112,16 @@ class GenericOpenAIPipe : Pipe()
     private var httpClient: HttpClient? = null
 
     /**
+     * Tracks whether the pipe created [httpClient] itself (true) or received
+     * it from a test seam (false). When false, [abort] must not close the
+     * client — the test caller owns it and will close it after the test exits.
+     * The default `true` is set in [init] and flipped to `false` by
+     * [injectHttpClientForTest].
+     */
+    @kotlinx.serialization.Transient
+    private var ownsHttpClient: Boolean = false
+
+    /**
      * Factory that opens the streaming-direct HTTP connection (used by
      * [executeStreamingDirect] for chunked SSE). The production default wraps
      * `java.net.URL(...).openConnection() as java.net.HttpURLConnection`; tests
@@ -124,6 +139,20 @@ class GenericOpenAIPipe : Pipe()
     private var streamingInputTokens: Int = 0
     private var streamingOutputTokens: Int = 0
     private var streamingReasoningTokens: Int = 0
+    /**
+     * The finish_reason captured from the first terminal chunk of the
+     * most recent OpenAI Chat Completions streaming call, or null if
+     * the stream ended without one (e.g. on `[DONE]` only, or on a
+     * mid-stream transport failure). Exposed to downstream consumers
+     * via [streamingFinishReason] and surfaced in the
+     * API_CALL_SUCCESS trace metadata under the same key.
+     *
+     * Reset to null at the top of every [executeStreamingDirect] call
+     * so stale values from a prior request do not leak into the
+     * next request's success metadata.
+     */
+    var streamingFinishReason: String? = null
+        private set
 
     /**
      * Function calling tool definitions.
@@ -223,6 +252,14 @@ class GenericOpenAIPipe : Pipe()
     @kotlinx.serialization.Transient
     private var apiModeLocked: Boolean = false
 
+    /**
+     * Optional Bedrock Mantle auth override. When set, takes precedence over
+     * the bearer / x-api-key headers produced by [getAuthHeaders]. The Mantle
+     * setter methods on this class populate this field.
+     */
+    @kotlinx.serialization.Transient
+    private var bedrockMantleAuth: BedrockMantleAuth? = null
+
     private val responseParser: ResponseParser = ResponseParser.Factory.create()
 
     private val requestSerializer: RequestSerializer = RequestSerializer.Factory.create()
@@ -233,10 +270,30 @@ class GenericOpenAIPipe : Pipe()
      * OpenAI mode uses Bearer token authentication.
      * Anthropic mode uses x-api-key header with anthropic-version header.
      *
-     * @return Map of header name to header value
+     * When [bedrockMantleAuth] is set, the Mantle auth shape takes precedence
+     * and its headers (computed against the supplied request method, URL, and
+     * body) are returned instead of the bearer / x-api-key defaults.
+     *
+     * @param method HTTP method of the outgoing request (uppercase).
+     * @param url Full URL of the outgoing request.
+     * @param body Request body bytes. May be empty.
+     * @return Map of header name to header value.
      */
-    private fun getAuthHeaders(): Map<String, String>
+    private fun getAuthHeaders(
+        method: String,
+        url: String,
+        body: ByteArray,
+    ): Map<String, String>
     {
+        bedrockMantleAuth?.let { auth ->
+            // SigV4 must sign the content-type and payload hash headers.
+            // Bearer-mode Mantle auth ignores them, but passing them is harmless.
+            val callerHeaders = mapOf(
+                "content-type" to "application/json",
+                "x-amz-content-sha256" to genericOpenAIPipe.mantle.SigV4Signer.sha256Hex(body),
+            )
+            return auth.authHeaders(method, url, body, callerHeaders)
+        }
         return when(apiMode)
         {
             is ApiMode.OpenAI -> mapOf("Authorization" to "Bearer $apiKey")
@@ -418,18 +475,98 @@ class GenericOpenAIPipe : Pipe()
     /**
      * Registers a callback for streaming response chunks.
      * Automatically enables streaming mode.
+     *
      * @param callback Suspendable callback receiving text chunks
+     * @param propagateToChildren Whether to propagate the callback to validator,
+     *                            transformation, and branch pipes. Defaults to true.
+     * @param propagateToReasoning Whether to propagate the callback to the reasoning
+     *                             pipe. Defaults to true.
      * @return This pipe instance for fluent chaining
      */
-    fun setStreamingCallback(callback: suspend (String) -> Unit): GenericOpenAIPipe
+    fun setStreamingCallback(
+        callback: suspend (String) -> Unit,
+        propagateToChildren: Boolean = true,
+        propagateToReasoning: Boolean = true,
+    ): GenericOpenAIPipe
     {
         this.streamingEnabled = true
         obtainStreamingCallbackManager().addCallback(callback)
-        // Propagate to every descendant pipe so chunks emitted by child
-        // pipes (validator, transformation, branch, reasoning) flow through
-        // the same callback. Without this, callbacks registered on a parent
-        // pipe are silently ignored when its child pipe's API call streams.
-        propagateStreamingCallback(callback)
+        propagateStreamingCallback(callback, mutableSetOf(), propagateToChildren, propagateToReasoning)
+        return this
+    }
+
+    /**
+     * Configures multiple streaming callbacks using the builder pattern.
+     *
+     * Mirrors [BedrockPipe.streamingCallbacks] so multi-recipient streaming works
+     * uniformly across providers. Each registered callback receives every chunk
+     * emitted by the streaming API. Execution mode is sequential by default; call
+     * [StreamingCallbackBuilder.concurrent] inside the block to fan chunks to all
+     * callbacks in parallel.
+     *
+     * Every registered callback is also propagated to descendant pipes
+     * (validator, transformation, branch, reasoning) via
+     * [com.TTT.Pipe.Pipe.propagateStreamingCallback] so chunks emitted anywhere
+     * in the pipe tree reach the same sinks. Propagation can be gated via
+     * [StreamingCallbackBuilder.propagateToChildren] and
+     * [StreamingCallbackBuilder.propagateToReasoning].
+     *
+     * Example:
+     * ```
+     * pipe.streamingCallbacks {
+     *     propagateToReasoning = false
+     *     propagateToChildren = true
+     *     add { chunk -> dispatcher.append(connectionId, chunk) }
+     *     add { chunk -> metrics.record(chunk.length) }
+     *     onError { e, chunk -> log.warn("callback failed", e) }
+     * }
+     * ```
+     *
+     * @param builder Lambda that configures the [StreamingCallbackBuilder]
+     * @return This pipe instance for method chaining
+     */
+    fun streamingCallbacks(builder: StreamingCallbackBuilder.() -> Unit): GenericOpenAIPipe
+    {
+        val callbackBuilder = StreamingCallbackBuilder()
+        callbackBuilder.builder()
+        val manager = obtainStreamingCallbackManager()
+        callbackBuilder.build().getCallbacks().forEach { callback ->
+            manager.addCallback(callback)
+            propagateStreamingCallback(
+                callback,
+                mutableSetOf(),
+                callbackBuilder.propagateToChildren,
+                callbackBuilder.propagateToReasoning,
+            )
+        }
+        streamingEnabled = true
+        return this
+    }
+
+    /**
+     * Enables streaming with optional callback registration.
+     *
+     * When `callback` is provided it is added to this pipe's
+     * [com.TTT.Pipe.StreamingCallbackManager] and propagated to all descendant
+     * pipes (validator, transformation, branch, reasoning). Mirrors
+     * [com.TTT.Pipe.Pipe.propagateStreamingCallback] so multi-pipe hierarchies
+     * receive chunks uniformly across providers.
+     *
+     * When called without arguments the method flips the streaming flag only.
+     * Equivalent to [setStreamingEnabled] with builder return.
+     *
+     * @param callback Optional suspending callback receiving text chunks
+     * @return This pipe instance for method chaining
+     */
+    @JvmOverloads
+    fun enableStreaming(callback: (suspend (String) -> Unit)? = null): GenericOpenAIPipe
+    {
+        if(callback != null)
+        {
+            obtainStreamingCallbackManager().addCallback(callback)
+            propagateStreamingCallback(callback)
+        }
+        setStreamingEnabled(true)
         return this
     }
 
@@ -472,6 +609,148 @@ class GenericOpenAIPipe : Pipe()
         return this
     }
 
+    /**
+     * Sets the [streamingFinishReason] field. Use this to seed an
+     * expected reason before a streaming call, or to clear it (pass
+     * null) between requests. The field is also reset to null
+     * automatically at the top of every [executeStreamingDirect]
+     * call and then overwritten with the captured terminal reason
+     * when the call returns.
+     *
+     * @param value The expected finish_reason ("stop", "length",
+     *              "tool_calls", "content_filter", ...), or null to
+     *              clear.
+     * @return This pipe instance for fluent chaining.
+     */
+    fun setStreamingFinishReason(value: String?): GenericOpenAIPipe
+    {
+        streamingFinishReason = value
+        return this
+    }
+
+    /**
+     * Configure the pipe to drive Amazon Bedrock Mantle in OpenAI Chat
+     * Completions mode.
+     *
+     * Wires [baseUrl] to the regional Mantle endpoint, sets [apiMode] to
+     * [ApiMode.OpenAI], and resolves authentication from
+     * [genericOpenAIPipe.env.BedrockMantleEnv] in the following order:
+     *   1. AWS SigV4 credentials (access key id + secret access key) when
+     *      both are resolvable, producing an [BedrockMantleAuth.SigV4] shape.
+     *   2. Bearer mode using whatever API key is currently set on the pipe.
+     *   3. Bearer mode using the `BEDROCK_MANTLE_API_KEY` env var.
+     *
+     * Callers who need fine-grained control should follow up with
+     * [setBedrockMantleAuth].
+     *
+     * @param region AWS region code (for example `us-east-1` or `us-west-2`).
+     * @param modelId The Bedrock model identifier to use
+     *               (for example `google.gemma-4-31b`).
+     * @return This pipe instance for fluent chaining.
+     */
+    fun setBedrockMantle(region: String, modelId: String): GenericOpenAIPipe
+    {
+        val config = BedrockMantleConfiguration.forRegion(region, modelId)
+        configureBedrockMantle(config)
+        return this
+    }
+
+    /**
+     * Configure the pipe to drive Amazon Bedrock Mantle in OpenAI Responses
+     * API mode.
+     *
+     * Mirrors [setBedrockMantle] but selects [ApiMode.OpenAIResponses] so
+     * requests dispatch to the `/v1/responses` endpoint.
+     *
+     * @param region AWS region code.
+     * @param modelId Bedrock model identifier.
+     * @return This pipe instance for fluent chaining.
+     */
+    fun setBedrockMantleWithResponses(region: String, modelId: String): GenericOpenAIPipe
+    {
+        val config = BedrockMantleConfiguration.forRegionWithResponses(region, modelId)
+        configureBedrockMantle(config)
+        return this
+    }
+
+    /**
+     * Replace the Mantle auth shape. Useful for tests that supply an explicit
+     * signer or bearer key, and for users who want to skip env-var
+     * resolution.
+     *
+     * Pass `null` to clear any previously set Mantle auth and fall back to
+     * the bearer / x-api-key defaults produced by [getAuthHeaders].
+     *
+     * @param auth Mantle auth shape, or `null` to disable Mantle auth.
+     * @return This pipe instance for fluent chaining.
+     */
+    fun setBedrockMantleAuth(auth: BedrockMantleAuth?): GenericOpenAIPipe
+    {
+        bedrockMantleAuth = auth
+        return this
+    }
+
+    /**
+     * Internal helper that wires baseUrl, apiMode, modelId, and auth for the
+     * given Mantle configuration. Resolves credentials via
+     * [genericOpenAIPipe.env.BedrockMantleEnv] and prefers SigV4 when both
+     * an access key id and a secret access key are available.
+     *
+     * Also populates the reasoning-pipe metadata contract keys that
+     * [Pipe.getMiddlePromptForReasoning] (Pipe.kt:8033), [Pipe.getFooterPromptForReasoning]
+     * (Pipe.kt:8047), and [Pipe.applySystemPrompt] (Pipe.kt:7166-7168) read at
+     * execution time. Without these keys present the unguarded casts at
+     * Pipe.kt:8033 / 8047 historically threw NPE on every Mantle reasoning
+     * invocation; the retry loop absorbed the exception and degraded the
+     * visible reasoning output. Mantle has no settings object (it is wired
+     * directly, not through `ReasoningBuilder.assignDefaults`), so we write
+     * the [Defaults.reasoning.ReasoningSettings] defaults by hand here:
+     *
+     *   injectMiddlePrompt     = false  (ReasoningSettings:142 default)
+     *   injectFooterPrompt     = false  (ReasoningSettings:143 default)
+     *   reinforceSystemPrompt  = false  (ReasoningSettings:144 default)
+     *
+     * Note: the JSON-completion footer prompt that `assignDefaults` installs
+     * at ReasoningBuilder.kt:321-325 via setFooterPrompt(...) is intentionally
+     * NOT wired here. getFooterPromptForReasoning() (Pipe.kt:8047) only reads
+     * `footerPrompt` when the caller has opted in via injectFooterPrompt=true,
+     * so the footer would be dead code at the wire unless a Mantle builder
+     * flips that gate. Callers that want JSON-completion enforcement on a
+     * Mantle reasoning pipe should set injectFooterPrompt=true after
+     * construction and then call setFooterPrompt(...) themselves.
+     */
+    private fun configureBedrockMantle(config: BedrockMantleConfiguration)
+    {
+        setBaseUrl(config.endpoint())
+        setApiMode(config.apiMode)
+        setModel(config.modelId)
+
+        // Reasoning-pipe metadata contract — defaults match ReasoningSettings
+        // (TPipe-Defaults/src/main/kotlin/Defaults/reasoning/ReasoningBuilder.kt:142-144).
+        pipeMetadata["injectMiddlePrompt"] = false
+        pipeMetadata["injectFooterPrompt"] = false
+        pipeMetadata["reinforceSystemPrompt"] = false
+
+        val sigV4Auth = BedrockMantleAuth.sigV4FromEnv(regionOverride = config.region)
+        if (sigV4Auth != null)
+        {
+            bedrockMantleAuth = sigV4Auth
+            return
+        }
+
+        // No IAM credentials resolvable; fall back to bearer mode. Prefer the
+        // programmatic apiKey the caller has already set (in case they
+        // configured one via setApiKey), then the env-var fallback.
+        val bearerKey = apiKey.takeIf { it.isNotBlank() }
+            ?: System.getenv("BEDROCK_MANTLE_API_KEY")
+            ?: ""
+        if (bearerKey.isNotBlank())
+        {
+            if (apiKey.isBlank()) apiKey = bearerKey
+            bedrockMantleAuth = BedrockMantleAuth.bearer(bearerKey)
+        }
+    }
+
 //=========================================Pipe Lifecycle Methods======================================================
 
     /**
@@ -491,10 +770,13 @@ class GenericOpenAIPipe : Pipe()
                   "model" to model
               ))
 
-        if(apiKey.isBlank())
+        // The apiKey field is only used for bearer / x-api-key auth.
+        // When a Mantle auth shape is set, it computes its own headers via
+        // [BedrockMantleAuth.authHeaders], so apiKey may legitimately be blank.
+        if (apiKey.isBlank() && bedrockMantleAuth == null)
         {
             val resolvedKey = GenericOpenAIEnv.resolveApiKey()
-            if(resolvedKey.isBlank())
+            if (resolvedKey.isBlank())
             {
                 throw IllegalStateException("GenericOpenAI API key is required. Call setApiKey(), genericOpenAIEnv.setApiKey(), or set GENERIC_OPENAI_API_KEY environment variable before init().")
             }
@@ -509,15 +791,8 @@ class GenericOpenAIPipe : Pipe()
         // not allocated and the test's MockEngine (or other custom engine) is honoured.
         if(httpClient == null)
         {
-            httpClient = HttpClient(CIO)
-            {
-                install(HttpTimeout)
-                {
-                    requestTimeoutMillis = 120_000
-                    connectTimeoutMillis = 30_000
-                    socketTimeoutMillis = 120_000
-                }
-            }
+            httpClient = createHttpClient()
+            ownsHttpClient = true
         }
 
         // Default streaming-direct factory wraps java.net.URL + HttpURLConnection.
@@ -552,14 +827,30 @@ class GenericOpenAIPipe : Pipe()
 
     /**
      * Aborts any active generation and cleans up resources.
+     *
+     * Releases the in-flight Ktor client and stands up a fresh one so the retry
+     * path (`Pipe.execute` while-loop at Pipe.kt:5967-5974) has a usable handle
+     * when [PipeTimeoutManager] fires and the parent pipeline re-enters
+     * [generateTextMultimodal] on the same pipe instance. Closing and reusing
+     * the same handle is unsafe — Ktor's CIO engine may surface
+     * `IOException: connection closed` on the next request through a closed
+     * client. See BUG_GENERICOPENAI_ABORT_NULLS_HTTPCLIENT.md for the full
+     * trace evidence and the previous (`httpClient = null`) regression.
      */
     override suspend fun abort()
     {
         trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION,
               metadata = mapOf("action" to "abort", "provider" to "GenericOpenAI"))
 
-        httpClient?.close()
-        httpClient = null
+        // Release the in-flight client and stand up a fresh one so the retry
+        // path has a usable handle. Only the pipe-owned client is closed and
+        // recreated; a client injected via [injectHttpClientForTest] is owned
+        // by the test caller and must be left alone.
+        if(ownsHttpClient)
+        {
+            httpClient?.close()
+            httpClient = createHttpClient()
+        }
 
         super.abort()
     }
@@ -576,7 +867,13 @@ class GenericOpenAIPipe : Pipe()
     {
         if(!content.hasBinaryContent())
         {
-            return MultimodalContent(text = generateText(content.text))
+            // Plain-text shortcut: route through the MultimodalContent-returning
+            // helper so any `modelReasoning` extracted from the wire response
+            // survives the public boundary. The previous shortcut wrapped the
+            // String-returning `generateText` in a fresh
+            // `MultimodalContent(text = ...)`, which discarded `modelReasoning`
+            // even though the wire response carries it.
+            return generateTextMultimodal(content.text)
         }
 
         val blocks = mutableListOf<ContentBlock>()
@@ -635,7 +932,7 @@ class GenericOpenAIPipe : Pipe()
             messages = messages,
             temperature = if(temperature > 0.0) temperature else null,
             topP = if(topP > 0.0) topP else null,
-            topK = topK,
+            topK = if(topK > 0) topK else null,
             maxTokens = if(maxTokens > 0) maxTokens else null,
             presencePenalty = if(presencePenalty != 0.0) presencePenalty else null,
             frequencyPenalty = frequencyPenalty,
@@ -661,6 +958,11 @@ class GenericOpenAIPipe : Pipe()
         )
 
         val responseText = sendRequest(request)
+        // Binary-content path: `sendRequest` returns String only, so any
+        // `modelReasoning` extracted by the parser is dropped here. Mantle
+        // currently serves text-only inputs, so the plain-text shortcut
+        // above covers the live use cases; reasoning on binary inputs
+        // would require widening `sendRequest` to return MultimodalContent.
         return MultimodalContent(text = responseText)
     }
 
@@ -677,16 +979,43 @@ class GenericOpenAIPipe : Pipe()
 
         if(streamingEnabled)
         {
+            // When Mantle chunked-encoding streaming SigV4 auth is active,
+            // route through the HttpURLConnection direct path because it
+            // gives us byte-level control over the chunked body writes
+            // (Ktor's setBody path doesn't expose per-chunk signing
+            // primitives in a way that lines up with the AWS streaming
+            // algorithm). The HttpURLConnection path is also more reliable
+            // for reading incremental SSE responses (see comment in
+            // executeStreamingDirect).
+            if (bedrockMantleAuth is BedrockMantleAuth.Streaming)
+            {
+                // `executeStreamingDirect` returns MultimodalContent so the
+                // reasoning content it accumulates via `streamingReasoningText`
+                // survives this Mantle chunked-SigV4 streaming boundary.
+                // Unpack `.text` here for the String-returning signature
+                // of `sendRequest`.
+                val streamedContent = executeStreamingDirect(jsonRequest)
+                return streamedContent.text
+            }
+
             val response = withContext(Dispatchers.IO)
             {
                 client.post("$baseUrl${getEndpoint()}")
                 {
                     contentType(ContentType.Application.Json)
-                    getAuthHeaders().forEach { (name, value) -> header(name, value) }
+                    getAuthHeaders(
+                        method = "POST",
+                        url = "$baseUrl${getEndpoint()}",
+                        body = jsonRequest.toByteArray(Charsets.UTF_8),
+                    ).forEach { (name, value) -> header(name, value) }
                     setBody(jsonRequest)
                 }
             }
-            return executeStreaming(response)
+            // `executeStreaming` returns MultimodalContent so the reasoning content
+            // it accumulates via `streamingReasoningText` survives the
+            // Ktor-based streaming boundary. Unpack `.text` here for the
+            // String signature of `sendRequest`.
+            return executeStreaming(response).text
         }
         else
         {
@@ -696,7 +1025,11 @@ class GenericOpenAIPipe : Pipe()
                     client.post("$baseUrl${getEndpoint()}")
                     {
                         contentType(ContentType.Application.Json)
-                        getAuthHeaders().forEach { (name, value) -> header(name, value) }
+                        getAuthHeaders(
+                            method = "POST",
+                            url = "$baseUrl${getEndpoint()}",
+                            body = jsonRequest.toByteArray(Charsets.UTF_8),
+                        ).forEach { (name, value) -> header(name, value) }
                         setBody(jsonRequest)
                     }.bodyAsText()
                 }
@@ -729,11 +1062,19 @@ class GenericOpenAIPipe : Pipe()
 //=========================================Context Management==========================================================
 
     /**
-     * Generates text using the configured OpenAI-compatible model.
-     * @param promptInjector Text to inject into the prompt
-     * @return Generated response text
+     * Canonical implementation of the non-streaming text path.
+     * Performs the full HTTP call + parse + trace for a text-only
+     * prompt and returns the resulting [MultimodalContent] — including
+     * any `modelReasoning` extracted from the wire response.
+     *
+     * The public [generateText] is a thin wrapper that returns `.text`
+     * for callers that only need the visible answer. The
+     * [generateContent] plain-text shortcut calls this helper directly
+     * so `modelReasoning` survives the public boundary — BedrockPipe
+     * and OllamaPipe populate `MultimodalContent.modelReasoning` from
+     * their wire responses, and this helper does the same.
      */
-    override suspend fun generateText(promptInjector: String): String
+    protected suspend fun generateTextMultimodal(promptInjector: String): com.TTT.Pipe.MultimodalContent
     {
         val client = httpClient ?: throw IllegalStateException("GenericOpenAIPipe not initialized. Call init() first.")
 
@@ -768,7 +1109,7 @@ class GenericOpenAIPipe : Pipe()
                 messages = messages,
                 temperature = if(temperature > 0.0) temperature else null,
                 topP = if(topP > 0.0) topP else null,
-                topK = topK,
+                topK = if(topK > 0) topK else null,
                 maxTokens = if(maxTokens > 0) maxTokens else null,
                 presencePenalty = if(presencePenalty != 0.0) presencePenalty else null,
                 frequencyPenalty = frequencyPenalty,
@@ -793,7 +1134,15 @@ class GenericOpenAIPipe : Pipe()
                 stream = streamingEnabled
             )
 
-            val jsonRequest = requestSerializer.serialize(request, apiMode)
+            val jsonRequest = requestSerializer.serialize(
+                request, apiMode,
+                // pipeMetadata is `MutableMap<Any, Any>` on the base Pipe class.
+                // RequestSerializationOptions expects `Map<String, Any?>` — keys
+                // are string constants in practice (see MantleMetadataKeys), values
+                // are typed objects. The cast is safe because callers use string keys.
+                @Suppress("UNCHECKED_CAST")
+                RequestSerializationOptions(metadata = pipeMetadata as Map<String, Any?>),
+            )
 
             if(streamingEnabled)
             {
@@ -808,6 +1157,10 @@ class GenericOpenAIPipe : Pipe()
                 // it arrives on the socket — verified empirically via
                 // RawHttpStreamingTest (chunks arrive hundreds of ms apart
                 // rather than all in one batch).
+                // Streaming path: `executeStreamingDirect` returns MultimodalContent
+                // so the reasoning content it accumulates via
+                // `streamingReasoningText` round-trips through
+                // `modelReasoning` on the way out.
                 return withContext(Dispatchers.IO)
                 {
                     executeStreamingDirect(jsonRequest)
@@ -821,7 +1174,11 @@ class GenericOpenAIPipe : Pipe()
                         client.post("$baseUrl${getEndpoint()}")
                         {
                             contentType(ContentType.Application.Json)
-                            getAuthHeaders().forEach { (name, value) -> header(name, value) }
+                            getAuthHeaders(
+                                method = "POST",
+                                url = "$baseUrl${getEndpoint()}",
+                                body = jsonRequest.toByteArray(Charsets.UTF_8),
+                            ).forEach { (name, value) -> header(name, value) }
 
                             setBody(jsonRequest)
                         }.bodyAsText()
@@ -892,7 +1249,12 @@ class GenericOpenAIPipe : Pipe()
                       content = result,
                       metadata = successMetadata)
 
-                return contentText
+                // Return the full MultimodalContent (carries both `text` and
+                // `modelReasoning`) so callers can route reasoning to its
+                // own content block. The public `generateText` override
+                // below extracts `.text` for callers that only need the
+                // visible answer.
+                return result
             }
         }
         catch(e: Exception)
@@ -916,6 +1278,23 @@ class GenericOpenAIPipe : Pipe()
     }
 
     /**
+     * Thin wrapper over [generateTextMultimodal] that discards
+     * `modelReasoning` and returns only the visible answer. Kept for
+     * source compatibility with the abstract base-class signature
+     * declared in `Pipe.generateText(promptInjector: String): String` —
+     * Kotlin does not allow widening the return type in an override,
+     * so the canonical implementation lives in [generateTextMultimodal]
+     * and this method delegates to it.
+     *
+     * @param promptInjector Text to inject into the prompt
+     * @return Generated response text (visible answer only)
+     */
+    override suspend fun generateText(promptInjector: String): String
+    {
+        return generateTextMultimodal(promptInjector).text
+    }
+
+    /**
      * Direct streaming call using [java.net.HttpURLConnection] instead of
      * the Ktor CIO client. Bypasses Ktor because its CIO engine buffers
      * chunked transfer-encoded SSE responses through 3.3.x — the
@@ -930,9 +1309,56 @@ class GenericOpenAIPipe : Pipe()
      *
      * This function produces the same emitStreamingChunk side effects
      * as the Ktor path so the streaming callback wiring is unchanged.
-     * It returns the same [String] accumulator.
+     * It returns the accumulated text plus any captured `modelReasoning`
+     * as a [MultimodalContent].
+     *
+     * AWS Mantle workaround — the [DONE] early-return guard at the
+     * top of the SSE `data:` branch and the `finish_reason` terminal
+     * capture in the OpenAI branch below exist because AWS Bedrock
+     * Mantle's chunked-SigV4 streaming transport keeps the TCP
+     * connection alive after the model has finished generating. The
+     * 65,536-byte signed body chunks carry trailing bytes (heartbeat,
+     * chunked-SigV4 terminator, partial retry traffic) that hold the
+     * socket open indefinitely. Without these explicit termination
+     * signals the parser would rely on socket EOF that never arrives,
+     * and the pipe would hang for the full
+     * [HttpURLConnection.readTimeoutMs] (`120_000` ms) instead of
+     * returning within milliseconds of the model's [DONE] sentinel.
+     * If AWS fixes the chunked-SigV4 keepalive-after-`[DONE]`
+     * behavior, these guards become redundant but harmless — the
+     * parser will still terminate on [DONE] before EOF regardless of
+     * whether the server flushes the socket. Revisit this KDoc and
+     * the [DONE]/finish_reason guards only when the streaming
+     * timeout has been empirically confirmed to no longer be the
+     * primary failure mode against Mantle in production.
+     *
+     * Exposed surface — the captured terminal reason is written to
+     * [streamingFinishReason] (a `var` on this class with a public
+     * `private set`) and to the API_CALL_SUCCESS trace metadata
+     * under the same key, so downstream consumers can read the
+     * reason without re-parsing the SSE stream. Seed or clear the
+     * field via [setStreamingFinishReason].
+     *
+     * Mid-stream failure policy — when the read loop throws
+     * `IOException` (e.g. Mantle mid-stream network blip, socket
+     * reset, broken pipe), the catch emits API_CALL_FAILURE with
+     * a diagnostic metadata block (`streamingFinishReason`,
+     * `partialTextLength`, `elapsedMs`, `transportErrorKind`,
+     * `transportErrorMessage`) and throws
+     * `P2PException(P2PError.transport, ...)`. The `retryable`
+     * flag in the metadata is `true` only when the caller has
+     * configured TPipe's generic pipe retry policy
+     * (`timeoutStrategy = PipeTimeoutStrategy.Retry` AND
+     * `maxRetryAttempts > 0`). When `retryable` is false (the
+     * TPipe default — `PipeTimeoutStrategy.Fail`), the failure
+     * is terminal and the trace file is the visible error record;
+     * when true, TPipe's [com.TTT.Pipe.PipeTimeoutManager] catches
+     * the propagated exception and schedules another attempt per
+     * its own retry policy. There is no streaming-internal retry
+     * loop — every retry attempt is owned by TPipe's generic
+     * retry layer, not this code.
      */
-    private suspend fun executeStreamingDirect(jsonRequest: String): String
+    private suspend fun executeStreamingDirect(jsonRequest: String): com.TTT.Pipe.MultimodalContent
     {
         val textBuilder = StringBuilder()
 
@@ -950,42 +1376,108 @@ class GenericOpenAIPipe : Pipe()
             method = "POST",
             headers = buildMap {
                 put("Content-Type", "application/json")
-                putAll(getAuthHeaders())
+                putAll(
+                    getAuthHeaders(
+                        method = "POST",
+                        url = "$baseUrl${getEndpoint()}",
+                        body = jsonRequest.toByteArray(Charsets.UTF_8),
+                    )
+                )
             },
             connectTimeoutMs = 30_000,
             readTimeoutMs = 120_000
         )
 
-        // Write the body
-        conn.outputStream.use { it.write(jsonRequest.toByteArray(Charsets.UTF_8)) }
+        // Write the body. When Mantle streaming SigV4 auth is in use,
+        // write the body as chunked-encoded blocks per the AWS S3
+        // streaming spec (and the Mantle streaming docs). Otherwise,
+        // write the body in a single shot as today.
+        conn.outputStream.use { out ->
+            val bodyBytes = jsonRequest.toByteArray(Charsets.UTF_8)
+            val streamingAuth = bedrockMantleAuth as? BedrockMantleAuth.Streaming
+            if (streamingAuth != null)
+            {
+                writeChunkedRequestBody(out, bodyBytes, streamingAuth)
+            }
+            else
+            {
+                out.write(bodyBytes)
+            }
+        }
 
         val reasoningBuilder = StringBuilder()
         var totalInputTokens = 0
         var totalOutputTokens = 0
         var totalReasoningTokens = 0
+        // Captured from the first non-null finish_reason across the
+        // choices[]. Defensive termination signal — the spec lets a
+        // server emit finish_reason on the terminal chunk without
+        // sending a separate `data: [DONE]` sentinel. We break out
+        // of the SSE loop on the first non-null value so the parser
+        // does not block waiting for socket EOF after the model has
+        // finished generating. See the [DONE] guard below for the
+        // primary termination trigger.
+        var streamingFinishReason: String? = null
 
         // Read SSE events line by line. lineSequence() reads from the
         // BufferedReader one line at a time, which blocks per-line —
         // so each SSE delta fires emitStreamingChunk as it arrives on
         // the socket. This is the key behavior the Ktor bodyAsChannel
         // path does NOT exhibit.
-        java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { reader ->
+        // Flag that the consumer has explicitly terminated the SSE loop
+        // (either via the [DONE] guard or a non-null finish_reason).
+        // Sequence.forEach cannot be broken out of via return@label —
+        // Kotlin's sequence iteration is a while(hasNext()) loop and
+        // returning from the action lambda only returns from the
+        // action. The iterator's hasNext() call then blocks on
+        // readLine() waiting for more data that never arrives (the
+        // connection is alive but the SSE stream has terminated via
+        // [DONE] or finish_reason). We use a labeled while loop on
+        // the iterator directly so `break@lineLoop` exits the loop
+        // without another iterator.hasNext() call.
+        // Reset the exposed terminal reason at the top of every
+        // streaming call so stale values from a prior request do
+        // not leak into the next request's success metadata.
+        this.streamingFinishReason = null
+        // Track the start of the streaming read so the catch block
+        // below can report elapsed time in the failure metadata.
+        val streamingStartMs = System.currentTimeMillis()
+        try
+        {
+            java.io.BufferedReader(java.io.InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { reader ->
             var lastEventType: String? = null
-            reader.lineSequence().forEach { rawLine ->
+            val lineIterator = reader.lineSequence().iterator()
+            lineLoop@ while(lineIterator.hasNext())
+            {
+                val rawLine = lineIterator.next()
                 val line = rawLine.trimEnd()
                 if(line.isEmpty())
                 {
                     // blank separator between events
-                    return@forEach
+                    continue@lineLoop
                 }
                 if(line.startsWith("event: "))
                 {
                     lastEventType = line.substringAfter("event: ").trim()
-                    return@forEach
+                    continue@lineLoop
                 }
                 if(line.startsWith("data: "))
                 {
                     val dataLine = line.substringAfter("data: ")
+                    // OpenAI Chat Completions spec mandates `data: [DONE]`
+                    // as the terminal sentinel. Without this guard, the
+                    // sentinel reaches the JSON parser below and throws;
+                    // the silent catch swallows the throw and the parser
+                    // waits for socket EOF. Against AWS Mantle (which
+                    // keeps the TCP connection alive after [DONE] because
+                    // of its chunked-SigV4 transport) the parser hangs for
+                    // the full readTimeoutMs instead of terminating within
+                    // milliseconds. See the function-level KDoc for the
+                    // AWS workaround note.
+                    if(dataLine.trim() == "[DONE]")
+                    {
+                        break@lineLoop
+                    }
                     when(apiMode)
                     {
                         is ApiMode.OpenAIResponses ->
@@ -1063,6 +1555,24 @@ class GenericOpenAIPipe : Pipe()
                                         textBuilder.append(content)
                                         emitStreamingChunk(content)
                                     }
+                                    // Terminal-chunk detection: spec lets the
+                                    // server emit finish_reason on the final
+                                    // chunk without a follow-up `data: [DONE]`
+                                    // sentinel. Capture the first non-null value
+                                    // and stop the SSE loop — otherwise the
+                                    // parser waits for socket EOF that may not
+                                    // arrive before the 120-second readTimeoutMs
+                                    // (Mantle chunked-SigV4 keeps the socket
+                                    // alive). The primary termination trigger is
+                                    // the [DONE] guard above; this is the
+                                    // belt-and-suspenders layer.
+                                    val finishReasonEl = choiceObj?.get("finish_reason")
+                                    val finishReason = (finishReasonEl as? JsonPrimitive)?.contentOrNull
+                                    if(finishReason != null && streamingFinishReason == null)
+                                    {
+                                        streamingFinishReason = finishReason
+                                        break@lineLoop
+                                    }
                                 }
                             }
                             catch(_: Exception)
@@ -1120,11 +1630,63 @@ class GenericOpenAIPipe : Pipe()
                 lastEventType = null
             }
         }
+        }
+        catch(e: java.io.IOException)
+        {
+            // Mid-stream transport failure during the SSE read loop.
+            // The loop has read whatever bytes had already arrived, so
+            // textBuilder and streamingFinishReason reflect partial
+            // state. Emit an API_CALL_FAILURE with the diagnostic
+            // metadata block, then throw P2PException so the call
+            // site propagates a typed transport failure.
+            //
+            // The `retryable` flag tells TPipe's PipeTimeoutManager
+            // whether the configured timeoutStrategy=Retry +
+            // maxRetryAttempts>0 path should fire. When retryable is
+            // false (the default for callers who haven't opted in),
+            // PipeTimeoutManager treats the failure as terminal and
+            // the trace file is the visible error record.
+            val retryable = this.timeoutStrategy == com.TTT.Pipe.PipeTimeoutStrategy.Retry
+                && this.maxRetryAttempts > 0
+            val elapsedMs = System.currentTimeMillis() - streamingStartMs
+            val partialTextLength = textBuilder.length
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
+                  error = e,
+                  metadata = mapOf(
+                      "reason" to "midStreamTransportFailure",
+                      "streaming" to true,
+                      "apiType" to when(apiMode)
+                      {
+                          is ApiMode.OpenAI -> "ChatAPI"
+                          is ApiMode.OpenAIResponses -> "ResponsesAPI"
+                          is ApiMode.Anthropic -> "AnthropicAPI"
+                      },
+                      "transport" to "HttpURLConnection",
+                      "retryable" to retryable,
+                      "transportErrorKind" to (e::class.simpleName ?: "IOException"),
+                      "transportErrorMessage" to (e.message ?: ""),
+                      "elapsedMs" to elapsedMs,
+                      "partialTextLength" to partialTextLength,
+                      "streamingFinishReason" to (this.streamingFinishReason ?: "null")
+                  ))
+            throw P2PException(
+                P2PError.transport,
+                "Streaming read failed mid-stream after ${partialTextLength} chars / ${elapsedMs}ms " +
+                    "(${e::class.simpleName}: ${e.message}). retryable=$retryable",
+                e
+            )
+        }
 
         streamingReasoning = reasoningBuilder.toString()
         streamingInputTokens = totalInputTokens
         streamingOutputTokens = totalOutputTokens
         streamingReasoningTokens = totalReasoningTokens
+        // Expose the captured terminal reason on the class field so
+        // downstream consumers (validators, post-call analytics,
+        // streaming callbacks) can read it without parsing the SSE
+        // stream themselves. null when the stream terminated on
+        // [DONE] without a finish_reason chunk.
+        this.streamingFinishReason = streamingFinishReason
 
         val resultText = textBuilder.toString()
 
@@ -1192,6 +1754,17 @@ class GenericOpenAIPipe : Pipe()
                 is ApiMode.Anthropic -> "AnthropicAPI"
             }
         )
+        // Surface the captured terminal reason when the chat-completions
+        // API emitted one. This is the most operationally relevant
+        // signal for OpenAI ChatAPI callers: a null finish_reason means
+        // the stream terminated on the [DONE] sentinel without a
+        // finish_reason chunk (rare but valid); "stop" is the normal
+        // case; "length" indicates the model hit the token cap;
+        // "content_filter" means the response was filtered mid-stream.
+        if(this.streamingFinishReason != null)
+        {
+            streamingMetadata["streamingFinishReason"] = this.streamingFinishReason!!
+        }
         if(streamingReasoningText.isNotEmpty())
         {
             streamingMetadata["reasoningLength"] = streamingReasoningText.length
@@ -1206,15 +1779,97 @@ class GenericOpenAIPipe : Pipe()
               content = result,
               metadata = streamingMetadata)
 
-        return resultText
+        // Return the MultimodalContent (carries both `text` and `modelReasoning`)
+        // so callers can route reasoning to its own content block. The
+        // non-streaming path does the same via `generateTextMultimodal`.
+        return result
+    }
+
+    /**
+     * Write [body] to [output] as AWS SigV4 chunked-transfer-encoded
+     * blocks for Mantle streaming. The wire format per chunk is:
+     *
+     * ```
+     * <size_hex>;<signature>\r\n
+     * <chunk_body>\r\n
+     * ```
+     *
+     * where `<size_hex>` is the chunk's byte length as 5-character
+     * lowercase hex, and `<signature>` is the per-chunk signature from
+     * the chain in [auth]. After the last body chunk a 0-byte
+     * terminator chunk is emitted (`0;<terminator-sig>\r\n\r\n`).
+     *
+     * The seed signature (the initial-request `Authorization` header
+     * value) is passed as the first argument to `auth.signChunk(...)`
+     * and is supplied by the caller via the headers map set up earlier
+     * in [executeStreamingDirect].
+     *
+     * @param output The OutputStream to write to (already-flushed response
+     *               body stream of an HttpURLConnection).
+     * @param body The request body bytes (the marshalled JSON).
+     * @param auth The chunked-encoding auth shape carrying the chunked
+     *             signer.
+     */
+    private fun writeChunkedRequestBody(
+        output: java.io.OutputStream,
+        body: ByteArray,
+        auth: BedrockMantleAuth.Streaming,
+    )
+    {
+        val chunkSize = ChunkedSigV4Signer.CHUNK_SIZE_BYTES
+        var previousSignature = extractStreamingSeedSignature(auth)
+        var offset = 0
+        while (offset < body.size)
+        {
+            val end = minOf(offset + chunkSize, body.size)
+            val chunk = body.copyOfRange(offset, end)
+            val chunkResult = auth.signChunk(previousSignature, chunk)
+            val sizeHex = chunk.size.toString(16).padStart(5, '0').lowercase()
+            output.write("$sizeHex;${chunkResult.signatureHex}\r\n".toByteArray(Charsets.US_ASCII))
+            output.write(chunk)
+            output.write("\r\n".toByteArray(Charsets.US_ASCII))
+            offset = end
+            previousSignature = chunkResult.signatureHex
+        }
+
+        // Final 0-byte terminator chunk. Its "previous" signature is the
+        // last body chunk's signature.
+        val terminator = auth.signChunk(previousSignature, ByteArray(0))
+        output.write("0;${terminator.signatureHex}\r\n\r\n".toByteArray(Charsets.US_ASCII))
+        output.flush()
+    }
+
+    /**
+     * Extract the seed signature (the `authorization` header value) from
+     * the [BedrockMantleAuth.Streaming] shape's `authHeaders` map. The
+     * seed signature is the initial-request SigV4 signature computed
+     * against the streaming constant as the payload hash.
+     */
+    private fun extractStreamingSeedSignature(auth: BedrockMantleAuth.Streaming): String
+    {
+        // Recompute the seed headers using the same method/url/body
+        // shape the streaming-direct path used. The authHeaders
+        // method computes the seed signature and returns the full
+        // header map; we only need the authorization header value.
+        val seedHeaders = auth.authHeaders(
+            method = "POST",
+            url = "$baseUrl${getEndpoint()}",
+            body = ByteArray(0),
+            headers = mapOf("Content-Type" to "application/json"),
+        )
+        return seedHeaders["authorization"]
+            ?: throw IllegalStateException("Streaming auth did not produce a seed signature")
     }
 
     /**
      * Executes a streaming request and accumulates the response.
+     * Returns the accumulated text plus any captured `modelReasoning`
+     * as a [MultimodalContent].
+     *
      * @param httpResponse The HTTP response from the streaming endpoint
-     * @return Accumulated response text
+     * @return Accumulated response text plus any captured modelReasoning
      */
-    private suspend fun executeStreaming(httpResponse: HttpResponse): String
+    private suspend fun executeStreaming(httpResponse: HttpResponse): com.TTT.Pipe.MultimodalContent
     {
         val channel = httpResponse.bodyAsChannel()
         val textBuilder = StringBuilder()
@@ -1312,7 +1967,10 @@ class GenericOpenAIPipe : Pipe()
               content = result,
               metadata = streamingMetadata)
 
-        return resultText
+        // Return the MultimodalContent (carries both `text` and `modelReasoning`)
+        // so callers can route reasoning to its own content block. The
+        // non-streaming path does the same via `generateTextMultimodal`.
+        return result
     }
 
     /**
@@ -1784,7 +2442,8 @@ class GenericOpenAIPipe : Pipe()
      * Returns the auth headers the pipe would attach, for the current [apiMode].
      * Visible only to tests in the same module.
      */
-    fun internalGetAuthHeadersForTest(): Map<String, String> = getAuthHeaders()
+    fun internalGetAuthHeadersForTest(): Map<String, String> =
+        getAuthHeaders(method = "GET", url = baseUrl, body = ByteArray(0))
 
     /**
      * Replaces the internal Ktor [HttpClient] with a caller-supplied one. The pipe
@@ -1793,7 +2452,32 @@ class GenericOpenAIPipe : Pipe()
      */
     fun injectHttpClientForTest(client: HttpClient)
     {
+        ownsHttpClient = false
         httpClient = client
+    }
+
+    /**
+     * Returns the current internal Ktor [HttpClient] for assertion in tests that
+     * verify the abort/retry-path contract. Production code MUST NOT use this.
+     */
+    fun httpClientForTest(): HttpClient? = httpClient
+
+    /**
+     * Builds the default Ktor [HttpClient] used by this pipe. Called from both
+     * [init] (when no test-supplied client is present) and [abort] (to give the
+     * retry path a fresh handle). Centralised here so the timeout configuration
+     * lives in one place — the previous inline copy in [init] and the
+     * `httpClient = null` regression in [abort] are the bugs this helper
+     * prevents recurring.
+     */
+    private fun createHttpClient(): HttpClient = HttpClient(CIO)
+    {
+        install(HttpTimeout)
+        {
+            requestTimeoutMillis = 120_000
+            connectTimeoutMillis = 30_000
+            socketTimeoutMillis = 120_000
+        }
     }
 
     /**

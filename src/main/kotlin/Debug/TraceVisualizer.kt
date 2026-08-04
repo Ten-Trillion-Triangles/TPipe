@@ -980,12 +980,12 @@ class TraceVisualizer
                     </div>
 
                     <div class="grid-section orchestration">
-                        <h2>🎯 Routing, Handoff, && Decision Timeline</h2>
+                        <h2>🎯 Routing, Handoff, and Decision Timeline</h2>
                         $orchestrationTable
                     </div>
 
                     <div class="grid-section activity">
-                        <h2>🗂️ Discovery, Registry, && Public Listing Activity</h2>
+                        <h2>🗂️ Discovery, Registry, and Public Listing Activity</h2>
                         $activityTable
                     </div>
                 </div>

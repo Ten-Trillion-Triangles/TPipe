@@ -9,8 +9,20 @@
 - [Available Models](#available-models)
 - [Basic Configuration](#basic-configuration)
 - [Advanced Features](#advanced-features)
+  - [Service Tier Configuration](#service-tier-configuration)
+  - [Performance Configuration](#performance-configuration)
+  - [Request Metadata](#request-metadata)
+  - [Prompt Template Variables](#prompt-template-variables)
+  - [Per-Call Metadata](#per-call-metadata)
+  - [JSON Schema Support](#json-schema-support)
+  - [Context Management](#context-management)
+  - [Content Safety with Guardrails](#content-safety-with-guardrails)
+  - [Developer-in-the-Loop Functions](#developer-in-the-loop-functions)
+  - [Pipeline Integration](#pipeline-integration)
 - [Best Practices](#best-practices)
 - [Troubleshooting](#troubleshooting)
+- [Debugging and Error Handling](#debugging-and-error-handling)
+- [Next Steps](#next-steps)
 
 TPipe-Bedrock is the AWS Bedrock integration module for TPipe, providing access to Amazon's managed AI models including Claude, Titan, and other foundation models through a unified TPipe interface.
 
@@ -306,6 +318,128 @@ val reservedPipe = BedrockPipe()
 - Service tier configuration is visible in API responses and CloudTrail events
 - CloudWatch metrics available under ModelId, ServiceTier, and ResolvedServiceTier
 - Not all models support all service tiers - check AWS documentation for availability
+
+### Performance Configuration
+
+Performance configuration reserves dedicated inference capacity for a call. Two tiers are supported: `Optimized` (dedicated capacity, lower tail latency, higher cost) and `Standard` (shared capacity, lower cost). When unset, AWS decides the performance characteristics based on the configured service tier (see [Service Tier Configuration](#service-tier-configuration)).
+
+```kotlin
+import aws.sdk.kotlin.services.bedrockruntime.model.PerformanceConfigLatency
+
+// Optimized latency — reserves dedicated inference capacity
+val optimizedPipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setPerformanceConfig(PerformanceConfigLatency.Optimized)
+
+// Standard latency — shared capacity at lower cost
+val standardPipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setPerformanceConfig(PerformanceConfigLatency.Standard)
+
+// Read the current setting
+val current = pipe.getPerformanceConfig()
+
+// Clear and revert to service-decided performance
+pipe.clearPerformanceConfig()
+```
+
+Use `Optimized` for time-sensitive workloads (customer-facing assistants, real-time classification) and `Standard` for batch processing, model evaluations, and back-office summarization. Performance configuration is independent of service tier — a Standard-tier pipe can still request Optimized latency for a specific call, and vice versa.
+
+### Request Metadata
+
+Request metadata is arbitrary key-value data that flows from each Bedrock call into CloudTrail invocation logs. Use it for cost-attribution tags, multi-tenant routing attribution, or per-call request tracing across the request lifecycle.
+
+```kotlin
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setRequestMetadata(mapOf(
+        "tenantId" to "acme-corp",
+        "feature" to "customer-support-summary",
+        "requestId" to "req-12345"
+    ))
+
+// Subsequent calls merge into the existing map; later calls overwrite earlier values
+// for the same key.
+pipe.setRequestMetadata(mapOf("feature" to "billing-summary"))
+
+// Read the current metadata as a defensive copy
+val current: Map<String, String> = pipe.getRequestMetadata()
+
+// Clear all metadata
+pipe.clearRequestMetadata()
+```
+
+The metadata is visible in CloudTrail under `additionalEventData.requestMetadata`. CloudWatch cost-explorer queries can group by these keys to attribute spend per tenant or per feature.
+
+### Prompt Template Variables
+
+Server-side prompt template variables let Bedrock perform prompt-template substitution on the server *before* the request reaches the model. The template (with `{{name}}` placeholders) is cacheable, only the variable values change per call — this is the recommended pattern for stable prompt-cache keys.
+
+```kotlin
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .setPromptVariables(mapOf(
+        "user_name" to "Alice",
+        "ticket_id" to "INC-1024",
+        "context_block" to "Order #4421 placed 2024-09-12, status: shipped."
+    ))
+
+// Add or override variables incrementally across calls
+pipe.setPromptVariables(mapOf("user_name" to "Bob"))
+
+// Read the current variables (null if never set)
+val current: Map<String, String>? = pipe.getPromptVariables()
+
+// Clear all variables
+pipe.clearPromptVariables()
+```
+
+The model's prompt template must declare matching `{{user_name}}`, `{{ticket_id}}`, `{{context_block}}` placeholders. Bedrock substitutes them at request time and emits the resolved prompt to the model.
+
+### Per-Call Metadata
+
+Every Converse (streaming or non-streaming) call now records wire-level metadata on a typed `BedrockCallMetadata` value object. Read it after a call returns to inspect tool invocations, citations, guardrail assessments, prompt-cache hits, latency, and stop reason — without parsing the trace string.
+
+```kotlin
+import bedrockPipe.BedrockCallMetadata
+
+val pipe = BedrockPipe()
+    .setRegion("us-east-1")
+    .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
+    .useConverseApi()
+    .enableStreaming()
+
+runBlocking {
+    pipe.init()
+    pipe.execute("Summarize the warranty terms in this manual.")
+}
+
+val meta: BedrockCallMetadata? = pipe.getLastCallMetadata()
+meta?.let {
+    println("Latency: ${it.latencyMs} ms")
+    println("Stop reason: ${it.stopReason}")
+    println("Service tier: ${it.serviceTier}")
+    println("Cache: ${it.cacheReadInputTokens} read, ${it.cacheWriteInputTokens} write")
+    println("Tool use blocks: ${it.toolUse.size}")
+    println("Citations: ${it.citations.size}")
+    println("Guardrail assessments: ${it.guardAssessments.size}")
+}
+
+// Clear before the next call if you need a fresh slate
+pipe.clearLastCallMetadata()
+```
+
+The metadata is per-call observation state — it is not thread-safe across concurrent calls on the same pipe (same constraint as `lastConverseResponse`) and it is not serialized in `toPipeSettings()`. Each field is nullable or empty-by-default so a call that did not produce a given artifact round-trips cleanly.
+
+Streaming Converse calls populate the same fields as non-streaming calls: tool-use blocks are reassembled from per-block Start/Delta/Stop events, citations are reassembled from `CitationsDelta` fragments per content block, and latency is captured from `ConverseStreamMetrics.latencyMs`. The stream also acknowledges `MessageStart` for tracing coverage.
+
+### Test Seams
+
+The `executeConverseStreamForTest(client, modelId, request, apiLabel)` method on `BedrockPipe` is a test seam that wraps `executeConverseStream`. It accepts a `BedrockRuntimeClient` as its first parameter so tests can inject a fake client without touching the protected `bedrockClient` field. The seam accepts a `ConverseStreamRequest` and internally reverses the `ConverseRequest.toStreamRequest()` mapping before delegating to the protected version.
 
 ### JSON Schema Support
 ```kotlin

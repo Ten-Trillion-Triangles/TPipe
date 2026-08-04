@@ -13,6 +13,8 @@ import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PResponse
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.Pipe
+import com.TTT.Pipe.StallCallback
+import com.TTT.Pipe.StreamingStallConfig
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Pipe.TruncationSettings
 import com.TTT.Structs.PipeSettings
@@ -2433,6 +2435,26 @@ private fun pathKey(name: String): String = name.lowercase()
         for (slot in additionalHarnessAgentSlots)
         {
             slot.agent?.setStreamingCallbackRecursive(callback)
+        }
+    }
+
+    override fun enableStallDetectorRecursive(
+        config: StreamingStallConfig,
+        callback: StallCallback?
+    )
+    {
+        judgeAgent?.enableStallDetectorRecursive(config, callback)
+        dispatchAgent?.enableStallDetectorRecursive(config, callback)
+        interventionAgent?.enableStallDetectorRecursive(config, callback)
+        healthAgent?.enableStallDetectorRecursive(config, callback)
+        lorebookAgent?.enableStallDetectorRecursive(config, callback)
+        summaryAgent?.enableStallDetectorRecursive(config, callback)
+        goalAgent?.enableStallDetectorRecursive(config, callback)
+        preInitAgent?.enableStallDetectorRecursive(config, callback)
+        pathSafetyAgent?.enableStallDetectorRecursive(config, callback)
+        for (slot in additionalHarnessAgentSlots)
+        {
+            slot.agent?.enableStallDetectorRecursive(config, callback)
         }
     }
 

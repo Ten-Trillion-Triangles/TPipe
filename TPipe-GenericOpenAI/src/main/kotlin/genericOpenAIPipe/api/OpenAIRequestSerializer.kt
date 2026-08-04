@@ -5,8 +5,18 @@ import genericOpenAIPipe.env.GenericOpenAIChatRequest
 
 class OpenAIRequestSerializer : RequestSerializer
 {
-    override fun serialize(request: GenericOpenAIChatRequest, apiMode: ApiMode): String
+    override fun serialize(
+        request: GenericOpenAIChatRequest,
+        apiMode: ApiMode,
+        options: RequestSerializationOptions,
+    ): String
     {
+        // options is intentionally unused — this serializer owns the Chat
+        // Completions and Anthropic wires, neither of which carries the
+        // Mantle GPT-5.6 prompt-cache extensions. The Responses extension
+        // lives in OpenAIResponsesRequestSerializer and reads options there.
+        @Suppress("UNUSED_PARAMETER")
+        val ignored = options
         return when(apiMode)
         {
             is ApiMode.OpenAI -> serialize(request, encodedefault = false)
@@ -22,7 +32,7 @@ class OpenAIRequestSerializer : RequestSerializer
                 // accidentally route Responses requests through this class still
                 // emit a well-formed body.
                 val responsesSerializer = OpenAIResponsesRequestSerializer()
-                responsesSerializer.serialize(request, apiMode)
+                responsesSerializer.serialize(request, apiMode, options)
             }
         }
     }

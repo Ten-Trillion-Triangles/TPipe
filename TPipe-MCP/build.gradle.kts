@@ -37,7 +37,7 @@ dependencies {
     implementation("io.ktor:ktor-server-cio:3.3.3")
     implementation("io.ktor:ktor-server-auth:3.3.3")
 
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.2.20")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.3.21")
 }
 
 // Ensure proper source set configuration
