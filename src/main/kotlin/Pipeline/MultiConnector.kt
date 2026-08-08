@@ -3,6 +3,8 @@ package com.TTT.Pipeline
 import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceEventType
+import com.TTT.Debug.TraceFormat
+import com.TTT.Debug.TraceAutoExporter
 import com.TTT.Debug.TracePhase
 import com.TTT.Debug.TraceEvent
 import com.TTT.P2P.P2PDescriptor
@@ -297,11 +299,41 @@ class MultiConnector : P2PInterface
     {
         tracingEnabled = true
         traceConfig = config
+        PipeTracer.setMaxHistory(config.maxHistory) // Apply configured history limit
         PipeTracer.startTrace(multiConnectorId)
         // Enable tracing on all child connectors
         connectors.forEach { it.enableTracing(config) }
         return this
     }
+
+    fun getTraceReport(format: TraceFormat = traceConfig.outputFormat): String
+    {
+        val report = PipeTracer.exportTrace(multiConnectorId, format)
+
+        if(traceConfig.autoExport)
+        {
+            val extension = when(format)
+            {
+                TraceFormat.HTML -> "html"
+                TraceFormat.JSON -> "json"
+                TraceFormat.MARKDOWN -> "md"
+                TraceFormat.CONSOLE -> "txt"
+            }
+            val filename = "trace-${multiConnectorId.take(8)}.$extension"
+            val exportPath = traceConfig.exportPath.trimEnd('/') + "/" + filename
+            TraceAutoExporter.default.export(exportPath, report) {
+                com.TTT.Util.writeStringToFile(exportPath, report)
+            }
+        }
+
+        return report
+    }
+
+    /**
+     * Returns the trace ID used by this MultiConnector when calling PipeTracer.
+     * Mirrors the `getTraceId()` shape on other containers.
+     */
+    fun getTraceId(): String = multiConnectorId
 
     /**
      * Internal trace helper that emits events to the PipeTracer when tracing is enabled.

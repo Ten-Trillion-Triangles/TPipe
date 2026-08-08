@@ -8,6 +8,8 @@ import com.TTT.P2P.P2PException
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.StreamingCallbackBuilder
+import com.TTT.Pipe.TruncationSettings
+import com.TTT.Context.Dictionary.BinaryEstimationMode
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import genericOpenAIPipe.env.*
@@ -2312,9 +2314,24 @@ class GenericOpenAIPipe : Pipe()
 //=========================================Context Management==========================================================
 
     /**
-     * Truncates module context using conservative token estimation.
-     * Uses OpenAI-compatible settings by default since most OpenAI-compatible
-     * providers use similar tokenization to GPT models.
+     * Truncates module context using OpenAI-conservative token estimation by default.
+     * For multimodal Mantle models, populates per-model binary TruncationSettings overrides
+     * so the binary token-counting pipeline at Dictionary.countBinaryTokens produces correct
+     * per-model estimates. Mirrors the BedrockPipe.kt pattern.
+     *
+     * Mantle multimodal models in scope (per /home/cage/Desktop/Workspaces/TPipe/md/00-synthesis-table.md
+     * + the pi-bedrock-mantle README's live model list):
+     *   - OpenAI: gpt-5.5, gpt-5.4, gpt-oss-120b, gpt-oss-20b (default conservative)
+     *   - Anthropic via Mantle: claude-3-haiku, claude-3-sonnet (patch formula, 1,369 at 1024^2)
+     *   - Mistral via Mantle: magistral-small, ministral-3*, mistral-large-3 (Pixtral 4,159 at 1024^2)
+     *   - Voxtral via Mantle: voxtral-mini, voxtral-small (12.5 tokens/sec, duration-dependent)
+     *   - Qwen3-VL via Mantle: qwen3-vl-235b (1,024 at 1024^2)
+     *   - Z.AI via Mantle: glm-4.x, glm-5 (no published vision formula; default)
+     *   - Moonshot via Mantle: kimi-k2.5 (1,369 at 1024^2)
+     *   - NVIDIA via Mantle: nemotron-nano-12b-v2 (1,280 at 1024^2)
+     *   - Writer via Mantle: palmyra-vision-7b (1,728 at 1024^2)
+     *   - Google via Mantle: gemma-3-{4b,12b,27b}-it (256 flat)
+     *
      * @return This pipe instance
      */
     override fun truncateModuleContext(): Pipe
@@ -2329,6 +2346,117 @@ class GenericOpenAIPipe : Pipe()
         countSubWordsIfSplit = false
         nonWordSplitCount = 2
         tokenCountingBias = 0.0
+
+        // Per-model binary TruncationSettings overrides for Mantle multimodal models.
+        // Same architectural pattern as BedrockPipe.kt: the binary* fields live ONLY on
+        // the TruncationSettings data class; we set them on tokenBudgetSettings.truncationSettings
+        // (creating it if null) so the framework's getTruncationSettings() returns them correctly.
+        // Tier-1 (binaryMimeOverride) is the only working path because the current BpeEncoder
+        // interface receives base64-encoded text chunks, not raw bytes.
+        val binarySettings = when
+        {
+            model.contains("anthropic.claude") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1369,
+                        "image/png" to 1369,
+                        "image/gif" to 1369,
+                        "image/webp" to 1369,
+                        "application/pdf" to 1369
+                    ),
+                    binaryEncoderThresholdBytes = 0,
+                    binaryFudgeFactor = 1.0
+                )
+            model.contains("google.gemma-3") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 256,
+                        "image/png" to 256,
+                        "image/webp" to 256,
+                        "image/gif" to 256
+                    )
+                )
+            model.contains("voxtral") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID
+                )
+            model.contains("mistral") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 4159,
+                        "image/png" to 4159,
+                        "image/webp" to 4159
+                    )
+                )
+            model.contains("qwen") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1024,
+                        "image/png" to 1024,
+                        "image/webp" to 1024
+                    )
+                )
+            model.contains("kimi") || model.contains("moonshotai") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1369,
+                        "image/png" to 1369,
+                        "image/webp" to 1369
+                    ),
+                    binaryEncoderThresholdBytes = 0,
+                    binaryFudgeFactor = 1.05
+                )
+            model.contains("nvidia.nemotron") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1280,
+                        "image/png" to 1280
+                    )
+                )
+            model.contains("writer.palmyra") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1728,
+                        "image/png" to 1728
+                    ),
+                    binaryFudgeFactor = 1.10
+                )
+            model.contains("amazon.titan-embed-image") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1,
+                        "image/png" to 1
+                    )
+                )
+            model.contains("amazon.nova-2-multimodal-embeddings") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1,
+                        "image/png" to 1,
+                        "image/webp" to 1
+                    )
+                )
+            model.contains("amazon.nova-2-sonic") || model.contains("amazon.nova-sonic") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID
+                )
+            else -> null
+        }
+        if(binarySettings != null)
+        {
+            tokenBudgetSettings?.let { tbs ->
+                tbs.truncationSettings = binarySettings
+            }
+        }
 
         if(truncateContextAsString)
         {

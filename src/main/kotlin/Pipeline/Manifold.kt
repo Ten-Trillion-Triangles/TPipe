@@ -32,6 +32,7 @@ import com.TTT.Util.extractJson
 import com.TTT.Util.serializeConverseHistory
 import com.TTT.Util.serialize
 import com.TTT.Debug.*
+import com.TTT.Debug.TraceAutoExporter
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Pipe.Pipe
 import com.TTT.Util.examplePromptFor
@@ -2288,6 +2289,7 @@ class Manifold : P2PInterface
         this.tracingEnabled = true
         this.traceConfig = config
         PipeTracer.enable() // Enable global tracer
+        PipeTracer.setMaxHistory(config.maxHistory) // Apply configured history limit
         return this
     }
 
@@ -2481,7 +2483,25 @@ class Manifold : P2PInterface
      */
     fun getTraceReport(format: TraceFormat = traceConfig.outputFormat): String
     {
-        return PipeTracer.exportTrace(manifoldId, format)
+        val report = PipeTracer.exportTrace(manifoldId, format)
+
+        if(traceConfig.autoExport)
+        {
+            val extension = when(format)
+            {
+                TraceFormat.HTML -> "html"
+                TraceFormat.JSON -> "json"
+                TraceFormat.MARKDOWN -> "md"
+                TraceFormat.CONSOLE -> "txt"
+            }
+            val filename = "trace-${manifoldId.take(8)}.$extension"
+            val exportPath = traceConfig.exportPath.trimEnd('/') + "/" + filename
+            TraceAutoExporter.default.export(exportPath, report) {
+                com.TTT.Util.writeStringToFile(exportPath, report)
+            }
+        }
+
+        return report
     }
 
     /**

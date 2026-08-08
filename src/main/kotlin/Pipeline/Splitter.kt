@@ -1,6 +1,7 @@
 package com.TTT.Pipeline
 
 import com.TTT.Debug.*
+import com.TTT.Debug.TraceAutoExporter
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.StallCallback
@@ -442,6 +443,7 @@ class Splitter: P2PInterface
         this.tracingEnabled = true
         this.traceConfig = config
         PipeTracer.enable()
+        PipeTracer.setMaxHistory(config.maxHistory) // Apply configured history limit
         return this
     }
 
@@ -566,7 +568,25 @@ class Splitter: P2PInterface
      * Gets trace report for this Splitter in the specified format.
      */
     fun getTraceReport(format: TraceFormat = traceConfig.outputFormat): String {
-        return PipeTracer.exportTrace(splitterId, format)
+        val report = PipeTracer.exportTrace(splitterId, format)
+
+        if(traceConfig.autoExport)
+        {
+            val extension = when(format)
+            {
+                TraceFormat.HTML -> "html"
+                TraceFormat.JSON -> "json"
+                TraceFormat.MARKDOWN -> "md"
+                TraceFormat.CONSOLE -> "txt"
+            }
+            val filename = "trace-${splitterId.take(8)}.$extension"
+            val exportPath = traceConfig.exportPath.trimEnd('/') + "/" + filename
+            TraceAutoExporter.default.export(exportPath, report) {
+                com.TTT.Util.writeStringToFile(exportPath, report)
+            }
+        }
+
+        return report
     }
 
     /**

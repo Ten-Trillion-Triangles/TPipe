@@ -17,6 +17,14 @@ object PipeTracer {
     fun setMaxHistory(max: Int) { maxTraceHistory = max }
 
     /**
+     * Test seam: returns the current max history limit. Production code does not consume
+     * this — it lets tests assert that [TraceConfig.maxHistory] propagated from a container's
+     * enableTracing call into PipeTracer.setMaxHistory. Same-module visibility keeps the
+     * seam out of the public API surface while still being reachable from src/test/kotlin.
+     */
+    internal fun getMaxHistoryForTest(): Int = maxTraceHistory
+
+    /**
      * Globally enables tracing for all pipelines.
      */
     fun enable()

@@ -89,7 +89,7 @@ val pipe = BedrockPipe()
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
 ```
 
-**Note**: The `enabled`, `maxHistory`, `autoExport`, and `exportPath` properties exist in TraceConfig but are **not used** by the actual tracing system.
+**Note**: `enabled`, `detailLevel`, `includeContext`, `includeMetadata`, and `maxHistory` are honored when their owning container's `enableTracing(config)` is called: `enabled` flips the global tracer, `maxHistory` propagates to `PipeTracer.setMaxHistory`, `detailLevel` filters via `EventPriorityMapper.shouldTrace`, and `includeContext`/`includeMetadata` gate the per-event payload. `autoExport` and `exportPath` are honored by every container — Pipeline, PumpStation, Manifold, Splitter, Junction, DistributionGrid, Connector, and MultiConnector — and routed through the thread-safe `TraceAutoExporter` so concurrent writes to the same path serialize without corrupting the file.
 
 ### TraceDetailLevel Effects
 ```kotlin
