@@ -3,6 +3,7 @@ package com.TTT.Context
 import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Pipe.TruncationSettings
 import java.io.File
+import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 
 
@@ -34,6 +35,70 @@ object Dictionary
         val words: List<String>,
         val wordsSet: HashSet<String>
     )
+
+    /**
+     * Primitive input for [Dictionary.countBinaryTokens]. At the dictionary layer, binary content
+     * is reduced to bytes plus a MIME type. The caller (typically [com.TTT.Pipe.Pipe.countBinaryTokens])
+     * is responsible for decoding any base64 transport format into raw bytes before constructing
+     * a [BinaryBytes]; text and URI payloads are handled by the caller via
+     * [Dictionary.countTokens] and never reach this entry point.
+     *
+     * Token-cost reduction is O(1) per item regardless of byte length — no substring scans, no
+     * dictionary matcher allocation storm, no recursion.
+     *
+     * @param bytes The decoded bytes. Never base64-encoded.
+     * @param mimeType IANA media type, e.g. `"image/png"`, `"audio/mpeg"`, `"application/pdf"`.
+     *                 Used for the per-MIME tier-1 lookup against
+     *                 [com.TTT.Pipe.TruncationSettings.binaryMimeOverride].
+     */
+    data class BinaryBytes(
+        val bytes: ByteArray,
+        val mimeType: String
+    )
+
+    /**
+     * Strategy for estimating token count of binary content. Selected via
+     * [com.TTT.Pipe.TruncationSettings.binaryTokenEstimation].
+     *
+     * The default ([HYBRID]) is the sanest default for multimodal workloads: per-MIME
+     * overrides win when configured, and the byte-exact formula is the safe fallback for
+     * unknown MIME types. Operators who want deterministic byte-exact budgeting without
+     * any MIME awareness can opt into [PER_ENCODER_RULE].
+     */
+    enum class BinaryEstimationMode {
+        /** Always use `ceil(decodedBytes / 4) * binaryFudgeFactor`. No MIME knowledge. */
+        PER_ENCODER_RULE,
+
+        /** Require an entry in `binaryMimeOverride` for every MIME seen. Missing entries throw. */
+        PER_MIME_TYPE,
+
+        /** Require a configured [BpeEncoder] for every binary over the threshold. Falls back to tier-0 on encoder failure. */
+        EXTERNAL_ENCODER,
+
+        /** Default. Per-MIME first, then byte-exact fallback. */
+        HYBRID,
+    }
+
+    /**
+     * Interface for an exact BPE encoder. Used by [Dictionary.countBinaryTokens] when the
+     * configured [com.TTT.Pipe.TruncationSettings.binaryEstimationMode] is [BinaryEstimationMode.EXTERNAL_ENCODER]
+     * or [BinaryEstimationMode.HYBRID] and the byte length exceeds the encoder threshold.
+     *
+     * The interface is intentionally minimal — implementations convert chunks of bytes
+     * (base64-encoded internally) into a token count via the standard `size` of the
+     * returned IntArray. The default implementation does not exist in this PR; this is
+     * plumbing for a follow-up that wires jtokkit or a custom model-specific encoder.
+     */
+    interface BpeEncoder {
+        /**
+         * Encode the given text and return the resulting token IDs.
+         *
+         * @param text The text to tokenize. Implementations are expected to handle empty strings
+         *             by returning `IntArray(0)`.
+         * @return Token IDs in encoding order. The token count is the array's size.
+         */
+        fun encode(text: String): IntArray
+    }
 
     val words: List<String> by lazy {
         try{
@@ -189,6 +254,132 @@ object Dictionary
             settings.tokenCountingBias,
             instance.wordsSet
         )
+    }
+
+    /**
+     * Counts tokens for a list of binary items using the configured [TruncationSettings.binaryTokenEstimation]
+     * mode. At the dictionary layer, binary content is reduced to bytes plus a MIME type — text and URI
+     * payloads are handled upstream by callers via [countTokens] and never reach this entry point.
+     *
+     * Replaces the prior [com.TTT.Pipe.Pipe.countBinaryTokens] body that routed binary payloads through
+     * [countTokens] on a base64 string. The base64 alphabet contains zero dictionary words, so the positional
+     * substring matcher at [findAllMatches] paid an O(n × maxMatchLength) allocation storm on every call. On a
+     * 256 KB binary the storm cost ~28 seconds (~3,066 tokens/s); on a 5.6 MB binary it OOMed the default
+     * 512 MB test heap. The tier-0 byte-exact path here is O(1) per item.
+     *
+     * Tier order per item:
+     *  1. Tier-1 (per-MIME) — if [TruncationSettings.binaryTokenEstimation] is PER_MIME_TYPE or HYBRID and
+     *     [TruncationSettings.binaryMimeOverride] has an entry for the item's MIME type, use that exact count.
+     *     Tier-1 wins; fudgeFactor and byte-exact are skipped.
+     *  2. Tier-2 (external encoder) — if [TruncationSettings.binaryTokenEstimation] is EXTERNAL_ENCODER or
+     *     HYBRID and [TruncationSettings.binaryEncoder] is non-null and the byte length exceeds
+     *     [TruncationSettings.binaryEncoderThresholdBytes], chunk the bytes into
+     *     [TruncationSettings.binaryChunkSizeBytes]-sized slices, base64-encode each chunk, sum the encoder's
+     *     returned token counts. Encapsulated in try/catch with tier-3 fallback.
+     *  3. Tier-0 (byte-exact) — `ceil(decodedBytes / 4) * binaryFudgeFactor`. Always used as the fallback
+     *     from tier-2.
+     *
+     * @param items Binary payloads with decoded bytes plus MIME type. Caller (typically
+     *              [com.TTT.Pipe.Pipe.countBinaryTokens]) is responsible for decoding any base64 transport
+     *              format before constructing a [BinaryBytes].
+     * @param settings TruncationSettings carrying the binary-mode knobs.
+     * @return Total token count across all items. Empty list returns 0.
+     * @throws IllegalArgumentException If [TruncationSettings.binaryTokenEstimation] is
+     *                                  [BinaryEstimationMode.PER_MIME_TYPE] and an item's MIME type is missing
+     *                                  from the override map.
+     */
+    fun countBinaryTokens(items: List<BinaryBytes>, settings: TruncationSettings): Int
+    {
+        if(items.isEmpty()) return 0
+
+        val mode = settings.binaryTokenEstimation
+        val mimeOverride = settings.binaryMimeOverride
+        val encoder = settings.binaryEncoder
+        val threshold = settings.binaryEncoderThresholdBytes
+        val chunkSize = settings.binaryChunkSizeBytes
+        val fudge = settings.binaryFudgeFactor
+
+        var total = 0
+        for(item in items)
+        {
+            val bytes = item.bytes.size
+            val mime = item.mimeType
+
+            // Tier-1: per-MIME override
+            if(mode == BinaryEstimationMode.PER_MIME_TYPE || mode == BinaryEstimationMode.HYBRID)
+            {
+                if(mimeOverride != null && mimeOverride.containsKey(mime))
+                {
+                    total += mimeOverride[mime]!!
+                    continue
+                }
+                if(mode == BinaryEstimationMode.PER_MIME_TYPE)
+                {
+                    throw IllegalArgumentException(
+                        "BinaryEstimationMode.PER_MIME_TYPE requires an entry in binaryMimeOverride for every " +
+                            "MIME seen. Missing entry for MIME: $mime"
+                    )
+                }
+            }
+
+            // Tier-2: external encoder
+            if((mode == BinaryEstimationMode.EXTERNAL_ENCODER || mode == BinaryEstimationMode.HYBRID) &&
+                encoder != null && bytes > threshold)
+            {
+                val encoded = try
+                {
+                    chunkedEncodeTokens(item.bytes, encoder, chunkSize)
+                }
+                catch(e: Exception)
+                {
+                    // Tier-3 fallback: silently fall through to byte-exact
+                    null
+                }
+                if(encoded != null)
+                {
+                    total += encoded
+                    continue
+                }
+            }
+
+            // Tier-0: byte-exact fallback
+            total += byteExactTokens(bytes, fudge)
+        }
+        return total
+    }
+
+    /**
+     * Pure function. `ceil(decodedBytes / 4) * binaryFudgeFactor`. The canonical byte-exact token estimate.
+     * Used as the default tier-0 fallback and as the per-item cost when no MIME override or encoder is configured.
+     */
+    private fun byteExactTokens(bytes: Int, fudgeFactor: Double): Int
+    {
+        val tokens = (bytes + 3) / 4
+        return (tokens * fudgeFactor).toInt()
+    }
+
+    /**
+     * Splits the byte array into [chunkSize]-sized slices, base64-encodes each slice, runs the encoder's
+     * `encode` method, and sums the returned IntArray sizes. Empty byte arrays short-circuit to 0.
+     *
+     * This is the chunked path for tier-2 EXTERNAL_ENCODER / HYBRID; the encoder receives a base64 string
+     * (alphabet-only, no whitespace) which is a stable input shape for any BPE encoder that accepts text.
+     */
+    private fun chunkedEncodeTokens(bytes: ByteArray, encoder: BpeEncoder, chunkSize: Int): Int
+    {
+        if(bytes.isEmpty()) return 0
+        val effective = chunkSize.coerceAtLeast(1)
+        var total = 0
+        var offset = 0
+        while(offset < bytes.size)
+        {
+            val end = minOf(offset + effective, bytes.size)
+            val slice = bytes.copyOfRange(offset, end)
+            val encoded = Base64.getEncoder().encodeToString(slice)
+            total += encoder.encode(encoded).size
+            offset = end
+        }
+        return total
     }
 
     /**

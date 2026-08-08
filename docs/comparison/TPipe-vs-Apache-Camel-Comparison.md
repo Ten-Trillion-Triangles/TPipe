@@ -1,7 +1,7 @@
 # TPipe vs Apache Camel: Complete Feature Comparison
 
 **Generated:** 2026-04-24
-**TPipe Repo:** `/home/cage/Desktop/Workspaces/TPipe/TPipe` (commit 20613ff5, branch mcp-server)
+**TPipe Repo:** `/home/cage/Desktop/Workspaces/TPipe/TPipe` (commit 20613ff5, branch main)
 **Camel Repo:** `/home/cage/Desktop/Workspaces/Camel` (cloned from github.com/apache/camel)
 
 ---
@@ -1091,7 +1091,7 @@ Camel has NO reasoning pipe system - purely message routing, not LLM orchestrati
 ## Document Info
 
 - **Generated:** 2026-04-24
-- **TPipe Source:** `/home/cage/Desktop/Workspaces/TPipe/TPipe` (commit 20613ff5, branch mcp-server)
+- **TPipe Source:** `/home/cage/Desktop/Workspaces/TPipe/TPipe` (commit 20613ff5, branch main)
 - **Camel Source:** `/home/cage/Desktop/Workspaces/Camel` (cloned from github.com/apache/camel)
 - **TPipe LOC Analyzed:** ~30,000+ lines across core modules
 - **Camel LOC Analyzed:** Key interfaces and model classes analyzed; Camel repo has 80,000+ commits across all modules
