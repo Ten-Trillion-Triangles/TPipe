@@ -1478,7 +1478,8 @@ class Pipeline : P2PInterface
             // Record the input that was passed to this pipe so the decision-pipe
             // resolution can detect a "no-op" pipe (one whose output is the same
             // as its input).
-            if(pipe.pipeName.isNotEmpty()) {
+            if(pipe.pipeName.isNotEmpty())
+            {
                 pipeInputs[pipe.pipeName] = generatedContent
             }
             
@@ -1492,25 +1493,28 @@ class Pipeline : P2PInterface
             }
 
             try {
-                val result : Deferred<MultimodalContent> = async {
-                    pipe.execute(generatedContent)
-                }
+                if(!pipe.disablePipe) //Conditional skip if the pipe is disabled. Otherwise, proceed as normal.
+                {
+                    val result : Deferred<MultimodalContent> = async {
+                        pipe.execute(generatedContent)
+                    }
 
-                //Execute the current pipe and await its result.
-                generatedContent = result.await()
-                
-                // Capture pipe errors after execution
-                if(pipe.hasError())
-                {
-                    lastFailedPipe = pipe
-                    lastError = pipe.lastError
-                }
-                
-                // Also check if error was propagated through content
-                if(generatedContent.pipeError != null && lastError == null)
-                {
-                    lastFailedPipe = pipe
-                    lastError = generatedContent.pipeError
+                    //Execute the current pipe and await its result.
+                    generatedContent = result.await()
+
+                    // Capture pipe errors after execution
+                    if(pipe.hasError())
+                    {
+                        lastFailedPipe = pipe
+                        lastError = pipe.lastError
+                    }
+
+                    // Also check if error was propagated through content
+                    if(generatedContent.pipeError != null && lastError == null)
+                    {
+                        lastFailedPipe = pipe
+                        lastError = generatedContent.pipeError
+                    }
                 }
             }
 

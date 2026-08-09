@@ -937,6 +937,11 @@ abstract class Pipe : P2PInterface, ProviderInterface
 //============================================= properties ===========================================================//
 
     /**
+     * If true, this pipe will be ignored and skipped over inside a pipeline.
+     */
+    var disablePipe = false
+
+    /**
      * Optional name for this pipe. Useful for debugging and tracing pipes and pipelines.
      */
     @SerialName("pipeName")
@@ -1928,6 +1933,15 @@ abstract class Pipe : P2PInterface, ProviderInterface
     val pipeMetadata = mutableMapOf<Any, Any>()
 
 //============================================= constructor ==========================================================//
+
+    /**
+     * Disable a pipe from running, or re-enable it. See [disablePipe]
+     */
+    fun setDisablePipe(state: Boolean) : Pipe
+    {
+        disablePipe = state
+        return this
+    }
 
     /**
      * Sets the name for this pipe. This name is useful for debugging, tracing, and identifying
