@@ -57,6 +57,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
+import java.util.Base64
 import java.util.UUID
 import kotlin.math.absoluteValue
 import kotlin.reflect.KClass
@@ -92,7 +93,53 @@ data class TruncationSettings(
           * instance throws [IllegalArgumentException]. When both this and [dictionaryLocale] are
           * null/blank, the bundled default dictionary (`/Words.txt`) is used.
           */
-         var dictionaryPath: String? = null)
+         var dictionaryPath: String? = null,
+         /**
+          * Strategy for estimating token count of binary content. The default ([com.TTT.Context.Dictionary.BinaryEstimationMode.HYBRID])
+          * is the sanest default for multimodal workloads: per-MIME overrides win when configured, and the
+          * byte-exact formula is the safe fallback for unknown MIME types. Operators who want deterministic
+          * byte-exact budgeting without any MIME awareness can opt into
+          * [com.TTT.Context.Dictionary.BinaryEstimationMode.PER_ENCODER_RULE].
+          */
+         var binaryTokenEstimation: com.TTT.Context.Dictionary.BinaryEstimationMode = com.TTT.Context.Dictionary.BinaryEstimationMode.HYBRID,
+         /**
+          * Optional BPE encoder for exact token counts on large binary payloads. Activated when
+          * [binaryTokenEstimation] is [com.TTT.Context.Dictionary.BinaryEstimationMode.EXTERNAL_ENCODER]
+          * or [com.TTT.Context.Dictionary.BinaryEstimationMode.HYBRID] and the byte length exceeds
+          * [binaryEncoderThresholdBytes]. The interface is intentionally minimal — implementations
+          * convert chunks of bytes (base64-encoded internally) into a token count via the
+          * `size` of the returned IntArray. No default implementation is provided; this is plumbing
+          * for a follow-up that wires jtokkit or a custom model-specific encoder.
+          */
+         var binaryEncoder: com.TTT.Context.Dictionary.BpeEncoder? = null,
+         /**
+          * Minimum byte length at which the binary path will consult [binaryEncoder]. Below this
+          * threshold the byte-exact formula is used regardless of mode. Default 1 MB.
+          */
+         var binaryEncoderThresholdBytes: Int = 1_048_576,
+         /**
+          * Multiplier applied to the byte-exact token estimate. Default 1.0 (byte-exact). Operators
+          * who want a safety margin against undercount can set this to 1.1 or higher. Applied after
+          * tier-1 (per-MIME override) and tier-3 (encoder fallback) but not within the per-MIME
+          * override itself — operators set the override value directly.
+          */
+         var binaryFudgeFactor: Double = 1.0,
+         /**
+          * Chunk size in bytes when invoking [binaryEncoder] on payloads that exceed
+          * [binaryEncoderThresholdBytes]. Each chunk is base64-encoded and passed to the encoder.
+          * Default 64 KB.
+          */
+         var binaryChunkSizeBytes: Int = 65_536,
+         /**
+          * Optional per-MIME token count overrides. Keys are IANA media types (e.g. `"image/png"`,
+          * `"audio/mpeg"`, `"application/pdf"`). Values are the exact token count to use for any
+          * binary of that MIME type. When set, the per-MIME entry wins over [binaryFudgeFactor]
+          * and the byte-exact formula. Operators who know their model's per-MIME rates (e.g.
+          * Claude's `(width × height) / 750` for images, GPT-4o's tile formula) can populate this
+          * map directly. Default null — no overrides, behavior identical to
+          * [com.TTT.Context.Dictionary.BinaryEstimationMode.PER_ENCODER_RULE] for unknown MIMEs.
+          */
+         var binaryMimeOverride: Map<String, Int>? = null)
 
 /**
  * Data class that defines how advanced token budgeting is applied. In this scheme the user prompt, and system prompt
@@ -5497,38 +5544,42 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     fun countBinaryTokens(content: MultimodalContent, truncationSettings: TruncationSettings): Int
     {
+        // Thin mapper: route text and URI payloads through the existing dictionary token path
+        // unchanged, and hand the rest to the new Dictionary.countBinaryTokens entry point.
+        // No mutation of content.binaryContent — the prior in-place Bytes -> Base64String rebase
+        // at Pipe.kt:5512 is gone. Now the input list is preserved exactly as the caller wrote it.
         var totalTokens = 0
+        val binaryItems = mutableListOf<Dictionary.BinaryBytes>()
 
-        for(i in content.binaryContent.indices)
+        for(binary in content.binaryContent)
         {
-            val binary = content.binaryContent[i]
-
-            //Convert to base64 if not already in that format.
-            val base64Content = when(binary)
+            when(binary)
             {
-                is BinaryContent.Bytes ->
-                {
-                    val converted = binary.toBase64()
-                    content.binaryContent[i] = converted
-                    converted
-                }
-                is BinaryContent.Base64String -> binary
-                is BinaryContent.CloudReference ->
-                {
-                    //Cloud references don't need conversion, count the URI.
-                    totalTokens += Dictionary.countTokens(binary.uri, truncationSettings)
-                    continue
-                }
                 is BinaryContent.TextDocument ->
                 {
-                    //Count text document content directly.
                     totalTokens += Dictionary.countTokens(binary.content, truncationSettings)
-                    continue
+                }
+                is BinaryContent.CloudReference ->
+                {
+                    totalTokens += Dictionary.countTokens(binary.uri, truncationSettings)
+                }
+                is BinaryContent.Bytes ->
+                {
+                    binaryItems += Dictionary.BinaryBytes(binary.data, binary.mimeType)
+                }
+                is BinaryContent.Base64String ->
+                {
+                    binaryItems += Dictionary.BinaryBytes(
+                        Base64.getDecoder().decode(binary.data),
+                        binary.mimeType
+                    )
                 }
             }
+        }
 
-            //Count tokens in the base64 string.
-            totalTokens += Dictionary.countTokens(base64Content.data, truncationSettings)
+        if(binaryItems.isNotEmpty())
+        {
+            totalTokens += Dictionary.countBinaryTokens(binaryItems, truncationSettings)
         }
 
         return totalTokens

@@ -113,7 +113,7 @@ class OpenAIResponsesLiveTest
         pipe.setModel(model)
         pipe.setMaxTokens(maxTokens)
         pipe.setTemperature(0.0)
-        pipe.setStreamingCallback { chunk: String -> chunks.add(chunk); Unit }
+        pipe.setStreamingCallback(suspend { chunk: String -> chunks.add(chunk); Unit })
 
         val pipeline = Pipeline()
         pipeline.add(pipe)

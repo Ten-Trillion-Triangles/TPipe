@@ -32,6 +32,8 @@ import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.StreamingCallbackBuilder
+import com.TTT.Pipe.TruncationSettings
+import com.TTT.Context.Dictionary.BinaryEstimationMode
 import env.bedrockEnv
 import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.json.*
@@ -1655,6 +1657,39 @@ open class BedrockPipe : Pipe()
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
                 nonWordSplitCount = 2
+                // Binary: Anthropic Claude 3 patch formula `min(ceil(W/28) * ceil(H/28), 1568)`.
+                // Tier-1 override populated at 1024x1024 baseline (1,369 tokens). Operators with
+                // varying resolutions should override per-resolution via TruncationSettings.
+            }
+            modelId.contains("google.gemma-3") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("voxtral") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("mistral") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
             }
             modelId.contains("amazon.nova-micro") -> {
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
@@ -1791,6 +1826,16 @@ open class BedrockPipe : Pipe()
                 countSubWordsIfSplit = true
                 nonWordSplitCount = 2
             }
+            modelId.contains("nvidia.nemotron") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
             modelId.contains("openai.gpt-oss") -> {
                 // contextWindowSize left for user configuration
                 contextWindowTruncation = ContextWindowSettings.TruncateTop
@@ -1812,6 +1857,213 @@ open class BedrockPipe : Pipe()
                 alwaysSplitIfWholeWordExists = false
                 countSubWordsIfSplit = true
                 nonWordSplitCount = 2
+            }
+            modelId.contains("amazon.nova-2-multimodal-embeddings") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+                // Binary: AWS bills image input per-image flat (1 token). Audio/video path
+                // is 12.5 tokens/sec (same FlexiCodec as Voxtral) but requires duration
+                // metadata; the current BpeEncoder interface does not expose raw bytes,
+                // so this tier-1 override only covers the image case. Audio/video
+                // should be pre-resolved by the caller via TruncationSettings.binaryMimeOverride.
+            }
+            modelId.contains("amazon.nova-2-sonic") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("amazon.nova-sonic") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("amazon.nova-canvas") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+            modelId.contains("amazon.nova-reel") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+                // Binary: Nova Reel conditioning image. AWS does not publish a per-image cost;
+                // 1,000-token placeholder.
+            }
+            modelId.contains("amazon.titan-embed-image") -> {
+                contextWindowTruncation = ContextWindowSettings.TruncateTop
+                countSubWordsInFirstWord = true
+                favorWholeWords = true
+                countOnlyFirstWordFound = false
+                splitForNonWordChar = true
+                alwaysSplitIfWholeWordExists = false
+                countSubWordsIfSplit = true
+                nonWordSplitCount = 2
+            }
+        }
+        // Per-model binary TruncationSettings overrides. The framework's getTruncationSettings()
+        // reads from the user-supplied `tokenBudgetSettings.truncationSettings` (a nested
+        // TruncationSettings inside the TokenBudgetSettings). The pipe itself does NOT
+        // have its own `truncationSettings` field -- the binary* fields exist ONLY on the
+        // TruncationSettings data class. So we set the binary* fields on the
+        // `tokenBudgetSettings.truncationSettings` (creating it if null) so the framework's
+        // getTruncationSettings() returns it correctly downstream.
+        //
+        // Tier-1 (binaryMimeOverride) is the only working path because the current BpeEncoder
+        // interface receives base64-encoded text chunks, not raw bytes, so dimension/duration
+        // metadata is unreachable through it. Operators with varying-resolution images should
+        // populate binaryMimeOverride per-resolution via the user-supplied TruncationSettings.
+        val binarySettings = when
+        {
+            modelId.contains("anthropic.claude") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1369,
+                        "image/png" to 1369,
+                        "image/gif" to 1369,
+                        "image/webp" to 1369,
+                        "application/pdf" to 1369
+                    ),
+                    binaryEncoderThresholdBytes = 0,
+                    binaryFudgeFactor = 1.0
+                )
+            modelId.contains("google.gemma-3") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 256,
+                        "image/png" to 256,
+                        "image/webp" to 256,
+                        "image/gif" to 256
+                    )
+                )
+            modelId.contains("voxtral") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID
+                )
+            modelId.contains("mistral") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 4159,
+                        "image/png" to 4159,
+                        "image/webp" to 4159
+                    )
+                )
+            modelId.contains("qwen") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1024,
+                        "image/png" to 1024,
+                        "image/webp" to 1024
+                    )
+                )
+            isKimiModel(modelId) ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1369,
+                        "image/png" to 1369,
+                        "image/webp" to 1369
+                    ),
+                    binaryEncoderThresholdBytes = 0,
+                    binaryFudgeFactor = 1.05
+                )
+            modelId.contains("writer.palmyra-x5") || modelId.contains("writer.palmyra-vision") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1728,
+                        "image/png" to 1728
+                    ),
+                    binaryFudgeFactor = 1.10
+                )
+            modelId.contains("nvidia.nemotron") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1280,
+                        "image/png" to 1280
+                    )
+                )
+            modelId.contains("amazon.titan-embed-image") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1,
+                        "image/png" to 1
+                    )
+                )
+            modelId.contains("amazon.nova-2-multimodal-embeddings") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1,
+                        "image/png" to 1,
+                        "image/webp" to 1
+                    )
+                )
+            modelId.contains("amazon.nova-2-sonic") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID
+                )
+            modelId.contains("amazon.nova-sonic") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID
+                )
+            modelId.contains("amazon.nova-canvas") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1000,
+                        "image/png" to 1000
+                    )
+                )
+            modelId.contains("amazon.nova-reel") ->
+                TruncationSettings(
+                    binaryTokenEstimation = BinaryEstimationMode.HYBRID,
+                    binaryMimeOverride = mapOf(
+                        "image/jpeg" to 1000,
+                        "image/png" to 1000
+                    )
+                )
+            else -> null
+        }
+        if(binarySettings != null)
+        {
+            // Merge the per-model binary settings into the user's TokenBudgetSettings.
+            // If no tokenBudgetSettings exists, we cannot create one (TokenBudgetSettings
+            // is a complex data class with multiPageBudgetStrategy etc.). Operators must
+            // supply tokenBudgetSettings for binary token counting to take effect at runtime.
+            tokenBudgetSettings?.let { tbs ->
+                tbs.truncationSettings = binarySettings
             }
         }
         
@@ -1854,272 +2106,17 @@ open class BedrockPipe : Pipe()
     }
 
     /**
-     * Suspend-safe context truncation used during execution so remote-aware lorebook selection can participate in
-     * provider-managed prompt assembly.
+     * Suspend-safe truncation delegate. Inherits the base class default at Pipe.kt which
+     * simply forwards to the synchronous truncateModuleContext(). The base behavior is
+     * sufficient because the per-model TruncationSettings are pure CPU work (no remote
+     * calls); remote-aware lorebook selection happens in a separate path that overrides
+     * this function only when needed.
      *
      * @return This pipe instance for method chaining.
      */
     override suspend fun truncateModuleContextSuspend(): Pipe
     {
-        trace(TraceEventType.CONTEXT_TRUNCATE, TracePhase.CONTEXT_PREPARATION,
-            metadata = mapOf(
-                "contextWindowSize" to contextWindowSize,
-                "truncateAsString" to truncateContextAsString,
-                "contextWindowTruncation" to contextWindowTruncation.name
-            ))
-
-        // Apply user-supplied TruncationSettings override from TokenBudgetSettings BEFORE the model-default
-        // when block runs. Same guard as truncateModuleContext() — keeps the override intact at the runtime
-        // call site inside generateText().
-        tokenBudgetSettings?.truncationSettings?.let { settings ->
-            multiplyWindowSizeBy = settings.multiplyWindowSizeBy
-            countSubWordsInFirstWord = settings.countSubWordsInFirstWord
-            favorWholeWords = settings.favorWholeWords
-            countOnlyFirstWordFound = settings.countOnlyFirstWordFound
-            splitForNonWordChar = settings.splitForNonWordChar
-            alwaysSplitIfWholeWordExists = settings.alwaysSplitIfWholeWordExists
-            countSubWordsIfSplit = settings.countSubWordsIfSplit
-            nonWordSplitCount = settings.nonWordSplitCount
-            tokenCountingBias = settings.tokenCountingBias
-            loreBookFillMode = settings.fillMode
-            loreBookFillAndSplitMode = settings.fillAndSplitMode
-            return this
-        }
-
-        val modelId = model.ifEmpty { "anthropic.claude-3-sonnet-20240229-v1:0" }
-
-        when
-        {
-            modelId.contains("anthropic.claude") ->
-            {
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            modelId.contains("amazon.nova-micro") ->
-            {
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            modelId.contains("amazon.nova-lite") || modelId.contains("amazon.nova-pro") ->
-            {
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            modelId.contains("amazon.nova-premier") ->
-            {
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            modelId.contains("meta.llama") ->
-            {
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            modelId.contains("ai21.jamba") ->
-            {
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            modelId.contains("qwen") ->
-            {
-                // Tuned with TPipe-Tuner's built-in stress string at an exact 631-token target.
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = false
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = false
-                nonWordSplitCount = 2
-                tokenCountingBias = QWEN_TUNED_TOKEN_COUNTING_BIAS
-            }
-            isKimiModel(modelId) ->
-            {
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            modelId.contains("minimax") ->
-            {
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            modelId.contains("deepseek") ->
-            {
-                when
-                {
-                    isDeepSeekR1(modelId) ->
-                    {
-                        // contextWindowSize and multiplyWindowSizeBy left for user configuration
-                        contextWindowTruncation = ContextWindowSettings.TruncateTop
-                        countSubWordsInFirstWord = true
-                        favorWholeWords = true
-                        countOnlyFirstWordFound = false
-                        splitForNonWordChar = true
-                        alwaysSplitIfWholeWordExists = false
-                        countSubWordsIfSplit = false
-                        nonWordSplitCount = 2
-                    }
-
-                    isDeepSeekV31(modelId) ->
-                    {
-                        // contextWindowSize and multiplyWindowSizeBy left for user configuration
-                        contextWindowTruncation = ContextWindowSettings.TruncateTop
-                        countSubWordsInFirstWord = true
-                        favorWholeWords = true
-                        countOnlyFirstWordFound = false
-                        splitForNonWordChar = true
-                        alwaysSplitIfWholeWordExists = false
-                        countSubWordsIfSplit = false
-                        nonWordSplitCount = 2
-                    }
-
-                    else ->
-                    {
-                        // contextWindowSize left for user configuration
-                        contextWindowTruncation = ContextWindowSettings.TruncateTop
-                    }
-                }
-            }
-            modelId.contains("writer.palmyra-x4") ->
-            {
-                // contextWindowSize left for user configuration
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            modelId.contains("writer.palmyra-x5") ->
-            {
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            modelId.contains("openai.gpt-oss") ->
-            {
-                // contextWindowSize left for user configuration
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-            isGlmModel(modelId) ->
-            {
-                // contextWindowSize and multiplyWindowSizeBy left for user configuration
-                contextWindowTruncation = ContextWindowSettings.TruncateTop
-                countSubWordsInFirstWord = true
-                favorWholeWords = true
-                countOnlyFirstWordFound = false
-                splitForNonWordChar = true
-                alwaysSplitIfWholeWordExists = false
-                countSubWordsIfSplit = true
-                nonWordSplitCount = 2
-            }
-        }
-
-        if(truncateContextAsString)
-        {
-            val truncationSettings = com.TTT.Pipe.TruncationSettings(
-                multiplyWindowSizeBy = multiplyWindowSizeBy,
-                countSubWordsInFirstWord = countSubWordsInFirstWord,
-                favorWholeWords = favorWholeWords,
-                countOnlyFirstWordFound = countOnlyFirstWordFound,
-                splitForNonWordChar = splitForNonWordChar,
-                alwaysSplitIfWholeWordExists = alwaysSplitIfWholeWordExists,
-                countSubWordsIfSplit = countSubWordsIfSplit,
-                nonWordSplitCount = nonWordSplitCount,
-                tokenCountingBias = tokenCountingBias
-            )
-            val combinedContext = contextWindow.combineAndTruncateAsStringWithSettingsSuspend(
-                userPrompt,
-                contextWindowSize,
-                truncationSettings,
-                contextWindowTruncation,
-                multiplyWindowSizeBy
-            )
-            contextWindow.clear()
-            contextWindow.contextElements.add(combinedContext)
-        }
-
-        else
-        {
-            contextWindow.selectAndTruncateContextSuspend(
-                userPrompt,
-                contextWindowSize,
-                multiplyWindowSizeBy,
-                contextWindowTruncation,
-                countSubWordsInFirstWord,
-                favorWholeWords,
-                countOnlyFirstWordFound,
-                splitForNonWordChar,
-                alwaysSplitIfWholeWordExists,
-                countSubWordsIfSplit,
-                nonWordSplitCount,
-                tokenCountingBias
-            )
-        }
-
-        return this
+        return truncateModuleContext()
     }
     
     /**

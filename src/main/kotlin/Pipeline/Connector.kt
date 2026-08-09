@@ -1,6 +1,7 @@
 package com.TTT.Pipeline
 
 import com.TTT.Debug.PipeTracer
+import com.TTT.Debug.TraceAutoExporter
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceEvent
 import com.TTT.Debug.TraceEventType
@@ -276,6 +277,7 @@ class Connector : P2PInterface
     {
         tracingEnabled = true
         traceConfig = config
+        PipeTracer.setMaxHistory(config.maxHistory) // Apply configured history limit
         // Enable tracing for this connector
         com.TTT.Debug.PipeTracer.startTrace(pipelineId)
 
@@ -323,6 +325,36 @@ class Connector : P2PInterface
         val pipeline = branches[lastConnection]
         val trace = pipeline?.getTraceReport(format) ?: ""
         return trace
+    }
+
+    /**
+     * Get the trace report for this connector. Mirrors the shape on Pipeline, Splitter,
+     * and other containers. The report is exported from [PipeTracer] under the
+     * connector's own trace ID; when [TraceConfig.autoExport] is true, the report is
+     * also written to a file under [TraceConfig.exportPath] using the thread-safe
+     * [TraceAutoExporter].
+     */
+    fun getTraceReport(format: TraceFormat = traceConfig.outputFormat): String
+    {
+        val report = PipeTracer.exportTrace(pipelineId, format)
+
+        if(traceConfig.autoExport)
+        {
+            val extension = when(format)
+            {
+                TraceFormat.HTML -> "html"
+                TraceFormat.JSON -> "json"
+                TraceFormat.MARKDOWN -> "md"
+                TraceFormat.CONSOLE -> "txt"
+            }
+            val filename = "trace-${pipelineId.take(8)}.$extension"
+            val exportPath = traceConfig.exportPath.trimEnd('/') + "/" + filename
+            TraceAutoExporter.default.export(exportPath, report) {
+                com.TTT.Util.writeStringToFile(exportPath, report)
+            }
+        }
+
+        return report
     }
 
     /**

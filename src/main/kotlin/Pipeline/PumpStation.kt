@@ -22,6 +22,7 @@ import com.TTT.PipeContextProtocol.FunctionRegistry
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.PipeContextProtocol.PcpExecutionDispatcher
 import com.TTT.Debug.FailureAnalysis
+import com.TTT.Debug.TraceAutoExporter
 import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceEvent
@@ -2464,6 +2465,18 @@ private fun pathKey(name: String): String = name.lowercase()
     fun getTaskState(): PumpStationTaskState = taskState
 
     /**
+     * Test seam: sets the runId that [getTraceReport] uses to look up the trace stream.
+     * Production code derives runId from `generateRunId()` inside `executeLocal()`; tests
+     * need to inject a deterministic id so they can pre-populate the trace stream and
+     * then assert on the auto-exported file. Internal per the same visibility pattern
+     * as `getMaxHistoryForTest` on PipeTracer.
+     */
+    internal fun setRunIdForTest(runId: String)
+    {
+        this.taskState.runId = runId
+    }
+
+    /**
      * Flag the judge agent to run on the next turn. One-shot: cleared automatically after the
      * judge consumes it. No-op when [getJudgeRunMode] is [PumpStationJudgeRunMode.Always] (the
      * judge already runs every turn).
@@ -2832,7 +2845,9 @@ private fun pathKey(name: String): String = name.lowercase()
                 }
                 val filename = "pumpstation-${traceId.take(12)}.$extension"
                 val exportPath = traceConfig.exportPath.trimEnd('/') + "/" + filename
-                writeStringToFile(exportPath, report)
+                TraceAutoExporter.default.export(exportPath, report) {
+                    writeStringToFile(exportPath, report)
+                }
             }
 
             report

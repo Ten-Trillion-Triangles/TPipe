@@ -138,7 +138,8 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
-    jvmArgs("-Xmx512m")
+    val testHeapSize = (project.findProperty("testHeapSize") as String?) ?: "512m"
+    jvmArgs("-Xmx$testHeapSize")
     // JDWP listener for debugging the test JVM (only when TPIPE_TEST_JDWP_PORT is set).
     // attach via: jdb -sourcepath src/main/kotlin -connect com.sun.jdi.SocketAttach:hostname=localhost,port=$PORT
     val debugPort = System.getenv("TPIPE_TEST_JDWP_PORT")

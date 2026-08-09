@@ -870,9 +870,11 @@ class Pipeline : P2PInterface
                 TraceFormat.MARKDOWN -> "md"
                 TraceFormat.CONSOLE -> "txt"
             }
-            val filename = "trace-${pipelineId.take(8)}-$extension.${extension}"
+            val filename = "trace-${pipelineId.take(8)}.$extension"
             val exportPath = traceConfig.exportPath.trimEnd('/') + "/" + filename
-            writeStringToFile(exportPath, report)
+            TraceAutoExporter.default.export(exportPath, report) {
+                writeStringToFile(exportPath, report)
+            }
         }
 
         return report

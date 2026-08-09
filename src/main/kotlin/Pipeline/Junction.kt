@@ -8,6 +8,7 @@ import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Debug.TraceEvent
 import com.TTT.Debug.TraceEventType
 import com.TTT.Debug.TraceFormat
+import com.TTT.Debug.TraceAutoExporter
 import com.TTT.Debug.TracePhase
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.Dictionary
@@ -654,6 +655,7 @@ class Junction : P2PInterface
         tracingEnabled = true
         traceConfig = config
         PipeTracer.enable()
+        PipeTracer.setMaxHistory(config.maxHistory) // Apply configured history limit
         return this
     }
 
@@ -1557,7 +1559,25 @@ class Junction : P2PInterface
      */
     fun getTraceReport(format: TraceFormat = traceConfig.outputFormat): String
     {
-        return PipeTracer.exportTrace(junctionId, format)
+        val report = PipeTracer.exportTrace(junctionId, format)
+
+        if(traceConfig.autoExport)
+        {
+            val extension = when(format)
+            {
+                TraceFormat.HTML -> "html"
+                TraceFormat.JSON -> "json"
+                TraceFormat.MARKDOWN -> "md"
+                TraceFormat.CONSOLE -> "txt"
+            }
+            val filename = "trace-${junctionId.take(8)}.$extension"
+            val exportPath = traceConfig.exportPath.trimEnd('/') + "/" + filename
+            TraceAutoExporter.default.export(exportPath, report) {
+                com.TTT.Util.writeStringToFile(exportPath, report)
+            }
+        }
+
+        return report
     }
 
     /**

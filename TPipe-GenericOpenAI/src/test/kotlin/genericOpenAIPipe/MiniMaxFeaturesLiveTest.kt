@@ -315,7 +315,7 @@ class MiniMaxFeaturesLiveTest
         pipe.setModel(MINIMAX_MODEL)
         pipe.setMaxTokens(MAX_TOKENS)
         pipe.setTemperature(0.0)
-        pipe.setStreamingCallback { chunk: String -> chunks.add(chunk); Unit }
+        pipe.setStreamingCallback(suspend { chunk: String -> chunks.add(chunk); Unit })
 
         val pipeline = Pipeline()
         pipeline.add(pipe)

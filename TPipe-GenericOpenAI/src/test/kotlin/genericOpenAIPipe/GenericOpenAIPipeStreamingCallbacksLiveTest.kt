@@ -53,9 +53,9 @@ class GenericOpenAIPipeStreamingCallbacksLiveTest
         pipe.setModel("MiniMax-M3")
         runBlocking { pipe.init() }
 
-        pipe.setStreamingCallback { chunk ->
+        pipe.setStreamingCallback(suspend { chunk: String ->
             capturedChunks.add(chunk)
-        }
+        })
 
         runBlocking {
             pipe.generateText("Reply with exactly three words: hello world test")
@@ -103,9 +103,9 @@ class GenericOpenAIPipeStreamingCallbacksLiveTest
 
         // Register callback on parent — propagateStreamingCallback in GenericOpenAIPipe
         // automatically propagates to any descendant pipes (reasoning, transformation).
-        parentPipe.setStreamingCallback { chunk ->
+        parentPipe.setStreamingCallback(suspend { chunk: String ->
             parentChunks.add(chunk)
-        }
+        })
 
         // Fire a live LLM call — exercises the full streaming propagation chain
         runBlocking {
