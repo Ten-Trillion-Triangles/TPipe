@@ -5,6 +5,7 @@ import org.junit.Before
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 class MetadataBankTests
 {
@@ -60,5 +61,29 @@ class MetadataBankTests
         assertEquals(1, out?.get("a"))
         assertEquals("overridden", out?.get("b"))
         assertEquals(3, out?.get("c"))
+    }
+
+    @Test
+    fun testDeleteRemovesPage()
+    {
+        MetadataBank.setMeta("gone", mapOf<Any, Any>("x" to 1))
+        assertNotNull(MetadataBank.getMeta("gone"))
+        val result = MetadataBank.delete("gone")
+        assertEquals(true, result)
+        assertNull(MetadataBank.getMeta("gone"))
+    }
+
+    @Test
+    fun testDeleteMissingReturnsFalse()
+    {
+        assertEquals(false, MetadataBank.delete("never-was"))
+    }
+
+    @Test
+    fun testExistsCorrectForPresentAndMissing()
+    {
+        MetadataBank.setMeta("present", mapOf<Any, Any>("x" to 1))
+        assertEquals(true, MetadataBank.exists("present"))
+        assertEquals(false, MetadataBank.exists("absent"))
     }
 }

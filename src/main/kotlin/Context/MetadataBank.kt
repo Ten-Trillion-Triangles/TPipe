@@ -106,12 +106,53 @@ object MetadataBank
 
     /**
      * Empty the bank and reset the active-page pointer. Bulk structural
-     * op — holds the [bankMutex] briefly.
+     * op — holds the [bankMutex] briefly. Pair with [emplaceSuspend] if
+     * a concurrent writer might be active at call time.
      */
     fun clear()
     {
-        bank.clear()
-        activeMeta = null
+        runBlocking { clearSuspend() }
+    }
+
+    /**
+     * Coroutine-native clear. Holds [bankMutex] for the full structural
+     * mutation.
+     */
+    suspend fun clearSuspend()
+    {
+        bankMutex.withLock {
+            bank.clear()
+            activeMeta = null
+        }
+    }
+
+    /**
+     * Remove the page at [key]. Returns `true` if a page was removed,
+     * `false` if no such page existed (idempotent semantics for missing
+     * keys — by design; callers don't need to pre-check existence).
+     */
+    fun delete(key: String): Boolean = runBlocking { deleteSuspend(key) }
+
+    /**
+     * Coroutine-native delete.
+     */
+    suspend fun deleteSuspend(key: String): Boolean
+    {
+        return bank.remove(key) != null
+    }
+
+    /**
+     * Probe whether [key] currently maps to a page. Cheap structural
+     * check; uses the substrate's intrinsic membership test.
+     */
+    fun exists(key: String): Boolean = runBlocking { existsSuspend(key) }
+
+    /**
+     * Coroutine-native exists.
+     */
+    suspend fun existsSuspend(key: String): Boolean
+    {
+        return bank.containsKey(key)
     }
 
     /**
