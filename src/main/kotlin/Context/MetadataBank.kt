@@ -31,6 +31,14 @@ object MetadataBank
     private val bank = ConcurrentHashMap<String, Map<Any, Any>>()
 
     /**
+     * Per-page advisory mutexes for atomic read-modify-write on a single
+     * page (used by [emplaceSuspend]). NOT for semantic content gating —
+     * a concurrency primitive only, mirroring `ContextBank.pageMutexes`.
+     * Lazily allocated on first reference.
+     */
+    private val metaMutexes = ConcurrentHashMap<String, Mutex>()
+
+    /**
      * Mutex for the active-page pointer ([swapMeta]/[getActiveMeta])
      * — held briefly while the active reference is reassigned. Matches
      * `ContextBank.swapMutex` semantics.
@@ -104,5 +112,49 @@ object MetadataBank
     {
         bank.clear()
         activeMeta = null
+    }
+
+    /**
+     * Resolve the per-page mutex for [key], lazily allocating on first
+     * call. Returns the same Mutex for the same key across the JVM's life.
+     */
+    private fun getMetaMutex(key: String): Mutex
+    {
+        return metaMutexes.computeIfAbsent(key) { Mutex() }
+    }
+
+    /**
+     * Merge [value] into the page at [key] (blocking). If the key has no
+     * page yet, this behaves like [setMeta]. If the page exists, the new
+     * map's entries are merged in: keys present in both pages are
+     * overwritten by the incoming value; keys only in the existing page
+     * are preserved. The full merge is atomic per-page.
+     */
+    fun emplace(key: String, value: Map<Any, Any>)
+    {
+        runBlocking { emplaceSuspend(key, value) }
+    }
+
+    /**
+     * Coroutine-native emplace. Holds the per-page mutex briefly while
+     * building the merged map and assigning to the substrate.
+     */
+    suspend fun emplaceSuspend(key: String, value: Map<Any, Any>)
+    {
+        getMetaMutex(key).withLock {
+            val existing = bank[key]
+            val merged: Map<Any, Any> =
+                if (existing == null)
+                {
+                    value
+                }
+                else
+                {
+                    val mut = HashMap<Any, Any>(existing)
+                    mut.putAll(value)
+                    mut
+                }
+            bank[key] = merged
+        }
     }
 }

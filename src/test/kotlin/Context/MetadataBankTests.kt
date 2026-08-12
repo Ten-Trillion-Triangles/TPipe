@@ -42,4 +42,23 @@ class MetadataBankTests
             assertEquals(42, out?.get("k"))
         }
     }
+
+    @Test
+    fun testEmplaceOnMissingKeyCreatesPage()
+    {
+        MetadataBank.emplace("emerge", mapOf<Any, Any>("a" to 1))
+        val out = MetadataBank.getMeta("emerge")
+        assertEquals(1, out?.get("a"))
+    }
+
+    @Test
+    fun testEmplaceOnExistingKeyMergesAndPreservesOriginals()
+    {
+        MetadataBank.setMeta("merge-source", mapOf<Any, Any>("a" to 1, "b" to 2))
+        MetadataBank.emplace("merge-source", mapOf<Any, Any>("c" to 3, "b" to "overridden"))
+        val out = MetadataBank.getMeta("merge-source")
+        assertEquals(1, out?.get("a"))
+        assertEquals("overridden", out?.get("b"))
+        assertEquals(3, out?.get("c"))
+    }
 }
