@@ -31,4 +31,15 @@ class MetadataBankTests
         assertEquals(1, retrieved["alpha"])
         assertEquals("two", retrieved["beta"])
     }
+
+    @Test
+    fun testSuspendSetAndGetThroughRunBlockingMatchesBlockingShape()
+    {
+        kotlinx.coroutines.runBlocking {
+            val v = mapOf<Any, Any>("k" to 42)
+            MetadataBank.setMetaSuspend("sx", v)
+            val out = MetadataBank.getMetaSuspend("sx")
+            assertEquals(42, out?.get("k"))
+        }
+    }
 }

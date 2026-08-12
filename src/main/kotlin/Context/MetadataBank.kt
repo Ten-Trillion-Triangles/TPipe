@@ -59,17 +59,39 @@ object MetadataBank
      * reference. Use [emplaceSuspend] for atomic read-modify-write
      * semantics.
      */
+    /**
+     * Replace the page at [key] with [value] (blocking). Forwards to the
+     * canonical [setMetaSuspend] via `runBlocking`. Uses `ConcurrentHashMap`'s
+     * own concurrency for the reference-assign — no per-page lock needed
+     * because the operation is single-statement.
+     */
     fun setMeta(key: String, value: Map<Any, Any>)
+    {
+        runBlocking { setMetaSuspend(key, value) }
+    }
+
+    /**
+     * Coroutine-native setMeta. The canonical path. Use this from any
+     * `suspend` context; the blocking [setMeta] exists for legacy callers.
+     */
+    suspend fun setMetaSuspend(key: String, value: Map<Any, Any>)
     {
         bank[key] = value
     }
 
     /**
-     * Look up the page at [key]. Returns `null` for unknown keys.
-     * Snapshot semantics: callers receive the shared reference; mutate
-     * the returned map at your own risk.
+     * Look up the page at [key] (blocking). Returns `null` for unknown keys.
+     * Forwards to the canonical [getMetaSuspend] via `runBlocking`.
      */
     fun getMeta(key: String): Map<Any, Any>?
+    {
+        return runBlocking { getMetaSuspend(key) }
+    }
+
+    /**
+     * Coroutine-native getMeta. The canonical path.
+     */
+    suspend fun getMetaSuspend(key: String): Map<Any, Any>?
     {
         return bank[key]
     }
