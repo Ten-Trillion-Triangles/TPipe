@@ -265,4 +265,42 @@ object MetadataBank
             target.putAll(page)
         }
     }
+
+    // -- inspection --------------------------------------------------------
+
+    /**
+     * Snapshot of every page key currently in the bank (blocking). The
+     * returned set is a stable copy; concurrent writes do not affect it.
+     * `ConcurrentHashMap.keys` iteration is weakly consistent under
+     * concurrent structural modification, but `.toSet()` materializes
+     * the view here so callers see a coherent point-in-time snapshot.
+     */
+    fun keys(): Set<String> = runBlocking { keysSuspend() }
+
+    /**
+     * Coroutine-native keys.
+     */
+    suspend fun keysSuspend(): Set<String>
+    {
+        return bank.keys.toSet()
+    }
+
+    /**
+     * Stringified view of every page (blocking). For each entry, the
+     * `Map<Any, Any>.toString()` is captured as the snapshot value.
+     * Deliberately dev-only and lossy: nested maps coerce via Kotlin
+     * stdlib `toString`; no serializer is invoked. Holds [bankMutex]
+     * briefly to bind the iteration with the structural read.
+     */
+    fun debugSnapshot(): Map<String, String> = runBlocking { debugSnapshotSuspend() }
+
+    /**
+     * Coroutine-native debugSnapshot.
+     */
+    suspend fun debugSnapshotSuspend(): Map<String, String>
+    {
+        return bankMutex.withLock {
+            bank.mapValues { (_, v) -> v.toString() }
+        }
+    }
 }

@@ -6,6 +6,7 @@ import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class MetadataBankTests
 {
@@ -155,5 +156,24 @@ class MetadataBankTests
         MetadataBank.pullMetaPageKeysInto(target, "missing, present, also-missing")
         assertEquals(1, target["x"])
         assertEquals(1, target.size)
+    }
+
+    @Test
+    fun testKeysReturnsAllLivePageKeys()
+    {
+        MetadataBank.setMeta("one", mapOf<Any, Any>("x" to 1))
+        MetadataBank.setMeta("two", mapOf<Any, Any>("y" to 2))
+        val allKeys = MetadataBank.keys()
+        assertEquals(setOf("one", "two"), allKeys)
+    }
+
+    @Test
+    fun testDebugSnapshotStringifiesValues()
+    {
+        MetadataBank.setMeta("probe", mapOf<Any, Any>("a" to 1, "b" to "text"))
+        val snapshot = MetadataBank.debugSnapshot()
+        assertNotNull(snapshot["probe"])
+        assertTrue(snapshot["probe"]!!.contains("a=1"), "snapshot must contain 'a=1'")
+        assertTrue(snapshot["probe"]!!.contains("b=text"), "snapshot must contain 'b=text'")
     }
 }
