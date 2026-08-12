@@ -262,4 +262,37 @@ class MetadataBankTests
             assertEquals(19, v!!["count"], "writer-$i's last write was 19")
         }
     }
+
+    @Test
+    fun testBlockingSuspendPairBehaveIdentically()
+    {
+        // Populate via blocking
+        MetadataBank.setMeta("x", mapOf<Any, Any>("a" to 1))
+        MetadataBank.emplace("x", mapOf<Any, Any>("b" to 2))
+        MetadataBank.swapMeta("x")
+
+        val blockingView = mapOf(
+            "getMeta" to MetadataBank.getMeta("x")?.get("a"),
+            "exists" to MetadataBank.exists("x"),
+            "getActive" to MetadataBank.getActiveMeta()?.get("b"),
+            "keys" to MetadataBank.keys().contains("x"),
+        )
+
+        // Reset and re-run via suspend
+        MetadataBank.clear()
+        runBlocking {
+            MetadataBank.setMetaSuspend("x", mapOf<Any, Any>("a" to 1))
+            MetadataBank.emplaceSuspend("x", mapOf<Any, Any>("b" to 2))
+            MetadataBank.swapMetaSuspend("x")
+        }
+
+        val suspendView = mapOf(
+            "getMeta" to MetadataBank.getMeta("x")?.get("a"),
+            "exists" to MetadataBank.exists("x"),
+            "getActive" to MetadataBank.getActiveMeta()?.get("b"),
+            "keys" to MetadataBank.keys().contains("x"),
+        )
+
+        assertEquals(blockingView, suspendView)
+    }
 }
