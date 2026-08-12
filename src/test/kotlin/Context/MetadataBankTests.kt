@@ -7,6 +7,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicInteger
 
 class MetadataBankTests
 {
@@ -175,5 +181,85 @@ class MetadataBankTests
         assertNotNull(snapshot["probe"])
         assertTrue(snapshot["probe"]!!.contains("a=1"), "snapshot must contain 'a=1'")
         assertTrue(snapshot["probe"]!!.contains("b=text"), "snapshot must contain 'b=text'")
+    }
+
+    @Test
+    fun testConcurrentEmplaceOnSameKeyPreservesAllEntries()
+    {
+        val sharedKey = "race-target"
+        val failures = AtomicInteger(0)
+        val workerCount = 16
+        val perWorker = 50
+
+        runBlocking {
+            coroutineScope {
+                val jobs = (1..workerCount).map { workerIndex ->
+                    launch(Dispatchers.Default) {
+                        repeat(perWorker) { iter ->
+                            try
+                            {
+                                MetadataBank.emplaceSuspend(
+                                    sharedKey,
+                                    mapOf<Any, Any>("w$workerIndex-$iter" to iter)
+                                )
+                            }
+                            catch (e: Exception)
+                            {
+                                failures.incrementAndGet()
+                            }
+                        }
+                    }
+                }
+                jobs.joinAll()
+            }
+        }
+
+        assertEquals(0, failures.get(), "Concurrent emplace must not throw")
+        val final = MetadataBank.getMeta(sharedKey)
+        assertNotNull(final)
+        assertEquals(
+            workerCount * perWorker,
+            final!!.size,
+            "Concurrent emplace must accumulate every entry without loss"
+        )
+    }
+
+    @Test
+    fun testConcurrentSetMetaOnDifferentKeysIsIndependentlyAtomic()
+    {
+        val failures = AtomicInteger(0)
+        val writerCount = 32
+
+        runBlocking {
+            coroutineScope {
+                val jobs = (1..writerCount).map { idx ->
+                    launch(Dispatchers.Default) {
+                        repeat(20) {
+                            try
+                            {
+                                MetadataBank.setMetaSuspend(
+                                    "writer-$idx",
+                                    mapOf<Any, Any>("count" to it)
+                                )
+                                MetadataBank.getMetaSuspend("writer-$idx")
+                            }
+                            catch (e: Exception)
+                            {
+                                failures.incrementAndGet()
+                            }
+                        }
+                    }
+                }
+                jobs.joinAll()
+            }
+        }
+
+        assertEquals(0, failures.get(), "Concurrent set/get must not throw")
+        for (i in 1..writerCount)
+        {
+            val v = MetadataBank.getMeta("writer-$i")
+            assertNotNull(v, "writer-$i page must exist")
+            assertEquals(19, v!!["count"], "writer-$i's last write was 19")
+        }
     }
 }
