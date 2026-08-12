@@ -86,4 +86,30 @@ class MetadataBankTests
         assertEquals(true, MetadataBank.exists("present"))
         assertEquals(false, MetadataBank.exists("absent"))
     }
+
+    @Test
+    fun testSwapMetaPromotesPageToActive()
+    {
+        MetadataBank.setMeta("p1", mapOf<Any, Any>("a" to 1))
+        MetadataBank.swapMeta("p1")
+        val active = MetadataBank.getActiveMeta()
+        assertEquals(1, active?.get("a"))
+    }
+
+    @Test
+    fun testSwapMetaOnUnknownKeyLeavesActiveNullIfNeverSet()
+    {
+        MetadataBank.swapMeta("nope")
+        assertNull(MetadataBank.getActiveMeta())
+    }
+
+    @Test
+    fun testSwapMetaOverwritesPreviousActive()
+    {
+        MetadataBank.setMeta("alpha", mapOf<Any, Any>("a" to 1))
+        MetadataBank.setMeta("beta", mapOf<Any, Any>("b" to 2))
+        MetadataBank.swapMeta("alpha")
+        MetadataBank.swapMeta("beta")
+        assertEquals(2, MetadataBank.getActiveMeta()?.get("b"))
+    }
 }

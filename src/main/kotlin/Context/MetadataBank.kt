@@ -156,6 +156,41 @@ object MetadataBank
     }
 
     /**
+     * Promote the page at [key] to the active-page pointer. The active
+     * slot is shared, volatile, and read by [getActiveMeta]; semantics
+     * match `ContextBank.swapBank`. If [key] does not exist, the active
+     * pointer is set to `null`. Caller is responsible for setting the
+     * page first if a non-null active is desired.
+     */
+    fun swapMeta(key: String) = runBlocking { swapMetaSuspend(key) }
+
+    /**
+     * Coroutine-native swapMeta. Holds [swapMutex] briefly to reassign
+     * the volatile reference.
+     */
+    suspend fun swapMetaSuspend(key: String)
+    {
+        swapMutex.withLock {
+            activeMeta = bank[key]
+        }
+    }
+
+    /**
+     * Read the active-page pointer. `null` until a [swapMeta] call has
+     * promoted a key; goes stale (still points at the old object) if
+     * the page is later [delete]d. Cheap non-blocking volatile read.
+     */
+    fun getActiveMeta(): Map<Any, Any>? = runBlocking { getActiveMetaSuspend() }
+
+    /**
+     * Coroutine-native getActiveMeta.
+     */
+    suspend fun getActiveMetaSuspend(): Map<Any, Any>?
+    {
+        return activeMeta
+    }
+
+    /**
      * Resolve the per-page mutex for [key], lazily allocating on first
      * call. Returns the same Mutex for the same key across the JVM's life.
      */
