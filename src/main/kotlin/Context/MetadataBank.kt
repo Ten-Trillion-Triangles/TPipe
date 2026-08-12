@@ -39,39 +39,34 @@ object MetadataBank
     private val metaMutexes = ConcurrentHashMap<String, Mutex>()
 
     /**
-     * Mutex for the active-page pointer ([swapMeta]/[getActiveMeta])
+     * Mutex for the active-page pointer ([swapMetaSuspend]/[getActiveMetaSuspend])
      * — held briefly while the active reference is reassigned. Matches
      * `ContextBank.swapMutex` semantics.
      */
     val swapMutex = Mutex()
 
     /**
-     * Mutex for whole-bank atomic ops ([clear], [debugSnapshot]) —
+     * Mutex for whole-bank atomic ops ([clearSuspend], [debugSnapshotSuspend]) —
      * held across the full structural mutation.
      */
     val bankMutex = Mutex()
 
     /**
      * `@Volatile` reference to the currently selected page. `null` until
-     * a [swapMeta] call promotes a key. Goes stale (still points at the
-     * old object) if the page is later `delete`d, matching
+     * a [swapMetaSuspend] call promotes a key. Goes stale (still points at the
+     * old object) if the page is later `deleteSuspend`d, matching
      * `ContextBank.bankedContextWindow` semantics.
      */
     @Volatile
     private var activeMeta: Map<Any, Any>? = null
 
-    /**
-     * Replace the page at [key] with [value]. Reference-assign: the
-     * caller owns the map instance and any subsequent mutations to it
-     * are visible to the bank because the substrate holds the same
-     * reference. Use [emplaceSuspend] for atomic read-modify-write
-     * semantics.
-     */
+    // -- setMeta / getMeta -------------------------------------------------
+
     /**
      * Replace the page at [key] with [value] (blocking). Forwards to the
-     * canonical [setMetaSuspend] via `runBlocking`. Uses `ConcurrentHashMap`'s
-     * own concurrency for the reference-assign — no per-page lock needed
-     * because the operation is single-statement.
+     * canonical [setMetaSuspend] via `runBlocking`. Reference-assign:
+     * the caller owns the map instance and any subsequent mutations are
+     * visible to the bank because the substrate holds the same reference.
      */
     fun setMeta(key: String, value: Map<Any, Any>)
     {
@@ -79,8 +74,8 @@ object MetadataBank
     }
 
     /**
-     * Coroutine-native setMeta. The canonical path. Use this from any
-     * `suspend` context; the blocking [setMeta] exists for legacy callers.
+     * Coroutine-native setMeta. The canonical path. Use from any `suspend`
+     * context; the blocking [setMeta] exists for legacy callers.
      */
     suspend fun setMetaSuspend(key: String, value: Map<Any, Any>)
     {
@@ -104,91 +99,7 @@ object MetadataBank
         return bank[key]
     }
 
-    /**
-     * Empty the bank and reset the active-page pointer. Bulk structural
-     * op — holds the [bankMutex] briefly. Pair with [emplaceSuspend] if
-     * a concurrent writer might be active at call time.
-     */
-    fun clear()
-    {
-        runBlocking { clearSuspend() }
-    }
-
-    /**
-     * Coroutine-native clear. Holds [bankMutex] for the full structural
-     * mutation.
-     */
-    suspend fun clearSuspend()
-    {
-        bankMutex.withLock {
-            bank.clear()
-            activeMeta = null
-        }
-    }
-
-    /**
-     * Remove the page at [key]. Returns `true` if a page was removed,
-     * `false` if no such page existed (idempotent semantics for missing
-     * keys — by design; callers don't need to pre-check existence).
-     */
-    fun delete(key: String): Boolean = runBlocking { deleteSuspend(key) }
-
-    /**
-     * Coroutine-native delete.
-     */
-    suspend fun deleteSuspend(key: String): Boolean
-    {
-        return bank.remove(key) != null
-    }
-
-    /**
-     * Probe whether [key] currently maps to a page. Cheap structural
-     * check; uses the substrate's intrinsic membership test.
-     */
-    fun exists(key: String): Boolean = runBlocking { existsSuspend(key) }
-
-    /**
-     * Coroutine-native exists.
-     */
-    suspend fun existsSuspend(key: String): Boolean
-    {
-        return bank.containsKey(key)
-    }
-
-    /**
-     * Promote the page at [key] to the active-page pointer. The active
-     * slot is shared, volatile, and read by [getActiveMeta]; semantics
-     * match `ContextBank.swapBank`. If [key] does not exist, the active
-     * pointer is set to `null`. Caller is responsible for setting the
-     * page first if a non-null active is desired.
-     */
-    fun swapMeta(key: String) = runBlocking { swapMetaSuspend(key) }
-
-    /**
-     * Coroutine-native swapMeta. Holds [swapMutex] briefly to reassign
-     * the volatile reference.
-     */
-    suspend fun swapMetaSuspend(key: String)
-    {
-        swapMutex.withLock {
-            activeMeta = bank[key]
-        }
-    }
-
-    /**
-     * Read the active-page pointer. `null` until a [swapMeta] call has
-     * promoted a key; goes stale (still points at the old object) if
-     * the page is later [delete]d. Cheap non-blocking volatile read.
-     */
-    fun getActiveMeta(): Map<Any, Any>? = runBlocking { getActiveMetaSuspend() }
-
-    /**
-     * Coroutine-native getActiveMeta.
-     */
-    suspend fun getActiveMetaSuspend(): Map<Any, Any>?
-    {
-        return activeMeta
-    }
+    // -- emplace (merge-into-page) -----------------------------------------
 
     /**
      * Resolve the per-page mutex for [key], lazily allocating on first
@@ -231,6 +142,127 @@ object MetadataBank
                     mut
                 }
             bank[key] = merged
+        }
+    }
+
+    // -- delete / exists / clear ------------------------------------------
+
+    /**
+     * Remove the page at [key] (blocking). Returns `true` if a page was
+     * removed, `false` if no such page existed (idempotent semantics for
+     * missing keys — by design; callers don't need to pre-check existence).
+     */
+    fun delete(key: String): Boolean = runBlocking { deleteSuspend(key) }
+
+    /**
+     * Coroutine-native delete.
+     */
+    suspend fun deleteSuspend(key: String): Boolean
+    {
+        return bank.remove(key) != null
+    }
+
+    /**
+     * Probe whether [key] currently maps to a page (blocking). Cheap
+     * structural check; uses the substrate's intrinsic membership test.
+     */
+    fun exists(key: String): Boolean = runBlocking { existsSuspend(key) }
+
+    /**
+     * Coroutine-native exists.
+     */
+    suspend fun existsSuspend(key: String): Boolean
+    {
+        return bank.containsKey(key)
+    }
+
+    /**
+     * Empty the bank and reset the active-page pointer (blocking). Bulk
+     * structural op — holds the [bankMutex] briefly. Pair with
+     * [emplaceSuspend] if a concurrent writer might be active at call time.
+     */
+    fun clear()
+    {
+        runBlocking { clearSuspend() }
+    }
+
+    /**
+     * Coroutine-native clear. Holds [bankMutex] for the full structural
+     * mutation.
+     */
+    suspend fun clearSuspend()
+    {
+        bankMutex.withLock {
+            bank.clear()
+            activeMeta = null
+        }
+    }
+
+    // -- active-page pointer ----------------------------------------------
+
+    /**
+     * Promote the page at [key] to the active-page pointer (blocking).
+     * If [key] does not exist, the active pointer is set to `null`.
+     */
+    fun swapMeta(key: String) = runBlocking { swapMetaSuspend(key) }
+
+    /**
+     * Coroutine-native swapMeta. Holds [swapMutex] briefly to reassign
+     * the volatile reference.
+     */
+    suspend fun swapMetaSuspend(key: String)
+    {
+        swapMutex.withLock {
+            activeMeta = bank[key]
+        }
+    }
+
+    /**
+     * Read the active-page pointer (blocking). `null` until a [swapMetaSuspend]
+     * call has promoted a key; goes stale (still points at the old object)
+     * if the page is later [delete]d. Cheap non-blocking volatile read.
+     */
+    fun getActiveMeta(): Map<Any, Any>? = runBlocking { getActiveMetaSuspend() }
+
+    /**
+     * Coroutine-native getActiveMeta.
+     */
+    suspend fun getActiveMetaSuspend(): Map<Any, Any>?
+    {
+        return activeMeta
+    }
+
+    // -- bulk pull --------------------------------------------------------
+
+    /**
+     * Pull a sequence of pages by glued page-key string into [target]
+     * (blocking). The [pageKeysGlued] string is parsed at call time:
+     * `split(",").map(trim).filter(nonEmpty)`. For each parsed key, the
+     * page is read via [getMetaSuspend] and `putAll`-merged into
+     * [target]. Missing keys are skipped silently. Conflicting keys
+     * resolve last-write-wins (later entries in the parsed list override
+     * earlier ones), matching Kotlin's `MutableMap.putAll` semantics.
+     */
+    fun pullMetaPageKeysInto(target: MutableMap<Any, Any>, pageKeysGlued: String) =
+        runBlocking { pullMetaPageKeysIntoSuspend(target, pageKeysGlued) }
+
+    /**
+     * Coroutine-native pull. The canonical path.
+     */
+    suspend fun pullMetaPageKeysIntoSuspend(
+        target: MutableMap<Any, Any>,
+        pageKeysGlued: String
+    )
+    {
+        val keys = pageKeysGlued
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+        for (key in keys)
+        {
+            val page = bank[key] ?: continue
+            target.putAll(page)
         }
     }
 }

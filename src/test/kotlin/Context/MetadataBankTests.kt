@@ -112,4 +112,48 @@ class MetadataBankTests
         MetadataBank.swapMeta("beta")
         assertEquals(2, MetadataBank.getActiveMeta()?.get("b"))
     }
+
+    @Test
+    fun testPullGluedStringParsesCommaSpaceSeparatedKeys()
+    {
+        MetadataBank.setMeta("k1", mapOf<Any, Any>("a" to 1))
+        MetadataBank.setMeta("k2", mapOf<Any, Any>("b" to 2))
+        MetadataBank.setMeta("k3", mapOf<Any, Any>("c" to 3))
+
+        val target = mutableMapOf<Any, Any>()
+        MetadataBank.pullMetaPageKeysInto(target, "k1, k2, k3")
+
+        assertEquals(1, target["a"])
+        assertEquals(2, target["b"])
+        assertEquals(3, target["c"])
+    }
+
+    @Test
+    fun testPullTolerantOfExtraWhitespaceAndEmptyEntries()
+    {
+        MetadataBank.setMeta("real", mapOf<Any, Any>("x" to 7))
+        val target = mutableMapOf<Any, Any>()
+        MetadataBank.pullMetaPageKeysInto(target, "  , real, , ,")
+        assertEquals(7, target["x"])
+    }
+
+    @Test
+    fun testPullLastWriteWinsOnKeyCollision()
+    {
+        MetadataBank.setMeta("pageA", mapOf<Any, Any>("k" to "fromA"))
+        MetadataBank.setMeta("pageB", mapOf<Any, Any>("k" to "fromB"))
+        val target = mutableMapOf<Any, Any>()
+        MetadataBank.pullMetaPageKeysInto(target, "pageA, pageB")
+        assertEquals("fromB", target["k"])
+    }
+
+    @Test
+    fun testPullSkipsMissingKeys()
+    {
+        MetadataBank.setMeta("present", mapOf<Any, Any>("x" to 1))
+        val target = mutableMapOf<Any, Any>()
+        MetadataBank.pullMetaPageKeysInto(target, "missing, present, also-missing")
+        assertEquals(1, target["x"])
+        assertEquals(1, target.size)
+    }
 }
