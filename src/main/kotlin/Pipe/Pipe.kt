@@ -10,6 +10,7 @@ import com.TTT.Context.Dictionary
 import com.TTT.Context.MemoryIntrospection
 import com.TTT.Context.MemoryIntrospectionConfig
 import com.TTT.Context.MemoryIntrospectionTools
+import com.TTT.Context.MetadataBank
 import com.TTT.Context.MiniBank
 import com.TTT.Debug.*
 import com.TTT.Debug.EventPriorityMapper
@@ -1931,6 +1932,16 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     @kotlinx.serialization.Transient
     val pipeMetadata = mutableMapOf<Any, Any>()
+
+    /**
+     * Page-keys string for metadata pull into [pipeMetadata]. When set,
+     * calling [pullMetaPageKeysIntoPipeMetadata] merges values from
+     * [MetadataBank] for every parsed key. Empty string = no pull.
+     * Glued format `"alpha, beta"`. Mirrors the convention used by
+     * [setPageKey] for the LLM context path but targets [pipeMetadata],
+     * not the ContextWindow pull.
+     */
+    protected var metaPageKeys: String = ""
 
 //============================================= constructor ==========================================================//
 
@@ -4223,6 +4234,35 @@ abstract class Pipe : P2PInterface, ProviderInterface
         pageKey = key
         pageKeyList.clear() //Clear to avoid choas when getting our json schemas at injection time.
         return this
+    }
+
+    /**
+     * Set the glued metadata-page-keys string. Same convention as
+     * [setPageKey] (split on `", "`) but targets the [pipeMetadata]
+     * bag via [MetadataBank] — does not touch [pageKey]/[pageKeyList]
+     * which serve the LLM ContextWindow path. Empty string disables
+     * the pull. Parsing happens at pull-time.
+     *
+     * @param keys Glued key list, e.g. `"apex.state, workflow.global"`.
+     * @return This Pipe object for method chaining.
+     */
+    fun setMetaPageKeys(keys: String) : Pipe
+    {
+        this.metaPageKeys = keys
+        return this
+    }
+
+    /**
+     * Pull metadata from every key in [metaPageKeys] into [pipeMetadata]
+     * via [MetadataBank.pullMetaPageKeysIntoSuspend]. Last-write-wins
+     * on collision; missing keys silently skipped; no-op when
+     * [metaPageKeys] is blank. Lazy by design — must be called
+     * explicitly (does not auto-fire at execute-time).
+     */
+    fun pullMetaPageKeysIntoPipeMetadata()
+    {
+        if(metaPageKeys.isBlank()) return
+        MetadataBank.pullMetaPageKeysInto(this.pipeMetadata, this.metaPageKeys)
     }
 
 
