@@ -4,6 +4,7 @@ import com.TTT.Context.ContextWindow
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ConverseRole
+import com.TTT.Context.MetadataBank
 import com.TTT.Context.MiniBank
 import com.TTT.Context.TodoList
 import com.TTT.Context.TodoListTask
@@ -1491,6 +1492,12 @@ private fun pathKey(name: String): String = name.lowercase()
      * whatever arbitrary data might need to be shared between functions across agents or other sub-systems.
      */
     val metadata = mutableMapOf<Any?, Any?>()
+
+    /**
+     * Page-keys string for metadata pull into [metadata]. Glued
+     * format `"alpha, beta"`. Empty string = no pull.
+     */
+    protected var metaPageKeys: String = ""
 
     /**
      * Internal context window addressable by this harness, and able to be passed into the various agents
@@ -5346,4 +5353,39 @@ private fun pathKey(name: String): String = name.lowercase()
         return this
     }
 
+    /**
+     * Set the glued metadata-page-keys string. Same convention as
+     * `Pipe.setPageKey(...)` and `MultimodalContent.setMetaPageKeys(...)`
+     * — split on `", "` — but targets [metadata] via [MetadataBank].
+     * Empty string disables the pull. Parsing happens at pull-time.
+     *
+     * @param keys Glued key list, e.g. `"alpha, beta"`.
+     * @return This PumpStation for chaining.
+     */
+    fun setMetaPageKeys(keys: String): PumpStation
+    {
+        this.metaPageKeys = keys
+        return this
+    }
+
+    /**
+     * Pull metadata from every key in [metaPageKeys] into [metadata]
+     * via [MetadataBank.pullMetaPageKeysIntoSuspend]. PumpStation's
+     * [metadata] uses `MutableMap<Any?, Any?>` (note `Any?`, not `Any`)
+     * while the bank primitive targets `MutableMap<Any, Any>`. The
+     * bridge uses a transient `MutableMap<Any, Any>` view, populated
+     * by the bank, then written back into the `Any?` bag. Last-write-wins
+     * on collision; missing keys silently skipped; no-op when
+     * [metaPageKeys] is blank.
+     */
+    fun pullMetaPageKeysIntoPumpStationMetadata()
+    {
+        if(metaPageKeys.isBlank()) return
+        val view = mutableMapOf<Any, Any>()
+        MetadataBank.pullMetaPageKeysInto(view, this.metaPageKeys)
+        for((k, v) in view)
+        {
+            this.metadata[k] = v
+        }
+    }
 }
