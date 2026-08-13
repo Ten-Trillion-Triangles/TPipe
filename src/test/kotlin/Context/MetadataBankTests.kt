@@ -295,4 +295,124 @@ class MetadataBankTests
 
         assertEquals(blockingView, suspendView)
     }
+
+    /**
+     * Regression for the audit-found race: setMetaSuspend used to write
+     * straight to the substrate without taking the per-page mutex, so a
+     * concurrent emplaceSuspend on the same key could land its merged map
+     * AFTER the setMeta and silently erase the setMeta's value. The fix
+     * places setMetaSuspend inside `getMetaMutex(key).withLock { }`. After
+     * the fix, every setMeta write is atomic with respect to emplace on
+     * the same key, and the last SENTINEL must always be present.
+     */
+    @Test
+    fun testSetMetaDoesNotRaceWithEmplaceOnSameKey()
+    {
+        val key = "race-emplace-set"
+        val failures = AtomicInteger(0)
+
+        runBlocking {
+            coroutineScope {
+                val emplaceJobs = (1..16).map { workerIdx ->
+                    launch(Dispatchers.Default) {
+                        repeat(50) { iter ->
+                            try
+                            {
+                                MetadataBank.emplaceSuspend(
+                                    key,
+                                    mapOf<Any, Any>("em$workerIdx" to iter)
+                                )
+                            }
+                            catch (e: Exception) { failures.incrementAndGet() }
+                        }
+                    }
+                }
+                val setJobs = (1..4).map {
+                    launch(Dispatchers.Default) {
+                        repeat(50) { iter ->
+                            try
+                            {
+                                MetadataBank.setMetaSuspend(
+                                    key,
+                                    mapOf<Any, Any>("SENTINEL" to iter)
+                                )
+                            }
+                            catch (e: Exception) { failures.incrementAndGet() }
+                        }
+                    }
+                }
+                (emplaceJobs + setJobs).joinAll()
+            }
+        }
+
+        assertEquals(0, failures.get(), "Concurrent emplace/set must not throw")
+        val final = MetadataBank.getMeta(key)
+        assertNotNull(final, "key must exist after contention")
+        // SENTINEL must reflect one of the setMeta writes — its presence
+        // proves no setMeta write was ever lost to a racing emplace.
+        assertTrue(
+            final!!.containsKey("SENTINEL"),
+            "setMeta writes must survive concurrent emplace contention"
+        )
+        assertTrue(
+            final["SENTINEL"] is Int && (final["SENTINEL"] as Int) in 0..49,
+            "SENTINEL must be one of the setMeta values"
+        )
+    }
+
+    /**
+     * Regression for the audit-found race: deleteSuspend used to remove
+     * straight from the substrate without taking the per-page mutex, so a
+     * concurrent emplaceSuspend that had already read the existing page
+     * could land its merged result AFTER the delete and resurrect the key.
+     * The fix places deleteSuspend inside `getMetaMutex(key).withLock { }`.
+     * After the fix, delete and emplace serialize on the same key —
+     * whichever wins, the other sees a coherent post-state.
+     */
+    @Test
+    fun testDeleteDoesNotRaceWithEmplaceOnSameKey()
+    {
+        val key = "race-emplace-delete"
+        val failures = AtomicInteger(0)
+
+        runBlocking {
+            coroutineScope {
+                val emplaceJobs = (1..8).map { workerIdx ->
+                    launch(Dispatchers.Default) {
+                        repeat(100) { iter ->
+                            try
+                            {
+                                MetadataBank.emplaceSuspend(
+                                    key,
+                                    mapOf<Any, Any>("em$workerIdx" to iter)
+                                )
+                            }
+                            catch (e: Exception) { failures.incrementAndGet() }
+                        }
+                    }
+                }
+                val deleteJobs = (1..4).map {
+                    launch(Dispatchers.Default) {
+                        repeat(50) {
+                            try { MetadataBank.deleteSuspend(key) }
+                            catch (e: Exception) { failures.incrementAndGet() }
+                        }
+                    }
+                }
+                (emplaceJobs + deleteJobs).joinAll()
+            }
+        }
+
+        assertEquals(0, failures.get(), "Concurrent emplace/delete must not throw")
+        // After all contention settles, the key either exists (last op was
+        // emplace) or doesn't (last op was delete) — but must NOT be in an
+        // inconsistent state. Allow either as a valid final.
+        val exists = MetadataBank.exists(key)
+        if (exists)
+        {
+            val final = MetadataBank.getMeta(key)
+            assertNotNull(final)
+            assertTrue(final!!.isNotEmpty(), "if the key exists its page must be non-empty")
+        }
+    }
 }

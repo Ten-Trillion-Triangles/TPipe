@@ -63,10 +63,11 @@ object MetadataBank
     // -- setMeta / getMeta -------------------------------------------------
 
     /**
-     * Replace the page at [key] with [value] (blocking). Forwards to the
-     * canonical [setMetaSuspend] via `runBlocking`. Reference-assign:
-     * the caller owns the map instance and any subsequent mutations are
-     * visible to the bank because the substrate holds the same reference.
+     * Replace the page at [key] with [value]. Reference-assign under
+     * the per-page [Mutex] (allocation lazy on first call) so concurrent
+     * [emplaceSuspend] on the same key cannot clobber the replace. The
+     * caller owns the map instance; subsequent mutations are visible to
+     * the bank because the substrate holds the same reference.
      */
     fun setMeta(key: String, value: Map<Any, Any>)
     {
@@ -79,7 +80,9 @@ object MetadataBank
      */
     suspend fun setMetaSuspend(key: String, value: Map<Any, Any>)
     {
-        bank[key] = value
+        getMetaMutex(key).withLock {
+            bank[key] = value
+        }
     }
 
     /**
@@ -155,11 +158,17 @@ object MetadataBank
     fun delete(key: String): Boolean = runBlocking { deleteSuspend(key) }
 
     /**
-     * Coroutine-native delete.
+     * Coroutine-native delete. Holds the per-page mutex briefly so a
+     * concurrent [emplaceSuspend] cannot resurrect the key during a
+     * delete. Returns `true` if a page was removed, `false` if no
+     * page existed (idempotent semantics for missing keys — by design;
+     * callers don't need to pre-check existence).
      */
     suspend fun deleteSuspend(key: String): Boolean
     {
-        return bank.remove(key) != null
+        return getMetaMutex(key).withLock {
+            bank.remove(key) != null
+        }
     }
 
     /**
