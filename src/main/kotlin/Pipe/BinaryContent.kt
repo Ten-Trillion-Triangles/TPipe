@@ -1,6 +1,7 @@
 package com.TTT.Pipe
 
 import com.TTT.Context.ContextWindow
+import com.TTT.Context.MetadataBank
 import com.TTT.Context.MiniBank
 import com.TTT.P2P.P2PTransport
 import com.TTT.PipeContextProtocol.PcPRequest
@@ -181,6 +182,16 @@ data class MultimodalContent @OptIn(ExperimentalSerializationApi::class) constru
    var metadata = mutableMapOf<Any, Any>()
 
     /**
+     * Page-keys string for metadata pull into [metadata]. When set,
+     * calling [pullMetaPageKeysIntoMetaData] merges values from
+     * [MetadataBank] into [metadata] for every parsed key. Empty
+     * string = no pull. Glued format `"alpha, beta"` parsed by the
+     * bank primitive at pull-time.
+     */
+    @kotlinx.serialization.Transient
+    var metaPageKeys: String = ""
+
+    /**
      * Current pipe that is working on this content object. Useful for handling tasks like pipe templating
      * inside branch functions.
      */
@@ -188,6 +199,34 @@ data class MultimodalContent @OptIn(ExperimentalSerializationApi::class) constru
    var currentPipe: Pipe? = null
 
 //---------------------------------------Functions---------------------------------------------------------------------
+
+    /**
+     * Set the glued metadata-page-keys string. Mirrors the convention
+     * used by `Pipe.setPageKey(...)` for the LLM context path but targets
+     * [metadata] (not the ContextWindow pull). Parsing happens at
+     * pull-time via [MetadataBank.pullMetaPageKeysIntoSuspend].
+     *
+     * @param keys Glued key list, e.g. `"alpha, beta, gamma"`. Empty
+     * string disables the pull.
+     * @return This content object for chaining.
+     */
+    fun setMetaPageKeys(keys: String): MultimodalContent
+    {
+        this.metaPageKeys = keys
+        return this
+    }
+
+    /**
+     * Pull metadata from every key in [metaPageKeys] into [metadata]
+     * via [MetadataBank.pullMetaPageKeysIntoSuspend]. Last-write-wins
+     * on collision; missing keys silently skipped; no-op when
+     * [metaPageKeys] is blank.
+     */
+    fun pullMetaPageKeysIntoMetaData()
+    {
+        if(metaPageKeys.isBlank()) return
+        MetadataBank.pullMetaPageKeysInto(this.metadata, this.metaPageKeys)
+    }
 
     /**
      * Add binary content to this multimodal content
