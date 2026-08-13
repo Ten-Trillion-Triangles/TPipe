@@ -5358,6 +5358,10 @@ private fun pathKey(name: String): String = name.lowercase()
      * `Pipe.setPageKey(...)` and `MultimodalContent.setMetaPageKeys(...)`
      * — split on `", "` — but targets [metadata] via [MetadataBank].
      * Empty string disables the pull. Parsing happens at pull-time.
+     * The runtime auto-pulls at the appropriate point (when Pipe
+     * addresses this station during execute) — the dev does not need
+     * to call [pullMetaPageKeysIntoPumpStationMetadata] directly
+     * under normal flow.
      *
      * @param keys Glued key list, e.g. `"alpha, beta"`.
      * @return This PumpStation for chaining.
@@ -5376,7 +5380,9 @@ private fun pathKey(name: String): String = name.lowercase()
      * bridge uses a transient `MutableMap<Any, Any>` view, populated
      * by the bank, then written back into the `Any?` bag. Last-write-wins
      * on collision; missing keys silently skipped; no-op when
-     * [metaPageKeys] is blank.
+     * [metaPageKeys] is blank. Runtime-invoked from the
+     * `readFromPumpStationContext` block of `Pipe.execute*()` — the
+     * dev does not need to call this directly under normal flow.
      */
     fun pullMetaPageKeysIntoPumpStationMetadata()
     {
@@ -5388,4 +5394,13 @@ private fun pathKey(name: String): String = name.lowercase()
             this.metadata[k] = v
         }
     }
+
+    /**
+     * Boolean flag the runtime reads at execute-time to decide
+     * whether to auto-pull metadata from [MetadataBank]. Mirrors
+     * the existing `readFromGlobalContext` etc. pattern: a bool
+     * the runtime checks, then pulls if true. `true` iff
+     * [metaPageKeys] is non-blank.
+     */
+    fun hasMetaPageKeys(): Boolean = metaPageKeys.isNotBlank()
 }

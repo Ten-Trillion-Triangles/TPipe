@@ -63,6 +63,17 @@ class PipeMetaPageKeysTests
         val returned = pipe.setMetaPageKeys("a, b")
         assertSame(pipe, returned)
     }
+
+    @Test
+    fun testHasMetaPageKeysReflectsWhetherPullIsConfigured()
+    {
+        val pipe = stubPipe()
+        assertEquals(false, pipe.hasMetaPageKeys())
+        pipe.setMetaPageKeys("alpha, beta")
+        assertEquals(true, pipe.hasMetaPageKeys())
+        pipe.setMetaPageKeys("")
+        assertEquals(false, pipe.hasMetaPageKeys())
+    }
 }
 
 /**

@@ -53,4 +53,15 @@ class PumpStationMetaPageKeysTests
         val returned = ps.setMetaPageKeys("a, b")
         assertSame(ps, returned)
     }
+
+    @Test
+    fun testHasMetaPageKeysReflectsWhetherPullIsConfigured()
+    {
+        val ps = station()
+        assertEquals(false, ps.hasMetaPageKeys())
+        ps.setMetaPageKeys("alpha, beta")
+        assertEquals(true, ps.hasMetaPageKeys())
+        ps.setMetaPageKeys("")
+        assertEquals(false, ps.hasMetaPageKeys())
+    }
 }

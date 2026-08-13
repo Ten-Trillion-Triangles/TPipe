@@ -53,13 +53,6 @@ data class ContextWindow(
     var metaData = mutableMapOf<Any, Any>()
 
     /**
-     * Page-keys string for metadata pull into [metaData]. Glued format
-     * `"alpha, beta"`. Empty string = no pull. Setter parses at pull-time
-     * via [MetadataBank.pullMetaPageKeysIntoSuspend].
-     */
-    protected var metaPageKeys: String = ""
-
-    /**
      * Finds lorebook keys that match any substrings in the input text using local lock visibility only.
      * Includes matches from both main keys and alias keys.
      *
@@ -2281,32 +2274,6 @@ data class ContextWindow(
         return ContextLock.getLockedKeysForContext(this)
     }
 
-    /**
-     * Set the glued metadata-page-keys string. Same convention as
-     * the LLM context path's `Pipe.setPageKey(...)` (split on
-     * `", "`) but targets [metaData] via [MetadataBank]. Empty string
-     * disables the pull. Parsing happens at pull-time.
-     *
-     * @param keys Glued key list, e.g. `"alpha, beta"`.
-     * @return This window for chaining.
-     */
-    fun setMetaPageKeys(keys: String): ContextWindow
-    {
-        this.metaPageKeys = keys
-        return this
-    }
-
-    /**
-     * Pull metadata from every key in [metaPageKeys] into [metaData]
-     * via [MetadataBank.pullMetaPageKeysIntoSuspend]. Last-write-wins
-     * on collision; missing keys silently skipped; no-op when
-     * [metaPageKeys] is blank.
-     */
-    fun pullMetaPageKeysIntoWindowMetaData()
-    {
-        if(metaPageKeys.isBlank()) return
-        MetadataBank.pullMetaPageKeysInto(this.metaData, this.metaPageKeys)
-    }
 }
 
 /**

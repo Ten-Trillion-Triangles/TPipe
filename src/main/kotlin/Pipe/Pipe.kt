@@ -1935,9 +1935,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
     /**
      * Page-keys string for metadata pull into [pipeMetadata]. When set,
-     * calling [pullMetaPageKeysIntoPipeMetadata] merges values from
-     * [MetadataBank] for every parsed key. Empty string = no pull.
-     * Glued format `"alpha, beta"`. Mirrors the convention used by
+     * the runtime auto-pulls from [MetadataBank] at the appropriate
+     * point (the `readFromGlobalContext` block in `execute*()`) prior
+     * to any metadata access. Mirrors the existing
+     * `Pipe.readFromGlobalContext` execution-time pattern — runtime
+     * auto, not manual. Empty string = no pull. Glued format
+     * `"alpha, beta"`. Mirrors the convention used by
      * [setPageKey] for the LLM context path but targets [pipeMetadata],
      * not the ContextWindow pull.
      */
@@ -4241,7 +4244,9 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * [setPageKey] (split on `", "`) but targets the [pipeMetadata]
      * bag via [MetadataBank] — does not touch [pageKey]/[pageKeyList]
      * which serve the LLM ContextWindow path. Empty string disables
-     * the pull. Parsing happens at pull-time.
+     * the pull. The runtime auto-pulls at the `readFromGlobalContext`
+     * point in `execute*()` — the dev does not need to call
+     * [pullMetaPageKeysIntoPipeMetadata] directly under normal flow.
      *
      * @param keys Glued key list, e.g. `"apex.state, workflow.global"`.
      * @return This Pipe object for method chaining.
@@ -4256,14 +4261,24 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * Pull metadata from every key in [metaPageKeys] into [pipeMetadata]
      * via [MetadataBank.pullMetaPageKeysIntoSuspend]. Last-write-wins
      * on collision; missing keys silently skipped; no-op when
-     * [metaPageKeys] is blank. Lazy by design — must be called
-     * explicitly (does not auto-fire at execute-time).
+     * [metaPageKeys] is blank. Runtime-invoked from the
+     * `readFromGlobalContext` block of `Pipe.execute*()` — the dev
+     * does not need to call this directly under normal flow.
      */
     fun pullMetaPageKeysIntoPipeMetadata()
     {
         if(metaPageKeys.isBlank()) return
         MetadataBank.pullMetaPageKeysInto(this.pipeMetadata, this.metaPageKeys)
     }
+
+    /**
+     * Boolean flag the runtime reads at execute-time to decide
+     * whether to auto-pull metadata from [MetadataBank]. Mirrors
+     * the existing `readFromGlobalContext` etc. pattern: a bool
+     * the runtime checks, then pulls if true. `true` iff
+     * [metaPageKeys] is non-blank.
+     */
+    fun hasMetaPageKeys(): Boolean = metaPageKeys.isNotBlank()
 
 
     /**
@@ -6538,6 +6553,16 @@ abstract class Pipe : P2PInterface, ProviderInterface
                             "contextWindow" to contextWindowJson,
                             "miniBank" to miniBankJson))
                 }
+
+                // Runtime auto-pull: MetadataBank -> pipeMetadata. Mirrors the existing
+                // readFrom*/pullFrom* execution-time pattern. No-op when metaPageKeys is blank.
+                // Pipe and PumpStation are the only execution classes that participate;
+                // MultimodalContent and ContextWindow are data carriers and do not
+                // surface the metaPageKeys contract.
+                if(hasMetaPageKeys())
+                {
+                    pullMetaPageKeysIntoPipeMetadata()
+                }
             }
 
 
@@ -6566,6 +6591,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 pumpStationParent?.getMiniBankFromInterface()?.let { pumpStationMiniBank ->
                     miniContextBank.merge(pumpStationMiniBank.deepCopy(), emplaceLorebook, appendLoreBook, emplaceConverseHistory, emplaceConverseHistoryOnlyIfNull)
                 }
+                // Runtime auto-pull: MetadataBank → PumpStation's metadata bag.
+                // Mirrors the existing readFrom*/pullFrom* execution-time pattern.
+                // No-op when metaPageKeys is blank.
+                (pumpStationParent as? com.TTT.Pipeline.PumpStation)?.pullMetaPageKeysIntoPumpStationMetadata()
             }
 
             /**
