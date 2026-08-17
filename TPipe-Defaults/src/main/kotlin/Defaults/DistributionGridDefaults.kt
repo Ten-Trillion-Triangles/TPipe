@@ -75,7 +75,7 @@ object DistributionGridDefaults
     {
         require(configuration.validate()) { "Invalid Bedrock grid configuration: $configuration" }
         return Pipeline().apply {
-            add(createBedrockRouterPipe(configuration))
+            add(createBedrockRouterPipe(configuration)) 
         }
     }
 

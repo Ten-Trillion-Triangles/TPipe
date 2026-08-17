@@ -226,4 +226,25 @@ class CountBinaryTokensTest
 
         assertEquals(1, tokens)
     }
+
+    /**
+     * Pins the byte-exact math from a real production budget throw:
+     * `Pipe.kt:5971` Exception("Binary size: ${binaryTokenCost}") with binaryTokenCost = 1_579_421
+     * traces to `ceil(decodedBytes / 4) * binaryFudgeFactor` at default HYBRID / no-encoder / no override.
+     * Inverse: 1_579_421 * 4 = 6_317_684 decoded bytes reaches the budget counter.
+     * Reference: session 2026-08-15 pumpstation-test thread, image downsampled-to-256k error spike.
+     */
+    @Test
+    fun userErrorTracePin()
+    {
+        val pipe = MockTokenPipe("user-error-pin")
+        // The exact byte count implied by the user's runtime error at Pipe.kt:5971.
+        val bytes = ByteArray(6_317_684) { (it and 0xFF).toByte() }
+        val content = MultimodalContent(
+            binaryContent = mutableListOf(BinaryContent.Bytes(bytes, "application/octet-stream"))
+        )
+        val tokens = pipe.countBinaryTokens(content, settings)
+        assertEquals(1_579_421, tokens,
+            "byte-exact math on user's implied byte count must reproduce the runtime error number")
+    }
 }
