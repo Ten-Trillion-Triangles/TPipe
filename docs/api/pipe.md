@@ -749,14 +749,33 @@ Enables reasoning with custom settings.
 #### `obtainStreamingCallbackManager(): StreamingCallbackManager`
 Gets or creates the streaming callback manager for this pipe.
 
-**Behavior:** Lazy-initializes the manager on first access. Returns the manager instance for direct callback manipulation. Use this for dynamic callback management (adding/removing callbacks at runtime).
+**Behavior:** Lazy-initializes the manager on first access. Returns the manager instance for direct callback manipulation. Use this for dynamic callback management (adding/removing callbacks at runtime). The manager exposes both chunk-callback APIs (`addCallback`, `removeCallback`, `emitToAll`) and completion-callback APIs (`addCompleteCallback`, `removeCompleteCallback`, `emitCompleteToAll`, `completeCallbackCount`) — see [StreamingCallbackManager](#streamingcallbackmanager) for the full surface.
 
 **Example:**
 ```kotlin
 val manager = pipe.obtainStreamingCallbackManager()
 manager.addCallback { chunk -> print(chunk) }
+manager.addCompleteCallback { metrics.recordStreamComplete() }
 manager.removeCallback(someCallback)
 ```
+
+#### StreamingCallbackManager
+
+Direct manager surface for chunk callbacks and completion callbacks. The two callback lists are independent — registering a completion callback does not affect chunk callbacks, and vice versa.
+
+| Method | Purpose |
+|--------|---------|
+| `addCallback(callback: suspend (String) -> Unit)` | Register a per-chunk callback. Fires once per streaming delta. |
+| `removeCallback(callback): Boolean` | Deregister a previously-added chunk callback. |
+| `callbackCount(): Int` | Number of registered chunk callbacks. |
+| `emitToAll(chunk: String)` | Invoke every chunk callback with the supplied chunk. Errors routed through `onError`. |
+| `clearCallbacks()` | Remove all chunk callbacks. |
+| `addCompleteCallback(callback: suspend () -> Unit)` | Register a stream-completion callback. Fires exactly once per `emitCompleteToAll()` invocation, after the last chunk. Dedup by reference identity. |
+| `removeCompleteCallback(callback): Boolean` | Deregister a previously-added completion callback. |
+| `completeCallbackCount(): Int` | Number of registered completion callbacks. |
+| `emitCompleteToAll()` | Invoke every completion callback once. Errors routed through `onError`; subsequent callbacks still fire. Honors the same `executionMode` (sequential/concurrent) as chunk callbacks. |
+
+Completion callbacks fire on the **success path only**. Error termination (an `IOException`, an empty-response guard throw, an `ApiMode.ResponseFailed` event, or a stall-driven timeout) does not fire completion callbacks — error handling happens via `onError` or a surrounding `try`/`catch` on `pipe.execute(...)`.
 
 #### `propagateStreamingCallback(callback: suspend (String) -> Unit, visited: MutableSet<String> = mutableSetOf(), propagateToChildren: Boolean = true, propagateToReasoning: Boolean = true): Unit` (Pipe)
 Registers a streaming callback on this pipe and optionally on descendant pipes (validator, transformation, branch, reasoning). This is the mechanism that ensures chunks emitted by any pipe in the tree flow through a callback registered on a parent.
@@ -836,6 +855,19 @@ pipe.streamingCallbacks {
 }
 ```
 
+**Example — chunk callbacks + stream completion callback:**
+```kotlin
+pipe.streamingCallbacks {
+    add { chunk -> textBuffer.append(chunk) }   // Per-chunk handlers
+    add { chunk -> websocket.send(chunk) }
+    onComplete {                                // Fires once when LLM finishes
+        textView.text = textBuffer.toString()
+        websocket.close()
+        metrics.recordStreamComplete()
+    }
+}
+```
+
 **Example — all callbacks propagate to reasoning only:**
 ```kotlin
 pipe.streamingCallbacks {
@@ -852,6 +884,25 @@ pipe.streamingCallbacks {
 **Returns:** This pipe instance for method chaining
 
 **See Also:** [Streaming Callbacks Guide](../core-concepts/streaming-callbacks.md)
+
+#### StreamingCallbackBuilder
+
+The builder passed to `streamingCallbacks { ... }` exposes a fluent API for registering chunk callbacks, completion callbacks, error handlers, and configuring execution mode. Available methods on the builder lambda receiver:
+
+| Method | Purpose |
+|--------|---------|
+| `add(callback: suspend (String) -> Unit)` | Register a per-chunk callback. Multiple `add` calls register multiple independent callbacks. |
+| `add(callback: (String) -> Unit)` | Non-suspending overload — automatically wrapped in a suspending lambda. |
+| `onError(handler: (Exception, String) -> Unit)` | Set the error handler invoked when a callback throws. |
+| `sequential()` | Switch callback execution mode to sequential (default — callbacks fire in registration order). |
+| `concurrent()` | Switch callback execution mode to concurrent (callbacks fire in parallel). |
+| `executionMode(mode: StreamingExecutionMode)` | Explicit mode setter — `SEQUENTIAL` or `CONCURRENT`. |
+| `propagateToChildren: Boolean` | Field — whether chunk callbacks propagate to validator/transformation/branch pipes. Defaults to `true`. |
+| `propagateToReasoning: Boolean` | Field — whether chunk callbacks propagate to the reasoning pipe. Defaults to `true`. |
+| `onComplete(callback: suspend () -> Unit)` | Register a stream-completion callback. Fires exactly once when the LLM finishes generating on the success path. Errors are routed through `onError`; subsequent completion callbacks still fire. Independent of the chunk-callback list — does not replay chunk history. |
+| `build(): StreamingCallbackManager` | Build the configured manager (used internally by `streamingCallbacks`). |
+
+Both `propagateToChildren` and `propagateToReasoning` apply only to chunk callbacks registered via `add`. The `onComplete` callback fires on the success path of any pipe in the tree that called `emitStreamEnd()` — it does not propagate to descendant pipes via the same gating flags as chunk callbacks. Register `onComplete` on the pipe whose stream lifecycle you care about.
 
 #### `enableStreaming(callback: (suspend (String) -> Unit)? = null, showReasoning: Boolean = false): Pipe` (BedrockPipe)
 Enables streaming mode with optional callback.
@@ -891,7 +942,7 @@ Disables streaming mode and clears all callbacks.
 
 **Behavior:** Switches back to standard (non-streaming) API calls. Clears both legacy single callback and all multi-callback manager callbacks to prevent memory leaks.
 
-> ℹ️ **Note:** Provider-specific methods (BedrockPipe) are available in provider implementations. Base Pipe class provides `obtainStreamingCallbackManager()` and `emitStreamingChunk()` for all providers.
+> ℹ️ **Note:** Provider-specific methods (BedrockPipe) are available in provider implementations. Base Pipe class provides `obtainStreamingCallbackManager()`, `emitStreamingChunk(chunk: String)` (called per chunk by providers), and `emitStreamEnd()` (called at every success-path stream-end break point by providers — fires the registered completion callbacks). All four providers (Bedrock, GenericOpenAI, OpenRouter, Ollama) wire both `emitStreamingChunk` and `emitStreamEnd` at their streaming break points.
 
 ---
 
