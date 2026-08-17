@@ -1592,9 +1592,13 @@ open class BedrockPipe : Pipe()
     /**
      * Aborts the current Bedrock API call. Since the AWS SDK respects coroutine
      * cancellation, super.abort() will handle the primary cancellation.
+     *
+     * The PIPE_FAILURE trace emitted here fires once per ancestor that cancels.
+     * Downstream consumers can use the trace metadata to distinguish an
+     * ancestor-cancel from a self-abort.
      */
     override suspend fun abort() {
-        trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, 
+        trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION,
               metadata = mapOf("action" to "abort", "provider" to "Bedrock"))
         super.abort()
     }
