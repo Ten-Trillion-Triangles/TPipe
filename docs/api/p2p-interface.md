@@ -2,11 +2,12 @@
 
 ## Table of Contents
 - [Overview](#overview)
-- [Public Functions](#public-functions)
+| [Public Functions](#public-functions)
   - [P2P Configuration](#p2p-configuration)
   - [Container Management](#container-management)
   - [Pipeline Access](#pipeline-access)
   - [Execution Methods](#execution-methods)
+  - [Recursive Propagation](#recursive-propagation)
 
 ## Overview
 
@@ -163,6 +164,78 @@ The pipeline access method enables P2P system to understand component structure 
 
 ### Default Implementations
 All methods have sensible defaults enabling implementing classes to selectively override only required functionality, reducing implementation burden while maintaining interface compliance.
+
+### Recursive Propagation
+
+A uniform pattern across P2PInterface: each `*Recursive` method drills the entire agent tree (containers, then leaf pipes) and applies the same operation at every node. This propagates settings to descendants even across multi-level compositions (Pipeline-in-Pipeline, Manifold-with-Containers-in-Pipelines, PumpStation-with-mixed-agents).
+
+The seven methods share one shape:
+
+| Method | Purpose | Pipe-side leaf handler |
+|--------|---------|----------------------|
+| `setTokenBudgetRecursive(budget: TokenBudgetSettings)` | Apply token budget to every descendant pipe | `setTokenBudget` |
+| `setPipeSettingsRecursively(settings: PipeSettings)` | Apply pipe settings to every descendant pipe | `applyPipeSettings` |
+| `setStreamingCallbackRecursive(callback: suspend (String) -> Unit)` | Register a per-chunk streaming callback on every leaf pipe | `propagateStreamingCallback` |
+| `enableStallDetectorRecursive(config, callback)` | Enable stall detection on every leaf pipe | `propagateStallDetection` |
+| `setConverseRoleRecursive(role: ConverseRole)` | Set converse role on every leaf pipe | `setConverseRole` |
+| `suspend abortRecursive()` | Abort every leaf pipe's current execution | `abort` (delegates to `propagateAbortRecursively`) |
+| `enablePipeTimeoutRecursive(applyRecursively, duration, autoRetry, retryLimit)` | Configure pipe timeout on every leaf pipe | `enablePipeTimeout` |
+
+Each method:
+
+1. Has a no-op default body on the interface — non-Pipeline implementations opt out by not overriding.
+2. Is overridden on every P2PInterface implementer that owns children: `Pipeline`, `Manifold`, `Junction`, `Splitter`, `Connector`, `MultiConnector`, `DistributionGrid`, `PumpStation` — each iterates its own pipes and calls `pipe.<method>(...)` on each, so the recursion walks down through every container layer.
+3. Has a corresponding override on `Pipe` that delegates: if `containerPtr == null` (the pipe is a leaf in its current container), apply locally; otherwise call `containerPtr.<method>(...)` to drill upward.
+
+#### `abortRecursive()` (suspend)
+Cancels the current execution on every leaf pipe in this interface's agent tree. Walks the entire container hierarchy from any node where it's invoked — calling `manifold.abortRecursive()` triggers the cascade across the manager pipeline and every worker.
+
+**Parameters:** None.
+
+**Behavior:** Each container override iterates its children and calls `abortRecursive()` on each. The base `Pipe` override resolves the leaf behavior: if the pipe is a leaf (no `containerPtr`), it calls `abort()` which delegates to `propagateAbortRecursively`, walking the pipe's own validator / transformation / branch / reasoning child pipes and their own children. Cycle-safe via `pipeId`-keyed `visited` set — a pipe reachable from multiple containers is cancelled exactly once.
+
+**Use cases:**
+- Cascade cancel a running multi-agent task from the top of the tree.
+- Emergency stop when a watch dog timer fires or a kill-switch trips.
+
+**Example:**
+```kotlin
+val tree: P2PInterface = manifold { /* ... */ }
+// ... tree is running ...
+tree.abortRecursive()
+// every leaf pipe across the entire agent tree is now cancelled
+```
+
+**Error path:** Returns normally on success. If a child pipe's `abort()` throws, the exception propagates after completing the current iteration (no upstream cascade stops on first failure, but the exception does not roll back previously-completed aborts).
+
+#### `enablePipeTimeoutRecursive(applyRecursively: Boolean = true, duration: Long = 300000, autoRetry: Boolean = false, retryLimit: Int = 5)`
+Configures pipe-timeout on every leaf pipe in this interface's agent tree using safe-to-propagate parameters. The signature exposes only the parameters that can be applied uniformly across a tree — `customLogic` is intentionally NOT exposed because it's bound to a specific pipe instance and would leak incorrectly across the cascade. Each leaf retains its own custom retry logic if any was set.
+
+**Parameters:**
+- **`applyRecursively`**: Whether each leaf should propagate to its own descendant pipes. Defaults to `true`.
+- **`duration`**: Timeout duration in milliseconds. Defaults to 300000 (5 minutes).
+- **`autoRetry`**: Whether to enable automatic retry on timeout. Defaults to `false`. Mutually exclusive with the per-pipe `customLogic` retry function (which is NOT propagated).
+- **`retryLimit`**: Maximum retry attempts. Defaults to `5`.
+
+**Behavior:** Each container override iterates its children and calls `enablePipeTimeoutRecursive(...)` on each. The base `Pipe` override resolves the leaf behavior: if the pipe is a leaf (no `containerPtr`), it calls `enablePipeTimeout(...)` locally; otherwise it delegates upward to `containerPtr.enablePipeTimeoutRecursive(...)` to drill toward the leaves. This matches the direct-child propagation in `Pipeline.init` and gives the root caller a single source of truth for timeout configuration across the entire agent tree.
+
+**Use cases:**
+- Standardize a single timeout configuration across a multi-agent tree.
+- Apply an emergency short-timeout across all leaves when token-budget pressure is high.
+
+**Example:**
+```kotlin
+val tree: P2PInterface = distributionGrid { /* ... */ }
+tree.enablePipeTimeoutRecursive(
+    applyRecursively = true,
+    duration = 120000,         // 2 minutes per leaf
+    autoRetry = true,
+    retryLimit = 3
+)
+// every leaf pipe across the entire grid now has a 2-minute timeout with up to 3 retries
+```
+
+**Custom logic preserved:** Custom retry functions set on individual pipes via `setRetryFunction(...)` are not replaced by the recursive call. To replace custom logic across the tree, call `setRetryFunction(...)` on each leaf directly via the existing `*Recursive` overrides or by iterating `getPipes()`.
 ## Next Steps
 
 - [P2P Package API](p2p-package.md) - Continue into the distributed agent package.

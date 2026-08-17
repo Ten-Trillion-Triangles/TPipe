@@ -219,6 +219,43 @@ Enables timeout tracking and configures retry behavior for this pipe.
 
 > ⚠️ **Warning:** Retry re-executes ALL pre-execution DITL functions (`preInitFunction`, `preValidationFunction`, etc.). These functions MUST be read-only. Writing to ContextBank or program memory will cause duplicate writes on retry. See [Timeout and Retry](../core-concepts/timeout-and-retry.md) for details.
 
+#### `abort(visited: MutableSet<String> = mutableSetOf())` (suspend, open)
+Cancels the current execution. Default base implementation calls `propagateAbortRecursively()` which walks this pipe's descendant tree (validator, transformation, branch, reasoning child pipes and their own children). Subclasses override this to add provider-specific cleanup (closing HTTP clients, releasing AWS SDK resources) before calling `super.abort()` to continue the cascade. A custom override that does NOT call `super.abort()` will silently skip the descendant cascade — every custom override must call super.
+
+**Example (typical provider):**
+```kotlin
+override suspend fun abort() {
+    // provider-specific cleanup
+    closeHttpClient()
+    // continue the cascade so descendants cancel too
+    super.abort()
+}
+```
+
+**Behavior:** Suspend because `propagateAbortRecursively` is suspend. The base `Pipe.abort()` body is a single line: `propagateAbortRecursively()`. Subclasses that override for cleanup must call `super.abort()` to keep the cascade intact — see the conformance rule below.
+
+**Conformance rule:** Any pipe-class override of `abort()` MUST call `super.abort()`. Skipping `super` breaks the cascade fix and re-introduces the original Issue #4 (descendant pipes do not cancel). See [Timeout and Retry](../core-concepts/timeout-and-retry.md) for the abort propagation contract.
+
+#### `propagateAbortRecursively(visited: MutableSet<String> = mutableSetOf())` (suspend)
+Walks this pipe's descendant tree (validator, transformation, branch, reasoning child pipes and their own children). For each descendant pipe, records it in `visited` (cycle-safe by `pipeId`) and walks the same descendant tree from that pipe's perspective. The walker cancels the `activeJob` (the in-flight coroutine running the pipe's execute path) on each leaf pipe it reaches, ensuring the AWS SDK / HttpURLConnection / Ktor transport unwinds cleanly.
+
+**Behavior:** Mark current `pipeId` in `visited`. Iterate `validatorPipe`, `transformationPipe`, `branchPipe`, `reasoningPipe`. For each non-null child, recursively call `child.propagateAbortRecursively(visited)`. At the leaf, the cancellation works through Kotlin coroutines: cancelling `activeJob` cancels the in-flight suspend call to the LLM provider and unwinds the coroutine stack. A pipe referenced from multiple parents (cycle) is cancelled exactly once.
+
+#### `enablePipeTimeoutRecursive(applyRecursively: Boolean = true, duration: Long = 300000, autoRetry: Boolean = false, retryLimit: Int = 5)` — `P2PInterface` override
+Implements the [P2PInterface recursive propagation pattern](./p2p-interface.md#recursive-propagation). If this pipe is a leaf (no `containerPtr`), applies the timeout configuration locally via `enablePipeTimeout(...)`. Otherwise drills upward to the owning container so its `P2PInterface.enablePipeTimeoutRecursive(...)` override can iterate its other children.
+
+**Behavior:** Mirrors `setTokenBudgetRecursive` and `setPipeSettingsRecursively`. Leaf path calls `enablePipeTimeout(applyRecursively, duration, autoRetry, retryLimit)` with no `customLogic` (per-pipe custom retry logic is preserved, not replaced). Container path delegates upward via `containerPtr.enablePipeTimeoutRecursive(...)` so the recursion originates at the root caller and walks down.
+
+#### `abortRecursive()` (suspend) — `P2PInterface` override
+Implements the [P2PInterface recursive propagation pattern](./p2p-interface.md#recursive-propagation). If this pipe is a leaf (no `containerPtr`), calls `abort()` which delegates to `propagateAbortRecursively`. Otherwise drills upward to the owning container so its `P2PInterface.abortRecursive()` override can iterate its other children.
+
+**Behavior:** Mirrors `setTokenBudgetRecursive` and `setPipeSettingsRecursively`. Leaf path invokes the open `abort()` method. Container path delegates upward via `containerPtr.abortRecursive()`. Cycle safety comes from `propagateAbortRecursively`'s `visited` set.
+
+#### `propagatePipeTimeout(visited: MutableSet<String> = mutableSetOf())`
+Walks this pipe's descendant tree (validator, transformation, branch, reasoning child pipes and their own children), calling `enablePipeTimeout(...)` on each leaf. The walk is cycle-safe via `pipeId`-keyed `visited` set. This is the leaf-side walker that the container-level `P2PInterface.enablePipeTimeoutRecursive(...)` ends up calling. Used internally — direct callers rarely need this; prefer `enablePipeTimeout(applyRecursively = true, ...)`.
+
+**Behavior:** Marks the current pipe in `visited`, then iterates `validatorPipe`, `transformationPipe`, `branchPipe`, `reasoningPipe`. Calls `child.propagatePipeTimeout(visited)` on each (only when the child is non-null), which recurses into that child's own child pipes. A pipe referenced from multiple parents (cycle) is configured exactly once.
+
 #### `setRetryFunction(func: (suspend (pipe: Pipe, content: MultimodalContent) -> Boolean)?): Pipe`
 Sets custom retry logic function for `CustomLogic` timeout strategy.
 
