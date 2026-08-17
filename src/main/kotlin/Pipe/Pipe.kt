@@ -2098,6 +2098,72 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
+     * Recursively enables pipe timeout on every descendant pipe
+     * (validatorPipe / transformationPipe / branchPipe / reasoningPipe).
+     *
+     * Symmetric counterpart to [propagateStallDetection]. Cycle-safe via
+     * [visited] keyed on [pipeId]. Each visited child has its own
+     * `applyTimeoutRecursively = true` set so the recursion continues
+     * down the tree when the child itself runs [init].
+     *
+     * Called from [Pipe.init] when [enablePipeTimeout] is true and
+     * [applyTimeoutRecursively] is true. Also exposed publicly so
+     * callers who set the timeout flag manually (e.g. after a builder
+     * call) can trigger the cascade without re-running init().
+     *
+     * @param visited Internal — tracks already-walked pipes to prevent cycles
+     *                when a pipe is referenced from multiple parents.
+     */
+    fun propagatePipeTimeout(visited: MutableSet<String> = mutableSetOf())
+    {
+        if(pipeId in visited) return
+        visited.add(pipeId)
+
+        listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { child ->
+            if(child.pipeId !in visited)
+            {
+                child.enablePipeTimeout = true
+                child.pipeTimeout = this.pipeTimeout
+                child.timeoutStrategy = this.timeoutStrategy
+                child.maxRetryAttempts = this.maxRetryAttempts
+                child.pipeRetryFunction = this.pipeRetryFunction
+                child.applyTimeoutRecursively = true
+                child.propagatePipeTimeout(visited)
+            }
+        }
+    }
+
+    /**
+     * Recursively cancels every descendant pipe (validatorPipe,
+     * transformationPipe, branchPipe, reasoningPipe) so a parent abort
+     * reaches the entire tree, not just the immediate child slots.
+     *
+     * Cycle-safe via [visited] keyed on [pipeId] — a pipe referenced from
+     * multiple parents is visited once. Each visited child receives its
+     * own [abort] call before the walker recurses, so the cancellation
+     * signal lands on descendants while the parent still has context.
+     *
+     * @param visited Internal — tracks already-walked pipes to prevent cycles
+     *                when a pipe is referenced from multiple parents.
+     */
+    suspend fun propagateAbortRecursively(visited: MutableSet<String> = mutableSetOf())
+    {
+        if(pipeId in visited) return
+        visited.add(pipeId)
+
+        activeJob?.cancel()
+        activeJob = null
+        activeStallDetector = null
+
+        listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { child ->
+            if(child.pipeId !in visited)
+            {
+                child.abort()
+            }
+        }
+    }
+
+    /**
      * Emits a streaming chunk to all registered callbacks.
      * Provides default no-op implementation for providers that don't support streaming.
      * Subclasses can override to add provider-specific behavior.
@@ -5534,17 +5600,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
      open suspend fun init() : Pipe
      {
-         // Propagate timeout settings recursively if enabled
+         // Propagate timeout settings recursively if enabled.
+         // Walker descends the entire descendant tree (validatorPipe /
+         // transformationPipe / branchPipe / reasoningPipe and their own
+         // children) so a 2-deep nested pipe gets timeout enabled on the
+         // grandchild as well. Mirrors propagateStallDetection's shape.
          if(enablePipeTimeout && applyTimeoutRecursively)
          {
-             listOfNotNull(validatorPipe, branchPipe, transformationPipe, reasoningPipe).forEach { child ->
-                 child.enablePipeTimeout = true
-                 child.pipeTimeout = pipeTimeout
-                 child.timeoutStrategy = timeoutStrategy
-                 child.maxRetryAttempts = maxRetryAttempts
-                 child.pipeRetryFunction = pipeRetryFunction
-                 child.applyTimeoutRecursively = true
-             }
+             propagatePipeTimeout()
          }
 
          // Name children FIRST, before they initialize their own children
@@ -6301,11 +6364,20 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Attempts to abort the current LLM call by cancelling the active execution job.
      * Child classes can override this to perform additional provider-specific cleanup.
+     *
+     * Delegates to [propagateAbortRecursively] so the cancellation walks
+     * the entire descendant tree (validatorPipe / transformationPipe /
+     * branchPipe / reasoningPipe and their own children). The walker
+     * performs the per-pipe cleanup (activeJob cancel, activeStallDetector
+     * clear) as part of its visit, so a single top-level abort() call
+     * cascades without double-invoking any descendant's abort().
+     *
+     * Override this ONLY when you need provider-specific cleanup that
+     * must run BEFORE the child cascade — in that case, do your work
+     * first and then call super.abort() to continue the cascade.
      */
     open suspend fun abort() {
-        activeJob?.cancel()
-        activeJob = null
-        activeStallDetector = null
+        propagateAbortRecursively()
     }
 
     /**
