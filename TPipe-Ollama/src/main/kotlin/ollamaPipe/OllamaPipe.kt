@@ -1020,9 +1020,12 @@ class OllamaPipe : Pipe()
                     if(chunk.done) break
                 }
             }
-            
+
+            // Stream ended successfully (chunk.done=true).
+            emitStreamEnd()
+
             var resultText = textBuilder.toString()
-            
+
             val responseMetadata = mutableMapOf<String, Any>(
                 "responseLength" to resultText.length,
                 "success" to true,
@@ -1203,7 +1206,10 @@ class OllamaPipe : Pipe()
                     if(chunk.done) break
                 }
             }
-            
+
+            // Stream ended successfully (chunk.done=true).
+            emitStreamEnd()
+
             val resultText = textBuilder.toString()
             val responseMetadata = mutableMapOf<String, Any>(
                 "responseLength" to resultText.length,

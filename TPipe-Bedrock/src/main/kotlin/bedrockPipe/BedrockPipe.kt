@@ -5100,7 +5100,11 @@ put("system", if(enableCaching && cacheControl != null) {
             val processedResult = splitInterleavedReasoning(result)
             
             trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, processedResult, metadata = metadata)
-            
+
+            // Notify streaming subscribers that the LLM has finished generating.
+            // Success-path only — error branches above return early.
+            emitStreamEnd()
+
             return processedResult
 
         }
@@ -5274,6 +5278,8 @@ put("system", if(enableCaching && cacheControl != null) {
             // Trace successful streaming completion
             trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, metadata = metadata)
             val result = MultimodalContent(text = finalText, modelReasoning = reasoningBuilder.toString())
+            // Notify streaming subscribers that the LLM has finished generating.
+            emitStreamEnd()
             return splitInterleavedReasoning(result)
 
         }

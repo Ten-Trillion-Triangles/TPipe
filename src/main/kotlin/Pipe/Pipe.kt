@@ -2167,12 +2167,30 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * Emits a streaming chunk to all registered callbacks.
      * Provides default no-op implementation for providers that don't support streaming.
      * Subclasses can override to add provider-specific behavior.
-     *
-     * @param chunk The text chunk to emit
      */
     protected open suspend fun emitStreamingChunk(chunk: String)
     {
         streamingCallbackManager?.emitToAll(chunk)
+    }
+
+    /**
+     * Fires the completion callbacks on the streaming callback manager.
+     *
+     * Symmetric counterpart to [emitStreamingChunk]. Wire this at every
+     * successful stream-end break point in provider implementations so
+     * downstream consumers (UI windows, AgentWorkStream dispatchers,
+     * stall detectors) can react to "the LLM finished generating."
+     *
+     * NOT fired on error paths — a partially-failed stream is not a
+     * completion. Provider implementations should call this only when
+     * the stream terminated via [DONE], `chunk.done`, `ResponseCompleted`,
+     * `message_delta`, or other success-path terminal events.
+     *
+     * No-op when no completion callbacks are registered.
+     */
+    protected open suspend fun emitStreamEnd()
+    {
+        streamingCallbackManager?.emitCompleteToAll()
     }
 
     /**
