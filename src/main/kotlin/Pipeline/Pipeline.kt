@@ -484,6 +484,32 @@ class Pipeline : P2PInterface
         }
     }
 
+    override suspend fun abortRecursive()
+    {
+        for (pipe in getPipes())
+        {
+            pipe.abortRecursive()
+        }
+    }
+
+    override fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean,
+        duration: Long,
+        autoRetry: Boolean,
+        retryLimit: Int
+    )
+    {
+        for (pipe in getPipes())
+        {
+            pipe.enablePipeTimeoutRecursive(
+                applyRecursively = applyRecursively,
+                duration = duration,
+                autoRetry = autoRetry,
+                retryLimit = retryLimit
+            )
+        }
+    }
+
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
         /** Start as "this" but we may need to alter our target if we need to copy "this" due to some change the

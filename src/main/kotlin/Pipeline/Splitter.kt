@@ -133,6 +133,38 @@ class Splitter: P2PInterface
         }
     }
 
+    override suspend fun abortRecursive()
+    {
+        for (activatorValue in activatorKeys.values)
+        {
+            for (pipeline in activatorValue.pipelines)
+            {
+                pipeline.abortRecursive()
+            }
+        }
+    }
+
+    override fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean,
+        duration: Long,
+        autoRetry: Boolean,
+        retryLimit: Int
+    )
+    {
+        for (activatorValue in activatorKeys.values)
+        {
+            for (pipeline in activatorValue.pipelines)
+            {
+                pipeline.enablePipeTimeoutRecursive(
+                    applyRecursively = applyRecursively,
+                    duration = duration,
+                    autoRetry = autoRetry,
+                    retryLimit = retryLimit
+                )
+            }
+        }
+    }
+
 //-------------------------------------------Properties--------------------------------------------------------------------
 
 

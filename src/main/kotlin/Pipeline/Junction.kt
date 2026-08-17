@@ -349,6 +349,39 @@ class Junction : P2PInterface
         }
     }
 
+    override suspend fun abortRecursive()
+    {
+        moderatorBinding?.component?.abortRecursive()
+        for (binding in participantBindings)
+        {
+            binding.component.abortRecursive()
+        }
+    }
+
+    override fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean,
+        duration: Long,
+        autoRetry: Boolean,
+        retryLimit: Int
+    )
+    {
+        moderatorBinding?.component?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        for (binding in participantBindings)
+        {
+            binding.component.enablePipeTimeoutRecursive(
+                applyRecursively = applyRecursively,
+                duration = duration,
+                autoRetry = autoRetry,
+                retryLimit = retryLimit
+            )
+        }
+    }
+
 //----------------------------------------------Configuration------------------------------------------------------------
 
     /**

@@ -8575,6 +8575,58 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
+     * Implements the [P2PInterface.abortRecursive] contract. If this pipe
+     * is a leaf (containerPtr is null), delegates to [abort] which
+     * propagates the abort down the pipe tree. Otherwise, drills upward
+     * to the owning container so its [P2PInterface.abortRecursive]
+     * override can iterate its other children.
+     */
+    override suspend fun abortRecursive()
+    {
+        if (containerPtr == null)
+        {
+            abort()
+        }
+        else
+        {
+            containerPtr!!.abortRecursive()
+        }
+    }
+
+    /**
+     * Implements the [P2PInterface.enablePipeTimeoutRecursive] contract.
+     * If this pipe is a leaf (containerPtr is null), applies the timeout
+     * configuration locally via [enablePipeTimeout]. Otherwise drills
+     * upward to the owning container.
+     */
+    override fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean,
+        duration: Long,
+        autoRetry: Boolean,
+        retryLimit: Int
+    )
+    {
+        if (containerPtr == null)
+        {
+            enablePipeTimeout(
+                applyRecursively = applyRecursively,
+                duration = duration,
+                autoRetry = autoRetry,
+                retryLimit = retryLimit
+            )
+        }
+        else
+        {
+            containerPtr!!.enablePipeTimeoutRecursive(
+                applyRecursively = applyRecursively,
+                duration = duration,
+                autoRetry = autoRetry,
+                retryLimit = retryLimit
+            )
+        }
+    }
+
+    /**
      * Checks the kill switch if one is set. If token consumption exceeds the configured limits,
      * the kill switch's onTripped callback is invoked — this typically throws [KillSwitchException]
      * which propagates as an uncaught exception, bypassing all retry policies.

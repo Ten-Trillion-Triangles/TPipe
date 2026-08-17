@@ -126,6 +126,32 @@ class Connector : P2PInterface
         }
     }
 
+    override suspend fun abortRecursive()
+    {
+        for (pipeline in branches.values)
+        {
+            pipeline.abortRecursive()
+        }
+    }
+
+    override fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean,
+        duration: Long,
+        autoRetry: Boolean,
+        retryLimit: Int
+    )
+    {
+        for (pipeline in branches.values)
+        {
+            pipeline.enablePipeTimeoutRecursive(
+                applyRecursively = applyRecursively,
+                duration = duration,
+                autoRetry = autoRetry,
+                retryLimit = retryLimit
+            )
+        }
+    }
+
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {

@@ -147,6 +147,32 @@ class MultiConnector : P2PInterface
         }
     }
 
+    override suspend fun abortRecursive()
+    {
+        for (connector in connectors)
+        {
+            connector.abortRecursive()
+        }
+    }
+
+    override fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean,
+        duration: Long,
+        autoRetry: Boolean,
+        retryLimit: Int
+    )
+    {
+        for (connector in connectors)
+        {
+            connector.enablePipeTimeoutRecursive(
+                applyRecursively = applyRecursively,
+                duration = duration,
+                autoRetry = autoRetry,
+                retryLimit = retryLimit
+            )
+        }
+    }
+
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse?
     {
         // Execute P2P request using the first available connector in sequential mode

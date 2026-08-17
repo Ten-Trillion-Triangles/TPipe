@@ -2466,6 +2466,95 @@ private fun pathKey(name: String): String = name.lowercase()
         }
     }
 
+    override suspend fun abortRecursive()
+    {
+        judgeAgent?.abortRecursive()
+        dispatchAgent?.abortRecursive()
+        interventionAgent?.abortRecursive()
+        healthAgent?.abortRecursive()
+        lorebookAgent?.abortRecursive()
+        summaryAgent?.abortRecursive()
+        goalAgent?.abortRecursive()
+        preInitAgent?.abortRecursive()
+        pathSafetyAgent?.abortRecursive()
+        for (slot in additionalHarnessAgentSlots)
+        {
+            slot.agent?.abortRecursive()
+        }
+    }
+
+    override fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean,
+        duration: Long,
+        autoRetry: Boolean,
+        retryLimit: Int
+    )
+    {
+        judgeAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        dispatchAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        interventionAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        healthAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        lorebookAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        summaryAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        goalAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        preInitAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        pathSafetyAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        for (slot in additionalHarnessAgentSlots)
+        {
+            slot.agent?.enablePipeTimeoutRecursive(
+                applyRecursively = applyRecursively,
+                duration = duration,
+                autoRetry = autoRetry,
+                retryLimit = retryLimit
+            )
+        }
+    }
+
     /**
      * Returns the current task state for inspection.
      */
