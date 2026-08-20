@@ -125,6 +125,8 @@ pumpStation("name") {
     lorebookAgent = pipeline()
     summaryAgent = pipeline()
     goalAgent = pipeline()
+    postGoalAgent = pipeline()
+    postGoalFunction = { content, station -> content }
     preInitAgent = pipeline()
     pathSafetyAgent = pipeline()
 
