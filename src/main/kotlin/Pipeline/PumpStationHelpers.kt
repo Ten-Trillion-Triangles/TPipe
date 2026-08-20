@@ -973,6 +973,25 @@ internal fun PumpStation.buildGoalContent(): MultimodalContent
     return base
 }
 
+/**
+ * Build the MultimodalContent for the post-goal hook. The post-goal surface
+ * receives the harness's pruned [turnHistory] (the same view judge/dispatch see),
+ * not the goal agent's output. Output becomes the harness's final deliverable
+ * on pass via [runFinalizationPhase].
+ *
+ * Differs from [buildGoalContent] in that [converseHistory] stays on the
+ * pruned [turnHistory] rather than overwriting it with [rawTurnHistory].
+ * [buildGoalContent] uses the raw event log because the goal agent's job
+ * is deep compliance verification; the post-goal surface sees the same
+ * view judge/dispatch see.
+ */
+internal fun PumpStation.buildPrunedHistoryContent(): MultimodalContent
+{
+    val base = buildTurnContent()
+    base.metadata["postGoalInputShape"] = "prunedHistory"
+    return base
+}
+
 //=========================================Error Messages======================================================
 
 /**

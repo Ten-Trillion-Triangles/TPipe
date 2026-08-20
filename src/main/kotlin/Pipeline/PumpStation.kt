@@ -1201,11 +1201,21 @@ suspend fun interrupt(phase: PumpStationPausePhase, text: String)
     internal var goalAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
 
     /**
-     * Optional post-success agent. Fires inside [runExitFlow] after the goal agent passes,
-     * or on the no-goal-agent / passPipeline-routed exit paths. Receives the goal agent's
-     * output (or the harness's exit-flow content when no goal agent is configured). Output
-     * becomes the harness's final deliverable on pass; a [MultimodalContent.terminatePipeline]
-     * result halts the harness with [PumpStationExitReason.JudgeComplete] without re-loop.
+     * Optional post-success agent. Fires inside [runExitFlow] after the goal
+     * agent passes, or on the no-goal-agent / passPipeline-routed exit paths.
+     * Receives the harness's pruned [turnHistory] (the same view judge/dispatch
+     * see) as its input — not the goal agent's output. The goal agent's job is
+     * to loop back and update turn history on compliance failure; the post-goal
+     * surface needs the full run context to do its work (schema enforcement,
+     * output shaping, cross-turn reasoning). May set
+     * [MultimodalContent.terminatePipeline] on its result to signal failure.
+     * Output becomes the harness's final deliverable on pass; a
+     * [MultimodalContent.terminatePipeline] result halts the harness with
+     * [PumpStationExitReason.JudgeComplete] without re-loop.
+     *
+     * Path output is NOT in the inline history by default; if your post-goal
+     * agent needs the path's actual [MultimodalContent], read it from
+     * `taskState.lastPathResult` inside a [postGoalFunction] lambda.
      *
      * @see [postGoalAgentBuilderFunction] for runtime override
      * @see [postGoalFunction] for the synchronous transform that precedes this agent
@@ -1219,10 +1229,18 @@ suspend fun interrupt(phase: PumpStationPausePhase, text: String)
     internal var postGoalAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
 
     /**
-     * Optional DITL function fired inside [runExitFlow] after the goal agent passes (or
-     * when no goal agent is configured and the harness is exiting through [runExitFlow]).
-     * Synchronous transform: receives the goal agent's output and returns a possibly-modified
-     * [MultimodalContent]. Precedes [postGoalAgent] when both are configured.
+     * Optional DITL function fired inside [runExitFlow] after the goal agent
+     * passes (or when no goal agent is configured and the harness is exiting
+     * through [runExitFlow]). Synchronous transform: receives the harness's
+     * pruned [turnHistory] content (the same input [postGoalAgent] will see)
+     * and returns a possibly-modified [MultimodalContent]. Precedes
+     * [postGoalAgent] when both are configured.
+     *
+     * Use this lambda to read `taskState.lastPathResult` and inject the path's
+     * actual output into the post-goal agent's input — the inline
+     * [CONVERSATION HISTORY] block does not contain the path's
+     * [MultimodalContent] directly (path execution stores a serialized form,
+     * not the raw object).
      */
     internal var postGoalFunction: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)? = null
 
@@ -3806,7 +3824,8 @@ private fun pathKey(name: String): String = name.lowercase()
     /**
      * Sets the post-success DITL function. Fires inside [runExitFlow] after the goal
      * agent passes (or on the no-goal-agent path). Synchronous transformation of the
-     * goal output that precedes [postGoalAgent] when both are configured.
+     * harness's pruned [turnHistory] content (the same input [postGoalAgent] will see)
+     * that precedes [postGoalAgent] when both are configured.
      *
      * @param fn The transformation function, or null to clear the binding.
      * @return This PumpStation instance for method chaining.

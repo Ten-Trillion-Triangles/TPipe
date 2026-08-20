@@ -12,6 +12,7 @@
   - [The Dispatch Agent Contract](#the-dispatch-agent-contract)
   - [The Path Execution Contract](#the-path-execution-contract)
   - [The Goal Agent Contract](#the-goal-agent-contract)
+  - [The Post-Goal Agent Contract](#the-post-goal-agent-contract)
   - [The Health Agent Contract](#the-health-agent-contract)
   - [The Path-Safety Agent Contract](#the-path-safety-agent-contract)
   - [The Lorebook Agent Contract](#the-lorebook-agent-contract)
@@ -319,6 +320,58 @@ By default, prose text. The goal agent's pass/fail signal is read from the `term
 There is no JSON contract on the goal agent. The goal's text is treated as critique feedback when the goal fails; the next turn's judge and dispatch see it in the history.
 
 If `maxGoalFailAttempts` is exceeded, the harness halts with `PumpStationExitReason.GoalValidationFailed`.
+
+### The Post-Goal Agent Contract
+
+**Type:** `P2PInterface?`
+**Location:** `PumpStation.postGoalAgent` / `setPostGoalAgent(...)` / `PumpStationBuilder.postGoalAgent`
+**Default:** none (optional)
+
+The post-goal surface fires after a successful exit through `runExitFlow` — every configuration that reaches the success exit: judge-driven completion with goal agent passed, path-driven completion with `passPipeline: true` and goal agent passed, or no-goal-agent exit (the post-goal hook still fires on the no-goal-agent halt path).
+
+**What the post-goal agent receives:**
+
+A `MultimodalContent` built by `buildPrunedHistoryContent()` — the same shape judge and dispatch see. The text includes the inline `[CONVERSATION HISTORY]` block, the original input prefix, and the `turnSummary` if one exists. The `context.converseHistory` stays on the pruned `turnHistory` (not the full event log — that is what `buildGoalContent()` does for the goal agent's deep verification, which is the goal agent's job, not the post-goal surface's).
+
+This is the canonical input shape regardless of whether `goalAgent` is configured. With no `goalAgent`, the no-goal-agent branch in `runExitFlow` calls `runPostGoalHook(buildGoalContent())` (the goal-content helper that uses `rawTurnHistory`); with `goalAgent` configured and passing, the goal-agent-passed branch calls `runPostGoalHook(buildPrunedHistoryContent())`. Either way, the post-goal agent sees the full run context — never the goal agent's verdict-shaped output.
+
+**What the post-goal agent must output:**
+
+By default, prose text. The pass/fail signal is read from the `terminatePipeline` flag on the result:
+
+- `terminatePipeline = false` (default) → post-goal passed → harness exits with `JudgeComplete`; the post-goal agent's `MultimodalContent` becomes the final deliverable returned by `executeLocal`.
+- `terminatePipeline = true` → post-goal failed → harness exits with `JudgeComplete` anyway (does NOT re-loop — post-success-only semantic). The failure is recorded in the `PostGoalCompleted` event with `passed=false` and `reason=result.text` for observability.
+
+**The synchronous transform: `postGoalFunction`**
+
+A lambda that runs synchronously before the post-goal agent receives the same input. Use it to inject extra context — for example, to read `taskState.lastPathResult` and prepend the path's actual output (which is NOT in the inline history; path execution stores a serialized form, not the raw `MultimodalContent`).
+
+```kotlin
+pumpStation("example") {
+    dispatchAgent = ...
+    goalAgent = ...
+    postGoalFunction = { content, station ->
+        val pathOutput = station.taskState.lastPathResult?.text.orEmpty()
+        MultimodalContent(text = "PATH OUTPUT:\n$pathOutput\n\n${content.text}")
+    }
+    postGoalAgent = jsonSchemaEnforcementPipe
+    path("do-work") { ... }
+}
+```
+
+**Coverage matrix:**
+
+| Configuration | Post-goal fires? | Input source |
+|---------------|------------------|--------------|
+| Judge `isComplete=true`, no goal agent | yes | `buildGoalContent()` (rawTurnHistory) |
+| Judge `isComplete=true`, goal agent passes | yes | `buildPrunedHistoryContent()` (pruned turnHistory) |
+| Path `passPipeline=true`, no goal agent | yes | `buildGoalContent()` (rawTurnHistory) |
+| Path `passPipeline=true`, goal agent passes | yes | `buildPrunedHistoryContent()` (pruned turnHistory) |
+| Goal agent fails repeatedly (`maxGoalFailAttempts` exceeded) | NO | n/a — halts via `GoalValidationFailed` |
+| Path `terminatePipeline=true` direct halt | NO | n/a — halts via `TerminateSignal` |
+| `KillSwitchTripped`, `LoopGuardTripped`, `MaxTurnsHit`, `ContextBlowout` | NO | n/a — failure exit paths |
+
+**Trace event:** `PUMP_STATION_POST_GOAL_COMPLETED` (mapped from the `PostGoalCompleted` event; metadata: `passed`, `reason`, `transformedContent`). Emitted on every successful exit that fires the hook.
 
 ### The Health Agent Contract
 
@@ -672,6 +725,8 @@ The `pumpStation { }` builder supports these top-level blocks and setters.
 | `lorebookAgent` | `P2PInterface?` | Updates lorebook entries from recent turns. |
 | `summaryAgent` | `P2PInterface?` | Generates `turnSummary`. |
 | `goalAgent` | `P2PInterface?` | Validates work when judge says complete or path says pass. |
+| `postGoalAgent` | `P2PInterface?` | Fires on successful exit; produces the final deliverable. See [The Post-Goal Agent Contract](#the-post-goal-agent-contract). |
+| `postGoalFunction` | `(suspend (MultimodalContent, PumpStation) -> MultimodalContent)?` | Synchronous transform that runs before `postGoalAgent`. Use to inject path output from `taskState.lastPathResult`. |
 | `preInitAgent` | `P2PInterface?` | Runs once at startup before the main loop. |
 | `pathSafetyAgent` | `P2PInterface?` | Gates medium/high risk path calls. |
 
@@ -950,12 +1005,19 @@ internal suspend fun PumpStation.runTurn(): TurnResult {
 `runExitFlow` is the goal-validation phase. It is called by `runTurn` when the judge says complete OR when a path returns `passPipeline: true` and a goal agent is configured. With no goal agent, the loop exits with `JudgeComplete` or `PassSignal` and the goal gate is skipped.
 
 ```kotlin
-internal suspend fun PumpStation.runExitFlow(): TurnResult {
+internal suspend fun PumpStation.runExitFlow(turnSnapshot: PumpStationInterruptSnapshot): TurnResult {
     if (!checkPauseGuards(PumpStationPausePhase.BeforeGoalValidation)) {
         return TurnResult.Halt(PumpStationExitReason.KillSwitchTripped)
     }
+    // Phase boundary: BeforeGoalValidation — poll interrupt then drain steering
+    // before the goal agent runs. The turnSnapshot is captured at the top of
+    // runTurn; if the goal flow throws an interrupt, the catch in
+    // runHarnessLoop will use it to rewind the turn.
+    injectInterruptForPhase(PumpStationPausePhase.BeforeGoalValidation, turnSnapshot)
+    injectSteeringForPhase(PumpStationPausePhase.BeforeGoalValidation)
     if (goalAgent == null) {
-        return TurnResult.Halt(PumpStationExitReason.JudgeComplete)
+        val exitContent = buildGoalContent()
+        return runPostGoalHook(exitContent)
     }
 
     val agent = goalAgentBuilderFunction?.invoke(this) ?: goalAgent!!
@@ -972,17 +1034,17 @@ internal suspend fun PumpStation.runExitFlow(): TurnResult {
     if (!passed) {
         turnHistory.add(ConverseData(role = ConverseRole.assistant, content = result))
         taskState.goalFailCount++
-        if (taskState.goalFailCount > maxGoalFailAttempts) {
+        if (taskState.goalFailCount > maxGoalFailAttemptsInternal) {
             return TurnResult.Halt(PumpStationExitReason.GoalValidationFailed)
         }
         return TurnResult.Continue
     }
 
-    return TurnResult.Halt(PumpStationExitReason.JudgeComplete)
+    return runPostGoalHook(buildPrunedHistoryContent())
 }
 ```
 
-The judge saying `isComplete: true` is **not** a terminal signal. It is a transition into goal validation. With no goal agent, the harness exits. With a goal agent, the goal validates — pass means deliver, fail means re-loop with the goal's critique appended to history (up to `maxGoalFailAttempts`).
+The judge saying `isComplete: true` is **not** a terminal signal. It is a transition into goal validation. With no goal agent, the harness exits. With a goal agent, the goal validates — pass means fire the post-goal hook (which produces the final deliverable), fail means re-loop with the goal's critique appended to history (up to `maxGoalFailAttempts`). On every successful exit, the post-goal hook (`runPostGoalHook`) fires before the loop terminates; see [The Post-Goal Agent Contract](#the-post-goal-agent-contract) for the full surface.
 
 ### Finalization: `runFinalizationPhase`
 
@@ -1824,6 +1886,7 @@ Trace events emitted by PumpStation:
 | `PUMP_STATION_COMPACTION_HANDED_OFF` | `CompactionHandedOffToTruncation` | contextWindowBefore, contextWindowAfter |
 | `PUMP_STATION_GOAL_VALIDATION_STARTED` | `GoalValidationStarted` | runId, turnIndex |
 | `PUMP_STATION_GOAL_VALIDATION_COMPLETED` | `GoalValidationCompleted` | passed, reason |
+| `PUMP_STATION_POST_GOAL_COMPLETED` | `PostGoalCompleted` | passed, reason, transformedContent |
 | `PUMP_STATION_RESERVE_PATH_REVEALED` | `ReservePathRevealed` | pathName, reservePathNames |
 | `PUMP_STATION_LOOP_GUARD_TRIPPED` | `LoopGuardTripped` | guard, pathName, detail |
 | `PUMP_STATION_CONTEXT_BLOWOUT_DETECTED` | `ContextBlowoutDetected` | fillRatio, threshold, afterPhase |
