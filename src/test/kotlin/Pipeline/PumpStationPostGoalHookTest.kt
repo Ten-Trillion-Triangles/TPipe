@@ -1,5 +1,7 @@
 package com.TTT.Pipeline
 
+import com.TTT.Context.ConverseData
+import com.TTT.Context.ConverseRole
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PResponse
@@ -184,5 +186,74 @@ class PumpStationPostGoalHookTest
             }
             station.P2PInit()
         }
+    }
+
+    /**
+     * Pins the [runPostGoalHook] input contract: when invoked directly with
+     * [buildPrunedHistoryContent], the [postGoalFunction] lambda receives the
+     * harness's pruned [turnHistory] (the same view judge/dispatch see),
+     * wrapped in a [MultimodalContent] that includes the inline
+     * `[CONVERSATION HISTORY]` block.
+     *
+     * The [postGoalFunction] lambda runs synchronously before [postGoalAgent]
+     * with the same input, so it acts as a side-channel capture mechanism:
+     * whatever the lambda receives is what the agent will receive.
+     */
+    @Test
+    fun testPostGoalHookReceivesPrunedHistoryContent() = runBlocking<Unit>
+    {
+        val capturedContent: java.util.concurrent.atomic.AtomicReference<MultimodalContent?> =
+            java.util.concurrent.atomic.AtomicReference(null)
+
+        val station = pumpStation("postgoal-hook-direct-test") {
+            dispatchAgent = Pipeline()
+            postGoalFunction = { content, _ ->
+                capturedContent.set(content)
+                content
+            }
+            postGoalAgent = SgTestAgent(agentTag = "post-goal-hook-direct-test")
+            path("noop") {
+                description = "noop"
+                risk = PathRiskLevel.Low
+                setInternalAgent(SgTestAgent(agentTag = "noop-agent"))
+            }
+        }
+        station.P2PInit()
+
+        // Synthesize a turnHistory entry so the inline [CONVERSATION HISTORY]
+        // block has content to serialize.
+        station.turnHistory.add(
+            ConverseData(
+                role = ConverseRole.user,
+                content = MultimodalContent(text = "seed turn for contract test")
+            )
+        )
+
+        val inputContent: MultimodalContent = station.buildPrunedHistoryContent()
+
+        // Drive the hook directly. Returns Halt(JudgeComplete) regardless of
+        // whether postGoalAgent is set — the post-success-only semantic.
+        val result = station.runPostGoalHook(inputContent)
+        assertEquals(
+            TurnResult.Halt(PumpStationExitReason.JudgeComplete),
+            result,
+            "runPostGoalHook must return Halt(JudgeComplete) per post-success-only semantic"
+        )
+
+        val captured = capturedContent.get()
+        assertNotNull(
+            captured,
+            "postGoalFunction must have been invoked exactly once"
+        )
+        assertTrue(
+            captured.text.contains("[CONVERSATION HISTORY]"),
+            "captured post-goal input must contain the inline history block. " +
+                "Captured first 200 chars: " + captured.text.take(200)
+        )
+        assertTrue(
+            captured.text.contains("seed turn for contract test"),
+            "captured post-goal input must include the seeded turnHistory entry. " +
+                "Captured first 200 chars: " + captured.text.take(200)
+        )
     }
 }

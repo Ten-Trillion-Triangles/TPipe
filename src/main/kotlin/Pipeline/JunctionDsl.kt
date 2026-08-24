@@ -376,6 +376,92 @@ class JunctionBuilder<S : JunctionStage> @PublishedApi internal constructor(
     }
 
     /**
+     * Override the moderator role's default system prompt.
+     *
+     * Pass `null` to re-enable the default prompt (`DEFAULT_MODERATOR_PROMPT`).
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This builder for chaining.
+     */
+    fun moderatorSystemPrompt(prompt: String?): JunctionBuilder<S>
+    {
+        junction.setModeratorSystemPrompt(prompt)
+        return this
+    }
+
+    /**
+     * Override the participant role's default system prompt.
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This builder for chaining.
+     */
+    fun participantSystemPrompt(prompt: String?): JunctionBuilder<S>
+    {
+        junction.setParticipantSystemPrompt(prompt)
+        return this
+    }
+
+    /**
+     * Override the planner role's default system prompt.
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This builder for chaining.
+     */
+    fun plannerSystemPrompt(prompt: String?): JunctionBuilder<S>
+    {
+        junction.setPlannerSystemPrompt(prompt)
+        return this
+    }
+
+    /**
+     * Override the actor role's default system prompt.
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This builder for chaining.
+     */
+    fun actorSystemPrompt(prompt: String?): JunctionBuilder<S>
+    {
+        junction.setActorSystemPrompt(prompt)
+        return this
+    }
+
+    /**
+     * Override the verifier role's default system prompt.
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This builder for chaining.
+     */
+    fun verifierSystemPrompt(prompt: String?): JunctionBuilder<S>
+    {
+        junction.setVerifierSystemPrompt(prompt)
+        return this
+    }
+
+    /**
+     * Override the adjuster role's default system prompt.
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This builder for chaining.
+     */
+    fun adjusterSystemPrompt(prompt: String?): JunctionBuilder<S>
+    {
+        junction.setAdjusterSystemPrompt(prompt)
+        return this
+    }
+
+    /**
+     * Override the output role's default system prompt.
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This builder for chaining.
+     */
+    fun outputSystemPrompt(prompt: String?): JunctionBuilder<S>
+    {
+        junction.setOutputSystemPrompt(prompt)
+        return this
+    }
+
+    /**
      * Configure the planner role for workflow-oriented Junction execution.
      *
      * @param roleName Stable planner routing name.

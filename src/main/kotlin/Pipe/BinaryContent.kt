@@ -180,10 +180,10 @@ data class MultimodalContent @OptIn(ExperimentalSerializationApi::class) constru
    @kotlinx.serialization.Transient
    var metadata = mutableMapOf<Any, Any>()
 
-    /**
-     * Current pipe that is working on this content object. Useful for handling tasks like pipe templating
-     * inside branch functions.
-     */
+   /**
+    * Current pipe that is working on this content object. Useful for handling tasks like pipe templating
+    * inside branch functions.
+    */
    @kotlinx.serialization.Transient
    var currentPipe: Pipe? = null
 

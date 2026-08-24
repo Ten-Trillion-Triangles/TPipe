@@ -10,6 +10,7 @@ import com.TTT.Context.Dictionary
 import com.TTT.Context.MemoryIntrospection
 import com.TTT.Context.MemoryIntrospectionConfig
 import com.TTT.Context.MemoryIntrospectionTools
+import com.TTT.Context.MetadataBank
 import com.TTT.Context.MiniBank
 import com.TTT.Debug.*
 import com.TTT.Debug.EventPriorityMapper
@@ -935,6 +936,11 @@ abstract class Pipe : P2PInterface, ProviderInterface
     private var activeStallDetector: StreamingStallDetector? = null
 
 //============================================= properties ===========================================================//
+
+    /**
+     * If true, this pipe will be ignored and skipped over inside a pipeline.
+     */
+    var disablePipe = false
 
     /**
      * Optional name for this pipe. Useful for debugging and tracing pipes and pipelines.
@@ -1927,7 +1933,29 @@ abstract class Pipe : P2PInterface, ProviderInterface
     @kotlinx.serialization.Transient
     val pipeMetadata = mutableMapOf<Any, Any>()
 
+    /**
+     * Page-keys string for metadata pull into [pipeMetadata]. When set,
+     * the runtime auto-pulls from [MetadataBank] at the appropriate
+     * point (the `readFromGlobalContext` block in `execute*()`) prior
+     * to any metadata access. Mirrors the existing
+     * `Pipe.readFromGlobalContext` execution-time pattern — runtime
+     * auto, not manual. Empty string = no pull. Glued format
+     * `"alpha, beta"`. Mirrors the convention used by
+     * [setPageKey] for the LLM context path but targets [pipeMetadata],
+     * not the ContextWindow pull.
+     */
+    protected var metaPageKeys: String = ""
+
 //============================================= constructor ==========================================================//
+
+    /**
+     * Disable a pipe from running, or re-enable it. See [disablePipe]
+     */
+    fun setDisablePipe(state: Boolean) : Pipe
+    {
+        disablePipe = state
+        return this
+    }
 
     /**
      * Sets the name for this pipe. This name is useful for debugging, tracing, and identifying
@@ -2070,15 +2098,99 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
+     * Recursively enables pipe timeout on every descendant pipe
+     * (validatorPipe / transformationPipe / branchPipe / reasoningPipe).
+     *
+     * Symmetric counterpart to [propagateStallDetection]. Cycle-safe via
+     * [visited] keyed on [pipeId]. Each visited child has its own
+     * `applyTimeoutRecursively = true` set so the recursion continues
+     * down the tree when the child itself runs [init].
+     *
+     * Called from [Pipe.init] when [enablePipeTimeout] is true and
+     * [applyTimeoutRecursively] is true. Also exposed publicly so
+     * callers who set the timeout flag manually (e.g. after a builder
+     * call) can trigger the cascade without re-running init().
+     *
+     * @param visited Internal — tracks already-walked pipes to prevent cycles
+     *                when a pipe is referenced from multiple parents.
+     */
+    fun propagatePipeTimeout(visited: MutableSet<String> = mutableSetOf())
+    {
+        if(pipeId in visited) return
+        visited.add(pipeId)
+
+        listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { child ->
+            if(child.pipeId !in visited)
+            {
+                child.enablePipeTimeout = true
+                child.pipeTimeout = this.pipeTimeout
+                child.timeoutStrategy = this.timeoutStrategy
+                child.maxRetryAttempts = this.maxRetryAttempts
+                child.pipeRetryFunction = this.pipeRetryFunction
+                child.applyTimeoutRecursively = true
+                child.propagatePipeTimeout(visited)
+            }
+        }
+    }
+
+    /**
+     * Recursively cancels every descendant pipe (validatorPipe,
+     * transformationPipe, branchPipe, reasoningPipe) so a parent abort
+     * reaches the entire tree, not just the immediate child slots.
+     *
+     * Cycle-safe via [visited] keyed on [pipeId] — a pipe referenced from
+     * multiple parents is visited once. Each visited child receives its
+     * own [abort] call before the walker recurses, so the cancellation
+     * signal lands on descendants while the parent still has context.
+     *
+     * @param visited Internal — tracks already-walked pipes to prevent cycles
+     *                when a pipe is referenced from multiple parents.
+     */
+    suspend fun propagateAbortRecursively(visited: MutableSet<String> = mutableSetOf())
+    {
+        if(pipeId in visited) return
+        visited.add(pipeId)
+
+        activeJob?.cancel()
+        activeJob = null
+        activeStallDetector = null
+
+        listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { child ->
+            if(child.pipeId !in visited)
+            {
+                child.abort()
+            }
+        }
+    }
+
+    /**
      * Emits a streaming chunk to all registered callbacks.
      * Provides default no-op implementation for providers that don't support streaming.
      * Subclasses can override to add provider-specific behavior.
-     *
-     * @param chunk The text chunk to emit
      */
     protected open suspend fun emitStreamingChunk(chunk: String)
     {
         streamingCallbackManager?.emitToAll(chunk)
+    }
+
+    /**
+     * Fires the completion callbacks on the streaming callback manager.
+     *
+     * Symmetric counterpart to [emitStreamingChunk]. Wire this at every
+     * successful stream-end break point in provider implementations so
+     * downstream consumers (UI windows, AgentWorkStream dispatchers,
+     * stall detectors) can react to "the LLM finished generating."
+     *
+     * NOT fired on error paths — a partially-failed stream is not a
+     * completion. Provider implementations should call this only when
+     * the stream terminated via [DONE], `chunk.done`, `ResponseCompleted`,
+     * `message_delta`, or other success-path terminal events.
+     *
+     * No-op when no completion callbacks are registered.
+     */
+    protected open suspend fun emitStreamEnd()
+    {
+        streamingCallbackManager?.emitCompleteToAll()
     }
 
     /**
@@ -4211,6 +4323,47 @@ abstract class Pipe : P2PInterface, ProviderInterface
         return this
     }
 
+    /**
+     * Set the glued metadata-page-keys string. Same convention as
+     * [setPageKey] (split on `", "`) but targets the [pipeMetadata]
+     * bag via [MetadataBank] — does not touch [pageKey]/[pageKeyList]
+     * which serve the LLM ContextWindow path. Empty string disables
+     * the pull. The runtime auto-pulls at the `readFromGlobalContext`
+     * point in `execute*()` — the dev does not need to call
+     * [pullMetaPageKeysIntoPipeMetadata] directly under normal flow.
+     *
+     * @param keys Glued key list, e.g. `"apex.state, workflow.global"`.
+     * @return This Pipe object for method chaining.
+     */
+    fun setMetaPageKeys(keys: String) : Pipe
+    {
+        this.metaPageKeys = keys
+        return this
+    }
+
+    /**
+     * Pull metadata from every key in [metaPageKeys] into [pipeMetadata]
+     * via [MetadataBank.pullMetaPageKeysIntoSuspend]. Last-write-wins
+     * on collision; missing keys silently skipped; no-op when
+     * [metaPageKeys] is blank. Runtime-invoked from the
+     * `readFromGlobalContext` block of `Pipe.execute*()` — the dev
+     * does not need to call this directly under normal flow.
+     */
+    fun pullMetaPageKeysIntoPipeMetadata()
+    {
+        if(metaPageKeys.isBlank()) return
+        MetadataBank.pullMetaPageKeysInto(this.pipeMetadata, this.metaPageKeys)
+    }
+
+    /**
+     * Boolean flag the runtime reads at execute-time to decide
+     * whether to auto-pull metadata from [MetadataBank]. Mirrors
+     * the existing `readFromGlobalContext` etc. pattern: a bool
+     * the runtime checks, then pulls if true. `true` iff
+     * [metaPageKeys] is non-blank.
+     */
+    fun hasMetaPageKeys(): Boolean = metaPageKeys.isNotBlank()
+
 
     /**
      * Sets the multiplier for window size calculations in dictionary truncation.
@@ -5465,17 +5618,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
      open suspend fun init() : Pipe
      {
-         // Propagate timeout settings recursively if enabled
+         // Propagate timeout settings recursively if enabled.
+         // Walker descends the entire descendant tree (validatorPipe /
+         // transformationPipe / branchPipe / reasoningPipe and their own
+         // children) so a 2-deep nested pipe gets timeout enabled on the
+         // grandchild as well. Mirrors propagateStallDetection's shape.
          if(enablePipeTimeout && applyTimeoutRecursively)
          {
-             listOfNotNull(validatorPipe, branchPipe, transformationPipe, reasoningPipe).forEach { child ->
-                 child.enablePipeTimeout = true
-                 child.pipeTimeout = pipeTimeout
-                 child.timeoutStrategy = timeoutStrategy
-                 child.maxRetryAttempts = maxRetryAttempts
-                 child.pipeRetryFunction = pipeRetryFunction
-                 child.applyTimeoutRecursively = true
-             }
+             propagatePipeTimeout()
          }
 
          // Name children FIRST, before they initialize their own children
@@ -6232,11 +6382,20 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Attempts to abort the current LLM call by cancelling the active execution job.
      * Child classes can override this to perform additional provider-specific cleanup.
+     *
+     * Delegates to [propagateAbortRecursively] so the cancellation walks
+     * the entire descendant tree (validatorPipe / transformationPipe /
+     * branchPipe / reasoningPipe and their own children). The walker
+     * performs the per-pipe cleanup (activeJob cancel, activeStallDetector
+     * clear) as part of its visit, so a single top-level abort() call
+     * cascades without double-invoking any descendant's abort().
+     *
+     * Override this ONLY when you need provider-specific cleanup that
+     * must run BEFORE the child cascade — in that case, do your work
+     * first and then call super.abort() to continue the cascade.
      */
     open suspend fun abort() {
-        activeJob?.cancel()
-        activeJob = null
-        activeStallDetector = null
+        propagateAbortRecursively()
     }
 
     /**
@@ -6484,6 +6643,16 @@ abstract class Pipe : P2PInterface, ProviderInterface
                             "contextWindow" to contextWindowJson,
                             "miniBank" to miniBankJson))
                 }
+
+                // Runtime auto-pull: MetadataBank -> pipeMetadata. Mirrors the existing
+                // readFrom*/pullFrom* execution-time pattern. No-op when metaPageKeys is blank.
+                // Pipe and PumpStation are the only execution classes that participate;
+                // MultimodalContent and ContextWindow are data carriers and do not
+                // surface the metaPageKeys contract.
+                if(hasMetaPageKeys())
+                {
+                    pullMetaPageKeysIntoPipeMetadata()
+                }
             }
 
 
@@ -6512,6 +6681,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 pumpStationParent?.getMiniBankFromInterface()?.let { pumpStationMiniBank ->
                     miniContextBank.merge(pumpStationMiniBank.deepCopy(), emplaceLorebook, appendLoreBook, emplaceConverseHistory, emplaceConverseHistoryOnlyIfNull)
                 }
+                // Runtime auto-pull: MetadataBank → PumpStation's metadata bag.
+                // Mirrors the existing readFrom*/pullFrom* execution-time pattern.
+                // No-op when metaPageKeys is blank.
+                (pumpStationParent as? com.TTT.Pipeline.PumpStation)?.pullMetaPageKeysIntoPumpStationMetadata()
             }
 
             /**
@@ -8398,6 +8571,58 @@ abstract class Pipe : P2PInterface, ProviderInterface
         else
         {
             containerPtr!!.setPipeSettingsRecursively(settings)
+        }
+    }
+
+    /**
+     * Implements the [P2PInterface.abortRecursive] contract. If this pipe
+     * is a leaf (containerPtr is null), delegates to [abort] which
+     * propagates the abort down the pipe tree. Otherwise, drills upward
+     * to the owning container so its [P2PInterface.abortRecursive]
+     * override can iterate its other children.
+     */
+    override suspend fun abortRecursive()
+    {
+        if (containerPtr == null)
+        {
+            abort()
+        }
+        else
+        {
+            containerPtr!!.abortRecursive()
+        }
+    }
+
+    /**
+     * Implements the [P2PInterface.enablePipeTimeoutRecursive] contract.
+     * If this pipe is a leaf (containerPtr is null), applies the timeout
+     * configuration locally via [enablePipeTimeout]. Otherwise drills
+     * upward to the owning container.
+     */
+    override fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean,
+        duration: Long,
+        autoRetry: Boolean,
+        retryLimit: Int
+    )
+    {
+        if (containerPtr == null)
+        {
+            enablePipeTimeout(
+                applyRecursively = applyRecursively,
+                duration = duration,
+                autoRetry = autoRetry,
+                retryLimit = retryLimit
+            )
+        }
+        else
+        {
+            containerPtr!!.enablePipeTimeoutRecursive(
+                applyRecursively = applyRecursively,
+                duration = duration,
+                autoRetry = autoRetry,
+                retryLimit = retryLimit
+            )
         }
     }
 

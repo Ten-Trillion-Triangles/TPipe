@@ -151,17 +151,25 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var goalAgent: P2PInterface? = null
 
     /**
-     * Optional agent that fires after the goal agent passes (or when no goal agent is
-     * configured and the harness is exiting through [runExitFlow]). Receives the
-     * goal agent's output (or the harness's exit-flow content when no goal agent is
-     * configured) as its input and may set [MultimodalContent.terminatePipeline] on
-     * its result to signal failure. Fires on every successful exit through
-     * [runExitFlow] — broad coverage including the no-goal-agent and passPipeline-
-     * routed paths — but NOT on the [PumpStationExitReason.GoalValidationFailed]
-     * failure-exhaustion halt path or the [MultimodalContent.terminatePipeline] direct
-     * halt path. Output becomes the harness's final deliverable; a non-passing agent
-     * halts the harness with [PumpStationExitReason.JudgeComplete] (does NOT re-loop
-     * — post-success-only semantic).
+     * Optional agent that fires after the goal agent passes (or when no goal
+     * agent is configured and the harness is exiting through [runExitFlow]).
+     * Receives the harness's pruned [turnHistory] (the same view judge/dispatch
+     * see) as its input — not the goal agent's output. The goal agent's job is
+     * to loop back and update turn history on compliance failure; the post-goal
+     * surface needs the full run context to do its work (schema enforcement,
+     * output shaping, cross-turn reasoning). May set
+     * [MultimodalContent.terminatePipeline] on its result to signal failure.
+     * Fires on every successful exit through [runExitFlow] — broad coverage
+     * including the no-goal-agent and passPipeline-routed paths — but NOT on
+     * the [PumpStationExitReason.GoalValidationFailed] failure-exhaustion halt
+     * path or the [MultimodalContent.terminatePipeline] direct halt path.
+     * Output becomes the harness's final deliverable; a non-passing agent
+     * halts the harness with [PumpStationExitReason.JudgeComplete] (does NOT
+     * re-loop — post-success-only semantic).
+     *
+     * Path output is NOT in the inline history by default; if your post-goal
+     * agent needs the path's actual [MultimodalContent], read it from
+     * `taskState.lastPathResult` inside a [postGoalFunction] lambda.
      */
     var postGoalAgent: P2PInterface? = null
 
@@ -744,13 +752,19 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     /**
      * DITL function fired after the goal agent passes (or when no goal agent is
      * configured and the harness is exiting through [runExitFlow]). Synchronous
-     * transformation: receives the goal agent's output (or the harness's exit-flow
-     * content when no goal agent is configured) and returns a possibly-modified
+     * transformation: receives the harness's pruned [turnHistory] content (the
+     * same input [postGoalAgent] will see) and returns a possibly-modified
      * [MultimodalContent]. Precedes [postGoalAgent] when both are configured —
      * the agent receives the function's return value. Fires on every successful
      * exit through [runExitFlow] (broad coverage); does NOT fire on the
-     * [PumpStationExitReason.GoalValidationFailed] failure-exhaustion halt path or
-     * the [MultimodalContent.terminatePipeline] direct halt path.
+     * [PumpStationExitReason.GoalValidationFailed] failure-exhaustion halt path
+     * or the [MultimodalContent.terminatePipeline] direct halt path.
+     *
+     * Use this lambda to read `taskState.lastPathResult` and inject the path's
+     * actual output into the post-goal agent's input — the inline
+     * [CONVERSATION HISTORY] block does not contain the path's
+     * [MultimodalContent] directly (path execution stores a serialized form,
+     * not the raw object).
      */
     var postGoalFunction: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)? = null
 
@@ -1032,6 +1046,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         healthAgent = source.healthAgent
         judgeAgentBuilderFunction = source.judgeAgentBuilderFunction
         dispatchAgentBuilderFunction = source.dispatchAgentBuilderFunction
+        postGoalFunction = source.postGoalFunction
         interventionAgentBuilderFunction = source.interventionAgentBuilderFunction
         lorebookAgentBuilderFunction = source.lorebookAgentBuilderFunction
         summaryAgentBuilderFunction = source.summaryAgentBuilderFunction
@@ -1171,6 +1186,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setSummaryAgent(summaryAgent)
             .setGoalAgent(goalAgent)
             .setPostGoalAgent(postGoalAgent)
+            .setPostGoalFunction(postGoalFunction)
             .setPreInitAgent(preInitAgent)
             .setPathSafetyAgent(pathSafetyAgent)
             .setPathExecutionShape(pathExecutionShape)

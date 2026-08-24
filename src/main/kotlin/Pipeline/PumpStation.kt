@@ -4,6 +4,7 @@ import com.TTT.Context.ContextWindow
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ConverseRole
+import com.TTT.Context.MetadataBank
 import com.TTT.Context.MiniBank
 import com.TTT.Context.TodoList
 import com.TTT.Context.TodoListTask
@@ -1200,11 +1201,21 @@ suspend fun interrupt(phase: PumpStationPausePhase, text: String)
     internal var goalAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
 
     /**
-     * Optional post-success agent. Fires inside [runExitFlow] after the goal agent passes,
-     * or on the no-goal-agent / passPipeline-routed exit paths. Receives the goal agent's
-     * output (or the harness's exit-flow content when no goal agent is configured). Output
-     * becomes the harness's final deliverable on pass; a [MultimodalContent.terminatePipeline]
-     * result halts the harness with [PumpStationExitReason.JudgeComplete] without re-loop.
+     * Optional post-success agent. Fires inside [runExitFlow] after the goal
+     * agent passes, or on the no-goal-agent / passPipeline-routed exit paths.
+     * Receives the harness's pruned [turnHistory] (the same view judge/dispatch
+     * see) as its input — not the goal agent's output. The goal agent's job is
+     * to loop back and update turn history on compliance failure; the post-goal
+     * surface needs the full run context to do its work (schema enforcement,
+     * output shaping, cross-turn reasoning). May set
+     * [MultimodalContent.terminatePipeline] on its result to signal failure.
+     * Output becomes the harness's final deliverable on pass; a
+     * [MultimodalContent.terminatePipeline] result halts the harness with
+     * [PumpStationExitReason.JudgeComplete] without re-loop.
+     *
+     * Path output is NOT in the inline history by default; if your post-goal
+     * agent needs the path's actual [MultimodalContent], read it from
+     * `taskState.lastPathResult` inside a [postGoalFunction] lambda.
      *
      * @see [postGoalAgentBuilderFunction] for runtime override
      * @see [postGoalFunction] for the synchronous transform that precedes this agent
@@ -1218,10 +1229,18 @@ suspend fun interrupt(phase: PumpStationPausePhase, text: String)
     internal var postGoalAgentBuilderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null
 
     /**
-     * Optional DITL function fired inside [runExitFlow] after the goal agent passes (or
-     * when no goal agent is configured and the harness is exiting through [runExitFlow]).
-     * Synchronous transform: receives the goal agent's output and returns a possibly-modified
-     * [MultimodalContent]. Precedes [postGoalAgent] when both are configured.
+     * Optional DITL function fired inside [runExitFlow] after the goal agent
+     * passes (or when no goal agent is configured and the harness is exiting
+     * through [runExitFlow]). Synchronous transform: receives the harness's
+     * pruned [turnHistory] content (the same input [postGoalAgent] will see)
+     * and returns a possibly-modified [MultimodalContent]. Precedes
+     * [postGoalAgent] when both are configured.
+     *
+     * Use this lambda to read `taskState.lastPathResult` and inject the path's
+     * actual output into the post-goal agent's input — the inline
+     * [CONVERSATION HISTORY] block does not contain the path's
+     * [MultimodalContent] directly (path execution stores a serialized form,
+     * not the raw object).
      */
     internal var postGoalFunction: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)? = null
 
@@ -1491,6 +1510,12 @@ private fun pathKey(name: String): String = name.lowercase()
      * whatever arbitrary data might need to be shared between functions across agents or other sub-systems.
      */
     val metadata = mutableMapOf<Any?, Any?>()
+
+    /**
+     * Page-keys string for metadata pull into [metadata]. Glued
+     * format `"alpha, beta"`. Empty string = no pull.
+     */
+    protected var metaPageKeys: String = ""
 
     /**
      * Internal context window addressable by this harness, and able to be passed into the various agents
@@ -2456,6 +2481,95 @@ private fun pathKey(name: String): String = name.lowercase()
         for (slot in additionalHarnessAgentSlots)
         {
             slot.agent?.enableStallDetectorRecursive(config, callback)
+        }
+    }
+
+    override suspend fun abortRecursive()
+    {
+        judgeAgent?.abortRecursive()
+        dispatchAgent?.abortRecursive()
+        interventionAgent?.abortRecursive()
+        healthAgent?.abortRecursive()
+        lorebookAgent?.abortRecursive()
+        summaryAgent?.abortRecursive()
+        goalAgent?.abortRecursive()
+        preInitAgent?.abortRecursive()
+        pathSafetyAgent?.abortRecursive()
+        for (slot in additionalHarnessAgentSlots)
+        {
+            slot.agent?.abortRecursive()
+        }
+    }
+
+    override fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean,
+        duration: Long,
+        autoRetry: Boolean,
+        retryLimit: Int
+    )
+    {
+        judgeAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        dispatchAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        interventionAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        healthAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        lorebookAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        summaryAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        goalAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        preInitAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        pathSafetyAgent?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        for (slot in additionalHarnessAgentSlots)
+        {
+            slot.agent?.enablePipeTimeoutRecursive(
+                applyRecursively = applyRecursively,
+                duration = duration,
+                autoRetry = autoRetry,
+                retryLimit = retryLimit
+            )
         }
     }
 
@@ -3710,7 +3824,8 @@ private fun pathKey(name: String): String = name.lowercase()
     /**
      * Sets the post-success DITL function. Fires inside [runExitFlow] after the goal
      * agent passes (or on the no-goal-agent path). Synchronous transformation of the
-     * goal output that precedes [postGoalAgent] when both are configured.
+     * harness's pruned [turnHistory] content (the same input [postGoalAgent] will see)
+     * that precedes [postGoalAgent] when both are configured.
      *
      * @param fn The transformation function, or null to clear the binding.
      * @return This PumpStation instance for method chaining.
@@ -5346,4 +5461,54 @@ private fun pathKey(name: String): String = name.lowercase()
         return this
     }
 
+    /**
+     * Set the glued metadata-page-keys string. Same convention as
+     * `Pipe.setPageKey(...)` and `MultimodalContent.setMetaPageKeys(...)`
+     * — split on `", "` — but targets [metadata] via [MetadataBank].
+     * Empty string disables the pull. Parsing happens at pull-time.
+     * The runtime auto-pulls at the appropriate point (when Pipe
+     * addresses this station during execute) — the dev does not need
+     * to call [pullMetaPageKeysIntoPumpStationMetadata] directly
+     * under normal flow.
+     *
+     * @param keys Glued key list, e.g. `"alpha, beta"`.
+     * @return This PumpStation for chaining.
+     */
+    fun setMetaPageKeys(keys: String): PumpStation
+    {
+        this.metaPageKeys = keys
+        return this
+    }
+
+    /**
+     * Pull metadata from every key in [metaPageKeys] into [metadata]
+     * via [MetadataBank.pullMetaPageKeysIntoSuspend]. PumpStation's
+     * [metadata] uses `MutableMap<Any?, Any?>` (note `Any?`, not `Any`)
+     * while the bank primitive targets `MutableMap<Any, Any>`. The
+     * bridge uses a transient `MutableMap<Any, Any>` view, populated
+     * by the bank, then written back into the `Any?` bag. Last-write-wins
+     * on collision; missing keys silently skipped; no-op when
+     * [metaPageKeys] is blank. Runtime-invoked from the
+     * `readFromPumpStationContext` block of `Pipe.execute*()` — the
+     * dev does not need to call this directly under normal flow.
+     */
+    fun pullMetaPageKeysIntoPumpStationMetadata()
+    {
+        if(metaPageKeys.isBlank()) return
+        val view = mutableMapOf<Any, Any>()
+        MetadataBank.pullMetaPageKeysInto(view, this.metaPageKeys)
+        for((k, v) in view)
+        {
+            this.metadata[k] = v
+        }
+    }
+
+    /**
+     * Boolean flag the runtime reads at execute-time to decide
+     * whether to auto-pull metadata from [MetadataBank]. Mirrors
+     * the existing `readFromGlobalContext` etc. pattern: a bool
+     * the runtime checks, then pulls if true. `true` iff
+     * [metaPageKeys] is non-blank.
+     */
+    fun hasMetaPageKeys(): Boolean = metaPageKeys.isNotBlank()
 }

@@ -326,6 +326,49 @@ Semantics:
 - **Cycle-safe** — `propagateStallDetection` uses a `visited` set keyed by `pipeId` so a pipe referenced from multiple containers is wired exactly once.
 - **Default config** — calling `enableStallDetectorRecursive()` with no arguments propagates `StreamingStallConfig()` defaults and a `null` callback to every leaf.
 
+#### Container-Level Abort (Recursive)
+
+For multi-container hierarchies (Manifold, Junction, Splitter, Connector, MultiConnector, DistributionGrid, PumpStation), use `abortRecursive()` on any P2PInterface root. The call walks the entire container tree: each container override recurses into its own child P2PInterface references, and at the leaf each `Pipe` runs `abort()` which delegates to `Pipe.propagateAbortRecursively()`, which further walks the pipe's validator / transformation / branch / reasoning child pipes.
+
+```kotlin
+// One call at the top of the agent tree, every leaf gets cancelled.
+val agentTree: P2PInterface = manifold { /* ... */ }
+// ... agent tree is running ...
+agentTree.abortRecursive()
+// every leaf pipe across the entire agent tree is now cancelled
+```
+
+Semantics:
+
+- **Leaf behavior** — when a `Pipe.abortRecursive()` reaches a leaf (no `containerPtr`), it calls `abort()` which delegates to `propagateAbortRecursively`, walking the pipe's own descendant pipes.
+- **Cycle-safe** — `propagateAbortRecursively` uses a `visited` set keyed by `pipeId` so a pipe reachable from multiple containers is cancelled exactly once.
+- **Suspend signature** — `abortRecursive` is a suspend function because the leaf-side `Pipe.abort()` is suspend. Call from a coroutine context (`runBlocking { ... }` or another `suspend fun`).
+- **Idempotent on already-cancelled pipes** — if a pipe has already been cancelled, calling abort on it again is a no-op for the cancellation and emits a `PIPE_FAILURE` trace if the on-trace path is configured.
+
+#### Container-Level Timeout Configuration (Recursive)
+
+For multi-container hierarchies, use `enablePipeTimeoutRecursive(...)` on any P2PInterface root. The call walks the entire container tree: each container override recurses into its own child P2PInterface references, and at the leaf each `Pipe` runs `enablePipeTimeout(...)` locally.
+
+```kotlin
+// One call at the top of the agent tree, every leaf gets the same timeout configuration.
+val agentTree: P2PInterface = distributionGrid { /* ... */ }
+agentTree.enablePipeTimeoutRecursive(
+    applyRecursively = true,
+    duration = 120000,         // 2 minutes per leaf
+    autoRetry = true,
+    retryLimit = 3
+)
+// every leaf pipe across the entire grid now has a 2-minute timeout with up to 3 retries
+```
+
+Semantics:
+
+- **Parent override wins** — a leaf that was previously configured with a different `pipeTimeout` or `maxRetryAttempts` has both replaced by the recursive call's arguments. Same shape as `Pipeline.init` direct propagation.
+- **Per-pipe stats invariant** — every leaf pipe keeps its own `PipeTimeoutManager` instance with its own retry counter. The recursive call wires more leaves to managers, it does NOT share a single manager across pipes.
+- **Cycle-safe** — `propagatePipeTimeout` uses a `visited` set keyed by `pipeId` so a pipe reachable from multiple containers is configured exactly once.
+- **Custom retry functions are NOT propagated** — the `customLogic` parameter is bound to a specific pipe instance and is intentionally NOT exposed on the recursive signature. Each leaf retains its own custom retry logic if any was set. To replace custom logic across the tree, call `setRetryFunction(...)` directly on each leaf.
+- **Default config** — calling `enablePipeTimeoutRecursive()` with no arguments propagates the defaults (`duration = 300000`, `autoRetry = false`, `retryLimit = 5`) to every leaf.
+
 ### How It Works
 
 ```

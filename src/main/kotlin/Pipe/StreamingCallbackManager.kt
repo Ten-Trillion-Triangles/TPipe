@@ -31,6 +31,7 @@ class StreamingCallbackManager(
 )
 {
     private val callbacks = mutableListOf<suspend (String) -> Unit>()
+    private val completionCallbacks = mutableListOf<suspend () -> Unit>()
 
     /**
      * Adds a callback to the manager.
@@ -85,6 +86,90 @@ class StreamingCallbackManager(
      * Returns the number of registered callbacks.
      */
     fun callbackCount(): Int = callbacks.size
+
+    /**
+     * Registers a callback to fire when the stream ends normally.
+     *
+     * The callback fires exactly once per [emitCompleteToAll] invocation.
+     * Errors thrown by a completion callback are routed through [onError]
+     * (set in the constructor) and do not stop subsequent callbacks from
+     * firing. Dedup by reference identity — registering the same lambda
+     * twice results in one call.
+     *
+     * @param callback Suspendable no-arg function invoked when the stream ends.
+     */
+    fun addCompleteCallback(callback: suspend () -> Unit)
+    {
+        if(!completionCallbacks.contains(callback))
+        {
+            completionCallbacks.add(callback)
+        }
+    }
+
+    /**
+     * Removes a previously-added completion callback.
+     *
+     * @param callback The callback to remove.
+     * @return True if removed, false if not found.
+     */
+    fun removeCompleteCallback(callback: suspend () -> Unit): Boolean
+    {
+        return completionCallbacks.remove(callback)
+    }
+
+    /**
+     * Returns the number of registered completion callbacks.
+     */
+    fun completeCallbackCount(): Int = completionCallbacks.size
+
+    /**
+     * Emits a completion event to all registered completion callbacks.
+     *
+     * Each callback runs in the caller's coroutine. Errors thrown by one
+     * callback are caught and routed through [onError]; subsequent callbacks
+     * still fire. Honors the same [executionMode] as chunk callbacks.
+     */
+    suspend fun emitCompleteToAll()
+    {
+        if(completionCallbacks.isEmpty()) return
+
+        when(executionMode)
+        {
+            StreamingExecutionMode.SEQUENTIAL -> emitCompleteSequential()
+            StreamingExecutionMode.CONCURRENT -> emitCompleteConcurrent()
+        }
+    }
+
+    private suspend fun emitCompleteSequential()
+    {
+        for(callback in completionCallbacks)
+        {
+            try
+            {
+                callback()
+            }
+            catch(e: Exception)
+            {
+                onError?.invoke(e, "")
+            }
+        }
+    }
+
+    private suspend fun emitCompleteConcurrent() = coroutineScope {
+        for(callback in completionCallbacks)
+        {
+            launch {
+                try
+                {
+                    callback()
+                }
+                catch(e: Exception)
+                {
+                    onError?.invoke(e, "")
+                }
+            }
+        }
+    }
 
     /**
      * Emits a chunk to all registered callbacks with error isolation.

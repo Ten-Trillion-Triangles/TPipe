@@ -2777,7 +2777,7 @@ internal suspend fun PumpStation.runExitFlow(turnSnapshot: PumpStationInterruptS
         return TurnResult.Continue
     }
 
-    return runPostGoalHook(result)
+    return runPostGoalHook(buildPrunedHistoryContent())
 }
 
 /**

@@ -241,6 +241,39 @@ class Manifold : P2PInterface
         }
     }
 
+    override suspend fun abortRecursive()
+    {
+        managerPipeline.abortRecursive()
+        for (workerComponent in workerComponents)
+        {
+            workerComponent.abortRecursive()
+        }
+    }
+
+    override fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean,
+        duration: Long,
+        autoRetry: Boolean,
+        retryLimit: Int
+    )
+    {
+        managerPipeline.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        for (workerComponent in workerComponents)
+        {
+            workerComponent.enablePipeTimeoutRecursive(
+                applyRecursively = applyRecursively,
+                duration = duration,
+                autoRetry = autoRetry,
+                retryLimit = retryLimit
+            )
+        }
+    }
+
 //=============================================Properties===============================================================
 
     private var managerPipeline: Pipeline = Pipeline()

@@ -658,6 +658,33 @@ class DistributionGrid : P2PInterface
         workerPipelines?.forEach { it.enableStallDetectorRecursive(config, callback) }
     }
 
+    override suspend fun abortRecursive()
+    {
+        routerBinding?.component?.abortRecursive()
+        workerBinding?.component?.abortRecursive()
+    }
+
+    override fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean,
+        duration: Long,
+        autoRetry: Boolean,
+        retryLimit: Int
+    )
+    {
+        routerBinding?.component?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        workerBinding?.component?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+    }
+
     /**
      * Execute the local DistributionGrid runtime path directly.
      *

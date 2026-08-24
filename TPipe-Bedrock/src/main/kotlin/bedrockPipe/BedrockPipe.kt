@@ -1592,9 +1592,13 @@ open class BedrockPipe : Pipe()
     /**
      * Aborts the current Bedrock API call. Since the AWS SDK respects coroutine
      * cancellation, super.abort() will handle the primary cancellation.
+     *
+     * The PIPE_FAILURE trace emitted here fires once per ancestor that cancels.
+     * Downstream consumers can use the trace metadata to distinguish an
+     * ancestor-cancel from a self-abort.
      */
     override suspend fun abort() {
-        trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, 
+        trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION,
               metadata = mapOf("action" to "abort", "provider" to "Bedrock"))
         super.abort()
     }
@@ -5100,7 +5104,11 @@ put("system", if(enableCaching && cacheControl != null) {
             val processedResult = splitInterleavedReasoning(result)
             
             trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, processedResult, metadata = metadata)
-            
+
+            // Notify streaming subscribers that the LLM has finished generating.
+            // Success-path only — error branches above return early.
+            emitStreamEnd()
+
             return processedResult
 
         }
@@ -5274,6 +5282,8 @@ put("system", if(enableCaching && cacheControl != null) {
             // Trace successful streaming completion
             trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION, metadata = metadata)
             val result = MultimodalContent(text = finalText, modelReasoning = reasoningBuilder.toString())
+            // Notify streaming subscribers that the LLM has finished generating.
+            emitStreamEnd()
             return splitInterleavedReasoning(result)
 
         }

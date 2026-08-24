@@ -14,6 +14,7 @@ Streaming callbacks are functions that receive individual text chunks (tokens) a
 - **Configurable execution** - Choose sequential or concurrent callback execution
 - **Error isolation** - One callback's exception doesn't affect others
 - **Backward compatibility** - Existing code continues to work unchanged
+- **Stream completion signal** - Register a callback that fires exactly once when the LLM finishes generating
 
 ## Basic Streaming (Single Callback)
 
@@ -108,6 +109,56 @@ pipe.streamingCallbacks {
         println("Error: ${exception.message}")
     }
 }
+```
+
+### Stream Completion Callback
+
+The `onComplete` callback fires exactly once when the LLM has finished generating, after the last chunk has been delivered. It is independent of the chunk-callback list — registering an `onComplete` does not replay chunk history, and chunk callbacks do not fire on completion. Errors thrown by an `onComplete` callback are isolated by `onError` and do not stop other completion callbacks from firing.
+
+```kotlin
+pipe.streamingCallbacks {
+    add { chunk -> print(chunk) }              // Fires per chunk
+    onComplete { 
+        // Fires exactly once after the LLM has finished generating.
+        // Use to flush UI buffers, close resources, or trigger follow-up work.
+        uiThread.post { statusLabel.text = "Done" }
+    }
+}
+```
+
+The completion callback fires on the **success path only** — it does not fire when the stream terminates via an error (an `IOException`, an empty-response guard throw, an `ApiMode.ResponseFailed` event, or a stall-driven timeout). For those cases, error handling happens via `onError` or the surrounding `try`/`catch` on `pipe.execute(...)`.
+
+Use cases for `onComplete`:
+
+- **UI window flush** — close streaming text buffers and render the final state without inspecting `streamingFinishReason` after `execute()` returns.
+- **Stall detector cleanup** — distinguish "the model is stalled" from "the model finished" within the streaming callback chain.
+- **Follow-up orchestration** — kick off the next pipeline stage, close a websocket, persist the response, without polling `pipe.execute()`.
+
+**Direct manager access** (for dynamic registration):
+
+```kotlin
+val pipe = BedrockPipe()
+    .setModel("anthropic.claude-3-haiku-20240307-v1:0")
+    .setRegion("us-west-2")
+
+val manager = pipe.obtainStreamingCallbackManager()
+
+// Register a completion callback dynamically
+val onStreamDone: suspend () -> Unit = {
+    metrics.recordStreamComplete()
+    websocket.close()
+}
+manager.addCompleteCallback(onStreamDone)
+
+// Remove later
+manager.removeCompleteCallback(onStreamDone)
+
+// Inspect count
+println("Completion callbacks: ${manager.completeCallbackCount()}")
+
+// Fire the completion signal manually (advanced — useful in tests or
+// non-streaming paths where you want to simulate a stream-end)
+runBlocking { manager.emitCompleteToAll() }
 ```
 
 ## Advanced Usage
@@ -293,6 +344,7 @@ This clears both legacy single callbacks and all multi-callback manager callback
 4. **Keep callbacks lightweight** - offload heavy processing to background threads
 5. **Use suspending callbacks** for async operations (database writes, network calls)
 6. **Test error isolation** - ensure one callback's failure doesn't break others
+7. **Subscribe to `onComplete`** when downstream consumers need a "stream ended" signal — without it, they have to inspect `streamingFinishReason` after `execute()` returns or guess based on chunk silence
 
 ## Common Use Cases
 
@@ -326,6 +378,24 @@ pipe.streamingCallbacks {
     add { chunk -> websocket.send(chunk) }     // Send to client
     add { chunk -> cache.append(chunk) }       // Cache response
     concurrent()
+}
+```
+
+### Stream Completion Notification
+
+```kotlin
+pipe.streamingCallbacks {
+    add { chunk -> textBuffer.append(chunk) }
+    onComplete {
+        // Flush the buffer, close the websocket, mark the UI as ready.
+        // No polling, no inspecting streamingFinishReason after execute() returns.
+        uiThread.post {
+            textView.text = textBuffer.toString()
+            statusLabel.text = "Stream complete"
+        }
+        websocket.close()
+        metrics.recordStreamComplete()
+    }
 }
 ```
 

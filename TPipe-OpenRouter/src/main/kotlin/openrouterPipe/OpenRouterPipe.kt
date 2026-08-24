@@ -817,6 +817,9 @@ class OpenRouterPipe : Pipe()
                   "apiType" to "ChatAPI"
               ))
 
+        // Stream ended successfully (via [DONE] sentinel or channel EOF).
+        emitStreamEnd()
+
         return resultText
     }
 

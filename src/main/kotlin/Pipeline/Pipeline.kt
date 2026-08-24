@@ -484,6 +484,32 @@ class Pipeline : P2PInterface
         }
     }
 
+    override suspend fun abortRecursive()
+    {
+        for (pipe in getPipes())
+        {
+            pipe.abortRecursive()
+        }
+    }
+
+    override fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean,
+        duration: Long,
+        autoRetry: Boolean,
+        retryLimit: Int
+    )
+    {
+        for (pipe in getPipes())
+        {
+            pipe.enablePipeTimeoutRecursive(
+                applyRecursively = applyRecursively,
+                duration = duration,
+                autoRetry = autoRetry,
+                retryLimit = retryLimit
+            )
+        }
+    }
+
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
         /** Start as "this" but we may need to alter our target if we need to copy "this" due to some change the
@@ -1478,7 +1504,8 @@ class Pipeline : P2PInterface
             // Record the input that was passed to this pipe so the decision-pipe
             // resolution can detect a "no-op" pipe (one whose output is the same
             // as its input).
-            if(pipe.pipeName.isNotEmpty()) {
+            if(pipe.pipeName.isNotEmpty())
+            {
                 pipeInputs[pipe.pipeName] = generatedContent
             }
             
@@ -1492,25 +1519,28 @@ class Pipeline : P2PInterface
             }
 
             try {
-                val result : Deferred<MultimodalContent> = async {
-                    pipe.execute(generatedContent)
-                }
+                if(!pipe.disablePipe) //Conditional skip if the pipe is disabled. Otherwise, proceed as normal.
+                {
+                    val result : Deferred<MultimodalContent> = async {
+                        pipe.execute(generatedContent)
+                    }
 
-                //Execute the current pipe and await its result.
-                generatedContent = result.await()
-                
-                // Capture pipe errors after execution
-                if(pipe.hasError())
-                {
-                    lastFailedPipe = pipe
-                    lastError = pipe.lastError
-                }
-                
-                // Also check if error was propagated through content
-                if(generatedContent.pipeError != null && lastError == null)
-                {
-                    lastFailedPipe = pipe
-                    lastError = generatedContent.pipeError
+                    //Execute the current pipe and await its result.
+                    generatedContent = result.await()
+
+                    // Capture pipe errors after execution
+                    if(pipe.hasError())
+                    {
+                        lastFailedPipe = pipe
+                        lastError = pipe.lastError
+                    }
+
+                    // Also check if error was propagated through content
+                    if(generatedContent.pipeError != null && lastError == null)
+                    {
+                        lastFailedPipe = pipe
+                        lastError = generatedContent.pipeError
+                    }
                 }
             }
 

@@ -103,6 +103,23 @@ class StreamingCallbackBuilder
     }
 
     /**
+     * Registers a callback to fire when the stream ends normally.
+     *
+     * Fires exactly once at stream end, after all chunk callbacks have run.
+     * Errors are routed through [onError] and do not stop subsequent callbacks.
+     * Independent of the chunk-callback list — completion callbacks fire
+     * exactly once and don't replay chunk history.
+     *
+     * @param callback Suspendable no-arg function invoked when the stream ends.
+     * @return This builder for method chaining
+     */
+    fun onComplete(callback: suspend () -> Unit): StreamingCallbackBuilder
+    {
+        manager.addCompleteCallback(callback)
+        return this
+    }
+
+    /**
      * Builds and returns the configured StreamingCallbackManager.
      *
      * @return The configured manager instance

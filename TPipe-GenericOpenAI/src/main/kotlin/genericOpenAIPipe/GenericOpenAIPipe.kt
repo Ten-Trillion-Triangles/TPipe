@@ -1781,6 +1781,11 @@ class GenericOpenAIPipe : Pipe()
               content = result,
               metadata = streamingMetadata)
 
+        // Notify subscribers that the LLM has finished generating.
+        // Success-path only — the IOException catch above and the
+        // empty-response guard throw before reaching this point.
+        emitStreamEnd()
+
         // Return the MultimodalContent (carries both `text` and `modelReasoning`)
         // so callers can route reasoning to its own content block. The
         // non-streaming path does the same via `generateTextMultimodal`.
@@ -1969,6 +1974,11 @@ class GenericOpenAIPipe : Pipe()
               content = result,
               metadata = streamingMetadata)
 
+        // Notify subscribers that the LLM has finished generating.
+        // Success-path only — the IOException catch above and the
+        // empty-response guard throw before reaching this point.
+        emitStreamEnd()
+
         // Return the MultimodalContent (carries both `text` and `modelReasoning`)
         // so callers can route reasoning to its own content block. The
         // non-streaming path does the same via `generateTextMultimodal`.
@@ -2026,6 +2036,8 @@ class GenericOpenAIPipe : Pipe()
                 is SseParser.SseLine.Invalid -> continue
             }
         }
+        // Stream ended successfully (via [DONE] sentinel or channel EOF).
+        emitStreamEnd()
     }
 
     /**
@@ -2132,6 +2144,8 @@ class GenericOpenAIPipe : Pipe()
                 currentEventType = null
             }
         }
+        // Stream ended successfully (via message_delta / message_stop break).
+        emitStreamEnd()
     }
 
     /**
@@ -2237,6 +2251,11 @@ class GenericOpenAIPipe : Pipe()
         streamingInputTokens = totalInputTokens
         streamingOutputTokens = totalOutputTokens
         streamingReasoningTokens = totalReasoningTokens
+
+        // Stream ended successfully (via ResponseCompleted break).
+        // ResponseFailed throws before this point and never reaches here,
+        // so error paths do not fire onComplete.
+        emitStreamEnd()
     }
 
     /**

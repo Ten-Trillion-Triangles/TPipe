@@ -140,6 +140,55 @@ interface P2PInterface
     ) {}
 
     /**
+     * Recursively aborts the current execution on every leaf pipe in this
+     * interface's agent tree. Mirrors the propagation behaviour of
+     * [setStreamingCallbackRecursive] and [enableStallDetectorRecursive].
+     *
+     * Default no-op so non-Pipeline implementations don't have to opt in.
+     * Each container (Pipeline, Manifold, Junction, Splitter, Connector,
+     * MultiConnector, DistributionGrid, PumpStation) overrides this to
+     * drill through its children and call [com.TTT.Pipe.Pipe.abort] (which
+     * delegates to [com.TTT.Pipe.Pipe.propagateAbortRecursively]) on every
+     * leaf pipe.
+     *
+     * Suspend because the leaf-side [com.TTT.Pipe.Pipe.abort] is suspend.
+     * The base Pipe override delegates upward via [containerPtr] so the
+     * abort cascade originates at the root caller and walks down.
+     */
+    suspend fun abortRecursive() {}
+
+    /**
+     * Recursively enables pipe-timeout on every leaf pipe in this
+     * interface's agent tree. Mirrors the propagation behaviour of
+     * [enableStallDetectorRecursive] and [setStreamingCallbackRecursive].
+     *
+     * Default no-op so non-Pipeline implementations don't have to opt in.
+     * Each container overrides this to drill through its children and
+     * call [com.TTT.Pipe.Pipe.enablePipeTimeout] on every leaf pipe.
+     *
+     * Only the safe-to-propagate parameters are exposed here:
+     * [applyRecursively], [duration], [autoRetry], [retryLimit]. The
+     * [com.TTT.Pipe.Pipe.enablePipeTimeout]'s `customLogic` parameter
+     * is bound to a specific pipe instance and is NOT propagated — each
+     * leaf retains its own custom retry logic if any was set.
+     *
+     * @param applyRecursively Whether each leaf should propagate to its
+     *                         own descendant pipes. Defaults to `true`.
+     * @param duration Timeout duration in milliseconds. Defaults to 5
+     *                 minutes (300,000 ms).
+     * @param autoRetry Whether to enable automatic retry on timeout. Defaults
+     *                 to `false`. Mutually exclusive with `customLogic`.
+     * @param retryLimit Maximum number of retry attempts on timeout.
+     *                   Defaults to `5`.
+     */
+    fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean = true,
+        duration: Long = 300000,
+        autoRetry: Boolean = false,
+        retryLimit: Int = 5
+    ) {}
+
+    /**
      * Sets the converse role on every leaf pipe in this interface's
      * agent tree. Mirrors the propagation behaviour of
      * [setTokenBudgetRecursive] and [setStreamingCallbackRecursive].

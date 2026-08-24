@@ -24,6 +24,7 @@ import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.P2PSkills
 import com.TTT.P2P.SupportedContentTypes
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.StallCallback
 import com.TTT.Pipe.StreamingStallConfig
 import com.TTT.Pipe.TokenBudgetSettings
@@ -131,6 +132,27 @@ class Junction : P2PInterface
     private var moderatorInterventionEnabled = true
     private var defaultMaxNestedDepth = 8
     private var junctionMemoryPolicy = JunctionMemoryPolicy()
+
+//==========================================Role Contract Auto-Injection==============================================
+
+    /**
+     * Custom system prompt overrides for each role's auto-injection target. When
+     * non-null, the auto-injector writes this prompt into the role's decision pipe
+     * instead of the corresponding `DEFAULT_<ROLE>_PROMPT` constant. When null,
+     * the role receives the default prompt. See
+     * `JunctionDefaults.kt` for the seven default constants and
+     * `JunctionContractAutoInjectionTest.kt` for the binding behavior contract.
+     *
+     * Each setter mutates only its own field — never the whole policy object —
+     * to preserve the silent-overwrite pitfall fix documented on `setSummaryAgent`.
+     */
+    private var customModeratorSystemPrompt: String? = null
+    private var customParticipantSystemPrompt: String? = null
+    private var customPlannerSystemPrompt: String? = null
+    private var customActorSystemPrompt: String? = null
+    private var customVerifierSystemPrompt: String? = null
+    private var customAdjusterSystemPrompt: String? = null
+    private var customOutputSystemPrompt: String? = null
 
 //==========================================Kill Switch Accumulator=================================================
 
@@ -349,6 +371,39 @@ class Junction : P2PInterface
         }
     }
 
+    override suspend fun abortRecursive()
+    {
+        moderatorBinding?.component?.abortRecursive()
+        for (binding in participantBindings)
+        {
+            binding.component.abortRecursive()
+        }
+    }
+
+    override fun enablePipeTimeoutRecursive(
+        applyRecursively: Boolean,
+        duration: Long,
+        autoRetry: Boolean,
+        retryLimit: Int
+    )
+    {
+        moderatorBinding?.component?.enablePipeTimeoutRecursive(
+            applyRecursively = applyRecursively,
+            duration = duration,
+            autoRetry = autoRetry,
+            retryLimit = retryLimit
+        )
+        for (binding in participantBindings)
+        {
+            binding.component.enablePipeTimeoutRecursive(
+                applyRecursively = applyRecursively,
+                duration = duration,
+                autoRetry = autoRetry,
+                retryLimit = retryLimit
+            )
+        }
+    }
+
 //----------------------------------------------Configuration------------------------------------------------------------
 
     /**
@@ -382,6 +437,8 @@ class Junction : P2PInterface
             description = description.ifBlank { "Moderator container for Junction discussion control" },
             weight = 1.0
         )
+
+        autoInjectDefaultPrompt(component, customModeratorSystemPrompt, DEFAULT_MODERATOR_PROMPT)
 
         bindContainerReference(component)
 
@@ -451,6 +508,8 @@ class Junction : P2PInterface
 
         participantBindings.add(binding)
         participantBindingsByName[roleName] = binding
+
+        autoInjectDefaultPrompt(component, customParticipantSystemPrompt, DEFAULT_PARTICIPANT_PROMPT)
 
         bindContainerReference(component)
 
@@ -617,6 +676,95 @@ class Junction : P2PInterface
     fun setSummaryAgent(agent: P2PInterface?): Junction
     {
         junctionMemoryPolicy.summaryAgent = agent
+        return this
+    }
+
+    /**
+     * Override the moderator role's default system prompt.
+     *
+     * Pass `null` to re-enable the default prompt (`DEFAULT_MODERATOR_PROMPT`).
+     * The custom prompt is written into the moderator binding's decision pipe
+     * at bind time, but only if the developer hasn't already configured the
+     * pipe's own `systemPrompt`.
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This Junction object for method chaining.
+     */
+    fun setModeratorSystemPrompt(prompt: String?): Junction
+    {
+        customModeratorSystemPrompt = prompt
+        return this
+    }
+
+    /**
+     * Override the participant role's default system prompt.
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This Junction object for method chaining.
+     */
+    fun setParticipantSystemPrompt(prompt: String?): Junction
+    {
+        customParticipantSystemPrompt = prompt
+        return this
+    }
+
+    /**
+     * Override the planner role's default system prompt.
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This Junction object for method chaining.
+     */
+    fun setPlannerSystemPrompt(prompt: String?): Junction
+    {
+        customPlannerSystemPrompt = prompt
+        return this
+    }
+
+    /**
+     * Override the actor role's default system prompt.
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This Junction object for method chaining.
+     */
+    fun setActorSystemPrompt(prompt: String?): Junction
+    {
+        customActorSystemPrompt = prompt
+        return this
+    }
+
+    /**
+     * Override the verifier role's default system prompt.
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This Junction object for method chaining.
+     */
+    fun setVerifierSystemPrompt(prompt: String?): Junction
+    {
+        customVerifierSystemPrompt = prompt
+        return this
+    }
+
+    /**
+     * Override the adjuster role's default system prompt.
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This Junction object for method chaining.
+     */
+    fun setAdjusterSystemPrompt(prompt: String?): Junction
+    {
+        customAdjusterSystemPrompt = prompt
+        return this
+    }
+
+    /**
+     * Override the output role's default system prompt.
+     *
+     * @param prompt Custom system prompt, or `null` to use the default.
+     * @return This Junction object for method chaining.
+     */
+    fun setOutputSystemPrompt(prompt: String?): Junction
+    {
+        customOutputSystemPrompt = prompt
         return this
     }
 
@@ -843,6 +991,7 @@ class Junction : P2PInterface
             requirements = requirements,
             description = description.ifBlank { "Planner container for Junction workflow setup" }
         )
+        autoInjectDefaultPrompt(component, customPlannerSystemPrompt, DEFAULT_PLANNER_PROMPT)
         return this
     }
 
@@ -897,6 +1046,7 @@ class Junction : P2PInterface
             requirements = requirements,
             description = description.ifBlank { "Actor container for Junction workflow execution" }
         )
+        autoInjectDefaultPrompt(component, customActorSystemPrompt, DEFAULT_ACTOR_PROMPT)
         return this
     }
 
@@ -951,6 +1101,7 @@ class Junction : P2PInterface
             requirements = requirements,
             description = description.ifBlank { "Verifier container for Junction workflow verification" }
         )
+        autoInjectDefaultPrompt(component, customVerifierSystemPrompt, DEFAULT_VERIFIER_PROMPT)
         return this
     }
 
@@ -1005,6 +1156,7 @@ class Junction : P2PInterface
             requirements = requirements,
             description = description.ifBlank { "Adjuster container for Junction workflow refinement" }
         )
+        autoInjectDefaultPrompt(component, customAdjusterSystemPrompt, DEFAULT_ADJUSTER_PROMPT)
         return this
     }
 
@@ -1059,6 +1211,7 @@ class Junction : P2PInterface
             requirements = requirements,
             description = description.ifBlank { "Output container for Junction workflow handoff" }
         )
+        autoInjectDefaultPrompt(component, customOutputSystemPrompt, DEFAULT_OUTPUT_PROMPT)
         return this
     }
 
@@ -1598,6 +1751,129 @@ class Junction : P2PInterface
     fun getTraceId(): String = junctionId
 
 //----------------------------------------------Internal Helpers---------------------------------------------------------
+
+    /**
+     * Resolve the pipe in [pipeline] that should receive a contract prompt.
+     * Uses the same layered resolution as `Pipeline.execute`: manual
+     * `decisionPipeName` first, then `Pipe.isDecisionPipe`, then
+     * `PipeRole.Decision`, then heuristic scoring. Returns null if no
+     * decision pipe can be resolved.
+     *
+     * Verbatim port of `PumpStation.resolveDecisionPipeForInjection` at
+     * `PumpStation.kt:4651-4698`. Junction carries its own copy so the two
+     * harnesses can evolve independently; a future refactor could lift this
+     * helper into a shared location.
+     */
+    private fun resolveDecisionPipeForInjection(pipeline: Pipeline): Pipe?
+    {
+        // 1. Manual override
+        val manual = pipeline.decisionPipeName
+        if(manual != null)
+        {
+            val (idx, pipe) = pipeline.getPipeByName(manual)
+            if(idx >= 0 && pipe != null) return pipe
+        }
+        // 2. isDecisionPipe flag
+        for(pipe in pipeline.getPipes())
+        {
+            if(pipe.isDecisionPipe) return pipe
+        }
+        // 3. pipeRole == Decision
+        for(pipe in pipeline.getPipes())
+        {
+            if(pipe.pipeRole == com.TTT.Enums.PipeRole.Decision) return pipe
+        }
+        // 4. Heuristic scoring fallback (only returns a pipe if it has
+        // a strong LLM signal — see `Pipeline.scoreDecisionPipeCandidates`).
+        val pipes = pipeline.getPipes()
+        if(pipes.isNotEmpty())
+        {
+            var bestPipe: Pipe? = null
+            var bestScore = 0
+            val namePattern = Regex("(?i)(decision|judge|dispatch|output|final)")
+            for(pipe in pipes)
+            {
+                val s = pipe.toPipeSettings()
+                var score = 0
+                if(s.provider != null && !s.model.isNullOrEmpty()) score += 10
+                if(!s.jsonOutput.isNullOrEmpty()) score += 5
+                if(!s.systemPrompt.isNullOrEmpty()) score += 3
+                if(namePattern.containsMatchIn(pipe.pipeName)) score += 1
+                if(score > bestScore || (score == bestScore && score > 0 && bestPipe != null))
+                {
+                    bestPipe = pipe
+                    bestScore = score
+                }
+            }
+            if(bestScore >= 10) return bestPipe
+        }
+        // 5. Last-pipe fallback: in a single-pipe pipeline, the only pipe
+        // IS the decision pipe by definition. For multi-pipe pipelines
+        // without signals, we use the last pipe as a best-effort default.
+        return pipes.lastOrNull()
+    }
+
+    /**
+     * Polymorphic decision-pipe resolver for arbitrary `P2PInterface` bindings.
+     *
+     * Each eligible container type contributes its contract-bearing pipe:
+     * - [Pipeline]: its own decision pipe via [resolveDecisionPipeForInjection].
+     * - [Manifold]: the manager pipeline's decision pipe, since the manager
+     *   originates the dispatch and its output is the contract surface Junction
+     *   reads.
+     * - [DistributionGrid]: the first registered pipeline's decision pipe,
+     *   resolved via `getPipelinesFromInterface()`. The grid's
+     *   `outcomeTransformationHook` is a post-execution transformer, not a
+     *   contract target, so it is not consulted here.
+     * - [PumpStation]: no-op for now. The path-resolving API to target a
+     *   single path's input pipeline is not yet exposed; conservative
+     *   eligibility to avoid injecting a misleading default prompt.
+     * - Junction, Splitter, Connector, MultiConnector, hand-rolled
+     *   P2PInterface: no-op. These containers don't expose a single
+     *   contract-bearing pipe surface; the developer must wire contracts
+     *   manually.
+     *
+     * @param component The bound `P2PInterface` to inspect.
+     * @return The decision pipe, or null when no eligible pipe exists.
+     */
+    private fun resolveDecisionPipe(component: P2PInterface): Pipe?
+    {
+        return when(component)
+        {
+            is Pipeline -> resolveDecisionPipeForInjection(component)
+            is Manifold -> resolveDecisionPipeForInjection(component.getManagerPipeline())
+            is DistributionGrid -> component.getPipelinesFromInterface().firstNotNullOfOrNull { pipeline ->
+                resolveDecisionPipeForInjection(pipeline)
+            }
+            else -> null
+        }
+    }
+
+    /**
+     * Write a contract prompt into the binding's decision pipe at bind time.
+     *
+     * Mirrors `PumpStation.autoInjectDefaultPrompt` at
+     * `PumpStation.kt:4709-4723`. Three rules:
+     * - If no decision pipe is resolvable via [resolveDecisionPipe], do nothing.
+     * - If the developer has already set a non-empty `systemPrompt` on the
+     *   decision pipe, respect their choice and do nothing.
+     * - Otherwise write `customPrompt ?: defaultPrompt` into the pipe.
+     *
+     * @param component The bound `P2PInterface` to inject into.
+     * @param customPrompt Developer-supplied override, or null for default.
+     * @param defaultPrompt The role's default prompt constant.
+     */
+    private fun autoInjectDefaultPrompt(
+        component: P2PInterface,
+        customPrompt: String?,
+        defaultPrompt: String
+    )
+    {
+        val decisionPipe = resolveDecisionPipe(component) ?: return
+        val existing = decisionPipe.toPipeSettings().systemPrompt
+        if(existing != null && existing.isNotEmpty()) return  // developer pre-set wins
+        decisionPipe.setSystemPrompt(customPrompt ?: defaultPrompt)
+    }
 
     /**
      * Resolve the token-counting settings Junction should use when compacting one outbound request.

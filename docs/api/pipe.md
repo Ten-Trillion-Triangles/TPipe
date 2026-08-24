@@ -219,6 +219,43 @@ Enables timeout tracking and configures retry behavior for this pipe.
 
 > ⚠️ **Warning:** Retry re-executes ALL pre-execution DITL functions (`preInitFunction`, `preValidationFunction`, etc.). These functions MUST be read-only. Writing to ContextBank or program memory will cause duplicate writes on retry. See [Timeout and Retry](../core-concepts/timeout-and-retry.md) for details.
 
+#### `abort(visited: MutableSet<String> = mutableSetOf())` (suspend, open)
+Cancels the current execution. Default base implementation calls `propagateAbortRecursively()` which walks this pipe's descendant tree (validator, transformation, branch, reasoning child pipes and their own children). Subclasses override this to add provider-specific cleanup (closing HTTP clients, releasing AWS SDK resources) before calling `super.abort()` to continue the cascade. A custom override that does NOT call `super.abort()` will silently skip the descendant cascade — every custom override must call super.
+
+**Example (typical provider):**
+```kotlin
+override suspend fun abort() {
+    // provider-specific cleanup
+    closeHttpClient()
+    // continue the cascade so descendants cancel too
+    super.abort()
+}
+```
+
+**Behavior:** Suspend because `propagateAbortRecursively` is suspend. The base `Pipe.abort()` body is a single line: `propagateAbortRecursively()`. Subclasses that override for cleanup must call `super.abort()` to keep the cascade intact — see the conformance rule below.
+
+**Conformance rule:** Any pipe-class override of `abort()` MUST call `super.abort()`. Skipping `super` breaks the cascade fix and re-introduces the original Issue #4 (descendant pipes do not cancel). See [Timeout and Retry](../core-concepts/timeout-and-retry.md) for the abort propagation contract.
+
+#### `propagateAbortRecursively(visited: MutableSet<String> = mutableSetOf())` (suspend)
+Walks this pipe's descendant tree (validator, transformation, branch, reasoning child pipes and their own children). For each descendant pipe, records it in `visited` (cycle-safe by `pipeId`) and walks the same descendant tree from that pipe's perspective. The walker cancels the `activeJob` (the in-flight coroutine running the pipe's execute path) on each leaf pipe it reaches, ensuring the AWS SDK / HttpURLConnection / Ktor transport unwinds cleanly.
+
+**Behavior:** Mark current `pipeId` in `visited`. Iterate `validatorPipe`, `transformationPipe`, `branchPipe`, `reasoningPipe`. For each non-null child, recursively call `child.propagateAbortRecursively(visited)`. At the leaf, the cancellation works through Kotlin coroutines: cancelling `activeJob` cancels the in-flight suspend call to the LLM provider and unwinds the coroutine stack. A pipe referenced from multiple parents (cycle) is cancelled exactly once.
+
+#### `enablePipeTimeoutRecursive(applyRecursively: Boolean = true, duration: Long = 300000, autoRetry: Boolean = false, retryLimit: Int = 5)` — `P2PInterface` override
+Implements the [P2PInterface recursive propagation pattern](./p2p-interface.md#recursive-propagation). If this pipe is a leaf (no `containerPtr`), applies the timeout configuration locally via `enablePipeTimeout(...)`. Otherwise drills upward to the owning container so its `P2PInterface.enablePipeTimeoutRecursive(...)` override can iterate its other children.
+
+**Behavior:** Mirrors `setTokenBudgetRecursive` and `setPipeSettingsRecursively`. Leaf path calls `enablePipeTimeout(applyRecursively, duration, autoRetry, retryLimit)` with no `customLogic` (per-pipe custom retry logic is preserved, not replaced). Container path delegates upward via `containerPtr.enablePipeTimeoutRecursive(...)` so the recursion originates at the root caller and walks down.
+
+#### `abortRecursive()` (suspend) — `P2PInterface` override
+Implements the [P2PInterface recursive propagation pattern](./p2p-interface.md#recursive-propagation). If this pipe is a leaf (no `containerPtr`), calls `abort()` which delegates to `propagateAbortRecursively`. Otherwise drills upward to the owning container so its `P2PInterface.abortRecursive()` override can iterate its other children.
+
+**Behavior:** Mirrors `setTokenBudgetRecursive` and `setPipeSettingsRecursively`. Leaf path invokes the open `abort()` method. Container path delegates upward via `containerPtr.abortRecursive()`. Cycle safety comes from `propagateAbortRecursively`'s `visited` set.
+
+#### `propagatePipeTimeout(visited: MutableSet<String> = mutableSetOf())`
+Walks this pipe's descendant tree (validator, transformation, branch, reasoning child pipes and their own children), calling `enablePipeTimeout(...)` on each leaf. The walk is cycle-safe via `pipeId`-keyed `visited` set. This is the leaf-side walker that the container-level `P2PInterface.enablePipeTimeoutRecursive(...)` ends up calling. Used internally — direct callers rarely need this; prefer `enablePipeTimeout(applyRecursively = true, ...)`.
+
+**Behavior:** Marks the current pipe in `visited`, then iterates `validatorPipe`, `transformationPipe`, `branchPipe`, `reasoningPipe`. Calls `child.propagatePipeTimeout(visited)` on each (only when the child is non-null), which recurses into that child's own child pipes. A pipe referenced from multiple parents (cycle) is configured exactly once.
+
 #### `setRetryFunction(func: (suspend (pipe: Pipe, content: MultimodalContent) -> Boolean)?): Pipe`
 Sets custom retry logic function for `CustomLogic` timeout strategy.
 
@@ -749,14 +786,33 @@ Enables reasoning with custom settings.
 #### `obtainStreamingCallbackManager(): StreamingCallbackManager`
 Gets or creates the streaming callback manager for this pipe.
 
-**Behavior:** Lazy-initializes the manager on first access. Returns the manager instance for direct callback manipulation. Use this for dynamic callback management (adding/removing callbacks at runtime).
+**Behavior:** Lazy-initializes the manager on first access. Returns the manager instance for direct callback manipulation. Use this for dynamic callback management (adding/removing callbacks at runtime). The manager exposes both chunk-callback APIs (`addCallback`, `removeCallback`, `emitToAll`) and completion-callback APIs (`addCompleteCallback`, `removeCompleteCallback`, `emitCompleteToAll`, `completeCallbackCount`) — see [StreamingCallbackManager](#streamingcallbackmanager) for the full surface.
 
 **Example:**
 ```kotlin
 val manager = pipe.obtainStreamingCallbackManager()
 manager.addCallback { chunk -> print(chunk) }
+manager.addCompleteCallback { metrics.recordStreamComplete() }
 manager.removeCallback(someCallback)
 ```
+
+#### StreamingCallbackManager
+
+Direct manager surface for chunk callbacks and completion callbacks. The two callback lists are independent — registering a completion callback does not affect chunk callbacks, and vice versa.
+
+| Method | Purpose |
+|--------|---------|
+| `addCallback(callback: suspend (String) -> Unit)` | Register a per-chunk callback. Fires once per streaming delta. |
+| `removeCallback(callback): Boolean` | Deregister a previously-added chunk callback. |
+| `callbackCount(): Int` | Number of registered chunk callbacks. |
+| `emitToAll(chunk: String)` | Invoke every chunk callback with the supplied chunk. Errors routed through `onError`. |
+| `clearCallbacks()` | Remove all chunk callbacks. |
+| `addCompleteCallback(callback: suspend () -> Unit)` | Register a stream-completion callback. Fires exactly once per `emitCompleteToAll()` invocation, after the last chunk. Dedup by reference identity. |
+| `removeCompleteCallback(callback): Boolean` | Deregister a previously-added completion callback. |
+| `completeCallbackCount(): Int` | Number of registered completion callbacks. |
+| `emitCompleteToAll()` | Invoke every completion callback once. Errors routed through `onError`; subsequent callbacks still fire. Honors the same `executionMode` (sequential/concurrent) as chunk callbacks. |
+
+Completion callbacks fire on the **success path only**. Error termination (an `IOException`, an empty-response guard throw, an `ApiMode.ResponseFailed` event, or a stall-driven timeout) does not fire completion callbacks — error handling happens via `onError` or a surrounding `try`/`catch` on `pipe.execute(...)`.
 
 #### `propagateStreamingCallback(callback: suspend (String) -> Unit, visited: MutableSet<String> = mutableSetOf(), propagateToChildren: Boolean = true, propagateToReasoning: Boolean = true): Unit` (Pipe)
 Registers a streaming callback on this pipe and optionally on descendant pipes (validator, transformation, branch, reasoning). This is the mechanism that ensures chunks emitted by any pipe in the tree flow through a callback registered on a parent.
@@ -836,6 +892,19 @@ pipe.streamingCallbacks {
 }
 ```
 
+**Example — chunk callbacks + stream completion callback:**
+```kotlin
+pipe.streamingCallbacks {
+    add { chunk -> textBuffer.append(chunk) }   // Per-chunk handlers
+    add { chunk -> websocket.send(chunk) }
+    onComplete {                                // Fires once when LLM finishes
+        textView.text = textBuffer.toString()
+        websocket.close()
+        metrics.recordStreamComplete()
+    }
+}
+```
+
 **Example — all callbacks propagate to reasoning only:**
 ```kotlin
 pipe.streamingCallbacks {
@@ -852,6 +921,25 @@ pipe.streamingCallbacks {
 **Returns:** This pipe instance for method chaining
 
 **See Also:** [Streaming Callbacks Guide](../core-concepts/streaming-callbacks.md)
+
+#### StreamingCallbackBuilder
+
+The builder passed to `streamingCallbacks { ... }` exposes a fluent API for registering chunk callbacks, completion callbacks, error handlers, and configuring execution mode. Available methods on the builder lambda receiver:
+
+| Method | Purpose |
+|--------|---------|
+| `add(callback: suspend (String) -> Unit)` | Register a per-chunk callback. Multiple `add` calls register multiple independent callbacks. |
+| `add(callback: (String) -> Unit)` | Non-suspending overload — automatically wrapped in a suspending lambda. |
+| `onError(handler: (Exception, String) -> Unit)` | Set the error handler invoked when a callback throws. |
+| `sequential()` | Switch callback execution mode to sequential (default — callbacks fire in registration order). |
+| `concurrent()` | Switch callback execution mode to concurrent (callbacks fire in parallel). |
+| `executionMode(mode: StreamingExecutionMode)` | Explicit mode setter — `SEQUENTIAL` or `CONCURRENT`. |
+| `propagateToChildren: Boolean` | Field — whether chunk callbacks propagate to validator/transformation/branch pipes. Defaults to `true`. |
+| `propagateToReasoning: Boolean` | Field — whether chunk callbacks propagate to the reasoning pipe. Defaults to `true`. |
+| `onComplete(callback: suspend () -> Unit)` | Register a stream-completion callback. Fires exactly once when the LLM finishes generating on the success path. Errors are routed through `onError`; subsequent completion callbacks still fire. Independent of the chunk-callback list — does not replay chunk history. |
+| `build(): StreamingCallbackManager` | Build the configured manager (used internally by `streamingCallbacks`). |
+
+Both `propagateToChildren` and `propagateToReasoning` apply only to chunk callbacks registered via `add`. The `onComplete` callback fires on the success path of any pipe in the tree that called `emitStreamEnd()` — it does not propagate to descendant pipes via the same gating flags as chunk callbacks. Register `onComplete` on the pipe whose stream lifecycle you care about.
 
 #### `enableStreaming(callback: (suspend (String) -> Unit)? = null, showReasoning: Boolean = false): Pipe` (BedrockPipe)
 Enables streaming mode with optional callback.
@@ -891,7 +979,7 @@ Disables streaming mode and clears all callbacks.
 
 **Behavior:** Switches back to standard (non-streaming) API calls. Clears both legacy single callback and all multi-callback manager callbacks to prevent memory leaks.
 
-> ℹ️ **Note:** Provider-specific methods (BedrockPipe) are available in provider implementations. Base Pipe class provides `obtainStreamingCallbackManager()` and `emitStreamingChunk()` for all providers.
+> ℹ️ **Note:** Provider-specific methods (BedrockPipe) are available in provider implementations. Base Pipe class provides `obtainStreamingCallbackManager()`, `emitStreamingChunk(chunk: String)` (called per chunk by providers), and `emitStreamEnd()` (called at every success-path stream-end break point by providers — fires the registered completion callbacks). All four providers (Bedrock, GenericOpenAI, OpenRouter, Ollama) wire both `emitStreamingChunk` and `emitStreamEnd` at their streaming break points.
 
 ---
 
