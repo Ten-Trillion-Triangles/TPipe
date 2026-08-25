@@ -140,7 +140,27 @@ data class TruncationSettings(
           * map directly. Default null — no overrides, behavior identical to
           * [com.TTT.Context.Dictionary.BinaryEstimationMode.PER_ENCODER_RULE] for unknown MIMEs.
           */
-         var binaryMimeOverride: Map<String, Int>? = null)
+         var binaryMimeOverride: Map<String, Int>? = null,
+         /**
+          * Controls how LoreBook metadata is included in token accounting.
+          */
+         var loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly)
+
+/**
+ * Controls the aggressiveness of LoreBook token accounting during context selection.
+ */
+@Serializable
+enum class LoreBookTokenAccounting
+{
+    /** Count only each LoreBook value. */
+    ValueOnly,
+
+    /** Count each serialized LoreBook entry. */
+    SerializedEntry,
+
+    /** Count the serialized LoreBook selection, including map and JSON framing. */
+    FullContextSerialized
+}
 
 /**
  * Data class that defines how advanced token budgeting is applied. In this scheme the user prompt, and system prompt
@@ -233,7 +253,11 @@ data class TokenBudgetSettings(
      * truncation block runs, ensuring user-specified tokenizer behavior survives any model defaults the
      * provider might otherwise apply. Null means the provider falls back to its model-default tuning.
      */
-    var truncationSettings: TruncationSettings? = null
+    var truncationSettings: TruncationSettings? = null,
+    /**
+     * Controls how aggressively LoreBook metadata is included in token accounting.
+     */
+    var loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly
 )
 {
     /**
@@ -429,7 +453,8 @@ fun TruncationSettings.toTokenBudgetSettings(
         maxTokens = maxTokens,
         truncationMethod = ContextWindowSettings.TruncateTop,
         multiPageBudgetStrategy = this.multiPageBudgetStrategy ?: MultiPageBudgetStrategy.DYNAMIC_FILL,
-        pageWeights = this.pageWeights
+        pageWeights = this.pageWeights,
+        loreBookTokenAccounting = this.loreBookTokenAccounting
     )
 }
 
@@ -448,6 +473,8 @@ fun TokenBudgetSettings.toTruncationSettings(pipe: Pipe? = null): TruncationSett
     {
         settings.pageWeights = this.pageWeights
     }
+
+    settings.loreBookTokenAccounting = this.loreBookTokenAccounting
 
     return settings
 }
@@ -5894,7 +5921,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     truncationSettings,
                     fillMode = loreBookFillMode,
                     fillAndSplitMode = loreBookFillAndSplitMode,
-                    preserveTextMatches = workingBudget.preserveTextMatches
+                    preserveTextMatches = workingBudget.preserveTextMatches,
+                    loreBookTokenAccounting = workingBudget.loreBookTokenAccounting
                 )
 
                 val actualTokensAfter = countContextWindowTokens(copy, truncationSettings)
@@ -5925,7 +5953,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
             truncationSettings,
             fillMode = loreBookFillMode,
             fillAndSplitMode = loreBookFillAndSplitMode,
-            preserveTextMatches = workingBudget.preserveTextMatches
+            preserveTextMatches = workingBudget.preserveTextMatches,
+            loreBookTokenAccounting = workingBudget.loreBookTokenAccounting
         )
         val mainContextTokensAfter = countContextWindowTokens(mainContextCopy, truncationSettings)
 
@@ -6068,7 +6097,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         truncationSettings,
                         fillMode = loreBookFillMode,
                         fillAndSplitMode = loreBookFillAndSplitMode,
-                        preserveTextMatches = workingBudget.preserveTextMatches
+                        preserveTextMatches = workingBudget.preserveTextMatches,
+                        loreBookTokenAccounting = workingBudget.loreBookTokenAccounting
                     )
                 }
 

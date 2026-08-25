@@ -36,7 +36,8 @@ data class TruncationSettings(
     var alwaysSplitIfWholeWordExists: Boolean = false, // Force splitting behavior
     var countSubWordsIfSplit: Boolean = false,      // Count subwords after splitting
     var nonWordSplitCount: Int = 4,                 // Characters per token for non-words
-    var tokenCountingBias: Double = 0.0             // Multiplicative adjustment to token counts
+    var tokenCountingBias: Double = 0.0,            // Multiplicative adjustment to token counts
+    var loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly
 )
 ```
 
@@ -75,6 +76,35 @@ Token counting bias is automatically applied across all TPipe memory systems:
 - **ConverseHistory**: Conversation history management
 - **MiniBank**: Multi-page context truncation
 - **All Dictionary operations**: Token counting and truncation
+
+### LoreBook Token Accounting
+
+`loreBookTokenAccounting` controls which LoreBook representation consumes the selection budget. The policy applies to `ContextWindow` LoreBook selection and truncation calls. The default is `ValueOnly`.
+
+| Policy | Counted representation |
+|---|---|
+| `ValueOnly` | The LoreBook value for each selected entry |
+| `SerializedEntry` | The serialized `LoreBook` entry, including its metadata |
+| `FullContextSerialized` | The serialized `ContextWindow` containing the selected entries, including map and JSON framing |
+
+Configure the policy through either `TruncationSettings` or `TokenBudgetSettings`:
+
+```kotlin
+val settings = TruncationSettings(
+    loreBookTokenAccounting = LoreBookTokenAccounting.SerializedEntry
+)
+
+val budget = TokenBudgetSettings(
+    contextWindowSize = 16_000,
+    maxTokens = 2_000,
+    truncationSettings = settings,
+    loreBookTokenAccounting = LoreBookTokenAccounting.SerializedEntry
+)
+
+val pipe = BedrockPipe().setTokenBudget(budget)
+```
+
+With `SerializedEntry`, keys, aliases, weights, and other serialized metadata consume budget. With `FullContextSerialized`, JSON and map framing also consume budget. If a candidate exceeds the remaining budget, the selection algorithm skips that candidate and continues evaluating later candidates.
 
 ### Token Multiplier Explanation
 

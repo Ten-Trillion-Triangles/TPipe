@@ -81,14 +81,14 @@ Cleans lorebook keys by removing or replacing banned characters.
 #### `findMatchingLoreBookKeys(text: String): List<String>`
 Finds lorebook keys that match substrings in input text.
 
-**Behavior:** Case-insensitive substring matching against both main keys and alias keys. Returns list of matching main keys (not aliases).
+**Behavior:** Performs case-insensitive substring matching against each main key and its aliases. Matching terms are deduplicated per entry. Each non-overlapping occurrence contributes one copy of the main key to the returned list, so repeated matches affect hit-count ranking. Locked entries are omitted.
 
 #### `countAndSortKeyHits(hitKeys: List<String>): List<Pair<String, Int>>`
 Counts key occurrences and sorts by frequency.
 
 **Behavior:** Groups identical keys, counts occurrences, returns key-count pairs sorted by count descending.
 
-#### `selectLoreBookContext(text: String, maxTokens: Int, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4): List<String>`
+#### `selectLoreBookContext(text: String, maxTokens: Int, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, tokenCountingBias: Double = 0.0, loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly): List<String>`
 Intelligently selects lorebook entries based on text relevance and token budget.
 
 **Behavior:** Complex selection algorithm:
@@ -96,16 +96,24 @@ Intelligently selects lorebook entries based on text relevance and token budget.
 - Expands selection to include linked keys
 - Validates dependency requirements
 - Sorts by hit count and weight
-- Selects entries within token budget using tokenizer configuration parameters
+- Selects entries within token budget using tokenizer configuration parameters and the selected LoreBook token-accounting policy
 - Prioritizes higher-weighted and more frequently matched entries
 
-#### `selectAndFillLoreBookContext(text: String, maxTokens: Int, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4): List<String>`
+`loreBookTokenAccounting` controls the token cost used for each candidate:
+
+- `ValueOnly`: counts the LoreBook value. This is the default.
+- `SerializedEntry`: counts the serialized `LoreBook` entry, including metadata such as the key, aliases, and weight.
+- `FullContextSerialized`: counts the serialized `ContextWindow` containing the selected entries, including map and JSON framing.
+
+For `FullContextSerialized`, candidate cost is calculated from the incremental serialized context size. An entry is skipped when its calculated cost exceeds the remaining budget.
+
+#### `selectAndFillLoreBookContext(text: String, maxTokens: Int, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, tokenCountingBias: Double = 0.0, loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly): List<String>`
 Selects lorebook entries with an additional fill phase to maximize token usage.
 
 **Behavior:**
 - Reuses the priority selection from `selectLoreBookContext` to gather matching lorebook entries.
 - Computes remaining budget after the priority phase.
-- Iterates through non-matching entries (sorted by weight) and adds them as long as the total token usage stays within `maxTokens` and dependencies are satisfied.
+- Iterates through non-matching entries (sorted by weight) and adds them as long as the total token usage stays within `maxTokens` and dependencies are satisfied. The selected `loreBookTokenAccounting` policy determines each entry's token cost.
 - Returns an ordered list that can be used to filter `loreBookKeys` before truncating the rest of the context.
 
 #### `selectLoreBookContextWithSettings(settings: TruncationSettings, text: String, maxTokens: Int): List<String>`
@@ -143,13 +151,13 @@ Merges another ContextWindow into this one with configurable strategies.
 
 ### Truncation
 
-#### `truncateContextElements(maxTokens: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, inputText: String = "", preserveTextMatches: Boolean = false)`
+#### `truncateContextElements(maxTokens: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, inputText: String = "", preserveTextMatches: Boolean = false, loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly)`
 Truncates context elements to fit token budget.
 
 **Behavior:** Uses Dictionary truncation with specified method (TruncateTop, TruncateBottom, TruncateMiddle) and tokenizer configuration parameters.
 - When `preserveTextMatches = true`, context elements matching words from `inputText` are kept before the default truncation ordering is applied.
 
-#### `selectAndTruncateContext(text: String, totalTokenBudget: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, fillMode: Boolean = false, fillAndSplitMode: Boolean = false, preserveTextMatches: Boolean = false)`
+#### `selectAndTruncateContext(text: String, totalTokenBudget: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4, fillMode: Boolean = false, fillAndSplitMode: Boolean = false, preserveTextMatches: Boolean = false, loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly)`
 Selects and truncates context with automatic budget allocation.
 
 **Behavior:** Intelligent budget allocation based on available content types:
@@ -163,6 +171,7 @@ Selects and truncates context with automatic budget allocation.
 - `fillMode: Boolean = false` — when true, `selectAndTruncateContext` first runs the select-and-fill LoreBook flow (`selectAndFillLoreBookContext`) using the full budget, then splits the remaining tokens between context elements and conversation history.
 - `fillAndSplitMode: Boolean = false` — when true, `selectAndTruncateContext` reserves half of the available top-level budget for lorebook selection and half for the remaining context/history split. If the lorebook side underfills its half, the unused budget is reclaimed and passed to the remaining context/history split. If both context elements and conversation history exist, the remainder is still split 50/50 between them.
 - `preserveTextMatches: Boolean = false` — when true, context elements and conversation history that include words from `text` are preserved before applying the usual truncation ordering.
+- `loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly` — selects whether LoreBook budget calculations count values, serialized entries, or the serialized selected context. The setting applies to LoreBook selection during truncation.
 
 #### `combineAndTruncateAsString(text: String, totalTokenBudget: Int, multiplyWindowSizeBy: Int, truncateSettings: ContextWindowSettings, countSubWordsInFirstWord: Boolean = true, favorWholeWords: Boolean = true, countOnlyFirstWordFound: Boolean = false, splitForNonWordChar: Boolean = true, alwaysSplitIfWholeWordExists: Boolean = false, countSubWordsIfSplit: Boolean = false, nonWordSplitCount: Int = 4): String`
 Combines lorebook values with context elements into single string with truncation.

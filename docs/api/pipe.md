@@ -525,6 +525,28 @@ paragraph boundary.
 
 **Tip:** Set `preserveTextMatches = true` inside `TokenBudgetSettings` (or call `enableTextMatchingPreservation()`) to keep context elements and conversation history entries that match the user prompt before the rest of the truncation budget is applied.
 
+`TokenBudgetSettings.loreBookTokenAccounting` selects the representation used when LoreBook entries consume the context-selection budget. The default is `LoreBookTokenAccounting.ValueOnly`. `SerializedEntry` includes each serialized `LoreBook` entry and its metadata. `FullContextSerialized` includes the serialized selected `ContextWindow`, including map and JSON framing. The setting is propagated to LoreBook selection during automatic context truncation. See [Token Counting and Truncation](../core-concepts/token-counting-and-truncation.md#lorebook-token-accounting).
+
+`TruncationSettings.loreBookTokenAccounting` provides the same policy for callers that pass tokenizer settings directly to `ContextWindow` helpers. `TruncationSettings.toTokenBudgetSettings()` and `TokenBudgetSettings.toTruncationSettings()` preserve the policy during conversion.
+
+#### `LoreBookTokenAccounting`
+
+Serializable enum that controls the LoreBook representation used for token-budget calculations.
+
+```kotlin
+enum class LoreBookTokenAccounting {
+    ValueOnly,
+    SerializedEntry,
+    FullContextSerialized
+}
+```
+
+| Value | Counted representation |
+|---|---|
+| `ValueOnly` | Each LoreBook value |
+| `SerializedEntry` | Each serialized `LoreBook` entry and its metadata |
+| `FullContextSerialized` | The serialized `ContextWindow` containing the selected entries |
+
 #### `setTokenCountingBias(value: Double): Pipe`
 Sets multiplicative adjustment for all token counts.
 
