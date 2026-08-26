@@ -1,10 +1,13 @@
 package com.TTT.Pipeline
 
 import com.TTT.Context.ContextWindow
+import com.TTT.Context.ConverseHistory
 import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceEvent
 import com.TTT.Debug.TraceEventType
 import com.TTT.Debug.TracePhase
+import com.TTT.Enums.PumpStationHistoryTransport
+import com.TTT.Enums.PumpStationLatestContentPosition
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.Util.extractAllJsonObjects
@@ -890,21 +893,25 @@ internal fun PumpStation.buildDispatchFooter(): String = DEFAULT_DISPATCH_FOOTER
 
 /**
  * Build the MultimodalContent for the judge/dispatch shared input.
- * - text: turnSummary (if any) + role-specific question
- * - context.converseHistory: turnHistory (curated, agent-facing)
- * - context.loreBookKeys: current lorebook
- * - miniBank: current
- * - metadata: taskState, phase, turnIndex, etc.
+ *
+ * @param history History source to expose to the agent.
+ * @return Content assembled according to the configured history transport.
  */
-internal fun PumpStation.buildTurnContent(): MultimodalContent
+internal fun PumpStation.buildTurnContent(history: ConverseHistory = turnHistory): MultimodalContent
 {
+    val transportedHistory = when(historyTransportInternal)
+    {
+        PumpStationHistoryTransport.ContextOnly,
+        PumpStationHistoryTransport.TextAndContext -> history
+        PumpStationHistoryTransport.TextOnly -> ConverseHistory()
+    }
     val newContext = contextWindow.copy().apply {
         loreBookKeys = contextWindow.loreBookKeys.toMutableMap()
         contextElements = contextWindow.contextElements.toMutableList()
-        converseHistory = turnHistory
+        converseHistory = transportedHistory
     }
     val content = MultimodalContent(
-        text = buildUserMessageForTurn(),
+        text = buildUserMessageForTurn(history),
         binaryContent = taskState.latestContent?.binaryContent ?: mutableListOf(),
         context = newContext,
         miniBankContext = miniBank,
@@ -924,50 +931,79 @@ internal fun PumpStation.buildTurnContent(): MultimodalContent
 }
 
 /**
- * Build the user-message text for a turn. The system prompt carries
- * personality/systemTask/userGuidelines/entryUserPrompt; the user message
- * just carries the conversational content.
+ * Build the user-message text for a turn using the selected history transport.
+ *
+ * @param history History source to serialize when text transport is enabled.
+ * @return Provider-facing user-message text.
  */
-internal fun PumpStation.buildUserMessageForTurn(): String
+internal fun PumpStation.buildUserMessageForTurn(history: ConverseHistory = turnHistory): String
 {
-    val originalInputPrefix = taskState.originalInput?.text.orEmpty().let { if (it.isNotBlank()) "$it\n\n" else "" }
-    val summaryPrefix = if (turnSummary.isNotBlank()) "[TURN SUMMARY]\n$turnSummary\n[/TURN SUMMARY]\n\n" else ""
-    val phaseQuestion = when (taskState.phase)
+    val originalInputPrefix = taskState.originalInput?.text.orEmpty().let { if(it.isNotBlank()) "$it\n\n" else "" }
+    val summaryPrefix = if(turnSummary.isNotBlank()) "[TURN SUMMARY]\n$turnSummary\n[/TURN SUMMARY]\n\n" else ""
+    val phaseQuestion = when(taskState.phase)
     {
         PumpStationPhase.Judge -> "Is the task complete? Decide based on the conversation history."
         PumpStationPhase.Dispatch -> "Select the next path to invoke."
         PumpStationPhase.GoalValidation -> "Verify the work was done."
         else -> ""
     }
-    // Embed the conversation history into the user message text so downstream
-    // pipes (which read only content.text) actually receive it. Without this,
-    // [com.TTT.Pipe.Pipe.generateContent]'s default implementation drops
-    // [MultimodalContent.context.converseHistory] on the floor — the system
-    // prompt claims "The conversation history below shows every turn" but the
-    // turn history never reaches the LLM.
-    //
-    // The serialized form matches [com.TTT.Pipe.Pipe.serializeConverseHistory]
-    // which the rest of the codebase uses for embedded-history payloads (see
-    // Pipe.kt:2091, 5479, 5726). Empty history is skipped to keep the
-    // no-history case identical to the previous behavior.
-    val historyBlock = if (turnHistory.history.isNotEmpty())
+    val historyBlock = if(historyTransportInternal != PumpStationHistoryTransport.ContextOnly && history.history.isNotEmpty())
     {
-        "\n\n[CONVERSATION HISTORY]\n" + serializeConverseHistory(turnHistory) + "\n[/CONVERSATION HISTORY]"
+        "\n\n[CONVERSATION HISTORY]\n" + serializeConverseHistory(history) + "\n[/CONVERSATION HISTORY]"
     }
     else ""
     return originalInputPrefix + summaryPrefix + phaseQuestion + historyBlock
 }
 
 /**
- * Build the MultimodalContent for the goal agent. Deeper than buildTurnContent:
- * includes rawTurnHistory (full event log) in the context, so the goal agent
- * can do a thorough deep verification.
+ * Build dispatch input with optional latest-output placement and deduplication.
+ *
+ * @return Dispatch content assembled from the configured prompt controls.
+ */
+internal fun PumpStation.buildDispatchContent(): MultimodalContent
+{
+    val baseContent = buildTurnContent()
+    val latestText = taskState.latestContent?.text.orEmpty()
+
+    if(!latestContentInjectionEnabledInternal || latestText.isBlank()) return baseContent
+    if(deduplicateLatestContentAgainstHistoryInternal && turnHistory.history.any { it.content.text == latestText }) return baseContent
+
+    val latestBlock = "[LATEST PRIOR AGENT OUTPUT]\n$latestText\n[/LATEST PRIOR AGENT OUTPUT]"
+    val historyMarker = "[CONVERSATION HISTORY]"
+    val historyEndMarker = "[/CONVERSATION HISTORY]"
+    val historyStart = baseContent.text.indexOf(historyMarker)
+    val historyEnd = if(historyStart >= 0) baseContent.text.indexOf(historyEndMarker, historyStart) else -1
+
+    val updatedText = when(latestContentPositionInternal)
+    {
+        PumpStationLatestContentPosition.Prefix -> "$latestBlock\n\n${baseContent.text}"
+
+        PumpStationLatestContentPosition.BeforeHistory ->
+            if(historyStart >= 0) baseContent.text.substring(0, historyStart) + latestBlock + "\n\n" + baseContent.text.substring(historyStart)
+            else baseContent.text + "\n\n" + latestBlock
+
+        PumpStationLatestContentPosition.AfterHistory ->
+            if(historyEnd >= 0)
+            {
+                val insertionPoint = historyEnd + historyEndMarker.length
+                baseContent.text.substring(0, insertionPoint) + "\n\n" + latestBlock + baseContent.text.substring(insertionPoint)
+            }
+
+            else baseContent.text + "\n\n" + latestBlock
+        PumpStationLatestContentPosition.Suffix -> baseContent.text + "\n\n" + latestBlock
+    }
+
+    return baseContent.copy(text = updatedText)
+}
+
+/**
+ * Build the MultimodalContent for the goal agent from the raw event history.
+ *
+ * @return Goal-validation content using raw history and the configured transport.
  */
 internal fun PumpStation.buildGoalContent(): MultimodalContent
 {
-    val base = buildTurnContent()
-    // Override the converseHistory in-place so metadata set on `base` survives
-    base.context.converseHistory = rawTurnHistory
+    val base = buildTurnContent(rawTurnHistory)
     base.metadata["judgeVerdict"] = "isComplete=true"
     base.metadata["rawHistorySize"] = rawTurnHistory.history.size
     return base

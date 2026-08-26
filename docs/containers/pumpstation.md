@@ -17,6 +17,7 @@
   - [The Path-Safety Agent Contract](#the-path-safety-agent-contract)
   - [The Lorebook Agent Contract](#the-lorebook-agent-contract)
   - [The Summary Agent Contract](#the-summary-agent-contract)
+- [Prompt Transport and Latest Output](#prompt-transport-and-latest-output)
 - [PathObject and PathRequest](#pathobject-and-pathrequest)
 - [DSL Builder](#dsl-builder)
 - [DSL Block Reference](#dsl-block-reference)
@@ -139,7 +140,7 @@ All seven agent slots are optional. A pump station with no judge, no path-safety
 
 **What the judge receives:**
 
-A `MultimodalContent` built by `buildTurnContent()` (see `Pipeline/PumpStationHelpers.kt:677`). The text carries `turnSummary` (if non-blank) prefixed to a phase-specific question, currently `"Is the task complete? Decide based on the conversation history."` for the Judge phase. The `context.converseHistory` is the curated `turnHistory`. The `miniBankContext` is the current `miniBank`. The `metadata` map contains `taskState`, `phase`, `turnIndex`, `runId`, `isInitialTurn`, and `visiblePaths`.
+A `MultimodalContent` built by `buildTurnContent()` (see `Pipeline/PumpStationHelpers.kt:899`). The text carries `turnSummary` (if non-blank) prefixed to a phase-specific question, currently `"Is the task complete? Decide based on the conversation history."` for the Judge phase. History transport is controlled by `historyTransport`; `TextOnly` serializes history into `content.text`, `ContextOnly` attaches it to `context.converseHistory`, and `TextAndContext` carries both forms. The `miniBankContext` is the current `miniBank`. The `metadata` map contains `taskState`, `phase`, `turnIndex`, `runId`, `isInitialTurn`, and `visiblePaths`.
 
 **What the judge must output:**
 
@@ -229,6 +230,41 @@ If the harness cannot parse the dispatch output as `PathRequest`, it invokes `bu
 - Otherwise the turn continues without a path call.
 
 The error message the harness injects for an unknown path or invalid path request is built by `buildLlmErrorMessage` (`Pipeline/PumpStationHelpers.kt:743`). It is natural-language, names the available paths, and explains what a valid `PathRequest` looks like — the dispatch agent sees this on the next turn as part of `turnHistory`.
+
+### Prompt Transport and Latest Output
+
+PumpStation builds each judge, dispatch, and goal input through `buildTurnContent(history)`. `historyTransport` selects one representation for the supplied history:
+
+| Mode | `content.text` | `context.converseHistory` | Default |
+|---|---|---|---|
+| `PumpStationHistoryTransport.TextOnly` | Serialized history | Empty | Yes |
+| `PumpStationHistoryTransport.ContextOnly` | Phase text only | Structured history | No |
+| `PumpStationHistoryTransport.TextAndContext` | Serialized history | Structured history | No |
+
+The default avoids paying for duplicate history representations. `buildGoalContent()` passes `rawTurnHistory` through the same selected mode, so the goal agent sees the raw event log consistently.
+
+Dispatch input can include the latest prior agent output from `taskState.latestContent`. The controls are:
+
+| Setting | Default | Behavior |
+|---|---|---|
+| `latestContentInjectionEnabled` | `true` | Enables the latest-output block. |
+| `latestContentPosition` | `Suffix` | Places the block after the dispatch text. Other values are `Prefix`, `BeforeHistory`, and `AfterHistory`. |
+| `deduplicateLatestContentAgainstHistory` | `true` | Suppresses an exact latest-output match already present in `turnHistory`. |
+
+Configure the settings through fluent methods or the DSL:
+
+```kotlin
+val station = pumpStation("research") {
+    promptConfiguration {
+        historyTransport = PumpStationHistoryTransport.TextOnly
+        latestContentInjectionEnabled = true
+        latestContentPosition = PumpStationLatestContentPosition.Suffix
+        deduplicateLatestContentAgainstHistory = true
+    }
+}
+```
+
+The same configuration is available through `setHistoryTransport(...)`, `setLatestContentInjectionEnabled(...)`, `setLatestContentPosition(...)`, and `setDeduplicateLatestContentAgainstHistory(...)` on `PumpStation`.
 
 ### Dispatch Contract Shape: `PathExecutionShape`
 

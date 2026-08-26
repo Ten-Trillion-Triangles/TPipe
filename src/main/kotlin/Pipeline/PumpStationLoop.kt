@@ -467,13 +467,7 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
     // on the previous turn, or path output on turn 0) and gives the dispatch
     // LLM direct context without forcing it to re-parse the serialized
     // history block.
-    val baseInput = if (taskState.latestContent != null && taskState.latestContent!!.text.isNotEmpty())
-    {
-        val enriched = buildTurnContent()
-        enriched.copy(text = "[LATEST PRIOR AGENT OUTPUT]\n" + taskState.latestContent!!.text +
-            "\n[/LATEST PRIOR AGENT OUTPUT]\n\n" + enriched.text)
-    }
-    else buildTurnContent()
+    val baseInput = buildDispatchContent()
     val input = preValidationDispatchFunctionInternal?.invoke(baseInput, contextWindow, miniBank, this)
         ?.let { baseInput.copy(miniBankContext = it) } ?: baseInput
 
@@ -631,13 +625,7 @@ internal suspend fun PumpStation.runDispatchPhaseMulti(): PathRequest?
         turnIndex = taskState.turnIndex
     ))
 
-    val baseInput = if (taskState.latestContent != null && taskState.latestContent!!.text.isNotEmpty())
-    {
-        val enriched = buildTurnContent()
-        enriched.copy(text = "[LATEST PRIOR AGENT OUTPUT]\n" + taskState.latestContent!!.text +
-            "\n[/LATEST PRIOR AGENT OUTPUT]\n\n" + enriched.text)
-    }
-    else buildTurnContent()
+    val baseInput = buildDispatchContent()
     val input = preValidationDispatchFunctionInternal?.invoke(baseInput, contextWindow, miniBank, this)
         ?.let { baseInput.copy(miniBankContext = it) } ?: baseInput
 

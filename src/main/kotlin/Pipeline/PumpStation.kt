@@ -8,6 +8,8 @@ import com.TTT.Context.MetadataBank
 import com.TTT.Context.MiniBank
 import com.TTT.Context.TodoList
 import com.TTT.Context.TodoListTask
+import com.TTT.Enums.PumpStationHistoryTransport
+import com.TTT.Enums.PumpStationLatestContentPosition
 import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequest
@@ -1802,6 +1804,26 @@ private fun pathKey(name: String): String = name.lowercase()
     private var maxRawTurnHistorySize: Int? = null
 
     /**
+     * Controls whether turn history is emitted as text, structured context, or both.
+     */
+    private var historyTransport = PumpStationHistoryTransport.TextOnly
+
+    /**
+     * Controls whether the latest prior agent output is injected into dispatch text.
+     */
+    private var latestContentInjectionEnabled = true
+
+    /**
+     * Controls where the latest prior agent output is placed in dispatch text.
+     */
+    private var latestContentPosition = PumpStationLatestContentPosition.Suffix
+
+    /**
+     * Controls exact duplicate suppression between latest content and turn history.
+     */
+    private var deduplicateLatestContentAgainstHistory = true
+
+    /**
      * Threshold (0.0-1.0) of context window utilization that triggers blowout
      * detection. Defaults to 0.9 (90%).
      */
@@ -2806,6 +2828,10 @@ private fun pathKey(name: String): String = name.lowercase()
 
     internal val maxTurnHistorySizeInternal get() = maxTurnHistorySize
     internal val maxRawTurnHistorySizeInternal get() = maxRawTurnHistorySize
+    internal val historyTransportInternal get() = historyTransport
+    internal val latestContentInjectionEnabledInternal get() = latestContentInjectionEnabled
+    internal val latestContentPositionInternal get() = latestContentPosition
+    internal val deduplicateLatestContentAgainstHistoryInternal get() = deduplicateLatestContentAgainstHistory
 
     //=====================================Group O: KillSwitch Accessors==============================================
     /**
@@ -4219,6 +4245,54 @@ private fun pathKey(name: String): String = name.lowercase()
      * null if no cap is enforced.
      */
     fun getMaxRawTurnHistorySize(): Int? = maxRawTurnHistorySize
+
+    /**
+     * Sets how PumpStation transports turn history to agents.
+     *
+     * @param transport The selected history transport mode.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setHistoryTransport(transport: PumpStationHistoryTransport): PumpStation
+    {
+        this.historyTransport = transport
+        return this
+    }
+
+    /**
+     * Sets whether latest prior agent output is injected into dispatch text.
+     *
+     * @param enabled True to inject latest output; false to omit it.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setLatestContentInjectionEnabled(enabled: Boolean): PumpStation
+    {
+        this.latestContentInjectionEnabled = enabled
+        return this
+    }
+
+    /**
+     * Sets the latest prior agent output position in dispatch text.
+     *
+     * @param position The selected latest-output position.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setLatestContentPosition(position: PumpStationLatestContentPosition): PumpStation
+    {
+        this.latestContentPosition = position
+        return this
+    }
+
+    /**
+     * Sets whether exact latest-output duplicates in turn history are suppressed.
+     *
+     * @param enabled True to suppress exact duplicates; false to preserve both copies.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setDeduplicateLatestContentAgainstHistory(enabled: Boolean): PumpStation
+    {
+        this.deduplicateLatestContentAgainstHistory = enabled
+        return this
+    }
 
     /**
      * Sets the context-blowout threshold (0.0-1.0). When the context window

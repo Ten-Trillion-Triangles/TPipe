@@ -2354,7 +2354,7 @@ put("system", if(enableCaching && cacheControl != null) {
     private fun buildTitanRequest(prompt: String): String
     {
         return buildJsonObject {
-            put("inputText", prompt)
+            put("inputText", composeLegacyPrompt(prompt))
             putJsonObject("textGenerationConfig") {
                 put("maxTokenCount", maxTokens)
                 if(temperature > 0) put("temperature", temperature)
@@ -2375,7 +2375,7 @@ put("system", if(enableCaching && cacheControl != null) {
     private fun buildJurassicRequest(prompt: String): String
     {
         return buildJsonObject {
-            put("prompt", prompt)
+            put("prompt", composeLegacyPrompt(prompt))
             if(maxTokens > 0) put("maxTokens", maxTokens)
             if(temperature > 0) put("temperature", temperature)
             if(topP > 0) put("topP", topP)
@@ -2395,7 +2395,7 @@ put("system", if(enableCaching && cacheControl != null) {
     private fun buildCohereRequest(prompt: String): String
     {
         return buildJsonObject {
-            put("prompt", prompt)
+            put("prompt", composeLegacyPrompt(prompt))
             put("max_tokens", maxTokens)
             if(temperature > 0) put("temperature", temperature)
             if(topP > 0) put("p", topP)
@@ -2415,7 +2415,7 @@ put("system", if(enableCaching && cacheControl != null) {
     private fun buildLlamaRequest(prompt: String): String
     {
         return buildJsonObject {
-            put("prompt", prompt)
+            put("prompt", composeLlamaPrompt(prompt))
             put("max_gen_len", maxTokens)
             if(temperature > 0) put("temperature", temperature)
             if(topP > 0) put("top_p", topP)
@@ -2433,7 +2433,7 @@ put("system", if(enableCaching && cacheControl != null) {
      */
     private fun buildMistralRequest(prompt: String): String {
         return buildJsonObject {
-            put("prompt", prompt)
+            put("prompt", composeMistralPrompt(prompt))
             put("max_tokens", maxTokens)
             if(temperature > 0) put("temperature", temperature)
             if(topP > 0) put("top_p", topP)
@@ -3432,13 +3432,47 @@ put("system", if(enableCaching && cacheControl != null) {
     fun buildGenericRequest(prompt: String): String
     {
         return buildJsonObject {
-            put("prompt", prompt)
+            put("prompt", composeLegacyPrompt(prompt))
             put("max_tokens", maxTokens)
             if(temperature > 0) put("temperature", temperature)
             if(topP > 0) put("top_p", topP)
             if(topK > 0) put("top_k", topK)
             if(stopSequences.isNotEmpty()) put("stop_sequences", JsonArray(stopSequences.map { JsonPrimitive(it) }))
         }.toString()
+    }
+
+    /**
+     * Preserves the pipe system instructions for legacy InvokeModel providers whose
+     * request schemas expose only one free-form prompt field. These providers do
+     * not accept the Converse API's top-level system field.
+     */
+    private fun composeLegacyPrompt(prompt: String): String
+    {
+        return if(systemPrompt.isEmpty()) prompt else "$systemPrompt\n\n$prompt"
+    }
+
+    /**
+     * Formats system and user content using the Llama 3+ InvokeModel chat template.
+     * Llama receives a single raw prompt string, so omitting this template would
+     * silently turn the pipe's system instructions into unstructured user text.
+     */
+    private fun composeLlamaPrompt(prompt: String): String
+    {
+        if(systemPrompt.isEmpty()) return prompt
+
+        return "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n" +
+            "$systemPrompt<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n" +
+            "$prompt<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n"
+    }
+
+    /**
+     * Formats system and user content using the Mistral text-completion template.
+     * Mistral's legacy InvokeModel schema accepts one prompt and represents the
+     * instruction turn with `[INST]` delimiters.
+     */
+    private fun composeMistralPrompt(prompt: String): String
+    {
+        return if(systemPrompt.isEmpty()) prompt else "<s>[INST] $systemPrompt\n\n$prompt [/INST]"
     }
     
     /**
