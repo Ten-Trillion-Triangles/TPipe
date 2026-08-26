@@ -320,7 +320,7 @@ Selects where prepared context is installed in the rebuilt system prompt.
 
 **Values:**
 - `Beginning`: before the raw system prompt
-- `Middle`: between JSON input and output requirements
+- `Middle`: between JSON input and output requirements, or before `footerPrompt` when no usable JSON output boundary exists
 - `Footer`: before the explicit `footerPrompt`
 
 **Behavior:** Enables system-prompt context injection and disables `.autoInjectContext(...)` user-prompt injection. The selected `ContextWindow` or `MiniBank` is serialized after retrieval and truncation. Context instructions use the existing `contextInstructions` configuration.

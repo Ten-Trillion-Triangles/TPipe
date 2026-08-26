@@ -55,6 +55,51 @@ class SystemContextInjectionTest
     }
 
     @Test
+    fun middlePlacementFallsBackToFooterForNativeJsonPipes()
+    {
+        val pipe = TestCapturingPipe()
+        pipe.setSystemPrompt("RAW_SYSTEM_PROMPT")
+        pipe.setFooterPrompt("EXPLICIT_FOOTER")
+        pipe.getContextWindowObject().contextElements.add("NATIVE_MIDDLE_CONTEXT")
+        pipe.setSystemContextInjectionPoint(SystemContextInjectionPoint.Middle)
+        pipe.applySystemPrompt()
+
+        val prompt = pipe.composedSystemPrompt
+        assertTrue(prompt.contains("NATIVE_MIDDLE_CONTEXT"))
+        assertTrue(prompt.indexOf("NATIVE_MIDDLE_CONTEXT") < prompt.indexOf("EXPLICIT_FOOTER"))
+        assertEquals(1, "NATIVE_MIDDLE_CONTEXT".toRegex().findAll(prompt).count())
+    }
+
+    @Test
+    fun middlePlacementFallsBackToFooterWithoutJsonOutput()
+    {
+        val pipe = TestCapturingPipe()
+        pipe.requireJsonPromptInjection()
+        pipe.setSystemPrompt("RAW_SYSTEM_PROMPT")
+        pipe.setFooterPrompt("EXPLICIT_FOOTER")
+        pipe.getContextWindowObject().contextElements.add("NO_OUTPUT_MIDDLE_CONTEXT")
+        pipe.setSystemContextInjectionPoint(SystemContextInjectionPoint.Middle)
+        pipe.applySystemPrompt()
+
+        val prompt = pipe.composedSystemPrompt
+        assertTrue(prompt.contains("NO_OUTPUT_MIDDLE_CONTEXT"))
+        assertTrue(prompt.indexOf("NO_OUTPUT_MIDDLE_CONTEXT") < prompt.indexOf("EXPLICIT_FOOTER"))
+    }
+
+    @Test
+    fun middleFallbackIsInsertedOnceAfterRepeatedRebuilds()
+    {
+        val pipe = TestCapturingPipe()
+        pipe.setSystemPrompt("RAW_SYSTEM_PROMPT")
+        pipe.getContextWindowObject().contextElements.add("REBUILT_MIDDLE_CONTEXT")
+        pipe.setSystemContextInjectionPoint(SystemContextInjectionPoint.Middle)
+        pipe.applySystemPrompt()
+        pipe.applySystemPrompt()
+
+        assertEquals(1, "REBUILT_MIDDLE_CONTEXT".toRegex().findAll(pipe.composedSystemPrompt).count())
+    }
+
+    @Test
     fun footerPlacementPrecedesExplicitFooterPrompt()
     {
         val pipe = TestCapturingPipe()

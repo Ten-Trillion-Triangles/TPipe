@@ -141,7 +141,7 @@ val pipe = BedrockPipe()
 | Placement | Position |
 |---|---|
 | `Beginning` | Before the raw system prompt. |
-| `Middle` | Between JSON input and JSON output requirements. |
+| `Middle` | Between JSON input and JSON output requirements; falls back to before `footerPrompt` when no usable JSON output boundary exists. |
 | `Footer` | Before `footerPrompt`, preserving the explicit footer as the final instruction. |
 
 The context block is rebuilt through `applySystemPrompt()` after context retrieval and truncation. It uses explicit delimiters and identifies embedded context instructions as data. Existing `contextInstructions` supplies model-specific guidance.

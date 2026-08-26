@@ -2605,6 +2605,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         systemPrompt = rawSystemPrompt //Restore raw system prompt.
 
         val systemContextBlock = buildSystemContextBlock()
+        val hasMiddleJsonBoundary = !supportsNativeJson && jsonOutput.isNotEmpty()
         if(systemContextInjectionPoint == SystemContextInjectionPoint.Beginning && systemContextBlock.isNotEmpty())
         {
             systemPrompt = "$systemContextBlock\n\n$systemPrompt"
@@ -2904,7 +2905,9 @@ abstract class Pipe : P2PInterface, ProviderInterface
             }
         }
 
-        if(systemContextInjectionPoint == SystemContextInjectionPoint.Footer && systemContextBlock.isNotEmpty())
+        val useFooterContextPlacement = systemContextInjectionPoint == SystemContextInjectionPoint.Footer ||
+            (systemContextInjectionPoint == SystemContextInjectionPoint.Middle && !hasMiddleJsonBoundary)
+        if(useFooterContextPlacement && systemContextBlock.isNotEmpty())
         {
             systemPrompt = "$systemPrompt\n\n$systemContextBlock"
         }
