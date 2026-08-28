@@ -333,9 +333,12 @@ Copies system prompt to user prompt for models that handle user prompts better.
 #### `applySystemPrompt(): Pipe`
 Rebuilds system prompt with all injections and configurations.
 
-**Behavior:** Critical function that reconstructs the system prompt by injecting the semantic decompression
-prelude, JSON schemas, PCP context, P2P agents, context instructions, todo lists, and custom footer text in a
-stable order. Must be called after changing JSON schemas or protocol settings to take effect.
+**Behavior:** Critical function that reconstructs the system prompt by starting from `rawSystemPrompt`, applying any
+owning-container implementation-plan overlay, and injecting the semantic decompression prelude, JSON schemas, PCP
+context, P2P agents, context instructions, todo lists, and custom footer text in a stable order. The overlay uses the
+literal block label `Implementation plan:` and preserves the normalized plan text. Each rebuild starts from the raw
+prompt, so repeated application produces one plan block. Must be called after changing JSON schemas or protocol
+settings to take effect. Manifold and PumpStation use this path when their implementation-plan guidance is active.
 
 ---
 

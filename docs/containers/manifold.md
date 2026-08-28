@@ -5,6 +5,7 @@
 
 ## Table of Contents
 - [Core Concepts](#core-concepts)
+- [Implementation Plan Guidance](#implementation-plan-guidance)
 - [DSL Builder](#dsl-builder)
 - [Summary Pipeline](#summary-pipeline)
 - [Summary to MiniBank Auto-Injection](#summary-to-minibank-auto-injection)
@@ -54,6 +55,45 @@ The default `TPipe-Defaults` manager pipeline uses two pipes:
 
 1. An entry pipe that reads `ConverseHistory` and emits `TaskProgress`
 2. An agent-caller pipe that reads `TaskProgress` and emits `AgentRequest`
+
+### Implementation Plan Guidance
+
+`setImplementationPlan(plan: String?)` attaches stable implementation guidance to the manager control pipes. The value is trimmed before storage. A `null` or blank value clears the guidance. The setter returns the manifold for chaining and applies the prompt overlay immediately when the manager pipeline is available.
+
+The manifold selects manager pipes in manager-pipeline order. The selected set contains:
+
+- The first manager pipe
+- Pipes whose names are registered through `addP2pAgentNames(...)` or `setP2pAgentNames(...)`
+- Pipes whose JSON output schema matches `AgentRequest`
+
+Each selected pipe receives the following system-prompt block:
+
+```text
+Implementation plan:
+<trimmed plan text>
+```
+
+Worker pipelines and unrelated manager pipes keep their existing system prompts. The overlay is rebuilt from each pipe's raw system prompt during prompt application, so repeated refreshes keep one implementation-plan block. See [Pipe System Prompt Processing](../core-concepts/pipe-class.md#system-prompt-processing).
+
+Configure the plan through the fluent API or the DSL:
+
+```kotlin
+val manifold = Manifold()
+    .setManagerPipeline(managerPipeline)
+    .setImplementationPlan("Use the declared manager contract and delegate through registered workers.")
+```
+
+```kotlin
+val manifold = manifold {
+    manager { /* manager configuration */ }
+    worker("research-worker") {
+        pipeline(researchPipeline)
+    }
+    implementationPlan("Use the declared manager contract and delegate through registered workers.")
+}
+```
+
+`getImplementationPlan()` returns the normalized value, or `null` when guidance is disabled. Plan mutation is permitted between executions. Calling `setImplementationPlan(...)` during `execute(...)` throws `IllegalStateException`; the lifecycle guard covers the execution interval and is released when execution finishes, including exceptional exits. If prompt application fails, the previous plan is restored and the original error is rethrown. The implementation is defined in `Pipeline/Manifold.kt:1075` and `Pipeline/Manifold.kt:1440`; the DSL entry point is in `Pipeline/ManifoldDsl.kt:201`.
 
 ### Worker Agents
 
@@ -213,6 +253,7 @@ The `manifold { }` builder supports these top-level blocks:
 | `workerP2P("name") { }` | Yes (at least one, mixed with `worker { }`) | Registers any `P2PInterface` worker (Junction, DistributionGrid, PumpStation, nested Manifold) |
 | `defaults { }` | Alternative to `manager { }` | Uses TPipe-Defaults to build the manager |
 | `maxIterations(limit)` | Optional | Sets the maximum loop iterations (default: 100, null = unlimited) |
+| `implementationPlan(plan)` | Optional | Adds stable guidance to the selected manager control pipes. Blank and `null` values clear it. |
 | `history { }` | Optional | Configures manager shared-history truncation |
 | `initFunction { }` | Optional | Pre-execution startup checks before the manifold loop starts |
 | `validation { }` | Optional | Hooks for worker output validation and transformation |
@@ -223,6 +264,20 @@ The `manifold { }` builder supports these top-level blocks:
 | `killSwitch(input, output, onTripped)` | Optional | Halts execution if token limits are exceeded |
 
 Each block can only appear once (except `worker` and `workerP2P`, which can appear multiple times and may be mixed).
+
+### implementationPlan(...)
+
+The `implementationPlan(plan)` builder method stores guidance for the selected manager control pipes. The value is copied through builder stage promotion and applied while the built manifold receives its manager pipeline and initializes.
+
+```kotlin
+val builtManifold = manifold {
+    manager { /* manager configuration */ }
+    worker("research-worker") {
+        pipeline(researchPipeline)
+    }
+    implementationPlan("Use the declared worker names and return a valid AgentRequest.")
+}
+```
 
 All builder methods return `ManifoldBuilder<S>` for chaining. For example, `concurrencyMode()`, `killSwitch()`, `maxIterations()`, and `history()` can be called in sequence:
 
@@ -693,6 +748,7 @@ suspend fun buildManifold(taskAnalyzer: Pipe, agentCaller: Pipe, workerPipe: Pip
 
     manifold
         .setManagerPipeline(managerPipeline)
+        .setImplementationPlan("Use the declared worker names and return a valid AgentRequest.")
         .setManagerTokenBudget(
             TokenBudgetSettings(
                 contextWindowSize = 12000,
@@ -721,6 +777,7 @@ suspend fun buildManifold(taskAnalyzer: Pipe, agentCaller: Pipe, workerPipe: Pip
 
 - At least one manager pipe must emit `AgentRequest`, or `setManagerPipeline(...)` throws
 - If you use a custom manager pipe name for agent dispatch, call `addP2pAgentNames(...)`
+- Use `setImplementationPlan(...)` or `implementationPlan(...)` to keep manager control guidance present across prompt refreshes
 - Do not skip worker overflow protection
 - Do not skip `init()`
 

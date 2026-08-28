@@ -1173,6 +1173,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
     protected var rawSystemPrompt = ""
 
     /**
+     * Optional transient implementation guidance supplied by an owning orchestration
+     * container. The raw system prompt remains the source of truth for rebuilding.
+     */
+    @kotlinx.serialization.Transient
+    internal var implementationPlanOverlay: String? = null
+
+    /**
      * Allows instructions to be overridden for json prompt injection for inputs and outputs.
      * Is applied if applySystemPrompt is invoked.
      */
@@ -2499,6 +2506,18 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
+     * Set the transient implementation-plan overlay used by container prompt refreshes.
+     *
+     * @param plan The plan to append to the raw system prompt, or null to clear it.
+     * @return This Pipe object for method chaining.
+     */
+    internal fun setImplementationPlanOverlay(plan: String?): Pipe
+    {
+        implementationPlanOverlay = normalizeImplementationPlan(plan)
+        return this
+    }
+
+    /**
      * Test-only accessor that returns the current (post-merge) system prompt.
      * Used by harness-loop unit tests to verify prompt refresh behavior.
      * Functions are not serialized by kotlinx-serialization, so no @Transient
@@ -2602,7 +2621,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     fun applySystemPrompt(content: MultimodalContent? = null) : Pipe
     {
-        systemPrompt = rawSystemPrompt //Restore raw system prompt.
+        systemPrompt = composeImplementationPlanPrompt(
+            basePrompt = rawSystemPrompt,
+            implementationPlan = implementationPlanOverlay
+        )
 
         val systemContextBlock = buildSystemContextBlock()
         val hasMiddleJsonBoundary = !supportsNativeJson && jsonOutput.isNotEmpty()

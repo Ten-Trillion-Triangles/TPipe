@@ -82,11 +82,15 @@ internal suspend fun PumpStation.refreshAgentInstances()
  */
 internal fun PumpStation.refreshPipelinesPrompts()
 {
-    applyPromptsToPipeline(judgeAgent, buildJudgeSystemPrompt(), buildJudgeFooter())
-    applyPromptsToPipeline(dispatchAgent, buildDispatchSystemPrompt(), buildDispatchFooter())
+    val judgePrompt = customJudgeSystemPrompt ?: buildJudgeSystemPrompt()
+    val dispatchPrompt = customDispatchSystemPrompt ?: buildDispatchSystemPrompt()
+    val goalPrompt = customGoalSystemPrompt ?: buildGoalSystemPrompt()
+
+    applyPromptsToPipeline(judgeAgent, judgePrompt, buildJudgeFooter())
+    applyPromptsToPipeline(dispatchAgent, dispatchPrompt, buildDispatchFooter())
     if (goalAgent is Pipeline)
 {
-        applyPromptsToPipeline(goalAgent as Pipeline, buildGoalSystemPrompt(), null)
+        applyPromptsToPipeline(goalAgent as Pipeline, goalPrompt, null)
     }
 }
 
@@ -104,6 +108,7 @@ internal fun PumpStation.applyPromptsToPipeline(
         val footer = customFooter ?: defaultFooterFor(agent)
         pipe.setSystemPrompt(prompt)
         pipe.setFooterPrompt(footer)
+        pipe.setImplementationPlanOverlay(implementationPlanInternal)
         if (agent == dispatchAgent) pipe.enableHarnessMode()
         pipe.applySystemPrompt()
     }

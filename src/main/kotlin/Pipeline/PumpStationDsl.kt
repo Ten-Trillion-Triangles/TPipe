@@ -89,6 +89,9 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      */
     var interruptConfiguration: PumpStationInterruptConfiguration? = null
 
+    /** Optional stable implementation guidance for the station control agents. */
+    var implementationPlan: String? = null
+
 //=========================================Agent Assignments=========================================================
 
     /**
@@ -811,6 +814,20 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     }
 
     /**
+     * Configure stable implementation guidance for judge, dispatch, and goal agents.
+     * Blank values clear the plan.
+     *
+     * @param plan Implementation guidance, or null to clear it.
+     * @return This builder for method chaining.
+     */
+    fun implementationPlan(plan: String?): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        targetBuilder.implementationPlan = com.TTT.Pipe.normalizeImplementationPlan(plan)
+        return this
+    }
+
+    /**
      * Declare a path that the dispatch agent can select.
      *
      * @param pathName Unique name for this path.
@@ -1060,6 +1077,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         compactionConfiguration = source.compactionConfiguration
         steeringConfiguration = source.steeringConfiguration
         interruptConfiguration = source.interruptConfiguration
+        implementationPlan = source.implementationPlan
         judgeAgent = source.judgeAgent
         dispatchAgent = source.dispatchAgent
         interventionAgent = source.interventionAgent
@@ -1244,6 +1262,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setHealthSystemPrompt(healthSystemPrompt)
             .setLorebookSystemPrompt(lorebookSystemPrompt)
             .setGoalSystemPrompt(goalSystemPrompt)
+            .setImplementationPlan(implementationPlan)
 
         // Event observer
         eventObserver?.let { station.setEventObserver(it) }

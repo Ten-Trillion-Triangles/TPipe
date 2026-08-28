@@ -1075,6 +1075,16 @@ suspend fun interrupt(phase: PumpStationPausePhase, text: String)
     internal var customGoalSystemPrompt: String? = null
 
     /**
+     * Optional stable implementation guidance injected into the judge, dispatch, and
+     * Pipeline-shaped goal agents.
+     */
+    private var implementationPlan: String? = null
+
+    /** Guards implementation-plan mutation while the station is executing. */
+    @kotlinx.serialization.Transient
+    private val implementationPlanLifecycleGuard = ImplementationPlanLifecycleGuard()
+
+    /**
      * REQUIRED: This agent evaluates what the next steps in the harness needs to be, and dispatches the to the
      * next path. (Equal to a tool call, or turn in traditional agent harnesses.) If null, or if a [Splitter] has
      * been assigned to this an illegal argument exception will be thrown.
@@ -2397,12 +2407,20 @@ private fun pathKey(name: String): String = name.lowercase()
      */
     override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
     {
-        if (!harnessIsReady) P2PInit()
-        runPreInitPhase(content)
-        val trip = runHarnessLoop()
-        val result = runFinalizationPhase()
-        if (trip != null) throw trip
-        return result
+        implementationPlanLifecycleGuard.beginExecution()
+        try
+        {
+            if(!harnessIsReady) P2PInit()
+            runPreInitPhase(content)
+            val trip = runHarnessLoop()
+            val result = runFinalizationPhase()
+            if(trip != null) throw trip
+            return result
+        }
+        finally
+        {
+            implementationPlanLifecycleGuard.endExecution()
+        }
     }
 
     /**
@@ -3605,6 +3623,69 @@ private fun pathKey(name: String): String = name.lowercase()
 
 //=====================================Fluent Setters================================================================
 
+    /**
+     * Sets stable implementation guidance for the judge, dispatch, and goal agents.
+     * The value is normalized by trimming outer whitespace; blank values clear it.
+     *
+     * @param plan Implementation guidance, or null to clear it.
+     * @return This PumpStation instance for method chaining.
+     * @throws IllegalStateException if the station is executing.
+     */
+    fun setImplementationPlan(plan: String?): PumpStation
+    {
+        implementationPlanLifecycleGuard.mutateBetweenExecutions {
+            val previousPlan = implementationPlan
+            implementationPlan = com.TTT.Pipe.normalizeImplementationPlan(plan)
+            try
+            {
+                applyImplementationPlanToAgents()
+            }
+            catch(error: Throwable)
+            {
+                implementationPlan = previousPlan
+                try
+                {
+                    applyImplementationPlanToAgents()
+                }
+                catch(rollbackError: Throwable)
+                {
+                    error.addSuppressed(rollbackError)
+                }
+                throw error
+            }
+        }
+        return this
+    }
+
+    /**
+     * Returns the normalized implementation plan, or null when disabled.
+     *
+     * @return The active implementation plan, or null when disabled.
+     */
+    fun getImplementationPlan(): String? = implementationPlan
+
+    /** Internal access for the prompt-refresh extensions in PumpStationLoop.kt. */
+    internal val implementationPlanInternal: String? get() = implementationPlan
+
+    /** Apply the current plan to exactly the configured PumpStation control agents. */
+    private fun applyImplementationPlanToAgents()
+    {
+        applyImplementationPlanToPipeline(judgeAgent)
+        applyImplementationPlanToPipeline(dispatchAgent)
+        applyImplementationPlanToPipeline(goalAgent as? Pipeline)
+    }
+
+    /** Apply the plan to every pipe in one Pipeline-shaped control agent. */
+    private fun applyImplementationPlanToPipeline(agent: Pipeline?)
+    {
+        agent ?: return
+        agent.getPipes().forEach { pipe ->
+            pipe
+                .setImplementationPlanOverlay(implementationPlan)
+                .applySystemPrompt()
+        }
+    }
+
 //---------------------------------------------Agent Setters--------------------------------------------------------
 
     /**
@@ -3617,7 +3698,11 @@ private fun pathKey(name: String): String = name.lowercase()
     fun setJudgeAgent(agent: Pipeline?): PumpStation
     {
         this.judgeAgent = agent
-        if(agent != null) autoInjectDefaultPrompt(agent, customJudgeSystemPrompt, DEFAULT_JUDGE_PROMPT)
+        if(agent != null)
+        {
+            autoInjectDefaultPrompt(agent, customJudgeSystemPrompt, DEFAULT_JUDGE_PROMPT)
+            if(implementationPlan != null) applyImplementationPlanToPipeline(agent)
+        }
         return this
     }
 
@@ -3631,7 +3716,11 @@ private fun pathKey(name: String): String = name.lowercase()
     fun setDispatchAgent(agent: Pipeline?): PumpStation
     {
         this.dispatchAgent = agent
-        if(agent != null) autoInjectDefaultPrompt(agent, customDispatchSystemPrompt, DEFAULT_DISPATCH_PROMPT)
+        if(agent != null)
+        {
+            autoInjectDefaultPrompt(agent, customDispatchSystemPrompt, DEFAULT_DISPATCH_PROMPT)
+            if(implementationPlan != null) applyImplementationPlanToPipeline(agent)
+        }
         return this
     }
 
@@ -3697,6 +3786,7 @@ private fun pathKey(name: String): String = name.lowercase()
     fun setGoalAgent(agent: P2PInterface?): PumpStation
     {
         this.goalAgent = agent
+        if(implementationPlan != null) applyImplementationPlanToPipeline(agent as? Pipeline)
         return this
     }
 
@@ -4662,6 +4752,7 @@ private fun pathKey(name: String): String = name.lowercase()
         this.customJudgeSystemPrompt = prompt
         this.judgeExpectsJsonContract = (prompt == null)
         applyCustomPromptToAgent(this.judgeAgent, prompt)
+        if(implementationPlan != null) applyImplementationPlanToPipeline(this.judgeAgent)
         return this
     }
 
@@ -4672,6 +4763,7 @@ private fun pathKey(name: String): String = name.lowercase()
     {
         this.customDispatchSystemPrompt = prompt
         applyCustomPromptToAgent(this.dispatchAgent, prompt)
+        if(implementationPlan != null) applyImplementationPlanToPipeline(this.dispatchAgent)
         return this
     }
 
@@ -4713,6 +4805,7 @@ private fun pathKey(name: String): String = name.lowercase()
     {
         this.customGoalSystemPrompt = prompt
         applyCustomPromptToAgent(this.goalAgent, prompt)
+        if(implementationPlan != null) applyImplementationPlanToPipeline(this.goalAgent as? Pipeline)
         return this
     }
 

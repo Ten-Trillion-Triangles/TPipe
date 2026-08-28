@@ -70,6 +70,13 @@ class Manifold : P2PInterface
 {
 //============================================== P2PInterface ==========================================================
 
+    /** Optional stable implementation guidance for manager control pipes. */
+    private var implementationPlan: String? = null
+
+    /** Guards implementation-plan mutation while the manifold is orchestrating. */
+    @kotlinx.serialization.Transient
+    private val implementationPlanLifecycleGuard = ImplementationPlanLifecycleGuard()
+
     private var p2pDescriptor: P2PDescriptor? = null
     private var p2pTransport: P2PTransport? = null
     private var p2PRequirements: P2PRequirements? = null
@@ -892,11 +899,13 @@ class Manifold : P2PInterface
     fun addP2pAgentNames(pipe: Pipe)
     {
         agentPipeNames.add(pipe.pipeName)
+        if(implementationPlan != null) applyImplementationPlanToManagerPipes()
     }
 
     fun addP2pAgentNames(name: String)
     {
         agentPipeNames.add(name)
+        if(implementationPlan != null) applyImplementationPlanToManagerPipes()
     }
 
     /**
@@ -912,6 +921,7 @@ class Manifold : P2PInterface
 
         agentPipeNames.clear()
         agentPipeNames.addAll(names.distinct())
+        if(implementationPlan != null) applyImplementationPlanToManagerPipes()
         return this
     }
 
@@ -1025,6 +1035,7 @@ class Manifold : P2PInterface
              * They are however, never null when registered from this function, so it's safe to use !! here.
              */
             P2PRegistry.register(managerPipeline, p2pTransport!!, p2pDescriptor!!, requirements)
+            if(implementationPlan != null) applyImplementationPlanToManagerPipes()
             return this
         }
 
@@ -1048,8 +1059,51 @@ class Manifold : P2PInterface
          */
         P2PRegistry.register(managerPipeline, descriptor.transport, descriptor, requirements)
 
+        if(implementationPlan != null) applyImplementationPlanToManagerPipes()
+
         return this
     }
+
+    /**
+     * Sets stable implementation guidance for the manifold's manager control pipes.
+     * Blank values clear the plan.
+     *
+     * @param plan Implementation guidance, or null to clear it.
+     * @return This Manifold instance for method chaining.
+     * @throws IllegalStateException if the manifold is executing.
+     */
+    fun setImplementationPlan(plan: String?): Manifold
+    {
+        implementationPlanLifecycleGuard.mutateBetweenExecutions {
+            val previousPlan = implementationPlan
+            implementationPlan = com.TTT.Pipe.normalizeImplementationPlan(plan)
+            try
+            {
+                applyImplementationPlanToManagerPipes()
+            }
+            catch(error: Throwable)
+            {
+                implementationPlan = previousPlan
+                try
+                {
+                    applyImplementationPlanToManagerPipes()
+                }
+                catch(rollbackError: Throwable)
+                {
+                    error.addSuppressed(rollbackError)
+                }
+                throw error
+            }
+        }
+        return this
+    }
+
+    /**
+     * Returns the normalized implementation plan, or null when disabled.
+     *
+     * @return The active implementation plan, or null when disabled.
+     */
+    fun getImplementationPlan(): String? = implementationPlan
 
     /**
      * Getter to read our manager pipeline. Provides some saftey since we want any sets to correctly register.
@@ -1307,6 +1361,10 @@ class Manifold : P2PInterface
                 ?.applySystemPrompt()
         }
 
+        // Rehydrate the transient implementation-plan overlay after initialization
+        // has attached the manager's P2P descriptors and prompt context.
+        applyImplementationPlanToManagerPipes()
+
         validateWorkerPipelineOverflowProtection()
 
         if(!autoTruncateContext && contextTruncationFunction == null)
@@ -1373,6 +1431,35 @@ class Manifold : P2PInterface
     private fun getPrimaryManagerPipe() : Pipe?
     {
         return managerPipeline.getPipes().firstOrNull()
+    }
+
+    /**
+     * Resolve the manager pipes that control manifold orchestration.
+     * Targets are kept in manager-pipeline order and deduplicated by identity.
+     */
+    private fun getImplementationPlanTargetPipes(): List<Pipe>
+    {
+        val managerPipes = managerPipeline.getPipes()
+        if(managerPipes.isEmpty()) return emptyList()
+
+        val namedPipes = agentPipeNames.mapNotNull { name ->
+            managerPipeline.getPipeByName(name).second
+        }.toSet()
+        val agentRequestExample = examplePromptFor(AgentRequest::class)
+
+        return managerPipes.filterIndexed { index, pipe ->
+            index == 0 || pipe in namedPipes || pipe.jsonOutput == agentRequestExample
+        }
+    }
+
+    /** Apply the current implementation plan to the selected manager pipes. */
+    private fun applyImplementationPlanToManagerPipes()
+    {
+        getImplementationPlanTargetPipes().forEach { pipe ->
+            pipe
+                .setImplementationPlanOverlay(implementationPlan)
+                .applySystemPrompt()
+        }
     }
 
     /**
@@ -1525,7 +1612,26 @@ class Manifold : P2PInterface
      * @return The final processed content after all agent interactions are complete
      * @throws Exception When converse history extraction fails - required for tracking agent interactions
      */
-    suspend fun execute(content: MultimodalContent) : MultimodalContent
+    suspend fun execute(content: MultimodalContent): MultimodalContent
+    {
+        implementationPlanLifecycleGuard.beginExecution()
+        try
+        {
+            return executeInternal(content)
+        }
+        finally
+        {
+            implementationPlanLifecycleGuard.endExecution()
+        }
+    }
+
+    /**
+     * Executes the existing manager-worker orchestration after lifecycle tracking is active.
+     *
+     * @param content The initial task content to process.
+     * @return The final processed content after all agent interactions are complete.
+     */
+    private suspend fun executeInternal(content: MultimodalContent): MultimodalContent
     {
         /**
          * Throw if our manager pipeline does not have agents assigned. In this event we would have a silent but

@@ -112,6 +112,7 @@ pumpStation("name") {
     systemTask = "..."
     userGuidelines = "..."
     entryUserPrompt = "..."
+    implementationPlan("Follow the declared workflow and preserve the required output contract.")
 
     // Dispatch contract — SinglePath (default) emits one PathRequest per turn;
     // MultiPath emits a PathRequestList and fans out via the async substrate.
@@ -276,6 +277,29 @@ pumpStation("name") {
 ```
 
 The `pumpStation("name") { ... }` function returns a fully built `PumpStation`. There is also `pumpStationBuilder("name")` for callers who want to build the builder separately and call `build()` explicitly.
+
+### Implementation-Plan Functions
+
+#### `setImplementationPlan(plan: String?): PumpStation`
+
+Attaches stable implementation guidance to the judge, dispatch, and Pipeline-shaped goal agents. The value is trimmed before storage. `null` and blank values clear the plan.
+
+The plan is appended to each selected pipe's raw system prompt as:
+
+```text
+Implementation plan:
+<trimmed plan text>
+```
+
+The setter applies the plan immediately to configured control-agent pipes and returns the station for chaining. Calling it while `executeLocal(...)` is active throws `IllegalStateException`. If prompt application fails, the prior plan is restored and the error is rethrown. Source: `Pipeline/PumpStation.kt:3634`.
+
+#### `getImplementationPlan(): String?`
+
+Returns the normalized implementation plan, or `null` when the plan is disabled. Source: `Pipeline/PumpStation.kt:3665`.
+
+#### `implementationPlan(plan: String?): PumpStationBuilder<S>`
+
+Stores the normalized plan in the staged builder. The value is copied during builder promotion and applied to the built station. Source: `Pipeline/PumpStationDsl.kt:823`.
 
 ### Prompt Configuration
 
