@@ -82,11 +82,15 @@ internal suspend fun PumpStation.refreshAgentInstances()
  */
 internal fun PumpStation.refreshPipelinesPrompts()
 {
-    applyPromptsToPipeline(judgeAgent, buildJudgeSystemPrompt(), buildJudgeFooter())
-    applyPromptsToPipeline(dispatchAgent, buildDispatchSystemPrompt(), buildDispatchFooter())
+    val judgePrompt = customJudgeSystemPrompt ?: buildJudgeSystemPrompt()
+    val dispatchPrompt = customDispatchSystemPrompt ?: buildDispatchSystemPrompt()
+    val goalPrompt = customGoalSystemPrompt ?: buildGoalSystemPrompt()
+
+    applyPromptsToPipeline(judgeAgent, judgePrompt, buildJudgeFooter())
+    applyPromptsToPipeline(dispatchAgent, dispatchPrompt, buildDispatchFooter())
     if (goalAgent is Pipeline)
 {
-        applyPromptsToPipeline(goalAgent as Pipeline, buildGoalSystemPrompt(), null)
+        applyPromptsToPipeline(goalAgent as Pipeline, goalPrompt, null)
     }
 }
 
@@ -104,6 +108,7 @@ internal fun PumpStation.applyPromptsToPipeline(
         val footer = customFooter ?: defaultFooterFor(agent)
         pipe.setSystemPrompt(prompt)
         pipe.setFooterPrompt(footer)
+        pipe.setImplementationPlanOverlay(implementationPlanInternal)
         if (agent == dispatchAgent) pipe.enableHarnessMode()
         pipe.applySystemPrompt()
     }
@@ -467,13 +472,7 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
     // on the previous turn, or path output on turn 0) and gives the dispatch
     // LLM direct context without forcing it to re-parse the serialized
     // history block.
-    val baseInput = if (taskState.latestContent != null && taskState.latestContent!!.text.isNotEmpty())
-    {
-        val enriched = buildTurnContent()
-        enriched.copy(text = "[LATEST PRIOR AGENT OUTPUT]\n" + taskState.latestContent!!.text +
-            "\n[/LATEST PRIOR AGENT OUTPUT]\n\n" + enriched.text)
-    }
-    else buildTurnContent()
+    val baseInput = buildDispatchContent()
     val input = preValidationDispatchFunctionInternal?.invoke(baseInput, contextWindow, miniBank, this)
         ?.let { baseInput.copy(miniBankContext = it) } ?: baseInput
 
@@ -631,13 +630,7 @@ internal suspend fun PumpStation.runDispatchPhaseMulti(): PathRequest?
         turnIndex = taskState.turnIndex
     ))
 
-    val baseInput = if (taskState.latestContent != null && taskState.latestContent!!.text.isNotEmpty())
-    {
-        val enriched = buildTurnContent()
-        enriched.copy(text = "[LATEST PRIOR AGENT OUTPUT]\n" + taskState.latestContent!!.text +
-            "\n[/LATEST PRIOR AGENT OUTPUT]\n\n" + enriched.text)
-    }
-    else buildTurnContent()
+    val baseInput = buildDispatchContent()
     val input = preValidationDispatchFunctionInternal?.invoke(baseInput, contextWindow, miniBank, this)
         ?.let { baseInput.copy(miniBankContext = it) } ?: baseInput
 

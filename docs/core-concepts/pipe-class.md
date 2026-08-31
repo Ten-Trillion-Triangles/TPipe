@@ -211,12 +211,13 @@ val pipe = BedrockPipe()
 The system prompt undergoes several processing steps:
 
 1. **Raw System Prompt**: Your original prompt
-2. **PCP Context**: Pipe Context Protocol additions (if enabled)
-3. **JSON Requirements**: JSON formatting instructions (if needed)
-4. **Middle Prompt**: Prompt that sits between json input, and json output.
-5. **Context Instructions**: Context schema guidance when `.autoInjectContext(...)` is enabled
-6. **System-Prompt Context Block**: Selected context data when `setSystemContextInjectionPoint(...)` is enabled
-7. **Footer Prompt**: Additional instructions appended at the end
+2. **Implementation Plan Overlay**: Stable guidance supplied by an owning `Manifold` or `PumpStation`, when configured
+3. **PCP Context**: Pipe Context Protocol additions (if enabled)
+4. **JSON Requirements**: JSON formatting instructions (if needed)
+5. **Middle Prompt**: Prompt that sits between json input, and json output.
+6. **Context Instructions**: Context schema guidance when `.autoInjectContext(...)` is enabled
+7. **System-Prompt Context Block**: Selected context data when `setSystemContextInjectionPoint(...)` is enabled
+8. **Footer Prompt**: Additional instructions appended at the end
 
 ```kotlin
 // The final system prompt may include additional instructions
@@ -224,6 +225,11 @@ The system prompt undergoes several processing steps:
 pipe.setSystemPrompt("You are an automated security auditor.")
 // Final prompt might be: "You are an automated security auditor.\n\n[JSON instructions]\n\n[Context instructions]"
 ```
+
+An implementation-plan overlay is appended to the raw system prompt before JSON, PCP, and footer injections. The exact
+block begins with `Implementation plan:`. The overlay is transient pipe state, and `applySystemPrompt()` rebuilds from
+the raw prompt so repeated refreshes remain idempotent. See [Manifold Implementation Plan Guidance](../containers/manifold.md#implementation-plan-guidance)
+and [PumpStation Implementation Plan Guidance](../containers/pumpstation.md#implementation-plan-guidance).
 
 ## System-Prompt Context Placement
 

@@ -7,6 +7,8 @@ import com.TTT.Context.MiniBank
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Debug.TraceFormat
+import com.TTT.Enums.PumpStationHistoryTransport
+import com.TTT.Enums.PumpStationLatestContentPosition
 import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.KillSwitchContext
 import com.TTT.P2P.P2PInterface
@@ -86,6 +88,9 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      * time by seeding [PumpStationInterruptService].
      */
     var interruptConfiguration: PumpStationInterruptConfiguration? = null
+
+    /** Optional stable implementation guidance for the station control agents. */
+    var implementationPlan: String? = null
 
 //=========================================Agent Assignments=========================================================
 
@@ -515,6 +520,18 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      */
     var maxRawTurnHistorySize: Int? = null
 
+    /** History representation supplied to PumpStation agents. */
+    var historyTransport: PumpStationHistoryTransport = PumpStationHistoryTransport.TextOnly
+
+    /** Whether latest prior agent output is injected into dispatch text. */
+    var latestContentInjectionEnabled: Boolean = true
+
+    /** Location of latest prior agent output in dispatch text. */
+    var latestContentPosition: PumpStationLatestContentPosition = PumpStationLatestContentPosition.Suffix
+
+    /** Whether exact latest-output duplicates in turn history are suppressed. */
+    var deduplicateLatestContentAgainstHistory: Boolean = true
+
     /**
      * Threshold (0.0-1.0) of context window utilization that triggers
      * blowout detection. Defaults to 0.9 (90%).
@@ -785,6 +802,32 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     }
 
     /**
+     * Configure history transport and latest-output placement.
+     *
+     * @param block Prompt configuration values to apply.
+     */
+    fun promptConfiguration(block: PromptConfigurationBlock.() -> Unit)
+    {
+        val targetBuilder = resolveActiveBuilder()
+        val promptBlock = PromptConfigurationBlock(targetBuilder)
+        promptBlock.block()
+    }
+
+    /**
+     * Configure stable implementation guidance for judge, dispatch, and goal agents.
+     * Blank values clear the plan.
+     *
+     * @param plan Implementation guidance, or null to clear it.
+     * @return This builder for method chaining.
+     */
+    fun implementationPlan(plan: String?): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        targetBuilder.implementationPlan = com.TTT.Pipe.normalizeImplementationPlan(plan)
+        return this
+    }
+
+    /**
      * Declare a path that the dispatch agent can select.
      *
      * @param pathName Unique name for this path.
@@ -1034,6 +1077,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         compactionConfiguration = source.compactionConfiguration
         steeringConfiguration = source.steeringConfiguration
         interruptConfiguration = source.interruptConfiguration
+        implementationPlan = source.implementationPlan
         judgeAgent = source.judgeAgent
         dispatchAgent = source.dispatchAgent
         interventionAgent = source.interventionAgent
@@ -1075,6 +1119,10 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         concurrencyMode = source.concurrencyMode
         maxGoalFailAttempts = source.maxGoalFailAttempts
         maxRawTurnHistorySize = source.maxRawTurnHistorySize
+        historyTransport = source.historyTransport
+        latestContentInjectionEnabled = source.latestContentInjectionEnabled
+        latestContentPosition = source.latestContentPosition
+        deduplicateLatestContentAgainstHistory = source.deduplicateLatestContentAgainstHistory
         pathExecutionShape = source.pathExecutionShape
         blowoutThreshold = source.blowoutThreshold
         memoryUpdateTimeoutMs = source.memoryUpdateTimeoutMs
@@ -1214,6 +1262,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setHealthSystemPrompt(healthSystemPrompt)
             .setLorebookSystemPrompt(lorebookSystemPrompt)
             .setGoalSystemPrompt(goalSystemPrompt)
+            .setImplementationPlan(implementationPlan)
 
         // Event observer
         eventObserver?.let { station.setEventObserver(it) }
@@ -1262,6 +1311,10 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setMaxTurnHistorySize(maxTurnHistorySize)
             .setMaxGoalFailAttempts(maxGoalFailAttempts)
             .setMaxRawTurnHistorySize(maxRawTurnHistorySize)
+            .setHistoryTransport(historyTransport)
+            .setLatestContentInjectionEnabled(latestContentInjectionEnabled)
+            .setLatestContentPosition(latestContentPosition)
+            .setDeduplicateLatestContentAgainstHistory(deduplicateLatestContentAgainstHistory)
             .setBlowoutThreshold(blowoutThreshold)
             .setMemoryUpdateTimeoutMs(memoryUpdateTimeoutMs)
             .setMaxBlowoutRecoveries(maxBlowoutRecoveries)
@@ -2447,4 +2500,31 @@ class CompactionBlock
     {
         rolledBackFunction = handler
     }
+}
+
+/**
+ * DSL block for PumpStation prompt transport and latest-output placement.
+ */
+@PumpStationDslMarker
+class PromptConfigurationBlock(private val builder: PumpStationBuilder<*>)
+{
+    /** History transport used by judge, dispatch, and goal content. */
+    var historyTransport: PumpStationHistoryTransport
+        get() = builder.historyTransport
+        set(value) { builder.historyTransport = value }
+
+    /** Whether latest prior agent output is injected into dispatch text. */
+    var latestContentInjectionEnabled: Boolean
+        get() = builder.latestContentInjectionEnabled
+        set(value) { builder.latestContentInjectionEnabled = value }
+
+    /** Position of latest prior agent output in dispatch text. */
+    var latestContentPosition: PumpStationLatestContentPosition
+        get() = builder.latestContentPosition
+        set(value) { builder.latestContentPosition = value }
+
+    /** Whether exact latest-output duplicates in turn history are suppressed. */
+    var deduplicateLatestContentAgainstHistory: Boolean
+        get() = builder.deduplicateLatestContentAgainstHistory
+        set(value) { builder.deduplicateLatestContentAgainstHistory = value }
 }

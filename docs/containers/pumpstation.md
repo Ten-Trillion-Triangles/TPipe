@@ -17,6 +17,8 @@
   - [The Path-Safety Agent Contract](#the-path-safety-agent-contract)
   - [The Lorebook Agent Contract](#the-lorebook-agent-contract)
   - [The Summary Agent Contract](#the-summary-agent-contract)
+- [Prompt Transport and Latest Output](#prompt-transport-and-latest-output)
+- [Implementation Plan Guidance](#implementation-plan-guidance)
 - [PathObject and PathRequest](#pathobject-and-pathrequest)
 - [DSL Builder](#dsl-builder)
 - [DSL Block Reference](#dsl-block-reference)
@@ -139,7 +141,7 @@ All seven agent slots are optional. A pump station with no judge, no path-safety
 
 **What the judge receives:**
 
-A `MultimodalContent` built by `buildTurnContent()` (see `Pipeline/PumpStationHelpers.kt:677`). The text carries `turnSummary` (if non-blank) prefixed to a phase-specific question, currently `"Is the task complete? Decide based on the conversation history."` for the Judge phase. The `context.converseHistory` is the curated `turnHistory`. The `miniBankContext` is the current `miniBank`. The `metadata` map contains `taskState`, `phase`, `turnIndex`, `runId`, `isInitialTurn`, and `visiblePaths`.
+A `MultimodalContent` built by `buildTurnContent()` (see `Pipeline/PumpStationHelpers.kt:899`). The text carries `turnSummary` (if non-blank) prefixed to a phase-specific question, currently `"Is the task complete? Decide based on the conversation history."` for the Judge phase. History transport is controlled by `historyTransport`; `TextOnly` serializes history into `content.text`, `ContextOnly` attaches it to `context.converseHistory`, and `TextAndContext` carries both forms. The `miniBankContext` is the current `miniBank`. The `metadata` map contains `taskState`, `phase`, `turnIndex`, `runId`, `isInitialTurn`, and `visiblePaths`.
 
 **What the judge must output:**
 
@@ -229,6 +231,82 @@ If the harness cannot parse the dispatch output as `PathRequest`, it invokes `bu
 - Otherwise the turn continues without a path call.
 
 The error message the harness injects for an unknown path or invalid path request is built by `buildLlmErrorMessage` (`Pipeline/PumpStationHelpers.kt:743`). It is natural-language, names the available paths, and explains what a valid `PathRequest` looks like — the dispatch agent sees this on the next turn as part of `turnHistory`.
+
+### Prompt Transport and Latest Output
+
+PumpStation builds each judge, dispatch, and goal input through `buildTurnContent(history)`. `historyTransport` selects one representation for the supplied history:
+
+| Mode | `content.text` | `context.converseHistory` | Default |
+|---|---|---|---|
+| `PumpStationHistoryTransport.TextOnly` | Serialized history | Empty | Yes |
+| `PumpStationHistoryTransport.ContextOnly` | Phase text only | Structured history | No |
+| `PumpStationHistoryTransport.TextAndContext` | Serialized history | Structured history | No |
+
+The default avoids paying for duplicate history representations. `buildGoalContent()` passes `rawTurnHistory` through the same selected mode, so the goal agent sees the raw event log consistently.
+
+Dispatch input can include the latest prior agent output from `taskState.latestContent`. The controls are:
+
+| Setting | Default | Behavior |
+|---|---|---|
+| `latestContentInjectionEnabled` | `true` | Enables the latest-output block. |
+| `latestContentPosition` | `Suffix` | Places the block after the dispatch text. Other values are `Prefix`, `BeforeHistory`, and `AfterHistory`. |
+| `deduplicateLatestContentAgainstHistory` | `true` | Suppresses an exact latest-output match already present in `turnHistory`. |
+
+Configure the settings through fluent methods or the DSL:
+
+```kotlin
+val station = pumpStation("research") {
+    promptConfiguration {
+        historyTransport = PumpStationHistoryTransport.TextOnly
+        latestContentInjectionEnabled = true
+        latestContentPosition = PumpStationLatestContentPosition.Suffix
+        deduplicateLatestContentAgainstHistory = true
+    }
+}
+```
+
+The same configuration is available through `setHistoryTransport(...)`, `setLatestContentInjectionEnabled(...)`, `setLatestContentPosition(...)`, and `setDeduplicateLatestContentAgainstHistory(...)` on `PumpStation`.
+
+### Implementation Plan Guidance
+
+`setImplementationPlan(plan: String?)` attaches stable implementation guidance to the station's judge, dispatch, and Pipeline-shaped goal agents. The value is trimmed before storage. A `null` or blank value clears the guidance. The setter returns the station for chaining and applies the overlay immediately to configured control-agent pipes.
+
+The selected pipes receive the following system-prompt block during `applySystemPrompt()`:
+
+```text
+Implementation plan:
+<trimmed plan text>
+```
+
+The overlay is applied to every pipe in `judgeAgent` and `dispatchAgent`, plus every pipe in `goalAgent` when the goal agent is a `Pipeline`. Intervention, health, lorebook, summary, pre-init, path-safety, and post-goal agents retain their own prompt configuration. The overlay is transient and rebuilt from each pipe's raw system prompt, which keeps repeated per-turn refreshes idempotent. See [Pipe System Prompt Processing](../core-concepts/pipe-class.md#system-prompt-processing).
+
+PumpStation prompt refreshes reuse a configured custom judge, dispatch, or goal prompt. The default prompt is selected only when the corresponding custom prompt is absent. The implementation-plan block is applied after that prompt is selected, so custom prompts and the plan remain present across refreshes. The refresh path is implemented in `Pipeline/PumpStationLoop.kt:83`; the plan setter and target selection are in `Pipeline/PumpStation.kt:3634`.
+
+Configure the plan through the fluent API or the DSL:
+
+```kotlin
+val station = PumpStation()
+    .setJudgeAgent(judgePipeline)
+    .setDispatchAgent(dispatchPipeline)
+    .setGoalAgent(goalPipeline)
+    .setImplementationPlan("Follow the declared research workflow and preserve source citations.")
+```
+
+```kotlin
+val station = pumpStation("research-station") {
+    judgeAgent = judgePipeline
+    dispatchAgent = dispatchPipeline
+    goalAgent = goalPipeline
+    implementationPlan("Follow the declared research workflow and preserve source citations.")
+    path("research") {
+        description = "Performs a single research query."
+        schema = "{\"query\": \"the question to research\"}"
+        setExecutionFunction { content, _, _, _ -> content }
+    }
+}
+```
+
+`getImplementationPlan()` returns the normalized value, or `null` when guidance is disabled. Plan mutation is permitted between executions. Calling `setImplementationPlan(...)` during `executeLocal(...)` throws `IllegalStateException`; the lifecycle guard is released after normal and exceptional exits. If applying the new plan fails, the previous plan is restored and the original error is rethrown. The DSL method is `PumpStationDsl.kt:823`, and builder-to-station wiring is `PumpStationDsl.kt:1265`.
 
 ### Dispatch Contract Shape: `PathExecutionShape`
 
@@ -616,6 +694,7 @@ val station = pumpStation("research-station") {
     systemTask = "Complete the user's research request to the highest standard."
     userGuidelines = "Cite every claim. Prefer primary sources."
     entryUserPrompt = "Research the history of distributed consensus algorithms."
+    implementationPlan("Follow the declared research workflow and preserve source citations.")
 
     judgeAgent = Pipeline().apply {
         pipelineName = "judge"
@@ -679,6 +758,7 @@ The `pumpStation { }` builder supports these top-level blocks and setters.
 | `systemTask`             | `String`                                   | `""`    | "System prompt" layer, second-priority. |
 | `userGuidelines`         | `String`                                   | `""`    | Third-priority guidelines. Equivalent to "skills" in other harnesses. |
 | `entryUserPrompt`        | `String`                                   | `""`    | Core task, fourth-priority. Set programmatically or via the input content. |
+| `implementationPlan`     | `String?`                                  | `null`  | Stable guidance appended to judge, dispatch, and Pipeline-shaped goal system prompts. Blank values clear it. |
 | `judgeRunMode`           | `PumpStationJudgeRunMode`                  | `Always`| `Always` (judge every turn) or `FlagTriggered` (judge only when `requestJudgeNextTurn()` is set). |
 | `maxHarnessTurns`        | `Int`                                      | `50`    | Safety cap on loop iterations. |
 | `maxTurns`               | `Int`                                      | `50`    | Canonical setter. `maxHarnessTurns` is a delegating alias. |

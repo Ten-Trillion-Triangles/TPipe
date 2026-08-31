@@ -112,6 +112,7 @@ pumpStation("name") {
     systemTask = "..."
     userGuidelines = "..."
     entryUserPrompt = "..."
+    implementationPlan("Follow the declared workflow and preserve the required output contract.")
 
     // Dispatch contract — SinglePath (default) emits one PathRequest per turn;
     // MultiPath emits a PathRequestList and fans out via the async substrate.
@@ -180,6 +181,12 @@ pumpStation("name") {
     setMaxTotalPathCallsPerPath(10)
     setPathLimitExceededPolicy(PathLimitExceededPolicy.Skip)
     setMaxRawTurnHistorySize(1000)
+    promptConfiguration {
+        historyTransport = PumpStationHistoryTransport.TextOnly
+        latestContentInjectionEnabled = true
+        latestContentPosition = PumpStationLatestContentPosition.Suffix
+        deduplicateLatestContentAgainstHistory = true
+    }
     setBlowoutThreshold(0.9)
     setMemoryUpdateTimeoutMs(30_000L)
     setMaxBlowoutRecoveries(3)
@@ -271,6 +278,46 @@ pumpStation("name") {
 
 The `pumpStation("name") { ... }` function returns a fully built `PumpStation`. There is also `pumpStationBuilder("name")` for callers who want to build the builder separately and call `build()` explicitly.
 
+### Implementation-Plan Functions
+
+#### `setImplementationPlan(plan: String?): PumpStation`
+
+Attaches stable implementation guidance to the judge, dispatch, and Pipeline-shaped goal agents. The value is trimmed before storage. `null` and blank values clear the plan.
+
+The plan is appended to each selected pipe's raw system prompt as:
+
+```text
+Implementation plan:
+<trimmed plan text>
+```
+
+The setter applies the plan immediately to configured control-agent pipes and returns the station for chaining. Calling it while `executeLocal(...)` is active throws `IllegalStateException`. If prompt application fails, the prior plan is restored and the error is rethrown. Source: `Pipeline/PumpStation.kt:3634`.
+
+#### `getImplementationPlan(): String?`
+
+Returns the normalized implementation plan, or `null` when the plan is disabled. Source: `Pipeline/PumpStation.kt:3665`.
+
+#### `implementationPlan(plan: String?): PumpStationBuilder<S>`
+
+Stores the normalized plan in the staged builder. The value is copied during builder promotion and applied to the built station. Source: `Pipeline/PumpStationDsl.kt:823`.
+
+### Prompt Configuration
+
+`PromptConfigurationBlock` lives in `Pipeline/PumpStationDsl.kt`. Its values are copied into the built `PumpStation`, including when a builder is promoted through `path { }`.
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `historyTransport` | `PumpStationHistoryTransport` | `TextOnly` | Selects text, structured-context, or dual history transport. |
+| `latestContentInjectionEnabled` | `Boolean` | `true` | Enables latest prior agent output in dispatch text. |
+| `latestContentPosition` | `PumpStationLatestContentPosition` | `Suffix` | Selects `Prefix`, `BeforeHistory`, `AfterHistory`, or `Suffix`. |
+| `deduplicateLatestContentAgainstHistory` | `Boolean` | `true` | Suppresses exact latest-output duplicates already present in turn history. |
+
+The equivalent `PumpStation` methods are `setHistoryTransport(...)`, `setLatestContentInjectionEnabled(...)`, `setLatestContentPosition(...)`, and `setDeduplicateLatestContentAgainstHistory(...)`.
+
+### Prompt Transport Enums
+
+`PumpStationHistoryTransport` and `PumpStationLatestContentPosition` live in `src/main/kotlin/Enums/`. `TextOnly` and `Suffix` are the defaults because they preserve one provider-facing history representation and a stable dispatch prefix.
+
 
 ## Async Substrate
 
@@ -340,6 +387,8 @@ The enums referenced by the API are documented in full in **[PumpStation Models 
 - `PumpStationPausePhase` — BeforeJudge, AfterJudge, BeforeDispatch, AfterDispatch, BeforePathSafety, BeforePathExecution, AfterPathExecution, BeforeMemoryUpdate, BeforeCompaction, BeforeGoalValidation, BeforeExit
 - `StashReason` — TokenOverflow, BinaryPayload, ErrorLog, UnsafeForPrompt, DeveloperRequested, BackgroundResult
 - `PathLimitExceededPolicy` — Skip, Halt, Continue
+- `PumpStationHistoryTransport` — TextOnly, ContextOnly, TextAndContext
+- `PumpStationLatestContentPosition` — Prefix, BeforeHistory, AfterHistory, Suffix
 - `HealthStatus` — Healthy, Degraded, Critical, Unknown
 - `WarningCode` — NoExitSignalConfigured
 - `ExitMechanism` — JudgeAlways, JudgeFlagTriggered, PathPassPipeline, PathTerminatePipeline

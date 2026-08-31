@@ -5,7 +5,10 @@ import com.TTT.Context.LoreBook
 import com.TTT.Context.Dictionary
 import com.TTT.Context.buildLorebookScanText
 import com.TTT.Context.ConverseRole
+import com.TTT.Pipe.LoreBookTokenAccounting
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Util.serialize
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -304,5 +307,181 @@ class ContextWindowTest {
             scanText,
             "userPrompt + \\n + contextElements.joinToString(\"\\n\") + \\n + converseHistory.joinToString(\"\\n\") { it.content.text }"
         )
+    }
+
+    @Test
+    fun repeatedMatchesMustInfluenceEqualWeightRanking()
+    {
+        val contextWindow = ContextWindow()
+        val repeatedValue = "same lore value"
+        val valueTokens = Dictionary.countTokens(repeatedValue)
+
+        contextWindow.addLoreBookEntry(
+            key = "single",
+            value = repeatedValue,
+            weight = 10
+        )
+        contextWindow.addLoreBookEntry(
+            key = "repeated",
+            value = repeatedValue,
+            weight = 10
+        )
+
+        val selectedKeys = contextWindow.selectLoreBookContext(
+            text = "repeated repeated repeated single",
+            maxTokens = valueTokens
+        )
+
+        assertEquals(
+            listOf("repeated"),
+            selectedKeys,
+            "Repeated direct matches should win the equal-weight hit-count tie"
+        )
+    }
+
+    @Test
+    fun repeatedMatchesMustInfluenceEqualWeightRankingSuspend() = runBlocking {
+        val contextWindow = ContextWindow()
+        val repeatedValue = "same lore value"
+        val valueTokens = Dictionary.countTokens(repeatedValue)
+
+        contextWindow.addLoreBookEntry(
+            key = "single",
+            value = repeatedValue,
+            weight = 10
+        )
+        contextWindow.addLoreBookEntry(
+            key = "repeated",
+            value = repeatedValue,
+            weight = 10
+        )
+
+        val selectedKeys = contextWindow.selectLoreBookContextSuspend(
+            text = "repeated repeated repeated single",
+            maxTokens = valueTokens
+        )
+
+        assertEquals(listOf("repeated"), selectedKeys)
+    }
+
+    @Test
+    fun valueOnlyAccountingPreservesCurrentSelection()
+    {
+        val contextWindow = ContextWindow()
+        val loreBookKey = "serialized-overhead-entry-with-a-long-key"
+        val loreBookValue = "lore"
+        val valueTokens = Dictionary.countTokens(loreBookValue)
+
+        contextWindow.addLoreBookEntry(
+            key = loreBookKey,
+            value = loreBookValue,
+            weight = 10
+        )
+
+        val selectedKeys = contextWindow.selectLoreBookContext(
+            text = loreBookKey,
+            maxTokens = valueTokens,
+            loreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly
+        )
+
+        assertEquals(listOf(loreBookKey), selectedKeys)
+    }
+
+    @Test
+    fun serializedEntryAccountingRejectsMetadataOverflow()
+    {
+        val contextWindow = ContextWindow()
+        val loreBookKey = "serialized-overhead-entry-with-a-long-key"
+        val loreBookValue = "lore"
+        val loreBookAliases = listOf(
+            "long-alias-one",
+            "long-alias-two",
+            "long-alias-three"
+        )
+        val valueTokens = Dictionary.countTokens(loreBookValue)
+        val loreBook = LoreBook().apply {
+            key = loreBookKey
+            value = loreBookValue
+            weight = 10
+            aliasKeys.addAll(loreBookAliases)
+        }
+        val serializedTokens = Dictionary.countTokens(serialize(loreBook))
+
+        assertTrue(serializedTokens > valueTokens)
+
+        contextWindow.addLoreBookEntry(
+            key = loreBookKey,
+            value = loreBookValue,
+            weight = 10,
+            aliasKeys = loreBookAliases
+        )
+
+        val selectedKeys = contextWindow.selectLoreBookContext(
+            text = loreBookKey,
+            maxTokens = valueTokens,
+            loreBookTokenAccounting = LoreBookTokenAccounting.SerializedEntry
+        )
+
+        assertTrue(selectedKeys.isEmpty())
+    }
+
+    @Test
+    fun fullContextSerializedAccountingRejectsFramingOverflow()
+    {
+        val contextWindow = ContextWindow()
+        val loreBookKey = "framed-entry"
+        val loreBookValue = "lore"
+        val valueTokens = Dictionary.countTokens(loreBookValue)
+
+        contextWindow.addLoreBookEntry(
+            key = loreBookKey,
+            value = loreBookValue,
+            weight = 10
+        )
+
+        val serializedContextTokens = Dictionary.countTokens(serialize(contextWindow))
+        assertTrue(serializedContextTokens > valueTokens)
+
+        val selectedKeys = contextWindow.selectLoreBookContext(
+            text = loreBookKey,
+            maxTokens = valueTokens,
+            loreBookTokenAccounting = LoreBookTokenAccounting.FullContextSerialized
+        )
+
+        assertTrue(selectedKeys.isEmpty())
+    }
+
+    @Test
+    fun serializedEntryAccountingSkipsOversizedCandidateAndContinues()
+    {
+        val contextWindow = ContextWindow()
+        val oversizedKey = "oversized-entry-with-metadata"
+        val oversizedValue = "large lore value"
+        val smallerKey = "small"
+        val smallerValue = "small lore"
+
+        contextWindow.addLoreBookEntry(
+            key = oversizedKey,
+            value = oversizedValue,
+            weight = 10,
+            aliasKeys = listOf("oversized-alias-one", "oversized-alias-two")
+        )
+        contextWindow.addLoreBookEntry(
+            key = smallerKey,
+            value = smallerValue,
+            weight = 1
+        )
+
+        val smallerTokens = Dictionary.countTokens(serialize(contextWindow.loreBookKeys.getValue(smallerKey)))
+        val oversizedTokens = Dictionary.countTokens(serialize(contextWindow.loreBookKeys.getValue(oversizedKey)))
+        assertTrue(oversizedTokens > smallerTokens)
+
+        val selectedKeys = contextWindow.selectAndFillLoreBookContext(
+            text = "$oversizedKey $smallerKey",
+            maxTokens = smallerTokens,
+            loreBookTokenAccounting = LoreBookTokenAccounting.SerializedEntry
+        )
+
+        assertEquals(listOf(smallerKey), selectedKeys)
     }
 }

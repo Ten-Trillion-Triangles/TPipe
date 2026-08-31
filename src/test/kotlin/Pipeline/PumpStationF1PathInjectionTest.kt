@@ -1,16 +1,17 @@
-// PumpStation F1: path descriptors + PathRequest schema not injected into the
-// dispatch pipe's actual API request. RED test asserts the captured dispatch
-// request body contains the registered path names, proving the
-// autoInjectPathDataFromPumpStation injection block at Pipe.kt:2319-2341 fired.
+// PumpStation F1: path descriptors + PathRequest schema are injected into the
+// dispatch pipe's actual API request. The test decodes the Responses payload
+// before checking the path names embedded in the top-level instructions field.
 
 package com.TTT.Pipeline
 
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import genericOpenAIPipe.GenericOpenAIPipe
 import genericOpenAIPipe.api.ApiMode
 import genericOpenAIPipe.env.OpenAIResponsesContentPart
 import genericOpenAIPipe.env.OpenAIResponsesOutputItem
+import genericOpenAIPipe.env.OpenAIResponsesRequest
 import genericOpenAIPipe.env.OpenAIResponsesResponse
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
@@ -25,11 +26,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * RED test for F1. Builds a minimal PumpStation with two paths and asserts that
- * the dispatch pipe's actual outbound API request contains the registered
- * path names. Currently the propagation chain fails silently and the captured
- * request body has only the user message and no path list, so this test
- * fails with the right reason.
+ * Builds a minimal PumpStation with two paths and asserts that the dispatch
+ * pipe's actual outbound Responses API request contains the registered path
+ * names in its decoded instructions field.
  */
 class PumpStationF1PathInjectionTest
 {
@@ -108,18 +107,19 @@ class PumpStationF1PathInjectionTest
 
         val body = capturedRequest.get()
         assertNotNull(body, "Dispatch pipe made no API call; cannot verify path injection")
-        // RED: this assertion fails because the dispatch pipe's request body
-        // contains only the user message and no path list. The fix wires
-        // autoInjectPathDataFromPumpStation through refreshPipelinesPrompts
-        // so the path descriptors land in the system prompt (instructions field).
+        // The Responses wire format JSON-escapes quotes inside the top-level
+        // instructions string. Decode the request before checking the embedded
+        // path-descriptor JSON.
+        val decodedRequest = deserialize<OpenAIResponsesRequest>(body)
+        val instructions = decodedRequest?.instructions.orEmpty()
         assertTrue(
-            body.contains("\"gather\""),
-            "F1 RED: dispatch request body did not contain path name 'gather'. " +
+            instructions.contains("\"gather\""),
+            "F1: decoded dispatch instructions did not contain path name 'gather'. " +
                 "Captured body length=${body.length}; first 500 chars=${body.take(500)}"
         )
         assertTrue(
-            body.contains("\"report\""),
-            "F1 RED: dispatch request body did not contain path name 'report'. " +
+            instructions.contains("\"report\""),
+            "F1: decoded dispatch instructions did not contain path name 'report'. " +
                 "Captured body length=${body.length}; first 500 chars=${body.take(500)}"
         )
     }

@@ -1,9 +1,11 @@
 package com.TTT.Context
 
 import com.TTT.Enums.ContextWindowSettings
+import com.TTT.Pipe.LoreBookTokenAccounting
 import com.TTT.Pipe.TruncationSettings
 import com.TTT.Util.combine
 import com.TTT.Util.deepCopy
+import com.TTT.Util.serialize
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import java.util.ArrayDeque
@@ -64,33 +66,26 @@ data class ContextWindow(
     fun findMatchingLoreBookKeys(text: String): List<String>
     {
         val lowerText = text.lowercase()
-        val matchingKeys = mutableSetOf<String>()
+        val matchingKeys = mutableListOf<String>()
         
         loreBookKeys.forEach { (key, loreBook) ->
-            // Check main key
-            if(lowerText.contains(key.lowercase()))
+            val matchingTerms = (listOf(key) + loreBook.aliasKeys)
+                .map { term -> term.lowercase() }
+                .distinct()
+            val hitCount = matchingTerms.sumOf { term ->
+                countSubstringOccurrences(lowerText, term)
+            }
+
+            if(hitCount > 0 && canSelectLoreBookKey(key))
             {
-                // Check if key is locked before adding
-                if(canSelectLoreBookKey(key))
+                repeat(hitCount)
                 {
                     matchingKeys.add(key)
                 }
             }
-            
-            // Check alias keys
-            loreBook.aliasKeys.forEach { alias ->
-                if(lowerText.contains(alias.lowercase()))
-                {
-                    // Check if key is locked before adding
-                    if(canSelectLoreBookKey(key))
-                    {
-                        matchingKeys.add(key)
-                    }
-                }
-            }
         }
         
-        return matchingKeys.toList()
+        return matchingKeys
     }
 
     /**
@@ -103,29 +98,26 @@ data class ContextWindow(
     suspend fun findMatchingLoreBookKeysSuspend(text: String): List<String>
     {
         val lowerText = text.lowercase()
-        val matchingKeys = mutableSetOf<String>()
+        val matchingKeys = mutableListOf<String>()
 
         loreBookKeys.forEach { (key, loreBook) ->
-            if(lowerText.contains(key.lowercase()))
+            val matchingTerms = (listOf(key) + loreBook.aliasKeys)
+                .map { term -> term.lowercase() }
+                .distinct()
+            val hitCount = matchingTerms.sumOf { term ->
+                countSubstringOccurrences(lowerText, term)
+            }
+
+            if(hitCount > 0 && canSelectLoreBookKeySuspend(key))
             {
-                if(canSelectLoreBookKeySuspend(key))
+                repeat(hitCount)
                 {
                     matchingKeys.add(key)
                 }
             }
-
-            loreBook.aliasKeys.forEach { alias ->
-                if(lowerText.contains(alias.lowercase()))
-                {
-                    if(canSelectLoreBookKeySuspend(key))
-                    {
-                        matchingKeys.add(key)
-                    }
-                }
-            }
         }
 
-        return matchingKeys.toList()
+        return matchingKeys
     }
 
     /**
@@ -135,6 +127,24 @@ data class ContextWindow(
      */
     fun countAndSortKeyHits(hitKeys: List<String>): List<Pair<String, Int>> {
         return hitKeys.groupingBy { it }.eachCount().toList().sortedByDescending { it.second }
+    }
+
+    /**
+     * Counts non-overlapping occurrences of a term in normalized scan text.
+     */
+    private fun countSubstringOccurrences(text: String, term: String): Int
+    {
+        if(term.isEmpty()) return 0
+
+        var searchStartIndex = 0
+        var occurrenceCount = 0
+        while(true)
+        {
+            val matchIndex = text.indexOf(term, searchStartIndex)
+            if(matchIndex < 0) return occurrenceCount
+            occurrenceCount++
+            searchStartIndex = matchIndex + term.length
+        }
     }
 
     /**
@@ -202,7 +212,8 @@ data class ContextWindow(
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
         nonWordSplitCount: Int = 4,
-        tokenCountingBias: Double = 0.0
+        tokenCountingBias: Double = 0.0,
+        loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly
     ): List<String> {
         // Step 1: Find all lorebook keys that match substrings in the input text (includes aliases)
         val matchingKeys = findMatchingLoreBookKeys(text)
@@ -258,7 +269,7 @@ data class ContextWindow(
         }
         
         // Step 3: Count how many times each key appears and convert to map for lookup
-        val keyHitCounts = countAndSortKeyHits(dependencyEligibleKeys.toList()).toMap()
+        val keyHitCounts = countAndSortKeyHits(matchingKeys).toMap()
         
         // Step 3.5: Filter out keys whose dependencies are not satisfied
         val dependencyStatus = checkKeyDependencies(dependencyEligibleKeys)
@@ -286,10 +297,19 @@ data class ContextWindow(
         for((key, loreBook, _) in candidates)
         {
             // Calculate token cost of this lorebook value using Dictionary tokenizer
-            val valueTokens = Dictionary.countTokens(
-                loreBook.value, countSubWordsInFirstWord, favorWholeWords, 
-                countOnlyFirstWordFound, splitForNonWordChar, alwaysSplitIfWholeWordExists, 
-                countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
+            val valueTokens = calculateLoreBookTokenCost(
+                key,
+                loreBook,
+                selected,
+                loreBookTokenAccounting,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
             )
             
             // Only add if it fits within remaining token budget
@@ -329,7 +349,8 @@ data class ContextWindow(
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
         nonWordSplitCount: Int = 4,
-        tokenCountingBias: Double = 0.0
+        tokenCountingBias: Double = 0.0,
+        loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly
     ): List<String>
     {
         val matchingKeys = findMatchingLoreBookKeysSuspend(text)
@@ -377,7 +398,7 @@ data class ContextWindow(
             }
         }
 
-        val keyHitCounts = countAndSortKeyHits(dependencyEligibleKeys.toList()).toMap()
+        val keyHitCounts = countAndSortKeyHits(matchingKeys).toMap()
         val dependencyStatus = checkKeyDependencies(dependencyEligibleKeys)
         val eligibleKeys = dependencyEligibleKeys.filter { key ->
             dependencyStatus[key] == true
@@ -405,8 +426,11 @@ data class ContextWindow(
 
         for((key, loreBook, _) in candidates)
         {
-            val valueTokens = Dictionary.countTokens(
-                loreBook.value,
+            val valueTokens = calculateLoreBookTokenCost(
+                key,
+                loreBook,
+                selected,
+                loreBookTokenAccounting,
                 countSubWordsInFirstWord,
                 favorWholeWords,
                 countOnlyFirstWordFound,
@@ -425,6 +449,145 @@ data class ContextWindow(
         }
 
         return selected
+    }
+
+    /**
+     * Calculates token usage for a complete LoreBook selection under the configured accounting policy.
+     */
+    private fun calculateLoreBookSelectionTokenCost(
+        selectedKeys: List<String>,
+        loreBookTokenAccounting: LoreBookTokenAccounting,
+        countSubWordsInFirstWord: Boolean,
+        favorWholeWords: Boolean,
+        countOnlyFirstWordFound: Boolean,
+        splitForNonWordChar: Boolean,
+        alwaysSplitIfWholeWordExists: Boolean,
+        countSubWordsIfSplit: Boolean,
+        nonWordSplitCount: Int,
+        tokenCountingBias: Double
+    ): Int
+    {
+        val selectedEntries = selectedKeys.mapNotNull { key ->
+            loreBookKeys[key]?.let { loreBook -> key to loreBook }
+        }
+
+        return when(loreBookTokenAccounting)
+        {
+            LoreBookTokenAccounting.ValueOnly -> selectedEntries.sumOf { (_, loreBook) ->
+                Dictionary.countTokens(
+                    loreBook.value,
+                    countSubWordsInFirstWord,
+                    favorWholeWords,
+                    countOnlyFirstWordFound,
+                    splitForNonWordChar,
+                    alwaysSplitIfWholeWordExists,
+                    countSubWordsIfSplit,
+                    nonWordSplitCount,
+                    tokenCountingBias
+                )
+            }
+            LoreBookTokenAccounting.SerializedEntry -> selectedEntries.sumOf { (_, loreBook) ->
+                Dictionary.countTokens(
+                    serialize(loreBook),
+                    countSubWordsInFirstWord,
+                    favorWholeWords,
+                    countOnlyFirstWordFound,
+                    splitForNonWordChar,
+                    alwaysSplitIfWholeWordExists,
+                    countSubWordsIfSplit,
+                    nonWordSplitCount,
+                    tokenCountingBias
+                )
+            }
+            LoreBookTokenAccounting.FullContextSerialized -> {
+                val serializedContext = ContextWindow().apply {
+                    loreBookKeys.putAll(selectedEntries)
+                }
+                Dictionary.countTokens(
+                    serialize(serializedContext),
+                    countSubWordsInFirstWord,
+                    favorWholeWords,
+                    countOnlyFirstWordFound,
+                    splitForNonWordChar,
+                    alwaysSplitIfWholeWordExists,
+                    countSubWordsIfSplit,
+                    nonWordSplitCount,
+                    tokenCountingBias
+                )
+            }
+        }
+    }
+
+    /**
+     * Calculates the incremental token cost of adding a LoreBook entry to an existing selection.
+     */
+    private fun calculateLoreBookTokenCost(
+        key: String,
+        loreBook: LoreBook,
+        selectedKeys: List<String>,
+        loreBookTokenAccounting: LoreBookTokenAccounting,
+        countSubWordsInFirstWord: Boolean,
+        favorWholeWords: Boolean,
+        countOnlyFirstWordFound: Boolean,
+        splitForNonWordChar: Boolean,
+        alwaysSplitIfWholeWordExists: Boolean,
+        countSubWordsIfSplit: Boolean,
+        nonWordSplitCount: Int,
+        tokenCountingBias: Double
+    ): Int
+    {
+        return when(loreBookTokenAccounting)
+        {
+            LoreBookTokenAccounting.ValueOnly -> Dictionary.countTokens(
+                loreBook.value,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
+            LoreBookTokenAccounting.SerializedEntry -> Dictionary.countTokens(
+                serialize(loreBook),
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
+            LoreBookTokenAccounting.FullContextSerialized -> {
+                val currentTokens = calculateLoreBookSelectionTokenCost(
+                    selectedKeys,
+                    loreBookTokenAccounting,
+                    countSubWordsInFirstWord,
+                    favorWholeWords,
+                    countOnlyFirstWordFound,
+                    splitForNonWordChar,
+                    alwaysSplitIfWholeWordExists,
+                    countSubWordsIfSplit,
+                    nonWordSplitCount,
+                    tokenCountingBias
+                )
+                val candidateTokens = calculateLoreBookSelectionTokenCost(
+                    selectedKeys + key,
+                    loreBookTokenAccounting,
+                    countSubWordsInFirstWord,
+                    favorWholeWords,
+                    countOnlyFirstWordFound,
+                    splitForNonWordChar,
+                    alwaysSplitIfWholeWordExists,
+                    countSubWordsIfSplit,
+                    nonWordSplitCount,
+                    tokenCountingBias
+                )
+                (candidateTokens - currentTokens).coerceAtLeast(0)
+            }
+        }
     }
 
     /**
@@ -453,7 +616,8 @@ data class ContextWindow(
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
         nonWordSplitCount: Int = 4,
-        tokenCountingBias: Double = 0.0
+        tokenCountingBias: Double = 0.0,
+        loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly
     ): List<String>
     {
         if(maxTokens <= 0) return listOf()
@@ -468,27 +632,25 @@ data class ContextWindow(
             alwaysSplitIfWholeWordExists,
             countSubWordsIfSplit,
             nonWordSplitCount,
-            tokenCountingBias
+            tokenCountingBias,
+            loreBookTokenAccounting
         )
 
         val selectedKeys = priorityKeys.toMutableList()
         val selectedSet = selectedKeys.toMutableSet()
 
-        var usedTokens = selectedKeys.sumOf { key ->
-            val loreBook = loreBookKeys[key]
-            if(loreBook == null) return@sumOf 0
-            Dictionary.countTokens(
-                loreBook.value,
-                countSubWordsInFirstWord,
-                favorWholeWords,
-                countOnlyFirstWordFound,
-                splitForNonWordChar,
-                alwaysSplitIfWholeWordExists,
-                countSubWordsIfSplit,
-                nonWordSplitCount,
-                tokenCountingBias
-            )
-        }
+        var usedTokens = calculateLoreBookSelectionTokenCost(
+            selectedKeys,
+            loreBookTokenAccounting,
+            countSubWordsInFirstWord,
+            favorWholeWords,
+            countOnlyFirstWordFound,
+            splitForNonWordChar,
+            alwaysSplitIfWholeWordExists,
+            countSubWordsIfSplit,
+            nonWordSplitCount,
+            tokenCountingBias
+        )
 
         if(usedTokens >= maxTokens) return selectedKeys
 
@@ -504,8 +666,11 @@ data class ContextWindow(
             val dependencyStatus = checkKeyDependencies(selectedSet)
             if(dependencyStatus[key] != true) continue
 
-            val tokenCost = Dictionary.countTokens(
-                loreBook.value,
+            val tokenCost = calculateLoreBookTokenCost(
+                key,
+                loreBook,
+                selectedKeys,
+                loreBookTokenAccounting,
                 countSubWordsInFirstWord,
                 favorWholeWords,
                 countOnlyFirstWordFound,
@@ -556,7 +721,8 @@ data class ContextWindow(
         alwaysSplitIfWholeWordExists: Boolean = false,
         countSubWordsIfSplit: Boolean = false,
         nonWordSplitCount: Int = 4,
-        tokenCountingBias: Double = 0.0
+        tokenCountingBias: Double = 0.0,
+        loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly
     ): List<String>
     {
         if(maxTokens <= 0) return listOf()
@@ -571,27 +737,25 @@ data class ContextWindow(
             alwaysSplitIfWholeWordExists,
             countSubWordsIfSplit,
             nonWordSplitCount,
-            tokenCountingBias
+            tokenCountingBias,
+            loreBookTokenAccounting
         )
 
         val selectedKeys = priorityKeys.toMutableList()
         val selectedSet = selectedKeys.toMutableSet()
 
-        var usedTokens = selectedKeys.sumOf { key ->
-            val loreBook = loreBookKeys[key]
-            if(loreBook == null) return@sumOf 0
-            Dictionary.countTokens(
-                loreBook.value,
-                countSubWordsInFirstWord,
-                favorWholeWords,
-                countOnlyFirstWordFound,
-                splitForNonWordChar,
-                alwaysSplitIfWholeWordExists,
-                countSubWordsIfSplit,
-                nonWordSplitCount,
-                tokenCountingBias
-            )
-        }
+        var usedTokens = calculateLoreBookSelectionTokenCost(
+            selectedKeys,
+            loreBookTokenAccounting,
+            countSubWordsInFirstWord,
+            favorWholeWords,
+            countOnlyFirstWordFound,
+            splitForNonWordChar,
+            alwaysSplitIfWholeWordExists,
+            countSubWordsIfSplit,
+            nonWordSplitCount,
+            tokenCountingBias
+        )
 
         if(usedTokens >= maxTokens) return selectedKeys
 
@@ -613,8 +777,11 @@ data class ContextWindow(
             val dependencyStatus = checkKeyDependencies(selectedSet)
             if(dependencyStatus[key] != true) continue
 
-            val tokenCost = Dictionary.countTokens(
-                loreBook.value,
+            val tokenCost = calculateLoreBookTokenCost(
+                key,
+                loreBook,
+                selectedKeys,
+                loreBookTokenAccounting,
                 countSubWordsInFirstWord,
                 favorWholeWords,
                 countOnlyFirstWordFound,
@@ -656,7 +823,8 @@ data class ContextWindow(
             settings.alwaysSplitIfWholeWordExists,
             settings.countSubWordsIfSplit,
             settings.nonWordSplitCount,
-            settings.tokenCountingBias
+            settings.tokenCountingBias,
+            settings.loreBookTokenAccounting
         )
     }
 
@@ -680,7 +848,8 @@ data class ContextWindow(
             settings.alwaysSplitIfWholeWordExists,
             settings.countSubWordsIfSplit,
             settings.nonWordSplitCount,
-            settings.tokenCountingBias
+            settings.tokenCountingBias,
+            settings.loreBookTokenAccounting
         )
     }
     
@@ -704,7 +873,8 @@ data class ContextWindow(
             settings.alwaysSplitIfWholeWordExists,
             settings.countSubWordsIfSplit,
             settings.nonWordSplitCount,
-            settings.tokenCountingBias
+            settings.tokenCountingBias,
+            settings.loreBookTokenAccounting
         )
     }
 
@@ -728,7 +898,8 @@ data class ContextWindow(
             settings.alwaysSplitIfWholeWordExists,
             settings.countSubWordsIfSplit,
             settings.nonWordSplitCount,
-            settings.tokenCountingBias
+            settings.tokenCountingBias,
+            settings.loreBookTokenAccounting
         )
     }
     
@@ -1031,7 +1202,8 @@ data class ContextWindow(
         settings: com.TTT.Pipe.TruncationSettings,
         fillMode: Boolean = false,
         fillAndSplitMode: Boolean = false,
-        preserveTextMatches: Boolean = false
+        preserveTextMatches: Boolean = false,
+        loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly
     ) {
         selectAndTruncateContext(
             text,
@@ -1048,7 +1220,8 @@ data class ContextWindow(
             settings.tokenCountingBias,
             fillMode,
             fillAndSplitMode,
-            preserveTextMatches
+            preserveTextMatches,
+            settings.loreBookTokenAccounting
         )
     }
 
@@ -1069,7 +1242,8 @@ data class ContextWindow(
         settings: com.TTT.Pipe.TruncationSettings,
         fillMode: Boolean = false,
         fillAndSplitMode: Boolean = false,
-        preserveTextMatches: Boolean = false
+        preserveTextMatches: Boolean = false,
+        loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly
     )
     {
         selectAndTruncateContextSuspend(
@@ -1087,7 +1261,8 @@ data class ContextWindow(
             settings.tokenCountingBias,
             fillMode,
             fillAndSplitMode,
-            preserveTextMatches
+            preserveTextMatches,
+            settings.loreBookTokenAccounting
         )
     }
 
@@ -1122,7 +1297,8 @@ data class ContextWindow(
         tokenCountingBias: Double = 0.0,
         fillMode: Boolean = false,
         fillAndSplitMode: Boolean = false,
-        preserveTextMatches: Boolean = false
+        preserveTextMatches: Boolean = false,
+        loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly
     )
     {
 
@@ -1154,24 +1330,22 @@ data class ContextWindow(
                 alwaysSplitIfWholeWordExists,
                 countSubWordsIfSplit,
                 nonWordSplitCount,
-                tokenCountingBias
+                tokenCountingBias,
+                loreBookTokenAccounting
             )
 
-            val lorebookTokensUsed = selectedLorebookKeys.sumOf { key ->
-                val loreBook = loreBookKeys[key]
-                if(loreBook == null) return@sumOf 0
-                Dictionary.countTokens(
-                    loreBook.value,
-                    countSubWordsInFirstWord,
-                    favorWholeWords,
-                    countOnlyFirstWordFound,
-                    splitForNonWordChar,
-                    alwaysSplitIfWholeWordExists,
-                    countSubWordsIfSplit,
-                    nonWordSplitCount,
-                    tokenCountingBias
-                )
-            }
+            val lorebookTokensUsed = calculateLoreBookSelectionTokenCost(
+                selectedLorebookKeys,
+                loreBookTokenAccounting,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
 
@@ -1231,7 +1405,8 @@ data class ContextWindow(
             val selectedLorebookKeys = selectLoreBookContext(
                 text, multipliedTokenBudget,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
+                loreBookTokenAccounting
             )
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
         }
@@ -1258,7 +1433,8 @@ data class ContextWindow(
             val selectedLorebookKeys = selectLoreBookContext(
                 text, lorebookBudget,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
+                loreBookTokenAccounting
             )
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
@@ -1289,7 +1465,8 @@ data class ContextWindow(
             val selectedLorebookKeys = selectLoreBookContext(
                 text, lorebookBudget,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
+                loreBookTokenAccounting
             )
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
@@ -1336,7 +1513,8 @@ data class ContextWindow(
             val selectedLorebookKeys = selectLoreBookContext(
                 text, lorebookBudget,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
-                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
+                loreBookTokenAccounting
             )
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
@@ -1377,7 +1555,8 @@ data class ContextWindow(
         tokenCountingBias: Double = 0.0,
         fillMode: Boolean = false,
         fillAndSplitMode: Boolean = false,
-        preserveTextMatches: Boolean = false
+        preserveTextMatches: Boolean = false,
+        loreBookTokenAccounting: LoreBookTokenAccounting = LoreBookTokenAccounting.ValueOnly
     )
     {
         if(totalTokenBudget == 0) return
@@ -1408,24 +1587,22 @@ data class ContextWindow(
                 alwaysSplitIfWholeWordExists,
                 countSubWordsIfSplit,
                 nonWordSplitCount,
-                tokenCountingBias
+                tokenCountingBias,
+                loreBookTokenAccounting
             )
 
-            val lorebookTokensUsed = selectedLorebookKeys.sumOf { key ->
-                val loreBook = loreBookKeys[key]
-                if(loreBook == null) return@sumOf 0
-                Dictionary.countTokens(
-                    loreBook.value,
-                    countSubWordsInFirstWord,
-                    favorWholeWords,
-                    countOnlyFirstWordFound,
-                    splitForNonWordChar,
-                    alwaysSplitIfWholeWordExists,
-                    countSubWordsIfSplit,
-                    nonWordSplitCount,
-                    tokenCountingBias
-                )
-            }
+            val lorebookTokensUsed = calculateLoreBookSelectionTokenCost(
+                selectedLorebookKeys,
+                loreBookTokenAccounting,
+                countSubWordsInFirstWord,
+                favorWholeWords,
+                countOnlyFirstWordFound,
+                splitForNonWordChar,
+                alwaysSplitIfWholeWordExists,
+                countSubWordsIfSplit,
+                nonWordSplitCount,
+                tokenCountingBias
+            )
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
 
@@ -1523,7 +1700,8 @@ data class ContextWindow(
                 alwaysSplitIfWholeWordExists,
                 countSubWordsIfSplit,
                 nonWordSplitCount,
-                tokenCountingBias
+                tokenCountingBias,
+                loreBookTokenAccounting
             )
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
         }
@@ -1570,7 +1748,8 @@ data class ContextWindow(
                 alwaysSplitIfWholeWordExists,
                 countSubWordsIfSplit,
                 nonWordSplitCount,
-                tokenCountingBias
+                tokenCountingBias,
+                loreBookTokenAccounting
             )
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
@@ -1621,7 +1800,8 @@ data class ContextWindow(
                 alwaysSplitIfWholeWordExists,
                 countSubWordsIfSplit,
                 nonWordSplitCount,
-                tokenCountingBias
+                tokenCountingBias,
+                loreBookTokenAccounting
             )
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()
@@ -1699,7 +1879,8 @@ data class ContextWindow(
                 alwaysSplitIfWholeWordExists,
                 countSubWordsIfSplit,
                 nonWordSplitCount,
-                tokenCountingBias
+                tokenCountingBias,
+                loreBookTokenAccounting
             )
 
             loreBookKeys = loreBookKeys.filterKeys { it in selectedLorebookKeys }.toMutableMap()

@@ -67,7 +67,8 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     var summaryInjectionConfiguration: SummaryInjectionConfiguration? = null,
     var concurrencyModeConfiguration: P2PConcurrencyMode = P2PConcurrencyMode.SHARED,
     var killSwitchConfiguration: KillSwitch? = null,
-    var maxIterationsConfiguration: Int? = null
+    var maxIterationsConfiguration: Int? = null,
+    var implementationPlanConfiguration: String? = null
 )
 {
     companion object
@@ -114,7 +115,8 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         summaryInjectionConfiguration: SummaryInjectionConfiguration? = this.summaryInjectionConfiguration,
         concurrencyModeConfiguration: P2PConcurrencyMode = this.concurrencyModeConfiguration,
         killSwitchConfiguration: KillSwitch? = this.killSwitchConfiguration,
-        maxIterationsConfiguration: Int? = this.maxIterationsConfiguration
+        maxIterationsConfiguration: Int? = this.maxIterationsConfiguration,
+        implementationPlanConfiguration: String? = this.implementationPlanConfiguration
     ): ManifoldBuilder<T>
     {
         val newBuilder = ManifoldBuilder<T>(
@@ -128,7 +130,8 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
             summaryInjectionConfiguration = summaryInjectionConfiguration,
             concurrencyModeConfiguration = concurrencyModeConfiguration,
             killSwitchConfiguration = killSwitchConfiguration,
-            maxIterationsConfiguration = maxIterationsConfiguration
+            maxIterationsConfiguration = maxIterationsConfiguration,
+            implementationPlanConfiguration = implementationPlanConfiguration
         )
         pushBuilder(newBuilder)
         return newBuilder
@@ -185,6 +188,29 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     fun maxIterations(limit: Int): ManifoldBuilder<S>
     {
         maxIterationsConfiguration = limit
+        return this
+    }
+
+    /**
+     * Configure stable implementation guidance for the manifold manager.
+     * Blank values clear the plan.
+     *
+     * @param plan Implementation guidance, or null to clear it.
+     * @return This builder for method chaining.
+     */
+    fun implementationPlan(plan: String?): ManifoldBuilder<S>
+    {
+        val stackBuilder = peekBuilder()
+        val targetBuilder = if(stackBuilder != null && stackBuilder !== this)
+        {
+            @Suppress("UNCHECKED_CAST")
+            stackBuilder as ManifoldBuilder<S>
+        }
+        else
+        {
+            this
+        }
+        targetBuilder.implementationPlanConfiguration = com.TTT.Pipe.normalizeImplementationPlan(plan)
         return this
     }
 
@@ -432,6 +458,8 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         }
 
         applyHistoryConfiguration(manifold, resolvedHistory)
+
+        manifold.setImplementationPlan(implementationPlanConfiguration)
 
         manifold.setManagerPipeline(
             managerSpec.pipeline,

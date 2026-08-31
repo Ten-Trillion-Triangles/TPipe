@@ -3,9 +3,15 @@ package com.TTT.Pipeline
 import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.PipeContextProtocol.FunctionRegistry
+import com.TTT.PipeContextProtocol.PcPRequest
+import com.TTT.PipeContextProtocol.PcpContext
+import com.TTT.PipeContextProtocol.TPipeContextOptions
+import com.TTT.Util.serialize
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
@@ -152,10 +158,22 @@ class PathObjectStandaloneDslTest
     /**
      * Minimal P2PInterface mock used to verify setInternalAgent delegation.
      */
-    private class MinimalP2P : P2PInterface
+    private class MinimalP2P(private val resultPrefix: String = "local") : P2PInterface
     {
         override var killSwitch: KillSwitch? = null
-        override suspend fun executeLocal(content: MultimodalContent): MultimodalContent = content
+        var executeCount = 0
+        var initCount = 0
+
+        override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
+        {
+            executeCount++
+            return MultimodalContent(text = "$resultPrefix:${content.text}")
+        }
+
+        override suspend fun P2PInit()
+        {
+            initCount++
+        }
     }
 
     @Test
@@ -260,5 +278,115 @@ class PathObjectStandaloneDslTest
 
         assertEquals("echo: hello", output.text)
         assertSame(input, output)  // executionFunction mutated the input and returned it
+    }
+
+    /** PCP function used to verify standalone path execution. */
+    fun standalonePcpEcho(value: String): String = "pcp:$value"
+
+    @Test
+    fun standalonePathObjectExecutesPcpRequestFromContentText()
+    {
+        FunctionRegistry.clear()
+        try
+        {
+            val path = pathObject("standalone-pcp") {}
+            path.bindFunction("standalonePcpEcho", ::standalonePcpEcho)
+            var captured: MultimodalContent? = null
+            path.setOutputCaptureFunction { content -> captured = content }
+
+            val request = PcPRequest(
+                tPipeContextOptions = TPipeContextOptions().apply {
+                    functionName = "standalonePcpEcho"
+                },
+                argumentsOrFunctionParams = listOf("value")
+            )
+            val input = MultimodalContent(text = "execute this request:\n${serialize(request, encodedefault = true)}")
+            val result = runBlocking { path.executeLocal(input) }
+
+            assertEquals("pcp:value", result.text)
+            assertEquals("pcp:value", result.metadata["pcpOutput"])
+            assertSame(result, captured)
+        }
+        finally
+        {
+            FunctionRegistry.clear()
+        }
+    }
+
+    @Test
+    fun standalonePathObjectExecutesInternalAgentWithoutPumpStation()
+    {
+        val agent = MinimalP2P("internal")
+        val path = pathObject("standalone-internal") { setInternalAgent(agent) }
+
+        val result = runBlocking { path.executeLocal(MultimodalContent(text = "payload")) }
+
+        assertEquals("internal:payload", result.text)
+        assertEquals(1, agent.executeCount)
+    }
+
+    @Test
+    fun standalonePathObjectBuildsInitializesAndExecutesAgentBuilder()
+    {
+        val builtAgent = MinimalP2P("builder")
+        var buildCount = 0
+        val path = pathObject("standalone-builder") {}
+        val builderField = PathObject::class.java.getDeclaredField("agentBuilderFunction")
+        builderField.isAccessible = true
+        val builder: suspend (MutableList<Any>?) -> P2PInterface = {
+            buildCount++
+            builtAgent
+        }
+        builderField.set(path, builder)
+
+        val result = runBlocking { path.executeLocal(MultimodalContent(text = "payload")) }
+
+        assertEquals("builder:payload", result.text)
+        assertEquals(1, buildCount)
+        assertEquals(1, builtAgent.initCount)
+        assertEquals(1, builtAgent.executeCount)
+    }
+
+    @Test
+    fun standalonePathObjectFallsThroughAfterPcpFailure()
+    {
+        FunctionRegistry.clear()
+        try
+        {
+            val fallbackAgent = MinimalP2P("fallback")
+            val path = pathObject("standalone-fallback") {
+                setInternalAgent(fallbackAgent)
+            }
+            path.pcpSchema = PcpContext().apply {
+                addTPipeOption(TPipeContextOptions().apply { functionName = "missingFunction" })
+            }
+            val request = PcPRequest(
+                tPipeContextOptions = TPipeContextOptions().apply {
+                    functionName = "missingFunction"
+                }
+            )
+
+            val result = runBlocking {
+                path.executeLocal(MultimodalContent(text = serialize(request, encodedefault = true)))
+            }
+
+            assertTrue(result.text.startsWith("fallback:"))
+            assertEquals(1, fallbackAgent.executeCount)
+        }
+        finally
+        {
+            FunctionRegistry.clear()
+        }
+    }
+
+    @Test
+    fun standalonePathObjectThrowsWhenNoStandaloneMechanismIsConfigured()
+    {
+        val path = pathObject("standalone-empty") {}
+
+        assertFailsWith<IllegalStateException>
+        {
+            runBlocking { path.executeLocal(MultimodalContent(text = "payload")) }
+        }
     }
 }

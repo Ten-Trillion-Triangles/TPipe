@@ -8,6 +8,8 @@ import com.TTT.Context.MetadataBank
 import com.TTT.Context.MiniBank
 import com.TTT.Context.TodoList
 import com.TTT.Context.TodoListTask
+import com.TTT.Enums.PumpStationHistoryTransport
+import com.TTT.Enums.PumpStationLatestContentPosition
 import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequest
@@ -28,9 +30,11 @@ import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceEvent
 import com.TTT.Debug.TraceFormat
+import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.Util.serialize
 import com.TTT.Util.writeStringToFile
 import com.TTT.Util.deepCopy
+import com.TTT.Util.extractJson
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -629,11 +633,12 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
         // Priority 1: PCP function — dispatch to PcpExecutionDispatcher if a function is named
         if (pcpSchema != null && pcpSchema!!.tpipeOptions.isNotEmpty())
         {
-            val functionName = content.tools.tPipeContextOptions.functionName
+            val pcpData = extractJson<PcPRequest>(content.text)
+            val functionName = pcpData?.tPipeContextOptions?.functionName ?: ""
             if (functionName.isNotBlank())
             {
                 val dispatcher = PcpExecutionDispatcher()
-                val result = dispatcher.executeRequest(content.tools, pcpSchema!!)
+                val result = dispatcher.executeRequest(pcpData!!, pcpSchema!!)
                 if (result.success)
                 {
                     val pcpResult = MultimodalContent(text = result.output)
@@ -682,6 +687,64 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
         throw IllegalStateException(
             "PathObject.execute() failed for path '${pathName}': no execution mechanism configured. " +
             "At least one of executionFunction, internalAgent, agentBuilderFunction, or a bound PCP function is required."
+        )
+    }
+
+    /**
+     * Executes the standalone-capable contents of this path without a parent [PumpStation].
+     *
+     * The local P2P entry point preserves the PCP, internal-agent, and agent-builder execution
+     * priority used by [execute]. The station-aware [executionFunction] branch is intentionally
+     * excluded because its callback contract requires a station, turn history, and turn summary.
+     *
+     * @param content The [MultimodalContent] input to this path.
+     * @return The result produced by the first successful standalone execution mechanism.
+     * @throws IllegalStateException if no standalone execution mechanism is configured.
+     */
+    override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
+    {
+        // Priority 1: PCP function — dispatch the request extracted from the content text.
+        if (pcpSchema != null && pcpSchema!!.tpipeOptions.isNotEmpty())
+        {
+            val pcpData = extractJson<PcPRequest>(content.text)
+            val functionName = pcpData?.tPipeContextOptions?.functionName ?: ""
+            if (functionName.isNotBlank())
+            {
+                val dispatcher = PcpExecutionDispatcher()
+                val result = dispatcher.executeRequest(pcpData!!, pcpSchema!!)
+                if (result.success)
+                {
+                    val pcpResult = MultimodalContent(text = result.output)
+                    pcpResult.metadata["pcpOutput"] = result.output
+                    outputCaptureFunction?.invoke(pcpResult)
+                    return pcpResult
+                }
+                // Standalone execution has no PumpStation task state to record the failure on.
+                // Fall through to the next standalone-capable mechanism.
+            }
+        }
+
+        // Priority 2: internal agent
+        if (internalAgent != null)
+        {
+            val internalResult = internalAgent!!.executeLocal(content)
+            outputCaptureFunction?.invoke(internalResult)
+            return internalResult
+        }
+
+        // Priority 3: agent builder function
+        if (agentBuilderFunction != null)
+        {
+            val agent = agentBuilderFunction!!.invoke(null)
+            agent.P2PInit()
+            val builderResult = agent.executeLocal(content)
+            outputCaptureFunction?.invoke(builderResult)
+            return builderResult
+        }
+
+        throw IllegalStateException(
+            "PathObject.executeLocal() failed for path '${pathName}': no standalone execution mechanism configured. " +
+            "A bound PCP function, internalAgent, or agentBuilderFunction is required."
         )
     }
 
@@ -1071,6 +1134,16 @@ suspend fun interrupt(phase: PumpStationPausePhase, text: String)
      * pipeline instead of the default [DEFAULT_GOAL_PROMPT].
      */
     internal var customGoalSystemPrompt: String? = null
+
+    /**
+     * Optional stable implementation guidance injected into the judge, dispatch, and
+     * Pipeline-shaped goal agents.
+     */
+    private var implementationPlan: String? = null
+
+    /** Guards implementation-plan mutation while the station is executing. */
+    @kotlinx.serialization.Transient
+    private val implementationPlanLifecycleGuard = ImplementationPlanLifecycleGuard()
 
     /**
      * REQUIRED: This agent evaluates what the next steps in the harness needs to be, and dispatches the to the
@@ -1802,6 +1875,26 @@ private fun pathKey(name: String): String = name.lowercase()
     private var maxRawTurnHistorySize: Int? = null
 
     /**
+     * Controls whether turn history is emitted as text, structured context, or both.
+     */
+    private var historyTransport = PumpStationHistoryTransport.TextOnly
+
+    /**
+     * Controls whether the latest prior agent output is injected into dispatch text.
+     */
+    private var latestContentInjectionEnabled = true
+
+    /**
+     * Controls where the latest prior agent output is placed in dispatch text.
+     */
+    private var latestContentPosition = PumpStationLatestContentPosition.Suffix
+
+    /**
+     * Controls exact duplicate suppression between latest content and turn history.
+     */
+    private var deduplicateLatestContentAgainstHistory = true
+
+    /**
      * Threshold (0.0-1.0) of context window utilization that triggers blowout
      * detection. Defaults to 0.9 (90%).
      */
@@ -2375,12 +2468,20 @@ private fun pathKey(name: String): String = name.lowercase()
      */
     override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
     {
-        if (!harnessIsReady) P2PInit()
-        runPreInitPhase(content)
-        val trip = runHarnessLoop()
-        val result = runFinalizationPhase()
-        if (trip != null) throw trip
-        return result
+        implementationPlanLifecycleGuard.beginExecution()
+        try
+        {
+            if(!harnessIsReady) P2PInit()
+            runPreInitPhase(content)
+            val trip = runHarnessLoop()
+            val result = runFinalizationPhase()
+            if(trip != null) throw trip
+            return result
+        }
+        finally
+        {
+            implementationPlanLifecycleGuard.endExecution()
+        }
     }
 
     /**
@@ -2806,6 +2907,10 @@ private fun pathKey(name: String): String = name.lowercase()
 
     internal val maxTurnHistorySizeInternal get() = maxTurnHistorySize
     internal val maxRawTurnHistorySizeInternal get() = maxRawTurnHistorySize
+    internal val historyTransportInternal get() = historyTransport
+    internal val latestContentInjectionEnabledInternal get() = latestContentInjectionEnabled
+    internal val latestContentPositionInternal get() = latestContentPosition
+    internal val deduplicateLatestContentAgainstHistoryInternal get() = deduplicateLatestContentAgainstHistory
 
     //=====================================Group O: KillSwitch Accessors==============================================
     /**
@@ -3579,6 +3684,69 @@ private fun pathKey(name: String): String = name.lowercase()
 
 //=====================================Fluent Setters================================================================
 
+    /**
+     * Sets stable implementation guidance for the judge, dispatch, and goal agents.
+     * The value is normalized by trimming outer whitespace; blank values clear it.
+     *
+     * @param plan Implementation guidance, or null to clear it.
+     * @return This PumpStation instance for method chaining.
+     * @throws IllegalStateException if the station is executing.
+     */
+    fun setImplementationPlan(plan: String?): PumpStation
+    {
+        implementationPlanLifecycleGuard.mutateBetweenExecutions {
+            val previousPlan = implementationPlan
+            implementationPlan = com.TTT.Pipe.normalizeImplementationPlan(plan)
+            try
+            {
+                applyImplementationPlanToAgents()
+            }
+            catch(error: Throwable)
+            {
+                implementationPlan = previousPlan
+                try
+                {
+                    applyImplementationPlanToAgents()
+                }
+                catch(rollbackError: Throwable)
+                {
+                    error.addSuppressed(rollbackError)
+                }
+                throw error
+            }
+        }
+        return this
+    }
+
+    /**
+     * Returns the normalized implementation plan, or null when disabled.
+     *
+     * @return The active implementation plan, or null when disabled.
+     */
+    fun getImplementationPlan(): String? = implementationPlan
+
+    /** Internal access for the prompt-refresh extensions in PumpStationLoop.kt. */
+    internal val implementationPlanInternal: String? get() = implementationPlan
+
+    /** Apply the current plan to exactly the configured PumpStation control agents. */
+    private fun applyImplementationPlanToAgents()
+    {
+        applyImplementationPlanToPipeline(judgeAgent)
+        applyImplementationPlanToPipeline(dispatchAgent)
+        applyImplementationPlanToPipeline(goalAgent as? Pipeline)
+    }
+
+    /** Apply the plan to every pipe in one Pipeline-shaped control agent. */
+    private fun applyImplementationPlanToPipeline(agent: Pipeline?)
+    {
+        agent ?: return
+        agent.getPipes().forEach { pipe ->
+            pipe
+                .setImplementationPlanOverlay(implementationPlan)
+                .applySystemPrompt()
+        }
+    }
+
 //---------------------------------------------Agent Setters--------------------------------------------------------
 
     /**
@@ -3591,7 +3759,11 @@ private fun pathKey(name: String): String = name.lowercase()
     fun setJudgeAgent(agent: Pipeline?): PumpStation
     {
         this.judgeAgent = agent
-        if(agent != null) autoInjectDefaultPrompt(agent, customJudgeSystemPrompt, DEFAULT_JUDGE_PROMPT)
+        if(agent != null)
+        {
+            autoInjectDefaultPrompt(agent, customJudgeSystemPrompt, DEFAULT_JUDGE_PROMPT)
+            if(implementationPlan != null) applyImplementationPlanToPipeline(agent)
+        }
         return this
     }
 
@@ -3605,7 +3777,11 @@ private fun pathKey(name: String): String = name.lowercase()
     fun setDispatchAgent(agent: Pipeline?): PumpStation
     {
         this.dispatchAgent = agent
-        if(agent != null) autoInjectDefaultPrompt(agent, customDispatchSystemPrompt, DEFAULT_DISPATCH_PROMPT)
+        if(agent != null)
+        {
+            autoInjectDefaultPrompt(agent, customDispatchSystemPrompt, DEFAULT_DISPATCH_PROMPT)
+            if(implementationPlan != null) applyImplementationPlanToPipeline(agent)
+        }
         return this
     }
 
@@ -3671,6 +3847,7 @@ private fun pathKey(name: String): String = name.lowercase()
     fun setGoalAgent(agent: P2PInterface?): PumpStation
     {
         this.goalAgent = agent
+        if(implementationPlan != null) applyImplementationPlanToPipeline(agent as? Pipeline)
         return this
     }
 
@@ -4221,6 +4398,54 @@ private fun pathKey(name: String): String = name.lowercase()
     fun getMaxRawTurnHistorySize(): Int? = maxRawTurnHistorySize
 
     /**
+     * Sets how PumpStation transports turn history to agents.
+     *
+     * @param transport The selected history transport mode.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setHistoryTransport(transport: PumpStationHistoryTransport): PumpStation
+    {
+        this.historyTransport = transport
+        return this
+    }
+
+    /**
+     * Sets whether latest prior agent output is injected into dispatch text.
+     *
+     * @param enabled True to inject latest output; false to omit it.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setLatestContentInjectionEnabled(enabled: Boolean): PumpStation
+    {
+        this.latestContentInjectionEnabled = enabled
+        return this
+    }
+
+    /**
+     * Sets the latest prior agent output position in dispatch text.
+     *
+     * @param position The selected latest-output position.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setLatestContentPosition(position: PumpStationLatestContentPosition): PumpStation
+    {
+        this.latestContentPosition = position
+        return this
+    }
+
+    /**
+     * Sets whether exact latest-output duplicates in turn history are suppressed.
+     *
+     * @param enabled True to suppress exact duplicates; false to preserve both copies.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setDeduplicateLatestContentAgainstHistory(enabled: Boolean): PumpStation
+    {
+        this.deduplicateLatestContentAgainstHistory = enabled
+        return this
+    }
+
+    /**
      * Sets the context-blowout threshold (0.0-1.0). When the context window
      * utilization exceeds this fraction, blowout detection fires.
      *
@@ -4588,6 +4813,7 @@ private fun pathKey(name: String): String = name.lowercase()
         this.customJudgeSystemPrompt = prompt
         this.judgeExpectsJsonContract = (prompt == null)
         applyCustomPromptToAgent(this.judgeAgent, prompt)
+        if(implementationPlan != null) applyImplementationPlanToPipeline(this.judgeAgent)
         return this
     }
 
@@ -4598,6 +4824,7 @@ private fun pathKey(name: String): String = name.lowercase()
     {
         this.customDispatchSystemPrompt = prompt
         applyCustomPromptToAgent(this.dispatchAgent, prompt)
+        if(implementationPlan != null) applyImplementationPlanToPipeline(this.dispatchAgent)
         return this
     }
 
@@ -4639,6 +4866,7 @@ private fun pathKey(name: String): String = name.lowercase()
     {
         this.customGoalSystemPrompt = prompt
         applyCustomPromptToAgent(this.goalAgent, prompt)
+        if(implementationPlan != null) applyImplementationPlanToPipeline(this.goalAgent as? Pipeline)
         return this
     }
 
