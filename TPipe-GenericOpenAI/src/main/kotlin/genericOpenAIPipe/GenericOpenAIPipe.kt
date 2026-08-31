@@ -93,7 +93,7 @@ class GenericOpenAIPipe : Pipe()
 
     /**
      * API key for authentication.
-     * Required for all API calls.
+     * Required for hosted endpoints, but optional for exact loopback endpoints.
      * Marked @Transient to prevent API key from being serialized to disk.
      */
     @kotlinx.serialization.Transient
@@ -105,6 +105,13 @@ class GenericOpenAIPipe : Pipe()
      */
     @kotlinx.serialization.Serializable
     private var baseUrl: String = "https://api.openai.com/v1"
+
+    /**
+     * Endpoint paths selected for the current API mode.
+     * Defaults preserve the existing hosted GenericOpenAI routes.
+     */
+    @kotlinx.serialization.Serializable
+    private var endpointProfile: GenericOpenAIEndpointProfile = GenericOpenAIEndpointProfile.DEFAULT
 
     /**
      * HTTP client for API calls.
@@ -270,7 +277,8 @@ class GenericOpenAIPipe : Pipe()
      * Returns the appropriate auth headers based on the current [apiMode].
      *
      * OpenAI mode uses Bearer token authentication.
-     * Anthropic mode uses x-api-key header with anthropic-version header.
+     * Anthropic mode uses x-api-key header with anthropic-version header when keyed.
+     * Blank keys omit the credential header; the Anthropic version header remains.
      *
      * When [bedrockMantleAuth] is set, the Mantle auth shape takes precedence
      * and its headers (computed against the supplied request method, URL, and
@@ -298,20 +306,20 @@ class GenericOpenAIPipe : Pipe()
         }
         return when(apiMode)
         {
-            is ApiMode.OpenAI -> mapOf("Authorization" to "Bearer $apiKey")
-            is ApiMode.OpenAIResponses -> mapOf("Authorization" to "Bearer $apiKey")
-            is ApiMode.Anthropic -> mapOf(
-                "x-api-key" to apiKey,
-                "anthropic-version" to "2023-06-01"
-            )
+            is ApiMode.OpenAI -> if(apiKey.isBlank()) emptyMap() else mapOf("Authorization" to "Bearer $apiKey")
+            is ApiMode.OpenAIResponses -> if(apiKey.isBlank()) emptyMap() else mapOf("Authorization" to "Bearer $apiKey")
+            is ApiMode.Anthropic -> buildMap {
+                if(apiKey.isNotBlank()) put("x-api-key", apiKey)
+                put("anthropic-version", "2023-06-01")
+            }
         }
     }
 
     /**
-     * Returns the appropriate endpoint path based on the current [apiMode].
+     * Returns the endpoint path selected by the current [endpointProfile] and [apiMode].
      *
-     * OpenAI mode uses /chat/completions.
-     * Anthropic mode uses /messages.
+     * The default profile preserves the hosted suffixes, while custom profiles
+     * can select paths such as the common local `/v1` routes.
      *
      * @return The endpoint path (without baseUrl prefix)
      */
@@ -319,9 +327,9 @@ class GenericOpenAIPipe : Pipe()
     {
         return when(apiMode)
         {
-            is ApiMode.OpenAI -> "/chat/completions"
-            is ApiMode.OpenAIResponses -> "/responses"
-            is ApiMode.Anthropic -> "/anthropic/v1/messages"
+            is ApiMode.OpenAI -> endpointProfile.chatCompletionsPath
+            is ApiMode.OpenAIResponses -> endpointProfile.responsesPath
+            is ApiMode.Anthropic -> endpointProfile.anthropicMessagesPath
         }
     }
 
@@ -345,21 +353,31 @@ class GenericOpenAIPipe : Pipe()
      */
     fun setBaseUrl(url: String): GenericOpenAIPipe
     {
-        require(url.isNotBlank()) { "baseUrl cannot be blank" }
-        // HTTPS-only by default. Set TPIPE_ALLOW_INSECURE_BASEURL=true to allow http://
-        // — intended for in-process stub servers used by tests. Production callers
-        // should never set this flag.
-        val allowInsecure = System.getenv("TPIPE_ALLOW_INSECURE_BASEURL") == "true" ||
-            System.getProperty("tpipe.allowInsecureBaseUrl") == "true"
-        val isHttps = url.startsWith("https://")
-        val isAllowedHttp = allowInsecure && url.startsWith("http://")
-        require(isHttps || isAllowedHttp) {
-            "baseUrl must use HTTPS for security (got: $url). " +
-                "Set TPIPE_ALLOW_INSECURE_BASEURL=true (or the tpipe.allowInsecureBaseUrl " +
-                "system property) to allow http:// — test-only flag, never use in production."
-        }
-        baseUrl = url.trimEnd('/')
+        baseUrl = BaseUrlPolicy.validateAndNormalize(
+            url = url,
+            allowInsecureHttp = insecureBaseUrlOverrideEnabled()
+        )
         return this
+    }
+
+    /**
+     * Selects the endpoint paths used by the current API mode.
+     *
+     * @param profile Endpoint path profile, such as [GenericOpenAIEndpointProfile.localV1].
+     * @return This pipe instance for fluent chaining.
+     * @throws IllegalStateException if called after the first API request.
+     */
+    fun setEndpointProfile(profile: GenericOpenAIEndpointProfile): GenericOpenAIPipe
+    {
+        check(!apiModeLocked) { "endpointProfile cannot be changed after the first API request" }
+        endpointProfile = profile
+        return this
+    }
+
+    private fun insecureBaseUrlOverrideEnabled(): Boolean
+    {
+        return System.getenv("TPIPE_ALLOW_INSECURE_BASEURL") == "true" ||
+            System.getProperty("tpipe.allowInsecureBaseUrl") == "true"
     }
 
     fun setFrequencyPenalty(penalty: Double): GenericOpenAIPipe
@@ -759,11 +777,16 @@ class GenericOpenAIPipe : Pipe()
      * Initializes the Generic OpenAI pipe.
      * Validates configuration and sets up the HTTP client.
      * @return This pipe instance
-     * @throws IllegalStateException if apiKey is not set
+     * @throws IllegalStateException if a non-loopback endpoint has no API key
      */
     override suspend fun init(): Pipe
     {
         super.init()
+
+        baseUrl = BaseUrlPolicy.validateAndNormalize(
+            url = baseUrl,
+            allowInsecureHttp = insecureBaseUrlOverrideEnabled()
+        )
 
         trace(TraceEventType.PIPE_START, TracePhase.INITIALIZATION,
               metadata = mapOf(
@@ -778,11 +801,14 @@ class GenericOpenAIPipe : Pipe()
         if (apiKey.isBlank() && bedrockMantleAuth == null)
         {
             val resolvedKey = GenericOpenAIEnv.resolveApiKey()
-            if (resolvedKey.isBlank())
+            if (resolvedKey.isNotBlank())
             {
-                throw IllegalStateException("GenericOpenAI API key is required. Call setApiKey(), genericOpenAIEnv.setApiKey(), or set GENERIC_OPENAI_API_KEY environment variable before init().")
+                apiKey = resolvedKey
             }
-            apiKey = resolvedKey
+            else if (!BaseUrlPolicy.isLoopbackUrl(baseUrl))
+            {
+                throw IllegalStateException("GenericOpenAI API key is required for non-loopback endpoints. Call setApiKey(), genericOpenAIEnv.setApiKey(), or set GENERIC_OPENAI_API_KEY environment variable before init().")
+            }
         }
 
         provider = ProviderName.Gpt
@@ -1079,6 +1105,8 @@ class GenericOpenAIPipe : Pipe()
     protected suspend fun generateTextMultimodal(promptInjector: String): com.TTT.Pipe.MultimodalContent
     {
         val client = httpClient ?: throw IllegalStateException("GenericOpenAIPipe not initialized. Call init() first.")
+
+        apiModeLocked = true
 
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
               metadata = mapOf(

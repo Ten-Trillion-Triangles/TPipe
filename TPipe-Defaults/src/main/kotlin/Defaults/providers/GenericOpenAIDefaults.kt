@@ -81,6 +81,7 @@ internal object GenericOpenAIDefaults
             {
                 setBaseUrl(config.baseUrl)
             }
+            setEndpointProfile(config.endpointProfile)
 
             /**
              * The pipe exposes a sealed [ApiMode] type. The configuration hands us a string

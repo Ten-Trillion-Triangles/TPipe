@@ -26,7 +26,7 @@
 
 ## Prerequisites
 
-1.  **API key for your target provider.** OpenAI keys come from [platform.openai.com](https://platform.openai.com), Anthropic keys from [console.anthropic.com](https://console.anthropic.com), and so on. You can also rely on the `GENERIC_OPENAI_API_KEY` environment variable and skip programmatic key management entirely.
+1.  **API key for hosted providers.** OpenAI keys come from [platform.openai.com](https://platform.openai.com), Anthropic keys from [console.anthropic.com](https://console.anthropic.com), and so on. Exact loopback servers may be used without a key. For hosted endpoints, you can rely on the `GENERIC_OPENAI_API_KEY` environment variable and skip programmatic key management entirely.
 2.  **A Gradle Kotlin DSL project.** Maven and Groovy DSL are not supported by TPipe.
 3.  **Java 24+ (GraalVM CE 24 recommended).** Matches the rest of the TPipe toolchain.
 4.  **Project dependency.** Add the `:TPipe-GenericOpenAI` module:
@@ -67,7 +67,7 @@ If you would rather resolve the key once for the whole process, set the `GENERIC
 export GENERIC_OPENAI_API_KEY="sk-..."
 ```
 
-`init()` reads it automatically and throws `IllegalStateException` if neither path is configured.
+`init()` reads it automatically. It throws `IllegalStateException` when neither path is configured for a non-loopback endpoint; local loopback endpoints may proceed with no key.
 
 ## API Modes
 
@@ -75,9 +75,11 @@ export GENERIC_OPENAI_API_KEY="sk-..."
 
 | Mode | Endpoint | Auth header(s) | When to use |
 |:---|:---|:---|:---|
-| `ApiMode.OpenAI` (default) | `${baseUrl}/chat/completions` | `Authorization: Bearer <key>` | OpenAI, Azure OpenAI, DeepSeek, Groq, Together, MiniMax, local llama.cpp servers, any OpenAI Chat-Completions-compatible proxy |
-| `ApiMode.Anthropic` | `${baseUrl}/anthropic/v1/messages` | `x-api-key: <key>`, `anthropic-version: 2023-06-01` | Anthropic Claude (direct or via a Messages-API proxy) |
-| `ApiMode.OpenAIResponses` | `${baseUrl}/responses` | `Authorization: Bearer <key>` | OpenAI's newer Responses wire spec (`response.created` / `response.output_text.delta` / `response.completed` events) |
+| `ApiMode.OpenAI` (default) | `${baseUrl}/chat/completions` by default | `Authorization: Bearer <key>` when keyed | OpenAI, Azure OpenAI, DeepSeek, Groq, Together, MiniMax, or a compatible proxy |
+| `ApiMode.Anthropic` | `${baseUrl}/anthropic/v1/messages` by default | `x-api-key: <key>`, `anthropic-version: 2023-06-01` | Anthropic Claude or a Messages-compatible proxy |
+| `ApiMode.OpenAIResponses` | `${baseUrl}/responses` by default | `Authorization: Bearer <key>` when keyed | OpenAI's newer Responses wire spec (`response.created` / `response.output_text.delta` / `response.completed` events) |
+
+For local servers that expose all three routes beneath `/v1`, use `GenericOpenAIEndpointProfile.localV1()`. This preserves the selected wire format while changing only the transport paths.
 
 The `getAuthHeaders()` and `getEndpoint()` methods on the pipe select the right values for the active mode at the moment the request is built, so the rest of your configuration is identical across modes.
 
@@ -102,11 +104,11 @@ There are three ways to provide credentials, checked in this order by `init()`:
     export GENERIC_OPENAI_API_KEY="sk-..."
     ```
 
-`init()` walks the chain in this order: pipe-level `apiKey` field → `GenericOpenAIEnv.resolveApiKey()` (programmatic + env) → `IllegalStateException` if nothing resolves. Use `genericOpenAIEnv.hasApiKey()` to probe before constructing a pipe.
+`init()` walks the chain in this order: pipe-level `apiKey` field → `GenericOpenAIEnv.resolveApiKey()` (programmatic + env). If nothing resolves, only an exact loopback base URL may continue without credentials; hosted endpoints throw `IllegalStateException`. Use `genericOpenAIEnv.hasApiKey()` to probe before constructing a hosted pipe.
 
 ### Endpoint overrides for proxies and enterprise gateways
 
-Most providers expose the OpenAI Chat Completions surface at a different base URL. Use `setBaseUrl(...)` to point the pipe at it. The URL must be HTTPS — the builder enforces this and throws `IllegalArgumentException` for plain HTTP:
+Most providers expose the OpenAI Chat Completions surface at a different base URL. Use `setBaseUrl(...)` to point the pipe at it. HTTPS is accepted for valid hosts. Plain HTTP is accepted automatically only for exact loopback targets (`localhost`, `127.0.0.0/8`, and `::1`):
 
 ```kotlin
 .setBaseUrl("https://api.openai.com/v1")        // OpenAI
@@ -119,6 +121,28 @@ Most providers expose the OpenAI Chat Completions surface at a different base UR
 ```
 
 The trailing slash is stripped automatically.
+
+### Local OpenAI-compatible server
+
+The generic pipe can target a plaintext local server without a provider-specific module. `localV1()` selects the common `/v1` route convention, and no API key is required for loopback URLs:
+
+```kotlin
+import genericOpenAIPipe.GenericOpenAIPipe
+import genericOpenAIPipe.api.GenericOpenAIEndpointProfile
+import kotlinx.coroutines.runBlocking
+
+fun main() = runBlocking {
+    val pipe = GenericOpenAIPipe()
+        .setBaseUrl("http://127.0.0.1:8080")
+        .setEndpointProfile(GenericOpenAIEndpointProfile.localV1())
+        .setModel("local-model")
+        .init()
+
+    println(pipe.execute("Say hello in one sentence.").text)
+}
+```
+
+The automatic plaintext exception is a narrow security boundary: only `localhost`, `127.0.0.0/8`, and `::1` qualify. Private-network addresses such as `192.168.x.x` and `10.x.x.x`, LAN hostnames, hostname-spoofing names such as `localhost.example.com`, embedded credentials, and malformed URLs are rejected. A non-loopback HTTP endpoint requires the explicit `TPIPE_ALLOW_INSECURE_BASEURL=true` environment variable or `tpipe.allowInsecureBaseUrl=true` system property override.
 
 ## Your First Pipe (per mode)
 
@@ -182,7 +206,7 @@ fun main() = runBlocking {
 }
 ```
 
-> **⚠ `apiMode` is locked after the first API call.** Calling `setApiMode(...)` after `execute()` / `generateText()` / `generateContent()` has been invoked throws `IllegalStateException`. Set the mode up front, before the first call. If you need to switch modes, build a new pipe instance.
+> **⚠ `apiMode` and `endpointProfile` are locked after the first API call.** Calling either setter after `execute()` / `generateText()` / `generateContent()` has been invoked throws `IllegalStateException`. Set both up front, before the first call. If you need to switch modes or route profiles, build a new pipe instance.
 
 ## Third-Party Providers
 
@@ -544,8 +568,8 @@ The conversion matrix for each `BinaryContent` variant across the three modes:
 | **Multimodal** | `MultimodalContent.binaryContent` with mode-specific conversion | Base64 images | OpenAI-compatible | Base64 images |
 | **Caching** | `CacheControl(type, ttl)` (Anthropic-style) | n/a | `setCacheControl(ttl)` | n/a |
 | **Free tier** | Depends on provider | Yes (local) | Yes (limited free models) | No |
-| **Auth pattern** | `setApiKey` / `GenericOpenAIEnv` / `GENERIC_OPENAI_API_KEY` | Local socket | `setApiKey` / `OPENROUTER_API_KEY` | AWS credentials / IAM roles |
-| **Endpoint override** | `setBaseUrl(https://...)` | `setIP` / `setPort` | `setBaseUrl(...)` | `setRegion(...)` |
+| **Auth pattern** | `setApiKey` / `GenericOpenAIEnv` / `GENERIC_OPENAI_API_KEY`; loopback may omit key | Local socket | `setApiKey` / `OPENROUTER_API_KEY` | AWS credentials / IAM roles |
+| **Endpoint override** | `setBaseUrl(...)` + optional `localV1()` profile | `setIP` / `setPort` | `setBaseUrl(...)` | `setRegion(...)` |
 
 Use `GenericOpenAIPipe` when the provider you want is not first-class in TPipe, or when you need the Anthropic `/messages` or OpenAI Responses surface from a single pipe class.
 
@@ -553,16 +577,18 @@ Use `GenericOpenAIPipe` when the provider you want is not first-class in TPipe, 
 
 ### `IllegalStateException: GenericOpenAI API key is required`
 
-You called `init()` without a key. Fix in one of three ways:
+You called `init()` without a key for a non-loopback endpoint. Fix in one of three ways:
 - Call `.setApiKey("sk-...")` on the pipe before `init()`.
 - Call `genericOpenAIEnv.setApiKey("sk-...")` before constructing the pipe.
 - Export `GENERIC_OPENAI_API_KEY` in the process environment.
 
 Probe at startup with `genericOpenAIEnv.hasApiKey()` if you want to fail fast with a friendlier error.
 
+Loopback endpoints are the exception: `http://localhost`, `http://127.0.0.0/8`, and `http://[::1]` may run without a key. Blank keys omit Bearer / `x-api-key` headers; Anthropic still receives `anthropic-version`.
+
 ### `IllegalArgumentException: baseUrl must use HTTPS for security`
 
-`setBaseUrl(...)` enforces HTTPS. If you are behind a TLS-terminating proxy, configure it to forward HTTPS upstream; for local development against a plaintext Ollama / llama.cpp OpenAI-compatible server, use a self-signed cert and the `https://` scheme.
+`setBaseUrl(...)` enforces HTTPS except for exact loopback targets. If you are behind a TLS-terminating proxy, configure it to forward HTTPS upstream. For a deliberate non-loopback plaintext compatibility endpoint, set `TPIPE_ALLOW_INSECURE_BASEURL=true` or `tpipe.allowInsecureBaseUrl=true` explicitly and understand the transport-security tradeoff.
 
 ### `IllegalStateException: apiMode cannot be changed after the first API request`
 

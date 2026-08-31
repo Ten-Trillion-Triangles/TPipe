@@ -266,6 +266,9 @@ data class OpenRouterConfiguration(
  * @param apiMode Wire-format selector. Values: "OpenAI", "OpenAIResponses", "Anthropic".
  *  The factory translates this string to the package-private `ApiMode` enum on
  *  [genericOpenAIPipe.GenericOpenAIPipe.setApiMode].
+ * @param endpointProfile Endpoint paths used by each wire mode. Use
+ *  [genericOpenAIPipe.api.GenericOpenAIEndpointProfile.localV1] for local servers
+ *  exposing all routes beneath `/v1`.
  * @param httpReferer HTTP Referer header (some gateways require it for traffic tracking).
  * @param appTitle Application title header (OpenRouter-style identification).
  * @param sessionId Optional sticky session identifier.
@@ -284,6 +287,8 @@ data class GenericOpenAIConfiguration(
     var pipeCount: Int = 1,
     var baseUrl: String = "https://api.openai.com/v1",
     var apiMode: String = "OpenAI",
+    var endpointProfile: genericOpenAIPipe.api.GenericOpenAIEndpointProfile =
+        genericOpenAIPipe.api.GenericOpenAIEndpointProfile.DEFAULT,
     var httpReferer: String = "",
     var appTitle: String = "",
     var sessionId: String? = null,

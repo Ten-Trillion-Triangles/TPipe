@@ -24,13 +24,22 @@
 
 ## Overview
 
-The `GenericOpenAIPipe` class provides a TPipe abstraction for OpenAI-compatible APIs. It supports three API modes — OpenAI Chat Completions, Anthropic Messages, and OpenAI Responses — and works with any provider that implements one of these specifications.
+The `GenericOpenAIPipe` class provides a TPipe abstraction for OpenAI-compatible APIs. It supports three API modes — OpenAI Chat Completions, Anthropic Messages, and OpenAI Responses — and works with any provider that implements one of these specifications, including local servers that expose compatible `/v1` routes.
 
 ```kotlin
 class GenericOpenAIPipe : Pipe()
 ```
 
-**Requirements:** Call `setApiKey()` before `init()`, or set the `GENERIC_OPENAI_API_KEY` environment variable.
+**Requirements:** Hosted endpoints require `setApiKey()` or the `GENERIC_OPENAI_API_KEY` environment variable. Exact loopback endpoints (`localhost`, `127.0.0.0/8`, or `::1`) may initialize without a key; blank keys then produce no credential header.
+
+**Example — local OpenAI-compatible server (no key):**
+```kotlin
+val pipe = GenericOpenAIPipe()
+    .setBaseUrl("http://127.0.0.1:8080")
+    .setEndpointProfile(GenericOpenAIEndpointProfile.localV1())
+    .setModel("local-model")
+    .init()
+```
 
 **Example — OpenAI mode (default):**
 ```kotlin
@@ -82,7 +91,9 @@ sealed class ApiMode
 | `ApiMode.Anthropic` | `${baseUrl}/anthropic/v1/messages` | `x-api-key: <key>`, `anthropic-version: 2023-06-01` |
 | `ApiMode.OpenAIResponses` | `${baseUrl}/responses` | `Authorization: Bearer <key>` |
 
-> **⚠ `apiMode` is locked after the first API call.** Once `sendRequest(...)` runs (i.e. after the first `execute()` / `generateText()` / `generateContent()`), the internal `apiModeLocked` flag flips to `true`. Calling `setApiMode(...)` afterwards throws `IllegalStateException("apiMode cannot be changed after the first API request")`. Set the mode up front, before the first call, and create a new pipe instance if you need a different mode.
+Use `GenericOpenAIEndpointProfile.localV1()` to change these three paths to `${baseUrl}/v1/chat/completions`, `${baseUrl}/v1/messages`, and `${baseUrl}/v1/responses` without changing serializers or parsers. With a blank key, OpenAI and Responses omit `Authorization`; Anthropic still sends `anthropic-version` but omits `x-api-key`.
+
+> **⚠ `apiMode` and `endpointProfile` are locked after the first API request.** Once the first request is built, changing either setting throws `IllegalStateException`. Configure both before the first call, or create a new pipe instance if you need different wire-format or route settings.
 
 `OpenAIResponses` is a sealed data object that targets OpenAI's newer Responses wire spec — top-level `instructions`, `input` items, and a streaming protocol driven by `response.created` / `response.output_text.delta` / `response.completed` events. See `OpenAIResponsesRequestSerializer` / `OpenAIResponsesSseParser` for the wire details.
 
@@ -91,16 +102,33 @@ sealed class ApiMode
 ### Authentication & Endpoint
 
 #### `setApiKey(key: String): GenericOpenAIPipe`
-Sets the API key. Required unless `GENERIC_OPENAI_API_KEY` environment variable is set. The pipe-level value is checked first; if blank, `init()` falls back to `GenericOpenAIEnv.resolveApiKey()`.
+Sets the API key. Hosted endpoints require a nonblank effective key. For exact loopback endpoints the key may be blank; no Bearer or `x-api-key` header is emitted in that case. The pipe-level value is checked first; if blank, `init()` falls back to `GenericOpenAIEnv.resolveApiKey()`.
 
 #### `setBaseUrl(url: String): GenericOpenAIPipe`
-Sets the base URL. Defaults to `https://api.openai.com/v1`. Must use HTTPS — passing an `http://` URL throws `IllegalArgumentException("baseUrl must use HTTPS for security")`. Trailing slashes are stripped.
+Sets the base URL. Defaults to `https://api.openai.com/v1`. HTTPS is accepted for valid hosts. Plain HTTP is accepted automatically only for exact loopback targets: `localhost`, `127.0.0.0/8`, and `::1`. LAN/private hosts, hostname-spoofing names, malformed URLs, embedded credentials, query strings, fragments, and non-HTTP(S) schemes are rejected. Trailing slashes are stripped.
+
+For a non-loopback HTTP compatibility endpoint, explicitly set `TPIPE_ALLOW_INSECURE_BASEURL=true` or the `tpipe.allowInsecureBaseUrl` system property. This override is intentionally opt-in because it removes transport confidentiality and must not be used as a general production default.
 
 **Example:**
 ```kotlin
 .setBaseUrl("https://api.openai.com/v1")       // OpenAI (default)
 .setBaseUrl("https://api.anthropic.com")        // Anthropic
 .setBaseUrl("https://openai.myenterprise.com") // Third-party proxy
+```
+
+#### `setEndpointProfile(profile: GenericOpenAIEndpointProfile): GenericOpenAIPipe`
+Selects the endpoint path for each API mode. The default profile preserves the hosted paths shown in the table above. `GenericOpenAIEndpointProfile.localV1()` selects `/v1/chat/completions`, `/v1/responses`, and `/v1/messages`.
+
+The profile must be configured before the first API request. It is then locked together with `apiMode`.
+
+```kotlin
+import genericOpenAIPipe.api.GenericOpenAIEndpointProfile
+
+val pipe = GenericOpenAIPipe()
+    .setBaseUrl("http://localhost:8080")
+    .setEndpointProfile(GenericOpenAIEndpointProfile.localV1())
+    .setApiMode(ApiMode.Anthropic)
+    .setModel("local-claude-compatible-model")
 ```
 
 ---
@@ -171,9 +199,9 @@ The full reference for `BedrockMantleAuth` (every sealed-class variant, every co
 Sets the wire format and endpoint. Default is `ApiMode.OpenAI`. Throws `IllegalStateException` if called after the first API request.
 
 **Parameters:**
-- `ApiMode.OpenAI` — OpenAI Chat Completions format at `${baseUrl}/chat/completions`
-- `ApiMode.Anthropic` — Anthropic messages format at `${baseUrl}/anthropic/v1/messages`
-- `ApiMode.OpenAIResponses` — OpenAI Responses format at `${baseUrl}/responses`
+- `ApiMode.OpenAI` — OpenAI Chat Completions format at the profile's `chatCompletionsPath`
+- `ApiMode.Anthropic` — Anthropic messages format at the profile's `anthropicMessagesPath`
+- `ApiMode.OpenAIResponses` — OpenAI Responses format at the profile's `responsesPath`
 
 **Example:**
 ```kotlin
@@ -367,12 +395,14 @@ val pipe = GenericOpenAIPipe()
 Initializes the pipe. Validates configuration and sets up the HTTP client.
 
 **Behavior:**
-- Resolves API key from parameter or `GenericOpenAIEnv.resolveApiKey()` (which checks the env var `GENERIC_OPENAI_API_KEY`)
+- Resolves an API key from the pipe or `GenericOpenAIEnv.resolveApiKey()` (which checks the env var `GENERIC_OPENAI_API_KEY`)
+- Allows a missing effective key only for exact loopback base URLs; hosted endpoints still fail fast without credentials
+- Omits blank Bearer / `x-api-key` credentials while retaining Anthropic's `anthropic-version` header
 - Sets `provider = ProviderName.Gpt`
 - Creates a CIO-based HTTP client with 120s request timeout, 30s connect timeout, 120s socket timeout
 - Emits a `TraceEventType.PIPE_START` trace event tagged `provider = "GenericOpenAI"`
 
-**Throws:** `IllegalStateException("GenericOpenAI API key is required. Call setApiKey(), genericOpenAIEnv.setApiKey(), or set GENERIC_OPENAI_API_KEY environment variable before init().")` if no API key is configured.
+**Throws:** `IllegalStateException` if no API key is configured for a non-loopback endpoint.
 
 #### `abort()`
 Closes the HTTP client and cleans up resources. Emits a `TraceEventType.PIPE_FAILURE` trace event with `action = "abort"`. Call when done with the pipe.
@@ -436,7 +466,7 @@ val pipe = GenericOpenAIPipe()
     .init()
 ```
 
-The `init()` chain is: pipe-level `apiKey` field → `GenericOpenAIEnv.resolveApiKey()` → `IllegalStateException`.
+The `init()` chain is: pipe-level `apiKey` field → `GenericOpenAIEnv.resolveApiKey()` → allow blank only for loopback URLs, otherwise `IllegalStateException`.
 
 ---
 

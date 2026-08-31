@@ -9,6 +9,7 @@
 - [Factory Classes](#factory-classes)
   - [ManifoldDefaults](#manifolddefaults)
   - [BedrockDefaults](#bedrockdefaults)
+  - [GenericOpenAIDefaults](#genericopenaidefaults)
   - [OllamaDefaults](#ollamadefaults)
 - [Reasoning System](#reasoning-system)
   - [ReasoningBuilder](#reasoningbuilder)
@@ -38,6 +39,54 @@ sealed class ProviderConfiguration
 Validates configuration parameters for the provider.
 
 **Behavior:** Abstract method implemented by each provider to ensure required parameters are present and valid.
+
+---
+
+### GenericOpenAIConfiguration
+
+Configuration for the provider-agnostic GenericOpenAI factory. It supports hosted OpenAI-compatible providers and exact loopback servers without requiring a provider-specific Defaults module.
+
+```kotlin
+data class GenericOpenAIConfiguration(
+    var model: String,
+    var apiKey: String = "",
+    var pipeCount: Int = 1,
+    var baseUrl: String = "https://api.openai.com/v1",
+    var apiMode: String = "OpenAI",
+    var endpointProfile: GenericOpenAIEndpointProfile = GenericOpenAIEndpointProfile.DEFAULT,
+    var httpReferer: String = "",
+    var appTitle: String = "",
+    var sessionId: String? = null,
+    var verbosity: String? = null,
+    var reasoningEffort: String? = null,
+    var parallelToolCalls: Boolean? = null,
+    var structuredOutputs: Boolean? = null,
+    var manifoldMemory: ManifoldMemoryConfiguration = ManifoldMemoryConfiguration()
+) : ProviderConfiguration()
+```
+
+**Key properties:**
+- **`model`**: Model identifier (required)
+- **`apiKey`**: Hosted-provider key; may remain blank for an exact loopback endpoint
+- **`pipeCount`**: Number of GenericOpenAI pipes in the manager pipeline (default: 1)
+- **`baseUrl`**: HTTP(S) base URL. Plain HTTP is automatic only for `localhost`, `127.0.0.0/8`, and `::1`.
+- **`apiMode`**: `OpenAI`, `OpenAIResponses`, or `Anthropic`; unknown values use `OpenAI`.
+- **`endpointProfile`**: `GenericOpenAIEndpointProfile.DEFAULT` preserves hosted paths. `GenericOpenAIEndpointProfile.localV1()` selects `/v1/chat/completions`, `/v1/responses`, and `/v1/messages`.
+
+```kotlin
+import Defaults.GenericOpenAIConfiguration
+import genericOpenAIPipe.api.GenericOpenAIEndpointProfile
+
+val local = GenericOpenAIConfiguration(
+    model = "local-model",
+    baseUrl = "http://127.0.0.1:8080",
+    endpointProfile = GenericOpenAIEndpointProfile.localV1()
+)
+```
+
+Loopback no-key operation omits Bearer and `x-api-key` headers; Anthropic still sends its non-authentication `anthropic-version` header. Non-loopback HTTP requires the explicit `TPIPE_ALLOW_INSECURE_BASEURL=true` environment variable or `tpipe.allowInsecureBaseUrl=true` system property override.
+
+The internal `GenericOpenAIDefaults.createGenericOpenAIPipe(...)` factory applies `endpointProfile` before selecting `apiMode`, so the same profile is propagated to every pipe created from the configuration.
 
 ---
 
@@ -217,6 +266,26 @@ Creates fully configured BedrockPipe.
 - Sets model (uses inference profile if provided)
 - Configures AWS region
 - Enables Converse API if specified
+
+---
+
+### GenericOpenAIDefaults
+
+Internal factory for GenericOpenAI-backed Manifolds, pipelines, and worker pipes.
+
+```kotlin
+internal object GenericOpenAIDefaults
+```
+
+#### Functions
+
+**`createGenericOpenAIPipe(config: GenericOpenAIConfiguration): GenericOpenAIPipe`**
+
+Creates a GenericOpenAI pipe, applying the model, optional key, base URL, endpoint profile, API mode, and optional tool/structured-output settings from the configuration. `endpointProfile` is applied before the first request, so `GenericOpenAIEndpointProfile.localV1()` works for loopback servers through the same Defaults factory.
+
+**`createManagerPipeline(config: GenericOpenAIConfiguration): Pipeline`** and **`createWorkerPipe(config: GenericOpenAIConfiguration): GenericOpenAIPipe`**
+
+Create configured manager pipelines or worker pipes using the same profile propagation.
 
 ---
 

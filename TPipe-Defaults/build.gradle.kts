@@ -38,8 +38,11 @@ dependencies {
     
     // Test dependencies
     testImplementation("org.jetbrains.kotlin:kotlin-test")
+    testImplementation("junit:junit:4.13.2")
 }
 
 tasks.test {
+    testClassesDirs = files("build/classes/kotlin/test")
+    classpath = sourceSets["test"].runtimeClasspath
     jvmArgs("-Xmx512m")
 }
