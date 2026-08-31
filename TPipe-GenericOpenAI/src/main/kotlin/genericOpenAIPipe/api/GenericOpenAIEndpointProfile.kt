@@ -6,9 +6,9 @@ import java.net.URI
 /**
  * Endpoint paths used by [genericOpenAIPipe.GenericOpenAIPipe] for each wire mode.
  *
- * The default profile preserves the hosted GenericOpenAI behavior. [localV1]
- * matches local OpenAI-compatible servers that expose every protocol below
- * beneath a shared `/v1` prefix.
+ * The default profile uses the standard Anthropic `/v1/messages` route.
+ * [localV1] matches local OpenAI-compatible servers that expose every protocol
+ * below beneath a shared `/v1` prefix.
  *
  * @param chatCompletionsPath Path for [ApiMode.OpenAI] chat completions.
  * @param responsesPath Path for [ApiMode.OpenAIResponses].
@@ -18,7 +18,7 @@ import java.net.URI
 data class GenericOpenAIEndpointProfile(
     val chatCompletionsPath: String = "/chat/completions",
     val responsesPath: String = "/responses",
-    val anthropicMessagesPath: String = "/anthropic/v1/messages"
+    val anthropicMessagesPath: String = "/v1/messages"
 )
 {
     init
@@ -46,7 +46,7 @@ data class GenericOpenAIEndpointProfile(
     companion object
     {
         /**
-         * Hosted GenericOpenAI defaults retained for backward compatibility.
+         * Standard GenericOpenAI endpoint defaults.
          */
         val DEFAULT: GenericOpenAIEndpointProfile = GenericOpenAIEndpointProfile()
 
@@ -59,6 +59,15 @@ data class GenericOpenAIEndpointProfile(
             chatCompletionsPath = "/v1/chat/completions",
             responsesPath = "/v1/responses",
             anthropicMessagesPath = "/v1/messages"
+        )
+
+        /**
+         * Returns the explicit Anthropic-compatible route used by MiniMax.
+         *
+         * @return Profile using `/anthropic/v1/messages` for Anthropic mode.
+         */
+        fun miniMax(): GenericOpenAIEndpointProfile = DEFAULT.copy(
+            anthropicMessagesPath = "/anthropic/v1/messages"
         )
     }
 }

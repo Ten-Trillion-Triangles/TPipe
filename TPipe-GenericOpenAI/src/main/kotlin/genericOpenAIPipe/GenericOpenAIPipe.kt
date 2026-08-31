@@ -108,7 +108,7 @@ class GenericOpenAIPipe : Pipe()
 
     /**
      * Endpoint paths selected for the current API mode.
-     * Defaults preserve the existing hosted GenericOpenAI routes.
+     * Defaults use the standard Anthropic route and existing OpenAI-compatible routes.
      */
     @kotlinx.serialization.Serializable
     private var endpointProfile: GenericOpenAIEndpointProfile = GenericOpenAIEndpointProfile.DEFAULT
@@ -318,8 +318,8 @@ class GenericOpenAIPipe : Pipe()
     /**
      * Returns the endpoint path selected by the current [endpointProfile] and [apiMode].
      *
-     * The default profile preserves the hosted suffixes, while custom profiles
-     * can select paths such as the common local `/v1` routes.
+     * The default profile uses the standard Anthropic suffix, while custom profiles
+     * can select paths such as the common local `/v1` routes or MiniMax's prefixed route.
      *
      * @return The endpoint path (without baseUrl prefix)
      */

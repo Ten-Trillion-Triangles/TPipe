@@ -27,7 +27,7 @@ sealed class ApiMode
 
     /**
      * Anthropic API mode.
-     * Uses Anthropic messages format at `/anthropic/v1/messages`.
+     * Uses Anthropic messages format at `/v1/messages` by default.
      */
     data object Anthropic : ApiMode()
 

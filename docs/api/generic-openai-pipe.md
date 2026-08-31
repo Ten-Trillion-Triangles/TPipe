@@ -88,10 +88,10 @@ sealed class ApiMode
 | Mode | Endpoint | Auth Header |
 |------|----------|-------------|
 | `ApiMode.OpenAI` (default) | `${baseUrl}/chat/completions` | `Authorization: Bearer <key>` |
-| `ApiMode.Anthropic` | `${baseUrl}/anthropic/v1/messages` | `x-api-key: <key>`, `anthropic-version: 2023-06-01` |
+| `ApiMode.Anthropic` | `${baseUrl}/v1/messages` | `x-api-key: <key>`, `anthropic-version: 2023-06-01` |
 | `ApiMode.OpenAIResponses` | `${baseUrl}/responses` | `Authorization: Bearer <key>` |
 
-Use `GenericOpenAIEndpointProfile.localV1()` to change these three paths to `${baseUrl}/v1/chat/completions`, `${baseUrl}/v1/messages`, and `${baseUrl}/v1/responses` without changing serializers or parsers. With a blank key, OpenAI and Responses omit `Authorization`; Anthropic still sends `anthropic-version` but omits `x-api-key`.
+Use `GenericOpenAIEndpointProfile.localV1()` to change the OpenAI and Responses paths to `${baseUrl}/v1/chat/completions` and `${baseUrl}/v1/responses`; Anthropic already defaults to `${baseUrl}/v1/messages`. With a blank key, OpenAI and Responses omit `Authorization`; Anthropic still sends `anthropic-version` but omits `x-api-key`.
 
 > **⚠ `apiMode` and `endpointProfile` are locked after the first API request.** Once the first request is built, changing either setting throws `IllegalStateException`. Configure both before the first call, or create a new pipe instance if you need different wire-format or route settings.
 
@@ -117,7 +117,7 @@ For a non-loopback HTTP compatibility endpoint, explicitly set `TPIPE_ALLOW_INSE
 ```
 
 #### `setEndpointProfile(profile: GenericOpenAIEndpointProfile): GenericOpenAIPipe`
-Selects the endpoint path for each API mode. The default profile preserves the hosted paths shown in the table above. `GenericOpenAIEndpointProfile.localV1()` selects `/v1/chat/completions`, `/v1/responses`, and `/v1/messages`.
+Selects the endpoint path for each API mode. The default profile uses the standard `/v1/messages` Anthropic route and retains the existing OpenAI and Responses paths. `GenericOpenAIEndpointProfile.localV1()` selects `/v1/chat/completions`, `/v1/responses`, and `/v1/messages`.
 
 The profile must be configured before the first API request. It is then locked together with `apiMode`.
 
@@ -129,6 +129,19 @@ val pipe = GenericOpenAIPipe()
     .setEndpointProfile(GenericOpenAIEndpointProfile.localV1())
     .setApiMode(ApiMode.Anthropic)
     .setModel("local-claude-compatible-model")
+```
+
+For MiniMax's provider-specific `/anthropic/v1/messages` route, select
+`GenericOpenAIEndpointProfile.miniMax()` explicitly, or include `/anthropic` in
+the base URL and use the generic default profile.
+
+```kotlin
+val miniMax = GenericOpenAIPipe()
+    .setApiKey(System.getenv("MINIMAX_API_KEY"))
+    .setBaseUrl("https://api.minimax.io")
+    .setEndpointProfile(GenericOpenAIEndpointProfile.miniMax())
+    .setApiMode(ApiMode.Anthropic)
+    .setModel("MiniMax-M2.7")
 ```
 
 ---

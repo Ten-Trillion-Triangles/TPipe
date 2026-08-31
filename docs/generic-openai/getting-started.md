@@ -76,10 +76,10 @@ export GENERIC_OPENAI_API_KEY="sk-..."
 | Mode | Endpoint | Auth header(s) | When to use |
 |:---|:---|:---|:---|
 | `ApiMode.OpenAI` (default) | `${baseUrl}/chat/completions` by default | `Authorization: Bearer <key>` when keyed | OpenAI, Azure OpenAI, DeepSeek, Groq, Together, MiniMax, or a compatible proxy |
-| `ApiMode.Anthropic` | `${baseUrl}/anthropic/v1/messages` by default | `x-api-key: <key>`, `anthropic-version: 2023-06-01` | Anthropic Claude or a Messages-compatible proxy |
+| `ApiMode.Anthropic` | `${baseUrl}/v1/messages` by default | `x-api-key: <key>`, `anthropic-version: 2023-06-01` | Anthropic Claude or a Messages-compatible proxy |
 | `ApiMode.OpenAIResponses` | `${baseUrl}/responses` by default | `Authorization: Bearer <key>` when keyed | OpenAI's newer Responses wire spec (`response.created` / `response.output_text.delta` / `response.completed` events) |
 
-For local servers that expose all three routes beneath `/v1`, use `GenericOpenAIEndpointProfile.localV1()`. This preserves the selected wire format while changing only the transport paths.
+For local servers that expose all routes beneath `/v1`, use `GenericOpenAIEndpointProfile.localV1()`. This changes the OpenAI and Responses paths; Anthropic already uses `/v1/messages` by default. For MiniMax's `/anthropic/v1/messages` route, use `GenericOpenAIEndpointProfile.miniMax()` explicitly when the base URL is `https://api.minimax.io`.
 
 The `getAuthHeaders()` and `getEndpoint()` methods on the pipe select the right values for the active mode at the moment the request is built, so the rest of your configuration is identical across modes.
 

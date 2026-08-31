@@ -71,7 +71,7 @@ data class GenericOpenAIConfiguration(
 - **`pipeCount`**: Number of GenericOpenAI pipes in the manager pipeline (default: 1)
 - **`baseUrl`**: HTTP(S) base URL. Plain HTTP is automatic only for `localhost`, `127.0.0.0/8`, and `::1`.
 - **`apiMode`**: `OpenAI`, `OpenAIResponses`, or `Anthropic`; unknown values use `OpenAI`.
-- **`endpointProfile`**: `GenericOpenAIEndpointProfile.DEFAULT` preserves hosted paths. `GenericOpenAIEndpointProfile.localV1()` selects `/v1/chat/completions`, `/v1/responses`, and `/v1/messages`.
+- **`endpointProfile`**: `GenericOpenAIEndpointProfile.DEFAULT` uses the standard Anthropic `/v1/messages` route while retaining the existing OpenAI and Responses paths. `GenericOpenAIEndpointProfile.localV1()` selects `/v1/chat/completions`, `/v1/responses`, and `/v1/messages`; `miniMax()` explicitly selects MiniMax's `/anthropic/v1/messages` route.
 
 ```kotlin
 import Defaults.GenericOpenAIConfiguration

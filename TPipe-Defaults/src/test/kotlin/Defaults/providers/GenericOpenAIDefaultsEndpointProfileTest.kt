@@ -38,4 +38,18 @@ class GenericOpenAIDefaultsEndpointProfileTest
 
         assertEquals("/chat/completions", pipe.internalGetEndpointForTest())
     }
+
+    @Test
+    fun omittedProfileUsesGenericAnthropicPath()
+    {
+        val pipe = GenericOpenAIDefaults.createGenericOpenAIPipe(
+            GenericOpenAIConfiguration(
+                model = "test-model",
+                apiKey = "test-key",
+                apiMode = "Anthropic"
+            )
+        )
+
+        assertEquals("/v1/messages", pipe.internalGetEndpointForTest())
+    }
 }

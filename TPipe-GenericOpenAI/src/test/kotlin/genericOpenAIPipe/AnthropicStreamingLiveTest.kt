@@ -3,6 +3,7 @@ package genericOpenAIPipe
 import com.TTT.Debug.PipeTracer
 import com.TTT.Pipeline.Pipeline
 import genericOpenAIPipe.api.ApiMode
+import genericOpenAIPipe.api.GenericOpenAIEndpointProfile
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
@@ -72,6 +73,7 @@ class AnthropicStreamingLiveTest
         val pipe: GenericOpenAIPipe = GenericOpenAIPipe()
             .setApiKey(apiKey)
             .setBaseUrl(MINIMAX_BASE)
+            .setEndpointProfile(GenericOpenAIEndpointProfile.miniMax())
             .setApiMode(ApiMode.Anthropic)
             .setModel(MINIMAX_MODEL)
             .setMaxTokens(MAX_TOKENS)

@@ -23,13 +23,13 @@ class GenericOpenAIEndpointProfileTest
 //=========================================Profile Contract=========================================================
 
     @Test
-    fun defaultProfilePreservesHostedPaths()
+    fun defaultProfileUsesProtocolPaths()
     {
         val profile = GenericOpenAIEndpointProfile.DEFAULT
 
         Assertions.assertEquals("/chat/completions", profile.chatCompletionsPath)
         Assertions.assertEquals("/responses", profile.responsesPath)
-        Assertions.assertEquals("/anthropic/v1/messages", profile.anthropicMessagesPath)
+        Assertions.assertEquals("/v1/messages", profile.anthropicMessagesPath)
     }
 
     @Test
@@ -40,6 +40,14 @@ class GenericOpenAIEndpointProfileTest
         Assertions.assertEquals("/v1/chat/completions", profile.chatCompletionsPath)
         Assertions.assertEquals("/v1/responses", profile.responsesPath)
         Assertions.assertEquals("/v1/messages", profile.anthropicMessagesPath)
+    }
+
+    @Test
+    fun miniMaxProfileRetainsExplicitProviderRoute()
+    {
+        val profile = GenericOpenAIEndpointProfile.miniMax()
+
+        Assertions.assertEquals("/anthropic/v1/messages", profile.anthropicMessagesPath)
     }
 
     @Test

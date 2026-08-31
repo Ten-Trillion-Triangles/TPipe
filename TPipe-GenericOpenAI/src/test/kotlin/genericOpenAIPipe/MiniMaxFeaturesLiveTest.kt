@@ -6,6 +6,7 @@ import com.TTT.Debug.TraceFormat
 import com.TTT.Debug.TracingBuilder
 import com.TTT.Pipeline.Pipeline
 import genericOpenAIPipe.api.ApiMode
+import genericOpenAIPipe.api.GenericOpenAIEndpointProfile
 import genericOpenAIPipe.env.FunctionSchema
 import genericOpenAIPipe.env.ToolDefinition
 import kotlinx.coroutines.runBlocking
@@ -136,6 +137,7 @@ class MiniMaxFeaturesLiveTest
         val pipe: GenericOpenAIPipe = GenericOpenAIPipe()
         pipe.setApiKey(apiKey())
         pipe.setBaseUrl(MINIMAX_ANTHROPIC_BASE)
+        pipe.setEndpointProfile(GenericOpenAIEndpointProfile.miniMax())
         pipe.setApiMode(ApiMode.Anthropic)
         pipe.setModel(MINIMAX_MODEL)
         pipe.setSystemPrompt(

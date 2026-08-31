@@ -84,13 +84,13 @@ class OpenAIResponsesPipeDispatchTest
     }
 
     @Test
-    fun testGetEndpointAnthropicUnchanged()
+    fun testGetEndpointAnthropicUsesProtocolPath()
     {
         val pipe = GenericOpenAIPipe()
             .setApiKey("test-key")
             .setBaseUrl("https://example.com/v1")
             .setApiMode(ApiMode.Anthropic)
-        Assertions.assertEquals("/anthropic/v1/messages", pipe.internalGetEndpointForTest())
+        Assertions.assertEquals("/v1/messages", pipe.internalGetEndpointForTest())
     }
 
 //=========================================Non-Streaming Round-Trip=========================================
