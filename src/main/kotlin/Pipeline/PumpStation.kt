@@ -30,9 +30,11 @@ import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceEvent
 import com.TTT.Debug.TraceFormat
+import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.Util.serialize
 import com.TTT.Util.writeStringToFile
 import com.TTT.Util.deepCopy
+import com.TTT.Util.extractJson
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -631,11 +633,12 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
         // Priority 1: PCP function — dispatch to PcpExecutionDispatcher if a function is named
         if (pcpSchema != null && pcpSchema!!.tpipeOptions.isNotEmpty())
         {
-            val functionName = content.tools.tPipeContextOptions.functionName
+            val pcpData = extractJson<PcPRequest>(content.text)
+            val functionName = pcpData?.tPipeContextOptions?.functionName ?: ""
             if (functionName.isNotBlank())
             {
                 val dispatcher = PcpExecutionDispatcher()
-                val result = dispatcher.executeRequest(content.tools, pcpSchema!!)
+                val result = dispatcher.executeRequest(pcpData!!, pcpSchema!!)
                 if (result.success)
                 {
                     val pcpResult = MultimodalContent(text = result.output)
