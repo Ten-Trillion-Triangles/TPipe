@@ -690,6 +690,64 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
         )
     }
 
+    /**
+     * Executes the standalone-capable contents of this path without a parent [PumpStation].
+     *
+     * The local P2P entry point preserves the PCP, internal-agent, and agent-builder execution
+     * priority used by [execute]. The station-aware [executionFunction] branch is intentionally
+     * excluded because its callback contract requires a station, turn history, and turn summary.
+     *
+     * @param content The [MultimodalContent] input to this path.
+     * @return The result produced by the first successful standalone execution mechanism.
+     * @throws IllegalStateException if no standalone execution mechanism is configured.
+     */
+    override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
+    {
+        // Priority 1: PCP function — dispatch the request extracted from the content text.
+        if (pcpSchema != null && pcpSchema!!.tpipeOptions.isNotEmpty())
+        {
+            val pcpData = extractJson<PcPRequest>(content.text)
+            val functionName = pcpData?.tPipeContextOptions?.functionName ?: ""
+            if (functionName.isNotBlank())
+            {
+                val dispatcher = PcpExecutionDispatcher()
+                val result = dispatcher.executeRequest(pcpData!!, pcpSchema!!)
+                if (result.success)
+                {
+                    val pcpResult = MultimodalContent(text = result.output)
+                    pcpResult.metadata["pcpOutput"] = result.output
+                    outputCaptureFunction?.invoke(pcpResult)
+                    return pcpResult
+                }
+                // Standalone execution has no PumpStation task state to record the failure on.
+                // Fall through to the next standalone-capable mechanism.
+            }
+        }
+
+        // Priority 2: internal agent
+        if (internalAgent != null)
+        {
+            val internalResult = internalAgent!!.executeLocal(content)
+            outputCaptureFunction?.invoke(internalResult)
+            return internalResult
+        }
+
+        // Priority 3: agent builder function
+        if (agentBuilderFunction != null)
+        {
+            val agent = agentBuilderFunction!!.invoke(null)
+            agent.P2PInit()
+            val builderResult = agent.executeLocal(content)
+            outputCaptureFunction?.invoke(builderResult)
+            return builderResult
+        }
+
+        throw IllegalStateException(
+            "PathObject.executeLocal() failed for path '${pathName}': no standalone execution mechanism configured. " +
+            "A bound PCP function, internalAgent, or agentBuilderFunction is required."
+        )
+    }
+
 //-----------------------------------------------------DITL-------------------------------------------------------------
 
 }
