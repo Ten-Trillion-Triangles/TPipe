@@ -67,6 +67,18 @@ class DefaultsManifoldDsl(private val builder: ManifoldBuilder<ManifoldStage.Ini
             applyDefaults(configuration.manifoldMemory)
         }
     }
+
+    /** Configure the manifold manager from a Codex OAuth defaults configuration. */
+    fun codex(configuration: CodexConfiguration)
+    {
+        require(configuration.validate()) { "Invalid Codex configuration: $configuration" }
+        builder.manager {
+            defaultsPipeline(ManifoldDefaults.buildDefaultManagerPipeline(configuration))
+        }
+        builder.history {
+            applyDefaults(configuration.manifoldMemory)
+        }
+    }
 }
 
 /**

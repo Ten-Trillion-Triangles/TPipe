@@ -1,6 +1,7 @@
 package Defaults
 
 import Defaults.providers.BedrockDefaults
+import Defaults.providers.CodexDefaults
 import Defaults.providers.OllamaDefaults
 import Defaults.providers.OpenRouterDefaults
 import com.TTT.Pipeline.Manifold
@@ -87,6 +88,25 @@ object ManifoldDefaults
             throw RuntimeException("Failed to create OpenRouter Manifold: ${e.message}", e)
         }
     }
+
+    /**
+     * Creates a Manifold configured for the subscription-backed Codex OAuth transport.
+     *
+     * @param configuration Codex model, credential-store, and manager settings.
+     * @return Fully configured Manifold instance using GenericOpenAI Responses mode.
+     */
+    fun withCodex(configuration: CodexConfiguration): Manifold
+    {
+        require(configuration.validate()) { "Invalid Codex configuration: $configuration" }
+        return try
+        {
+            CodexDefaults.createManifold(configuration)
+        }
+        catch(e: Exception)
+        {
+            throw RuntimeException("Failed to create Codex Manifold: ${e.message}", e)
+        }
+    }
     
     /**
      * Lists all available providers that can be used for Manifold configuration.
@@ -100,6 +120,7 @@ object ManifoldDefaults
         if(isProviderAvailable("bedrock")) providers.add("bedrock")
         if(isProviderAvailable("ollama")) providers.add("ollama")
         if(isProviderAvailable("openrouter")) providers.add("openrouter")
+        if(isProviderAvailable("codex")) providers.add("codex")
 
         return providers
     }
@@ -126,6 +147,10 @@ object ManifoldDefaults
                 }
                 "openrouter" -> {
                     Class.forName("openrouterPipe.OpenRouterPipe")
+                    true
+                }
+                "codex" -> {
+                    Class.forName("codexPipe.CodexPipes")
                     true
                 }
                 else -> false
@@ -178,6 +203,19 @@ object ManifoldDefaults
     {
         val managerPipeline = OpenRouterDefaults.createManagerPipeline(openRouterConfig)
         assignManagerPipelineDefaults(managerPipeline, openRouterConfig.manifoldMemory)
+        return managerPipeline
+    }
+
+    /**
+     * Builds the standard two-pipe manager pipeline for Codex OAuth.
+     *
+     * @param codexConfig Codex configuration for the manager pipes.
+     * @return Configured manager pipeline with the standard defaults-module prompts.
+     */
+    fun buildDefaultManagerPipeline(codexConfig: CodexConfiguration): Pipeline
+    {
+        val managerPipeline = CodexDefaults.createManagerPipeline(codexConfig)
+        assignManagerPipelineDefaults(managerPipeline, codexConfig.manifoldMemory)
         return managerPipeline
     }
 

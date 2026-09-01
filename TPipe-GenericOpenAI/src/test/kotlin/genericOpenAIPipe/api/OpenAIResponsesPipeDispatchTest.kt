@@ -1,9 +1,14 @@
 package genericOpenAIPipe.api
 
+import com.TTT.Util.serialize
 import com.TTT.P2P.P2PError
 import com.TTT.P2P.P2PException
+import com.TTT.PipeContextProtocol.FunctionRegistry
+import com.TTT.PipeContextProtocol.PcpContext
+import com.TTT.PipeContextProtocol.TPipeContextOptions
 import genericOpenAIPipe.GenericOpenAIPipe
 import genericOpenAIPipe.MockStreamingConnectionFactory
+import genericOpenAIPipe.access.GenericOpenAIAccessProfile
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -45,6 +50,7 @@ import org.junit.jupiter.api.Assertions
  */
 class OpenAIResponsesPipeDispatchTest
 {
+    fun echoForCodex(value: String): String = "echoed:$value"
 
 //=========================================Endpoint + Auth Headers=========================================
 
@@ -74,6 +80,62 @@ class OpenAIResponsesPipeDispatchTest
     }
 
     @Test
+    fun testAccessProfileIsNotSerialized()
+    {
+        val pipe = GenericOpenAIPipe()
+            .setBaseUrl("https://mock.local/v1")
+            .setApiMode(ApiMode.OpenAIResponses)
+            .setAccessProfile(RotatingTestAccessProfile(forceStreaming = true))
+        pipe.setModel("test-model")
+
+        val serialized = serialize(pipe)
+
+        Assertions.assertFalse(serialized.contains("test-profile"))
+        Assertions.assertFalse(serialized.contains("accessProfile"))
+    }
+
+    @Test
+    fun testAccessProfileRecoversOneKtorUnauthorizedResponse() = runBlocking<Unit>
+    {
+        val callCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val profile = RotatingTestAccessProfile(forceStreaming = false)
+        val engine = MockEngine {
+            if(callCount.incrementAndGet() == 1)
+            {
+                respond("", HttpStatusCode.Unauthorized)
+            }
+            else
+            {
+                respond(
+                    cannedResponsesBodyForAccessRecovery,
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+                )
+            }
+        }
+        val client = HttpClient(engine)
+        val pipe = GenericOpenAIPipe()
+            .setBaseUrl("https://mock.local/v1")
+            .setApiMode(ApiMode.OpenAIResponses)
+            .setAccessProfile(profile)
+        pipe.setModel("test-model")
+        pipe.setStreamingEnabled(false)
+        pipe.injectHttpClientForTest(client)
+        pipe.initForTest()
+        try
+        {
+            Assertions.assertEquals("retry-pong", pipe.generateTextForTest("hi"))
+            Assertions.assertEquals(2, callCount.get())
+            Assertions.assertEquals(1, profile.recoveryCount)
+        }
+        finally
+        {
+            pipe.abortForTest()
+            client.close()
+        }
+    }
+
+    @Test
     fun testGetEndpointOpenAICompletionsUnchanged()
     {
         val pipe = GenericOpenAIPipe()
@@ -81,6 +143,92 @@ class OpenAIResponsesPipeDispatchTest
             .setBaseUrl("https://example.com/v1")
             .setApiMode(ApiMode.OpenAI)
         Assertions.assertEquals("/chat/completions", pipe.internalGetEndpointForTest())
+    }
+
+    @Test
+    fun testAccessProfileRecoversOneDirectStreamingUnauthorizedResponse() = runBlocking<Unit>
+    {
+        val callCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val profile = RotatingTestAccessProfile(forceStreaming = true)
+        val sseBody = """
+            event: response.output_text.delta
+            data: {"type":"response.output_text.delta","delta":"recovered"}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"status":"completed"}}
+
+        """.trimIndent()
+        val factory = MockStreamingConnectionFactory(
+            responseBodySupplier = { sseBody },
+            statusCodeSupplier = { if(callCount.incrementAndGet() == 1) 401 else 200 },
+        )
+        val pipe = GenericOpenAIPipe()
+            .setBaseUrl("https://mock.local/v1")
+            .setApiMode(ApiMode.OpenAIResponses)
+            .setAccessProfile(profile)
+        pipe.setModel("test-model")
+        pipe.injectStreamingConnectionFactoryForTest(factory)
+        pipe.initForTest()
+        try
+        {
+            Assertions.assertEquals("recovered", pipe.generateTextForTest("hi"))
+            Assertions.assertEquals(2, callCount.get())
+            Assertions.assertEquals(1, profile.recoveryCount)
+            Assertions.assertEquals("Bearer rotated", factory.capturedHeaders["Authorization"])
+        }
+        finally
+        {
+            pipe.abortForTest()
+        }
+    }
+
+    @Test
+    fun testCodexShapedResponsesTextStillReachesExistingPcpDispatcher() = runBlocking<Unit>
+    {
+        FunctionRegistry.clear()
+        FunctionRegistry.registerFunction("echo", ::echoForCodex)
+        val pcpContext = PcpContext().apply {
+            addTPipeOption(TPipeContextOptions().apply { functionName = "echo" })
+        }
+        val request = com.TTT.PipeContextProtocol.PcPRequest().apply {
+            tPipeContextOptions = TPipeContextOptions().apply { functionName = "echo" }
+            argumentsOrFunctionParams = listOf("codex")
+        }
+        val responseText = serialize(request, encodedefault = true)
+        val sseBody = """
+            event: response.output_text.delta
+            data: {"type":"response.output_text.delta","delta":${kotlinx.serialization.json.JsonPrimitive(responseText)}}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"status":"completed"}}
+
+        """.trimIndent()
+        val factory = MockStreamingConnectionFactory(responseBodySupplier = { sseBody })
+        val pipe = GenericOpenAIPipe()
+            .setBaseUrl("https://mock.local/v1")
+            .setApiMode(ApiMode.OpenAIResponses)
+            .setAccessProfile(RotatingTestAccessProfile(forceStreaming = true))
+        pipe.setModel("gpt-5-codex")
+        pipe.setPcPContext(pcpContext)
+        pipe.setSystemPrompt("Use the available tool when appropriate.")
+        pipe.injectStreamingConnectionFactoryForTest(factory)
+        pipe.initForTest()
+        try
+        {
+            val llmResponse = pipe.generateTextForTest("run the tool")
+            Assertions.assertTrue(factory.capturedRequestBody.contains("Pipe Context Protocol"))
+            Assertions.assertTrue(factory.capturedRequestBody.contains("echo"))
+            Assertions.assertFalse(factory.capturedRequestBody.contains("\"tools\""))
+
+            val execution = pipe.processPcpResponse(llmResponse)
+            Assertions.assertTrue(execution.success, "PCP execution failed: ${execution.errors}")
+            Assertions.assertEquals("echoed:codex", execution.results.single().output)
+        }
+        finally
+        {
+            pipe.abortForTest()
+            FunctionRegistry.clear()
+        }
     }
 
     @Test
@@ -182,6 +330,33 @@ class OpenAIResponsesPipeDispatchTest
         pipe.injectStreamingConnectionFactoryForTest(factory)
         pipe.initForTest()
         return pipe to factory
+    }
+
+    private class RotatingTestAccessProfile(
+        private val forceStreaming: Boolean,
+    ) : GenericOpenAIAccessProfile
+    {
+        override val profileName: String = "test-profile"
+        override val responsesWirePolicy: OpenAIResponsesWirePolicy = OpenAIResponsesWirePolicy(
+            forceStreaming = forceStreaming,
+            messageItemType = "message",
+        )
+        var recoveryCount: Int = 0
+            private set
+
+        override suspend fun headersForRequest(
+            method: String,
+            url: String,
+            body: ByteArray,
+        ): Map<String, String> = mapOf(
+            "Authorization" to if(recoveryCount == 0) "Bearer initial" else "Bearer rotated"
+        )
+
+        override suspend fun recoverUnauthorized(): Boolean
+        {
+            recoveryCount++
+            return true
+        }
     }
 
     @Test
@@ -342,5 +517,18 @@ class OpenAIResponsesPipeDispatchTest
         {
             pipe.abortForTest()
         }
+    }
+
+    private companion object
+    {
+        val cannedResponsesBodyForAccessRecovery = """
+            {
+              "id":"resp_retry",
+              "object":"response",
+              "status":"completed",
+              "model":"test-model",
+              "output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"retry-pong"}]}]
+            }
+        """.trimIndent()
     }
 }

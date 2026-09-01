@@ -153,6 +153,9 @@ Integration guides for different AI providers:
 #### OpenRouter
 - [Getting Started with TPipe-OpenRouter](docs/openrouter/getting-started.md) - Unified API access to 300+ models
 
+#### Codex OAuth
+- [Getting Started with TPipe-Codex](docs/codex/getting-started.md) - ChatGPT subscription-backed OAuth transport
+
 ### 📚 API Reference
 #### Core APIs
 - [Pipe Class API](docs/api/pipe.md) - Complete Pipe class reference
@@ -174,6 +177,7 @@ Integration guides for different AI providers:
 - [Bedrock Mantle API](docs/api/bedrock-mantle.md) - `BedrockMantleConfiguration`, `BedrockMantleAuth` (Bearer / SigV4 / Streaming variants), `BedrockMantleEnv` env-var precedence
 - [Ollama Pipe API](docs/api/ollama-pipe.md) - Local Ollama model interface
 - [OpenRouter Pipe API](docs/api/openrouter-pipe.md) - OpenRouter unified API interface
+- [Codex OAuth API](docs/api/codex-oauth.md) - OAuth manager, credential store, model catalog, and GenericOpenAI profile
 
 #### Advanced APIs
 - [Debug Package API](docs/api/debug-package.md) - Tracing and monitoring tools

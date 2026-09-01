@@ -107,6 +107,7 @@ class OpenAIResponsesRequestSerializer : RequestSerializer
                 // dynamic user/assistant turns.
                 add(
                     OpenAIResponsesMessageItem(
+                        type = options.responsesPolicy?.messageItemType,
                         role = "developer",
                         content = listOf(
                             OpenAIResponsesInputPart.InputTextPart(
@@ -117,23 +118,34 @@ class OpenAIResponsesRequestSerializer : RequestSerializer
                     )
                 )
             }
-            inputMessages.forEach { add(convertMessage(it)) }
+            inputMessages.forEach { add(convertMessage(it, options.responsesPolicy?.messageItemType)) }
+        }
+
+        val policy = options.responsesPolicy
+        val nativeTools = when {
+            request.tools != null -> request.tools.map { convertTool(it) }
+            policy?.emitEmptyToolsWhenNone == true -> emptyList()
+            else -> null
         }
 
         return OpenAIResponsesRequest(
             model = request.model,
             input = input,
             instructions = if (boundary == MantleGpt56CacheBoundary.AFTER_INSTRUCTIONS) null else instructions,
-            maxOutputTokens = request.maxTokens ?: request.maxCompletionTokens,
-            temperature = request.temperature,
-            topP = request.topP,
-            stream = request.stream,
-            tools = request.tools?.map { convertTool(it) },
-            toolChoice = request.toolChoice,
-            parallelToolCalls = request.parallelToolCalls,
+            maxOutputTokens = if (policy?.emitMaxOutputTokens != false) {
+                request.maxTokens ?: request.maxCompletionTokens
+            } else null,
+            temperature = if (policy?.emitSamplingParameters != false) request.temperature else null,
+            topP = if (policy?.emitSamplingParameters != false) request.topP else null,
+            stream = if (policy?.forceStreaming == true) true else request.stream,
+            store = policy?.store,
+            include = policy?.include,
+            tools = nativeTools,
+            toolChoice = request.toolChoice ?: policy?.emptyToolChoice,
+            parallelToolCalls = request.parallelToolCalls ?: policy?.emptyParallelToolCalls,
             text = convertResponseFormat(request.responseFormat),
             reasoning = convertReasoning(request.reasoning),
-            user = request.user,
+            user = if (policy?.emitUser != false) request.user else null,
             promptCacheOptions = cacheMeta?.let { PromptCacheOptions(mode = it.mode, ttl = it.ttl) },
         )
     }
@@ -186,10 +198,11 @@ class OpenAIResponsesRequestSerializer : RequestSerializer
     /**
      * Converts a single non-system [ChatMessage] to a Responses [OpenAIResponsesMessageItem].
      */
-    private fun convertMessage(message: ChatMessage): OpenAIResponsesMessageItem
+    private fun convertMessage(message: ChatMessage, type: String?): OpenAIResponsesMessageItem
     {
         val parts = convertContent(message.content)
         return OpenAIResponsesMessageItem(
+            type = type,
             role = message.role,
             content = parts
         )

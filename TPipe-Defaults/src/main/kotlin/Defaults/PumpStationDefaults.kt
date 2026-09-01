@@ -1,6 +1,7 @@
 package Defaults
 
 import Defaults.providers.OpenRouterDefaults
+import Defaults.providers.CodexDefaults
 import com.TTT.Debug.TraceConfig
 import com.TTT.P2P.KillSwitch
 import com.TTT.Pipeline.DEFAULT_DISPATCH_PROMPT
@@ -11,6 +12,8 @@ import com.TTT.Pipeline.PumpStationBuilder
 import com.TTT.Pipeline.PumpStationMemoryManagementMode
 import com.TTT.Pipeline.PumpStationStage
 import com.TTT.Pipeline.pumpStation
+import codexPipe.auth.CodexAuthManager
+import genericOpenAIPipe.GenericOpenAIPipe
 import openrouterPipe.OpenRouterPipe
 
 /**
@@ -114,6 +117,45 @@ object PumpStationDefaults
     }
 
     /**
+     * Creates a PumpStation using Codex OAuth for both its judge and dispatch agents.
+     *
+     * @param configuration Codex model, credential-store, and import settings.
+     * @param configure Optional builder overrides applied after the defaults.
+     * @return Configured PumpStation ready for paths to be registered.
+     */
+    fun withCodex(
+        configuration: CodexConfiguration,
+        configure: PumpStationBuilder<PumpStationStage.Initial>.() -> Unit = {}
+    ): PumpStation
+    {
+        require(configuration.validate()) { "Invalid Codex configuration: $configuration" }
+        return try
+        {
+            val authManager = CodexDefaults.createAuthManager(configuration)
+            pumpStation("codex-defaults") {
+                judgeAgent = buildCodexPipeline(configuration, authManager, DEFAULT_JUDGE_PROMPT)
+                dispatchAgent = buildCodexPipeline(configuration, authManager, DEFAULT_DISPATCH_PROMPT)
+
+                val ksConfig = recommendedKillSwitchConfig()
+                killSwitchConfiguration = KillSwitch(
+                    inputTokenLimit = ksConfig.inputTokenLimit,
+                    outputTokenLimit = ksConfig.outputTokenLimit
+                )
+
+                val (mode, threshold) = recommendedMemoryConfig()
+                memoryManagementMode = mode
+                compactionThreshold = threshold
+                tracingConfiguration = TraceConfig(enabled = true)
+                configure()
+            }
+        }
+        catch(e: Exception)
+        {
+            throw RuntimeException("Failed to create Codex PumpStation: ${e.message}", e)
+        }
+    }
+
+    /**
      * Build a `Pipeline` of one `OpenRouterPipe` configured to act as the judge agent.
      * The pipe's system prompt is set to [DEFAULT_JUDGE_PROMPT] so the harness's prompt-injection
      * machinery renders the standard judge JSON schema request.
@@ -134,6 +176,18 @@ object PumpStationDefaults
     {
         val pipe: OpenRouterPipe = OpenRouterDefaults.createOpenRouterPipe(config)
         pipe.setSystemPrompt(DEFAULT_DISPATCH_PROMPT)
+        return Pipeline().apply { add(pipe) }
+    }
+
+    /** Builds one Codex agent pipeline with the supplied harness prompt. */
+    private fun buildCodexPipeline(
+        config: CodexConfiguration,
+        authManager: CodexAuthManager,
+        prompt: String,
+    ): Pipeline
+    {
+        val pipe: GenericOpenAIPipe = CodexDefaults.createCodexPipe(config, authManager)
+        pipe.setSystemPrompt(prompt)
         return Pipeline().apply { add(pipe) }
     }
 }

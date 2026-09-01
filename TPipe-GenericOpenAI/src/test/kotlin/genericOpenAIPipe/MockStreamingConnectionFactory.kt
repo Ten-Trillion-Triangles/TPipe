@@ -28,7 +28,8 @@ import java.io.OutputStream
  */
 internal class MockStreamingConnectionFactory(
     private val responseBodySupplier: () -> String,
-    private val statusCode: Int = 200
+    private val statusCode: Int = 200,
+    private val statusCodeSupplier: () -> Int = { statusCode },
 ) : HttpStreamingConnectionFactory
 {
     var capturedRequestBody: String = ""
@@ -57,7 +58,7 @@ internal class MockStreamingConnectionFactory(
         capturedHeaders = headers
         capturedConnectTimeoutMs = connectTimeoutMs
         capturedReadTimeoutMs = readTimeoutMs
-        return MockStreamingConnection(responseBodySupplier, statusCode) { body ->
+        return MockStreamingConnection(responseBodySupplier, statusCodeSupplier()) { body ->
             capturedRequestBody = body
         }
     }
