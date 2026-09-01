@@ -51,6 +51,28 @@ class ManifoldDslDefaultsTest
         assertTrue(builtManifold.isManagerBudgetControlEnabled())
     }
 
+    @Test
+    fun codexDefaultsConfigureManagerAndHistory()
+    {
+        val builtManifold = manifold {
+            defaults {
+                codex(CodexConfiguration(model = "gpt-5-codex"))
+            }
+            worker("implementation-worker") {
+                pipeline {
+                    add(
+                        DummyPipe()
+                            .setContextWindowSize(2048)
+                            .autoTruncateContext()
+                    )
+                }
+            }
+        }
+
+        assertEquals("entry pipe", builtManifold.getManagerPipeline().getPipes()[0].pipeName)
+        assertEquals("Agent caller pipe", builtManifold.getManagerPipeline().getPipes()[1].pipeName)
+    }
+
     /**
      * Verifies that non-default provider memory settings are mirrored into the manifold DSL path instead of being
      * silently dropped.

@@ -8,6 +8,7 @@ import kotlin.test.assertSame
 import kotlin.test.assertEquals
 import com.TTT.Pipeline.Pipeline
 import bedrockPipe.BedrockMultimodalPipe
+import genericOpenAIPipe.GenericOpenAIPipe
 
 /**
  * Basic tests for ManifoldDefaults functionality
@@ -56,6 +57,20 @@ class ManifoldDefaultsTest
             model = ""
         )
         assertFalse(invalidConfig.validate())
+    }
+
+    @Test
+    fun `Codex defaults validate and create GenericOpenAI Responses pipes`()
+    {
+        val configuration = CodexConfiguration(model = "gpt-5-codex", pipeCount = 2)
+        assertTrue(configuration.validate())
+
+        val manifold = ManifoldDefaults.withCodex(configuration)
+
+        assertEquals(2, manifold.getManagerPipeline().getPipes().size)
+        assertTrue(manifold.getManagerPipeline().getPipes().all { it is GenericOpenAIPipe })
+        assertEquals("entry pipe", ManifoldDefaults.buildDefaultManagerPipeline(configuration)
+            .getPipes()[0].pipeName)
     }
 
     @Test

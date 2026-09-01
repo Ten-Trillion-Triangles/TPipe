@@ -34,6 +34,7 @@ dependencies {
     implementation(project(":TPipe-Ollama"))
     implementation(project(":TPipe-OpenRouter"))
     implementation(project(":TPipe-GenericOpenAI"))
+    implementation(project(":TPipe-Codex"))
     implementation(libs.ktor.serialization.kotlinx.json)
     
     // Test dependencies

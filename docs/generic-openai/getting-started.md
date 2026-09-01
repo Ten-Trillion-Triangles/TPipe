@@ -6,6 +6,7 @@
 - [Basic Usage](#basic-usage)
 - [API Modes](#api-modes)
 - [Authentication](#authentication)
+- [Codex OAuth access profile](#codex-oauth-access-profile)
 - [Your First Pipe (per mode)](#your-first-pipe-per-mode)
 - [Third-Party Providers](#third-party-providers)
 - [Structured Outputs](#structured-outputs)
@@ -105,6 +106,27 @@ There are three ways to provide credentials, checked in this order by `init()`:
     ```
 
 `init()` walks the chain in this order: pipe-level `apiKey` field → `GenericOpenAIEnv.resolveApiKey()` (programmatic + env). If nothing resolves, only an exact loopback base URL may continue without credentials; hosted endpoints throw `IllegalStateException`. Use `genericOpenAIEnv.hasApiKey()` to probe before constructing a hosted pipe.
+
+### Codex OAuth access profile
+
+For ChatGPT subscription-backed Codex access, use the `TPipe-Codex` factory. It
+returns the same `GenericOpenAIPipe` class, but supplies a transient OAuth access
+profile and Codex-specific Responses wire policy:
+
+```kotlin
+implementation(project(":TPipe-Codex"))
+```
+
+```kotlin
+val auth = CodexAuthManager.default()
+val pipe = CodexPipes.create("gpt-5-codex", auth)
+```
+
+The profile forces streaming on the wire, emits `store=false` and
+`include=["reasoning.encrypted_content"]`, suppresses generic sampling and
+identity controls, and does not translate TPipe PCP tools into native provider
+tools. See [Codex OAuth](../codex/getting-started.md) for login, file import,
+refresh, and model discovery.
 
 ### Endpoint overrides for proxies and enterprise gateways
 

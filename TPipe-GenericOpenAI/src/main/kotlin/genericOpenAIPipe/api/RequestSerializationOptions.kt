@@ -19,7 +19,10 @@ package genericOpenAIPipe.api
  *                    [genericOpenAIPipe.mantle.MantleGpt56PromptCacheMetadata]).
  *                    Empty by default so existing call sites see no behavior
  *                    change.
+ * @property responsesPolicy Optional typed Responses wire policy. Null keeps
+ *                           the existing generic Responses serialization.
  */
 data class RequestSerializationOptions(
     val metadata: Map<String, Any?> = emptyMap(),
+    val responsesPolicy: OpenAIResponsesWirePolicy? = null,
 )

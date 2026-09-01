@@ -303,6 +303,30 @@ data class GenericOpenAIConfiguration(
 }
 
 /**
+ * Configuration for the subscription-backed Codex OAuth transport.
+ *
+ * @param model Codex model slug to use (required).
+ * @param pipeCount Number of shared-manager pipes to create.
+ * @param credentialStorePath Optional TPipe-owned OAuth file path. The default is
+ *  `~/.tpipe/codex/auth.json` and can also be selected through `TPIPE_CODEX_AUTH_FILE`.
+ * @param importCodexCliCredentialsIfMissing Whether to import file-backed Codex CLI OAuth
+ *  credentials once when the TPipe store is empty.
+ * @param cliAuthFile Optional Codex CLI auth file override for that one-way import.
+ * @param manifoldMemory Manifold manager-memory defaults applied by `TPipe-Defaults`.
+ */
+data class CodexConfiguration(
+    var model: String,
+    var pipeCount: Int = 2,
+    var credentialStorePath: String? = null,
+    var importCodexCliCredentialsIfMissing: Boolean = true,
+    var cliAuthFile: String? = null,
+    var manifoldMemory: ManifoldMemoryConfiguration = ManifoldMemoryConfiguration()
+) : ProviderConfiguration()
+{
+    override fun validate(): Boolean = model.isNotBlank() && pipeCount > 0
+}
+
+/**
  * Grid-specific Ollama defaults configuration.
  *
  * @param model Model name to use.

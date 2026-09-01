@@ -6,11 +6,13 @@
   - [ProviderConfiguration](#providerconfiguration)
   - [BedrockConfiguration](#bedrockconfiguration)
   - [OllamaConfiguration](#ollamaconfiguration)
+  - [CodexConfiguration](#codexconfiguration)
 - [Factory Classes](#factory-classes)
   - [ManifoldDefaults](#manifolddefaults)
   - [BedrockDefaults](#bedrockdefaults)
   - [GenericOpenAIDefaults](#genericopenaidefaults)
   - [OllamaDefaults](#ollamadefaults)
+  - [CodexDefaults](#codexdefaults)
 - [Reasoning System](#reasoning-system)
   - [ReasoningBuilder](#reasoningbuilder)
   - [ReasoningPrompts](#reasoningprompts)
@@ -174,6 +176,27 @@ Validates Ollama configuration parameters.
 
 ---
 
+### CodexConfiguration
+
+Configuration for the subscription-backed Codex OAuth transport.
+
+```kotlin
+data class CodexConfiguration(
+    var model: String,
+    var pipeCount: Int = 2,
+    var credentialStorePath: String? = null,
+    var importCodexCliCredentialsIfMissing: Boolean = true,
+    var cliAuthFile: String? = null,
+    var manifoldMemory: ManifoldMemoryConfiguration = ManifoldMemoryConfiguration()
+) : ProviderConfiguration()
+```
+
+The model is required and the pipe count must be positive. Credentials are
+managed by `TPipe-Codex`; the optional paths select the TPipe-owned store and
+the one-way Codex CLI file-import source.
+
+---
+
 ## Factory Classes
 
 ### ManifoldDefaults
@@ -207,6 +230,10 @@ Creates Manifold instance configured for Ollama.
 - Creates Ollama-optimized Manifold with manager pipeline
 - Throws IllegalArgumentException for invalid configuration
 - Throws RuntimeException if Ollama provider unavailable
+
+**`withCodex(configuration: CodexConfiguration): Manifold`**
+Creates a Manifold using shared Codex OAuth-backed GenericOpenAI pipes in
+Responses mode.
 
 **`getAvailableProviders(): List<String>`**
 Lists all available providers with implementations.
@@ -315,6 +342,15 @@ Creates fully configured OllamaPipe.
 - Sets model name
 - Configures host IP and port
 - Sets TaskProgress as JSON input
+
+---
+
+### CodexDefaults
+
+Internal factory for GenericOpenAI pipes configured with the `TPipe-Codex`
+OAuth access profile. Manager pipelines share one `CodexAuthManager`, so
+proactive refresh and rotated refresh tokens are coordinated across manager
+pipes.
 
 ---
 

@@ -326,6 +326,70 @@ class OpenAIResponsesRequestSerializerTest
         Assertions.assertEquals(0.9, parsed!!.topP)
     }
 
+    @Test
+    fun testCodexPolicySuppressesGenericControlsAndAddsResponsesControls()
+    {
+        val request = GenericOpenAIChatRequest(
+            model = "gpt-5-codex",
+            messages = listOf(
+                ChatMessage(role = "system", content = MessageContent.TextContent("rules")),
+                ChatMessage(role = "user", content = MessageContent.TextContent("hi")),
+            ),
+            temperature = 0.2,
+            topP = 0.8,
+            maxTokens = 512,
+            user = "do-not-send",
+            stream = false,
+        )
+        val policy = OpenAIResponsesWirePolicy(
+            emitMaxOutputTokens = false,
+            emitSamplingParameters = false,
+            emitUser = false,
+            store = false,
+            include = listOf("reasoning.encrypted_content"),
+            messageItemType = "message",
+            forceStreaming = true,
+        )
+
+        val parsed = deserialize<OpenAIResponsesRequest>(
+            serializer.serialize(
+                request,
+                ApiMode.OpenAIResponses,
+                RequestSerializationOptions(responsesPolicy = policy),
+            )
+        )
+
+        Assertions.assertNotNull(parsed)
+        Assertions.assertEquals(true, parsed!!.stream)
+        Assertions.assertEquals(false, parsed.store)
+        Assertions.assertEquals(listOf("reasoning.encrypted_content"), parsed.include)
+        Assertions.assertEquals(null, parsed.maxOutputTokens)
+        Assertions.assertEquals(null, parsed.temperature)
+        Assertions.assertEquals(null, parsed.topP)
+        Assertions.assertEquals(null, parsed.user)
+        Assertions.assertEquals("message", parsed.input[0].type)
+    }
+
+    @Test
+    fun testCodexPolicyDoesNotInventNativeTools()
+    {
+        val request = GenericOpenAIChatRequest(
+            model = "gpt-5-codex",
+            messages = listOf(ChatMessage(role = "user", content = MessageContent.TextContent("hi"))),
+        )
+        val policy = OpenAIResponsesWirePolicy(messageItemType = "message")
+
+        val parsed = deserialize<OpenAIResponsesRequest>(
+            serializer.serialize(
+                request,
+                ApiMode.OpenAIResponses,
+                RequestSerializationOptions(responsesPolicy = policy),
+            )
+        )
+
+        Assertions.assertNull(parsed!!.tools)
+    }
+
 //=========================================Error Cases=========================================
 
     @Test

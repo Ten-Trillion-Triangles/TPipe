@@ -11,9 +11,9 @@ import com.TTT.Pipe.StreamingCallbackBuilder
 import com.TTT.Pipe.TruncationSettings
 import com.TTT.Context.Dictionary.BinaryEstimationMode
 import com.TTT.Util.deserialize
-import com.TTT.Util.serialize
 import genericOpenAIPipe.env.*
 import genericOpenAIPipe.api.*
+import genericOpenAIPipe.access.GenericOpenAIAccessProfile
 import genericOpenAIPipe.mantle.BedrockMantleAuth
 import genericOpenAIPipe.mantle.BedrockMantleConfiguration
 import genericOpenAIPipe.mantle.ChunkedSigV4Signer
@@ -37,6 +37,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
+import kotlinx.coroutines.runBlocking
 
 /**
  * Fixed 100ms backoff between the first request and the single retry in
@@ -269,6 +270,13 @@ class GenericOpenAIPipe : Pipe()
     @kotlinx.serialization.Transient
     private var bedrockMantleAuth: BedrockMantleAuth? = null
 
+    /**
+     * Optional transient access profile for rotating or externally managed
+     * credentials such as ChatGPT/Codex OAuth.
+     */
+    @kotlinx.serialization.Transient
+    private var accessProfile: GenericOpenAIAccessProfile? = null
+
     private val responseParser: ResponseParser = ResponseParser.Factory.create()
 
     private val requestSerializer: RequestSerializer = RequestSerializer.Factory.create()
@@ -289,7 +297,7 @@ class GenericOpenAIPipe : Pipe()
      * @param body Request body bytes. May be empty.
      * @return Map of header name to header value.
      */
-    private fun getAuthHeaders(
+    private suspend fun getAuthHeaders(
         method: String,
         url: String,
         body: ByteArray,
@@ -303,6 +311,9 @@ class GenericOpenAIPipe : Pipe()
                 "x-amz-content-sha256" to genericOpenAIPipe.mantle.SigV4Signer.sha256Hex(body),
             )
             return auth.authHeaders(method, url, body, callerHeaders)
+        }
+        accessProfile?.let { profile ->
+            return profile.headersForRequest(method = method, url = url, body = body)
         }
         return when(apiMode)
         {
@@ -333,6 +344,72 @@ class GenericOpenAIPipe : Pipe()
         }
     }
 
+    /** Returns the access-profile Responses policy, if one is configured. */
+    private fun responsesWirePolicy(): OpenAIResponsesWirePolicy? =
+        accessProfile?.responsesWirePolicy
+
+    /**
+     * Resolves caller streaming separately from the backend's wire requirement.
+     *
+     * A profile may require SSE internally while TPipe still assembles the
+     * result for callers that did not register streaming callbacks.
+     */
+    private fun wireStreamingEnabled(): Boolean =
+        responsesWirePolicy()?.forceStreaming ?: streamingEnabled
+
+    /** Builds the typed serializer options for the current pipe. */
+    private fun buildSerializationOptions(): RequestSerializationOptions
+    {
+        @Suppress("UNCHECKED_CAST")
+        return RequestSerializationOptions(
+            metadata = pipeMetadata as Map<String, Any?>,
+            responsesPolicy = responsesWirePolicy(),
+        )
+    }
+
+    /**
+     * Builds the normalized request shared by text and multimodal generation.
+     *
+     * @param messages Conversation messages in TPipe order.
+     * @param wireStreaming Whether the backend request must use SSE.
+     */
+    private fun buildGenericRequest(
+        messages: List<ChatMessage>,
+        wireStreaming: Boolean,
+    ): GenericOpenAIChatRequest = GenericOpenAIChatRequest(
+        model = model,
+        messages = messages,
+        temperature = if(temperature > 0.0) temperature else null,
+        topP = if(topP > 0.0) topP else null,
+        topK = if(topK > 0) topK else null,
+        maxTokens = if(maxTokens > 0) maxTokens else null,
+        presencePenalty = if(presencePenalty != 0.0) presencePenalty else null,
+        frequencyPenalty = frequencyPenalty,
+        repetitionPenalty = repetitionPenalty,
+        seed = seed,
+        stop = stopSequences.takeIf { it.isNotEmpty() },
+        tools = tools,
+        toolChoice = toolChoice,
+        parallelToolCalls = parallelToolCalls,
+        responseFormat = responseFormat,
+        structuredOutputs = structuredOutputs,
+        modalities = modalities,
+        reasoning = reasoningConfig,
+        cacheControl = cacheControl,
+        logitBias = logitBias.takeIf { it.isNotEmpty() },
+        logprobs = logprobs,
+        topLogprobs = topLogprobs,
+        minP = minP,
+        topA = topA,
+        user = user,
+        n = n,
+        stream = wireStreaming,
+    )
+
+    /** Serializes a normalized request using the selected mode and policy. */
+    private fun serializeRequest(request: GenericOpenAIChatRequest): String =
+        requestSerializer.serialize(request, apiMode, buildSerializationOptions())
+
 //=========================================Builder Methods=============================================================
 
     /**
@@ -343,6 +420,24 @@ class GenericOpenAIPipe : Pipe()
     fun setApiKey(key: String): GenericOpenAIPipe
     {
         apiKey = key
+        return this
+    }
+
+    /**
+     * Sets a transient provider access profile.
+     *
+     * The profile supplies request headers and optional Responses wire policy;
+     * it is never serialized with this pipe. Mantle auth remains higher
+     * precedence when both profiles are configured.
+     *
+     * @param profile Runtime access profile, or null to clear it before use.
+     * @return This pipe instance for fluent chaining.
+     * @throws IllegalStateException if called after the first API request.
+     */
+    fun setAccessProfile(profile: GenericOpenAIAccessProfile?): GenericOpenAIPipe
+    {
+        check(!apiModeLocked) { "accessProfile cannot be changed after the first API request" }
+        accessProfile = profile
         return this
     }
 
@@ -798,7 +893,7 @@ class GenericOpenAIPipe : Pipe()
         // The apiKey field is only used for bearer / x-api-key auth.
         // When a Mantle auth shape is set, it computes its own headers via
         // [BedrockMantleAuth.authHeaders], so apiKey may legitimately be blank.
-        if (apiKey.isBlank() && bedrockMantleAuth == null)
+        if (apiKey.isBlank() && bedrockMantleAuth == null && accessProfile == null)
         {
             val resolvedKey = GenericOpenAIEnv.resolveApiKey()
             if (resolvedKey.isNotBlank())
@@ -955,43 +1050,9 @@ class GenericOpenAIPipe : Pipe()
 
         messages.add(ChatMessage(role = "user", content = MessageContent.MultimodalContent(blocks)))
 
-        val request = GenericOpenAIChatRequest(
-            model = model,
-            messages = messages,
-            temperature = if(temperature > 0.0) temperature else null,
-            topP = if(topP > 0.0) topP else null,
-            topK = if(topK > 0) topK else null,
-            maxTokens = if(maxTokens > 0) maxTokens else null,
-            presencePenalty = if(presencePenalty != 0.0) presencePenalty else null,
-            frequencyPenalty = frequencyPenalty,
-            repetitionPenalty = repetitionPenalty,
-            seed = seed,
-            stop = stopSequences.takeIf { it.isNotEmpty() },
-            tools = tools,
-            toolChoice = toolChoice,
-            parallelToolCalls = parallelToolCalls,
-            responseFormat = responseFormat,
-            structuredOutputs = structuredOutputs,
-            modalities = modalities,
-            reasoning = reasoningConfig,
-            cacheControl = cacheControl,
-            logitBias = logitBias.takeIf { it.isNotEmpty() },
-            logprobs = logprobs,
-            topLogprobs = topLogprobs,
-            minP = minP,
-            topA = topA,
-            user = user,
-            n = n,
-            stream = streamingEnabled
-        )
-
-        val responseText = sendRequest(request)
-        // Binary-content path: `sendRequest` returns String only, so any
-        // `modelReasoning` extracted by the parser is dropped here. Mantle
-        // currently serves text-only inputs, so the plain-text shortcut
-        // above covers the live use cases; reasoning on binary inputs
-        // would require widening `sendRequest` to return MultimodalContent.
-        return MultimodalContent(text = responseText)
+        val wireStreaming = wireStreamingEnabled()
+        val request = buildGenericRequest(messages, wireStreaming)
+        return executeSerializedRequest(serializeRequest(request), wireStreaming).content
     }
 
     /**
@@ -1003,9 +1064,10 @@ class GenericOpenAIPipe : Pipe()
 
         apiModeLocked = true
 
-        val jsonRequest = serialize(request, encodedefault = false)
+        val wireStreaming = wireStreamingEnabled()
+        val jsonRequest = serializeRequest(request.copy(stream = wireStreaming))
 
-        if(streamingEnabled)
+        if(wireStreaming)
         {
             // When Mantle chunked-encoding streaming SigV4 auth is active,
             // route through the HttpURLConnection direct path because it
@@ -1015,7 +1077,7 @@ class GenericOpenAIPipe : Pipe()
             // algorithm). The HttpURLConnection path is also more reliable
             // for reading incremental SSE responses (see comment in
             // executeStreamingDirect).
-            if (bedrockMantleAuth is BedrockMantleAuth.Streaming)
+            if (bedrockMantleAuth is BedrockMantleAuth.Streaming || accessProfile != null)
             {
                 // `executeStreamingDirect` returns MultimodalContent so the
                 // reasoning content it accumulates via `streamingReasoningText`
@@ -1047,21 +1109,11 @@ class GenericOpenAIPipe : Pipe()
         }
         else
         {
-            val responseText = runRequestWithRetry {
-                withContext(Dispatchers.IO)
-                {
-                    client.post("$baseUrl${getEndpoint()}")
-                    {
-                        contentType(ContentType.Application.Json)
-                        getAuthHeaders(
-                            method = "POST",
-                            url = "$baseUrl${getEndpoint()}",
-                            body = jsonRequest.toByteArray(Charsets.UTF_8),
-                        ).forEach { (name, value) -> header(name, value) }
-                        setBody(jsonRequest)
-                    }.bodyAsText()
-                }
-            }
+            val responseText = executeKtorBodyWithAuthRecovery(
+                client = client,
+                jsonRequest = jsonRequest,
+                authRecoveryAttempted = false,
+            )
 
             val response: GenericOpenAIChatResponse = try
             {
@@ -1087,6 +1139,114 @@ class GenericOpenAIPipe : Pipe()
         }
     }
 
+    /** Result of the shared serialized transport path used by multimodal input. */
+    private data class SerializedResponse(
+        val content: MultimodalContent,
+        val normalizedResponse: GenericOpenAIChatResponse? = null,
+    )
+
+    /**
+     * Executes an already serialized request while preserving reasoning content
+     * for multimodal callers.
+     */
+    private suspend fun executeSerializedRequest(
+        jsonRequest: String,
+        wireStreaming: Boolean,
+    ): SerializedResponse
+    {
+        val client = httpClient ?: throw IllegalStateException("GenericOpenAIPipe not initialized. Call init() first.")
+        apiModeLocked = true
+
+        if(wireStreaming)
+        {
+            return SerializedResponse(
+                content = withContext(Dispatchers.IO) { executeStreamingDirect(jsonRequest) }
+            )
+        }
+
+        val responseText = executeKtorBodyWithAuthRecovery(
+            client = client,
+            jsonRequest = jsonRequest,
+            authRecoveryAttempted = false,
+        )
+        val response = try
+        {
+            responseParser.parse(responseText, apiMode)
+        }
+        catch(e: P2PException)
+        {
+            throw e
+        }
+        catch(e: Exception)
+        {
+            throw P2PException(P2PError.json, "Failed to parse GenericOpenAI response: ${e.message}", e)
+        }
+
+        return SerializedResponse(
+            content = MultimodalContent(
+                text = responseTextFrom(response),
+                modelReasoning = response.reasoningContent ?: "",
+            ),
+            normalizedResponse = response,
+        )
+    }
+
+    /** Performs a Ktor request and allows one bounded access-profile recovery. */
+    private suspend fun executeKtorBodyWithAuthRecovery(
+        client: HttpClient,
+        jsonRequest: String,
+        authRecoveryAttempted: Boolean,
+    ): String
+    {
+        val bodyBytes = jsonRequest.toByteArray(Charsets.UTF_8)
+        var requestHeaders: Map<String, String> = emptyMap()
+        val (status, responseText) = runRequestWithRetry {
+            withContext(Dispatchers.IO)
+            {
+                requestHeaders = getAuthHeaders(
+                    method = "POST",
+                    url = "$baseUrl${getEndpoint()}",
+                    body = bodyBytes,
+                )
+                val response = client.post("$baseUrl${getEndpoint()}")
+                {
+                    contentType(ContentType.Application.Json)
+                    requestHeaders.forEach { (name, value) -> header(name, value) }
+                    setBody(jsonRequest)
+                }
+                response.status to response.bodyAsText()
+            }
+        }
+
+        if(status == HttpStatusCode.Unauthorized && !authRecoveryAttempted)
+        {
+            val recovered = accessProfile?.recoverUnauthorized(requestHeaders) == true
+            if(recovered)
+            {
+                return executeKtorBodyWithAuthRecovery(
+                    client = client,
+                    jsonRequest = jsonRequest,
+                    authRecoveryAttempted = true,
+                )
+            }
+        }
+        return responseText
+    }
+
+    /** Extracts visible response text from the normalized generic shape. */
+    private fun responseTextFrom(response: GenericOpenAIChatResponse): String
+    {
+        return when(val msg = response.choices.firstOrNull()?.message?.content)
+        {
+            is MessageContent.TextContent -> msg.text
+            is MessageContent.MultimodalContent -> msg.blocks
+                .filterIsInstance<ContentBlock.TextBlock>()
+                .joinToString("") { it.text }
+            is MessageContent.PlainContent -> msg.content
+            null -> ""
+        }
+    }
+
 //=========================================Context Management==========================================================
 
     /**
@@ -1105,23 +1265,26 @@ class GenericOpenAIPipe : Pipe()
     protected suspend fun generateTextMultimodal(promptInjector: String): com.TTT.Pipe.MultimodalContent
     {
         val client = httpClient ?: throw IllegalStateException("GenericOpenAIPipe not initialized. Call init() first.")
+        val wireStreaming = wireStreamingEnabled()
 
         apiModeLocked = true
 
-        trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
-              metadata = mapOf(
-                  "provider" to "GenericOpenAI",
-                  "model" to model,
-                  "baseUrl" to baseUrl,
-                  "promptLength" to promptInjector.length,
-                  "streaming" to streamingEnabled,
-                  "apiType" to when(apiMode)
-                  {
-                      is ApiMode.OpenAI -> "ChatAPI"
-                      is ApiMode.OpenAIResponses -> "ResponsesAPI"
-                      is ApiMode.Anthropic -> "AnthropicAPI"
-                  }
-              ))
+        val traceMetadata = buildMap<String, Any> {
+            put("provider", "GenericOpenAI")
+            put("model", model)
+            put("baseUrl", baseUrl)
+            put("promptLength", promptInjector.length)
+            put("streamingRequested", streamingEnabled)
+            put("wireStreaming", wireStreaming)
+            put("apiType", when(apiMode)
+            {
+                is ApiMode.OpenAI -> "ChatAPI"
+                is ApiMode.OpenAIResponses -> "ResponsesAPI"
+                is ApiMode.Anthropic -> "AnthropicAPI"
+            })
+            accessProfile?.let { put("accessProfile", it.profileName) }
+        }
+        trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION, metadata = traceMetadata)
 
         return try
         {
@@ -1134,47 +1297,10 @@ class GenericOpenAIPipe : Pipe()
 
             messages.add(ChatMessage(role = "user", content = MessageContent.TextContent(promptInjector)))
 
-            val request = GenericOpenAIChatRequest(
-                model = model,
-                messages = messages,
-                temperature = if(temperature > 0.0) temperature else null,
-                topP = if(topP > 0.0) topP else null,
-                topK = if(topK > 0) topK else null,
-                maxTokens = if(maxTokens > 0) maxTokens else null,
-                presencePenalty = if(presencePenalty != 0.0) presencePenalty else null,
-                frequencyPenalty = frequencyPenalty,
-                repetitionPenalty = repetitionPenalty,
-                seed = seed,
-                stop = stopSequences.takeIf { it.isNotEmpty() },
-                tools = tools,
-                toolChoice = toolChoice,
-                parallelToolCalls = parallelToolCalls,
-                responseFormat = responseFormat,
-                structuredOutputs = structuredOutputs,
-                modalities = modalities,
-                reasoning = reasoningConfig,
-                cacheControl = cacheControl,
-                logitBias = logitBias.takeIf { it.isNotEmpty() },
-                logprobs = logprobs,
-                topLogprobs = topLogprobs,
-                minP = minP,
-                topA = topA,
-                user = user,
-                n = n,
-                stream = streamingEnabled
-            )
+            val request = buildGenericRequest(messages, wireStreaming)
+            val jsonRequest = serializeRequest(request)
 
-            val jsonRequest = requestSerializer.serialize(
-                request, apiMode,
-                // pipeMetadata is `MutableMap<Any, Any>` on the base Pipe class.
-                // RequestSerializationOptions expects `Map<String, Any?>` — keys
-                // are string constants in practice (see MantleMetadataKeys), values
-                // are typed objects. The cast is safe because callers use string keys.
-                @Suppress("UNCHECKED_CAST")
-                RequestSerializationOptions(metadata = pipeMetadata as Map<String, Any?>),
-            )
-
-            if(streamingEnabled)
+            if(wireStreaming)
             {
                 // BUG FIX: Ktor CIO's bodyAsChannel does NOT deliver bytes
                 // incrementally for chunked transfer-encoded SSE responses
@@ -1198,22 +1324,11 @@ class GenericOpenAIPipe : Pipe()
             }
             else
             {
-                val responseText = runRequestWithRetry {
-                    withContext(Dispatchers.IO)
-                    {
-                        client.post("$baseUrl${getEndpoint()}")
-                        {
-                            contentType(ContentType.Application.Json)
-                            getAuthHeaders(
-                                method = "POST",
-                                url = "$baseUrl${getEndpoint()}",
-                                body = jsonRequest.toByteArray(Charsets.UTF_8),
-                            ).forEach { (name, value) -> header(name, value) }
-
-                            setBody(jsonRequest)
-                        }.bodyAsText()
-                    }
-                }
+                val responseText = executeKtorBodyWithAuthRecovery(
+                    client = client,
+                    jsonRequest = jsonRequest,
+                    authRecoveryAttempted = false,
+                )
 
                 val response: GenericOpenAIChatResponse = try
                 {
@@ -1388,7 +1503,10 @@ class GenericOpenAIPipe : Pipe()
      * loop — every retry attempt is owned by TPipe's generic
      * retry layer, not this code.
      */
-    private suspend fun executeStreamingDirect(jsonRequest: String): com.TTT.Pipe.MultimodalContent
+    private suspend fun executeStreamingDirect(
+        jsonRequest: String,
+        authRecoveryAttempted: Boolean = false,
+    ): com.TTT.Pipe.MultimodalContent
     {
         val textBuilder = StringBuilder()
 
@@ -1401,19 +1519,20 @@ class GenericOpenAIPipe : Pipe()
               ))
 
         java.net.HttpURLConnection.setFollowRedirects(false)
+        val requestHeaders = buildMap {
+            put("Content-Type", "application/json")
+            putAll(
+                getAuthHeaders(
+                    method = "POST",
+                    url = "$baseUrl${getEndpoint()}",
+                    body = jsonRequest.toByteArray(Charsets.UTF_8),
+                )
+            )
+        }
         val conn = (streamingConnectionFactory ?: error("streamingConnectionFactory not initialized")).open(
             url = "$baseUrl${getEndpoint()}",
             method = "POST",
-            headers = buildMap {
-                put("Content-Type", "application/json")
-                putAll(
-                    getAuthHeaders(
-                        method = "POST",
-                        url = "$baseUrl${getEndpoint()}",
-                        body = jsonRequest.toByteArray(Charsets.UTF_8),
-                    )
-                )
-            },
+            headers = requestHeaders,
             connectTimeoutMs = 30_000,
             readTimeoutMs = 120_000
         )
@@ -1433,6 +1552,38 @@ class GenericOpenAIPipe : Pipe()
             {
                 out.write(bodyBytes)
             }
+        }
+
+        // HttpURLConnection exposes the response status before its input stream.
+        // Inspect it here so an access profile can recover exactly once without
+        // trying to parse an error body as SSE.
+        val responseCode = conn.responseCode
+        if(responseCode == 401 && !authRecoveryAttempted)
+        {
+            val recovered = try
+            {
+                accessProfile?.recoverUnauthorized(requestHeaders) == true
+            }
+            catch(e: Exception)
+            {
+                conn.close()
+                throw e
+            }
+            conn.close()
+            if(recovered)
+            {
+                return executeStreamingDirect(jsonRequest, authRecoveryAttempted = true)
+            }
+        }
+        if(responseCode !in 200..299)
+        {
+            conn.close()
+            val category = if(responseCode == 401) P2PError.auth else P2PError.transport
+            throw P2PException(
+                category,
+                "GenericOpenAI streaming request failed with HTTP status $responseCode",
+                Exception("HTTP $responseCode"),
+            )
         }
 
         val reasoningBuilder = StringBuilder()
@@ -2617,7 +2768,15 @@ class GenericOpenAIPipe : Pipe()
      * Returns the auth headers the pipe would attach, for the current [apiMode].
      * Visible only to tests in the same module.
      */
-    fun internalGetAuthHeadersForTest(): Map<String, String> =
+    fun internalGetAuthHeadersForTest(): Map<String, String> = runBlocking {
+        getAuthHeaders(method = "GET", url = baseUrl, body = ByteArray(0))
+    }
+
+    /**
+     * Suspending auth-header seam for access profiles whose credentials are
+     * refreshed asynchronously.
+     */
+    suspend fun internalGetAuthHeadersForTestAsync(): Map<String, String> =
         getAuthHeaders(method = "GET", url = baseUrl, body = ByteArray(0))
 
     /**

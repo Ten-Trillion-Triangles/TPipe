@@ -31,6 +31,8 @@ data class OpenAIResponsesRequest(
     @SerialName("top_p")
     val topP: Double? = null,
     val stream: Boolean = false,
+    val store: Boolean? = null,
+    val include: List<String>? = null,
     val tools: List<OpenAIResponsesTool>? = null,
     @SerialName("tool_choice")
     val toolChoice: String? = null,
@@ -57,6 +59,7 @@ data class OpenAIResponsesRequest(
  */
 @Serializable
 data class OpenAIResponsesMessageItem(
+    val type: String? = null,
     val role: String,
     val content: List<OpenAIResponsesInputPart>
 )

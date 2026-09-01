@@ -110,6 +110,17 @@ class PumpStationDefaultsTest
     }
 
     @Test
+    fun `withCodex wires judge and dispatch without requiring an API key`()
+    {
+        val station = PumpStationDefaults.withCodex(
+            CodexConfiguration(model = "gpt-5-codex", pipeCount = 1)
+        ) { addDonePath() }
+
+        assertNotNull(station.getJudgeAgent())
+        assertNotNull(station.getDispatchAgent())
+    }
+
+    @Test
     fun `recommendedKillSwitchConfig returns 50K input and 10K output`()
     {
         val ks = PumpStationDefaults.recommendedKillSwitchConfig()
