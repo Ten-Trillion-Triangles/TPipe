@@ -46,7 +46,8 @@ class AgentCoreAgUiRuntimeHostTest
                 mapper = AgentCoreAgUiInputMapper { "resolved-session" }
             )
             val client = HttpClient(CIO)
-            try {
+            try
+            {
                 host.start()
                 waitForServer(port)
                 val response = client.post("http://127.0.0.1:$port/invocations") {
@@ -61,7 +62,10 @@ class AgentCoreAgUiRuntimeHostTest
                 assertTrue(body.contains("chunk-2"))
                 assertTrue(!body.contains("final-output"))
                 assertEquals(1, root.clearCount)
-            } finally {
+            }
+
+            finally
+            {
                 client.close()
                 host.close()
             }
@@ -82,7 +86,8 @@ class AgentCoreAgUiRuntimeHostTest
                 factory = { root }
             )
             val client = HttpClient(CIO) { install(WebSockets) }
-            try {
+            try
+            {
                 host.start()
                 waitForServer(port)
                 val events = mutableListOf<String>()
@@ -93,7 +98,8 @@ class AgentCoreAgUiRuntimeHostTest
                     path = "/ws"
                 ) {
                     send(Frame.Text(inputJson()))
-                    while (events.none { it.contains("RUN_FINISHED") }) {
+                    while(events.none { it.contains("RUN_FINISHED") })
+                    {
                         events += (incoming.receive() as Frame.Text).readText()
                     }
                 }
@@ -102,7 +108,10 @@ class AgentCoreAgUiRuntimeHostTest
                 assertTrue(events.any { it.contains("chunk-1") })
                 assertTrue(events.any { it.contains("chunk-2") })
                 assertEquals(1, root.clearCount)
-            } finally {
+            }
+
+            finally
+            {
                 client.close()
                 host.close()
             }
@@ -122,7 +131,8 @@ class AgentCoreAgUiRuntimeHostTest
                 factory = { StreamingRoot() }
             )
             val client = HttpClient(CIO)
-            try {
+            try
+            {
                 host.start()
                 waitForServer(port)
                 val response = client.post("http://127.0.0.1:$port/invocations") {
@@ -131,7 +141,10 @@ class AgentCoreAgUiRuntimeHostTest
                 }
 
                 assertTrue(response.bodyAsText().contains("RUN_ERROR"))
-            } finally {
+            }
+
+            finally
+            {
                 client.close()
                 host.close()
             }
@@ -151,7 +164,8 @@ class AgentCoreAgUiRuntimeHostTest
                 factory = { StreamingRoot() }
             )
             val client = HttpClient(CIO) { install(WebSockets) }
-            try {
+            try
+            {
                 host.start()
                 waitForServer(port)
                 client.webSocket(
@@ -164,7 +178,10 @@ class AgentCoreAgUiRuntimeHostTest
                     val error = (incoming.receive() as Frame.Text).readText()
                     assertTrue(error.contains("RUN_ERROR"))
                 }
-            } finally {
+            }
+
+            finally
+            {
                 client.close()
                 host.close()
             }

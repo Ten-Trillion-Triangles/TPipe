@@ -17,7 +17,18 @@ enum class AgentCoreSessionMode {
     SHARED
 }
 
-/** Context supplied when a new runtime session root is created. */
+/**
+ * Context supplied when a new runtime session root is created.
+ *
+ * @param sessionId Runtime session identifier.
+ * @param protocol Protocol that created the session.
+ * @param createdAt Session creation timestamp.
+ * @param requestCorrelationId Non-secret request correlation identifier.
+ * @param approvedRequestHeaders Headers explicitly approved for the request.
+ * @param threadId Optional AG-UI thread identifier.
+ * @param runId Optional AG-UI run identifier.
+ * @param sessionRegistry Registry retaining the session root.
+ */
 data class AgentCoreSessionContext(
     val sessionId: String,
     val protocol: AgentCoreRuntimeProtocol,
@@ -32,26 +43,43 @@ data class AgentCoreSessionContext(
 
 /** Factory for the TPipe root associated with an AgentCore session. */
 fun interface AgentCoreSessionFactory {
-    /** Create the root interface that will handle [context]'s requests. */
+    /**
+     * Create the root interface that will handle [context]'s requests.
+     *
+     * @param context Session metadata supplied to the new root.
+     * @return The root that handles this session's requests.
+     */
     suspend fun create(context: AgentCoreSessionContext): P2PInterface
 }
 
 /**
  * Owns runtime session roots and serializes requests within each session.
  * Different sessions use independent locks and may execute concurrently.
+ *
+ * @param mode Session-root sharing policy.
+ * @param factory Factory for new session roots.
+ * @param now Clock used for activity timestamps.
  */
 class AgentCoreSessionRegistry(
     private val mode: AgentCoreSessionMode,
     private val factory: AgentCoreSessionFactory,
     private val now: () -> Long = System::currentTimeMillis
-) : AutoCloseable {
+) : AutoCloseable
+{
     private val entries = mutableMapOf<String, Entry>()
     private val entriesMutex = Mutex()
     private var sharedEntry: Entry? = null
     private var closed = false
     private val sessionCleanups = mutableMapOf<String, MutableMap<String, suspend () -> Unit>>()
 
-    /** Run [block] against the session root while holding its execution lock. */
+    /**
+     * Run [block] against the session root while holding its execution lock.
+     *
+     * @param sessionId Runtime session identifier.
+     * @param protocol Protocol that created the request.
+     * @param block Operation to execute against the retained root.
+     * @return The value returned by [block].
+     */
     suspend fun <T> withSession(
         sessionId: String,
         protocol: AgentCoreRuntimeProtocol,
@@ -66,7 +94,16 @@ class AgentCoreSessionRegistry(
         block
     )
 
-    /** Run a request with non-secret correlation and explicitly approved headers. */
+    /**
+     * Run a request with non-secret correlation and explicitly approved headers.
+     *
+     * @param sessionId Runtime session identifier.
+     * @param protocol Protocol that created the request.
+     * @param requestCorrelationId Non-secret request correlation identifier.
+     * @param approvedRequestHeaders Headers explicitly approved for the request.
+     * @param block Operation to execute against the retained root.
+     * @return The value returned by [block].
+     */
     suspend fun <T> withSession(
         sessionId: String,
         protocol: AgentCoreRuntimeProtocol,
@@ -83,7 +120,18 @@ class AgentCoreSessionRegistry(
         block
     )
 
-    /** Run a request while retaining AG-UI or caller-supplied correlation. */
+    /**
+     * Run a request while retaining AG-UI or caller-supplied correlation.
+     *
+     * @param sessionId Runtime session identifier.
+     * @param protocol Protocol that created the request.
+     * @param requestCorrelationId Non-secret request correlation identifier.
+     * @param approvedRequestHeaders Headers explicitly approved for the request.
+     * @param threadId Optional AG-UI thread identifier.
+     * @param runId Optional AG-UI run identifier.
+     * @param block Operation to execute against the retained root.
+     * @return The value returned by [block].
+     */
     suspend fun <T> withSession(
         sessionId: String,
         protocol: AgentCoreRuntimeProtocol,
@@ -92,10 +140,12 @@ class AgentCoreSessionRegistry(
         threadId: String?,
         runId: String?,
         block: suspend (P2PInterface) -> T
-    ): T {
+    ): T
+    {
         val entry = entriesMutex.withLock {
             check(!closed) { "AgentCore session registry is closed." }
-            val selected = when (mode) {
+            val selected = when(mode)
+            {
                 AgentCoreSessionMode.ISOLATED -> entries[sessionId] ?: createEntry(
                     sessionId,
                     protocol,
@@ -116,30 +166,43 @@ class AgentCoreSessionRegistry(
                 ).also { sharedEntry = it }
             }
             selected.pendingRequests++
-            if (selected.pendingRequests == 1) {
+            if(selected.pendingRequests == 1)
+            {
                 selected.idle = CompletableDeferred()
             }
+
             selected.lastActivity = now()
             selected
         }
-        try {
+
+        try
+        {
             return entry.executionMutex.withLock {
                 check(!entry.closeRequested) { "AgentCore session registry is closing." }
                 block(entry.root)
             }
-        } finally {
+        }
+
+        finally
+        {
             entriesMutex.withLock {
                 entry.pendingRequests--
                 entry.lastActivity = now()
-                if (entry.pendingRequests == 0) {
+                if(entry.pendingRequests == 0)
+                {
                     entry.idle.complete(Unit)
                 }
             }
         }
     }
 
-    /** Evict idle, inactive sessions and return the ids removed. */
-    suspend fun evictIdle(olderThan: Long): List<String> {
+    /** Evict idle, inactive sessions and return the ids removed.
+     *
+     * @param olderThan Activity timestamp threshold.
+     * @return Canonical session ids that were evicted.
+     */
+    suspend fun evictIdle(olderThan: Long): List<String>
+    {
         val (evicted, roots, cleanups) = entriesMutex.withLock {
             val isolatedEntries = entries
                 .filterValues { it.pendingRequests == 0 && it.lastActivity < olderThan }
@@ -149,16 +212,18 @@ class AgentCoreSessionRegistry(
             val evictShared = shared?.pendingRequests == 0 && shared.lastActivity < olderThan
             val evictedRoots = buildList {
                 addAll(isolatedEntries.map { it.second.root })
-                if (evictShared) add(requireNotNull(shared).root)
+                if(evictShared) add(requireNotNull(shared).root)
             }
             isolated.forEach(entries::remove)
             val ids = buildList {
                 addAll(isolated)
-                if (evictShared) {
+                if(evictShared)
+                {
                     sharedEntry = null
                     add(requireNotNull(shared).sessionId)
                 }
             }
+
             val callbacks = if(evictShared)
             {
                 // Shared mode maps many logical caller ids onto one root. All
@@ -172,44 +237,67 @@ class AgentCoreSessionRegistry(
             }
             Triple(ids, evictedRoots, callbacks)
         }
+
         roots.forEach { root -> root.clearStreamingCallbacksRecursive() }
         cleanups.forEach { cleanup -> runCatching { cleanup() } }
+
         return evicted
     }
 
-    /** Register an owner cleanup invoked when that runtime session is evicted or closed. */
+    /**
+     * Register an owner cleanup invoked when that runtime session is evicted or closed.
+     *
+     * @param sessionId Runtime session that owns the cleanup.
+     * @param key Stable cleanup key used for replacement.
+     * @param cleanup Cleanup action to invoke once.
+     */
     suspend fun registerSessionCleanup(
         sessionId: String,
         key: String,
         cleanup: suspend () -> Unit
-    ) {
+    )
+    {
         val runImmediately = entriesMutex.withLock {
-            if (closed) {
+            if(closed)
+            {
                 true
             }
-            else {
+            else
+            {
                 sessionCleanups.getOrPut(sessionId) { mutableMapOf() }[key] = cleanup
                 false
             }
         }
-        if (runImmediately) {
+        if(runImmediately)
+        {
             runCatching { cleanup() }
         }
     }
 
-    /** Return the number of isolated sessions currently retained. */
+    /**
+     * Return the number of retained sessions currently tracked.
+     *
+     * @return Number of retained session roots.
+     */
     suspend fun size(): Int = entriesMutex.withLock {
-        if (mode == AgentCoreSessionMode.SHARED) if (sharedEntry == null) 0 else 1 else entries.size
+        if(mode == AgentCoreSessionMode.SHARED) if(sharedEntry == null) 0 else 1 else entries.size
     }
 
-    /** Return whether any retained session currently has queued or active work. */
+    /**
+     * Return whether any retained session currently has queued or active work.
+     *
+     * @return `true` when at least one request is queued or active.
+     */
     suspend fun isBusy(): Boolean = entriesMutex.withLock {
-        if (mode == AgentCoreSessionMode.SHARED) {
+        if(mode == AgentCoreSessionMode.SHARED)
+        {
             sharedEntry?.pendingRequests?.let { it > 0 } == true
         }
-        else {
+        else
+        {
             entries.values.any { it.pendingRequests > 0 }
         }
+
     }
 
     /**
@@ -219,17 +307,23 @@ class AgentCoreSessionRegistry(
      * A bounded wait keeps shutdown safe when a user-owned root cannot be
      * aborted cooperatively. Requests already admitted before close retain
      * their captured entry and finish their accounting in [finally].
+     *
+     * @param timeoutMillis Maximum time to wait for cleanup and active requests.
      */
-    suspend fun closeSuspend(timeoutMillis: Long = 5_000L) {
+    suspend fun closeSuspend(timeoutMillis: Long = 5_000L)
+    {
         require(timeoutMillis >= 0) { "Session registry close timeout cannot be negative." }
+
         val (retained, active, cleanups) = entriesMutex.withLock {
-            if (closed) {
+            if(closed)
+            {
                 return@withLock Triple(emptyList(), emptyList(), emptyList())
             }
+
             closed = true
             val allEntries = buildList {
                 addAll(entries.values)
-                sharedEntry?.let { shared -> if (none { it === shared }) add(shared) }
+                sharedEntry?.let { shared -> if(none { it === shared }) add(shared) }
             }
             val activeEntries = allEntries.filter { it.pendingRequests > 0 }
             allEntries.forEach { entry -> entry.closeRequested = true }
@@ -239,14 +333,17 @@ class AgentCoreSessionRegistry(
             sessionCleanups.clear()
             Triple(allEntries, activeEntries, callbacks)
         }
+
         val deadline = System.nanoTime() + timeoutMillis * 1_000_000L
         cleanups.forEach { cleanup ->
             val remainingMillis = ((deadline - System.nanoTime()) / 1_000_000L).coerceAtLeast(0L)
             withTimeoutOrNull(remainingMillis) { runCatching { cleanup() } }
         }
+
         active.forEach { entry ->
             runCatching { entry.root.abortRecursive() }
         }
+
         retained.forEach { entry -> entry.root.clearStreamingCallbacksRecursive() }
         retained.forEach { entry ->
             val remainingMillis = ((deadline - System.nanoTime()) / 1_000_000L).coerceAtLeast(0L)
@@ -255,7 +352,8 @@ class AgentCoreSessionRegistry(
     }
 
     /** Drop all session references and coordinate cleanup of admitted work. */
-    override fun close() {
+    override fun close()
+    {
         runBlocking { closeSuspend() }
     }
 
@@ -266,7 +364,8 @@ class AgentCoreSessionRegistry(
         approvedRequestHeaders: Map<String, String>,
         threadId: String?,
         runId: String?
-    ): Entry {
+    ): Entry
+    {
         val root = factory.create(
             AgentCoreSessionContext(
                 sessionId = sessionId,

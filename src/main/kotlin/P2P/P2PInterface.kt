@@ -115,7 +115,9 @@ interface P2PInterface
      * The default is intentionally empty so existing P2P implementations remain
      * source-compatible. Stateful TPipe containers and adapters override it.
      */
-    fun clearStreamingCallbacksRecursive() {}
+    fun clearStreamingCallbacksRecursive()
+    {
+    }
 
     /**
      * Enables stall detection on every leaf pipe in this interface's

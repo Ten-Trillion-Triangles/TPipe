@@ -74,7 +74,8 @@ class AgentCoreRuntimeClientTest
                 AgentCoreRuntimeClientConfig("http://runtime"),
                 httpClient
             )
-            try {
+            try
+            {
                 val chunks = mutableListOf<String>()
                 val response = client.invokeStreaming("input", onChunk = { chunks += it })
 
@@ -82,7 +83,10 @@ class AgentCoreRuntimeClientTest
                 assertEquals("hello world", response.output)
                 assertEquals("resolved", response.sessionId)
                 assertEquals(true, response.streamed)
-            } finally {
+            }
+
+            finally
+            {
                 httpClient.close()
             }
         }
@@ -107,10 +111,12 @@ class AgentCoreRuntimeClientTest
                 AgentCoreRuntimeClientConfig("http://runtime"),
                 httpClient
             )
-            try {
+            try
+            {
                 assertEquals("header-session", client.invokeStreaming("input", onChunk = {}).sessionId)
             }
-            finally {
+            finally
+            {
                 httpClient.close()
             }
         }
@@ -132,11 +138,15 @@ class AgentCoreRuntimeClientTest
                 AgentCoreRuntimeClientConfig("http://runtime"),
                 httpClient
             )
-            try {
+            try
+            {
                 assertFailsWith<IllegalStateException> {
                     client.invokeStreaming("input", onChunk = {})
                 }
-            } finally {
+            }
+
+            finally
+            {
                 httpClient.close()
             }
         }
@@ -158,11 +168,15 @@ class AgentCoreRuntimeClientTest
                 AgentCoreRuntimeClientConfig("http://runtime"),
                 httpClient
             )
-            try {
+            try
+            {
                 assertFailsWith<IllegalStateException> {
                     client.invokeStreaming("input", onChunk = {})
                 }
-            } finally {
+            }
+
+            finally
+            {
                 httpClient.close()
             }
         }

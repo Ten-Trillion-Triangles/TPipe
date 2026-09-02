@@ -239,7 +239,7 @@ class Manifold : P2PInterface
     override fun clearStreamingCallbacksRecursive()
     {
         managerPipeline.clearStreamingCallbacksRecursive()
-        for (workerComponent in workerComponents)
+        for(workerComponent in workerComponents)
         {
             workerComponent.clearStreamingCallbacksRecursive()
         }

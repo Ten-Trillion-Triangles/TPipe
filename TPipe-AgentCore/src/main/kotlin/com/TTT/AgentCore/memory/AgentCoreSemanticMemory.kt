@@ -16,20 +16,39 @@ import com.TTT.AgentCore.AgentCoreClients
  *
  * This is separate from [AgentCoreMemoryBackend]: semantic retrieval is an
  * application feature, while ContextBank persistence must remain exact.
+ *
+ * @param client AgentCore data-plane client used for semantic operations.
  */
-class AgentCoreSemanticMemory(private val client: BedrockAgentCoreClient) {
-    /** Create an AgentCore Memory event for service-managed extraction. */
+class AgentCoreSemanticMemory(private val client: BedrockAgentCoreClient)
+{
+    /** Create an AgentCore Memory event for service-managed extraction.
+     *
+     * @param request Event request.
+     * @return The service response.
+     */
     suspend fun createEvent(request: CreateEventRequest): CreateEventResponse = client.createEvent(request)
 
-    /** Retrieve semantically relevant memory records. */
+    /** Retrieve semantically relevant memory records.
+     *
+     * @param request Retrieval request.
+     * @return The service response.
+     */
     suspend fun retrieveMemoryRecords(request: RetrieveMemoryRecordsRequest): RetrieveMemoryRecordsResponse =
         client.retrieveMemoryRecords(request)
 
-    /** List records using AgentCore's exact list/pagination API. */
+    /** List records using AgentCore's exact list/pagination API.
+     *
+     * @param request List request.
+     * @return The service response.
+     */
     suspend fun listMemoryRecords(request: ListMemoryRecordsRequest): ListMemoryRecordsResponse =
         client.listMemoryRecords(request)
 
-    /** Read one raw AgentCore Memory record. */
+    /** Read one raw AgentCore Memory record.
+     *
+     * @param request Record request.
+     * @return The service response.
+     */
     suspend fun getMemoryRecord(request: GetMemoryRecordRequest): GetMemoryRecordResponse =
         client.getMemoryRecord(request)
 }

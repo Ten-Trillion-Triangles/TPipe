@@ -30,7 +30,16 @@ import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.collect
 import java.util.UUID
 
-/** HTTP client configuration for an AgentCore Runtime endpoint. */
+/**
+ * HTTP client configuration for an AgentCore Runtime endpoint.
+ *
+ * @param endpoint Runtime endpoint.
+ * @param invocationPath Runtime invocation path.
+ * @param requestHeaders Static request headers.
+ * @param sessionHeader Header carrying the runtime session identifier.
+ * @param runtimeArn Optional runtime ARN for SDK session operations.
+ * @param qualifier Optional runtime qualifier.
+ */
 data class AgentCoreRuntimeClientConfig(
     val endpoint: String,
     val invocationPath: String = "/invocations",
@@ -40,12 +49,18 @@ data class AgentCoreRuntimeClientConfig(
     val qualifier: String? = null
 )
 
-/** Client for the AgentCore Runtime `/invocations` contract. */
+/** Client for the AgentCore Runtime `/invocations` contract.
+ *
+ * @param config Runtime endpoint and request settings.
+ * @param httpClient Optional injected HTTP client.
+ * @param dataClient Optional pinned SDK data-plane seam.
+ */
 class AgentCoreRuntimeClient(
     private val config: AgentCoreRuntimeClientConfig,
     httpClient: HttpClient? = null,
     private val dataClient: AgentCoreRuntimeDataClient? = null
-) : AutoCloseable {
+) : AutoCloseable
+{
     private val ownsHttpClient = httpClient == null
     private val httpClient = httpClient ?: HttpClient()
 
@@ -56,13 +71,24 @@ class AgentCoreRuntimeClient(
         httpClient: HttpClient? = null
     ) : this(config, httpClient, AwsAgentCoreRuntimeDataClient(clients.data))
 
-    /** Invoke the runtime and decode its JSON response. */
-    suspend fun invoke(input: String, sessionId: String? = null): AgentCoreInvocationResponse {
+    /** Invoke the runtime and decode its JSON response.
+     *
+     * @param input Text prompt.
+     * @param sessionId Optional runtime session identifier.
+     * @return Decoded invocation response.
+     */
+    suspend fun invoke(input: String, sessionId: String? = null): AgentCoreInvocationResponse
+    {
         return invoke(AgentCoreInvocationRequest(input = input, sessionId = sessionId))
     }
 
-    /** Invoke the runtime with the canonical prompt/content request model. */
-    suspend fun invoke(request: AgentCoreInvocationRequest): AgentCoreInvocationResponse {
+    /** Invoke the runtime with the canonical prompt/content request model.
+     *
+     * @param request Invocation request.
+     * @return Decoded invocation response.
+     */
+    suspend fun invoke(request: AgentCoreInvocationRequest): AgentCoreInvocationResponse
+    {
         require(!request.stream) { "Non-streaming runtime invocation cannot set stream=true." }
         val response = httpClient.post(url()) {
             contentType(ContentType.Application.Json)
@@ -71,31 +97,46 @@ class AgentCoreRuntimeClient(
             setBody(AgentCoreRuntimeJson.encodeRequest(request))
         }
         val body = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            throw IllegalStateException("AgentCore Runtime returned ${response.status}: $body")
-        }
+        if(!response.status.isSuccess())
+            {
+                throw IllegalStateException("AgentCore Runtime returned ${response.status}: $body")
+            }
+
         return AgentCoreRuntimeJson.decodeResponse(body).copy(
             sessionId = response.headers[config.sessionHeader] ?: request.sessionId.orEmpty()
         )
     }
 
-    /** Invoke the runtime in streaming mode and forward each SSE text event. */
+    /** Invoke the runtime in streaming mode and forward each SSE text event.
+     *
+     * @param input Text prompt.
+     * @param sessionId Optional runtime session identifier.
+     * @param onChunk Callback invoked for each non-empty text chunk.
+     * @return Decoded streamed response.
+     */
     suspend fun invokeStreaming(
         input: String,
         sessionId: String? = null,
         onChunk: suspend (String) -> Unit
-    ): AgentCoreInvocationResponse {
+    ): AgentCoreInvocationResponse
+    {
         return invokeStreaming(
             AgentCoreInvocationRequest(input = input, sessionId = sessionId, stream = true),
             onChunk
         )
     }
 
-    /** Invoke the canonical request model and consume the SSE body incrementally. */
+    /** Invoke the canonical request model and consume the SSE body incrementally.
+     *
+     * @param request Streaming invocation request.
+     * @param onChunk Callback invoked for each non-empty text chunk.
+     * @return Decoded streamed response.
+     */
     suspend fun invokeStreaming(
         request: AgentCoreInvocationRequest,
         onChunk: suspend (String) -> Unit
-    ): AgentCoreInvocationResponse {
+    ): AgentCoreInvocationResponse
+    {
         require(request.stream) { "Streaming runtime requests must set stream=true." }
         return httpClient.preparePost(url()) {
             contentType(ContentType.Application.Json)
@@ -106,7 +147,8 @@ class AgentCoreRuntimeClient(
             }
             setBody(AgentCoreRuntimeJson.encodeRequest(request))
         }.execute { response ->
-            if (!response.status.isSuccess()) {
+            if(!response.status.isSuccess())
+            {
                 throw IllegalStateException(
                     "AgentCore Runtime returned ${response.status}: ${response.bodyAsText()}"
                 )
@@ -118,9 +160,10 @@ class AgentCoreRuntimeClient(
             val output = StringBuilder()
             var receivedTerminalEvent = false
             val channel = response.bodyAsChannel()
-            while (true) {
+            while(true)
+            {
                 val line = channel.readUTF8Line() ?: break
-                if (!line.startsWith("data:")) continue
+                if(!line.startsWith("data:")) continue
 
                 val eventJson = line.removePrefix("data:").trimStart()
                 val event = AgentCoreRuntimeJson.decodeStreamEvent(eventJson)
@@ -128,18 +171,23 @@ class AgentCoreRuntimeClient(
                 event.error?.let { error ->
                     throw IllegalStateException("AgentCore Runtime invocation failed: $error")
                 }
-                if (event.text.isNotEmpty()) {
+                if(event.text.isNotEmpty())
+                {
                     output.append(event.text)
                     onChunk(event.text)
                 }
-                if (event.done) {
+                if(event.done)
+                {
                     receivedTerminalEvent = true
                     break
                 }
             }
-            if (!receivedTerminalEvent) {
+
+            if(!receivedTerminalEvent)
+            {
                 throw IllegalStateException("AgentCore Runtime SSE stream ended before a terminal event.")
             }
+
             AgentCoreInvocationResponse(
                 output = output.toString(),
                 sessionId = resolvedSessionId,
@@ -148,7 +196,11 @@ class AgentCoreRuntimeClient(
         }
     }
 
-    /** Invoke AgentCore's pinned SDK data-plane operation directly. */
+    /** Invoke AgentCore's pinned SDK data-plane operation directly.
+     *
+     * @param request SDK invocation request.
+     * @return SDK invocation response.
+     */
     suspend fun invoke(request: InvokeAgentRuntimeRequest): InvokeAgentRuntimeResponse =
         checkNotNull(dataClient) {
             "This runtime client was not constructed with AgentCoreClients."
@@ -161,13 +213,18 @@ class AgentCoreRuntimeClient(
     suspend fun invokeSdkStreaming(
         request: InvokeAgentRuntimeRequest,
         onChunk: suspend (ByteArray) -> Unit
-    ): InvokeAgentRuntimeResponse {
+    ): InvokeAgentRuntimeResponse
+    {
         val response = invoke(request)
         response.response?.toFlow()?.collect { chunk -> onChunk(chunk) }
         return response
     }
 
-    /** Stop a pinned SDK runtime session when this client was SDK-configured. */
+    /** Stop a pinned SDK runtime session when this client was SDK-configured.
+     *
+     * @param sessionId Runtime session identifier.
+     * @return SDK stop-session response.
+     */
     suspend fun stopSession(sessionId: String): StopRuntimeSessionResponse =
         checkNotNull(dataClient) {
             "This runtime client was not constructed with AgentCoreClients."
@@ -182,8 +239,12 @@ class AgentCoreRuntimeClient(
         )
 
     /** Close the owned HTTP client. */
-    override fun close() {
-        if (ownsHttpClient) httpClient.close()
+    override fun close()
+    {
+        if(ownsHttpClient)
+        {
+            httpClient.close()
+        }
     }
 
     private fun url(): String = config.endpoint.trimEnd('/') + config.invocationPath
@@ -191,20 +252,35 @@ class AgentCoreRuntimeClient(
 
 /** Narrow SDK seam that keeps runtime client tests independent of AWS. */
 interface AgentCoreRuntimeDataClient {
+    /**
+     * Invoke the runtime through the SDK data plane.
+     *
+     * @param request SDK invocation request.
+     * @return SDK invocation response.
+     */
     suspend fun invoke(request: InvokeAgentRuntimeRequest): InvokeAgentRuntimeResponse
+
+    /**
+     * Stop a runtime session through the SDK data plane.
+     *
+     * @param request SDK stop-session request.
+     * @return SDK stop-session response.
+     */
     suspend fun stop(request: StopRuntimeSessionRequest): StopRuntimeSessionResponse
 }
 
 private class AwsAgentCoreRuntimeDataClient(
     private val delegate: aws.sdk.kotlin.services.bedrockagentcore.BedrockAgentCoreClient
-) : AgentCoreRuntimeDataClient {
+) : AgentCoreRuntimeDataClient
+{
     override suspend fun invoke(request: InvokeAgentRuntimeRequest): InvokeAgentRuntimeResponse =
         requireNotNull(captureInvokeResponse(request))
 
-    private suspend fun captureInvokeResponse(request: InvokeAgentRuntimeRequest): InvokeAgentRuntimeResponse? {
+    private suspend fun captureInvokeResponse(request: InvokeAgentRuntimeRequest): InvokeAgentRuntimeResponse?
+    {
         var response: InvokeAgentRuntimeResponse? = null
-        delegate.invokeAgentRuntime(request) { result ->
-            response = result
+        delegate.invokeAgentRuntime(request) { runtimeResponse ->
+            response = runtimeResponse
         }
         return response
     }
@@ -213,11 +289,16 @@ private class AwsAgentCoreRuntimeDataClient(
         delegate.stopRuntimeSession(request)
 }
 
-/** A P2P adapter that routes generic TPipe requests to AgentCore Runtime. */
+/** A P2P adapter that routes generic TPipe requests to AgentCore Runtime.
+ *
+ * @param client Runtime HTTP client.
+ * @param agentName Name advertised in the P2P descriptor.
+ */
 class AgentCoreRuntimeAgent(
     private val client: AgentCoreRuntimeClient,
     agentName: String = "agentcore-runtime"
-) : P2PInterface {
+) : P2PInterface
+{
     private var descriptor: P2PDescriptor = P2PDescriptor(
         agentName = agentName,
         agentDescription = "TPipe agent hosted by AgentCore Runtime",
@@ -237,28 +318,34 @@ class AgentCoreRuntimeAgent(
 
     override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
-    override fun setP2pDescription(description: P2PDescriptor) {
+    override fun setP2pDescription(description: P2PDescriptor)
+    {
         descriptor = description
     }
 
     override fun getP2pDescription(): P2PDescriptor = descriptor
 
-    override fun setP2pTransport(transport: P2PTransport) {
+    override fun setP2pTransport(transport: P2PTransport)
+    {
         descriptor.transport = transport
     }
 
     override fun getP2pTransport(): P2PTransport = descriptor.transport
 
-    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit) {
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
         this.callback = callback
     }
 
-    override fun clearStreamingCallbacksRecursive() {
+    override fun clearStreamingCallbacksRecursive()
+    {
         callback = null
     }
 
-    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse {
-        return try {
+    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse
+    {
+        return try
+        {
             val input = request.prompt.text
             val invocation = callback?.let { sink ->
                 client.invokeStreaming(input, onChunk = sink)
@@ -266,7 +353,10 @@ class AgentCoreRuntimeAgent(
             P2PResponse(
                 output = invocation.outputContent ?: invocation.output.let { value -> MultimodalContent(text = value) }
             )
-        } finally {
+        }
+
+        finally
+        {
             // A runtime adapter may be reused directly, outside the HTTP host.
             // Do not retain a caller-owned callback across requests.
             clearStreamingCallbacksRecursive()

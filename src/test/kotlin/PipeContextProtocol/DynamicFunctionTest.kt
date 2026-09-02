@@ -7,9 +7,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class DynamicFunctionTest {
+class DynamicFunctionTest
+{
     @AfterEach
-    fun cleanup() {
+    fun cleanup()
+    {
         FunctionRegistry.clear()
     }
 
@@ -33,10 +35,10 @@ class DynamicFunctionTest {
             "ok:${it["mode"]}"
         }
 
-        val result = FunctionInvoker().invoke("remote_tool_test", mapOf("mode" to "fast"))
+        val invocationResult = FunctionInvoker().invoke("remote_tool_test", mapOf("mode" to "fast"))
 
-        assertTrue(result.success)
-        assertEquals("ok:fast", result.returnValueAsString)
+        assertTrue(invocationResult.success)
+        assertEquals("ok:fast", invocationResult.returnValueAsString)
         assertEquals(mapOf("mode" to "fast"), received)
     }
 
@@ -60,10 +62,10 @@ class DynamicFunctionTest {
             "unexpected"
         }
 
-        val result = FunctionInvoker().invoke("remote_tool_enum_test", mapOf("mode" to "unsafe"))
+        val invocationResult = FunctionInvoker().invoke("remote_tool_enum_test", mapOf("mode" to "unsafe"))
 
-        assertFalse(result.success)
+        assertFalse(invocationResult.success)
         assertFalse(invoked)
-        assertTrue(result.error.orEmpty().contains("Invalid value 'unsafe'"))
+        assertTrue(invocationResult.error.orEmpty().contains("Invalid value 'unsafe'"))
     }
 }

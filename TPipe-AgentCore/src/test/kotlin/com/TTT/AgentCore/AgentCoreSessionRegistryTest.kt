@@ -19,7 +19,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
-class AgentCoreSessionRegistryTest {
+class AgentCoreSessionRegistryTest
+{
     @Test
     fun createsOneRootPerSessionAndSerializesSameSession() = runBlocking {
         var created = 0
@@ -126,8 +127,10 @@ class AgentCoreSessionRegistryTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val aborted = CompletableDeferred<Unit>()
-        val root = object : FakeP2pInterface() {
-            override suspend fun abortRecursive() {
+        val root = object : FakeP2pInterface()
+        {
+            override suspend fun abortRecursive()
+            {
                 aborted.complete(Unit)
                 release.complete(Unit)
             }
@@ -156,15 +159,18 @@ class AgentCoreSessionRegistryTest {
     fun closeDoesNotAbortIdleRootsAndRunsRegisteredCleanup() = runBlocking {
         var now = 100L
         var cleanupCalls = 0
-        val root = object : FakeP2pInterface() {
+        val root = object : FakeP2pInterface()
+        {
             var aborted = false
             var callbacksCleared = false
 
-            override suspend fun abortRecursive() {
+            override suspend fun abortRecursive()
+            {
                 aborted = true
             }
 
-            override fun clearStreamingCallbacksRecursive() {
+            override fun clearStreamingCallbacksRecursive()
+            {
                 callbacksCleared = true
             }
         }
@@ -202,7 +208,8 @@ class AgentCoreSessionRegistryTest {
         assertEquals(2, loads)
     }
 
-    private open class FakeP2pInterface : P2PInterface {
+    private open class FakeP2pInterface : P2PInterface
+    {
         override var killSwitch: com.TTT.P2P.KillSwitch? = null
     }
 }

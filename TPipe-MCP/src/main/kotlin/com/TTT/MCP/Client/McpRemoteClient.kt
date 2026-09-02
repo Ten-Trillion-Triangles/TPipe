@@ -54,13 +54,25 @@ import java.util.concurrent.ConcurrentHashMap
  * credential into the client configuration.
  */
 fun interface McpRemoteAuthProvider {
-    /** Return the headers that should be added to the next HTTP request. */
+    /**
+     * Return the headers that should be added to the next HTTP request.
+     *
+     * @return Headers for the next request.
+     */
     suspend fun headers(): Map<String, String>
 }
 
 /** Signs one outgoing MCP HTTP request, including its exact request body. */
 fun interface McpRemoteRequestSigner {
-    /** Return authentication headers for the supplied request. */
+    /**
+     * Return authentication headers for the supplied request.
+     *
+     * @param url Final request URL.
+     * @param method HTTP method.
+     * @param headers Request headers before signing.
+     * @param body Exact request body bytes.
+     * @return Headers to add to the request.
+     */
     suspend fun sign(
         url: String,
         method: String,
@@ -69,7 +81,21 @@ fun interface McpRemoteRequestSigner {
     ): Map<String, String>
 }
 
-/** Configuration for an MCP 2025-06-18 Streamable HTTP connection. */
+/**
+ * Configuration for an MCP 2025-06-18 Streamable HTTP connection.
+ *
+ * @param endpoint MCP endpoint.
+ * @param clientName Client name advertised during initialization.
+ * @param clientVersion Client version advertised during initialization.
+ * @param requestHeaders Static headers added to requests.
+ * @param authProvider Dynamic request-header provider.
+ * @param namespacePrefix Optional PCP function-name prefix.
+ * @param clientOptions MCP SDK client options.
+ * @param requestSigner Dynamic request signer.
+ * @param requestTimeoutMillis Request timeout in milliseconds.
+ * @param connectTimeoutMillis Connection timeout in milliseconds.
+ * @param socketTimeoutMillis Socket timeout in milliseconds.
+ */
 data class McpRemoteClientConfig(
     val endpoint: String,
     val clientName: String = "TPipe-MCP-Remote-Client",
@@ -90,12 +116,16 @@ data class McpRemoteClientConfig(
  * This class intentionally exposes MCP tools, resources, and prompts rather
  * than inventing an AgentCore-specific transport. It also keeps the SDK
  * session alive until [close] so server-assigned MCP session ids are reused.
+ *
+ * @param config MCP endpoint, authentication, and timeout settings.
+ * @param httpClient Optional injected HTTP client.
  */
 @OptIn(ExperimentalMcpApi::class)
 class McpRemoteClient(
     private val config: McpRemoteClientConfig,
     httpClient: HttpClient? = null
-) : AutoCloseable {
+) : AutoCloseable
+{
 
     private val ownsHttpClient = httpClient == null
     private val sourceHttpClient = httpClient ?: HttpClient {
@@ -106,7 +136,7 @@ class McpRemoteClient(
         }
     }
     private val sourceHasHttpTimeoutPlugin = sourceHttpClient.pluginOrNull(HttpTimeout) != null
-    private val httpClient = if (
+    private val httpClient = if(
         config.authProvider != null ||
         config.requestSigner != null ||
         (!ownsHttpClient && (
@@ -114,7 +144,8 @@ class McpRemoteClient(
                 config.connectTimeoutMillis != null ||
                 config.socketTimeoutMillis != null
             ) && !sourceHasHttpTimeoutPlugin)
-    ) {
+    )
+    {
         sourceHttpClient.config {
             if(!ownsHttpClient && !sourceHasHttpTimeoutPlugin && (
                 config.requestTimeoutMillis != null ||
@@ -130,7 +161,9 @@ class McpRemoteClient(
             }
         }
     }
-    else {
+
+    else
+    {
         sourceHttpClient
     }
     private val configuredHttpClient = httpClient !== sourceHttpClient
@@ -180,74 +213,106 @@ class McpRemoteClient(
         }
     }
 
-    /** Connect once and retain the negotiated MCP session for later calls. */
+    /**
+     * Connect once and retain the negotiated MCP session for later calls.
+     *
+     * @return Nothing; completion indicates that the session is connected.
+     */
     suspend fun connect() = connectionMutex.withLock {
-        if (!connected) {
+        if(!connected)
+        {
             client.connect(transport)
             connected = true
         }
     }
 
-    /** Return the underlying SDK client for capabilities not wrapped here. */
+    /**
+     * Return the underlying SDK client for capabilities not wrapped here.
+     *
+     * @return Underlying MCP SDK client.
+     */
     fun sdkClient(): Client = client
 
-    /** Return the transport and its current negotiated session id. */
+    /**
+     * Return the transport and its current negotiated session id.
+     *
+     * @return Current MCP session identifier, when negotiated.
+     */
     fun sessionId(): String? = transport.sessionId
 
-    /** List all tools, following MCP pagination cursors. */
-    suspend fun listTools(): List<Tool> {
+    /** List all tools, following MCP pagination cursors.
+     *
+     * @return All tools returned by the server.
+     */
+    suspend fun listTools(): List<Tool>
+    {
         ensureConnected()
         val tools = mutableListOf<Tool>()
         var cursor: String? = null
         do {
-            val result = client.listTools(
+            val toolsResponse = client.listTools(
                 ListToolsRequest(PaginatedRequestParams(cursor = cursor))
             )
-            tools += result.tools
-            cursor = result.nextCursor
-        } while (!cursor.isNullOrBlank())
+            tools += toolsResponse.tools
+            cursor = toolsResponse.nextCursor
+        } while(!cursor.isNullOrBlank())
         return tools
     }
 
-    /** List all resources, following MCP pagination cursors. */
-    suspend fun listResources(): List<Resource> {
+    /** List all resources, following MCP pagination cursors.
+     *
+     * @return All resources returned by the server.
+     */
+    suspend fun listResources(): List<Resource>
+    {
         ensureConnected()
         val resources = mutableListOf<Resource>()
         var cursor: String? = null
         do {
-            val result = client.listResources(
+            val resourcesResponse = client.listResources(
                 ListResourcesRequest(PaginatedRequestParams(cursor = cursor))
             )
-            resources += result.resources
-            cursor = result.nextCursor
-        } while (!cursor.isNullOrBlank())
+            resources += resourcesResponse.resources
+            cursor = resourcesResponse.nextCursor
+        } while(!cursor.isNullOrBlank())
         return resources
     }
 
-    /** List all prompts, following MCP pagination cursors. */
-    suspend fun listPrompts(): List<Prompt> {
+    /** List all prompts, following MCP pagination cursors.
+     *
+     * @return All prompts returned by the server.
+     */
+    suspend fun listPrompts(): List<Prompt>
+    {
         ensureConnected()
         val prompts = mutableListOf<Prompt>()
         var cursor: String? = null
         do {
-            val result = client.listPrompts(
+            val promptsResponse = client.listPrompts(
                 ListPromptsRequest(PaginatedRequestParams(cursor = cursor))
             )
-            prompts += result.prompts
-            cursor = result.nextCursor
-        } while (!cursor.isNullOrBlank())
+            prompts += promptsResponse.prompts
+            cursor = promptsResponse.nextCursor
+        } while(!cursor.isNullOrBlank())
         return prompts
     }
 
-    /** Call a remote MCP tool and return its protocol JSON result. */
-    suspend fun callTool(name: String, arguments: Map<String, String>): String {
+    /** Call a remote MCP tool and return its protocol JSON result.
+     *
+     * @param name Remote tool name.
+     * @param arguments String-valued PCP-compatible arguments.
+     * @return Serialized MCP tool result.
+     */
+    suspend fun callTool(name: String, arguments: Map<String, String>): String
+    {
         return callToolValues(name, arguments)
     }
 
-    private suspend fun callToolValues(name: String, arguments: Map<String, Any?>): String {
+    private suspend fun callToolValues(name: String, arguments: Map<String, Any?>): String
+    {
         ensureConnected()
-        val result = client.callTool(name, arguments)
-        return McpJson.encodeToString(result)
+        val toolResponse = client.callTool(name, arguments)
+        return McpJson.encodeToString(toolResponse)
     }
 
     /**
@@ -256,8 +321,12 @@ class McpRemoteClient(
      * Parameter values remain strings at the PCP boundary; compatible scalar,
      * list, and map values are converted to native JSON values before the MCP
      * SDK call while preserving PCP validation and enum metadata.
+     *
+     * @param context Context receiving the bound functions.
+     * @return The supplied context after binding.
      */
-    suspend fun bindToolsToPcp(context: PcpContext): PcpContext {
+    suspend fun bindToolsToPcp(context: PcpContext): PcpContext
+    {
         bindToolsToPcp(context, config.namespacePrefix)
         return context
     }
@@ -267,13 +336,19 @@ class McpRemoteClient(
      *
      * A collision is rejected instead of silently replacing a function in the
      * process-wide PCP registry. Rebinding the same signature is idempotent.
+     *
+     * @param context Context receiving the bound functions.
+     * @param namespacePrefix Optional prefix for exposed function names.
+     * @return The supplied context after binding.
      */
-    suspend fun bindToolsToPcp(context: PcpContext, namespacePrefix: String?): PcpContext {
+    suspend fun bindToolsToPcp(context: PcpContext, namespacePrefix: String?): PcpContext
+    {
         listTools().forEach { tool ->
             val exposedName = (namespacePrefix.orEmpty() + tool.name)
             val signature = tool.toFunctionSignature().copy(name = exposedName)
             val existing = com.TTT.PipeContextProtocol.FunctionRegistry.getSignature(exposedName)
-            if(existing != null) {
+            if(existing != null)
+            {
                 require(boundFunctions[exposedName] == signature && existing == signature) {
                     "MCP tool '$exposedName' is already registered by another binding."
                 }
@@ -294,40 +369,56 @@ class McpRemoteClient(
         return context
     }
 
-    /** Create a new PCP context populated with this connection's remote tools. */
+    /**
+     * Create a new PCP context populated with this connection's remote tools.
+     *
+     * @param namespacePrefix Optional prefix for exposed function names.
+     * @return New context containing the remote tools.
+     */
     suspend fun toPcpContext(namespacePrefix: String? = config.namespacePrefix): PcpContext =
         bindToolsToPcp(PcpContext(), namespacePrefix)
 
-    /** Close the MCP session and the owned HTTP client, if any. */
-    suspend fun closeSuspend() {
+    /**
+     * Close the MCP session and the owned HTTP client, if any.
+     *
+     * @return Nothing; completion indicates that owned resources were closed.
+     */
+    suspend fun closeSuspend()
+    {
         boundFunctions.forEach { (name, signature) ->
             com.TTT.PipeContextProtocol.FunctionRegistry.unregisterFunction(name, signature)
         }
         boundFunctions.clear()
         connectionMutex.withLock {
-            if (connected) {
+            if(connected)
+            {
                 client.close()
                 connected = false
             }
         }
-        if (configuredHttpClient) {
+        if(configuredHttpClient)
+        {
             httpClient.close()
         }
-        if (ownsHttpClient) {
+        if(ownsHttpClient)
+        {
             sourceHttpClient.close()
         }
     }
 
     /** Blocking AutoCloseable bridge for JVM applications. */
-    override fun close() {
+    override fun close()
+    {
         runBlocking { closeSuspend() }
     }
 
-    private suspend fun ensureConnected() {
+    private suspend fun ensureConnected()
+    {
         connect()
     }
 
-    private suspend fun applyDynamicAuthentication(request: HttpRequestBuilder) {
+    private suspend fun applyDynamicAuthentication(request: HttpRequestBuilder)
+    {
         config.authProvider?.headers()?.forEach { (name, value) ->
             request.headers.remove(name)
             request.headers.append(name, value)
@@ -349,14 +440,16 @@ class McpRemoteClient(
         }
     }
 
-    private fun addConfiguredHeaders(builder: HttpRequestBuilder) {
+    private fun addConfiguredHeaders(builder: HttpRequestBuilder)
+    {
         builder.headers {
             config.requestHeaders.forEach { (name, value) -> append(name, value) }
         }
     }
 }
 
-private fun Tool.toFunctionSignature(): FunctionSignature {
+private fun Tool.toFunctionSignature(): FunctionSignature
+{
     val properties: JsonObject = inputSchema.properties ?: JsonObject(emptyMap())
     val parameters = properties.map { (name, definition) ->
         val objectDefinition = definition as? JsonObject
@@ -378,9 +471,11 @@ private fun Tool.toFunctionSignature(): FunctionSignature {
     )
 }
 
-private fun JsonElement?.schemaType(): String? = when (this) {
+private fun JsonElement?.schemaType(): String? = when(this)
+{
     is JsonObject -> {
-        when (val type = this["type"]) {
+        when(val type = this["type"])
+        {
             is JsonPrimitive -> type.content
             is kotlinx.serialization.json.JsonArray -> type
                 .mapNotNull { (it as? JsonPrimitive)?.content }
@@ -426,13 +521,15 @@ internal fun String?.toPcpKotlinType(enumValues: List<String>): String = when {
     else -> "kotlin.Any"
 }
 
-internal fun String.toMcpArgument(type: ParamType): Any? = when (type) {
+internal fun String.toMcpArgument(type: ParamType): Any? = when(type)
+{
     ParamType.String, ParamType.Enum -> this
     ParamType.Int -> toIntOrNull()
         ?: throw IllegalArgumentException("Expected an integer MCP argument, got '$this'.")
     ParamType.Float -> toDoubleOrNull()
         ?: throw IllegalArgumentException("Expected a number MCP argument, got '$this'.")
-    ParamType.Bool -> when (lowercase()) {
+    ParamType.Bool -> when(lowercase())
+    {
         "true" -> true
         "false" -> false
         else -> throw IllegalArgumentException("Expected a boolean MCP argument, got '$this'.")
@@ -447,13 +544,17 @@ internal fun String.toMcpArgument(type: ParamType): Any? = when (type) {
 private fun parseNativeJsonArgument(value: String): Any? =
     Json.parseToJsonElement(value).toNativeMcpValue()
 
-private fun JsonElement.toNativeMcpValue(): Any? = when (this) {
+private fun JsonElement.toNativeMcpValue(): Any? = when(this)
+{
     JsonNull -> null
     is kotlinx.serialization.json.JsonObject -> mapValues { (_, value) -> value.toNativeMcpValue() }
     is kotlinx.serialization.json.JsonArray -> map { it.toNativeMcpValue() }
-    is JsonPrimitive -> if (isString) {
+    is JsonPrimitive -> if(isString)
+    {
         content
-    } else {
+    }
+    else
+    {
         booleanOrNull ?: longOrNull ?: doubleOrNull ?: content
     }
 }

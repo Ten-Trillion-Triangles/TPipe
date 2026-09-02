@@ -2588,7 +2588,7 @@ private fun pathKey(name: String): String = name.lowercase()
         goalAgent?.clearStreamingCallbacksRecursive()
         preInitAgent?.clearStreamingCallbacksRecursive()
         pathSafetyAgent?.clearStreamingCallbacksRecursive()
-        for (slot in additionalHarnessAgentSlots)
+        for(slot in additionalHarnessAgentSlots)
         {
             slot.agent?.clearStreamingCallbacksRecursive()
         }

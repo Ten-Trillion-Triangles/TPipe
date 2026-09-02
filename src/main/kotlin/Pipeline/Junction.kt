@@ -362,7 +362,7 @@ class Junction : P2PInterface
     override fun clearStreamingCallbacksRecursive()
     {
         moderatorBinding?.component?.clearStreamingCallbacksRecursive()
-        for (binding in participantBindings)
+        for(binding in participantBindings)
         {
             binding.component.clearStreamingCallbacksRecursive()
         }

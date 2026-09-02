@@ -16,7 +16,13 @@ import javax.crypto.spec.SecretKeySpec
 /** Authentication seam for Gateway MCP requests. */
 fun interface AgentCoreGatewayAuth : McpRemoteAuthProvider
 
-/** Credentials used by the request-aware Gateway SigV4 signer. */
+/**
+ * Credentials used by the request-aware Gateway SigV4 signer.
+ *
+ * @param accessKeyId AWS access key identifier.
+ * @param secretAccessKey AWS secret access key.
+ * @param sessionToken Optional temporary-session token.
+ */
 data class AgentCoreGatewayCredentials(
     val accessKeyId: String,
     val secretAccessKey: String,
@@ -25,7 +31,10 @@ data class AgentCoreGatewayCredentials(
 
 /** Supplies fresh AWS credentials for each Gateway request signature. */
 fun interface AgentCoreGatewayCredentialsProvider {
-    /** Resolve credentials for one outgoing request. */
+    /** Resolve credentials for one outgoing request.
+     *
+     * @return Credentials used for the next signature.
+     */
     suspend fun credentials(): AgentCoreGatewayCredentials
 }
 
@@ -34,13 +43,19 @@ fun interface AgentCoreGatewayCredentialsProvider {
  *
  * The signer receives the final MCP URL, headers, and serialized request body
  * so the authorization covers the exact bytes sent by [McpRemoteClient].
+ *
+ * @param region AWS signing region.
+ * @param credentialsProvider Source of request credentials.
+ * @param service AWS service name used in the signing scope.
+ * @param clock Clock used for the signing timestamp.
  */
 class AgentCoreGatewaySigV4Auth(
     private val region: String,
     private val credentialsProvider: AgentCoreGatewayCredentialsProvider,
     private val service: String = "bedrock-agentcore",
     private val clock: Clock = Clock.systemUTC()
-) : McpRemoteRequestSigner {
+) : McpRemoteRequestSigner
+{
     private val timestampFormat = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
         .withLocale(Locale.ROOT)
         .withZone(ZoneOffset.UTC)
@@ -48,12 +63,21 @@ class AgentCoreGatewaySigV4Auth(
         .withLocale(Locale.ROOT)
         .withZone(ZoneOffset.UTC)
 
+    /** Sign one MCP request using the exact URL, headers, and body bytes.
+     *
+     * @param url Final request URL.
+     * @param method HTTP method.
+     * @param headers Request headers before signing.
+     * @param body Exact serialized request body.
+     * @return Headers to add to the request.
+     */
     override suspend fun sign(
         url: String,
         method: String,
         headers: Map<String, String>,
         body: ByteArray
-    ): Map<String, String> {
+    ): Map<String, String>
+    {
         val credentials = credentialsProvider.credentials()
         val instant = Instant.now(clock)
         val amzDate = timestampFormat.format(instant)
@@ -121,7 +145,8 @@ class AgentCoreGatewaySigV4Auth(
         }
     }
 
-    private fun canonicalPath(uri: URI): String {
+    private fun canonicalPath(uri: URI): String
+    {
         val rawPath = uri.rawPath.ifEmpty { "/" }
         return buildString {
             var index = 0
@@ -153,8 +178,8 @@ class AgentCoreGatewaySigV4Auth(
         .filter { it.isNotEmpty() }
         .map { part ->
             val separator = part.indexOf('=')
-            val name = if (separator >= 0) part.substring(0, separator) else part
-            val value = if (separator >= 0) part.substring(separator + 1) else ""
+            val name = if(separator >= 0) part.substring(0, separator) else part
+            val value = if(separator >= 0) part.substring(separator + 1) else ""
             awsEncode(percentDecode(name), encodeSlash = true) to
                 awsEncode(percentDecode(value), encodeSlash = true)
         }
@@ -162,7 +187,8 @@ class AgentCoreGatewaySigV4Auth(
         .joinToString("&") { (name, value) -> "$name=$value" }
 
     /** Decode URI percent escapes without treating a literal plus as a space. */
-    private fun percentDecode(value: String): String {
+    private fun percentDecode(value: String): String
+    {
         val bytes = ByteArrayOutputStream(value.length)
         var index = 0
         while(index < value.length)
@@ -189,16 +215,19 @@ class AgentCoreGatewaySigV4Auth(
     private fun awsEncode(value: String, encodeSlash: Boolean): String = buildString {
         value.toByteArray(Charsets.UTF_8).forEach { byte ->
             val character = byte.toInt().and(0xff).toChar()
-            if (character in 'A'..'Z' || character in 'a'..'z' || character in '0'..'9' ||
+            if(character in 'A'..'Z' || character in 'a'..'z' || character in '0'..'9' ||
                 character in "-_.~" || (!encodeSlash && character == '/')
-            ) {
+            )
+            {
                 append(character)
             }
-            else {
+            else
+            {
                 append('%')
                 append("0123456789ABCDEF"[byte.toInt().ushr(4).and(0x0f)])
                 append("0123456789ABCDEF"[byte.toInt().and(0x0f)])
             }
+
         }
     }
 

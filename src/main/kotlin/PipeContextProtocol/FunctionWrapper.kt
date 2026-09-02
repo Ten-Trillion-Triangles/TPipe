@@ -33,6 +33,9 @@ abstract class NativeFunction
 /**
  * Native-function wrapper for a dynamically resolved implementation.
  * Validation is still performed by [FunctionInvoker] before this handler runs.
+ *
+ * @param signature Function metadata advertised to PCP callers.
+ * @param handler Dynamic implementation receiving string-compatible arguments.
  */
 class DynamicFunction(
     override val signature: FunctionSignature,

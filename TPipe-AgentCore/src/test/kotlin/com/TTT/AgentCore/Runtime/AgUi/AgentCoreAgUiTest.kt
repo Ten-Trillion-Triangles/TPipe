@@ -5,9 +5,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class AgentCoreAgUiTest {
+class AgentCoreAgUiTest
+{
     @Test
-    fun mapsLatestUserMessageAndKeepsPriorConversationInRequestContext() {
+    fun mapsLatestUserMessageAndKeepsPriorConversationInRequestContext()
+    {
         val input = RunAgentInput(
             threadId = "thread-1",
             runId = "run-1",
@@ -31,7 +33,8 @@ class AgentCoreAgUiTest {
     }
 
     @Test
-    fun emitsCanonicalSseFramesAndStandardRunSequence() {
+    fun emitsCanonicalSseFramesAndStandardRunSequence()
+    {
         val input = RunAgentInput("thread-1", "run-1", listOf(RunAgentMessage("user", "Hi")))
         val events = AgentCoreAgUiEventMapper.started(input) +
             AgentCoreAgUiEventMapper.content(input, "Hello") +

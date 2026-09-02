@@ -4,16 +4,19 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
-class TraceSinkTest {
+class TraceSinkTest
+{
     @AfterEach
-    fun cleanup() {
+    fun cleanup()
+    {
         PipeTracer.clearSinks()
         PipeTracer.clearTrace("trace-sink-test")
         PipeTracer.disable()
     }
 
     @Test
-    fun deliversEventsWithoutChangingTraceHistoryWhenSinkFails() {
+    fun deliversEventsWithoutChangingTraceHistoryWhenSinkFails()
+    {
         val delivered = mutableListOf<TraceEvent>()
         PipeTracer.enable()
         PipeTracer.registerSink("capture") { _, event -> delivered += event }

@@ -7,6 +7,10 @@ object AgentCoreEvaluationTraceAdapter {
     /**
      * Convert traces without exporting prompt/context content by default.
      * Metadata already present on a trace is retained for evaluator labels.
+     *
+     * @param events TPipe trace events to convert.
+     * @param includeContent Whether to include trace content.
+     * @return Evaluation-friendly trace records.
      */
     fun toRecords(events: Iterable<TraceEvent>, includeContent: Boolean = false): List<Map<String, Any?>> =
         events.map { event ->
@@ -18,7 +22,7 @@ object AgentCoreEvaluationTraceAdapter {
                 put("pipeName", event.pipeName)
                 put("timestamp", event.timestamp)
                 put("metadata", event.metadata)
-                if (includeContent) put("content", event.content?.text.orEmpty())
+                if(includeContent) put("content", event.content?.text.orEmpty())
             }
         }
 }

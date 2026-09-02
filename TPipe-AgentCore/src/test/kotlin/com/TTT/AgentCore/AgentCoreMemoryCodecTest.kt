@@ -5,9 +5,11 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class AgentCoreMemoryCodecTest {
+class AgentCoreMemoryCodecTest
+{
     @Test
-    fun preservesExactSerializedTextAcrossCompressionAndChunking() {
+    fun preservesExactSerializedTextAcrossCompressionAndChunking()
+    {
         val serialized = "value-" + "x".repeat(40_000)
         val encoded = AgentCoreMemoryCodec.encode(serialized)
 

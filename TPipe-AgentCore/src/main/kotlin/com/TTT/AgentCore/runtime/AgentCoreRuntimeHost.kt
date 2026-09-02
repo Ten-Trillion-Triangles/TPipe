@@ -35,7 +35,18 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
-/** Configuration for the local AgentCore Runtime HTTP/WebSocket host. */
+/**
+ * Configuration for the local AgentCore Runtime HTTP/WebSocket host.
+ *
+ * @param bindAddress Address on which the server listens.
+ * @param port Server port.
+ * @param invocationPath HTTP invocation path.
+ * @param pingPath Health-check path.
+ * @param websocketPath WebSocket invocation path.
+ * @param sessionHeader Header carrying the runtime session id.
+ * @param sessionMode Session-root sharing mode.
+ * @param abortOnClientDisconnect Whether to abort a root after cancellation.
+ */
 data class AgentCoreRuntimeHostConfig(
     val bindAddress: String = "0.0.0.0",
     val port: Int = 8080,
@@ -53,19 +64,29 @@ data class AgentCoreRuntimeHostConfig(
  * The host does not introduce a new TPipe transport enum. It converts each
  * request into the existing [P2PRequest] contract and retains the root in the
  * [AgentCoreSessionRegistry].
+ *
+ * @param config Runtime server configuration.
+ * @param factory Factory that creates one root per session.
+ * @param clock Clock used for health and idle-session timestamps.
  */
 class AgentCoreRuntimeHost(
     private val config: AgentCoreRuntimeHostConfig,
     factory: AgentCoreSessionFactory,
     private val clock: () -> Long = System::currentTimeMillis
-) : AutoCloseable {
+) : AutoCloseable
+{
     private val sessions = AgentCoreSessionRegistry(config.sessionMode, factory, clock)
     private var engine: EmbeddedServer<*, *>? = null
     private val healthStatus = AtomicReference("Healthy")
     private val healthUpdatedAt = AtomicLong(clock())
 
-    /** Start the runtime server and return its engine. */
-    fun start(wait: Boolean = false): EmbeddedServer<*, *> {
+    /** Start the runtime server and return its engine.
+     *
+     * @param wait Whether to block while the server is running.
+     * @return The started embedded server.
+     */
+    fun start(wait: Boolean = false): EmbeddedServer<*, *>
+    {
         check(engine == null) { "AgentCore Runtime host is already started." }
         return embeddedServer(CIO, host = config.bindAddress, port = config.port) {
             installRuntimeRoutes()
@@ -75,29 +96,54 @@ class AgentCoreRuntimeHost(
     }
 
     /** Stop the runtime server and release the session registry. */
-    override fun close() {
+    override fun close()
+    {
         engine?.stop(1000, 2000)
         engine = null
         sessions.close()
     }
 
-    /** Evict inactive session roots older than [olderThan]. */
+    /**
+     * Evict inactive session roots older than [olderThan].
+     *
+     * @param olderThan Activity timestamp threshold.
+     * @return Canonical session identifiers that were evicted.
+     */
     suspend fun evictIdleSessions(olderThan: Long): List<String> = sessions.evictIdle(olderThan)
 
-    /** Number of retained session roots. */
+    /**
+     * Return the number of retained session roots.
+     *
+     * @return Number of retained session roots.
+     */
     suspend fun sessionCount(): Int = sessions.size()
 
-    /** Registry that AgentCore tool clients can use for owner-bound cleanup. */
+    /**
+     * Return the registry that AgentCore tool clients can use for owner-bound cleanup.
+     *
+     * @return This host's session registry.
+     */
     fun sessionRegistry(): AgentCoreSessionRegistry = sessions
 
-    /** Construct a Browser client bound to this host's session registry. */
+    /**
+     * Construct a Browser client bound to this host's session registry.
+     *
+     * @param clients Shared AgentCore SDK clients.
+     * @return Browser client with host-owned session cleanup.
+     */
     fun browserClient(clients: AgentCoreClients): AgentCoreBrowserClient = clients.browser(sessions)
 
-    /** Construct a Code Interpreter client bound to this host's session registry. */
+    /**
+     * Construct a Code Interpreter client bound to this host's session registry.
+     *
+     * @param clients Shared AgentCore SDK clients.
+     * @return Code Interpreter client with host-owned session cleanup.
+     */
     fun codeInterpreterClient(clients: AgentCoreClients): AgentCoreCodeInterpreterClient =
         clients.codeInterpreter(sessions)
 
-    private fun Application.installRuntimeRoutes() {
+    private fun Application.installRuntimeRoutes()
+    {
         install(WebSockets)
         routing {
             get(config.pingPath) {
@@ -117,12 +163,14 @@ class AgentCoreRuntimeHost(
                 val sessionId = request.sessionId
                     ?: call.request.headers[config.sessionHeader]
                     ?: UUID.randomUUID().toString()
-                if (request.stream) {
+                if(request.stream)
+                {
                     call.response.headers.append(config.sessionHeader, sessionId)
                     call.respondTextWriter(ContentType.Text.EventStream) {
                         var emittedChunks = false
                         var completedSuccessfully = false
-                        try {
+                        try
+                        {
                             val response = this@AgentCoreRuntimeHost.execute(
                                 sessionId = sessionId,
                                 content = request.effectiveContent(),
@@ -140,7 +188,8 @@ class AgentCoreRuntimeHost(
                                 )
                                 flush()
                             } ?: response.output?.text?.takeIf { it.isNotEmpty() }?.let { output ->
-                                if (!emittedChunks) {
+                                if(!emittedChunks)
+                                {
                                     write(
                                         "data: ${AgentCoreRuntimeJson.encodeStreamEvent(AgentCoreStreamEvent(text = output, sessionId = sessionId))}\n\n"
                                     )
@@ -148,27 +197,39 @@ class AgentCoreRuntimeHost(
                                 }
                             }
                             completedSuccessfully = response.rejection == null
-                        } catch (exception: CancellationException) {
+                        }
+                        catch(exception: CancellationException)
+                        {
                             throw exception
-                        } catch (exception: Exception) {
+                        }
+                        catch(exception: Exception)
+                        {
                             write(
                                 "data: ${AgentCoreRuntimeJson.encodeError(AgentCoreInvocationError(exception.message ?: "Invocation failed", sessionId))}\n\n"
                             )
                             flush()
                         }
-                        if (completedSuccessfully) {
+                        if(completedSuccessfully)
+                        {
                             write(
                                 "data: ${AgentCoreRuntimeJson.encodeStreamEvent(AgentCoreStreamEvent(done = true, sessionId = sessionId))}\n\n"
                             )
                             flush()
                         }
                     }
-                } else {
-                    val response = try {
+                }
+                else
+                {
+                    val response = try
+                    {
                         execute(sessionId, request.effectiveContent(), null)
-                    } catch (exception: CancellationException) {
+                    }
+                    catch(exception: CancellationException)
+                    {
                         throw exception
-                    } catch (exception: Exception) {
+                    }
+                    catch(exception: Exception)
+                    {
                         call.respondText(
                             AgentCoreRuntimeJson.encodeError(
                                 AgentCoreInvocationError(exception.message ?: "Invocation failed", sessionId)
@@ -200,8 +261,9 @@ class AgentCoreRuntimeHost(
                 }
             }
             webSocket(config.websocketPath) {
-                for (frame in incoming) {
-                    if (!isActive || frame !is Frame.Text) continue
+                for(frame in incoming)
+                {
+                    if(!isActive || frame !is Frame.Text) continue
                     val request = runCatching {
                         AgentCoreRuntimeJson.decodeRequest(frame.readText())
                     }.getOrElse {
@@ -211,9 +273,11 @@ class AgentCoreRuntimeHost(
                     val sessionId = request.sessionId
                         ?: call.request.headers[config.sessionHeader]
                         ?: UUID.randomUUID().toString()
-                    if (request.stream) {
+                    if(request.stream)
+                    {
                         var emittedChunks = false
-                        try {
+                        try
+                        {
                             val response = execute(
                                 sessionId,
                                 request.effectiveContent(),
@@ -241,7 +305,8 @@ class AgentCoreRuntimeHost(
                                     )
                                 )
                             } ?: run {
-                                if (!emittedChunks) {
+                                if(!emittedChunks)
+                                {
                                     response.output?.text?.takeIf { it.isNotEmpty() }?.let { output ->
                                         send(
                                             Frame.Text(
@@ -260,9 +325,13 @@ class AgentCoreRuntimeHost(
                                     )
                                 )
                             }
-                        } catch (exception: CancellationException) {
+                        }
+                        catch(exception: CancellationException)
+                        {
                             throw exception
-                        } catch (exception: Exception) {
+                        }
+                        catch(exception: Exception)
+                        {
                             send(
                                 Frame.Text(
                                     AgentCoreRuntimeJson.encodeError(
@@ -273,11 +342,16 @@ class AgentCoreRuntimeHost(
                         }
                         continue
                     }
-                    val response = try {
+                    val response = try
+                    {
                         execute(sessionId, request.effectiveContent(), null, AgentCoreRuntimeProtocol.HTTP)
-                    } catch (exception: CancellationException) {
+                    }
+                    catch(exception: CancellationException)
+                    {
                         throw exception
-                    } catch (exception: Exception) {
+                    }
+                    catch(exception: Exception)
+                    {
                         send(
                             Frame.Text(
                                 AgentCoreRuntimeJson.encodeError(
@@ -316,9 +390,11 @@ class AgentCoreRuntimeHost(
         content: MultimodalContent,
         stream: (suspend (String) -> Unit)?,
         protocol: AgentCoreRuntimeProtocol = AgentCoreRuntimeProtocol.HTTP
-    ): P2PResponse {
+    ): P2PResponse
+    {
         return sessions.withSession(sessionId, protocol) { root ->
-            try {
+            try
+            {
                 stream?.let { callback -> root.setStreamingCallbackRecursive(callback) }
                 root.executeP2PRequest(
                     P2PRequest(
@@ -326,26 +402,34 @@ class AgentCoreRuntimeHost(
                         prompt = content
                     )
                 ) ?: P2PResponse()
-            } catch (exception: CancellationException) {
-                if (config.abortOnClientDisconnect) {
+            }
+            catch(exception: CancellationException)
+            {
+                if(config.abortOnClientDisconnect)
+                {
                     runCatching { root.abortRecursive() }
                 }
                 throw exception
-            } finally {
+            }
+            finally
+            {
                 root.clearStreamingCallbacksRecursive()
             }
         }
     }
 
-    private suspend fun healthResponse(): AgentCorePingResponse {
-        val nextStatus = if (sessions.isBusy()) "HealthyBusy" else "Healthy"
-        if (healthStatus.getAndSet(nextStatus) != nextStatus) {
+    private suspend fun healthResponse(): AgentCorePingResponse
+    {
+        val nextStatus = if(sessions.isBusy()) "HealthyBusy" else "Healthy"
+        if(healthStatus.getAndSet(nextStatus) != nextStatus)
+        {
             healthUpdatedAt.set(clock())
         }
         return AgentCorePingResponse(status = nextStatus, timeOfLastUpdate = healthUpdatedAt.get())
     }
 
-    private fun P2PResponse.toInvocationResponse(sessionId: String): AgentCoreInvocationResponse {
+    private fun P2PResponse.toInvocationResponse(sessionId: String): AgentCoreInvocationResponse
+    {
         return AgentCoreInvocationResponse(
             output = output?.text.orEmpty(),
             sessionId = sessionId,
@@ -353,11 +437,3 @@ class AgentCoreRuntimeHost(
         )
     }
 }
-
-/** Single streamed text event used by the runtime SSE response. */
-data class AgentCoreStreamEvent(
-    val text: String = "",
-    val done: Boolean = false,
-    val sessionId: String? = null,
-    val error: String? = null
-)

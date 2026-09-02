@@ -6,7 +6,13 @@ import com.TTT.Pipe.Pipe
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.PipeContextProtocol.getPcpContext
 
-/** Configuration for an AgentCore Gateway MCP endpoint. */
+/**
+ * Configuration for an AgentCore Gateway MCP endpoint.
+ *
+ * @param endpoint Gateway MCP endpoint.
+ * @param namespacePrefix Optional PCP namespace prefix.
+ * @param mcp Base MCP client configuration.
+ */
 data class AgentCoreGatewayConfig(
     val endpoint: String,
     val namespacePrefix: String? = null,
@@ -18,11 +24,15 @@ data class AgentCoreGatewayConfig(
  *
  * The connector deliberately returns the generic PCP context produced by
  * [McpRemoteClient]; Gateway is not a second TPipe tool or transport model.
+ *
+ * @param remoteClient MCP client used to access Gateway tools.
+ * @param namespacePrefix Optional PCP namespace prefix.
  */
 class AgentCoreGatewayConnector(
     private val remoteClient: McpRemoteClient,
     private val namespacePrefix: String? = null
-) : AutoCloseable {
+) : AutoCloseable
+{
     /** Create a connector from endpoint/auth configuration. */
     constructor(config: AgentCoreGatewayConfig) : this(
         McpRemoteClient(
@@ -34,11 +44,19 @@ class AgentCoreGatewayConnector(
         config.namespacePrefix ?: config.mcp.namespacePrefix
     )
 
-    /** Discover Gateway tools and return them as executable PCP functions. */
+    /** Discover Gateway tools and return them as executable PCP functions.
+     *
+     * @return A PCP context containing the discovered tools.
+     */
     suspend fun createPcpContext(): PcpContext = remoteClient.toPcpContext(namespacePrefix)
 
-    /** Attach discovered Gateway tools to an existing Pipe's PCP context. */
-    suspend fun attachTo(pipe: Pipe): Pipe {
+    /** Attach discovered Gateway tools to an existing Pipe's PCP context.
+     *
+     * @param pipe Pipe receiving the discovered PCP functions.
+     * @return The supplied pipe after binding.
+     */
+    suspend fun attachTo(pipe: Pipe): Pipe
+    {
         val context = pipe.getPcpContext()
         remoteClient.bindToolsToPcp(context, namespacePrefix)
         pipe.setPcPContext(context)

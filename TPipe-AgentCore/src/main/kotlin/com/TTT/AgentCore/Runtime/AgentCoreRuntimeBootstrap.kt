@@ -22,7 +22,8 @@ object AgentCoreRuntimeBootstrap {
         config: AgentCoreRuntimeHostConfig = fromEnvironment(),
         wait: Boolean = true,
         buildRoot: suspend (AgentCoreSessionContext) -> P2PInterface
-    ): AgentCoreRuntimeHost {
+    ): AgentCoreRuntimeHost
+    {
         val host = AgentCoreRuntimeHost(config, AgentCoreSessionFactory(buildRoot))
         host.start(wait)
         return host

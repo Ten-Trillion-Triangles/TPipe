@@ -117,7 +117,7 @@ class Connector : P2PInterface
 
     override fun clearStreamingCallbacksRecursive()
     {
-        for (pipeline in branches.values)
+        for(pipeline in branches.values)
         {
             pipeline.clearStreamingCallbacksRecursive()
         }

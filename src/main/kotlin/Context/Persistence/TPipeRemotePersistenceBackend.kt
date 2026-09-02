@@ -23,38 +23,44 @@ class TPipeRemotePersistenceBackend :
     override val id: String = "tpipe-remote-http"
 
     override suspend fun getContextWindow(key: String): ContextWindow? =
-        when (val result = MemoryClient.getContextWindow(key)) {
-            is MemoryOperationResult.Success -> result.value
-            is MemoryOperationResult.Failure -> result.valueOrNullOrThrow("fetch remote context window '$key'")
+        when(val operationResult = MemoryClient.getContextWindow(key))
+        {
+            is MemoryOperationResult.Success -> operationResult.value
+            is MemoryOperationResult.Failure -> operationResult.valueOrNullOrThrow("fetch remote context window '$key'")
         }
 
-    override suspend fun putContextWindow(key: String, window: ContextWindow) {
+    override suspend fun putContextWindow(key: String, window: ContextWindow)
+    {
         MemoryClient.emplaceContextWindow(key, window).requireValue("store remote context window '$key'")
     }
 
     override suspend fun deleteContextWindow(key: String): Boolean =
-        when (val result = MemoryClient.deleteContextWindow(key)) {
+        when(val operationResult = MemoryClient.deleteContextWindow(key))
+        {
             is MemoryOperationResult.Success -> true
-            is MemoryOperationResult.Failure -> result.booleanNotFoundOrThrow("delete remote context window '$key'")
+            is MemoryOperationResult.Failure -> operationResult.booleanNotFoundOrThrow("delete remote context window '$key'")
         }
 
     override suspend fun listContextWindowKeys(): List<String> =
         MemoryClient.getPageKeys().requireValue("list remote context keys")
 
     override suspend fun getTodoList(key: String): TodoList? =
-        when (val result = MemoryClient.getTodoList(key)) {
-            is MemoryOperationResult.Success -> result.value
-            is MemoryOperationResult.Failure -> result.valueOrNullOrThrow("fetch remote todo list '$key'")
+        when(val operationResult = MemoryClient.getTodoList(key))
+        {
+            is MemoryOperationResult.Success -> operationResult.value
+            is MemoryOperationResult.Failure -> operationResult.valueOrNullOrThrow("fetch remote todo list '$key'")
         }
 
-    override suspend fun putTodoList(key: String, todoList: TodoList) {
+    override suspend fun putTodoList(key: String, todoList: TodoList)
+    {
         MemoryClient.emplaceTodoList(key, todoList).requireValue("store remote todo list '$key'")
     }
 
     override suspend fun deleteTodoList(key: String): Boolean =
-        when (val result = MemoryClient.deleteTodoList(key)) {
+        when(val operationResult = MemoryClient.deleteTodoList(key))
+        {
             is MemoryOperationResult.Success -> true
-            is MemoryOperationResult.Failure -> result.booleanNotFoundOrThrow("delete remote todo list '$key'")
+            is MemoryOperationResult.Failure -> operationResult.booleanNotFoundOrThrow("delete remote todo list '$key'")
         }
 
     override suspend fun listTodoListKeys(): List<String> =
@@ -69,20 +75,23 @@ class TPipeRemotePersistenceBackend :
     override suspend fun isPageLocked(pageKey: String): Boolean =
         MemoryClient.isPageLocked(pageKey).requireValue("check remote page lock '$pageKey'")
 
-    override suspend fun addLock(request: LockRequest) {
+    override suspend fun addLock(request: LockRequest)
+    {
         MemoryClient.addLock(request).requireSuccess("add remote lock '${request.key}'")
     }
 
     override suspend fun removeLock(key: String): Boolean =
-        when (val result = MemoryClient.removeLock(key)) {
+        when(val operationResult = MemoryClient.removeLock(key))
+        {
             is MemoryOperationResult.Success -> true
-            is MemoryOperationResult.Failure -> result.booleanNotFoundOrThrow("remove remote lock '$key'")
+            is MemoryOperationResult.Failure -> operationResult.booleanNotFoundOrThrow("remove remote lock '$key'")
         }
 
     override suspend fun updateLockState(key: String, lockState: Boolean): Boolean =
-        when (val result = MemoryClient.updateLockState(key, lockState)) {
+        when(val operationResult = MemoryClient.updateLockState(key, lockState))
+        {
             is MemoryOperationResult.Success -> true
-            is MemoryOperationResult.Failure -> result.booleanNotFoundOrThrow("update remote lock '$key'")
+            is MemoryOperationResult.Failure -> operationResult.booleanNotFoundOrThrow("update remote lock '$key'")
         }
 
     override suspend fun queryLorebook(
@@ -104,12 +113,14 @@ class TPipeRemotePersistenceBackend :
     override suspend fun simulateLorebookTrigger(key: String, text: String): List<String> =
         MemoryClient.simulateLorebookTrigger(key, text).requireValue("simulate remote lorebook trigger '$key'")
 
-    private fun MemoryOperationResult.Failure.valueOrNullOrThrow(operation: String): Nothing? {
+    private fun MemoryOperationResult.Failure.valueOrNullOrThrow(operation: String): Nothing?
+    {
         if(error.errorType == MemoryErrorType.notFound) return null
         throw MemoryRemoteException(operation, this)
     }
 
-    private fun MemoryOperationResult.Failure.booleanNotFoundOrThrow(operation: String): Boolean {
+    private fun MemoryOperationResult.Failure.booleanNotFoundOrThrow(operation: String): Boolean
+    {
         if(error.errorType == MemoryErrorType.notFound) return false
         throw MemoryRemoteException(operation, this)
     }

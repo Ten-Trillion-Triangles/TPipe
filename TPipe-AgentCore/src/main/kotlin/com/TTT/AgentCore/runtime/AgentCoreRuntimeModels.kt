@@ -19,19 +19,26 @@ import kotlinx.serialization.json.put
  * `prompt`/`content` shape and accepts the old `input` shape on ingress.
  */
 data class AgentCoreInvocationRequest(
+    /** Legacy text input accepted by early TPipe-AgentCore callers. */
     val input: String = "",
+    /** Optional runtime session identifier. */
     val sessionId: String? = null,
+    /** Whether the invocation should return streamed events. */
     val stream: Boolean = false,
+    /** Core-serialized multimodal invocation content. */
     val content: MultimodalContent? = null,
+    /** Canonical text prompt used by the AgentCore wire format. */
     val prompt: String? = null
 )
 {
     /** Resolve the content that should be passed to the TPipe P2P boundary. */
-    fun effectiveContent(): MultimodalContent {
+    fun effectiveContent(): MultimodalContent
+    {
         require((prompt != null) xor (content != null) ||
             (prompt == null && content == null && input.isNotEmpty())) {
             "Exactly one of 'prompt' or 'content' is required."
         }
+
         return content ?: MultimodalContent(prompt ?: input)
     }
 }
@@ -43,13 +50,24 @@ data class AgentCoreInvocationRequest(
  * canonical response codec writes a Core-serialized [outputContent] object.
  */
 data class AgentCoreInvocationResponse(
+    /** Text projection retained for source compatibility. */
     val output: String = "",
+    /** Runtime session identifier assigned to the invocation. */
     val sessionId: String,
+    /** Whether the response was produced through a streaming request. */
     val streamed: Boolean = false,
+    /** Core-serialized multimodal response content, when available. */
     val outputContent: MultimodalContent? = null
 )
 
-/** Structured error returned for a rejected or failed invocation. */
+/**
+ * Structured error returned for a rejected or failed invocation.
+ *
+ * @param error Human-readable failure message.
+ * @param sessionId Session associated with the failed invocation, when known.
+ * @param errorType Stable error category for clients.
+ * @param retryable Whether retrying the invocation may succeed.
+ */
 data class AgentCoreInvocationError(
     val error: String,
     val sessionId: String? = null,
@@ -57,16 +75,41 @@ data class AgentCoreInvocationError(
     val retryable: Boolean = false
 )
 
-/** Minimal health response for `/ping`. */
+/**
+ * Minimal health response for `/ping`.
+ *
+ * @param status Current runtime health status.
+ * @param timeOfLastUpdate Epoch-millisecond timestamp of the latest update.
+ */
 data class AgentCorePingResponse(
     val status: String = "Healthy",
     val timeOfLastUpdate: Long
 )
 
+/**
+ * One event emitted by an AgentCore streaming invocation.
+ *
+ * @param text Text chunk carried by the event.
+ * @param done Whether this event terminates the stream.
+ * @param sessionId Runtime session identifier, when known.
+ * @param error Failure message when the event represents an error.
+ */
+data class AgentCoreStreamEvent(
+    val text: String = "",
+    val done: Boolean = false,
+    val sessionId: String? = null,
+    val error: String? = null
+)
+
 /** JSON codecs for the small runtime wire objects. */
 object AgentCoreRuntimeJson {
-    /** Decode a runtime invocation request. */
-    fun decodeRequest(value: String): AgentCoreInvocationRequest {
+    /** Decode a runtime invocation request.
+     *
+     * @param value Serialized request JSON.
+     * @return Decoded invocation request.
+     */
+    fun decodeRequest(value: String): AgentCoreInvocationRequest
+    {
         val json = Json.parseToJsonElement(value).jsonObject
         val prompt = json["prompt"]?.takeUnless { it == JsonNull }?.jsonPrimitive?.content
         val content = json["content"]?.takeUnless { it == JsonNull }?.let { element ->
@@ -80,6 +123,7 @@ object AgentCoreRuntimeJson {
         ) {
             "Exactly one of 'prompt' or 'content' is required."
         }
+
         return AgentCoreInvocationRequest(
             input = legacyInput ?: prompt ?: content?.text.orEmpty(),
             sessionId = json["sessionId"]?.jsonPrimitive?.content,
@@ -89,7 +133,11 @@ object AgentCoreRuntimeJson {
         )
     }
 
-    /** Encode a runtime invocation request. */
+    /** Encode a runtime invocation request.
+     *
+     * @param value Request to encode.
+     * @return Serialized request JSON.
+     */
     fun encodeRequest(value: AgentCoreInvocationRequest): String = buildJsonObject {
         require(
             (value.content != null && value.prompt == null && value.input.isEmpty()) ||
@@ -128,20 +176,29 @@ object AgentCoreRuntimeJson {
         }
     }.toString()
 
-    /** Decode a runtime invocation response. */
-    fun decodeResponse(value: String): AgentCoreInvocationResponse {
+    /** Decode a runtime invocation response.
+     *
+     * @param value Serialized response JSON.
+     * @return Decoded invocation response.
+     */
+    fun decodeResponse(value: String): AgentCoreInvocationResponse
+    {
         val json = Json.parseToJsonElement(value).jsonObject
         val outputElement: JsonElement? = json["output"]
         val outputContent = outputElement
             ?.takeUnless { it == JsonNull }
             ?.let { element ->
-                if (element is kotlinx.serialization.json.JsonPrimitive) {
+                if(element is kotlinx.serialization.json.JsonPrimitive)
+                {
                     null
                 }
-                else {
+
+                else
+                {
                     deserialize<MultimodalContent>(element.toString(), useRepair = false)
                 }
             }
+
         val outputText = outputContent?.text
             ?: outputElement?.jsonPrimitive?.content.orEmpty()
         return AgentCoreInvocationResponse(
@@ -152,7 +209,11 @@ object AgentCoreRuntimeJson {
         )
     }
 
-    /** Encode a runtime error. */
+    /** Encode a runtime error.
+     *
+     * @param value Error to encode.
+     * @return Serialized error JSON.
+     */
     fun encodeError(value: AgentCoreInvocationError): String = buildJsonObject {
         put("type", "error")
         put("errorType", value.errorType)
@@ -161,23 +222,36 @@ object AgentCoreRuntimeJson {
         value.sessionId?.let { put("sessionId", it) }
     }.toString()
 
-    /** Encode the health response. */
+    /** Encode the health response.
+     *
+     * @param value Health response to encode.
+     * @return Serialized health JSON.
+     */
     fun encodePing(value: AgentCorePingResponse): String = buildJsonObject {
         put("status", value.status)
         put("time_of_last_update", value.timeOfLastUpdate)
     }.toString()
 
-    /** Encode one streamed text event. */
+    /** Encode one streamed text event.
+     *
+     * @param value Stream event to encode.
+     * @return Serialized stream-event JSON.
+     */
     fun encodeStreamEvent(value: AgentCoreStreamEvent): String = buildJsonObject {
-        put("type", if (value.error != null) "error" else if (value.done) "final" else "chunk")
+        put("type", if(value.error != null) "error" else if(value.done) "final" else "chunk")
         put("text", value.text)
         put("done", value.done)
         value.sessionId?.let { put("sessionId", it) }
         value.error?.let { put("error", it) }
     }.toString()
 
-    /** Decode a streamed text event. */
-    fun decodeStreamEvent(value: String): AgentCoreStreamEvent {
+    /** Decode a streamed text event.
+     *
+     * @param value Serialized stream-event JSON.
+     * @return Decoded stream event.
+     */
+    fun decodeStreamEvent(value: String): AgentCoreStreamEvent
+    {
         val json = Json.parseToJsonElement(value).jsonObject
         val type = json["type"]?.jsonPrimitive?.content
         return AgentCoreStreamEvent(

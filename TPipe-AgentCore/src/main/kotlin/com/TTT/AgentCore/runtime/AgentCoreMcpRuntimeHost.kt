@@ -3,7 +3,14 @@ package com.TTT.AgentCore.runtime
 import com.TTT.MCP.Server.McpBridgeHttpHost
 import com.TTT.MCP.Server.McpHttpHostConfig
 
-/** Configuration for an AgentCore-compatible MCP endpoint. */
+/**
+ * Configuration for an AgentCore-compatible MCP endpoint.
+ *
+ * @param bindAddress Address on which the endpoint listens.
+ * @param port Endpoint port.
+ * @param path MCP request path.
+ * @param authKey Optional bearer token accepted by the bridge.
+ */
 data class AgentCoreMcpRuntimeHostConfig(
     val bindAddress: String = "0.0.0.0",
     val port: Int = 8000,
@@ -18,8 +25,12 @@ data class AgentCoreMcpRuntimeHostConfig(
  * the core transport enum or create an AgentCore-specific PCP transport.
  */
 object AgentCoreMcpRuntimeHost {
-    /** Run the MCP endpoint until the hosting process exits. */
-    fun run(config: AgentCoreMcpRuntimeHostConfig = AgentCoreMcpRuntimeHostConfig()) {
+    /** Run the MCP endpoint until the hosting process exits.
+     *
+     * @param config MCP host configuration.
+     */
+    fun run(config: AgentCoreMcpRuntimeHostConfig = AgentCoreMcpRuntimeHostConfig())
+    {
         McpBridgeHttpHost.run(
             McpHttpHostConfig(
                 port = config.port,

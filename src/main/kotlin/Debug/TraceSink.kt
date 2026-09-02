@@ -7,6 +7,11 @@ package com.TTT.Debug
  * exporters should enqueue the event and return immediately.
  */
 fun interface TraceSink {
-    /** Receive one event after it has been added to the local trace history. */
+    /**
+     * Receive one event after it has been added to the local trace history.
+     *
+     * @param traceId Pipeline trace identifier.
+     * @param event Event appended to the trace history.
+     */
     fun onEvent(traceId: String, event: TraceEvent)
 }

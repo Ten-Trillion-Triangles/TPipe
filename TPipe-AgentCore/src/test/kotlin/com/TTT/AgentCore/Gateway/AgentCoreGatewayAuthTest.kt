@@ -14,7 +14,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
-class AgentCoreGatewayAuthTest {
+class AgentCoreGatewayAuthTest
+{
     @Test
     fun signsTheExactRequestBodyAndIncludesSessionCredentials() = runBlocking {
         val auth = AgentCoreGatewaySigV4Auth(

@@ -8,8 +8,12 @@ object AgentCoreEvaluationPoller {
     /**
      * Poll [load] until [isTerminal] is true or [timeoutMillis] elapses.
      *
+     * @param timeoutMillis Maximum polling duration.
      * @param initialDelayMillis Initial delay between status requests.
      * @param maxDelayMillis Maximum exponential-backoff delay.
+     * @param load Status loader.
+     * @param isTerminal Predicate identifying a terminal status.
+     * @return The first terminal status.
      */
     suspend fun <T> await(
         timeoutMillis: Long,
@@ -20,16 +24,20 @@ object AgentCoreEvaluationPoller {
     ): T = withTimeout<T>(timeoutMillis) {
         var delayMillis = initialDelayMillis.coerceAtLeast(1L)
         var terminalResult: Result<T>? = null
-        while (terminalResult == null) {
+        while(terminalResult == null)
+        {
             val status = load()
-            if (isTerminal(status)) {
+            if(isTerminal(status))
+            {
                 terminalResult = Result.success(status)
             }
-            else {
+            else
+            {
                 delay(delayMillis)
                 delayMillis = (delayMillis * 2L).coerceAtMost(maxDelayMillis.coerceAtLeast(delayMillis))
             }
         }
+
         terminalResult!!.getOrThrow()
     }
 }

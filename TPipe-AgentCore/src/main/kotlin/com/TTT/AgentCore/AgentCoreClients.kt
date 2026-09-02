@@ -9,12 +9,17 @@ import aws.sdk.kotlin.services.bedrockagentcorecontrol.BedrockAgentCoreControlCl
  * Clients may be injected for tests. When omitted, the AWS SDK default
  * credential chain is used, with the optional [AgentCoreConfig.credentialsProvider]
  * taking precedence.
+ *
+ * @param config Shared region and credential configuration.
+ * @param dataClient Optional injected data-plane client.
+ * @param controlClient Optional injected control-plane client.
  */
 class AgentCoreClients(
     config: AgentCoreConfig,
     dataClient: BedrockAgentCoreClient? = null,
     controlClient: BedrockAgentCoreControlClient? = null
-) : AutoCloseable {
+) : AutoCloseable
+{
     private val ownsDataClient = dataClient == null
     private val ownsControlClient = controlClient == null
 
@@ -31,8 +36,16 @@ class AgentCoreClients(
     }
 
     /** Close only clients created by this bundle. */
-    override fun close() {
-        if (ownsDataClient) data.close()
-        if (ownsControlClient) control.close()
+    override fun close()
+    {
+        if(ownsDataClient)
+        {
+            data.close()
+        }
+
+        if(ownsControlClient)
+        {
+            control.close()
+        }
     }
 }

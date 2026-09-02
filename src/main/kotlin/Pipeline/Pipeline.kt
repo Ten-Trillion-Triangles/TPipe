@@ -467,7 +467,7 @@ class Pipeline : P2PInterface
     }
     override fun clearStreamingCallbacksRecursive()
     {
-        for (pipe in getPipes())
+        for(pipe in getPipes())
         {
             pipe.clearStreamingCallbacksRecursively()
         }

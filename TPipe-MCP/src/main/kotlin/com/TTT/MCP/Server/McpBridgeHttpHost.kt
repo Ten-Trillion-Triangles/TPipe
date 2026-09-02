@@ -9,7 +9,14 @@ import io.ktor.server.cio.CIO
 import io.modelcontextprotocol.kotlin.sdk.server.mcpStreamableHttp
 import kotlinx.coroutines.runBlocking
 
-/** Configuration for hosting a TPipe MCP bridge over Streamable HTTP. */
+/**
+ * Configuration for hosting a TPipe MCP bridge over Streamable HTTP.
+ *
+ * @param port Port on which the bridge listens.
+ * @param authKey Optional bearer-token authentication key.
+ * @param bindAddress Address on which the bridge listens.
+ * @param path MCP endpoint path.
+ */
 data class McpHttpHostConfig(
     val port: Int = 8080,
     val authKey: String? = null,
@@ -58,6 +65,8 @@ object McpBridgeHttpHost {
      *
      * The legacy overload keeps `/mcp/bridge`; callers hosting an AgentCore
      * MCP endpoint can select `/mcp` without changing the bridge server.
+     *
+     * @param config Bridge host configuration.
      */
     fun run(config: McpHttpHostConfig)
     {
@@ -66,12 +75,12 @@ object McpBridgeHttpHost {
             val host = createHost()
 
             embeddedServer(CIO, host = config.bindAddress, port = config.port) {
-                if (!config.authKey.isNullOrBlank())
+                if(!config.authKey.isNullOrBlank())
                 {
                     install(Authentication) {
                         bearer("mcp-auth") {
                             authenticate { tokenCredential: io.ktor.server.auth.BearerTokenCredential ->
-                                if (tokenCredential.token == config.authKey)
+                                if(tokenCredential.token == config.authKey)
                                 {
                                     UserIdPrincipal("mcp-client")
                                 }
@@ -84,7 +93,7 @@ object McpBridgeHttpHost {
                     }
                 }
                 routing {
-                    if (!config.authKey.isNullOrBlank())
+                    if(!config.authKey.isNullOrBlank())
                     {
                         authenticate("mcp-auth") {
                             mcpStreamableHttp(config.path) { host.getServer() }

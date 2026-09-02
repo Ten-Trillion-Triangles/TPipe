@@ -34,7 +34,16 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.long
 
-/** AgentCore Memory identifiers and namespace layout for exact TPipe values. */
+/**
+ * AgentCore Memory identifiers and namespace layout for exact TPipe values.
+ *
+ * @param memoryId AgentCore Memory resource identifier.
+ * @param instanceId Memory instance identifier used in namespaces.
+ * @param contextNamespace Namespace for exact ContextWindow records.
+ * @param todoNamespace Namespace for exact TodoList records.
+ * @param contextIndexNamespace Namespace for ContextWindow key indexes.
+ * @param todoIndexNamespace Namespace for TodoList key indexes.
+ */
 data class AgentCoreMemoryConfig(
     val memoryId: String,
     val instanceId: String = memoryId,
@@ -50,11 +59,15 @@ data class AgentCoreMemoryConfig(
  * TPipe values are serialized, gzip-compressed, base64-encoded, checksummed,
  * and stored as opaque records. This adapter never asks AgentCore Memory to
  * summarize or semantically reinterpret a ContextWindow or TodoList.
+ *
+ * @param data AgentCore Memory data-plane seam.
+ * @param config Memory identifiers and namespace settings.
  */
 class AgentCoreMemoryBackend internal constructor(
     private val data: AgentCoreMemoryDataClient,
     private val config: AgentCoreMemoryConfig
-) : ContextPersistenceBackend {
+) : ContextPersistenceBackend
+{
     /** Create an AgentCore Memory backend using the configured AWS data client. */
     constructor(clients: AgentCoreClients, config: AgentCoreMemoryConfig) : this(
         AwsAgentCoreMemoryDataClient(clients.data),
@@ -69,7 +82,8 @@ class AgentCoreMemoryBackend internal constructor(
     override suspend fun getContextWindow(key: String): ContextWindow? =
         readExact(key, config.contextNamespace, ContextWindow.serializer())
 
-    override suspend fun putContextWindow(key: String, window: ContextWindow) {
+    override suspend fun putContextWindow(key: String, window: ContextWindow)
+    {
         writeExact(key, config.contextNamespace, RecordKind.CONTEXT, window.version, serialize(window))
         writeIndex(key, config.contextIndexNamespace, RecordKind.CONTEXT)
     }
@@ -83,7 +97,8 @@ class AgentCoreMemoryBackend internal constructor(
     override suspend fun getTodoList(key: String): TodoList? =
         readExact(key, config.todoNamespace, TodoList.serializer())
 
-    override suspend fun putTodoList(key: String, todoList: TodoList) {
+    override suspend fun putTodoList(key: String, todoList: TodoList)
+    {
         writeExact(key, config.todoNamespace, RecordKind.TODO, todoList.version, serialize(todoList))
         writeIndex(key, config.todoIndexNamespace, RecordKind.TODO)
     }
@@ -98,9 +113,10 @@ class AgentCoreMemoryBackend internal constructor(
         key: String,
         namespace: String,
         serializer: kotlinx.serialization.KSerializer<T>
-    ): T? {
+    ): T?
+    {
         val records = recordsForKey(namespace, key)
-        if (records.isEmpty()) return null
+        if(records.isEmpty()) return null
 
         val envelopes = records.mapNotNull { record ->
             readRecordText(record)?.let { text ->
@@ -113,6 +129,7 @@ class AgentCoreMemoryBackend internal constructor(
                 }
             }
         }
+
         val manifests = envelopes
             .filter { it.envelope.kind == RecordKind.MANIFEST }
             .sortedWith(
@@ -150,6 +167,7 @@ class AgentCoreMemoryBackend internal constructor(
             {
                 return@firstNotNullOfOrNull null
             }
+
             val encodedPayload = chunks.joinToString(separator = "") { it.envelope.payload }
             val serializedPayload = runCatching { AgentCoreMemoryCodec.decode(encodedPayload) }
                 .getOrNull()
@@ -164,6 +182,7 @@ class AgentCoreMemoryBackend internal constructor(
             {
                 return@firstNotNullOfOrNull null
             }
+
             // Treat a payload that cannot be decoded by the Core serializer as
             // incomplete too, so a prior committed generation remains a valid
             // fallback after a corrupt or incompatible newest write.
@@ -177,7 +196,8 @@ class AgentCoreMemoryBackend internal constructor(
         kind: RecordKind,
         revision: Long,
         serialized: String
-    ) {
+    )
+    {
         keyLocks.computeIfAbsent(key) { Mutex() }.withLock {
             val recordNamespace = namespaceFor(namespace, key)
             val previousRecords = recordsForKey(namespace, key)
@@ -233,7 +253,8 @@ class AgentCoreMemoryBackend internal constructor(
         }
     }
 
-    private suspend fun writeIndex(key: String, namespace: String, kind: RecordKind) {
+    private suspend fun writeIndex(key: String, namespace: String, kind: RecordKind)
+    {
         val existing = listRecords(namespace).filter { record ->
             readRecordText(record)?.let { text ->
                 runCatching { decodeEnvelope(text).key == key }.getOrDefault(false)
@@ -265,7 +286,8 @@ class AgentCoreMemoryBackend internal constructor(
         deleteRecords(existing)
     }
 
-    private suspend fun deleteExact(key: String, namespace: String, indexNamespace: String): Boolean {
+    private suspend fun deleteExact(key: String, namespace: String, indexNamespace: String): Boolean
+    {
         return keyLocks.computeIfAbsent(key) { Mutex() }.withLock {
             val records = recordsForKey(namespace, key)
             val indexRecords = listOf(indexNamespace, historicalIndexNamespace(indexNamespace))
@@ -277,13 +299,14 @@ class AgentCoreMemoryBackend internal constructor(
                     } == true
                 }
             val recordsToDelete = (records + indexRecords).distinctBy { it.memoryRecordId }
-            if (recordsToDelete.isEmpty()) return@withLock false
+            if(recordsToDelete.isEmpty()) return@withLock false
             deleteRecords(recordsToDelete)
             true
         }
     }
 
-    private suspend fun listIndexKeys(namespace: String, kind: RecordKind): List<String> {
+    private suspend fun listIndexKeys(namespace: String, kind: RecordKind): List<String>
+    {
         val namespaces = listOf(namespace, historicalIndexNamespace(namespace)).distinct()
         return namespaces.flatMap { indexNamespace -> listRecords(indexNamespace) }.mapNotNull { record ->
             readRecordText(record)?.let { text -> runCatching { decodeEnvelope(text) }.getOrNull()?.let { envelope ->
@@ -293,7 +316,8 @@ class AgentCoreMemoryBackend internal constructor(
         }.distinct()
     }
 
-    private suspend fun listRecords(namespace: String): List<MemoryRecordSummary> {
+    private suspend fun listRecords(namespace: String): List<MemoryRecordSummary>
+    {
         val records = mutableListOf<MemoryRecordSummary>()
         var nextToken: String? = null
         do {
@@ -307,7 +331,7 @@ class AgentCoreMemoryBackend internal constructor(
             )
             records += response.memoryRecordSummaries
             nextToken = response.nextToken
-        } while (!nextToken.isNullOrBlank())
+        } while(!nextToken.isNullOrBlank())
         return records
     }
 
@@ -319,7 +343,8 @@ class AgentCoreMemoryBackend internal constructor(
      * envelope check also protects reads and deletes of legacy records written
      * before that separator was introduced.
      */
-    private suspend fun recordsForKey(namespace: String, key: String): List<MemoryRecordSummary> {
+    private suspend fun recordsForKey(namespace: String, key: String): List<MemoryRecordSummary>
+    {
         val records = mutableListOf<MemoryRecordSummary>()
         listOf(
             namespaceFor(namespace, key),
@@ -339,7 +364,8 @@ class AgentCoreMemoryBackend internal constructor(
             }
     }
 
-    private suspend fun readRecordText(record: MemoryRecordSummary): String? {
+    private suspend fun readRecordText(record: MemoryRecordSummary): String?
+    {
         record.content?.asTextOrNull()?.let { return it }
         val recordId = record.memoryRecordId
         val memoryRecord = data.getMemoryRecord(
@@ -351,7 +377,8 @@ class AgentCoreMemoryBackend internal constructor(
         return memoryRecord.content?.asTextOrNull()
     }
 
-    private suspend fun createRecords(records: List<MemoryRecordCreateInput>) {
+    private suspend fun createRecords(records: List<MemoryRecordCreateInput>)
+    {
         records.chunked(BATCH_SIZE).forEach { batch ->
             val response = data.batchCreateMemoryRecords(
                 BatchCreateMemoryRecordsRequest {
@@ -360,7 +387,8 @@ class AgentCoreMemoryBackend internal constructor(
                     clientToken = UUID.randomUUID().toString()
                 }
             )
-            if(response.failedRecords.isNotEmpty()) {
+            if(response.failedRecords.isNotEmpty())
+            {
                 throw AgentCoreMemoryBackendException(
                     operation = "batch create",
                     failures = response.failedRecords.map { failed ->
@@ -375,7 +403,8 @@ class AgentCoreMemoryBackend internal constructor(
         }
     }
 
-    private suspend fun deleteRecords(summaries: List<MemoryRecordSummary>) {
+    private suspend fun deleteRecords(summaries: List<MemoryRecordSummary>)
+    {
         val snapshots = summaries.mapNotNull { snapshotRecord(it) }
         val ids = summaries.mapNotNull { it.memoryRecordId }.distinct()
         if(ids.isEmpty()) return
@@ -389,7 +418,8 @@ class AgentCoreMemoryBackend internal constructor(
                         records = batch.map { id -> MemoryRecordDeleteInput { memoryRecordId = id } }
                     }
                 )
-                if(response.failedRecords.isNotEmpty()) {
+                if(response.failedRecords.isNotEmpty())
+                {
                     throw AgentCoreMemoryBackendException(
                         operation = "batch delete",
                         failures = response.failedRecords.map { failed ->
@@ -403,10 +433,12 @@ class AgentCoreMemoryBackend internal constructor(
                 }
             }
         }
+
         catch(exception: CancellationException)
         {
             throw exception
         }
+
         catch(exception: Exception)
         {
             // AgentCore batch deletes are not transactional. Restore the
@@ -419,7 +451,8 @@ class AgentCoreMemoryBackend internal constructor(
         }
     }
 
-    private suspend fun snapshotRecord(record: MemoryRecordSummary): MemoryRecordCreateInput? {
+    private suspend fun snapshotRecord(record: MemoryRecordSummary): MemoryRecordCreateInput?
+    {
         val contentText = readRecordText(record) ?: return null
         return MemoryRecordCreateInput {
             content = MemoryContent.Text(contentText)
@@ -462,18 +495,22 @@ class AgentCoreMemoryBackend internal constructor(
     private fun legacyNamespaceFor(namespace: String, key: String): String =
         "$namespace/${Base64.getUrlEncoder().withoutPadding().encodeToString(key.toByteArray())}"
 
-    private fun historicalNamespaceFor(namespace: String, key: String): String? {
-        val historicalRoot = when (namespace) {
+    private fun historicalNamespaceFor(namespace: String, key: String): String?
+    {
+        val historicalRoot = when(namespace)
+        {
             "/tpipe/${config.instanceId}/context" -> "tpipe/context"
             "/tpipe/${config.instanceId}/todo" -> "tpipe/todo"
             else -> null
         }
+
         return historicalRoot?.let {
             "$it/${Base64.getUrlEncoder().withoutPadding().encodeToString(key.toByteArray())}"
         }
     }
 
-    private fun historicalIndexNamespace(namespace: String): String = when (namespace) {
+    private fun historicalIndexNamespace(namespace: String): String = when(namespace)
+    {
         "/tpipe/${config.instanceId}/index/context" -> "tpipe/index/context"
         "/tpipe/${config.instanceId}/index/todo" -> "tpipe/index/todo"
         else -> namespace
@@ -484,7 +521,8 @@ class AgentCoreMemoryBackend internal constructor(
             MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8))
         )
 
-    private fun decodeEnvelope(text: String): AgentCoreMemoryRecordEnvelope {
+    private fun decodeEnvelope(text: String): AgentCoreMemoryRecordEnvelope
+    {
         val json = Json.parseToJsonElement(text).jsonObject
         return AgentCoreMemoryRecordEnvelope(
             schemaVersion = json["schemaVersion"]?.jsonPrimitive?.int ?: 1,
@@ -539,6 +577,7 @@ class AgentCoreMemoryBackend internal constructor(
         const val MAX_RECORD_CHARS = 16_000
         const val MAX_CHUNKS = 12_000
     }
+
     private data class StoredEnvelope(
         val envelope: AgentCoreMemoryRecordEnvelope,
         val serviceCreatedAt: String,
@@ -563,7 +602,8 @@ internal interface AgentCoreMemoryDataClient {
 
 private class AwsAgentCoreMemoryDataClient(
     private val delegate: aws.sdk.kotlin.services.bedrockagentcore.BedrockAgentCoreClient
-) : AgentCoreMemoryDataClient {
+) : AgentCoreMemoryDataClient
+{
     override suspend fun batchCreateMemoryRecords(
         request: BatchCreateMemoryRecordsRequest
     ): BatchCreateMemoryRecordsResponse = delegate.batchCreateMemoryRecords(request)

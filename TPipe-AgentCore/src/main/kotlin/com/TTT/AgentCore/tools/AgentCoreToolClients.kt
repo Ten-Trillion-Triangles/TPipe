@@ -14,7 +14,13 @@ import com.TTT.PipeContextProtocol.ReturnTypeInfo
 import com.TTT.PipeContextProtocol.bindDynamicFunction
 import kotlinx.coroutines.CancellationException
 
-/** A Browser session owned by one TPipe/AgentCore runtime session. */
+/**
+ * A Browser session owned by one TPipe/AgentCore runtime session.
+ *
+ * @param sessionId Browser session identifier.
+ * @param ownerSessionId TPipe runtime session that owns the Browser session.
+ * @param browserIdentifier Browser resource identifier.
+ */
 data class AgentCoreBrowserSession(
     val sessionId: String,
     val ownerSessionId: String,
@@ -25,7 +31,8 @@ data class AgentCoreBrowserSession(
 class AgentCoreBrowserClient(
     private val client: BedrockAgentCoreClient,
     private val sessionRegistry: AgentCoreSessionRegistry? = null
-) {
+)
+{
     private data class OwnedSession(val ownerSessionId: String, val browserIdentifier: String)
 
     private val ownedSessions = java.util.concurrent.ConcurrentHashMap<String, OwnedSession>()
@@ -34,7 +41,8 @@ class AgentCoreBrowserClient(
     suspend fun startSession(
         request: StartBrowserSessionRequest,
         ownerSessionId: String
-    ): AgentCoreBrowserSession {
+    ): AgentCoreBrowserSession
+    {
         require(ownerSessionId.isNotBlank()) { "A Browser session owner id is required." }
         val response = client.startBrowserSession(request)
         val sessionId = requireNotNull(response.sessionId) { "AgentCore Browser did not return a session id." }
@@ -57,7 +65,8 @@ class AgentCoreBrowserClient(
     suspend fun getSession(
         request: GetBrowserSessionRequest,
         ownerSessionId: String
-    ): GetBrowserSessionResponse {
+    ): GetBrowserSessionResponse
+    {
         requireOwner(request.sessionId, ownerSessionId)
         return getSession(request)
     }
@@ -69,7 +78,8 @@ class AgentCoreBrowserClient(
     suspend fun invoke(
         request: InvokeBrowserRequest,
         ownerSessionId: String
-    ): InvokeBrowserResponse {
+    ): InvokeBrowserResponse
+    {
         requireOwner(request.sessionId, ownerSessionId)
         return invoke(request)
     }
@@ -82,7 +92,8 @@ class AgentCoreBrowserClient(
     suspend fun updateStream(
         request: UpdateBrowserStreamRequest,
         ownerSessionId: String
-    ): UpdateBrowserStreamResponse {
+    ): UpdateBrowserStreamResponse
+    {
         requireOwner(request.sessionId, ownerSessionId)
         return updateStream(request)
     }
@@ -95,7 +106,8 @@ class AgentCoreBrowserClient(
     suspend fun saveProfile(
         request: SaveBrowserSessionProfileRequest,
         ownerSessionId: String
-    ): SaveBrowserSessionProfileResponse {
+    ): SaveBrowserSessionProfileResponse
+    {
         requireOwner(request.sessionId, ownerSessionId)
         return saveProfile(request)
     }
@@ -108,13 +120,15 @@ class AgentCoreBrowserClient(
     suspend fun stopSession(
         request: StopBrowserSessionRequest,
         ownerSessionId: String
-    ): StopBrowserSessionResponse {
+    ): StopBrowserSessionResponse
+    {
         requireOwner(request.sessionId, ownerSessionId)
         return stopSession(request)
     }
 
     /** Stop every Browser session owned by one TPipe runtime session. */
-    suspend fun stopOwnedSessions(ownerSessionId: String): List<StopBrowserSessionResponse> {
+    suspend fun stopOwnedSessions(ownerSessionId: String): List<StopBrowserSessionResponse>
+    {
         val sessions = ownedSessions.entries
             .filter { it.value.ownerSessionId == ownerSessionId }
             .map { (sessionId, owned) ->
@@ -145,7 +159,8 @@ class AgentCoreBrowserClient(
     /** Execute an SDK operation not yet wrapped by this facade. */
     suspend fun <T> execute(block: suspend BedrockAgentCoreClient.() -> T): T = client.block()
 
-    private fun requireOwner(sessionId: String?, ownerSessionId: String) {
+    private fun requireOwner(sessionId: String?, ownerSessionId: String)
+    {
         require(!sessionId.isNullOrBlank()) { "AgentCore Browser session id is required." }
         check(ownedSessions[sessionId]?.ownerSessionId == ownerSessionId) {
             "AgentCore Browser session '$sessionId' is not owned by '$ownerSessionId'."
@@ -153,7 +168,13 @@ class AgentCoreBrowserClient(
     }
 }
 
-/** Code Interpreter session owned by one TPipe/AgentCore runtime session. */
+/**
+ * Code Interpreter session owned by one TPipe/AgentCore runtime session.
+ *
+ * @param sessionId Code Interpreter session identifier.
+ * @param ownerSessionId TPipe runtime session that owns the Code Interpreter session.
+ * @param codeInterpreterIdentifier Code Interpreter resource identifier.
+ */
 data class AgentCoreCodeInterpreterSession(
     val sessionId: String,
     val ownerSessionId: String,
@@ -164,7 +185,8 @@ data class AgentCoreCodeInterpreterSession(
 class AgentCoreCodeInterpreterClient(
     private val client: BedrockAgentCoreClient,
     private val sessionRegistry: AgentCoreSessionRegistry? = null
-) {
+)
+{
     private data class OwnedSession(val ownerSessionId: String, val codeInterpreterIdentifier: String)
 
     private val ownedSessions = java.util.concurrent.ConcurrentHashMap<String, OwnedSession>()
@@ -173,7 +195,8 @@ class AgentCoreCodeInterpreterClient(
     suspend fun startSession(
         request: StartCodeInterpreterSessionRequest,
         ownerSessionId: String
-    ): AgentCoreCodeInterpreterSession {
+    ): AgentCoreCodeInterpreterSession
+    {
         require(ownerSessionId.isNotBlank()) { "A Code Interpreter session owner id is required." }
         val response = client.startCodeInterpreterSession(request)
         val sessionId = requireNotNull(response.sessionId) {
@@ -202,7 +225,8 @@ class AgentCoreCodeInterpreterClient(
     suspend fun getSession(
         request: GetCodeInterpreterSessionRequest,
         ownerSessionId: String
-    ): GetCodeInterpreterSessionResponse {
+    ): GetCodeInterpreterSessionResponse
+    {
         requireOwner(request.sessionId, ownerSessionId)
         return getSession(request)
     }
@@ -218,7 +242,8 @@ class AgentCoreCodeInterpreterClient(
         request: InvokeCodeInterpreterRequest,
         ownerSessionId: String,
         handler: suspend (InvokeCodeInterpreterResponse) -> T
-    ): T {
+    ): T
+    {
         requireOwner(request.sessionId, ownerSessionId)
         return invoke(request, handler)
     }
@@ -231,13 +256,15 @@ class AgentCoreCodeInterpreterClient(
     suspend fun stopSession(
         request: StopCodeInterpreterSessionRequest,
         ownerSessionId: String
-    ): StopCodeInterpreterSessionResponse {
+    ): StopCodeInterpreterSessionResponse
+    {
         requireOwner(request.sessionId, ownerSessionId)
         return stopSession(request)
     }
 
     /** Stop every Code Interpreter session owned by one TPipe runtime session. */
-    suspend fun stopOwnedSessions(ownerSessionId: String): List<StopCodeInterpreterSessionResponse> {
+    suspend fun stopOwnedSessions(ownerSessionId: String): List<StopCodeInterpreterSessionResponse>
+    {
         val sessions = ownedSessions.entries
             .filter { it.value.ownerSessionId == ownerSessionId }
             .map { (sessionId, owned) ->
@@ -268,7 +295,8 @@ class AgentCoreCodeInterpreterClient(
     /** Execute an SDK operation not yet wrapped by this facade. */
     suspend fun <T> execute(block: suspend BedrockAgentCoreClient.() -> T): T = client.block()
 
-    private fun requireOwner(sessionId: String?, ownerSessionId: String) {
+    private fun requireOwner(sessionId: String?, ownerSessionId: String)
+    {
         require(!sessionId.isNullOrBlank()) { "AgentCore Code Interpreter session id is required." }
         check(ownedSessions[sessionId]?.ownerSessionId == ownerSessionId) {
             "AgentCore Code Interpreter session '$sessionId' is not owned by '$ownerSessionId'."
@@ -276,14 +304,26 @@ class AgentCoreCodeInterpreterClient(
     }
 }
 
-/** Optional Browser PCP registration settings. */
+/**
+ * Optional Browser PCP registration settings.
+ *
+ * @param namespace Prefix applied to registered function names.
+ * @param enabledActions Actions that may be invoked through PCP.
+ * @param invoke Caller-owned action implementation.
+ */
 data class AgentCoreBrowserToolsConfig(
     val namespace: String = "agentcore_browser__",
     val enabledActions: Set<String> = emptySet(),
     val invoke: (suspend (String, Map<String, String>) -> Any?)? = null
 )
 
-/** Optional Code Interpreter PCP registration settings. */
+/**
+ * Optional Code Interpreter PCP registration settings.
+ *
+ * @param namespace Prefix applied to registered function names.
+ * @param enabledActions Actions that may be invoked through PCP.
+ * @param invoke Caller-owned action implementation.
+ */
 data class AgentCoreCodeInterpreterToolsConfig(
     val namespace: String = "agentcore_code_interpreter__",
     val enabledActions: Set<String> = emptySet(),
@@ -292,14 +332,26 @@ data class AgentCoreCodeInterpreterToolsConfig(
 
 /** Explicitly register caller-backed Browser capabilities as PCP functions. */
 object AgentCoreBrowserTools {
-    /** Register only enabled actions and never execute client-defined tools implicitly. */
+    /**
+     * Register only enabled actions and never execute client-defined tools implicitly.
+     *
+     * @param pcpContext Context receiving the registered functions.
+     * @param config Registration settings.
+     * @return The supplied context after registration.
+     */
     fun register(pcpContext: PcpContext, config: AgentCoreBrowserToolsConfig): PcpContext =
         registerActions(pcpContext, config.namespace, config.enabledActions, config.invoke)
 }
 
 /** Explicitly register caller-backed Code Interpreter capabilities as PCP functions. */
 object AgentCoreCodeInterpreterTools {
-    /** Register only enabled actions and never execute client-defined tools implicitly. */
+    /**
+     * Register only enabled actions and never execute client-defined tools implicitly.
+     *
+     * @param pcpContext Context receiving the registered functions.
+     * @param config Registration settings.
+     * @return The supplied context after registration.
+     */
     fun register(pcpContext: PcpContext, config: AgentCoreCodeInterpreterToolsConfig): PcpContext =
         registerActions(pcpContext, config.namespace, config.enabledActions, config.invoke)
 }
@@ -309,7 +361,8 @@ private fun registerActions(
     namespace: String,
     actions: Set<String>,
     invoke: (suspend (String, Map<String, String>) -> Any?)?
-): PcpContext {
+): PcpContext
+{
     val handlerFactory = invoke ?: return context
     actions.forEach { action ->
         val name = namespace + action
@@ -333,12 +386,22 @@ private fun registerActions(
     return context
 }
 
-/** Construct an explicit Browser client from shared AgentCore clients. */
+/**
+ * Construct an explicit Browser client from shared AgentCore clients.
+ *
+ * @param sessionRegistry Optional registry for owner-bound cleanup.
+ * @return Browser client backed by the shared data-plane client.
+ */
 fun AgentCoreClients.browser(
     sessionRegistry: AgentCoreSessionRegistry? = null
 ): AgentCoreBrowserClient = AgentCoreBrowserClient(data, sessionRegistry)
 
-/** Construct an explicit Code Interpreter client. */
+/**
+ * Construct an explicit Code Interpreter client.
+ *
+ * @param sessionRegistry Optional registry for owner-bound cleanup.
+ * @return Code Interpreter client backed by the shared data-plane client.
+ */
 fun AgentCoreClients.codeInterpreter(
     sessionRegistry: AgentCoreSessionRegistry? = null
 ): AgentCoreCodeInterpreterClient = AgentCoreCodeInterpreterClient(data, sessionRegistry)
@@ -348,6 +411,9 @@ fun AgentCoreClients.codeInterpreter(
  *
  * Passing the context's registry ensures Browser sessions started by the root
  * are stopped when the owning runtime session is evicted or the host closes.
+ *
+ * @param clients Shared AgentCore clients.
+ * @return Browser client bound to this runtime session.
  */
 fun AgentCoreSessionContext.browserClient(
     clients: AgentCoreClients
@@ -356,6 +422,9 @@ fun AgentCoreSessionContext.browserClient(
 /**
  * Construct a Code Interpreter client bound to the runtime session being
  * created.
+ *
+ * @param clients Shared AgentCore clients.
+ * @return Code Interpreter client bound to this runtime session.
  */
 fun AgentCoreSessionContext.codeInterpreterClient(
     clients: AgentCoreClients

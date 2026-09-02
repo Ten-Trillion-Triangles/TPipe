@@ -4,15 +4,28 @@ import aws.sdk.kotlin.services.bedrockagentcore.BedrockAgentCoreClient
 import aws.sdk.kotlin.services.bedrockagentcorecontrol.BedrockAgentCoreControlClient
 import com.TTT.AgentCore.AgentCoreClients
 
-/** Evaluation facade that keeps evaluator calls separate from normal pipeline execution. */
+/** Evaluation facade that keeps evaluator calls separate from normal pipeline execution.
+ *
+ * @param dataClient AgentCore data-plane client.
+ * @param controlClient AgentCore control-plane client.
+ */
 class AgentCoreEvaluations(
     private val dataClient: BedrockAgentCoreClient,
     private val controlClient: BedrockAgentCoreControlClient
-) {
-    /** Execute a data-plane evaluation API call supplied by the caller. */
+)
+{
+    /** Execute a data-plane evaluation API call supplied by the caller.
+     *
+     * @param block SDK operation to execute.
+     * @return The operation result.
+     */
     suspend fun <T> executeData(block: suspend BedrockAgentCoreClient.() -> T): T = dataClient.block()
 
-    /** Execute a control-plane evaluator/configuration API call supplied by the caller. */
+    /** Execute a control-plane evaluator/configuration API call supplied by the caller.
+     *
+     * @param block SDK operation to execute.
+     * @return The operation result.
+     */
     suspend fun <T> executeControl(block: suspend BedrockAgentCoreControlClient.() -> T): T = controlClient.block()
 }
 

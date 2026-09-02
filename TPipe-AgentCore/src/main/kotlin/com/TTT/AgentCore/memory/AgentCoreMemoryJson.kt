@@ -6,8 +6,7 @@ import kotlinx.serialization.json.Json
 
 /** Core-compatible JSON decoding for exact TPipe memory payloads. */
 @OptIn(ExperimentalSerializationApi::class)
-internal object AgentCoreMemoryJson
-{
+internal object AgentCoreMemoryJson {
     private val format = Json {
         prettyPrint = true
         ignoreUnknownKeys = true

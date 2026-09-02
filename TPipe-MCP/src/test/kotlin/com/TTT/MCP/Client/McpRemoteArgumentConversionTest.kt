@@ -91,7 +91,8 @@ class McpRemoteArgumentConversionTest
                         (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
                     ).jsonObject
                     val id = requestJson["id"] ?: JsonNull
-                    when (requestJson["method"]?.jsonPrimitive?.content) {
+                    when(requestJson["method"]?.jsonPrimitive?.content)
+                    {
                         "initialize" -> {
                             initializeCalls.incrementAndGet()
                             respond(
@@ -121,11 +122,13 @@ class McpRemoteArgumentConversionTest
             })
             val httpClient = HttpClient(engine)
             val remote = McpRemoteClient(McpRemoteClientConfig("http://fake-mcp"), httpClient)
-            try {
+            try
+            {
                 listOf(async { remote.connect() }, async { remote.connect() }).awaitAll()
                 assertEquals(1, initializeCalls.get())
             }
-            finally {
+            finally
+            {
                 remote.closeSuspend()
                 httpClient.close()
             }
@@ -147,7 +150,8 @@ class McpRemoteArgumentConversionTest
                         (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
                     ).jsonObject
                     val id: JsonElement = requestJson["id"] ?: JsonNull
-                    val response = when (requestJson["method"]?.jsonPrimitive?.content) {
+                    val response = when(requestJson["method"]?.jsonPrimitive?.content)
+                    {
                         "initialize" -> buildJsonObject {
                             put("jsonrpc", "2.0")
                             put("id", id)
@@ -179,10 +183,12 @@ class McpRemoteArgumentConversionTest
                 ),
                 httpClient
             )
-            try {
+            try
+            {
                 remote.connect()
             }
-            finally {
+            finally
+            {
                 remote.closeSuspend()
                 httpClient.close()
             }
@@ -242,7 +248,8 @@ class McpRemoteArgumentConversionTest
                         (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
                     ).jsonObject
                     val id: JsonElement = requestJson["id"] ?: JsonNull
-                    val response = when (requestJson["method"]?.jsonPrimitive?.content) {
+                    val response = when(requestJson["method"]?.jsonPrimitive?.content)
+                    {
                         "initialize" -> buildJsonObject {
                             put("jsonrpc", "2.0")
                             put("id", id)
@@ -316,7 +323,8 @@ class McpRemoteArgumentConversionTest
                         }
                         else -> error("Unexpected MCP request: $requestJson")
                     }
-                    if (response == null) {
+                    if(response == null)
+                    {
                         respond(
                             content = "",
                             status = HttpStatusCode.OK,
@@ -324,7 +332,10 @@ class McpRemoteArgumentConversionTest
                                 "Content-Type" to listOf(ContentType.Application.Json.toString())
                             )
                         )
-                    } else {
+                    }
+
+                    else
+                    {
                         respond(
                             content = response.toString(),
                             status = HttpStatusCode.OK,
@@ -341,9 +352,10 @@ class McpRemoteArgumentConversionTest
                 McpRemoteClientConfig("http://fake-mcp"),
                 httpClient
             )
-            try {
+            try
+            {
                 remote.bindToolsToPcp(PcpContext())
-                val result = FunctionInvoker().invoke(
+                val invocationResult = FunctionInvoker().invoke(
                     toolName,
                     mapOf(
                         "count" to "7",
@@ -356,14 +368,17 @@ class McpRemoteArgumentConversionTest
                     )
                 )
 
-                assertTrue(result.success, result.error.orEmpty())
+                assertTrue(invocationResult.success, invocationResult.error.orEmpty())
                 assertEquals(7L, receivedArguments?.get("count")?.jsonPrimitive?.long)
                 assertEquals(true, receivedArguments?.get("enabled")?.jsonPrimitive?.boolean)
                 assertEquals("one", receivedArguments?.get("items")?.jsonArray?.get(0)?.jsonPrimitive?.content)
                 assertEquals(2L, receivedArguments?.get("options")?.jsonObject?.get("limit")?.jsonPrimitive?.long)
                 assertEquals(true, receivedArguments?.get("options")?.jsonObject?.get("verbose")?.jsonPrimitive?.boolean)
                 assertEquals("fast", receivedArguments?.get("mode")?.jsonPrimitive?.content)
-            } finally {
+            }
+
+            finally
+            {
                 remote.closeSuspend()
                 httpClient.close()
             }

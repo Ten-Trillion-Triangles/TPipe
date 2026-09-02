@@ -8,11 +8,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class ContextPersistenceBackendTest {
+class ContextPersistenceBackendTest
+{
     private val key = "generic-backend-${System.nanoTime()}"
 
     @AfterEach
-    fun cleanup() {
+    fun cleanup()
+    {
         ContextBank.clearRemotePersistenceBackend()
         runBlocking { ContextBank.deleteContextWindowSuspend(key, skipRemote = true) }
     }
@@ -36,19 +38,22 @@ class ContextPersistenceBackendTest {
         assertFalse(ContextBank.deleteContextWindowSuspend(key))
     }
 
-    private class FakeContextPersistenceBackend : ContextPersistenceBackend {
+    private class FakeContextPersistenceBackend : ContextPersistenceBackend
+    {
         override val id: String = "fake"
         val windows = mutableMapOf<String, ContextWindow>()
         private val todos = mutableMapOf<String, TodoList>()
 
         override suspend fun getContextWindow(key: String): ContextWindow? = windows[key]
-        override suspend fun putContextWindow(key: String, window: ContextWindow) {
+        override suspend fun putContextWindow(key: String, window: ContextWindow)
+        {
             windows[key] = window
         }
         override suspend fun deleteContextWindow(key: String): Boolean = windows.remove(key) != null
         override suspend fun listContextWindowKeys(): List<String> = windows.keys.toList()
         override suspend fun getTodoList(key: String): TodoList? = todos[key]
-        override suspend fun putTodoList(key: String, todoList: TodoList) {
+        override suspend fun putTodoList(key: String, todoList: TodoList)
+        {
             todos[key] = todoList
         }
         override suspend fun deleteTodoList(key: String): Boolean = todos.remove(key) != null

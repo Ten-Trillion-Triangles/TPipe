@@ -5,13 +5,28 @@ import kotlinx.serialization.json.put
 
 /** Byte-stable SSE and WebSocket encoding for AgentCore-local AG-UI events. */
 object AgentCoreAgUiEventEncoder {
-    /** Encode one event as a canonical SSE data frame. */
+    /**
+     * Encode one event as a canonical SSE data frame.
+     *
+     * @param event Event to encode.
+     * @return One SSE data frame.
+     */
     fun encodeSse(event: AgentCoreAgUiEvent): String = "data: ${encodeJson(event)}\n\n"
 
-    /** Encode one event as a WebSocket JSON frame. */
+    /**
+     * Encode one event as a WebSocket JSON frame.
+     *
+     * @param event Event to encode.
+     * @return One JSON frame.
+     */
     fun encodeWebSocket(event: AgentCoreAgUiEvent): String = encodeJson(event)
 
-    /** Encode only populated optional fields to keep the wire contract compact. */
+    /**
+     * Encode only populated optional fields to keep the wire contract compact.
+     *
+     * @param event Event to encode.
+     * @return Compact JSON representation.
+     */
     fun encodeJson(event: AgentCoreAgUiEvent): String = buildJsonObject {
         put("type", event.type)
         put("threadId", event.threadId)

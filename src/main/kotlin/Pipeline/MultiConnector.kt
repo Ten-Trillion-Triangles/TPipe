@@ -138,7 +138,7 @@ class MultiConnector : P2PInterface
 
     override fun clearStreamingCallbacksRecursive()
     {
-        for (connector in connectors)
+        for(connector in connectors)
         {
             connector.clearStreamingCallbacksRecursive()
         }

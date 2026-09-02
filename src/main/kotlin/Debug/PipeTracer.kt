@@ -41,14 +41,23 @@ object PipeTracer {
         isEnabled = false
     }
 
-    /** Register or replace a named generic trace sink. */
+    /**
+     * Register or replace a named generic trace sink.
+     *
+     * @param name Stable sink name.
+     * @param sink Sink receiving future trace events.
+     */
     fun registerSink(name: String, sink: TraceSink)
     {
         require(name.isNotBlank()) { "Trace sink name must not be blank." }
         sinks[name] = sink
     }
 
-    /** Remove a named trace sink. */
+    /**
+     * Remove a named trace sink.
+     *
+     * @param name Stable sink name.
+     */
     fun removeSink(name: String)
     {
         sinks.remove(name)

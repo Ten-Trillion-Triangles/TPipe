@@ -35,19 +35,30 @@ import java.io.Writer
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
-/** AgentCore-only AG-UI transport host; Core protocol types remain unchanged. */
+/** AgentCore-only AG-UI transport host; Core protocol types remain unchanged.
+ *
+ * @param config Runtime server configuration.
+ * @param factory Factory for new AG-UI session roots.
+ * @param mapper Input mapper for the AG-UI envelope.
+ */
 class AgentCoreAgUiRuntimeHost(
     private val config: AgentCoreRuntimeHostConfig = AgentCoreRuntimeHostConfig(),
     factory: AgentCoreSessionFactory,
     private val mapper: AgentCoreAgUiInputMapper = AgentCoreAgUiInputMapper()
-) : AutoCloseable {
+) : AutoCloseable
+{
     private val sessions = AgentCoreSessionRegistry(config.sessionMode, factory)
     private var engine: EmbeddedServer<*, *>? = null
     private val healthStatus = AtomicReference("Healthy")
     private val healthUpdatedAt = AtomicLong(System.currentTimeMillis())
 
-    /** Start the SSE/WebSocket AG-UI host. */
-    fun start(wait: Boolean = false): EmbeddedServer<*, *> {
+    /** Start the SSE/WebSocket AG-UI host.
+     *
+     * @param wait Whether to block while the server is running.
+     * @return The started embedded server.
+     */
+    fun start(wait: Boolean = false): EmbeddedServer<*, *>
+    {
         check(engine == null) { "AG-UI runtime host is already started." }
         return embeddedServer(CIO, host = config.bindAddress, port = config.port) {
             installAgUiRoutes()
@@ -55,7 +66,8 @@ class AgentCoreAgUiRuntimeHost(
     }
 
     /** Stop the host and release retained session roots. */
-    override fun close() {
+    override fun close()
+    {
         engine?.stop(1000, 2000)
         engine = null
         sessions.close()
@@ -71,7 +83,8 @@ class AgentCoreAgUiRuntimeHost(
     fun codeInterpreterClient(clients: AgentCoreClients): AgentCoreCodeInterpreterClient =
         clients.codeInterpreter(sessions)
 
-    private fun Application.installAgUiRoutes() {
+    private fun Application.installAgUiRoutes()
+    {
         install(WebSockets)
         routing {
             get(config.pingPath) {
@@ -83,7 +96,8 @@ class AgentCoreAgUiRuntimeHost(
             post(config.invocationPath) {
                 val rawInput = call.receiveText()
                 val decoded = runCatching { mapper.decode(rawInput) }
-                if (decoded.isFailure) {
+                if(decoded.isFailure)
+                {
                     call.response.status(HttpStatusCode.BadRequest)
                     call.respondTextWriter(ContentType.Text.EventStream) {
                         writeFailure(
@@ -91,29 +105,37 @@ class AgentCoreAgUiRuntimeHost(
                             "Invalid AG-UI input: ${decoded.exceptionOrNull()?.message.orEmpty()}"
                         )
                     }
+
                     return@post
                 }
+
                 val decodedInput = decoded.getOrThrow()
                 val input = decodedInput.sessionId?.let { decodedInput }
                     ?: call.request.headers[config.sessionHeader]?.let { decodedInput.copy(sessionId = it) }
                     ?: decodedInput
                 val mapped = runCatching { mapper.map(input) }
-                if (mapped.isFailure) {
+                if(mapped.isFailure)
+                {
                     call.response.status(HttpStatusCode.BadRequest)
                     call.respondTextWriter(ContentType.Text.EventStream) {
                         writeFailure(input, mapped.exceptionOrNull()?.message.orEmpty())
                     }
+
                     return@post
                 }
+
                 call.respondTextWriter(ContentType.Text.EventStream) {
                     writeAll(input, mapped.getOrThrow())
                 }
             }
+
             webSocket(config.websocketPath) {
-                for (frame in incoming) {
-                    if (!isActive || frame !is Frame.Text) continue
+                for(frame in incoming)
+                {
+                    if(!isActive || frame !is Frame.Text) continue
                     val decoded = runCatching { mapper.decode(frame.readText()) }
-                    if (decoded.isFailure) {
+                    if(decoded.isFailure)
+                    {
                         send(
                             Frame.Text(
                                 AgentCoreAgUiEventEncoder.encodeWebSocket(
@@ -126,12 +148,14 @@ class AgentCoreAgUiRuntimeHost(
                         )
                         continue
                     }
+
                     val decodedInput = decoded.getOrThrow()
                     val input = decodedInput.sessionId?.let { decodedInput }
                         ?: call.request.headers[config.sessionHeader]?.let { decodedInput.copy(sessionId = it) }
                         ?: decodedInput
                     val mappedResult = runCatching { mapper.map(input) }
-                    if (mappedResult.isFailure) {
+                    if(mappedResult.isFailure)
+                    {
                         send(
                             Frame.Text(
                                 AgentCoreAgUiEventEncoder.encodeWebSocket(
@@ -144,6 +168,7 @@ class AgentCoreAgUiRuntimeHost(
                         )
                         continue
                     }
+
                     val mapped = mappedResult.getOrThrow()
                     val mappedInput = RunAgentInput(
                         threadId = mapped.threadId,
@@ -151,13 +176,20 @@ class AgentCoreAgUiRuntimeHost(
                         messages = listOf(RunAgentMessage("user", mapped.request.prompt.text)),
                         sessionId = mapped.sessionId
                     )
-                    try {
+                    try
+                    {
                         executeStreaming(mappedInput, mapped) { event ->
                             send(Frame.Text(AgentCoreAgUiEventEncoder.encodeWebSocket(event)))
                         }
-                    } catch (exception: CancellationException) {
+                    }
+
+                    catch(exception: CancellationException)
+                    {
                         throw exception
-                    } catch (exception: Exception) {
+                    }
+
+                    catch(exception: Exception)
+                    {
                         send(
                             Frame.Text(
                                 AgentCoreAgUiEventEncoder.encodeWebSocket(
@@ -171,21 +203,30 @@ class AgentCoreAgUiRuntimeHost(
         }
     }
 
-    private suspend fun Writer.writeAll(input: RunAgentInput, mapped: AgentCoreAgUiMappedRequest) {
-        try {
+    private suspend fun Writer.writeAll(input: RunAgentInput, mapped: AgentCoreAgUiMappedRequest)
+    {
+        try
+        {
             executeStreaming(input, mapped) { event ->
                 write(AgentCoreAgUiEventEncoder.encodeSse(event))
                 flush()
             }
-        } catch (exception: CancellationException) {
+        }
+
+        catch(exception: CancellationException)
+        {
             throw exception
-        } catch (exception: Exception) {
+        }
+
+        catch(exception: Exception)
+        {
             write(AgentCoreAgUiEventEncoder.encodeSse(AgentCoreAgUiEventMapper.failed(input, exception.message.orEmpty())))
             flush()
         }
     }
 
-    private fun Writer.writeFailure(input: RunAgentInput, message: String) {
+    private fun Writer.writeFailure(input: RunAgentInput, message: String)
+    {
         write(AgentCoreAgUiEventEncoder.encodeSse(AgentCoreAgUiEventMapper.failed(input, message)))
         flush()
     }
@@ -194,7 +235,8 @@ class AgentCoreAgUiRuntimeHost(
         input: RunAgentInput,
         mapped: AgentCoreAgUiMappedRequest,
         emit: suspend (AgentCoreAgUiEvent) -> Unit
-    ) {
+    )
+    {
         AgentCoreAgUiEventMapper.started(input).forEach { event -> emit(event) }
         var emittedChunks = false
         val response = sessions.withSession(
@@ -205,7 +247,8 @@ class AgentCoreAgUiRuntimeHost(
             threadId = input.threadId,
             runId = input.runId
         ) { root ->
-            try {
+            try
+            {
                 root.setStreamingCallbackRecursive { chunk ->
                     if(chunk.isNotEmpty())
                     {
@@ -214,33 +257,49 @@ class AgentCoreAgUiRuntimeHost(
                     }
                 }
                 root.executeP2PRequest(mapped.request) ?: P2PResponse()
-            } catch (exception: CancellationException) {
-                if (config.abortOnClientDisconnect) {
+            }
+
+            catch(exception: CancellationException)
+            {
+                if(config.abortOnClientDisconnect)
+                {
                     runCatching { root.abortRecursive() }
                 }
                 throw exception
-            } finally {
+            }
+
+            finally
+            {
                 root.clearStreamingCallbacksRecursive()
             }
         }
         val rejection = response.rejection
-        if (rejection != null) {
+        if(rejection != null)
+        {
             emit(AgentCoreAgUiEventMapper.failed(input, rejection.reason))
-        } else {
-            if (!emittedChunks) {
+        }
+
+        else
+        {
+            if(!emittedChunks)
+            {
                 response.output?.text?.takeIf { it.isNotEmpty() }?.let { output ->
                     emit(AgentCoreAgUiEventMapper.content(input, output))
                 }
             }
+
             AgentCoreAgUiEventMapper.finished(input).forEach { event -> emit(event) }
         }
     }
 
-    private suspend fun healthResponse(): com.TTT.AgentCore.runtime.AgentCorePingResponse {
-        val nextStatus = if (sessions.isBusy()) "HealthyBusy" else "Healthy"
-        if (healthStatus.getAndSet(nextStatus) != nextStatus) {
+    private suspend fun healthResponse(): com.TTT.AgentCore.runtime.AgentCorePingResponse
+    {
+        val nextStatus = if(sessions.isBusy()) "HealthyBusy" else "Healthy"
+        if(healthStatus.getAndSet(nextStatus) != nextStatus)
+        {
             healthUpdatedAt.set(System.currentTimeMillis())
         }
+
         return com.TTT.AgentCore.runtime.AgentCorePingResponse(
             status = nextStatus,
             timeOfLastUpdate = healthUpdatedAt.get()

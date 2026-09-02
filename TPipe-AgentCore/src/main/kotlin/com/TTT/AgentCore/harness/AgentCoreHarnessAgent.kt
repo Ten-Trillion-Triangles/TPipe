@@ -12,10 +12,13 @@ import com.TTT.P2P.P2PResponse
 /**
  * P2P adapter for an external AgentCore Harness worker. Harness remains an
  * external worker boundary and does not add a transport enum.
+ *
+ * @param worker Function that handles one P2P request.
  */
 class AgentCoreHarnessAgent(
     private val worker: suspend (P2PRequest) -> P2PResponse
-) : P2PInterface {
+) : P2PInterface
+{
     /**
      * Build a real Harness-backed P2P agent while retaining the lambda
      * constructor used by existing callers and tests.

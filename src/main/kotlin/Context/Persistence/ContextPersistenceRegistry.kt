@@ -8,8 +8,12 @@ object ContextPersistenceRegistry {
     @Volatile
     private var backend: ContextPersistenceBackend? = null
 
-    /** Install [newBackend] as the process-wide remote persistence backend. */
-    fun set(newBackend: ContextPersistenceBackend) {
+    /** Install [newBackend] as the process-wide remote persistence backend.
+     *
+     * @param newBackend Backend to install.
+     */
+    fun set(newBackend: ContextPersistenceBackend)
+    {
         backend = newBackend
     }
 
@@ -17,7 +21,8 @@ object ContextPersistenceRegistry {
     fun get(): ContextPersistenceBackend? = backend
 
     /** Remove the configured backend. */
-    fun clear() {
+    fun clear()
+    {
         backend = null
     }
 }

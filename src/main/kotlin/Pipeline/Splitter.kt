@@ -121,9 +121,9 @@ class Splitter: P2PInterface
 
     override fun clearStreamingCallbacksRecursive()
     {
-        for (activatorValue in activatorKeys.values)
+        for(activatorValue in activatorKeys.values)
         {
-            for (pipeline in activatorValue.pipelines)
+            for(pipeline in activatorValue.pipelines)
             {
                 pipeline.clearStreamingCallbacksRecursive()
             }

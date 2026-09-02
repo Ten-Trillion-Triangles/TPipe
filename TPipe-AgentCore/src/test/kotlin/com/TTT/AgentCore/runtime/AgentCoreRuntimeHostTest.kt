@@ -37,7 +37,8 @@ class AgentCoreRuntimeHostTest
             val transport = AgentCoreRuntimeClient(
                 AgentCoreRuntimeClientConfig("http://127.0.0.1:$port")
             )
-            try {
+            try
+            {
                 host.start()
                 waitForServer(port)
                 val streamedChunks = mutableListOf<String>()
@@ -53,7 +54,10 @@ class AgentCoreRuntimeHostTest
                 assertEquals("final-output", normal.output)
                 assertEquals(2, root.clearCount)
                 assertFalse(root.hasCallback)
-            } finally {
+            }
+
+            finally
+            {
                 transport.close()
                 host.close()
             }
@@ -76,7 +80,8 @@ class AgentCoreRuntimeHostTest
             val transport = AgentCoreRuntimeClient(
                 AgentCoreRuntimeClientConfig("http://127.0.0.1:$port")
             )
-            try {
+            try
+            {
                 host.start()
                 waitForServer(port)
                 val chunks = mutableListOf<String>()
@@ -88,7 +93,10 @@ class AgentCoreRuntimeHostTest
 
                 assertEquals(listOf("final-output"), chunks)
                 assertEquals("final-output", response.output)
-            } finally {
+            }
+
+            finally
+            {
                 transport.close()
                 host.close()
             }
@@ -164,7 +172,8 @@ class AgentCoreRuntimeHostTest
 
         override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse
         {
-            if (emitChunks) {
+            if(emitChunks)
+            {
                 callback?.invoke("chunk-1")
                 callback?.invoke("chunk-2")
             }
