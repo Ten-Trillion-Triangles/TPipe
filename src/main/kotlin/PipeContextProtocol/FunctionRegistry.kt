@@ -7,6 +7,12 @@ import kotlin.reflect.full.valueParameters
 import kotlin.reflect.jvm.javaType
 
 /**
+ * Provider-neutral handler for functions whose implementation is resolved at
+ * runtime, such as a remote MCP tool.
+ */
+typealias DynamicFunctionHandler = suspend (Map<String, String>) -> Any?
+
+/**
  * Thread-safe singleton registry for managing all bound native functions.
  * Provides registration, lookup, validation, and lifecycle management for
  * native functions integrated with the PCP protocol.
@@ -58,6 +64,29 @@ object FunctionRegistry
         functions[name] = wrapper
         return signature
     }
+
+    /**
+     * Register a dynamic function while preserving the normal PCP signature,
+     * whitelist, and parameter-validation path.
+     *
+     * @param name Name exposed to PCP.
+     * @param signature Parameters and return metadata for the function.
+     * @param handler Suspendable implementation receiving validated string values.
+     * @return The registered signature.
+     */
+    fun registerDynamicFunction(
+        name: String,
+        signature: FunctionSignature,
+        handler: DynamicFunctionHandler
+    ): FunctionSignature
+    {
+        require(name.isNotBlank()) { "Dynamic function name must not be blank." }
+        require(signature.name == name) {
+            "Dynamic function signature name '${signature.name}' does not match '$name'."
+        }
+        functions[name] = DynamicFunction(signature, handler)
+        return signature
+    }
     
     /**
      * Lookup registered function by name.
@@ -69,6 +98,21 @@ object FunctionRegistry
     fun getFunction(name: String): NativeFunction? 
     {
         return functions[name]
+    }
+
+    /**
+     * Remove a registered function, optionally only when its signature still
+     * matches the caller's binding.
+     *
+     * @param name Name of the function to remove.
+     * @param expectedSignature Signature originally associated with the binding.
+     * @return True when this call removed the function.
+     */
+    fun unregisterFunction(name: String, expectedSignature: FunctionSignature? = null): Boolean
+    {
+        val current = functions[name] ?: return false
+        if(expectedSignature != null && current.signature != expectedSignature) return false
+        return functions.remove(name, current)
     }
     
     /**

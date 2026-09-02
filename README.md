@@ -185,6 +185,7 @@ Integration guides for different AI providers:
 
 #### Extension APIs
 - [TPipe-MCP Package API](docs/api/tpipe-mcp-package.md) - Model Context Protocol bridge and server hosting
+- [TPipe-AgentCore](docs/agentcore/README.md) - Optional AgentCore Runtime, Memory, Gateway, tools, and observability integration
 - [TPipe-Defaults API](docs/api/tpipe-defaults-package.md) - Pre-configured components and reasoning
 
 ## Quick Start

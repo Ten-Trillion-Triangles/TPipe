@@ -359,6 +359,15 @@ class Junction : P2PInterface
         }
     }
 
+    override fun clearStreamingCallbacksRecursive()
+    {
+        moderatorBinding?.component?.clearStreamingCallbacksRecursive()
+        for (binding in participantBindings)
+        {
+            binding.component.clearStreamingCallbacksRecursive()
+        }
+    }
+
     override fun enableStallDetectorRecursive(
         config: StreamingStallConfig,
         callback: StallCallback?

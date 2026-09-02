@@ -2098,6 +2098,40 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
+     * Clears streamed-output callbacks from this pipe and all descendant pipes.
+     *
+     * @param visited Internal cycle guard for shared child references.
+     */
+    fun clearStreamingCallbacksRecursively(visited: MutableSet<String> = mutableSetOf())
+    {
+        if(pipeId in visited) return
+        visited.add(pipeId)
+
+        clearStreamingCallbackState()
+
+        listOfNotNull(validatorPipe, transformationPipe, branchPipe, reasoningPipe).forEach { child ->
+            child.clearStreamingCallbacksRecursively(visited)
+        }
+    }
+
+    /**
+     * Clears callback state owned by this pipe implementation.
+     *
+     * Providers with a legacy callback field can override this hook while the
+     * recursive traversal remains owned by the base [Pipe].
+     */
+    protected open fun clearStreamingCallbackState()
+    {
+        streamingCallbackManager?.clearCallbacks()
+        setStreamingEnabled(false)
+    }
+
+    override fun clearStreamingCallbacksRecursive()
+    {
+        clearStreamingCallbacksRecursively()
+    }
+
+    /**
      * Enables stall detection on this pipe and recurses into every child pipe
      * (validator, transformation, branch, reasoning). Mirrors the propagation
      * shape of [propagateStreamingCallback] so a single call at a container

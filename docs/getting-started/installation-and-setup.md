@@ -9,7 +9,7 @@
 ### Required Versions
 
 - **Java**: JDK 24 or higher (TPipe targets JVM 24 bytecode)
-- **Kotlin**: Version 2.2.20 (as specified in build configuration)
+- **Kotlin**: Version 2.3.21 (as specified in build configuration)
 - **Gradle**: Version 8.14.3 or higher
 - **Build System**: **Kotlin Gradle DSL only** - TPipe does not support Maven, Groovy Gradle, or any other build systems
 
@@ -29,6 +29,7 @@ TPipe/
 ├── TPipe-Bedrock/         # AWS Bedrock integration
 ├── TPipe-Ollama/          # Ollama integration  
 ├── TPipe-MCP/             # MCP integration
+├── TPipe-AgentCore/       # Optional AWS AgentCore integration
 └── TPipe-Defaults/        # Default configurations
 ```
 
@@ -56,8 +57,8 @@ TPipe **only supports Kotlin Gradle DSL**. Add TPipe dependencies to your `build
 
 ```kotlin
 plugins {
-    kotlin("jvm") version "2.2.20"
-    kotlin("plugin.serialization") version "2.2.20"
+    kotlin("jvm") version "2.3.21"
+    kotlin("plugin.serialization") version "2.3.21"
 }
 
 java {
@@ -85,6 +86,7 @@ dependencies {
     implementation("com.TTT:TPipe-Bedrock:1.0.0")  // AWS Bedrock support
     implementation("com.TTT:TPipe-Ollama:1.0.0")   // Ollama support
     implementation("com.TTT:TPipe-MCP:1.0.0")      // MCP support
+    implementation("com.TTT:TPipe-AgentCore:1.0.0") // AWS AgentCore support
     implementation("com.TTT:TPipe-Defaults:1.0.0") // Default configurations
     
     // Required dependencies
@@ -102,7 +104,7 @@ For better dependency management, you can use a version catalog like TPipe does:
 **gradle/libs.versions.toml:**
 ```toml
 [versions]
-kotlin-version = "2.2.20"
+kotlin-version = "2.3.21"
 ktor-version = "3.1.3"
 tpipe-version = "1.0.0"
 
@@ -111,6 +113,7 @@ tpipe-main = { module = "com.TTT:TPipe", version.ref = "tpipe-version" }
 tpipe-bedrock = { module = "com.TTT:TPipe-Bedrock", version.ref = "tpipe-version" }
 tpipe-ollama = { module = "com.TTT:TPipe-Ollama", version.ref = "tpipe-version" }
 tpipe-mcp = { module = "com.TTT:TPipe-MCP", version.ref = "tpipe-version" }
+tpipe-agentcore = { module = "com.TTT:TPipe-AgentCore", version.ref = "tpipe-version" }
 tpipe-defaults = { module = "com.TTT:TPipe-Defaults", version.ref = "tpipe-version" }
 
 [plugins]
@@ -130,6 +133,7 @@ dependencies {
     implementation(libs.tpipe.bedrock)
     implementation(libs.tpipe.ollama)
     implementation(libs.tpipe.mcp)
+    implementation(libs.tpipe.agentcore)
     implementation(libs.tpipe.defaults)
 }
 ```
@@ -143,6 +147,7 @@ dependencies {
 | `TPipe-GenericOpenAI` | OpenAI-compatible HTTP pipe (incl. Bedrock Mantle) | When using OpenAI, Anthropic Messages, OpenAI Responses, or Bedrock Mantle |
 | `TPipe-Ollama` | Ollama integration | When using local Ollama models |
 | `TPipe-MCP` | Model Context Protocol support | When using MCP servers |
+| `TPipe-AgentCore` | AWS AgentCore Runtime, Memory, Gateway, tools, and observability adapters | When hosting or integrating a TPipe agent with AgentCore |
 | `TPipe-Defaults` | Default configurations and utilities | Optional, provides sensible defaults |
 
 ### Bedrock Mantle
@@ -335,11 +340,11 @@ java -version
 ### Kotlin Version Mismatch
 
 **Issue**: Kotlin compilation errors
-**Solution**: Use exactly Kotlin 2.2.20 as specified in TPipe
+**Solution**: Use exactly Kotlin 2.3.21 as specified in TPipe
 
 ```kotlin
 plugins {
-    kotlin("jvm") version "2.2.20"  // Must match TPipe's version
+    kotlin("jvm") version "2.3.21"  // Must match TPipe's version
 }
 ```
 

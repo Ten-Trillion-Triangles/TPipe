@@ -7,6 +7,7 @@ import java.util.Collections
 
 object PipeTracer {
     private val traces = ConcurrentHashMap<String, MutableList<TraceEvent>>()
+    private val sinks = ConcurrentHashMap<String, TraceSink>()
     private var isEnabled = false
     private var maxTraceHistory = 1000
 
@@ -39,6 +40,25 @@ object PipeTracer {
     {
         isEnabled = false
     }
+
+    /** Register or replace a named generic trace sink. */
+    fun registerSink(name: String, sink: TraceSink)
+    {
+        require(name.isNotBlank()) { "Trace sink name must not be blank." }
+        sinks[name] = sink
+    }
+
+    /** Remove a named trace sink. */
+    fun removeSink(name: String)
+    {
+        sinks.remove(name)
+    }
+
+    /** Remove all registered trace sinks. */
+    fun clearSinks()
+    {
+        sinks.clear()
+    }
     
     /**
      * Initializes a new trace history for a given pipeline ID.
@@ -66,6 +86,21 @@ object PipeTracer {
             if(traceList.size > maxTraceHistory)
             {
                 traceList.removeAt(0)
+            }
+        }
+
+        // Snapshot after leaving the trace-list monitor so an exporter cannot
+        // block or re-enter the trace history while it is being mutated.
+        sinks.values.toList().forEach { sink ->
+            try
+            {
+                sink.onEvent(pipelineId, event)
+            }
+            catch(exception: Exception)
+            {
+                System.err.println(
+                    "Trace sink failed for '$pipelineId': ${exception.message ?: exception::class.simpleName}"
+                )
             }
         }
     }

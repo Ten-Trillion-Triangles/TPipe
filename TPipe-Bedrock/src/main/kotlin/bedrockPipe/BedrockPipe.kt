@@ -1012,6 +1012,16 @@ open class BedrockPipe : Pipe()
     }
 
     /**
+     * Clears Bedrock's legacy callback field as part of the shared recursive
+     * TPipe callback cleanup path.
+     */
+    override fun clearStreamingCallbackState()
+    {
+        streamingCallback = null
+        super.clearStreamingCallbackState()
+    }
+
+    /**
      * Adds a streaming callback to descendant pipes (validator, transformation,
      * branch, reasoning) without registering on this pipe's own manager.
      *

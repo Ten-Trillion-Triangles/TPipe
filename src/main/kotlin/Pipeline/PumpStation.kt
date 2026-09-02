@@ -271,6 +271,16 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
 
     override fun getParentP2PInterface(): P2PInterface? = parentInterface
 
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        internalAgent?.setStreamingCallbackRecursive(callback)
+    }
+
+    override fun clearStreamingCallbacksRecursive()
+    {
+        internalAgent?.clearStreamingCallbacksRecursive()
+    }
+
     /**
      * Name of the path. Used by the [PumpStation] harnesses to locate this path when signals are sent to it
      * from the dispatcher agent.
@@ -2563,6 +2573,27 @@ private fun pathKey(name: String): String = name.lowercase()
         {
             slot.agent?.setStreamingCallbackRecursive(callback)
         }
+        pathList.values.forEach { it.setStreamingCallbackRecursive(callback) }
+        reservePaths.values.forEach { it.setStreamingCallbackRecursive(callback) }
+    }
+
+    override fun clearStreamingCallbacksRecursive()
+    {
+        judgeAgent?.clearStreamingCallbacksRecursive()
+        dispatchAgent?.clearStreamingCallbacksRecursive()
+        interventionAgent?.clearStreamingCallbacksRecursive()
+        healthAgent?.clearStreamingCallbacksRecursive()
+        lorebookAgent?.clearStreamingCallbacksRecursive()
+        summaryAgent?.clearStreamingCallbacksRecursive()
+        goalAgent?.clearStreamingCallbacksRecursive()
+        preInitAgent?.clearStreamingCallbacksRecursive()
+        pathSafetyAgent?.clearStreamingCallbacksRecursive()
+        for (slot in additionalHarnessAgentSlots)
+        {
+            slot.agent?.clearStreamingCallbacksRecursive()
+        }
+        pathList.values.forEach { it.clearStreamingCallbacksRecursive() }
+        reservePaths.values.forEach { it.clearStreamingCallbacksRecursive() }
     }
 
     override fun enableStallDetectorRecursive(

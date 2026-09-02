@@ -236,6 +236,15 @@ class Manifold : P2PInterface
         }
     }
 
+    override fun clearStreamingCallbacksRecursive()
+    {
+        managerPipeline.clearStreamingCallbacksRecursive()
+        for (workerComponent in workerComponents)
+        {
+            workerComponent.clearStreamingCallbacksRecursive()
+        }
+    }
+
     override fun enableStallDetectorRecursive(
         config: StreamingStallConfig,
         callback: StallCallback?

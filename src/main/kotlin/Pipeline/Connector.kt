@@ -115,6 +115,14 @@ class Connector : P2PInterface
         }
     }
 
+    override fun clearStreamingCallbacksRecursive()
+    {
+        for (pipeline in branches.values)
+        {
+            pipeline.clearStreamingCallbacksRecursive()
+        }
+    }
+
     override fun enableStallDetectorRecursive(
         config: StreamingStallConfig,
         callback: StallCallback?

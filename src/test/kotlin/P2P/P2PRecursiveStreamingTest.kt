@@ -84,6 +84,24 @@ class P2PRecursiveStreamingTest
     }
 
     @Test
+    fun `Pipeline clearStreamingCallbacksRecursive removes callbacks and disables streaming`()
+    {
+        runBlocking {
+            val pipe = RecordingPipe()
+            val pipeline = Pipeline().add(pipe)
+            val chunks = mutableListOf<String>()
+
+            pipeline.setStreamingCallbackRecursive { chunks.add(it) }
+            pipe.emit("before-clear")
+            pipeline.clearStreamingCallbacksRecursive()
+            pipe.emit("after-clear")
+
+            assertEquals(listOf("before-clear"), chunks)
+            assertTrue(!pipe.streamingEnabled)
+        }
+    }
+
+    @Test
     fun `Pipeline setStreamingCallbackRecursive broadcasts callback to every pipe`()
     {
         runBlocking {

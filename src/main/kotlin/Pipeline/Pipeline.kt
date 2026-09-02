@@ -465,6 +465,14 @@ class Pipeline : P2PInterface
             pipe.propagateStreamingCallback(callback)
         }
     }
+    override fun clearStreamingCallbacksRecursive()
+    {
+        for (pipe in getPipes())
+        {
+            pipe.clearStreamingCallbacksRecursively()
+        }
+    }
+
     override fun enableStallDetectorRecursive(
         config: StreamingStallConfig,
         callback: StallCallback?

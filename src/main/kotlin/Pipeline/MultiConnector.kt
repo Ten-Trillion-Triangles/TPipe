@@ -136,6 +136,14 @@ class MultiConnector : P2PInterface
         }
     }
 
+    override fun clearStreamingCallbacksRecursive()
+    {
+        for (connector in connectors)
+        {
+            connector.clearStreamingCallbacksRecursive()
+        }
+    }
+
     override fun enableStallDetectorRecursive(
         config: StreamingStallConfig,
         callback: StallCallback?

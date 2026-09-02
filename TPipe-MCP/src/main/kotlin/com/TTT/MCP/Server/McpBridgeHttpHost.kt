@@ -9,6 +9,14 @@ import io.ktor.server.cio.CIO
 import io.modelcontextprotocol.kotlin.sdk.server.mcpStreamableHttp
 import kotlinx.coroutines.runBlocking
 
+/** Configuration for hosting a TPipe MCP bridge over Streamable HTTP. */
+data class McpHttpHostConfig(
+    val port: Int = 8080,
+    val authKey: String? = null,
+    val bindAddress: String = "127.0.0.1",
+    val path: String = "/mcp/bridge"
+)
+
 /**
  * HTTP transport wrapper for MCP bridge server hosting.
  * Allows MCP clients to connect over HTTP with bridge server conversion.
@@ -36,16 +44,34 @@ object McpBridgeHttpHost {
      */
     fun run(port: Int, authKey: String? = null, bindAddress: String = "127.0.0.1")
     {
+        run(
+            McpHttpHostConfig(
+                port = port,
+                authKey = authKey,
+                bindAddress = bindAddress
+            )
+        )
+    }
+
+    /**
+     * Run a bridge with an explicit endpoint path.
+     *
+     * The legacy overload keeps `/mcp/bridge`; callers hosting an AgentCore
+     * MCP endpoint can select `/mcp` without changing the bridge server.
+     */
+    fun run(config: McpHttpHostConfig)
+    {
+        require(config.path.startsWith("/")) { "MCP endpoint path must start with '/'." }
         runBlocking {
             val host = createHost()
 
-            embeddedServer(CIO, host = bindAddress, port = port) {
-                if (!authKey.isNullOrBlank())
+            embeddedServer(CIO, host = config.bindAddress, port = config.port) {
+                if (!config.authKey.isNullOrBlank())
                 {
                     install(Authentication) {
                         bearer("mcp-auth") {
                             authenticate { tokenCredential: io.ktor.server.auth.BearerTokenCredential ->
-                                if (tokenCredential.token == authKey)
+                                if (tokenCredential.token == config.authKey)
                                 {
                                     UserIdPrincipal("mcp-client")
                                 }
@@ -58,15 +84,15 @@ object McpBridgeHttpHost {
                     }
                 }
                 routing {
-                    if (!authKey.isNullOrBlank())
+                    if (!config.authKey.isNullOrBlank())
                     {
                         authenticate("mcp-auth") {
-                            mcpStreamableHttp("/mcp/bridge") { host.getServer() }
+                            mcpStreamableHttp(config.path) { host.getServer() }
                         }
                     }
                     else
                     {
-                        mcpStreamableHttp("/mcp/bridge") { host.getServer() }
+                        mcpStreamableHttp(config.path) { host.getServer() }
                     }
                 }
             }.start(wait = true)

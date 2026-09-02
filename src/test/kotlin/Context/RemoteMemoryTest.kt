@@ -34,6 +34,10 @@ class RemoteMemoryTest
 
             val contextWindow = ContextWindow().apply {
                 contextElements.add("remote context element")
+                loreBookKeys["remote-lore"] = LoreBook().apply {
+                    key = "remote-lore"
+                    value = "remote lore value"
+                }
             }
             val storedContext = assertSuccess(
                 MemoryClient.emplaceContextWindow(contextKey, contextWindow),
@@ -47,6 +51,18 @@ class RemoteMemoryTest
                 "fetch remote context window"
             )
             assertEquals("remote context element", fetchedContext.contextElements[0])
+            val queriedLore = assertSuccess(
+                MemoryClient.queryLorebook(contextKey, query = "remote"),
+                "query remote lorebook"
+            )
+            assertEquals(listOf("remote-lore"), queriedLore.map { it.entry.key })
+            assertEquals(
+                listOf("remote-lore"),
+                assertSuccess(
+                    MemoryClient.simulateLorebookTrigger(contextKey, "remote-lore"),
+                    "simulate remote lorebook trigger"
+                )
+            )
             assertTrue(ContextBank.contextWindowExistsSuspend(contextKey))
 
             assertSuccess(MemoryClient.deleteContextWindow(contextKey), "delete remote context window")

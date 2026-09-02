@@ -2,10 +2,14 @@ package com.TTT.Context
 
 import com.TTT.Config.TPipeConfig
 import com.TTT.module
+import com.TTT.Context.Persistence.ContextPersistenceBackend
+import com.TTT.Context.Persistence.ContextPersistenceRegistry
+import com.TTT.Context.Persistence.TPipeRemotePersistenceBackend
 import com.TTT.Util.deepCopy
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -118,6 +122,42 @@ object ContextBank
      * Uses ConcurrentHashMap for thread-safe access.
      */
     private val writeBackFunctions = ConcurrentHashMap<String, WriteBackFunction>()
+
+    /**
+     * Resolve the configured backend while retaining compatibility with callers
+     * that still configure the legacy remote-memory flags directly.
+     */
+    private fun remotePersistenceBackendOrNull(): ContextPersistenceBackend?
+    {
+        return ContextPersistenceRegistry.get()
+            ?: if(TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally)
+            {
+                TPipeRemotePersistenceBackend()
+            }
+            else
+            {
+                null
+            }
+    }
+
+    /**
+     * Resolve the active backend or fail with an actionable configuration error.
+     */
+    private fun requireRemotePersistenceBackend(): ContextPersistenceBackend
+    {
+        return remotePersistenceBackendOrNull()
+            ?: throw IllegalStateException(
+                "Remote ContextBank storage requires a configured ContextPersistenceBackend or remote memory configuration."
+            )
+    }
+
+    /**
+     * Return whether a call should use the configured remote persistence backend.
+     */
+    private fun shouldUseRemotePersistence(mode: StorageMode, skipRemote: Boolean): Boolean
+    {
+        return !skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally)
+    }
 
     /**
      * Resolve the mutex for a specific context page key.
@@ -413,10 +453,10 @@ object ContextBank
      */
     fun emplace(key: String, window: ContextWindow, mode: StorageMode, skipRemote: Boolean = false)
     {
-        if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(shouldUseRemotePersistence(mode, skipRemote))
         {
             runBlocking {
-                MemoryClient.emplaceContextWindow(key, window).requireValue("store remote context window '$key'")
+                emplaceSuspend(key, window, mode, skipRemote, useWriteBack = false)
             }
             return
         }
@@ -500,9 +540,12 @@ object ContextBank
             return
         }
 
-        if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(shouldUseRemotePersistence(mode, skipRemote))
         {
-            MemoryClient.emplaceContextWindow(key, window).requireValue("store remote context window '$key'")
+            getPageMutex(key).withLock {
+                requireRemotePersistenceBackend().putContextWindow(key, window)
+                updateMetadata(key, mode)
+            }
             return
         }
 
@@ -600,22 +643,10 @@ object ContextBank
      */
     suspend fun deletePersistingBankKeySuspend(key: String, skipRemote: Boolean = false) : Boolean
     {
-        if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(shouldUseRemotePersistence(getStorageMode(key), skipRemote))
         {
-            return when(val deleteResult = MemoryClient.deleteContextWindow(key))
-            {
-                is MemoryOperationResult.Success -> true
-                is MemoryOperationResult.Failure ->
-                {
-                    if(deleteResult.error.errorType == MemoryErrorType.notFound)
-                    {
-                        false
-                    }
-                    else
-                    {
-                        throw MemoryRemoteException("delete persisted remote context window '$key'", deleteResult)
-                    }
-                }
+            return getPageMutex(key).withLock {
+                requireRemotePersistenceBackend().deleteContextWindow(key)
             }
         }
 
@@ -642,9 +673,26 @@ object ContextBank
      * Check whether a context page currently exists in memory, as a retrieval binding, or on disk.
      *
      * @param key Page key to inspect.
-     * @return True when the page exists locally.
+     * @return True when the page exists in the active local or remote store.
      */
     suspend fun contextWindowExistsSuspend(key: String): Boolean
+    {
+        if(shouldUseRemotePersistence(getStorageMode(key), skipRemote = false))
+        {
+            return getPageMutex(key).withLock {
+                requireRemotePersistenceBackend().getContextWindow(key) != null
+            }
+        }
+        return contextWindowExistsLocallySuspend(key)
+    }
+
+    /**
+     * Check whether a context page exists in this process without consulting a remote backend.
+     *
+     * @param key Page key to inspect.
+     * @return True when the page exists in local memory, retrieval bindings, or on disk.
+     */
+    internal suspend fun contextWindowExistsLocallySuspend(key: String): Boolean
     {
         return getPageMutex(key).withLock {
             if(bank.containsKey(key) || retrievalFunctions.containsKey(key))
@@ -660,9 +708,26 @@ object ContextBank
      * Check whether a todo list currently exists in memory or on disk.
      *
      * @param key Todo key to inspect.
-     * @return True when the todo list exists locally.
+     * @return True when the todo list exists in the active local or remote store.
      */
     suspend fun todoListExistsSuspend(key: String): Boolean
+    {
+        if(shouldUseRemotePersistence(getStorageMode(key), skipRemote = false))
+        {
+            return getTodoMutex(key).withLock {
+                requireRemotePersistenceBackend().getTodoList(key) != null
+            }
+        }
+        return todoListExistsLocallySuspend(key)
+    }
+
+    /**
+     * Check whether a todo list exists in this process without consulting a remote backend.
+     *
+     * @param key Todo key to inspect.
+     * @return True when the todo list exists in local memory or on disk.
+     */
+    internal suspend fun todoListExistsLocallySuspend(key: String): Boolean
     {
         return getTodoMutex(key).withLock {
             if(todoList.containsKey(key))
@@ -684,22 +749,17 @@ object ContextBank
      */
     suspend fun deleteContextWindowSuspend(key: String, skipRemote: Boolean = false): Boolean
     {
-        if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(shouldUseRemotePersistence(getStorageMode(key), skipRemote))
         {
-            return when(val deleteResult = MemoryClient.deleteContextWindow(key))
-            {
-                is MemoryOperationResult.Success -> deleteContextWindowSuspend(key, skipRemote = true)
-                is MemoryOperationResult.Failure ->
-                {
-                    if(deleteResult.error.errorType == MemoryErrorType.notFound)
-                    {
-                        deleteContextWindowSuspend(key, skipRemote = true)
-                    }
-                    else
-                    {
-                        throw MemoryRemoteException("delete remote context window '$key'", deleteResult)
-                    }
-                }
+            return getPageMutex(key).withLock {
+                val existedRemotely = requireRemotePersistenceBackend().deleteContextWindow(key)
+                val filePath = "${TPipeConfig.getLorebookDir()}/${key}.bank"
+                val existedInMemory = bank.remove(key) != null
+                val existedOnDisk = MemoryPersistence.deleteMemoryFile(filePath)
+                val existedAsRetrievalBinding = retrievalFunctions.remove(key) != null
+                writeBackFunctions.remove(key)
+                storageMetadata.remove(key)
+                existedRemotely || existedInMemory || existedOnDisk || existedAsRetrievalBinding
             }
         }
 
@@ -724,22 +784,15 @@ object ContextBank
      */
     suspend fun deleteTodoListSuspend(key: String, skipRemote: Boolean = false): Boolean
     {
-        if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(shouldUseRemotePersistence(getStorageMode(key), skipRemote))
         {
-            return when(val deleteResult = MemoryClient.deleteTodoList(key))
-            {
-                is MemoryOperationResult.Success -> deleteTodoListSuspend(key, skipRemote = true)
-                is MemoryOperationResult.Failure ->
-                {
-                    if(deleteResult.error.errorType == MemoryErrorType.notFound)
-                    {
-                        deleteTodoListSuspend(key, skipRemote = true)
-                    }
-                    else
-                    {
-                        throw MemoryRemoteException("delete remote todo list '$key'", deleteResult)
-                    }
-                }
+            return getTodoMutex(key).withLock {
+                val existedRemotely = requireRemotePersistenceBackend().deleteTodoList(key)
+                val filePath = "${TPipeConfig.getTodoListDir()}/${key}.todo"
+                val existedInMemory = todoList.remove(key) != null
+                val existedOnDisk = MemoryPersistence.deleteMemoryFile(filePath)
+                storageMetadata.remove(key)
+                existedRemotely || existedInMemory || existedOnDisk
             }
         }
 
@@ -905,6 +958,19 @@ object ContextBank
     }
 
     /**
+     * Return whether any known page is explicitly configured for remote storage.
+     *
+     * This is used by page-agnostic compatibility APIs, such as lock listings,
+     * that cannot receive a page key from their caller.
+     *
+     * @return True when at least one page has [StorageMode.REMOTE] metadata.
+     */
+    fun hasRemoteStorageMode(): Boolean
+    {
+        return storageMetadata.values.any { it.storageMode == StorageMode.REMOTE }
+    }
+
+    /**
      * Thread-safe version of setStorageMode().
      *
      * @param key The context bank key
@@ -1044,22 +1110,18 @@ object ContextBank
         }
 
         val mode = getStorageMode(key)
-        if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(shouldUseRemotePersistence(mode, skipRemote))
         {
-            return when(val remoteResult = MemoryClient.getContextWindow(key))
-            {
-                is MemoryOperationResult.Success -> snapshotContextWindow(remoteResult.value, copy)
-                is MemoryOperationResult.Failure ->
+            return getPageMutex(key).withLock {
+                if(ContextLock.isPageLockedSuspend(key, skipRemote))
                 {
-                    if(remoteResult.error.errorType == MemoryErrorType.notFound)
-                    {
-                        ContextWindow()
-                    }
-                    else
-                    {
-                        throw MemoryRemoteException("fetch remote context window '$key'", remoteResult)
-                    }
+                    return@withLock ContextWindow()
                 }
+
+                snapshotContextWindow(
+                    requireRemotePersistenceBackend().getContextWindow(key) ?: ContextWindow(),
+                    copy
+                )
             }
         }
 
@@ -1097,9 +1159,14 @@ object ContextBank
     {
         return getPageMutex(key).withLock {
             val mode = getStorageMode(key)
-            val context = if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+            val context = if(shouldUseRemotePersistence(mode, skipRemote))
             {
-                MemoryClient.getContextWindow(key).requireValue("fetch remote context window '$key'")
+                if(!skipRemote && ContextLock.isPageLockedSuspend(key, skipRemote))
+                {
+                    return@withLock ContextWindow()
+                }
+
+                requireRemotePersistenceBackend().getContextWindow(key) ?: ContextWindow()
             }
             else
             {
@@ -1126,26 +1193,19 @@ object ContextBank
         block: (ContextWindow) -> Unit
     ): ContextWindow
     {
-        if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(shouldUseRemotePersistence(mode, skipRemote))
         {
-            val remoteContext = when(val remoteResult = MemoryClient.getContextWindow(key))
-            {
-                is MemoryOperationResult.Success -> remoteResult.value
-                is MemoryOperationResult.Failure ->
+            return getPageMutex(key).withLock {
+                if(ContextLock.isPageLockedSuspend(key, skipRemote))
                 {
-                    if(remoteResult.error.errorType == MemoryErrorType.notFound)
-                    {
-                        ContextWindow()
-                    }
-                    else
-                    {
-                        throw MemoryRemoteException("fetch remote context window '$key' for mutation", remoteResult)
-                    }
+                    return@withLock ContextWindow()
                 }
+
+                val remoteContext = requireRemotePersistenceBackend().getContextWindow(key) ?: ContextWindow()
+                block(remoteContext)
+                requireRemotePersistenceBackend().putContextWindow(key, remoteContext)
+                remoteContext.deepCopy()
             }
-            block(remoteContext)
-            MemoryClient.emplaceContextWindow(key, remoteContext).requireValue("store remote context window '$key'")
-            return remoteContext.deepCopy()
         }
 
         return getPageMutex(key).withLock {
@@ -1211,9 +1271,11 @@ object ContextBank
     suspend fun getPageKeysSuspend(skipRemote: Boolean = false) : List<String>
     {
         val localKeys = (bank.keys + retrievalFunctions.keys).distinct()
-        if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote &&
+            (TPipeConfig.useRemoteMemoryGlobally ||
+                storageMetadata.values.any { it.storageMode == StorageMode.REMOTE }))
         {
-            val remoteKeys = MemoryClient.getPageKeys().requireValue("list remote context keys")
+            val remoteKeys = requireRemotePersistenceBackend().listContextWindowKeys()
             return (localKeys + remoteKeys).distinct()
         }
         return localKeys
@@ -1239,9 +1301,11 @@ object ContextBank
     suspend fun getTodoListKeysSuspend(skipRemote: Boolean = false) : List<String>
     {
         val localKeys = todoList.keys.toList()
-        if(!skipRemote && (TPipeConfig.remoteMemoryEnabled || TPipeConfig.useRemoteMemoryGlobally))
+        if(!skipRemote &&
+            (TPipeConfig.useRemoteMemoryGlobally ||
+                storageMetadata.values.any { it.storageMode == StorageMode.REMOTE }))
         {
-            val remoteKeys = MemoryClient.getTodoListKeys().requireValue("list remote todo keys")
+            val remoteKeys = requireRemotePersistenceBackend().listTodoListKeys()
             return (localKeys + remoteKeys).distinct()
         }
         return localKeys
@@ -1279,22 +1343,18 @@ object ContextBank
      */
     suspend fun getPagedTodoListSuspend(key: String, copy: Boolean = true, skipRemote: Boolean = false) : TodoList
     {
-        if(!skipRemote && (getStorageMode(key) == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(shouldUseRemotePersistence(getStorageMode(key), skipRemote))
         {
-            return when(val remoteResult = MemoryClient.getTodoList(key))
-            {
-                is MemoryOperationResult.Success -> snapshotTodoList(remoteResult.value, copy)
-                is MemoryOperationResult.Failure ->
+            return getTodoMutex(key).withLock {
+                if(ContextLock.isPageLockedSuspend(key, skipRemote))
                 {
-                    if(remoteResult.error.errorType == MemoryErrorType.notFound)
-                    {
-                        TodoList()
-                    }
-                    else
-                    {
-                        throw MemoryRemoteException("fetch remote todo list '$key'", remoteResult)
-                    }
+                    return@withLock TodoList()
                 }
+
+                snapshotTodoList(
+                    requireRemotePersistenceBackend().getTodoList(key) ?: TodoList(),
+                    copy
+                )
             }
         }
 
@@ -1400,9 +1460,12 @@ object ContextBank
         skipRemote: Boolean = false
     )
     {
-        if(!skipRemote && (mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally))
+        if(shouldUseRemotePersistence(mode, skipRemote))
         {
-            MemoryClient.emplaceTodoList(key, todoList).requireValue("store remote todo list '$key'")
+            getTodoMutex(key).withLock {
+                requireRemotePersistenceBackend().putTodoList(key, todoList)
+                updateMetadata(key, mode)
+            }
             return
         }
 
@@ -1640,6 +1703,22 @@ object ContextBank
         TPipeConfig.remoteMemoryUrl = url
         TPipeConfig.remoteMemoryAuthToken = token
         TPipeConfig.useRemoteMemoryGlobally = useGlobally
+        ContextPersistenceRegistry.set(TPipeRemotePersistenceBackend())
+    }
+
+    /** Install a provider-neutral backend for remote ContextBank operations. */
+    fun setRemotePersistenceBackend(backend: ContextPersistenceBackend)
+    {
+        ContextPersistenceRegistry.set(backend)
+    }
+
+    /** Return the currently configured remote ContextBank backend. */
+    fun getRemotePersistenceBackend(): ContextPersistenceBackend? = ContextPersistenceRegistry.get()
+
+    /** Clear the custom remote ContextBank backend. */
+    fun clearRemotePersistenceBackend()
+    {
+        ContextPersistenceRegistry.clear()
     }
 
     /**
@@ -1714,16 +1793,22 @@ object ContextBank
      */
     suspend fun fetchMergeSaveRemoteContext(key: String, localWindow: ContextWindow): Boolean
     {
-        val remoteWindow = when(val remoteResult = MemoryClient.getContextWindow(key))
+        val backend = requireRemotePersistenceBackend()
+        val remoteWindow = backend.getContextWindow(key)
+        if(remoteWindow == null)
         {
-            is MemoryOperationResult.Success -> remoteResult.value
-            is MemoryOperationResult.Failure ->
+            return try
             {
-                if(remoteResult.error.errorType == MemoryErrorType.notFound)
-                {
-                    return MemoryClient.emplaceContextWindow(key, localWindow) is MemoryOperationResult.Success
-                }
-                throw MemoryRemoteException("fetch remote context window '$key' for merge-save", remoteResult)
+                backend.putContextWindow(key, localWindow)
+                true
+            }
+            catch(e: CancellationException)
+            {
+                throw e
+            }
+            catch(_: Exception)
+            {
+                false
             }
         }
 
@@ -1732,6 +1817,18 @@ object ContextBank
         localWindow.merge(remoteWindow)
         localWindow.version = maxOf(localWindow.version, remoteWindow.version) + 1
 
-        return MemoryClient.emplaceContextWindow(key, localWindow) is MemoryOperationResult.Success
+        return try
+        {
+            backend.putContextWindow(key, localWindow)
+            true
+        }
+        catch(e: CancellationException)
+        {
+            throw e
+        }
+        catch(_: Exception)
+        {
+            false
+        }
     }
 }

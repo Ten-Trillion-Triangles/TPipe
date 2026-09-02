@@ -60,7 +60,7 @@ object MemoryServer
                         "Missing context key"
                     )
 
-                    if(!ContextBank.contextWindowExistsSuspend(key))
+                    if(!ContextBank.contextWindowExistsLocallySuspend(key))
                     {
                         return@get call.respondMemoryError(
                             HttpStatusCode.NotFound,
@@ -88,7 +88,7 @@ object MemoryServer
                         "Failed to deserialize ContextWindow"
                     )
 
-                    val pageExists = ContextBank.contextWindowExistsSuspend(key)
+                    val pageExists = ContextBank.contextWindowExistsLocallySuspend(key)
                     if(TPipeConfig.enforceMemoryVersioning && pageExists)
                     {
                         val existingWindow = ContextBank.getContextFromBankSuspend(key, skipRemote = true)
@@ -123,7 +123,7 @@ object MemoryServer
                         "Missing context key"
                     )
 
-                    if(!ContextBank.contextWindowExistsSuspend(key))
+                    if(!ContextBank.contextWindowExistsLocallySuspend(key))
                     {
                         return@get call.respondMemoryError(
                             HttpStatusCode.NotFound,
@@ -140,7 +140,7 @@ object MemoryServer
 
                     val results = MemoryIntrospection.withCoroutineScope(MemoryIntrospectionConfig(allowedPageKeys = mutableSetOf("*"), allowRead = true))
                     {
-                        MemoryIntrospectionTools.queryLorebook(
+                        MemoryIntrospectionTools.queryLorebookLocally(
                             key,
                             query,
                             minWeight,
@@ -160,7 +160,7 @@ object MemoryServer
                         "Missing context key"
                     )
 
-                    if(!ContextBank.contextWindowExistsSuspend(key))
+                    if(!ContextBank.contextWindowExistsLocallySuspend(key))
                     {
                         return@get call.respondMemoryError(
                             HttpStatusCode.NotFound,
@@ -172,7 +172,7 @@ object MemoryServer
                     val text = call.request.queryParameters["text"] ?: ""
                     val results = MemoryIntrospection.withCoroutineScope(MemoryIntrospectionConfig(allowedPageKeys = mutableSetOf("*"), allowRead = true))
                     {
-                        MemoryIntrospectionTools.simulateLorebookTrigger(key, text)
+                        MemoryIntrospectionTools.simulateLorebookTriggerLocally(key, text)
                     }
                     call.respond(results)
                 }
@@ -214,7 +214,7 @@ object MemoryServer
                         "Missing todo key"
                     )
 
-                    if(!ContextBank.todoListExistsSuspend(key))
+                    if(!ContextBank.todoListExistsLocallySuspend(key))
                     {
                         return@get call.respondMemoryError(
                             HttpStatusCode.NotFound,
@@ -242,7 +242,7 @@ object MemoryServer
                         "Failed to deserialize TodoList"
                     )
 
-                    val todoExists = ContextBank.todoListExistsSuspend(key)
+                    val todoExists = ContextBank.todoListExistsLocallySuspend(key)
                     if(TPipeConfig.enforceMemoryVersioning && todoExists)
                     {
                         val existingTodo = ContextBank.getPagedTodoListSuspend(key, skipRemote = true)

@@ -31,6 +31,23 @@ abstract class NativeFunction
 }
 
 /**
+ * Native-function wrapper for a dynamically resolved implementation.
+ * Validation is still performed by [FunctionInvoker] before this handler runs.
+ */
+class DynamicFunction(
+    override val signature: FunctionSignature,
+    private val handler: DynamicFunctionHandler
+) : NativeFunction()
+{
+    override suspend fun invoke(parameters: Map<String, Any?>): Any?
+    {
+        return handler(parameters.mapValues { (_, value) -> value?.toString() ?: "" })
+    }
+
+    override fun validate(): Boolean = signature.name.isNotBlank()
+}
+
+/**
  * Wrapper for Kotlin functions using reflection.
  * Handles KFunction objects and provides type-safe invocation with automatic
  * parameter mapping and return value extraction.

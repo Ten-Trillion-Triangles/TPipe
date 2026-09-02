@@ -1,5 +1,6 @@
 package com.TTT.PipeContextProtocol
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 
 /**
@@ -47,6 +48,19 @@ class FunctionInvoker
                     error = "Parameter validation failed: ${validationResult.errors.joinToString(", ")}"
                 )
             }
+
+            if(nativeFunction is DynamicFunction)
+            {
+                val returnValue = nativeFunction.invoke(parameters)
+                val returnValueString = convertReturnValue(returnValue, nativeFunction.signature.returnType)
+                return InvocationResult(
+                    success = true,
+                    returnValue = returnValue,
+                    returnValueAsString = returnValueString,
+                    executionTimeMs = System.currentTimeMillis() - startTime,
+                    error = null
+                )
+            }
             
             // Convert parameters to native types
             val convertedParams = convertParameters(nativeFunction.signature, parameters)
@@ -65,6 +79,10 @@ class FunctionInvoker
                 error = null
             )
         } 
+        catch(e: CancellationException)
+        {
+            throw e
+        }
         catch(e: Exception)
         {
             InvocationResult(
@@ -108,6 +126,14 @@ class FunctionInvoker
                 if(!canConvert)
                 {
                     errors.add("Cannot convert parameter '$paramName' to type '${paramInfo.kotlinType}'")
+                }
+
+                if(paramInfo.enumValues.isNotEmpty() && paramValue !in paramInfo.enumValues)
+                {
+                    errors.add(
+                        "Invalid value '$paramValue' for parameter '$paramName'. " +
+                            "Allowed: ${paramInfo.enumValues.joinToString(", ")}"
+                    )
                 }
             }
         }
