@@ -24,6 +24,25 @@ fun PcpContext.bindFunction(name: String, function: KFunction<*>): PcpContext
 }
 
 /**
+ * Bind a provider-neutral dynamically implemented function to PCP.
+ *
+ * @param name Name exposed to PCP.
+ * @param signature Signature used for visibility and validation.
+ * @param handler Suspendable function implementation.
+ * @return This [PcpContext] for chaining.
+ */
+fun PcpContext.bindDynamicFunction(
+    name: String,
+    signature: FunctionSignature,
+    handler: DynamicFunctionHandler
+): PcpContext
+{
+    FunctionRegistry.registerDynamicFunction(name, signature, handler)
+    addTPipeOption(TPipeContextOptions().fromFunctionSignature(signature))
+    return this
+}
+
+/**
  * Extensions to TPipeContextOptions for enhanced function metadata.
  * Converts function signature to PCP-compatible format for LLM consumption.
  * 

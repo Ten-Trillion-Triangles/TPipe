@@ -109,6 +109,17 @@ interface P2PInterface
     fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit) {}
 
     /**
+     * Removes recursively propagated streaming callbacks and disables streaming
+     * on every descendant that supports it.
+     *
+     * The default is intentionally empty so existing P2P implementations remain
+     * source-compatible. Stateful TPipe containers and adapters override it.
+     */
+    fun clearStreamingCallbacksRecursive()
+    {
+    }
+
+    /**
      * Enables stall detection on every leaf pipe in this interface's
      * agent tree. Mirrors the propagation behaviour of
      * [setStreamingCallbackRecursive] and [setConverseRoleRecursive].

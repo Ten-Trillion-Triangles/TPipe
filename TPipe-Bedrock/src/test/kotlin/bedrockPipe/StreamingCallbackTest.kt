@@ -183,6 +183,28 @@ class StreamingCallbackTest
     }
 
     @Test
+    fun testRecursiveCleanupClearsLegacyCallbacks()
+    {
+        runBlocking {
+            val received = mutableListOf<String>()
+            val pipe = TestBedrockPipe()
+            val child = TestBedrockPipe()
+            pipe.setTransformationPipe(child)
+
+            val callback: suspend (String) -> Unit = { chunk -> received.add(chunk) }
+            pipe.setStreamingCallback(callback)
+            pipe.clearStreamingCallbacksRecursive()
+
+            pipe.testEmit("parent")
+            child.testEmit("child")
+
+            assertEquals(0, received.size)
+            assertEquals(false, pipe.streamingEnabled)
+            assertEquals(false, child.streamingEnabled)
+        }
+    }
+
+    @Test
     fun testBuilderPatternChaining()
     {
         runBlocking {

@@ -648,6 +648,13 @@ class DistributionGrid : P2PInterface
         workerPipelines?.forEach { it.setStreamingCallbackRecursive(callback) }
     }
 
+    override fun clearStreamingCallbacksRecursive()
+    {
+        entryPipeline?.clearStreamingCallbacksRecursive()
+        judgePipeline?.clearStreamingCallbacksRecursive()
+        workerPipelines?.forEach { it.clearStreamingCallbacksRecursive() }
+    }
+
     override fun enableStallDetectorRecursive(
         config: StreamingStallConfig,
         callback: StallCallback?

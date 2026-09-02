@@ -8,6 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Run all tests
 ./gradlew test
 
+# Validate the optional AgentCore module
+./gradlew :TPipe-AgentCore:check
+
 # Run a specific test class
 ./gradlew :test --tests "*.ManifoldDslTest"
 
@@ -83,6 +86,7 @@ TPipe/                      # Main library
 TPipe-Bedrock/              # AWS Bedrock provider
 TPipe-Ollama/               # Ollama local model provider
 TPipe-MCP/                  # Model Context Protocol bridge
+TPipe-AgentCore/            # Optional AWS AgentCore runtime/infrastructure integration
 TPipe-Defaults/             # Pre-configured components
 TPipe-Tuner/                # Tuning utilities
 TPipe-TraceServer/          # Remote trace dashboard

@@ -7,6 +7,9 @@ import com.TTT.Config.TPipeConfig
 import com.TTT.PipeContextProtocol.TPipeContextOptions
 import com.TTT.PipeContextProtocol.ParamType
 import com.TTT.PipeContextProtocol.FunctionRegistry
+import com.TTT.Context.Persistence.ContextPersistenceRegistry
+import com.TTT.Context.Persistence.ContextQueryBackend
+import com.TTT.Context.Persistence.TPipeRemotePersistenceBackend
 import kotlinx.serialization.Serializable
 
 /**
@@ -34,7 +37,7 @@ object MemoryIntrospectionTools
     suspend fun getLorebookEntry(pageKey: String, key: String): LoreBook?
     {
         if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return null
-        if(ContextLock.isKeyLockedSuspend(key)) return null
+        if(ContextLock.isKeyLockedSuspend(key, pageKey = pageKey)) return null
 
         val window = ContextBank.getContextFromBankSuspend(pageKey)
         return window.findLoreBookEntry(key)
@@ -50,7 +53,7 @@ object MemoryIntrospectionTools
 
         val window = ContextBank.getContextFromBankSuspend(pageKey)
         return window.loreBookKeys.filter { (key, _) ->
-            !ContextLock.isKeyLockedSuspend(key)
+            !ContextLock.isKeyLockedSuspend(key, pageKey = pageKey)
         }
     }
 
@@ -67,21 +70,67 @@ object MemoryIntrospectionTools
         extractRegex: String = ""
     ): List<LoreBookQueryResult>
     {
-        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return emptyList()
+        return queryLorebookInternal(pageKey, query, minWeight, requiredKeys, aliasKeys, extractRegex, skipRemote = false)
+    }
 
-        // Optimize for remote memory if configured
-        val mode = ContextBank.getStorageMode(pageKey)
-        if(mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally)
-        {
-            return MemoryClient.queryLorebook(pageKey, query, minWeight, requiredKeys, aliasKeys, extractRegex)
-                .requireValue("query remote lorebook '$pageKey'")
+    /**
+     * Query a local page for the in-process MemoryServer without consulting a remote backend.
+     *
+     * @param pageKey Page key to query.
+     * @param query Optional substring to match.
+     * @param minWeight Minimum lorebook weight to include.
+     * @param requiredKeys Required lorebook keys.
+     * @param aliasKeys Alias keys to match.
+     * @param extractRegex Optional regular expression applied to matching values.
+     * @return Matching lorebook results.
+     */
+    internal suspend fun queryLorebookLocally(
+        pageKey: String,
+        query: String = "",
+        minWeight: Int = Int.MIN_VALUE,
+        requiredKeys: List<String> = emptyList(),
+        aliasKeys: List<String> = emptyList(),
+        extractRegex: String = ""
+    ): List<LoreBookQueryResult>
+    {
+        return queryLorebookInternal(pageKey, query, minWeight, requiredKeys, aliasKeys, extractRegex, skipRemote = true)
+    }
+
+    /**
+     * Execute a lorebook query with explicit local/remote routing.
+     *
+     * @param pageKey Page key to query.
+     * @param query Optional substring to match.
+     * @param minWeight Minimum lorebook weight to include.
+     * @param requiredKeys Required lorebook keys.
+     * @param aliasKeys Alias keys to match.
+     * @param extractRegex Optional regular expression applied to matching values.
+     * @param skipRemote Whether to force local lookup.
+     * @return Matching lorebook results.
+     */
+    private suspend fun queryLorebookInternal(
+        pageKey: String,
+        query: String,
+        minWeight: Int,
+        requiredKeys: List<String>,
+        aliasKeys: List<String>,
+        extractRegex: String,
+        skipRemote: Boolean
+    ): List<LoreBookQueryResult>
+    {
+        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey, skipRemote)) return emptyList()
+
+        // Use a backend's optional query capability when it has one. Exact
+        // persistence backends are not required to implement semantic queries.
+        queryBackendOrNull(pageKey, skipRemote)?.let { backend ->
+            return backend.queryLorebook(pageKey, query, minWeight, requiredKeys, aliasKeys, extractRegex)
         }
 
-        val window = ContextBank.getContextFromBankSuspend(pageKey)
+        val window = ContextBank.getContextFromBankSuspend(pageKey, skipRemote = skipRemote)
         val regex = if(extractRegex.isNotEmpty()) Regex(extractRegex) else null
 
         return window.loreBookKeys.filter { (key, entry) ->
-            if(ContextLock.isKeyLocked(key)) return@filter false
+            if(ContextLock.isKeyLocked(key, skipRemote)) return@filter false
 
             val matchesQuery = query.isEmpty() ||
                               key.contains(query, ignoreCase = true) ||
@@ -111,19 +160,73 @@ object MemoryIntrospectionTools
      */
     suspend fun simulateLorebookTrigger(pageKey: String, text: String): List<String>
     {
-        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return emptyList()
+        return simulateLorebookTriggerInternal(pageKey, text, skipRemote = false)
+    }
 
-        // Optimize for remote memory if configured
-        val mode = ContextBank.getStorageMode(pageKey)
-        if(mode == StorageMode.REMOTE || TPipeConfig.useRemoteMemoryGlobally)
-        {
-            return MemoryClient.simulateLorebookTrigger(pageKey, text)
-                .requireValue("simulate remote lorebook trigger '$pageKey'")
+    /**
+     * Simulate local lorebook triggers for the in-process MemoryServer without consulting a remote backend.
+     *
+     * @param pageKey Page key to inspect.
+     * @param text Input text to scan for triggers.
+     * @return Matching lorebook keys.
+     */
+    internal suspend fun simulateLorebookTriggerLocally(pageKey: String, text: String): List<String>
+    {
+        return simulateLorebookTriggerInternal(pageKey, text, skipRemote = true)
+    }
+
+    /**
+     * Execute lorebook trigger simulation with explicit local/remote routing.
+     *
+     * @param pageKey Page key to inspect.
+     * @param text Input text to scan for triggers.
+     * @param skipRemote Whether to force local lookup.
+     * @return Matching lorebook keys.
+     */
+    private suspend fun simulateLorebookTriggerInternal(
+        pageKey: String,
+        text: String,
+        skipRemote: Boolean
+    ): List<String>
+    {
+        if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey, skipRemote)) return emptyList()
+
+        queryBackendOrNull(pageKey, skipRemote)?.let { backend ->
+            return backend.simulateLorebookTrigger(pageKey, text)
         }
 
-        val window = ContextBank.getContextFromBankSuspend(pageKey)
+        val window = ContextBank.getContextFromBankSuspend(pageKey, skipRemote = skipRemote)
         // Note: findMatchingLoreBookKeys already filters using canSelectLoreBookKey which respects ContextLock
         return window.findMatchingLoreBookKeys(text)
+    }
+
+    /**
+     * Resolve the optional query capability for a page without allowing a registered remote backend to hijack local pages.
+     *
+     * @param pageKey The page whose storage mode determines routing.
+     * @param skipRemote Whether to force local lookup.
+     * @return A remote query backend when this page is remote, or null for local/fallback queries.
+     */
+    private fun queryBackendOrNull(pageKey: String, skipRemote: Boolean): ContextQueryBackend?
+    {
+        if(skipRemote)
+        {
+            return null
+        }
+
+        val mode = ContextBank.getStorageMode(pageKey)
+        if(mode != StorageMode.REMOTE && !TPipeConfig.useRemoteMemoryGlobally)
+        {
+            return null
+        }
+
+        val configured = ContextPersistenceRegistry.get()
+        if(configured != null)
+        {
+            return configured as? ContextQueryBackend
+        }
+
+        return TPipeRemotePersistenceBackend()
     }
 
     /**
@@ -165,9 +268,9 @@ object MemoryIntrospectionTools
     suspend fun updateLorebookEntry(pageKey: String, entry: LoreBook): Boolean
     {
         if(!MemoryIntrospection.canWriteSuspend(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return false
-        if(ContextLock.isKeyLockedSuspend(entry.key)) return false
+        if(ContextLock.isKeyLockedSuspend(entry.key, pageKey = pageKey)) return false
 
-        ContextBank.mutateContextWindowSuspend(pageKey, mode = StorageMode.MEMORY_AND_DISK) { window ->
+        ContextBank.mutateContextWindowSuspend(pageKey, mode = ContextBank.getStorageMode(pageKey)) { window ->
             window.addLoreBookEntryWithObject(entry)
         }
         return true
@@ -180,10 +283,10 @@ object MemoryIntrospectionTools
     suspend fun deleteLorebookEntry(pageKey: String, key: String): Boolean
     {
         if(!MemoryIntrospection.canWriteSuspend(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return false
-        if(ContextLock.isKeyLockedSuspend(key)) return false
+        if(ContextLock.isKeyLockedSuspend(key, pageKey = pageKey)) return false
 
         var removed = false
-        ContextBank.mutateContextWindowSuspend(pageKey, mode = StorageMode.MEMORY_AND_DISK) { window ->
+        ContextBank.mutateContextWindowSuspend(pageKey, mode = ContextBank.getStorageMode(pageKey)) { window ->
             removed = window.loreBookKeys.remove(key) != null
         }
         return removed
@@ -206,7 +309,7 @@ object MemoryIntrospectionTools
     suspend fun updateTodoList(pageKey: String, todoList: TodoList): Boolean
     {
         if(!MemoryIntrospection.canWriteSuspend(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return false
-        ContextBank.emplaceTodoListSuspend(pageKey, todoList, StorageMode.MEMORY_AND_DISK)
+        ContextBank.emplaceTodoListSuspend(pageKey, todoList, ContextBank.getStorageMode(pageKey))
         return true
     }
 

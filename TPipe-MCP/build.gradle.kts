@@ -36,8 +36,10 @@ dependencies {
     implementation("io.modelcontextprotocol:kotlin-sdk:0.11.1")
     implementation("io.ktor:ktor-server-cio:3.3.3")
     implementation("io.ktor:ktor-server-auth:3.3.3")
+    implementation("io.ktor:ktor-client-cio:3.3.3")
 
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.3.21")
+    testImplementation("io.ktor:ktor-client-mock:3.3.3")
 }
 
 // Ensure proper source set configuration

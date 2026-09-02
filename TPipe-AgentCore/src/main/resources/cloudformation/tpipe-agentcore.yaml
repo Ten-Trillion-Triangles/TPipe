@@ -1,0 +1,326 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TPipe AgentCore Runtime container deployment contract (ARM64 JVM)
+
+Parameters:
+  RuntimeName:
+    Type: String
+    Default: tpipe-agentcore-runtime
+  RuntimeProtocol:
+    Type: String
+    Default: HTTP
+    AllowedValues:
+      - HTTP
+      - MCP
+      - AGUI
+    Description: Supported TPipe runtime protocol. A2A is intentionally unsupported.
+  RuntimeRoleArn:
+    Type: String
+    Default: ''
+    Description: Optional existing IAM role assumed by the AgentCore Runtime; do not provide a secret.
+  RuntimeImageUri:
+    Type: String
+    Description: Consumer-owned ARM64 ECR image URI containing the TPipe application.
+  NetworkMode:
+    Type: String
+    Default: PUBLIC
+    AllowedValues:
+      - PUBLIC
+      - VPC
+  EnableMemory:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  EnableGateway:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  EnablePolicy:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  EnableBrowser:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  EnableCodeInterpreter:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  EnableEvaluations:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  RuntimeEndpointName:
+    Type: String
+    Default: live
+  RuntimeEndpointVersion:
+    Type: String
+    Default: '1'
+  MemoryName:
+    Type: String
+    Default: tpipe_agentcore_memory
+  MemoryEventExpiryDays:
+    Type: Number
+    Default: 30
+    MinValue: 3
+    MaxValue: 365
+  GatewayName:
+    Type: String
+    Default: tpipe-agentcore-gateway
+  GatewayTargetName:
+    Type: String
+    Default: tpipe-agentcore-mcp-target
+  GatewayTargetEndpoint:
+    Type: String
+    Default: ''
+    Description: Optional HTTPS MCP endpoint to expose as a Gateway target.
+  GatewayTargetListingMode:
+    Type: String
+    Default: DEFAULT
+    AllowedValues: [DEFAULT, DYNAMIC]
+  GatewayAuthorizerType:
+    Type: String
+    Default: NONE
+    AllowedValues: [CUSTOM_JWT, AWS_IAM, NONE, AUTHENTICATE_ONLY]
+  PolicyEngineName:
+    Type: String
+    Default: tpipe_agentcore_policy
+  PolicyEngineDescription:
+    Type: String
+    Default: TPipe AgentCore policy engine (LOG_ONLY until explicitly promoted)
+  PolicyName:
+    Type: String
+    Default: tpipe_agentcore_policy_example
+  PolicyCedarStatement:
+    Type: String
+    Default: 'permit(principal, action, resource);'
+  KmsKeyArn:
+    Type: String
+    Default: ''
+
+Metadata:
+  TPipe:
+    RuntimeProtocol: !Ref RuntimeProtocol
+    OptionalCapabilities:
+      Memory: !Ref EnableMemory
+      Gateway: !Ref EnableGateway
+      Policy: !Ref EnablePolicy
+      Browser: !Ref EnableBrowser
+      CodeInterpreter: !Ref EnableCodeInterpreter
+      Evaluations: !Ref EnableEvaluations
+    Notes:
+      - Optional capabilities are application-owned and use the pinned 1.6.107 SDK clients.
+      - Secrets belong in IAM, workload identity, or Secrets Manager, not parameters or environment variables.
+      - Policy starts in LOG_ONLY by convention; enforcement is an explicit application decision.
+
+Resources:
+  AgentCoreRuntimeExecutionRole:
+    Condition: CreateRuntimeRole
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: TPipeAgentCoreRuntimeLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+        - !If
+          - PolicyEnabled
+          - PolicyName: TPipeAgentCorePolicyAuthorization
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - bedrock-agentcore:AuthorizeAction
+                    - bedrock-agentcore:PartiallyAuthorizeActions
+                    - bedrock-agentcore:GetPolicyEngine
+                    - bedrock-agentcore:UpdateGateway
+                  Resource: '*'
+          - !Ref 'AWS::NoValue'
+        - !If
+          - BrowserEnabled
+          - PolicyName: TPipeAgentCoreBrowser
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - bedrock-agentcore:StartBrowserSession
+                    - bedrock-agentcore:GetBrowserSession
+                    - bedrock-agentcore:UpdateBrowserStream
+                    - bedrock-agentcore:SaveBrowserSessionProfile
+                    - bedrock-agentcore:StopBrowserSession
+                    - bedrock-agentcore:ConnectBrowserAutomationStream
+                    - bedrock-agentcore:ConnectBrowserLiveViewStream
+                  Resource: '*'
+          - !Ref 'AWS::NoValue'
+        - !If
+          - CodeInterpreterEnabled
+          - PolicyName: TPipeAgentCoreCodeInterpreter
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - bedrock-agentcore:StartCodeInterpreterSession
+                    - bedrock-agentcore:GetCodeInterpreterSession
+                    - bedrock-agentcore:InvokeCodeInterpreter
+                    - bedrock-agentcore:StopCodeInterpreterSession
+                  Resource: '*'
+          - !Ref 'AWS::NoValue'
+        - !If
+          - EvaluationsEnabled
+          - PolicyName: TPipeAgentCoreEvaluations
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - bedrock-agentcore:CreateEvaluator
+                    - bedrock-agentcore:GetEvaluator
+                    - bedrock-agentcore:ListEvaluators
+                    - bedrock-agentcore:UpdateEvaluator
+                    - bedrock-agentcore:DeleteEvaluator
+                    - bedrock-agentcore:Evaluate
+                    - bedrock-agentcore:CreateOnlineEvaluationConfig
+                    - bedrock-agentcore:GetOnlineEvaluationConfig
+                    - bedrock-agentcore:ListOnlineEvaluationConfigs
+                    - bedrock-agentcore:UpdateOnlineEvaluationConfig
+                    - bedrock-agentcore:DeleteOnlineEvaluationConfig
+                  Resource: '*'
+          - !Ref 'AWS::NoValue'
+
+  AgentCoreRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Ref RuntimeName
+      RoleArn: !If [UseProvidedRuntimeRole, !Ref RuntimeRoleArn, !GetAtt AgentCoreRuntimeExecutionRole.Arn]
+      # Use Sub so older cfn-lint schemas do not reject the service's AGUI value.
+      ProtocolConfiguration: !Sub '${RuntimeProtocol}'
+      NetworkConfiguration:
+        NetworkMode: !Ref NetworkMode
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Ref RuntimeImageUri
+
+  AgentCoreRuntimeEndpoint:
+    Type: AWS::BedrockAgentCore::RuntimeEndpoint
+    Properties:
+      AgentRuntimeId: !GetAtt AgentCoreRuntime.AgentRuntimeId
+      AgentRuntimeVersion: !Ref RuntimeEndpointVersion
+      Name: !Ref RuntimeEndpointName
+
+  AgentCoreMemory:
+    Condition: MemoryEnabled
+    Type: AWS::BedrockAgentCore::Memory
+    Properties:
+      Name: !Ref MemoryName
+      EventExpiryDuration: !Ref MemoryEventExpiryDays
+      EncryptionKeyArn: !If [HasKmsKey, !Ref KmsKeyArn, !Ref 'AWS::NoValue']
+
+  AgentCoreGateway:
+    Condition: GatewayEnabled
+    Type: AWS::BedrockAgentCore::Gateway
+    Properties:
+      Name: !Ref GatewayName
+      AuthorizerType: !Sub '${GatewayAuthorizerType}'
+      ProtocolType: MCP
+      RoleArn: !If [UseProvidedRuntimeRole, !Ref RuntimeRoleArn, !GetAtt AgentCoreRuntimeExecutionRole.Arn]
+      PolicyEngineConfiguration: !If
+        - PolicyEnabled
+        - Arn: !Ref AgentCorePolicyEngine
+          Mode: LOG_ONLY
+        - !Ref 'AWS::NoValue'
+
+  AgentCoreGatewayTarget:
+    Condition: GatewayTargetEnabled
+    Type: AWS::BedrockAgentCore::GatewayTarget
+    Properties:
+      GatewayIdentifier: !Ref AgentCoreGateway
+      Name: !Ref GatewayTargetName
+      TargetConfiguration:
+        Mcp:
+          McpServer:
+            Endpoint: !Ref GatewayTargetEndpoint
+            ListingMode: !Ref GatewayTargetListingMode
+
+  AgentCorePolicyEngine:
+    Condition: PolicyEnabled
+    Type: AWS::BedrockAgentCore::PolicyEngine
+    Properties:
+      Name: !Ref PolicyEngineName
+      Description: !Ref PolicyEngineDescription
+      EncryptionKeyArn: !If [HasKmsKey, !Ref KmsKeyArn, !Ref 'AWS::NoValue']
+
+  AgentCorePolicy:
+    Condition: PolicyEnabled
+    Type: AWS::BedrockAgentCore::Policy
+    Properties:
+      Definition:
+        Cedar:
+          Statement: !Ref PolicyCedarStatement
+      Description: !Ref PolicyEngineDescription
+      Name: !Ref PolicyName
+      PolicyEngineId: !GetAtt AgentCorePolicyEngine.PolicyEngineId
+      ValidationMode: IGNORE_ALL_FINDINGS
+
+Conditions:
+  UseProvidedRuntimeRole: !Not [!Equals [!Ref RuntimeRoleArn, '']]
+  CreateRuntimeRole: !Equals [!Ref RuntimeRoleArn, '']
+  MemoryEnabled: !Equals [!Ref EnableMemory, 'true']
+  GatewayEnabled: !Equals [!Ref EnableGateway, 'true']
+  GatewayTargetEnabled: !And
+    - !Equals [!Ref EnableGateway, 'true']
+    - !Not [!Equals [!Ref GatewayTargetEndpoint, '']]
+  PolicyEnabled: !Equals [!Ref EnablePolicy, 'true']
+  BrowserEnabled: !Equals [!Ref EnableBrowser, 'true']
+  CodeInterpreterEnabled: !Equals [!Ref EnableCodeInterpreter, 'true']
+  EvaluationsEnabled: !Equals [!Ref EnableEvaluations, 'true']
+  HasKmsKey: !Not [!Equals [!Ref KmsKeyArn, '']]
+
+Outputs:
+  RuntimeName:
+    Description: AgentCore Runtime name.
+    Value: !Ref RuntimeName
+  RuntimeProtocol:
+    Description: Protocol selected for the consumer-owned runtime bootstrap.
+    Value: !Ref RuntimeProtocol
+  RuntimeImageUri:
+    Description: Consumer image supplied to the runtime.
+    Value: !Ref RuntimeImageUri
+  RuntimeEndpointArn:
+    Description: AgentCore Runtime endpoint ARN.
+    Value: !Ref AgentCoreRuntimeEndpoint
+  MemoryArn:
+    Condition: MemoryEnabled
+    Description: Optional exact/semantic AgentCore Memory ARN.
+    Value: !Ref AgentCoreMemory
+  GatewayId:
+    Condition: GatewayEnabled
+    Description: Optional AgentCore Gateway identifier.
+    Value: !Ref AgentCoreGateway
+  GatewayTargetId:
+    Condition: GatewayTargetEnabled
+    Description: Optional AgentCore Gateway target identifier.
+    Value: !Ref AgentCoreGatewayTarget
+  PolicyEngineArn:
+    Condition: PolicyEnabled
+    Description: Optional AgentCore Policy Engine ARN.
+    Value: !Ref AgentCorePolicyEngine
+  PolicyArn:
+    Condition: PolicyEnabled
+    Description: Optional LOG_ONLY example policy ARN.
+    Value: !Ref AgentCorePolicy
