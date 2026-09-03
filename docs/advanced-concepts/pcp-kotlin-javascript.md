@@ -14,7 +14,7 @@
 TPipe's Pipe Context Protocol (PCP) supports Kotlin and JavaScript scripting alongside Python and native functions. This enables LLMs to execute type-safe JVM code (Kotlin) or leverage the Node.js ecosystem (JavaScript) for tool execution.
 
 **Key Features:**
-- **Kotlin**: JVM-based scripting with full type safety and Kotlin stdlib access
+- **Kotlin**: TPipe-owned K2 JVM scripting with a versioned one-shot dialect
 - **JavaScript**: Node.js execution with npm module support
 - **Security**: Dedicated security managers for each language
 - **Bindings**: Expose custom objects to scripts
@@ -121,6 +121,21 @@ pcpContext.kotlinOptions.exposedBindings["config"] = "Application configuration"
 pcpContext.kotlinOptions.exposedBindings["database"] = "Database connection"
 ```
 
+Kotlin bindings are live in-process object references. Both host access and an
+explicit `exposedBindings` entry are required; an empty exposure map does not
+expose registered objects. The current host uses provided properties, so named
+classes are the supported binding type. Local and anonymous classes retain the
+backend's unsupported-type behavior.
+
+### Kotlin execution contract
+
+Kotlin scripts run through TPipe's internal K2 scripting host using the
+versioned `pcp-kotlin-v1` dialect. Scripts are one-shot and use only the host
+application classpath; persistent REPL state, dependency annotations such as
+`@DependsOn`, and Maven dependency resolution are not supported. Security
+validation runs before compilation. A timeout returns a failed PCP result but
+does not terminate arbitrary in-process JVM bytecode.
+
 ### Execution Example
 
 ```kotlin
@@ -142,7 +157,6 @@ val request = PcPRequest().apply {
         val b = 4.0
         val c = sqrt(a.pow(2) + b.pow(2))
         
-        println("Hypotenuse: ${'$'}c")
         c
     """.trimIndent())
 }
@@ -441,8 +455,8 @@ fun createMultiLanguageContext(): PcpContext
 ### Performance Characteristics
 
 **Kotlin:**
-- Startup: ~10-50ms (script engine initialization)
-- Execution: Native JVM speed
+- Startup: Includes per-invocation K2 compilation and evaluation
+- Execution: JVM bytecode in the TPipe process
 - Memory: Shared with TPipe process
 
 **JavaScript:**

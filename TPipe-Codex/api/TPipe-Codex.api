@@ -1,0 +1,292 @@
+public final class codexPipe/CodexAccessProfile : genericOpenAIPipe/access/GenericOpenAIAccessProfile {
+	public fun <init> (LcodexPipe/auth/CodexAuthManager;)V
+	public fun getProfileName ()Ljava/lang/String;
+	public fun getResponsesWirePolicy ()LgenericOpenAIPipe/api/OpenAIResponsesWirePolicy;
+	public fun headersForRequest (Ljava/lang/String;Ljava/lang/String;[BLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun recoverUnauthorized (Ljava/util/Map;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun recoverUnauthorized (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class codexPipe/CodexConstants {
+	public static final field ACCESS_TOKEN_REFRESH_LEEWAY_MILLIS J
+	public static final field AUTH_BASE_URL Ljava/lang/String;
+	public static final field AUTH_FILE_ENV Ljava/lang/String;
+	public static final field CLIENT_ID_ENV Ljava/lang/String;
+	public static final field CLIENT_VERSION Ljava/lang/String;
+	public static final field CODEX_BASE_URL Ljava/lang/String;
+	public static final field DEFAULT_CLIENT_ID Ljava/lang/String;
+	public static final field DEVICE_LOGIN_TIMEOUT_MILLIS J
+	public static final field DEVICE_TOKEN_PATH Ljava/lang/String;
+	public static final field DEVICE_USER_CODE_PATH Ljava/lang/String;
+	public static final field FALLBACK_REFRESH_INTERVAL_MILLIS J
+	public static final field INSTANCE LcodexPipe/CodexConstants;
+	public static final field MODELS_PATH Ljava/lang/String;
+	public static final field OAUTH_TOKEN_PATH Ljava/lang/String;
+	public final fun clientId ()Ljava/lang/String;
+}
+
+public final class codexPipe/CodexPipes {
+	public static final field INSTANCE LcodexPipe/CodexPipes;
+	public final fun create (Ljava/lang/String;LcodexPipe/auth/CodexAuthManager;)LgenericOpenAIPipe/GenericOpenAIPipe;
+	public static synthetic fun create$default (LcodexPipe/CodexPipes;Ljava/lang/String;LcodexPipe/auth/CodexAuthManager;ILjava/lang/Object;)LgenericOpenAIPipe/GenericOpenAIPipe;
+}
+
+public final class codexPipe/CodexPipesKt {
+	public static final fun useCodexOAuth (LgenericOpenAIPipe/GenericOpenAIPipe;LcodexPipe/auth/CodexAuthManager;Ljava/lang/String;)LgenericOpenAIPipe/GenericOpenAIPipe;
+	public static synthetic fun useCodexOAuth$default (LgenericOpenAIPipe/GenericOpenAIPipe;LcodexPipe/auth/CodexAuthManager;Ljava/lang/String;ILjava/lang/Object;)LgenericOpenAIPipe/GenericOpenAIPipe;
+}
+
+public final class codexPipe/auth/CodexAccountInfo {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Z
+	public final fun component5 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;)LcodexPipe/auth/CodexAccountInfo;
+	public static synthetic fun copy$default (LcodexPipe/auth/CodexAccountInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;ILjava/lang/Object;)LcodexPipe/auth/CodexAccountInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAccountId ()Ljava/lang/String;
+	public final fun getChatgptUserId ()Ljava/lang/String;
+	public final fun getPlanType ()Ljava/lang/String;
+	public final fun getWorkspaceId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isFedramp ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class codexPipe/auth/CodexAuthManager {
+	public static final field Companion LcodexPipe/auth/CodexAuthManager$Companion;
+	public fun <init> ()V
+	public fun <init> (LcodexPipe/auth/CodexCredentialStore;Lio/ktor/client/HttpClient;Ljava/lang/String;Ljava/lang/String;ZLjava/nio/file/Path;Lkotlin/jvm/functions/Function0;JJ)V
+	public synthetic fun <init> (LcodexPipe/auth/CodexCredentialStore;Lio/ktor/client/HttpClient;Ljava/lang/String;Ljava/lang/String;ZLjava/nio/file/Path;Lkotlin/jvm/functions/Function0;JJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun authorizationHeaders (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun completeDeviceLogin (LcodexPipe/auth/CodexDeviceCode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun credentialStore ()LcodexPipe/auth/CodexCredentialStore;
+	public final fun currentAccount (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun logout (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun recoverUnauthorized (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun recoverUnauthorized$default (LcodexPipe/auth/CodexAuthManager;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun refreshIfNeeded (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun refreshIfNeeded$default (LcodexPipe/auth/CodexAuthManager;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun requestDeviceCode (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class codexPipe/auth/CodexAuthManager$Companion {
+	public final fun default (Z)LcodexPipe/auth/CodexAuthManager;
+	public static synthetic fun default$default (LcodexPipe/auth/CodexAuthManager$Companion;ZILjava/lang/Object;)LcodexPipe/auth/CodexAuthManager;
+}
+
+public final class codexPipe/auth/CodexAuthenticationException : java/io/IOException {
+	public fun <init> (Ljava/lang/String;)V
+}
+
+public final class codexPipe/auth/CodexCliCredentialImporter {
+	public fun <init> (LcodexPipe/auth/CodexCredentialStore;Ljava/nio/file/Path;)V
+	public synthetic fun <init> (LcodexPipe/auth/CodexCredentialStore;Ljava/nio/file/Path;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun importIfMissing ()LcodexPipe/auth/CodexOAuthCredentials;
+}
+
+public abstract interface class codexPipe/auth/CodexCredentialStore {
+	public abstract fun delete ()Z
+	public abstract fun load ()LcodexPipe/auth/CodexOAuthCredentials;
+	public abstract fun save (LcodexPipe/auth/CodexOAuthCredentials;)V
+}
+
+public final class codexPipe/auth/CodexDeviceAuthClient : java/io/Closeable {
+	public fun <init> ()V
+	public fun <init> (Lio/ktor/client/HttpClient;Ljava/lang/String;Ljava/lang/String;LcodexPipe/auth/CodexCredentialStore;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;J)V
+	public synthetic fun <init> (Lio/ktor/client/HttpClient;Ljava/lang/String;Ljava/lang/String;LcodexPipe/auth/CodexCredentialStore;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun completeDeviceLogin (LcodexPipe/auth/CodexDeviceCode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun requestDeviceCode (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class codexPipe/auth/CodexDeviceCode {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J)LcodexPipe/auth/CodexDeviceCode;
+	public static synthetic fun copy$default (LcodexPipe/auth/CodexDeviceCode;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JILjava/lang/Object;)LcodexPipe/auth/CodexDeviceCode;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getUserCode ()Ljava/lang/String;
+	public final fun getVerificationUrl ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class codexPipe/auth/CodexJwtClaims {
+	public static final field Companion LcodexPipe/auth/CodexJwtClaims$Companion;
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Long;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Z
+	public final fun component8 ()Ljava/lang/Long;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Long;)LcodexPipe/auth/CodexJwtClaims;
+	public static synthetic fun copy$default (LcodexPipe/auth/CodexJwtClaims;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Long;ILjava/lang/Object;)LcodexPipe/auth/CodexJwtClaims;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChatgptAccountId ()Ljava/lang/String;
+	public final fun getChatgptPlanType ()Ljava/lang/String;
+	public final fun getChatgptUserId ()Ljava/lang/String;
+	public final fun getEmail ()Ljava/lang/String;
+	public final fun getExpirationEpochSeconds ()Ljava/lang/Long;
+	public final fun getUserId ()Ljava/lang/String;
+	public final fun getWorkspaceId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isFedramp ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class codexPipe/auth/CodexJwtClaims$Companion {
+	public final fun parse (Ljava/lang/String;)LcodexPipe/auth/CodexJwtClaims;
+}
+
+public final class codexPipe/auth/CodexOAuthCredentials {
+	public static final field Companion LcodexPipe/auth/CodexOAuthCredentials$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Long;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun accountInfo ()LcodexPipe/auth/CodexAccountInfo;
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Z
+	public final fun component9 ()Ljava/lang/Long;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Long;)LcodexPipe/auth/CodexOAuthCredentials;
+	public static synthetic fun copy$default (LcodexPipe/auth/CodexOAuthCredentials;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Long;ILjava/lang/Object;)LcodexPipe/auth/CodexOAuthCredentials;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAccessToken ()Ljava/lang/String;
+	public final fun getAccountId ()Ljava/lang/String;
+	public final fun getChatgptUserId ()Ljava/lang/String;
+	public final fun getIdToken ()Ljava/lang/String;
+	public final fun getLastRefresh ()Ljava/lang/Long;
+	public final fun getPlanType ()Ljava/lang/String;
+	public final fun getRefreshToken ()Ljava/lang/String;
+	public final fun getWorkspaceId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isFedramp ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class codexPipe/auth/CodexOAuthCredentials$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE LcodexPipe/auth/CodexOAuthCredentials$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)LcodexPipe/auth/CodexOAuthCredentials;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;LcodexPipe/auth/CodexOAuthCredentials;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class codexPipe/auth/CodexOAuthCredentials$Companion {
+	public final fun fromTokens (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;)LcodexPipe/auth/CodexOAuthCredentials;
+	public static synthetic fun fromTokens$default (LcodexPipe/auth/CodexOAuthCredentials$Companion;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;ILjava/lang/Object;)LcodexPipe/auth/CodexOAuthCredentials;
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class codexPipe/auth/CodexPaths {
+	public static final field INSTANCE LcodexPipe/auth/CodexPaths;
+	public final fun codexCliAuthFile (Ljava/util/Map;Ljava/lang/String;)Ljava/nio/file/Path;
+	public static synthetic fun codexCliAuthFile$default (LcodexPipe/auth/CodexPaths;Ljava/util/Map;Ljava/lang/String;ILjava/lang/Object;)Ljava/nio/file/Path;
+	public final fun tpipeAuthFile (Ljava/util/Map;Ljava/lang/String;)Ljava/nio/file/Path;
+	public static synthetic fun tpipeAuthFile$default (LcodexPipe/auth/CodexPaths;Ljava/util/Map;Ljava/lang/String;ILjava/lang/Object;)Ljava/nio/file/Path;
+}
+
+public final class codexPipe/auth/FileCodexCredentialStore : codexPipe/auth/CodexCredentialStore {
+	public fun <init> ()V
+	public fun <init> (Ljava/nio/file/Path;)V
+	public synthetic fun <init> (Ljava/nio/file/Path;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun delete ()Z
+	public final fun getPath ()Ljava/nio/file/Path;
+	public fun load ()LcodexPipe/auth/CodexOAuthCredentials;
+	public fun save (LcodexPipe/auth/CodexOAuthCredentials;)V
+}
+
+public final class codexPipe/model/CodexModelCatalog {
+	public fun <init> (Ljava/util/List;Ljava/lang/String;J)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()J
+	public final fun copy (Ljava/util/List;Ljava/lang/String;J)LcodexPipe/model/CodexModelCatalog;
+	public static synthetic fun copy$default (LcodexPipe/model/CodexModelCatalog;Ljava/util/List;Ljava/lang/String;JILjava/lang/Object;)LcodexPipe/model/CodexModelCatalog;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEtag ()Ljava/lang/String;
+	public final fun getFetchedAtMillis ()J
+	public final fun getModels ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class codexPipe/model/CodexModelCatalogClient {
+	public fun <init> (LcodexPipe/auth/CodexAuthManager;Lio/ktor/client/HttpClient;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function0;JJ)V
+	public synthetic fun <init> (LcodexPipe/auth/CodexAuthManager;Lio/ktor/client/HttpClient;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function0;JJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getLastCatalog ()LcodexPipe/model/CodexModelCatalog;
+	public final fun listModels (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun listModels$default (LcodexPipe/model/CodexModelCatalogClient;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class codexPipe/model/CodexModelInfo {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Double;Ljava/util/List;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Double;Ljava/util/List;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/Double;
+	public final fun component11 ()Ljava/util/List;
+	public final fun component12 ()Ljava/lang/Boolean;
+	public final fun component13 ()Ljava/util/List;
+	public final fun component14 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/Integer;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/util/List;
+	public final fun component8 ()Ljava/lang/Long;
+	public final fun component9 ()Ljava/lang/Long;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Double;Ljava/util/List;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/String;)LcodexPipe/model/CodexModelInfo;
+	public static synthetic fun copy$default (LcodexPipe/model/CodexModelInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Double;Ljava/util/List;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)LcodexPipe/model/CodexModelInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContextWindow ()Ljava/lang/Long;
+	public final fun getDefaultReasoningLevel ()Ljava/lang/String;
+	public final fun getDefaultServiceTier ()Ljava/lang/String;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getDisplayName ()Ljava/lang/String;
+	public final fun getEffectiveContextWindowPercent ()Ljava/lang/Double;
+	public final fun getInputModalities ()Ljava/util/List;
+	public final fun getMaxContextWindow ()Ljava/lang/Long;
+	public final fun getPriority ()Ljava/lang/Integer;
+	public final fun getServiceTiers ()Ljava/util/List;
+	public final fun getSlug ()Ljava/lang/String;
+	public final fun getSupportedReasoningLevels ()Ljava/util/List;
+	public final fun getSupportsVerbosity ()Ljava/lang/Boolean;
+	public final fun getVisibility ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class codexPipe/model/CodexServiceTier {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)LcodexPipe/model/CodexServiceTier;
+	public static synthetic fun copy$default (LcodexPipe/model/CodexServiceTier;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)LcodexPipe/model/CodexServiceTier;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}

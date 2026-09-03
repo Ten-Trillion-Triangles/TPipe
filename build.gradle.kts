@@ -1,8 +1,16 @@
+@file:OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
+
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.gradle.api.GradleException
+import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.GradleBuild
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.authentication.http.BasicAuthentication
 import org.gradle.external.javadoc.StandardJavadocDocletOptions
+import org.gradle.kotlin.dsl.configure
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 
 /**
  * Support for GraalVM  Native is planned but not yet implemented. This will allow us to deploy this library
@@ -18,6 +26,18 @@ plugins {
     alias(libs.plugins.shadow)
     alias(libs.plugins.dokka)
     `maven-publish`
+}
+
+allprojects {
+    plugins.withId("org.jetbrains.kotlin.jvm") {
+        extensions.configure<KotlinJvmProjectExtension> {
+            compilerOptions {
+                languageVersion.set(KotlinVersion.KOTLIN_2_3)
+                apiVersion.set(KotlinVersion.KOTLIN_2_3)
+            }
+            abiValidation { }
+        }
+    }
 }
 
 java {
@@ -105,7 +125,8 @@ dependencies {
     implementation("io.ktor:ktor-client-content-negotiation:${libs.versions.ktor.version.get()}")
 
     // Scripting
-    implementation(kotlin("scripting-jsr223"))
+    implementation(kotlin("scripting-common"))
+    implementation(kotlin("scripting-jvm"))
     implementation(kotlin("scripting-jvm-host"))
 
     // Logging
@@ -187,6 +208,121 @@ publishing {
                 password = providers.environmentVariable("CODEARTIFACT_AUTH_TOKEN")
                     .orElse(providers.gradleProperty("codeArtifactAuthToken"))
                     .getOrElse("")
+            }
+        }
+        maven {
+            name = "CompatibilityRepository"
+            url = uri(layout.buildDirectory.dir("compatibility-maven"))
+        }
+    }
+}
+
+val packagingSmokeMain = "com.TTT.PipeContextProtocol.KotlinPackagingSmokeMain"
+val compatibilityVersion = "1.0.0-compatibility"
+
+val kotlinPackagingSmokeRunnerJar by tasks.registering(Jar::class) {
+    group = "verification"
+    description = "Builds the isolated runner used by the shadow-JAR Kotlin scripting smoke test."
+    archiveClassifier.set("kotlin-packaging-smoke-runner")
+    from(sourceSets.test.get().output)
+    manifest {
+        attributes["Main-Class"] = packagingSmokeMain
+    }
+    dependsOn(tasks.named("testClasses"))
+}
+
+tasks.register<JavaExec>("kotlinScriptingThinJarSmoke") {
+    group = "verification"
+    description = "Executes Kotlin PCP scripting from the thin TPipe JAR and its runtime classpath."
+    dependsOn(tasks.named("jar"), tasks.named("testClasses"))
+    mainClass.set(packagingSmokeMain)
+    classpath = files(
+        tasks.named("jar"),
+        sourceSets.test.get().output,
+        configurations.testRuntimeClasspath
+    )
+}
+
+tasks.register<JavaExec>("kotlinScriptingShadowJarSmoke") {
+    group = "verification"
+    description = "Executes Kotlin PCP scripting from the shadow JAR and isolated smoke runner."
+    dependsOn(tasks.named("shadowJar"), kotlinPackagingSmokeRunnerJar)
+    mainClass.set(packagingSmokeMain)
+    classpath = files(tasks.named("shadowJar"), kotlinPackagingSmokeRunnerJar)
+}
+
+tasks.named<ShadowJar>("shadowJar") {
+    // Fat-JAR module descriptors cause K2 scripting to resolve unrelated
+    // standard-library packages through embedded dependency modules.
+    exclude("module-info.class")
+    exclude("META-INF/versions/**/module-info.class")
+    // kotlin-scripting-jvm-host contains an unused JSR-223 adapter in the
+    // same host artifact. The production backend uses BasicJvmScriptingHost;
+    // keep the release archive free of the legacy adapter and its compiler
+    // bridge while leaving the dependency available to the thin-JAR runtime.
+    exclude("kotlin/script/experimental/jvmhost/jsr223/**")
+    exclude("org/jetbrains/kotlin/cli/common/repl/*Jsr223*")
+}
+
+tasks.register("kotlinJsrAbsenceCheck") {
+    group = "verification"
+    description = "Rejects Kotlin JSR-223 providers or service descriptors in release archives."
+    val mcpJar = project(":TPipe-MCP").tasks.named<Jar>("jar")
+    dependsOn(tasks.named("jar"), tasks.named("shadowJar"), mcpJar)
+    doLast {
+        val forbiddenRuntimeArtifacts = configurations.runtimeClasspath.get().resolve().filter { file ->
+            file.name.contains("kotlin-scripting-jsr223", ignoreCase = true)
+        }
+        if(forbiddenRuntimeArtifacts.isNotEmpty())
+        {
+            throw GradleException(
+                "Kotlin JSR-223 dependency found on runtimeClasspath: ${forbiddenRuntimeArtifacts.joinToString()}"
+            )
+        }
+
+        val archives = listOf(
+            tasks.named<Jar>("jar").get().archiveFile.get().asFile,
+            tasks.named<Jar>("shadowJar").get().archiveFile.get().asFile,
+            mcpJar.get().archiveFile.get().asFile
+        )
+        val forbiddenEntries = listOf(
+            "KotlinJsr223",
+            "kotlin-scripting-jsr223",
+            "META-INF/services/javax.script.ScriptEngineFactory"
+        )
+        archives.forEach { archive ->
+            val matches = zipTree(archive).files.filter { file ->
+                forbiddenEntries.any { forbidden -> file.path.contains(forbidden) }
+            }
+            if(matches.isNotEmpty())
+            {
+                throw GradleException("Kotlin JSR provider content found in ${archive.name}: ${matches.joinToString()}")
+            }
+        }
+    }
+}
+
+tasks.register<GradleBuild>("publishCompatibilityArtifact") {
+    group = "verification"
+    description = "Publishes the TPipe compatibility artifact into build/compatibility-maven."
+    tasks = listOf("publishMavenPublicationToCompatibilityRepository")
+    startParameter.projectProperties["publishVersion"] = compatibilityVersion
+}
+
+tasks.register("consumerCompatibilityTest") {
+    group = "verification"
+    description = "Builds the independent Java 24 and Kotlin consumer fixtures."
+    dependsOn(tasks.named("publishCompatibilityArtifact"))
+    doLast {
+        val fixtureRoots = listOf(
+            rootProject.file("compatibility-tests/java24-consumer"),
+            rootProject.file("compatibility-tests/kotlin-2.3.21-consumer"),
+            rootProject.file("compatibility-tests/kotlin-2.4.10-consumer")
+        )
+        fixtureRoots.forEach { fixtureRoot ->
+            exec {
+                workingDir = fixtureRoot
+                commandLine("../../gradlew", "run", "--no-daemon", "--console=plain")
             }
         }
     }

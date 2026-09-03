@@ -1,0 +1,655 @@
+public final class env/ChatRequest {
+	public static final field Companion Lenv/ChatRequest$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;ZLenv/OllamaOptions;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;ZLenv/OllamaOptions;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun component5 ()Z
+	public final fun component6 ()Lenv/OllamaOptions;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;ZLenv/OllamaOptions;Ljava/lang/String;)Lenv/ChatRequest;
+	public static synthetic fun copy$default (Lenv/ChatRequest;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;ZLenv/OllamaOptions;Ljava/lang/String;ILjava/lang/Object;)Lenv/ChatRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFormat ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getKeepAlive ()Ljava/lang/String;
+	public final fun getMessages ()Ljava/util/List;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getOptions ()Lenv/OllamaOptions;
+	public final fun getStream ()Z
+	public final fun getTools ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/ChatRequest$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/ChatRequest$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/ChatRequest;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/ChatRequest;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/ChatRequest$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/ChatResponse {
+	public static final field Companion Lenv/ChatResponse$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Lenv/OllamaMessage;ZLjava/lang/String;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lenv/OllamaMessage;ZLjava/lang/String;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/Integer;
+	public final fun component11 ()Ljava/lang/Long;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lenv/OllamaMessage;
+	public final fun component4 ()Z
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/Long;
+	public final fun component7 ()Ljava/lang/Long;
+	public final fun component8 ()Ljava/lang/Integer;
+	public final fun component9 ()Ljava/lang/Long;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Lenv/OllamaMessage;ZLjava/lang/String;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;)Lenv/ChatResponse;
+	public static synthetic fun copy$default (Lenv/ChatResponse;Ljava/lang/String;Ljava/lang/String;Lenv/OllamaMessage;ZLjava/lang/String;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;ILjava/lang/Object;)Lenv/ChatResponse;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCreatedAt ()Ljava/lang/String;
+	public final fun getDone ()Z
+	public final fun getDoneReason ()Ljava/lang/String;
+	public final fun getEvalCount ()Ljava/lang/Integer;
+	public final fun getEvalDuration ()Ljava/lang/Long;
+	public final fun getLoadDuration ()Ljava/lang/Long;
+	public final fun getMessage ()Lenv/OllamaMessage;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getPromptEvalCount ()Ljava/lang/Integer;
+	public final fun getPromptEvalDuration ()Ljava/lang/Long;
+	public final fun getTotalDuration ()Ljava/lang/Long;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/ChatResponse$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/ChatResponse$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/ChatResponse;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/ChatResponse;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/ChatResponse$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/Endpoints {
+	public static final field INSTANCE Lenv/Endpoints;
+	public final fun getChatEndpoint ()Ljava/lang/String;
+	public final fun getCopyEndpoint ()Ljava/lang/String;
+	public final fun getCreateEndpoint ()Ljava/lang/String;
+	public final fun getDeleteEndpoint ()Ljava/lang/String;
+	public final fun getEmbeddingsEndpoint ()Ljava/lang/String;
+	public final fun getGenerateEndpoint ()Ljava/lang/String;
+	public final fun getListEndpoint ()Ljava/lang/String;
+	public final fun getPullEndpoint ()Ljava/lang/String;
+	public final fun getPushEndpoint ()Ljava/lang/String;
+	public final fun getRunningEndpoint ()Ljava/lang/String;
+	public final fun getShowEndpoint ()Ljava/lang/String;
+	public final fun getVersionEndpoint ()Ljava/lang/String;
+	public final fun init (Ljava/lang/String;I)V
+}
+
+public final class env/GeneratedRequest {
+	public static final field Companion Lenv/GeneratedRequest$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZZLkotlinx/serialization/json/JsonElement;Ljava/util/List;Lenv/OllamaOptions;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZZLkotlinx/serialization/json/JsonElement;Ljava/util/List;Lenv/OllamaOptions;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Lenv/OllamaOptions;
+	public final fun component11 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Z
+	public final fun component7 ()Z
+	public final fun component8 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun component9 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZZLkotlinx/serialization/json/JsonElement;Ljava/util/List;Lenv/OllamaOptions;Ljava/lang/String;)Lenv/GeneratedRequest;
+	public static synthetic fun copy$default (Lenv/GeneratedRequest;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZZLkotlinx/serialization/json/JsonElement;Ljava/util/List;Lenv/OllamaOptions;Ljava/lang/String;ILjava/lang/Object;)Lenv/GeneratedRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContext ()Ljava/util/List;
+	public final fun getFormat ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getImages ()Ljava/util/List;
+	public final fun getKeepAlive ()Ljava/lang/String;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getOptions ()Lenv/OllamaOptions;
+	public final fun getPrompt ()Ljava/lang/String;
+	public final fun getRaw ()Z
+	public final fun getStream ()Z
+	public final fun getSystem ()Ljava/lang/String;
+	public final fun getTemplate ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/GeneratedRequest$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/GeneratedRequest$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/GeneratedRequest;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/GeneratedRequest;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/GeneratedRequest$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/GeneratedResponse {
+	public static final field Companion Lenv/GeneratedResponse$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/Integer;
+	public final fun component11 ()Ljava/lang/Long;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Z
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Ljava/lang/Long;
+	public final fun component7 ()Ljava/lang/Long;
+	public final fun component8 ()Ljava/lang/Integer;
+	public final fun component9 ()Ljava/lang/Long;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;)Lenv/GeneratedResponse;
+	public static synthetic fun copy$default (Lenv/GeneratedResponse;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;ILjava/lang/Object;)Lenv/GeneratedResponse;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContext ()Ljava/util/List;
+	public final fun getCreatedAt ()Ljava/lang/String;
+	public final fun getDone ()Z
+	public final fun getEvalCount ()Ljava/lang/Integer;
+	public final fun getEvalDuration ()Ljava/lang/Long;
+	public final fun getLoadDuration ()Ljava/lang/Long;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getPromptEvalCount ()Ljava/lang/Integer;
+	public final fun getPromptEvalDuration ()Ljava/lang/Long;
+	public final fun getResponse ()Ljava/lang/String;
+	public final fun getTotalDuration ()Ljava/lang/Long;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/GeneratedResponse$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/GeneratedResponse$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/GeneratedResponse;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/GeneratedResponse;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/GeneratedResponse$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/InputParams {
+	public static final field Companion Lenv/InputParams$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;Lenv/OllamaOptions;ZLjava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;Lenv/OllamaOptions;ZLjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun component7 ()Lenv/OllamaOptions;
+	public final fun component8 ()Z
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;Lenv/OllamaOptions;ZLjava/lang/String;)Lenv/InputParams;
+	public static synthetic fun copy$default (Lenv/InputParams;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;Lenv/OllamaOptions;ZLjava/lang/String;ILjava/lang/Object;)Lenv/InputParams;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFormat ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getImages ()Ljava/util/List;
+	public final fun getKeepAlive ()Ljava/lang/String;
+	public final fun getMessages ()Ljava/util/List;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getOptions ()Lenv/OllamaOptions;
+	public final fun getPrompt ()Ljava/lang/String;
+	public final fun getStream ()Z
+	public final fun getTools ()Ljava/util/List;
+	public fun hashCode ()I
+	public final fun setFormat (Lkotlinx/serialization/json/JsonElement;)V
+	public final fun setImages (Ljava/util/List;)V
+	public final fun setKeepAlive (Ljava/lang/String;)V
+	public final fun setMessages (Ljava/util/List;)V
+	public final fun setOptions (Lenv/OllamaOptions;)V
+	public final fun setPrompt (Ljava/lang/String;)V
+	public final fun setStream (Z)V
+	public final fun setTools (Ljava/util/List;)V
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/InputParams$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/InputParams$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/InputParams;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/InputParams;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/InputParams$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/Model {
+	public static final field Companion Lenv/Model$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lenv/Model;
+	public static synthetic fun copy$default (Lenv/Model;Ljava/lang/String;ILjava/lang/Object;)Lenv/Model;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAdapters ()Ljava/util/List;
+	public final fun getDestination ()Ljava/lang/String;
+	public final fun getFiles ()Ljava/util/List;
+	public final fun getFrom ()Ljava/lang/String;
+	public final fun getInsecure ()Z
+	public final fun getLicense ()Ljava/lang/String;
+	public final fun getMessages ()Ljava/util/List;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getOptions ()Lenv/OllamaOptions;
+	public final fun getParameters ()Lenv/OllamaOptions;
+	public final fun getQuantize ()Z
+	public final fun getStream ()Z
+	public final fun getSystem ()Ljava/lang/String;
+	public final fun getTemplate ()Ljava/lang/String;
+	public final fun getVerbose ()Z
+	public fun hashCode ()I
+	public final fun setAdapters (Ljava/util/List;)V
+	public final fun setDestination (Ljava/lang/String;)V
+	public final fun setFiles (Ljava/util/List;)V
+	public final fun setFrom (Ljava/lang/String;)V
+	public final fun setInsecure (Z)V
+	public final fun setLicense (Ljava/lang/String;)V
+	public final fun setMessages (Ljava/util/List;)V
+	public final fun setModel (Ljava/lang/String;)V
+	public final fun setOptions (Lenv/OllamaOptions;)V
+	public final fun setParameters (Lenv/OllamaOptions;)V
+	public final fun setQuantize (Z)V
+	public final fun setStream (Z)V
+	public final fun setSystem (Ljava/lang/String;)V
+	public final fun setTemplate (Ljava/lang/String;)V
+	public final fun setVerbose (Z)V
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/Model$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/Model$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/Model;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/Model;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/Model$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/OllamaFunctionCall {
+	public static final field Companion Lenv/OllamaFunctionCall$Companion;
+	public fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lkotlinx/serialization/json/JsonObject;
+	public final fun copy (Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)Lenv/OllamaFunctionCall;
+	public static synthetic fun copy$default (Lenv/OllamaFunctionCall;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;ILjava/lang/Object;)Lenv/OllamaFunctionCall;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getArguments ()Lkotlinx/serialization/json/JsonObject;
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/OllamaFunctionCall$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/OllamaFunctionCall$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/OllamaFunctionCall;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/OllamaFunctionCall;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/OllamaFunctionCall$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/OllamaFunctionDefinition {
+	public static final field Companion Lenv/OllamaFunctionDefinition$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lkotlinx/serialization/json/JsonObject;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)Lenv/OllamaFunctionDefinition;
+	public static synthetic fun copy$default (Lenv/OllamaFunctionDefinition;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;ILjava/lang/Object;)Lenv/OllamaFunctionDefinition;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getParameters ()Lkotlinx/serialization/json/JsonObject;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/OllamaFunctionDefinition$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/OllamaFunctionDefinition$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/OllamaFunctionDefinition;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/OllamaFunctionDefinition;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/OllamaFunctionDefinition$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/OllamaMessage {
+	public static final field Companion Lenv/OllamaMessage$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;)Lenv/OllamaMessage;
+	public static synthetic fun copy$default (Lenv/OllamaMessage;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lenv/OllamaMessage;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContent ()Ljava/lang/String;
+	public final fun getImages ()Ljava/util/List;
+	public final fun getRole ()Ljava/lang/String;
+	public final fun getToolCalls ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/OllamaMessage$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/OllamaMessage$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/OllamaMessage;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/OllamaMessage;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/OllamaMessage$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/OllamaOptions {
+	public static final field Companion Lenv/OllamaOptions$Companion;
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/Integer;
+	public final fun component10 ()Ljava/lang/Float;
+	public final fun component11 ()Ljava/lang/Float;
+	public final fun component12 ()Ljava/lang/Float;
+	public final fun component13 ()Ljava/lang/Integer;
+	public final fun component14 ()Ljava/lang/Float;
+	public final fun component15 ()Ljava/lang/Float;
+	public final fun component16 ()Ljava/lang/Boolean;
+	public final fun component17 ()Ljava/util/List;
+	public final fun component18 ()Ljava/lang/Boolean;
+	public final fun component19 ()Ljava/lang/Integer;
+	public final fun component2 ()Ljava/lang/Long;
+	public final fun component20 ()Ljava/lang/Integer;
+	public final fun component21 ()Ljava/lang/Integer;
+	public final fun component22 ()Ljava/lang/Integer;
+	public final fun component23 ()Ljava/lang/Boolean;
+	public final fun component24 ()Ljava/lang/Boolean;
+	public final fun component25 ()Ljava/lang/Boolean;
+	public final fun component26 ()Ljava/lang/Boolean;
+	public final fun component27 ()Ljava/lang/Integer;
+	public final fun component3 ()Ljava/lang/Integer;
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun component5 ()Ljava/lang/Double;
+	public final fun component6 ()Ljava/lang/Float;
+	public final fun component7 ()Ljava/lang/Float;
+	public final fun component8 ()Ljava/lang/Integer;
+	public final fun component9 ()Ljava/lang/Double;
+	public final fun copy (Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;)Lenv/OllamaOptions;
+	public static synthetic fun copy$default (Lenv/OllamaOptions;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;ILjava/lang/Object;)Lenv/OllamaOptions;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFrequencyPenalty ()Ljava/lang/Float;
+	public final fun getLowVram ()Ljava/lang/Boolean;
+	public final fun getMainGpu ()Ljava/lang/Integer;
+	public final fun getMinP ()Ljava/lang/Float;
+	public final fun getMirostat ()Ljava/lang/Integer;
+	public final fun getMirostatEta ()Ljava/lang/Float;
+	public final fun getMirostatTau ()Ljava/lang/Float;
+	public final fun getNumBatch ()Ljava/lang/Integer;
+	public final fun getNumCtx ()Ljava/lang/Integer;
+	public final fun getNumGpu ()Ljava/lang/Integer;
+	public final fun getNumKeep ()Ljava/lang/Integer;
+	public final fun getNumPredict ()Ljava/lang/Integer;
+	public final fun getNumThread ()Ljava/lang/Integer;
+	public final fun getNuma ()Ljava/lang/Boolean;
+	public final fun getPenalizeNewline ()Ljava/lang/Boolean;
+	public final fun getPresencePenalty ()Ljava/lang/Float;
+	public final fun getRepeatLastN ()Ljava/lang/Integer;
+	public final fun getRepeatPenalty ()Ljava/lang/Float;
+	public final fun getSeed ()Ljava/lang/Long;
+	public final fun getStop ()Ljava/util/List;
+	public final fun getTemperature ()Ljava/lang/Double;
+	public final fun getTopK ()Ljava/lang/Integer;
+	public final fun getTopP ()Ljava/lang/Double;
+	public final fun getTypicalP ()Ljava/lang/Float;
+	public final fun getUseMlock ()Ljava/lang/Boolean;
+	public final fun getUseMmap ()Ljava/lang/Boolean;
+	public final fun getVocabOnly ()Ljava/lang/Boolean;
+	public fun hashCode ()I
+	public final fun setFrequencyPenalty (Ljava/lang/Float;)V
+	public final fun setLowVram (Ljava/lang/Boolean;)V
+	public final fun setMainGpu (Ljava/lang/Integer;)V
+	public final fun setMinP (Ljava/lang/Float;)V
+	public final fun setMirostat (Ljava/lang/Integer;)V
+	public final fun setMirostatEta (Ljava/lang/Float;)V
+	public final fun setMirostatTau (Ljava/lang/Float;)V
+	public final fun setNumBatch (Ljava/lang/Integer;)V
+	public final fun setNumCtx (Ljava/lang/Integer;)V
+	public final fun setNumGpu (Ljava/lang/Integer;)V
+	public final fun setNumKeep (Ljava/lang/Integer;)V
+	public final fun setNumPredict (Ljava/lang/Integer;)V
+	public final fun setNumThread (Ljava/lang/Integer;)V
+	public final fun setNuma (Ljava/lang/Boolean;)V
+	public final fun setPenalizeNewline (Ljava/lang/Boolean;)V
+	public final fun setPresencePenalty (Ljava/lang/Float;)V
+	public final fun setRepeatLastN (Ljava/lang/Integer;)V
+	public final fun setRepeatPenalty (Ljava/lang/Float;)V
+	public final fun setSeed (Ljava/lang/Long;)V
+	public final fun setStop (Ljava/util/List;)V
+	public final fun setTemperature (Ljava/lang/Double;)V
+	public final fun setTopK (Ljava/lang/Integer;)V
+	public final fun setTopP (Ljava/lang/Double;)V
+	public final fun setTypicalP (Ljava/lang/Float;)V
+	public final fun setUseMlock (Ljava/lang/Boolean;)V
+	public final fun setUseMmap (Ljava/lang/Boolean;)V
+	public final fun setVocabOnly (Ljava/lang/Boolean;)V
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/OllamaOptions$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/OllamaOptions$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/OllamaOptions;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/OllamaOptions;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/OllamaOptions$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/OllamaTool {
+	public static final field Companion Lenv/OllamaTool$Companion;
+	public fun <init> (Ljava/lang/String;Lenv/OllamaFunctionDefinition;)V
+	public synthetic fun <init> (Ljava/lang/String;Lenv/OllamaFunctionDefinition;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lenv/OllamaFunctionDefinition;
+	public final fun copy (Ljava/lang/String;Lenv/OllamaFunctionDefinition;)Lenv/OllamaTool;
+	public static synthetic fun copy$default (Lenv/OllamaTool;Ljava/lang/String;Lenv/OllamaFunctionDefinition;ILjava/lang/Object;)Lenv/OllamaTool;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFunction ()Lenv/OllamaFunctionDefinition;
+	public final fun getType ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/OllamaTool$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/OllamaTool$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/OllamaTool;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/OllamaTool;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/OllamaTool$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/OllamaToolCall {
+	public static final field Companion Lenv/OllamaToolCall$Companion;
+	public fun <init> (Lenv/OllamaFunctionCall;)V
+	public final fun component1 ()Lenv/OllamaFunctionCall;
+	public final fun copy (Lenv/OllamaFunctionCall;)Lenv/OllamaToolCall;
+	public static synthetic fun copy$default (Lenv/OllamaToolCall;Lenv/OllamaFunctionCall;ILjava/lang/Object;)Lenv/OllamaToolCall;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFunction ()Lenv/OllamaFunctionCall;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/OllamaToolCall$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/OllamaToolCall$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/OllamaToolCall;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/OllamaToolCall;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/OllamaToolCall$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/versionResponce {
+	public static final field Companion Lenv/versionResponce$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lenv/versionResponce;
+	public static synthetic fun copy$default (Lenv/versionResponce;Ljava/lang/String;ILjava/lang/Object;)Lenv/versionResponce;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getVersion ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/versionResponce$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/versionResponce$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/versionResponce;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/versionResponce;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/versionResponce$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class ollamaPipe/OllamaPipe : com/TTT/Pipe/Pipe {
+	public static final field Companion LollamaPipe/OllamaPipe$Companion;
+	public fun <init> ()V
+	public fun abort (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun disableStreaming ()LollamaPipe/OllamaPipe;
+	public final fun enableStreaming (Lkotlin/jvm/functions/Function2;ZZ)LollamaPipe/OllamaPipe;
+	public static synthetic fun enableStreaming$default (LollamaPipe/OllamaPipe;Lkotlin/jvm/functions/Function2;ZZILjava/lang/Object;)LollamaPipe/OllamaPipe;
+	public final fun enableThink ()LollamaPipe/OllamaPipe;
+	public fun generateContent (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun generateText (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getRunningModels (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun getStreamingEnabled ()Z
+	public final fun getVersion (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun init (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listModels (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun serve ()V
+	public final fun setBatchSize (I)LollamaPipe/OllamaPipe;
+	public final fun setFrequencyPenalty (F)LollamaPipe/OllamaPipe;
+	public final fun setGpuSettings (ILjava/lang/Integer;)LollamaPipe/OllamaPipe;
+	public static synthetic fun setGpuSettings$default (LollamaPipe/OllamaPipe;ILjava/lang/Integer;ILjava/lang/Object;)LollamaPipe/OllamaPipe;
+	public final fun setIP (Ljava/lang/String;)LollamaPipe/OllamaPipe;
+	public final fun setKeepAlive (Ljava/lang/String;)LollamaPipe/OllamaPipe;
+	public final fun setLowVram (Z)LollamaPipe/OllamaPipe;
+	public final fun setMinP (F)LollamaPipe/OllamaPipe;
+	public final fun setMirostat (ILjava/lang/Float;Ljava/lang/Float;)LollamaPipe/OllamaPipe;
+	public static synthetic fun setMirostat$default (LollamaPipe/OllamaPipe;ILjava/lang/Float;Ljava/lang/Float;ILjava/lang/Object;)LollamaPipe/OllamaPipe;
+	public final fun setNumCtx (I)LollamaPipe/OllamaPipe;
+	public final fun setNumThread (I)LollamaPipe/OllamaPipe;
+	public final fun setNuma (Z)LollamaPipe/OllamaPipe;
+	public final fun setPenalizeNewline (Z)LollamaPipe/OllamaPipe;
+	public final fun setPort (I)LollamaPipe/OllamaPipe;
+	public final fun setPresencePenalty (F)LollamaPipe/OllamaPipe;
+	public final fun setRepeatLastN (I)LollamaPipe/OllamaPipe;
+	public final fun setStreamingCallback (Lkotlin/jvm/functions/Function2;)LollamaPipe/OllamaPipe;
+	public fun setStreamingEnabled (Z)V
+	public final fun setTypicalP (F)LollamaPipe/OllamaPipe;
+	public final fun setUseMlock (Z)LollamaPipe/OllamaPipe;
+	public final fun setUseMmap (Z)LollamaPipe/OllamaPipe;
+	public final fun setVocabOnly (Z)LollamaPipe/OllamaPipe;
+	public final fun streamingCallbacks (Lkotlin/jvm/functions/Function1;)LollamaPipe/OllamaPipe;
+	public fun truncateModuleContext ()Lcom/TTT/Pipe/Pipe;
+	public fun truncateModuleContextSuspend (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun useChatApi ()LollamaPipe/OllamaPipe;
+	public final fun useLegacyApi ()LollamaPipe/OllamaPipe;
+}
+
+public final synthetic class ollamaPipe/OllamaPipe$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE LollamaPipe/OllamaPipe$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)LollamaPipe/OllamaPipe;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;LollamaPipe/OllamaPipe;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class ollamaPipe/OllamaPipe$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}

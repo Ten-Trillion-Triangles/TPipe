@@ -9,8 +9,10 @@ import java.util.concurrent.TimeUnit
 /**
  * Bounded thread pool for PCP code-execution sandboxes.
  *
- * Caps concurrent subprocess / JSR-223 engine calls at
- * Runtime.availableProcessors() * 2. Saturated submissions throw
+ * Caps concurrent tasks submitted to this pool at
+ * Runtime.availableProcessors() * 2. KotlinExecutor owns its separate
+ * daemon-thread timeout boundary and does not submit script execution here.
+ * Saturated submissions throw
  * RejectedExecutionException immediately (no unbounded queue) so the
  * dispatcher can convert the rejection into a clean error response
  * instead of spawning unbounded OS processes.

@@ -366,7 +366,7 @@ data class JavaScriptContext(@Transient val cinit: Boolean = false)
 
 ### KotlinExecutor
 
-Executes Kotlin scripts within the JVM using the Kotlin scripting engine.
+Executes Kotlin scripts within the JVM using TPipe's internal K2 scripting host.
 
 ```kotlin
 class KotlinExecutor : PcpExecutor
@@ -376,12 +376,16 @@ class KotlinExecutor : PcpExecutor
 
 **`execute(request: PcPRequest, context: PcpContext): PcpRequestResult`**
 - Validates script against `KotlinSecurityManager`
-- Executes script using JSR-223 Kotlin script engine
+- Executes the one-shot script through TPipe's internal K2 scripting host
 - Returns execution result with output and timing
 
 **`registerBinding(name: String, obj: Any, description: String = "")`**
 - Registers custom objects for script access
-- Objects become available when `allowHostApplicationAccess = true`
+- Objects become available only when `allowHostApplicationAccess = true` and
+  their names are present in `exposedBindings`
+- Bindings retain live in-process object identity
+- The host uses the `pcp-kotlin-v1` dialect and does not support `@DependsOn`
+- Timeouts return control to the caller but do not terminate arbitrary JVM bytecode
 
 ---
 

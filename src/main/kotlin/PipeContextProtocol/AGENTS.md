@@ -105,14 +105,14 @@ Every language executor routes process starts through `PcpThreadPool`:
   executor converts this into `PcpRequestResult(success=false, error="Executor saturated: ...")`
   rather than queuing or spawning unbounded OS processes.
 
-### Kotlin timeout (acknowledged leak)
+### Kotlin timeout (acknowledged in-process limitation)
 
 `KotlinExecutor.execute` runs `engine.eval()` on a daemon thread and joins
 with `Thread.join(timeoutMs)`. When the timeout fires:
 
 - The dispatcher returns `PcpRequestResult(success=false, error="Kotlin script timed out after Xms")`.
-- The JSR-223 engine thread is **uninterruptible** — it keeps running
-  until the script returns or the JVM exits.
+- The in-process compiler/evaluation thread is not forcibly terminated — it
+  keeps running until the script returns or the JVM exits.
 - Document this limitation to any context that exposes `Transport.Kotlin`.
   For untrusted scripts, wrap the dispatcher call in an outer
   `withTimeoutOrNull` at the pipe/manifold layer.
@@ -133,4 +133,4 @@ with `Thread.join(timeoutMs)`. When the timeout fires:
 - **Never** read `process.inputStream` / `process.errorStream` directly via `readText()` — use `SubprocessOutputCapture`.
 - **Never** call `process.waitFor()` without `timeoutMs` — the timeout is the only signal the dispatcher can give.
 - **Never** start a process without `PcpThreadPool.submit { processBuilder.start() }` — bypasses backpressure.
-- **Never** expect Kotlin's `while (true) {}` to be killed by timeout — it isn't, the daemon thread leaks until JVM exit.
+- **Never** expect Kotlin's `while (true) {}` to be killed by timeout — it isn't, the daemon thread remains until JVM exit.

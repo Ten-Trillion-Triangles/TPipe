@@ -1,0 +1,1108 @@
+public final class com/TTT/TraceServer/AuthConfig {
+	public synthetic fun <init> (ZJJLcom/TTT/TraceServer/auth/HashedPassword;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ZJJLcom/TTT/TraceServer/auth/HashedPassword;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2-UwyO8pc ()J
+	public final fun component3-UwyO8pc ()J
+	public final fun component4 ()Lcom/TTT/TraceServer/auth/HashedPassword;
+	public final fun copy-vLdBGDU (ZJJLcom/TTT/TraceServer/auth/HashedPassword;)Lcom/TTT/TraceServer/AuthConfig;
+	public static synthetic fun copy-vLdBGDU$default (Lcom/TTT/TraceServer/AuthConfig;ZJJLcom/TTT/TraceServer/auth/HashedPassword;ILjava/lang/Object;)Lcom/TTT/TraceServer/AuthConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAccessTokenTtl-UwyO8pc ()J
+	public final fun getExpectedHash ()Lcom/TTT/TraceServer/auth/HashedPassword;
+	public final fun getPasswordHasherEnabled ()Z
+	public final fun getRefreshTokenTtl-UwyO8pc ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/TraceServer/AuthConfigEnvelope {
+	public static final field Companion Lcom/TTT/TraceServer/AuthConfigEnvelope$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/TraceServer/AuthConfigEnvelope;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/AuthConfigEnvelope;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/AuthConfigEnvelope;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMode ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/AuthConfigEnvelope$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/AuthConfigEnvelope$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/AuthConfigEnvelope;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/AuthConfigEnvelope;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/AuthConfigEnvelope$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/AuthMode : java/lang/Enum {
+	public static final field BOTH Lcom/TTT/TraceServer/AuthMode;
+	public static final field CREDENTIALS Lcom/TTT/TraceServer/AuthMode;
+	public static final field KEY Lcom/TTT/TraceServer/AuthMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/TraceServer/AuthMode;
+	public static fun values ()[Lcom/TTT/TraceServer/AuthMode;
+}
+
+public final class com/TTT/TraceServer/AuthRequest {
+	public static final field Companion Lcom/TTT/TraceServer/AuthRequest$Companion;
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/TraceServer/AuthRequest;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/AuthRequest;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/AuthRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getKey ()Ljava/lang/String;
+	public final fun getPassword ()Ljava/lang/String;
+	public final fun getUsername ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/AuthRequest$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/AuthRequest$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/AuthRequest;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/AuthRequest;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/AuthRequest$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/AuthResponse {
+	public static final field Companion Lcom/TTT/TraceServer/AuthResponse$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/Long;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;)Lcom/TTT/TraceServer/AuthResponse;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/AuthResponse;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;ILjava/lang/Object;)Lcom/TTT/TraceServer/AuthResponse;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpiresInMs ()Ljava/lang/Long;
+	public final fun getRefreshToken ()Ljava/lang/String;
+	public final fun getToken ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/AuthResponse$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/AuthResponse$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/AuthResponse;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/AuthResponse;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/AuthResponse$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/CompressionConfig {
+	public fun <init> ()V
+	public fun <init> (ZJZZ)V
+	public synthetic fun <init> (ZJZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()J
+	public final fun component3 ()Z
+	public final fun component4 ()Z
+	public final fun copy (ZJZZ)Lcom/TTT/TraceServer/CompressionConfig;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/CompressionConfig;ZJZZILjava/lang/Object;)Lcom/TTT/TraceServer/CompressionConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDeflate ()Z
+	public final fun getEnabled ()Z
+	public final fun getGzip ()Z
+	public final fun getMinSize ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/TraceServer/CorsConfig {
+	public fun <init> ()V
+	public fun <init> (Ljava/util/List;Ljava/util/List;Ljava/util/List;Z)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/util/List;Ljava/util/List;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Z
+	public final fun copy (Ljava/util/List;Ljava/util/List;Ljava/util/List;Z)Lcom/TTT/TraceServer/CorsConfig;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/CorsConfig;Ljava/util/List;Ljava/util/List;Ljava/util/List;ZILjava/lang/Object;)Lcom/TTT/TraceServer/CorsConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAllowCredentials ()Z
+	public final fun getAllowedHeaders ()Ljava/util/List;
+	public final fun getAllowedHosts ()Ljava/util/List;
+	public final fun getAllowedMethods ()Ljava/util/List;
+	public fun hashCode ()I
+	public final fun isWildcard ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/TraceServer/ErrorEnvelope {
+	public static final field Companion Lcom/TTT/TraceServer/ErrorEnvelope$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/TraceServer/ErrorEnvelope;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/ErrorEnvelope;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/ErrorEnvelope;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getError ()Ljava/lang/String;
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/ErrorEnvelope$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/ErrorEnvelope$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/ErrorEnvelope;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/ErrorEnvelope;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/ErrorEnvelope$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/HealthEnvelope {
+	public static final field Companion Lcom/TTT/TraceServer/HealthEnvelope$Companion;
+	public fun <init> (Ljava/lang/String;JLcom/TTT/TraceServer/HealthTracesInfo;Ljava/lang/String;Lcom/TTT/TraceServer/HealthStoreInfo;Z)V
+	public synthetic fun <init> (Ljava/lang/String;JLcom/TTT/TraceServer/HealthTracesInfo;Ljava/lang/String;Lcom/TTT/TraceServer/HealthStoreInfo;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun component3 ()Lcom/TTT/TraceServer/HealthTracesInfo;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Lcom/TTT/TraceServer/HealthStoreInfo;
+	public final fun component6 ()Z
+	public final fun copy (Ljava/lang/String;JLcom/TTT/TraceServer/HealthTracesInfo;Ljava/lang/String;Lcom/TTT/TraceServer/HealthStoreInfo;Z)Lcom/TTT/TraceServer/HealthEnvelope;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/HealthEnvelope;Ljava/lang/String;JLcom/TTT/TraceServer/HealthTracesInfo;Ljava/lang/String;Lcom/TTT/TraceServer/HealthStoreInfo;ZILjava/lang/Object;)Lcom/TTT/TraceServer/HealthEnvelope;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMetricsEnabled ()Z
+	public final fun getStatus ()Ljava/lang/String;
+	public final fun getStore ()Lcom/TTT/TraceServer/HealthStoreInfo;
+	public final fun getTraces ()Lcom/TTT/TraceServer/HealthTracesInfo;
+	public final fun getUptimeMs ()J
+	public final fun getVersion ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/HealthEnvelope$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/HealthEnvelope$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/HealthEnvelope;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/HealthEnvelope;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/HealthEnvelope$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/HealthStoreInfo {
+	public static final field Companion Lcom/TTT/TraceServer/HealthStoreInfo$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Long;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Long;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/Long;
+	public final fun component5 ()Ljava/lang/Integer;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Long;Ljava/lang/Integer;)Lcom/TTT/TraceServer/HealthStoreInfo;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/HealthStoreInfo;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Long;Ljava/lang/Integer;ILjava/lang/Object;)Lcom/TTT/TraceServer/HealthStoreInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDirectory ()Ljava/lang/String;
+	public final fun getMaxTraces ()I
+	public final fun getPerTenantQuota ()Ljava/lang/Integer;
+	public final fun getTtlMs ()Ljava/lang/Long;
+	public final fun getType ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/HealthStoreInfo$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/HealthStoreInfo$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/HealthStoreInfo;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/HealthStoreInfo;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/HealthStoreInfo$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/HealthTracesInfo {
+	public static final field Companion Lcom/TTT/TraceServer/HealthTracesInfo$Companion;
+	public fun <init> (II)V
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun copy (II)Lcom/TTT/TraceServer/HealthTracesInfo;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/HealthTracesInfo;IIILjava/lang/Object;)Lcom/TTT/TraceServer/HealthTracesInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getTenants ()I
+	public final fun getTotal ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/HealthTracesInfo$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/HealthTracesInfo$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/HealthTracesInfo;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/HealthTracesInfo;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/HealthTracesInfo$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/MetricsConfig {
+	public fun <init> ()V
+	public fun <init> (ZLjava/lang/String;)V
+	public synthetic fun <init> (ZLjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (ZLjava/lang/String;)Lcom/TTT/TraceServer/MetricsConfig;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/MetricsConfig;ZLjava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/MetricsConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnabled ()Z
+	public final fun getPath ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/TraceServer/RateLimitConfig {
+	public synthetic fun <init> (ZIIJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ZIIJLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4-UwyO8pc ()J
+	public final fun copy-Wn2Vu4Y (ZIIJ)Lcom/TTT/TraceServer/RateLimitConfig;
+	public static synthetic fun copy-Wn2Vu4Y$default (Lcom/TTT/TraceServer/RateLimitConfig;ZIIJILjava/lang/Object;)Lcom/TTT/TraceServer/RateLimitConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnabled ()Z
+	public final fun getPerIpWrites ()I
+	public final fun getPerTenantWrites ()I
+	public final fun getWindow-UwyO8pc ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/TraceServer/RateLimitExceededException : java/lang/RuntimeException {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun getBucket ()Ljava/lang/String;
+}
+
+public final class com/TTT/TraceServer/RefreshRequest {
+	public static final field Companion Lcom/TTT/TraceServer/RefreshRequest$Companion;
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/TraceServer/RefreshRequest;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/RefreshRequest;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/RefreshRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRefreshToken ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/RefreshRequest$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/RefreshRequest$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/RefreshRequest;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/RefreshRequest;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/RefreshRequest$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/RefreshResponse {
+	public static final field Companion Lcom/TTT/TraceServer/RefreshResponse$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;J)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()J
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;J)Lcom/TTT/TraceServer/RefreshResponse;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/RefreshResponse;Ljava/lang/String;Ljava/lang/String;JILjava/lang/Object;)Lcom/TTT/TraceServer/RefreshResponse;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpiresInMs ()J
+	public final fun getRefreshToken ()Ljava/lang/String;
+	public final fun getToken ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/RefreshResponse$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/RefreshResponse$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/RefreshResponse;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/RefreshResponse;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/RefreshResponse$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/StoreConfig {
+	public fun <init> ()V
+	public fun <init> (Lcom/TTT/TraceServer/StoreType;Ljava/nio/file/Path;ILjava/time/Duration;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Lcom/TTT/TraceServer/StoreType;Ljava/nio/file/Path;ILjava/time/Duration;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/TTT/TraceServer/StoreType;
+	public final fun component2 ()Ljava/nio/file/Path;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/time/Duration;
+	public final fun component5 ()Ljava/lang/Integer;
+	public final fun copy (Lcom/TTT/TraceServer/StoreType;Ljava/nio/file/Path;ILjava/time/Duration;Ljava/lang/Integer;)Lcom/TTT/TraceServer/StoreConfig;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/StoreConfig;Lcom/TTT/TraceServer/StoreType;Ljava/nio/file/Path;ILjava/time/Duration;Ljava/lang/Integer;ILjava/lang/Object;)Lcom/TTT/TraceServer/StoreConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDirectory ()Ljava/nio/file/Path;
+	public final fun getMaxTraces ()I
+	public final fun getPerTenantQuota ()Ljava/lang/Integer;
+	public final fun getTtl ()Ljava/time/Duration;
+	public final fun getType ()Lcom/TTT/TraceServer/StoreType;
+	public fun hashCode ()I
+	public final fun resolveStore ()Lcom/TTT/TraceServer/store/TraceStore;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/TraceServer/StoreType : java/lang/Enum {
+	public static final field FILE_BACKED Lcom/TTT/TraceServer/StoreType;
+	public static final field IN_MEMORY Lcom/TTT/TraceServer/StoreType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/TraceServer/StoreType;
+	public static fun values ()[Lcom/TTT/TraceServer/StoreType;
+}
+
+public final class com/TTT/TraceServer/TlsConfig {
+	public fun <init> ()V
+	public fun <init> (ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;)V
+	public synthetic fun <init> (ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Z
+	public final fun component9 ()Ljava/util/List;
+	public final fun copy (ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;)Lcom/TTT/TraceServer/TlsConfig;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/TlsConfig;ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;ILjava/lang/Object;)Lcom/TTT/TraceServer/TlsConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnabled ()Z
+	public final fun getKeyAlias ()Ljava/lang/String;
+	public final fun getKeyPassword ()Ljava/lang/String;
+	public final fun getKeyStorePassword ()Ljava/lang/String;
+	public final fun getKeyStorePath ()Ljava/lang/String;
+	public final fun getMutualTls ()Z
+	public final fun getProtocols ()Ljava/util/List;
+	public final fun getTrustStorePassword ()Ljava/lang/String;
+	public final fun getTrustStorePath ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isValid ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/TraceServer/TraceEvent {
+	public static final field Companion Lcom/TTT/TraceServer/TraceEvent$Companion;
+	public fun <init> (Ljava/lang/String;JLjava/lang/String;Lkotlinx/serialization/json/JsonElement;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun copy (Ljava/lang/String;JLjava/lang/String;Lkotlinx/serialization/json/JsonElement;)Lcom/TTT/TraceServer/TraceEvent;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/TraceEvent;Ljava/lang/String;JLjava/lang/String;Lkotlinx/serialization/json/JsonElement;ILjava/lang/Object;)Lcom/TTT/TraceServer/TraceEvent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEventId ()Ljava/lang/String;
+	public final fun getPayload ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getTs ()J
+	public final fun getType ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/TraceEvent$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/TraceEvent$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/TraceEvent;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/TraceEvent;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/TraceEvent$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/TraceListEnvelope {
+	public static final field Companion Lcom/TTT/TraceServer/TraceListEnvelope$Companion;
+	public fun <init> (Ljava/util/List;III)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun copy (Ljava/util/List;III)Lcom/TTT/TraceServer/TraceListEnvelope;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/TraceListEnvelope;Ljava/util/List;IIIILjava/lang/Object;)Lcom/TTT/TraceServer/TraceListEnvelope;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getItems ()Ljava/util/List;
+	public final fun getLimit ()I
+	public final fun getOffset ()I
+	public final fun getTotal ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/TraceListEnvelope$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/TraceListEnvelope$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/TraceListEnvelope;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/TraceListEnvelope;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/TraceListEnvelope$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/TracePayload {
+	public static final field Companion Lcom/TTT/TraceServer/TracePayload$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;)Lcom/TTT/TraceServer/TracePayload;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/TracePayload;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/TracePayload;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHtmlContent ()Ljava/lang/String;
+	public final fun getKind ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getPipelineId ()Ljava/lang/String;
+	public final fun getStatus ()Ljava/lang/String;
+	public final fun getTags ()Ljava/util/Map;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/TracePayload$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/TracePayload$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/TracePayload;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/TracePayload;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/TracePayload$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/TraceServerConfig {
+	public fun <init> ()V
+	public fun <init> (ILjava/lang/String;ILcom/TTT/TraceServer/TlsConfig;Lcom/TTT/TraceServer/CorsConfig;Lcom/TTT/TraceServer/StoreConfig;Lcom/TTT/TraceServer/AuthMode;Lcom/TTT/TraceServer/AuthConfig;Lcom/TTT/TraceServer/RateLimitConfig;Lcom/TTT/TraceServer/CompressionConfig;Lcom/TTT/TraceServer/MetricsConfig;JLjava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (ILjava/lang/String;ILcom/TTT/TraceServer/TlsConfig;Lcom/TTT/TraceServer/CorsConfig;Lcom/TTT/TraceServer/StoreConfig;Lcom/TTT/TraceServer/AuthMode;Lcom/TTT/TraceServer/AuthConfig;Lcom/TTT/TraceServer/RateLimitConfig;Lcom/TTT/TraceServer/CompressionConfig;Lcom/TTT/TraceServer/MetricsConfig;JLjava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component10 ()Lcom/TTT/TraceServer/CompressionConfig;
+	public final fun component11 ()Lcom/TTT/TraceServer/MetricsConfig;
+	public final fun component12 ()J
+	public final fun component13 ()Ljava/lang/String;
+	public final fun component14 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun component4 ()Lcom/TTT/TraceServer/TlsConfig;
+	public final fun component5 ()Lcom/TTT/TraceServer/CorsConfig;
+	public final fun component6 ()Lcom/TTT/TraceServer/StoreConfig;
+	public final fun component7 ()Lcom/TTT/TraceServer/AuthMode;
+	public final fun component8 ()Lcom/TTT/TraceServer/AuthConfig;
+	public final fun component9 ()Lcom/TTT/TraceServer/RateLimitConfig;
+	public final fun copy (ILjava/lang/String;ILcom/TTT/TraceServer/TlsConfig;Lcom/TTT/TraceServer/CorsConfig;Lcom/TTT/TraceServer/StoreConfig;Lcom/TTT/TraceServer/AuthMode;Lcom/TTT/TraceServer/AuthConfig;Lcom/TTT/TraceServer/RateLimitConfig;Lcom/TTT/TraceServer/CompressionConfig;Lcom/TTT/TraceServer/MetricsConfig;JLjava/lang/String;Ljava/lang/String;)Lcom/TTT/TraceServer/TraceServerConfig;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/TraceServerConfig;ILjava/lang/String;ILcom/TTT/TraceServer/TlsConfig;Lcom/TTT/TraceServer/CorsConfig;Lcom/TTT/TraceServer/StoreConfig;Lcom/TTT/TraceServer/AuthMode;Lcom/TTT/TraceServer/AuthConfig;Lcom/TTT/TraceServer/RateLimitConfig;Lcom/TTT/TraceServer/CompressionConfig;Lcom/TTT/TraceServer/MetricsConfig;JLjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/TraceServerConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAuth ()Lcom/TTT/TraceServer/AuthConfig;
+	public final fun getAuthMode ()Lcom/TTT/TraceServer/AuthMode;
+	public final fun getCompression ()Lcom/TTT/TraceServer/CompressionConfig;
+	public final fun getCors ()Lcom/TTT/TraceServer/CorsConfig;
+	public final fun getDefaultTenant ()Ljava/lang/String;
+	public final fun getHost ()Ljava/lang/String;
+	public final fun getMaxPayloadBytes ()J
+	public final fun getMetrics ()Lcom/TTT/TraceServer/MetricsConfig;
+	public final fun getPort ()I
+	public final fun getRateLimit ()Lcom/TTT/TraceServer/RateLimitConfig;
+	public final fun getStore ()Lcom/TTT/TraceServer/StoreConfig;
+	public final fun getTls ()Lcom/TTT/TraceServer/TlsConfig;
+	public final fun getTlsPort ()I
+	public final fun getVersion ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/TraceServer/TraceServerConfigBridge {
+	public static final field INSTANCE Lcom/TTT/TraceServer/TraceServerConfigBridge;
+	public final fun legacy ()Lcom/TTT/TraceServer/TraceServerConfig;
+}
+
+public final class com/TTT/TraceServer/TraceServerConfigLegacy {
+	public static final field INSTANCE Lcom/TTT/TraceServer/TraceServerConfigLegacy;
+	public final fun getHost ()Ljava/lang/String;
+	public final fun getPort ()I
+	public final fun setHost (Ljava/lang/String;)V
+	public final fun setPort (I)V
+}
+
+public final class com/TTT/TraceServer/TraceServerDemoKt {
+	public static final fun main ([Ljava/lang/String;)V
+}
+
+public final class com/TTT/TraceServer/TraceServerKt {
+	public static final fun main ([Ljava/lang/String;)V
+	public static final fun parseArgs ([Ljava/lang/String;Lcom/TTT/TraceServer/TraceServerConfig;)Lcom/TTT/TraceServer/TraceServerConfig;
+	public static final fun startTraceServer (ILjava/lang/String;Z)Lio/ktor/server/engine/EmbeddedServer;
+	public static final fun startTraceServer (Lcom/TTT/TraceServer/TraceServerConfig;Z)Lio/ktor/server/engine/EmbeddedServer;
+	public static synthetic fun startTraceServer$default (ILjava/lang/String;ZILjava/lang/Object;)Lio/ktor/server/engine/EmbeddedServer;
+	public static synthetic fun startTraceServer$default (Lcom/TTT/TraceServer/TraceServerConfig;ZILjava/lang/Object;)Lio/ktor/server/engine/EmbeddedServer;
+	public static final fun stopTraceServer (Lio/ktor/server/engine/EmbeddedServer;J)V
+	public static synthetic fun stopTraceServer$default (Lio/ktor/server/engine/EmbeddedServer;JILjava/lang/Object;)V
+	public static final fun traceServerModule (Lio/ktor/server/application/Application;Lcom/TTT/TraceServer/TraceServerConfig;)V
+	public static synthetic fun traceServerModule$default (Lio/ktor/server/application/Application;Lcom/TTT/TraceServer/TraceServerConfig;ILjava/lang/Object;)V
+}
+
+public final class com/TTT/TraceServer/TraceServerRegistry {
+	public static final field INSTANCE Lcom/TTT/TraceServer/TraceServerRegistry;
+	public final fun addConnection (Lio/ktor/websocket/WebSocketSession;Ljava/lang/String;)V
+	public static synthetic fun addConnection$default (Lcom/TTT/TraceServer/TraceServerRegistry;Lio/ktor/websocket/WebSocketSession;Ljava/lang/String;ILjava/lang/Object;)V
+	public final fun clearTenantRateBuckets ()V
+	public final fun configureStore (Lcom/TTT/TraceServer/store/TraceStore;)V
+	public final fun connectionsFor (Ljava/lang/String;)Ljava/util/Set;
+	public final fun createSession (Ljava/lang/String;Ljava/lang/Long;)Ljava/lang/String;
+	public static synthetic fun createSession$default (Lcom/TTT/TraceServer/TraceServerRegistry;Ljava/lang/String;Ljava/lang/Long;ILjava/lang/Object;)Ljava/lang/String;
+	public final fun createSessionPair (Ljava/lang/String;)Lkotlin/Pair;
+	public static synthetic fun createSessionPair$default (Lcom/TTT/TraceServer/TraceServerRegistry;Ljava/lang/String;ILjava/lang/Object;)Lkotlin/Pair;
+	public final fun getAgentAuthMechanism ()Lkotlin/jvm/functions/Function2;
+	public final fun getAllSummaries ()Ljava/util/List;
+	public final fun getAuthConfig ()Lcom/TTT/TraceServer/AuthConfig;
+	public final fun getAuthMode ()Lcom/TTT/TraceServer/AuthMode;
+	public final fun getBroadcastScope ()Lkotlinx/coroutines/CoroutineScope;
+	public final fun getClientAuthMechanism ()Lkotlin/jvm/functions/Function2;
+	public final fun getClientSessions ()Ljava/util/Map;
+	public final fun getPasswordHasher ()Lcom/TTT/TraceServer/auth/PasswordHasher;
+	public final fun getStore ()Lcom/TTT/TraceServer/store/TraceStore;
+	public final fun getTraces ()Lkotlin/Unit;
+	public final fun lookupSession (Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/TraceServer/TraceServerRegistry$ClientSession;
+	public static synthetic fun lookupSession$default (Lcom/TTT/TraceServer/TraceServerRegistry;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/TraceServerRegistry$ClientSession;
+	public final fun purgeExpired ()V
+	public final fun registerTrace (Lcom/TTT/TraceServer/TracePayload;)V
+	public final fun removeConnection (Lio/ktor/websocket/WebSocketSession;Ljava/lang/String;)V
+	public static synthetic fun removeConnection$default (Lcom/TTT/TraceServer/TraceServerRegistry;Lio/ktor/websocket/WebSocketSession;Ljava/lang/String;ILjava/lang/Object;)V
+	public final fun rotateRefresh (Ljava/lang/String;Ljava/lang/String;)Lkotlin/Pair;
+	public static synthetic fun rotateRefresh$default (Lcom/TTT/TraceServer/TraceServerRegistry;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lkotlin/Pair;
+	public final fun sessionsFor (Ljava/lang/String;)Ljava/util/Map;
+	public final fun setAgentAuthMechanism (Lkotlin/jvm/functions/Function2;)V
+	public final fun setAuthConfig (Lcom/TTT/TraceServer/AuthConfig;)V
+	public final fun setAuthMode (Lcom/TTT/TraceServer/AuthMode;)V
+	public final fun setClientAuthMechanism (Lkotlin/jvm/functions/Function2;)V
+	public final fun setPasswordHasher (Lcom/TTT/TraceServer/auth/PasswordHasher;)V
+	public final fun shutdownRegistry ()V
+	public final fun subscribe (Lio/ktor/websocket/WebSocketSession;Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun subscribersFor (Ljava/lang/String;Ljava/lang/String;)Ljava/util/Set;
+	public final fun tenantRateBucket (Ljava/lang/String;)Ljava/util/List;
+	public final fun unsubscribe (Lio/ktor/websocket/WebSocketSession;Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun useInMemoryStore (I)V
+	public static synthetic fun useInMemoryStore$default (Lcom/TTT/TraceServer/TraceServerRegistry;IILjava/lang/Object;)V
+	public final fun validateSession (Ljava/lang/String;Ljava/lang/String;)Z
+	public static synthetic fun validateSession$default (Lcom/TTT/TraceServer/TraceServerRegistry;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Z
+}
+
+public final class com/TTT/TraceServer/TraceServerRegistry$ClientSession {
+	public fun <init> (Ljava/lang/String;JLcom/TTT/TraceServer/TraceServerRegistry$ClientSession$Kind;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;JLcom/TTT/TraceServer/TraceServerRegistry$ClientSession$Kind;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun component3 ()Lcom/TTT/TraceServer/TraceServerRegistry$ClientSession$Kind;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;JLcom/TTT/TraceServer/TraceServerRegistry$ClientSession$Kind;Ljava/lang/String;)Lcom/TTT/TraceServer/TraceServerRegistry$ClientSession;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/TraceServerRegistry$ClientSession;Ljava/lang/String;JLcom/TTT/TraceServer/TraceServerRegistry$ClientSession$Kind;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/TraceServerRegistry$ClientSession;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpiresAt ()J
+	public final fun getKind ()Lcom/TTT/TraceServer/TraceServerRegistry$ClientSession$Kind;
+	public final fun getParentToken ()Ljava/lang/String;
+	public final fun getTenant ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/TraceServer/TraceServerRegistry$ClientSession$Kind : java/lang/Enum {
+	public static final field ACCESS Lcom/TTT/TraceServer/TraceServerRegistry$ClientSession$Kind;
+	public static final field REFRESH Lcom/TTT/TraceServer/TraceServerRegistry$ClientSession$Kind;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/TraceServer/TraceServerRegistry$ClientSession$Kind;
+	public static fun values ()[Lcom/TTT/TraceServer/TraceServerRegistry$ClientSession$Kind;
+}
+
+public final class com/TTT/TraceServer/TraceServerSmokeMainKt {
+	public static final fun main ()V
+	public static synthetic fun main ([Ljava/lang/String;)V
+}
+
+public final class com/TTT/TraceServer/TraceSummary {
+	public static final field Companion Lcom/TTT/TraceServer/TraceSummary$Companion;
+	public fun <init> (Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/TraceServer/TraceSummary;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/TraceSummary;Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/TraceSummary;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Ljava/lang/String;
+	public final fun getKind ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getStatus ()Ljava/lang/String;
+	public final fun getTimestamp ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/TraceSummary$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/TraceSummary$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/TraceSummary;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/TraceSummary;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/TraceSummary$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public abstract class com/TTT/TraceServer/WebSocketEnvelope {
+	public static final field Companion Lcom/TTT/TraceServer/WebSocketEnvelope$Companion;
+	public synthetic fun <init> (ILkotlinx/serialization/internal/SerializationConstructorMarker;)V
+	public static final synthetic fun write$Self (Lcom/TTT/TraceServer/WebSocketEnvelope;Lkotlinx/serialization/encoding/CompositeEncoder;Lkotlinx/serialization/descriptors/SerialDescriptor;)V
+}
+
+public final class com/TTT/TraceServer/WebSocketEnvelope$Ack : com/TTT/TraceServer/WebSocketEnvelope {
+	public static final field Companion Lcom/TTT/TraceServer/WebSocketEnvelope$Ack$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/TraceServer/WebSocketEnvelope$Ack;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/WebSocketEnvelope$Ack;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/WebSocketEnvelope$Ack;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOp ()Ljava/lang/String;
+	public final fun getPipelineId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/WebSocketEnvelope$Ack$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/WebSocketEnvelope$Ack$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/WebSocketEnvelope$Ack;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/WebSocketEnvelope$Ack;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/WebSocketEnvelope$Ack$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/WebSocketEnvelope$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/WebSocketEnvelope$ErrorMsg : com/TTT/TraceServer/WebSocketEnvelope {
+	public static final field Companion Lcom/TTT/TraceServer/WebSocketEnvelope$ErrorMsg$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/TraceServer/WebSocketEnvelope$ErrorMsg;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/WebSocketEnvelope$ErrorMsg;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/WebSocketEnvelope$ErrorMsg;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/WebSocketEnvelope$ErrorMsg$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/WebSocketEnvelope$ErrorMsg$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/WebSocketEnvelope$ErrorMsg;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/WebSocketEnvelope$ErrorMsg;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/WebSocketEnvelope$ErrorMsg$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/WebSocketEnvelope$Event : com/TTT/TraceServer/WebSocketEnvelope {
+	public static final field Companion Lcom/TTT/TraceServer/WebSocketEnvelope$Event$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Lkotlinx/serialization/json/JsonElement;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()J
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Lkotlinx/serialization/json/JsonElement;)Lcom/TTT/TraceServer/WebSocketEnvelope$Event;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/WebSocketEnvelope$Event;Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Lkotlinx/serialization/json/JsonElement;ILjava/lang/Object;)Lcom/TTT/TraceServer/WebSocketEnvelope$Event;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEventId ()Ljava/lang/String;
+	public final fun getPayload ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getPipelineId ()Ljava/lang/String;
+	public final fun getTs ()J
+	public final fun getType ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/WebSocketEnvelope$Event$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/WebSocketEnvelope$Event$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/WebSocketEnvelope$Event;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/WebSocketEnvelope$Event;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/WebSocketEnvelope$Event$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/WebSocketEnvelope$Subscribe : com/TTT/TraceServer/WebSocketEnvelope {
+	public static final field Companion Lcom/TTT/TraceServer/WebSocketEnvelope$Subscribe$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/TraceServer/WebSocketEnvelope$Subscribe;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/WebSocketEnvelope$Subscribe;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/WebSocketEnvelope$Subscribe;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPipelineId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/WebSocketEnvelope$Subscribe$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/WebSocketEnvelope$Subscribe$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/WebSocketEnvelope$Subscribe;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/WebSocketEnvelope$Subscribe;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/WebSocketEnvelope$Subscribe$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/WebSocketEnvelope$Summary : com/TTT/TraceServer/WebSocketEnvelope {
+	public static final field Companion Lcom/TTT/TraceServer/WebSocketEnvelope$Summary$Companion;
+	public fun <init> (Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;)Lcom/TTT/TraceServer/WebSocketEnvelope$Summary;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/WebSocketEnvelope$Summary;Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/WebSocketEnvelope$Summary;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getName ()Ljava/lang/String;
+	public final fun getPipelineId ()Ljava/lang/String;
+	public final fun getStatus ()Ljava/lang/String;
+	public final fun getTimestamp ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/WebSocketEnvelope$Summary$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/WebSocketEnvelope$Summary$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/WebSocketEnvelope$Summary;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/WebSocketEnvelope$Summary;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/WebSocketEnvelope$Summary$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/WebSocketEnvelope$Unsubscribe : com/TTT/TraceServer/WebSocketEnvelope {
+	public static final field Companion Lcom/TTT/TraceServer/WebSocketEnvelope$Unsubscribe$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/TraceServer/WebSocketEnvelope$Unsubscribe;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/WebSocketEnvelope$Unsubscribe;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/WebSocketEnvelope$Unsubscribe;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPipelineId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/WebSocketEnvelope$Unsubscribe$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/WebSocketEnvelope$Unsubscribe$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/WebSocketEnvelope$Unsubscribe;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/WebSocketEnvelope$Unsubscribe;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/WebSocketEnvelope$Unsubscribe$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/auth/HashedPassword {
+	public static final field Companion Lcom/TTT/TraceServer/auth/HashedPassword$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;)Lcom/TTT/TraceServer/auth/HashedPassword;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/auth/HashedPassword;Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/auth/HashedPassword;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAlgorithm ()Ljava/lang/String;
+	public final fun getHash ()Ljava/lang/String;
+	public final fun getIterations ()I
+	public final fun getSalt ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/TraceServer/auth/HashedPassword$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/TraceServer/auth/HashedPassword$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/TraceServer/auth/HashedPassword;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/TraceServer/auth/HashedPassword;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/TraceServer/auth/HashedPassword$Companion {
+	public final fun decode (Ljava/lang/String;)[B
+	public final fun encodeHash ([B)Ljava/lang/String;
+	public final fun randomSalt (I)Ljava/lang/String;
+	public static synthetic fun randomSalt$default (Lcom/TTT/TraceServer/auth/HashedPassword$Companion;IILjava/lang/Object;)Ljava/lang/String;
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public abstract interface class com/TTT/TraceServer/auth/PasswordHasher {
+	public fun getDefaultIterations ()I
+	public abstract fun hash (Ljava/lang/String;[B)Lcom/TTT/TraceServer/auth/HashedPassword;
+	public static synthetic fun hash$default (Lcom/TTT/TraceServer/auth/PasswordHasher;Ljava/lang/String;[BILjava/lang/Object;)Lcom/TTT/TraceServer/auth/HashedPassword;
+	public abstract fun verify (Ljava/lang/String;Lcom/TTT/TraceServer/auth/HashedPassword;)Z
+}
+
+public final class com/TTT/TraceServer/auth/PasswordHasher$DefaultImpls {
+	public static fun getDefaultIterations (Lcom/TTT/TraceServer/auth/PasswordHasher;)I
+	public static synthetic fun hash$default (Lcom/TTT/TraceServer/auth/PasswordHasher;Ljava/lang/String;[BILjava/lang/Object;)Lcom/TTT/TraceServer/auth/HashedPassword;
+}
+
+public final class com/TTT/TraceServer/auth/Pbkdf2PasswordHasher : com/TTT/TraceServer/auth/PasswordHasher {
+	public static final field ALGORITHM Ljava/lang/String;
+	public static final field Companion Lcom/TTT/TraceServer/auth/Pbkdf2PasswordHasher$Companion;
+	public fun <init> ()V
+	public fun <init> (II)V
+	public synthetic fun <init> (IIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun getDefaultIterations ()I
+	public fun hash (Ljava/lang/String;[B)Lcom/TTT/TraceServer/auth/HashedPassword;
+	public fun verify (Ljava/lang/String;Lcom/TTT/TraceServer/auth/HashedPassword;)Z
+}
+
+public final class com/TTT/TraceServer/auth/Pbkdf2PasswordHasher$Companion {
+}
+
+public final class com/TTT/TraceServer/store/FileBackedTraceStore : com/TTT/TraceServer/store/TraceStore {
+	public static final field Companion Lcom/TTT/TraceServer/store/FileBackedTraceStore$Companion;
+	public static final field EVENTS_DIR Ljava/lang/String;
+	public static final field INDEX_FILE Ljava/lang/String;
+	public static final field LOG_FILE Ljava/lang/String;
+	public fun <init> (Ljava/nio/file/Path;ILjava/time/Duration;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/nio/file/Path;ILjava/time/Duration;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun appendEvent (Ljava/lang/String;Lcom/TTT/TraceServer/TraceEvent;Ljava/lang/String;)V
+	public fun close ()V
+	public fun count (Ljava/lang/String;)I
+	public fun delete (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun directoryPath ()Ljava/lang/String;
+	public fun get (Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/TraceServer/TracePayload;
+	public fun getEvents (Ljava/lang/String;Ljava/lang/String;)Ljava/util/List;
+	public fun listSummaries (Lcom/TTT/TraceServer/store/TraceFilter;)Lcom/TTT/TraceServer/store/TraceListResult;
+	public final fun maxTracesValue ()I
+	public final fun perTenantQuotaValue ()Ljava/lang/Integer;
+	public fun put (Lcom/TTT/TraceServer/TracePayload;Ljava/lang/String;)V
+	public fun tenantNames ()Ljava/util/Set;
+	public final fun ttlMs ()Ljava/lang/Long;
+}
+
+public final class com/TTT/TraceServer/store/FileBackedTraceStore$Companion {
+	public final fun at (Ljava/lang/String;ILjava/time/Duration;Ljava/lang/Integer;)Lcom/TTT/TraceServer/store/FileBackedTraceStore;
+	public static synthetic fun at$default (Lcom/TTT/TraceServer/store/FileBackedTraceStore$Companion;Ljava/lang/String;ILjava/time/Duration;Ljava/lang/Integer;ILjava/lang/Object;)Lcom/TTT/TraceServer/store/FileBackedTraceStore;
+}
+
+public final class com/TTT/TraceServer/store/InMemoryTraceStore : com/TTT/TraceServer/store/TraceStore {
+	public static final field Companion Lcom/TTT/TraceServer/store/InMemoryTraceStore$Companion;
+	public static final field MAX_LIMIT I
+	public fun <init> ()V
+	public fun <init> (I)V
+	public synthetic fun <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun appendEvent (Ljava/lang/String;Lcom/TTT/TraceServer/TraceEvent;Ljava/lang/String;)V
+	public fun close ()V
+	public fun count (Ljava/lang/String;)I
+	public fun delete (Ljava/lang/String;Ljava/lang/String;)Z
+	public fun get (Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/TraceServer/TracePayload;
+	public fun getEvents (Ljava/lang/String;Ljava/lang/String;)Ljava/util/List;
+	public fun listSummaries (Lcom/TTT/TraceServer/store/TraceFilter;)Lcom/TTT/TraceServer/store/TraceListResult;
+	public final fun maxTracesValue ()I
+	public fun put (Lcom/TTT/TraceServer/TracePayload;Ljava/lang/String;)V
+	public fun tenantNames ()Ljava/util/Set;
+}
+
+public final class com/TTT/TraceServer/store/InMemoryTraceStore$Companion {
+}
+
+public final class com/TTT/TraceServer/store/TraceFilter {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;IILjava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;IILjava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/Long;
+	public final fun component6 ()I
+	public final fun component7 ()I
+	public final fun component8 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;IILjava/util/Map;)Lcom/TTT/TraceServer/store/TraceFilter;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/store/TraceFilter;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;IILjava/util/Map;ILjava/lang/Object;)Lcom/TTT/TraceServer/store/TraceFilter;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLimit ()I
+	public final fun getOffset ()I
+	public final fun getQuery ()Ljava/lang/String;
+	public final fun getSince ()Ljava/lang/Long;
+	public final fun getStatus ()Ljava/lang/String;
+	public final fun getTag ()Ljava/lang/String;
+	public final fun getTagsById ()Ljava/util/Map;
+	public final fun getTenant ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/TraceServer/store/TraceListResult {
+	public fun <init> (Ljava/util/List;III)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun copy (Ljava/util/List;III)Lcom/TTT/TraceServer/store/TraceListResult;
+	public static synthetic fun copy$default (Lcom/TTT/TraceServer/store/TraceListResult;Ljava/util/List;IIIILjava/lang/Object;)Lcom/TTT/TraceServer/store/TraceListResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getItems ()Ljava/util/List;
+	public final fun getLimit ()I
+	public final fun getOffset ()I
+	public final fun getTotal ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/TTT/TraceServer/store/TraceStore {
+	public abstract fun appendEvent (Ljava/lang/String;Lcom/TTT/TraceServer/TraceEvent;Ljava/lang/String;)V
+	public static synthetic fun appendEvent$default (Lcom/TTT/TraceServer/store/TraceStore;Ljava/lang/String;Lcom/TTT/TraceServer/TraceEvent;Ljava/lang/String;ILjava/lang/Object;)V
+	public abstract fun close ()V
+	public abstract fun count (Ljava/lang/String;)I
+	public static synthetic fun count$default (Lcom/TTT/TraceServer/store/TraceStore;Ljava/lang/String;ILjava/lang/Object;)I
+	public abstract fun delete (Ljava/lang/String;Ljava/lang/String;)Z
+	public static synthetic fun delete$default (Lcom/TTT/TraceServer/store/TraceStore;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Z
+	public abstract fun get (Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/TraceServer/TracePayload;
+	public static synthetic fun get$default (Lcom/TTT/TraceServer/store/TraceStore;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/TracePayload;
+	public abstract fun getEvents (Ljava/lang/String;Ljava/lang/String;)Ljava/util/List;
+	public static synthetic fun getEvents$default (Lcom/TTT/TraceServer/store/TraceStore;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ljava/util/List;
+	public abstract fun listSummaries (Lcom/TTT/TraceServer/store/TraceFilter;)Lcom/TTT/TraceServer/store/TraceListResult;
+	public abstract fun put (Lcom/TTT/TraceServer/TracePayload;Ljava/lang/String;)V
+	public static synthetic fun put$default (Lcom/TTT/TraceServer/store/TraceStore;Lcom/TTT/TraceServer/TracePayload;Ljava/lang/String;ILjava/lang/Object;)V
+	public fun tenantNames ()Ljava/util/Set;
+}
+
+public final class com/TTT/TraceServer/store/TraceStore$DefaultImpls {
+	public static synthetic fun appendEvent$default (Lcom/TTT/TraceServer/store/TraceStore;Ljava/lang/String;Lcom/TTT/TraceServer/TraceEvent;Ljava/lang/String;ILjava/lang/Object;)V
+	public static synthetic fun count$default (Lcom/TTT/TraceServer/store/TraceStore;Ljava/lang/String;ILjava/lang/Object;)I
+	public static synthetic fun delete$default (Lcom/TTT/TraceServer/store/TraceStore;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Z
+	public static synthetic fun get$default (Lcom/TTT/TraceServer/store/TraceStore;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/TraceServer/TracePayload;
+	public static synthetic fun getEvents$default (Lcom/TTT/TraceServer/store/TraceStore;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ljava/util/List;
+	public static synthetic fun put$default (Lcom/TTT/TraceServer/store/TraceStore;Lcom/TTT/TraceServer/TracePayload;Ljava/lang/String;ILjava/lang/Object;)V
+	public static fun tenantNames (Lcom/TTT/TraceServer/store/TraceStore;)Ljava/util/Set;
+}
+
+public final class com/TTT/TraceServer/store/TraceStoreKt {
+	public static final field DEFAULT_TENANT Ljava/lang/String;
+}

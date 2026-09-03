@@ -1,0 +1,776 @@
+public final class Defaults/BedrockConfiguration : Defaults/ProviderConfiguration {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;LDefaults/ManifoldMemoryConfiguration;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;LDefaults/ManifoldMemoryConfiguration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()LDefaults/ManifoldMemoryConfiguration;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Z
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;LDefaults/ManifoldMemoryConfiguration;)LDefaults/BedrockConfiguration;
+	public static synthetic fun copy$default (LDefaults/BedrockConfiguration;Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;LDefaults/ManifoldMemoryConfiguration;ILjava/lang/Object;)LDefaults/BedrockConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAccessKey ()Ljava/lang/String;
+	public final fun getInferenceProfile ()Ljava/lang/String;
+	public final fun getManifoldMemory ()LDefaults/ManifoldMemoryConfiguration;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getPipeCount ()I
+	public final fun getProfileName ()Ljava/lang/String;
+	public final fun getRegion ()Ljava/lang/String;
+	public final fun getSecretKey ()Ljava/lang/String;
+	public final fun getSessionToken ()Ljava/lang/String;
+	public final fun getUseConverseApi ()Z
+	public fun hashCode ()I
+	public final fun make (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun setAccessKey (Ljava/lang/String;)V
+	public final fun setInferenceProfile (Ljava/lang/String;)V
+	public final fun setManifoldMemory (LDefaults/ManifoldMemoryConfiguration;)V
+	public final fun setModel (Ljava/lang/String;)V
+	public final fun setPipeCount (I)V
+	public final fun setProfileName (Ljava/lang/String;)V
+	public final fun setRegion (Ljava/lang/String;)V
+	public final fun setSecretKey (Ljava/lang/String;)V
+	public final fun setSessionToken (Ljava/lang/String;)V
+	public final fun setUseConverseApi (Z)V
+	public fun toString ()Ljava/lang/String;
+	public fun validate ()Z
+}
+
+public final class Defaults/BedrockGridConfiguration : Defaults/ProviderConfiguration {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;LDefaults/DistributionGridDefaultsConfiguration;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;LDefaults/DistributionGridDefaultsConfiguration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Z
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()LDefaults/DistributionGridDefaultsConfiguration;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;LDefaults/DistributionGridDefaultsConfiguration;)LDefaults/BedrockGridConfiguration;
+	public static synthetic fun copy$default (LDefaults/BedrockGridConfiguration;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;LDefaults/DistributionGridDefaultsConfiguration;ILjava/lang/Object;)LDefaults/BedrockGridConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAccessKey ()Ljava/lang/String;
+	public final fun getGridDefaults ()LDefaults/DistributionGridDefaultsConfiguration;
+	public final fun getInferenceProfile ()Ljava/lang/String;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getProfileName ()Ljava/lang/String;
+	public final fun getRegion ()Ljava/lang/String;
+	public final fun getSecretKey ()Ljava/lang/String;
+	public final fun getSessionToken ()Ljava/lang/String;
+	public final fun getUseConverseApi ()Z
+	public fun hashCode ()I
+	public final fun setAccessKey (Ljava/lang/String;)V
+	public final fun setGridDefaults (LDefaults/DistributionGridDefaultsConfiguration;)V
+	public final fun setInferenceProfile (Ljava/lang/String;)V
+	public final fun setModel (Ljava/lang/String;)V
+	public final fun setProfileName (Ljava/lang/String;)V
+	public final fun setRegion (Ljava/lang/String;)V
+	public final fun setSecretKey (Ljava/lang/String;)V
+	public final fun setSessionToken (Ljava/lang/String;)V
+	public final fun setUseConverseApi (Z)V
+	public fun toString ()Ljava/lang/String;
+	public fun validate ()Z
+}
+
+public final class Defaults/CodexConfiguration : Defaults/ProviderConfiguration {
+	public fun <init> (Ljava/lang/String;ILjava/lang/String;ZLjava/lang/String;LDefaults/ManifoldMemoryConfiguration;)V
+	public synthetic fun <init> (Ljava/lang/String;ILjava/lang/String;ZLjava/lang/String;LDefaults/ManifoldMemoryConfiguration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Z
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()LDefaults/ManifoldMemoryConfiguration;
+	public final fun copy (Ljava/lang/String;ILjava/lang/String;ZLjava/lang/String;LDefaults/ManifoldMemoryConfiguration;)LDefaults/CodexConfiguration;
+	public static synthetic fun copy$default (LDefaults/CodexConfiguration;Ljava/lang/String;ILjava/lang/String;ZLjava/lang/String;LDefaults/ManifoldMemoryConfiguration;ILjava/lang/Object;)LDefaults/CodexConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCliAuthFile ()Ljava/lang/String;
+	public final fun getCredentialStorePath ()Ljava/lang/String;
+	public final fun getImportCodexCliCredentialsIfMissing ()Z
+	public final fun getManifoldMemory ()LDefaults/ManifoldMemoryConfiguration;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getPipeCount ()I
+	public fun hashCode ()I
+	public final fun setCliAuthFile (Ljava/lang/String;)V
+	public final fun setCredentialStorePath (Ljava/lang/String;)V
+	public final fun setImportCodexCliCredentialsIfMissing (Z)V
+	public final fun setManifoldMemory (LDefaults/ManifoldMemoryConfiguration;)V
+	public final fun setModel (Ljava/lang/String;)V
+	public final fun setPipeCount (I)V
+	public fun toString ()Ljava/lang/String;
+	public fun validate ()Z
+}
+
+public final class Defaults/DefaultsDistributionGridDsl {
+	public fun <init> (Lcom/TTT/Pipeline/DistributionGridBuilder;)V
+	public final fun bedrock (LDefaults/BedrockGridConfiguration;)V
+	public final fun ollama (LDefaults/OllamaGridConfiguration;)V
+}
+
+public final class Defaults/DefaultsManifoldDsl {
+	public fun <init> (Lcom/TTT/Pipeline/ManifoldBuilder;)V
+	public final fun bedrock (LDefaults/BedrockConfiguration;)V
+	public final fun codex (LDefaults/CodexConfiguration;)V
+	public final fun ollama (LDefaults/OllamaConfiguration;)V
+}
+
+public final class Defaults/DistributionGridBootstrapCatalogConfiguration {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/TTT/P2P/P2PTransport;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Z
+	public final fun component6 ()Ljava/util/List;
+	public final fun component7 ()Ljava/util/List;
+	public final fun component8 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/util/List;)LDefaults/DistributionGridBootstrapCatalogConfiguration;
+	public static synthetic fun copy$default (LDefaults/DistributionGridBootstrapCatalogConfiguration;Ljava/lang/String;Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)LDefaults/DistributionGridBootstrapCatalogConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAuthBody ()Ljava/lang/String;
+	public final fun getAutoPullOnInit ()Z
+	public final fun getCategories ()Ljava/util/List;
+	public final fun getSourceId ()Ljava/lang/String;
+	public final fun getTags ()Ljava/util/List;
+	public final fun getTransport ()Lcom/TTT/P2P/P2PTransport;
+	public final fun getTransportAuthBody ()Ljava/lang/String;
+	public final fun getTrustDomainIds ()Ljava/util/List;
+	public fun hashCode ()I
+	public final fun setAuthBody (Ljava/lang/String;)V
+	public final fun setAutoPullOnInit (Z)V
+	public final fun setCategories (Ljava/util/List;)V
+	public final fun setSourceId (Ljava/lang/String;)V
+	public final fun setTags (Ljava/util/List;)V
+	public final fun setTransport (Lcom/TTT/P2P/P2PTransport;)V
+	public final fun setTransportAuthBody (Ljava/lang/String;)V
+	public final fun setTrustDomainIds (Ljava/util/List;)V
+	public fun toString ()Ljava/lang/String;
+	public final fun validate ()Z
+}
+
+public final class Defaults/DistributionGridDefaults {
+	public static final field INSTANCE LDefaults/DistributionGridDefaults;
+	public final fun buildDefaultRouterPipeline (LDefaults/BedrockGridConfiguration;)Lcom/TTT/Pipeline/Pipeline;
+	public final fun buildDefaultRouterPipeline (LDefaults/OllamaGridConfiguration;)Lcom/TTT/Pipeline/Pipeline;
+	public final fun buildDefaultWorkerPipeline (LDefaults/BedrockGridConfiguration;)Lcom/TTT/Pipeline/Pipeline;
+	public final fun buildDefaultWorkerPipeline (LDefaults/OllamaGridConfiguration;)Lcom/TTT/Pipeline/Pipeline;
+	public final fun withBedrock (LDefaults/BedrockGridConfiguration;)Lcom/TTT/Pipeline/DistributionGrid;
+	public final fun withOllama (LDefaults/OllamaGridConfiguration;)Lcom/TTT/Pipeline/DistributionGrid;
+}
+
+public final class Defaults/DistributionGridDefaultsConfiguration {
+	public fun <init> ()V
+	public fun <init> (Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;LDefaults/DistributionGridRoleSeed;LDefaults/DistributionGridRoleSeed;Lcom/TTT/Pipeline/DistributionGridRoutingPolicy;Lcom/TTT/Pipeline/DistributionGridMemoryPolicy;Lcom/TTT/Debug/TraceConfig;Lcom/TTT/Pipeline/DistributionGridPeerDiscoveryMode;Lcom/TTT/Pipeline/DistributionGridRegistryMetadata;Lcom/TTT/Pipeline/DistributionGridTrustVerifier;Ljava/util/List;Lcom/TTT/Pipeline/DistributionGridDurableStore;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;LDefaults/DistributionGridRoleSeed;LDefaults/DistributionGridRoleSeed;Lcom/TTT/Pipeline/DistributionGridRoutingPolicy;Lcom/TTT/Pipeline/DistributionGridMemoryPolicy;Lcom/TTT/Debug/TraceConfig;Lcom/TTT/Pipeline/DistributionGridPeerDiscoveryMode;Lcom/TTT/Pipeline/DistributionGridRegistryMetadata;Lcom/TTT/Pipeline/DistributionGridTrustVerifier;Ljava/util/List;Lcom/TTT/Pipeline/DistributionGridDurableStore;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/TTT/P2P/P2PDescriptor;
+	public final fun component10 ()Lcom/TTT/Pipeline/DistributionGridTrustVerifier;
+	public final fun component11 ()Ljava/util/List;
+	public final fun component12 ()Lcom/TTT/Pipeline/DistributionGridDurableStore;
+	public final fun component13 ()Ljava/lang/Integer;
+	public final fun component14 ()Ljava/lang/Long;
+	public final fun component15 ()Ljava/lang/Integer;
+	public final fun component2 ()Lcom/TTT/P2P/P2PRequirements;
+	public final fun component3 ()LDefaults/DistributionGridRoleSeed;
+	public final fun component4 ()LDefaults/DistributionGridRoleSeed;
+	public final fun component5 ()Lcom/TTT/Pipeline/DistributionGridRoutingPolicy;
+	public final fun component6 ()Lcom/TTT/Pipeline/DistributionGridMemoryPolicy;
+	public final fun component7 ()Lcom/TTT/Debug/TraceConfig;
+	public final fun component8 ()Lcom/TTT/Pipeline/DistributionGridPeerDiscoveryMode;
+	public final fun component9 ()Lcom/TTT/Pipeline/DistributionGridRegistryMetadata;
+	public final fun copy (Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;LDefaults/DistributionGridRoleSeed;LDefaults/DistributionGridRoleSeed;Lcom/TTT/Pipeline/DistributionGridRoutingPolicy;Lcom/TTT/Pipeline/DistributionGridMemoryPolicy;Lcom/TTT/Debug/TraceConfig;Lcom/TTT/Pipeline/DistributionGridPeerDiscoveryMode;Lcom/TTT/Pipeline/DistributionGridRegistryMetadata;Lcom/TTT/Pipeline/DistributionGridTrustVerifier;Ljava/util/List;Lcom/TTT/Pipeline/DistributionGridDurableStore;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;)LDefaults/DistributionGridDefaultsConfiguration;
+	public static synthetic fun copy$default (LDefaults/DistributionGridDefaultsConfiguration;Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;LDefaults/DistributionGridRoleSeed;LDefaults/DistributionGridRoleSeed;Lcom/TTT/Pipeline/DistributionGridRoutingPolicy;Lcom/TTT/Pipeline/DistributionGridMemoryPolicy;Lcom/TTT/Debug/TraceConfig;Lcom/TTT/Pipeline/DistributionGridPeerDiscoveryMode;Lcom/TTT/Pipeline/DistributionGridRegistryMetadata;Lcom/TTT/Pipeline/DistributionGridTrustVerifier;Ljava/util/List;Lcom/TTT/Pipeline/DistributionGridDurableStore;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;ILjava/lang/Object;)LDefaults/DistributionGridDefaultsConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBootstrapRegistries ()Ljava/util/List;
+	public final fun getDiscoveryMode ()Lcom/TTT/Pipeline/DistributionGridPeerDiscoveryMode;
+	public final fun getDurableStore ()Lcom/TTT/Pipeline/DistributionGridDurableStore;
+	public final fun getMaxHops ()Ljava/lang/Integer;
+	public final fun getMaxSessionDurationSeconds ()Ljava/lang/Integer;
+	public final fun getMemoryPolicy ()Lcom/TTT/Pipeline/DistributionGridMemoryPolicy;
+	public final fun getP2pDescriptor ()Lcom/TTT/P2P/P2PDescriptor;
+	public final fun getP2pRequirements ()Lcom/TTT/P2P/P2PRequirements;
+	public final fun getRegistryMetadata ()Lcom/TTT/Pipeline/DistributionGridRegistryMetadata;
+	public final fun getRouterSeed ()LDefaults/DistributionGridRoleSeed;
+	public final fun getRoutingPolicy ()Lcom/TTT/Pipeline/DistributionGridRoutingPolicy;
+	public final fun getRpcTimeoutMillis ()Ljava/lang/Long;
+	public final fun getTraceConfig ()Lcom/TTT/Debug/TraceConfig;
+	public final fun getTrustVerifier ()Lcom/TTT/Pipeline/DistributionGridTrustVerifier;
+	public final fun getWorkerSeed ()LDefaults/DistributionGridRoleSeed;
+	public fun hashCode ()I
+	public final fun setBootstrapRegistries (Ljava/util/List;)V
+	public final fun setDiscoveryMode (Lcom/TTT/Pipeline/DistributionGridPeerDiscoveryMode;)V
+	public final fun setDurableStore (Lcom/TTT/Pipeline/DistributionGridDurableStore;)V
+	public final fun setMaxHops (Ljava/lang/Integer;)V
+	public final fun setMaxSessionDurationSeconds (Ljava/lang/Integer;)V
+	public final fun setMemoryPolicy (Lcom/TTT/Pipeline/DistributionGridMemoryPolicy;)V
+	public final fun setP2pDescriptor (Lcom/TTT/P2P/P2PDescriptor;)V
+	public final fun setP2pRequirements (Lcom/TTT/P2P/P2PRequirements;)V
+	public final fun setRegistryMetadata (Lcom/TTT/Pipeline/DistributionGridRegistryMetadata;)V
+	public final fun setRouterSeed (LDefaults/DistributionGridRoleSeed;)V
+	public final fun setRoutingPolicy (Lcom/TTT/Pipeline/DistributionGridRoutingPolicy;)V
+	public final fun setRpcTimeoutMillis (Ljava/lang/Long;)V
+	public final fun setTraceConfig (Lcom/TTT/Debug/TraceConfig;)V
+	public final fun setTrustVerifier (Lcom/TTT/Pipeline/DistributionGridTrustVerifier;)V
+	public final fun setWorkerSeed (LDefaults/DistributionGridRoleSeed;)V
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class Defaults/DistributionGridDslDefaultsKt {
+	public static final fun defaults (Lcom/TTT/Pipeline/DistributionGridBuilder;Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class Defaults/DistributionGridPublicListingDefaultsConfiguration {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;I)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()I
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;I)LDefaults/DistributionGridPublicListingDefaultsConfiguration;
+	public static synthetic fun copy$default (LDefaults/DistributionGridPublicListingDefaultsConfiguration;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;IILjava/lang/Object;)LDefaults/DistributionGridPublicListingDefaultsConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCategories ()Ljava/util/List;
+	public final fun getRequestedLeaseSeconds ()I
+	public final fun getSummary ()Ljava/lang/String;
+	public final fun getTags ()Ljava/util/List;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun setCategories (Ljava/util/List;)V
+	public final fun setRequestedLeaseSeconds (I)V
+	public final fun setSummary (Ljava/lang/String;)V
+	public final fun setTags (Ljava/util/List;)V
+	public final fun setTitle (Ljava/lang/String;)V
+	public fun toString ()Ljava/lang/String;
+	public final fun validate ()Z
+}
+
+public final class Defaults/DistributionGridRoleSeed {
+	public fun <init> ()V
+	public fun <init> (Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;)V
+	public synthetic fun <init> (Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/TTT/P2P/P2PDescriptor;
+	public final fun component2 ()Lcom/TTT/P2P/P2PRequirements;
+	public final fun copy (Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;)LDefaults/DistributionGridRoleSeed;
+	public static synthetic fun copy$default (LDefaults/DistributionGridRoleSeed;Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;ILjava/lang/Object;)LDefaults/DistributionGridRoleSeed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDescriptor ()Lcom/TTT/P2P/P2PDescriptor;
+	public final fun getRequirements ()Lcom/TTT/P2P/P2PRequirements;
+	public fun hashCode ()I
+	public final fun setDescriptor (Lcom/TTT/P2P/P2PDescriptor;)V
+	public final fun setRequirements (Lcom/TTT/P2P/P2PRequirements;)V
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class Defaults/GenericOpenAIConfiguration : Defaults/ProviderConfiguration {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;LgenericOpenAIPipe/api/GenericOpenAIEndpointProfile;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/Boolean;LDefaults/ManifoldMemoryConfiguration;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;LgenericOpenAIPipe/api/GenericOpenAIEndpointProfile;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/Boolean;LDefaults/ManifoldMemoryConfiguration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/String;
+	public final fun component11 ()Ljava/lang/String;
+	public final fun component12 ()Ljava/lang/Boolean;
+	public final fun component13 ()Ljava/lang/Boolean;
+	public final fun component14 ()LDefaults/ManifoldMemoryConfiguration;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()LgenericOpenAIPipe/api/GenericOpenAIEndpointProfile;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;LgenericOpenAIPipe/api/GenericOpenAIEndpointProfile;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/Boolean;LDefaults/ManifoldMemoryConfiguration;)LDefaults/GenericOpenAIConfiguration;
+	public static synthetic fun copy$default (LDefaults/GenericOpenAIConfiguration;Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;LgenericOpenAIPipe/api/GenericOpenAIEndpointProfile;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/Boolean;LDefaults/ManifoldMemoryConfiguration;ILjava/lang/Object;)LDefaults/GenericOpenAIConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getApiKey ()Ljava/lang/String;
+	public final fun getApiMode ()Ljava/lang/String;
+	public final fun getAppTitle ()Ljava/lang/String;
+	public final fun getBaseUrl ()Ljava/lang/String;
+	public final fun getEndpointProfile ()LgenericOpenAIPipe/api/GenericOpenAIEndpointProfile;
+	public final fun getHttpReferer ()Ljava/lang/String;
+	public final fun getManifoldMemory ()LDefaults/ManifoldMemoryConfiguration;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getParallelToolCalls ()Ljava/lang/Boolean;
+	public final fun getPipeCount ()I
+	public final fun getReasoningEffort ()Ljava/lang/String;
+	public final fun getSessionId ()Ljava/lang/String;
+	public final fun getStructuredOutputs ()Ljava/lang/Boolean;
+	public final fun getVerbosity ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun setApiKey (Ljava/lang/String;)V
+	public final fun setApiMode (Ljava/lang/String;)V
+	public final fun setAppTitle (Ljava/lang/String;)V
+	public final fun setBaseUrl (Ljava/lang/String;)V
+	public final fun setEndpointProfile (LgenericOpenAIPipe/api/GenericOpenAIEndpointProfile;)V
+	public final fun setHttpReferer (Ljava/lang/String;)V
+	public final fun setManifoldMemory (LDefaults/ManifoldMemoryConfiguration;)V
+	public final fun setModel (Ljava/lang/String;)V
+	public final fun setParallelToolCalls (Ljava/lang/Boolean;)V
+	public final fun setPipeCount (I)V
+	public final fun setReasoningEffort (Ljava/lang/String;)V
+	public final fun setSessionId (Ljava/lang/String;)V
+	public final fun setStructuredOutputs (Ljava/lang/Boolean;)V
+	public final fun setVerbosity (Ljava/lang/String;)V
+	public fun toString ()Ljava/lang/String;
+	public fun validate ()Z
+}
+
+public final class Defaults/HostedRegistryConfiguration {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Lcom/TTT/P2P/P2PTransport;LDefaults/HostedRegistryStoreMode;Ljava/lang/String;Lcom/TTT/P2P/P2PHostedRegistryPolicySettings;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/TTT/P2P/P2PTransport;LDefaults/HostedRegistryStoreMode;Ljava/lang/String;Lcom/TTT/P2P/P2PHostedRegistryPolicySettings;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/TTT/P2P/P2PTransport;
+	public final fun component3 ()LDefaults/HostedRegistryStoreMode;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Lcom/TTT/P2P/P2PHostedRegistryPolicySettings;
+	public final fun copy (Ljava/lang/String;Lcom/TTT/P2P/P2PTransport;LDefaults/HostedRegistryStoreMode;Ljava/lang/String;Lcom/TTT/P2P/P2PHostedRegistryPolicySettings;)LDefaults/HostedRegistryConfiguration;
+	public static synthetic fun copy$default (LDefaults/HostedRegistryConfiguration;Ljava/lang/String;Lcom/TTT/P2P/P2PTransport;LDefaults/HostedRegistryStoreMode;Ljava/lang/String;Lcom/TTT/P2P/P2PHostedRegistryPolicySettings;ILjava/lang/Object;)LDefaults/HostedRegistryConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDurableFilePath ()Ljava/lang/String;
+	public final fun getPolicySettings ()Lcom/TTT/P2P/P2PHostedRegistryPolicySettings;
+	public final fun getRegistryName ()Ljava/lang/String;
+	public final fun getStoreMode ()LDefaults/HostedRegistryStoreMode;
+	public final fun getTransport ()Lcom/TTT/P2P/P2PTransport;
+	public fun hashCode ()I
+	public final fun setDurableFilePath (Ljava/lang/String;)V
+	public final fun setPolicySettings (Lcom/TTT/P2P/P2PHostedRegistryPolicySettings;)V
+	public final fun setRegistryName (Ljava/lang/String;)V
+	public final fun setStoreMode (LDefaults/HostedRegistryStoreMode;)V
+	public final fun setTransport (Lcom/TTT/P2P/P2PTransport;)V
+	public fun toString ()Ljava/lang/String;
+	public final fun validate ()Z
+}
+
+public final class Defaults/HostedRegistryDefaults {
+	public static final field INSTANCE LDefaults/HostedRegistryDefaults;
+	public final fun bootstrapCatalogSource (LDefaults/DistributionGridBootstrapCatalogConfiguration;)Lcom/TTT/Pipeline/DistributionGridBootstrapCatalogSource;
+	public final fun buildPrivateRegistryHost (LDefaults/HostedRegistryConfiguration;)Lcom/TTT/P2P/P2PHostedRegistry;
+	public final fun buildPublicRegistryHost (LDefaults/HostedRegistryConfiguration;)Lcom/TTT/P2P/P2PHostedRegistry;
+	public final fun buildRegistryHost (LDefaults/HostedRegistryConfiguration;)Lcom/TTT/P2P/P2PHostedRegistry;
+	public final fun publicListingOptions (LDefaults/DistributionGridPublicListingDefaultsConfiguration;)Lcom/TTT/Pipeline/DistributionGridPublicListingOptions;
+	public final fun trustedPublicAgentSource (LDefaults/TrustedRegistrySourceConfiguration;)Lcom/TTT/P2P/P2PTrustedRegistrySource;
+}
+
+public final class Defaults/HostedRegistryStoreMode : java/lang/Enum {
+	public static final field FILE_JSON LDefaults/HostedRegistryStoreMode;
+	public static final field MEMORY LDefaults/HostedRegistryStoreMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)LDefaults/HostedRegistryStoreMode;
+	public static fun values ()[LDefaults/HostedRegistryStoreMode;
+}
+
+public final class Defaults/KillSwitchConfig {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/Integer;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/lang/Integer;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/Integer;
+	public final fun component2 ()Ljava/lang/Integer;
+	public final fun copy (Ljava/lang/Integer;Ljava/lang/Integer;)LDefaults/KillSwitchConfig;
+	public static synthetic fun copy$default (LDefaults/KillSwitchConfig;Ljava/lang/Integer;Ljava/lang/Integer;ILjava/lang/Object;)LDefaults/KillSwitchConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInputTokenLimit ()Ljava/lang/Integer;
+	public final fun getOutputTokenLimit ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class Defaults/ManifoldDefaults {
+	public static final field INSTANCE LDefaults/ManifoldDefaults;
+	public final fun applyManifoldMemoryConfiguration (Lcom/TTT/Pipeline/Manifold;LDefaults/ManifoldMemoryConfiguration;)Lcom/TTT/Pipeline/Manifold;
+	public final fun assignManagerPipelineDefaults (Lcom/TTT/Pipeline/Pipeline;LDefaults/ManifoldMemoryConfiguration;)Lcom/TTT/Pipeline/Pipeline;
+	public static synthetic fun assignManagerPipelineDefaults$default (LDefaults/ManifoldDefaults;Lcom/TTT/Pipeline/Pipeline;LDefaults/ManifoldMemoryConfiguration;ILjava/lang/Object;)Lcom/TTT/Pipeline/Pipeline;
+	public final fun buildDefaultManagerPipeline (LDefaults/BedrockConfiguration;)Lcom/TTT/Pipeline/Pipeline;
+	public final fun buildDefaultManagerPipeline (LDefaults/CodexConfiguration;)Lcom/TTT/Pipeline/Pipeline;
+	public final fun buildDefaultManagerPipeline (LDefaults/OllamaConfiguration;)Lcom/TTT/Pipeline/Pipeline;
+	public final fun buildDefaultManagerPipeline (LDefaults/OpenRouterConfiguration;)Lcom/TTT/Pipeline/Pipeline;
+	public final fun getAvailableProviders ()Ljava/util/List;
+	public final fun isProviderAvailable (Ljava/lang/String;)Z
+	public final fun withBedrock (LDefaults/BedrockConfiguration;)Lcom/TTT/Pipeline/Manifold;
+	public final fun withCodex (LDefaults/CodexConfiguration;)Lcom/TTT/Pipeline/Manifold;
+	public final fun withOllama (LDefaults/OllamaConfiguration;)Lcom/TTT/Pipeline/Manifold;
+	public final fun withOpenRouter (LDefaults/OpenRouterConfiguration;)Lcom/TTT/Pipeline/Manifold;
+}
+
+public final class Defaults/ManifoldDslDefaultsKt {
+	public static final fun applyDefaults (Lcom/TTT/Pipeline/HistoryDsl;LDefaults/ManifoldMemoryConfiguration;)V
+	public static final fun defaults (Lcom/TTT/Pipeline/ManifoldBuilder;Lkotlin/jvm/functions/Function1;)V
+	public static final fun defaultsPipeline (Lcom/TTT/Pipeline/ManagerDsl;Lcom/TTT/Pipeline/Pipeline;)V
+}
+
+public final class Defaults/ManifoldMemoryConfiguration {
+	public fun <init> ()V
+	public fun <init> (ZLcom/TTT/Pipe/TokenBudgetSettings;Ljava/lang/Integer;Lcom/TTT/Enums/ContextWindowSettings;)V
+	public synthetic fun <init> (ZLcom/TTT/Pipe/TokenBudgetSettings;Ljava/lang/Integer;Lcom/TTT/Enums/ContextWindowSettings;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Lcom/TTT/Pipe/TokenBudgetSettings;
+	public final fun component3 ()Ljava/lang/Integer;
+	public final fun component4 ()Lcom/TTT/Enums/ContextWindowSettings;
+	public final fun copy (ZLcom/TTT/Pipe/TokenBudgetSettings;Ljava/lang/Integer;Lcom/TTT/Enums/ContextWindowSettings;)LDefaults/ManifoldMemoryConfiguration;
+	public static synthetic fun copy$default (LDefaults/ManifoldMemoryConfiguration;ZLcom/TTT/Pipe/TokenBudgetSettings;Ljava/lang/Integer;Lcom/TTT/Enums/ContextWindowSettings;ILjava/lang/Object;)LDefaults/ManifoldMemoryConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnableManagerBudgetControl ()Z
+	public final fun getManagerContextWindowSize ()Ljava/lang/Integer;
+	public final fun getManagerTokenBudget ()Lcom/TTT/Pipe/TokenBudgetSettings;
+	public final fun getManagerTruncationMethod ()Lcom/TTT/Enums/ContextWindowSettings;
+	public fun hashCode ()I
+	public final fun setEnableManagerBudgetControl (Z)V
+	public final fun setManagerContextWindowSize (Ljava/lang/Integer;)V
+	public final fun setManagerTokenBudget (Lcom/TTT/Pipe/TokenBudgetSettings;)V
+	public final fun setManagerTruncationMethod (Lcom/TTT/Enums/ContextWindowSettings;)V
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class Defaults/OllamaConfiguration : Defaults/ProviderConfiguration {
+	public fun <init> (Ljava/lang/String;ILjava/lang/String;IJZLDefaults/ManifoldMemoryConfiguration;)V
+	public synthetic fun <init> (Ljava/lang/String;ILjava/lang/String;IJZLDefaults/ManifoldMemoryConfiguration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()I
+	public final fun component5 ()J
+	public final fun component6 ()Z
+	public final fun component7 ()LDefaults/ManifoldMemoryConfiguration;
+	public final fun copy (Ljava/lang/String;ILjava/lang/String;IJZLDefaults/ManifoldMemoryConfiguration;)LDefaults/OllamaConfiguration;
+	public static synthetic fun copy$default (LDefaults/OllamaConfiguration;Ljava/lang/String;ILjava/lang/String;IJZLDefaults/ManifoldMemoryConfiguration;ILjava/lang/Object;)LDefaults/OllamaConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHost ()Ljava/lang/String;
+	public final fun getManifoldMemory ()LDefaults/ManifoldMemoryConfiguration;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getPipeCount ()I
+	public final fun getPort ()I
+	public final fun getTimeout ()J
+	public final fun getUseHttps ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+	public fun validate ()Z
+}
+
+public final class Defaults/OllamaGridConfiguration : Defaults/ProviderConfiguration {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;IJZLDefaults/DistributionGridDefaultsConfiguration;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;IJZLDefaults/DistributionGridDefaultsConfiguration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun component4 ()J
+	public final fun component5 ()Z
+	public final fun component6 ()LDefaults/DistributionGridDefaultsConfiguration;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;IJZLDefaults/DistributionGridDefaultsConfiguration;)LDefaults/OllamaGridConfiguration;
+	public static synthetic fun copy$default (LDefaults/OllamaGridConfiguration;Ljava/lang/String;Ljava/lang/String;IJZLDefaults/DistributionGridDefaultsConfiguration;ILjava/lang/Object;)LDefaults/OllamaGridConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getGridDefaults ()LDefaults/DistributionGridDefaultsConfiguration;
+	public final fun getHost ()Ljava/lang/String;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getPort ()I
+	public final fun getTimeout ()J
+	public final fun getUseHttps ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+	public fun validate ()Z
+}
+
+public final class Defaults/OpenRouterConfiguration : Defaults/ProviderConfiguration {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;LDefaults/ManifoldMemoryConfiguration;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/String;Ljava/lang/String;Lenv/ProviderPreferences;Ljava/util/List;Lenv/ResponseFormat;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;LDefaults/ManifoldMemoryConfiguration;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/String;Ljava/lang/String;Lenv/ProviderPreferences;Ljava/util/List;Lenv/ResponseFormat;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/String;
+	public final fun component11 ()Ljava/lang/String;
+	public final fun component12 ()Ljava/lang/Boolean;
+	public final fun component13 ()Ljava/lang/Integer;
+	public final fun component14 ()Ljava/lang/Double;
+	public final fun component15 ()Ljava/lang/Double;
+	public final fun component16 ()Ljava/lang/Integer;
+	public final fun component17 ()Ljava/lang/Double;
+	public final fun component18 ()Ljava/lang/Boolean;
+	public final fun component19 ()Ljava/lang/Boolean;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component20 ()Ljava/lang/String;
+	public final fun component21 ()Ljava/lang/String;
+	public final fun component22 ()Lenv/ProviderPreferences;
+	public final fun component23 ()Ljava/util/List;
+	public final fun component24 ()Lenv/ResponseFormat;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()LDefaults/ManifoldMemoryConfiguration;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;LDefaults/ManifoldMemoryConfiguration;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/String;Ljava/lang/String;Lenv/ProviderPreferences;Ljava/util/List;Lenv/ResponseFormat;)LDefaults/OpenRouterConfiguration;
+	public static synthetic fun copy$default (LDefaults/OpenRouterConfiguration;Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;LDefaults/ManifoldMemoryConfiguration;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/String;Ljava/lang/String;Lenv/ProviderPreferences;Ljava/util/List;Lenv/ResponseFormat;ILjava/lang/Object;)LDefaults/OpenRouterConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getApiKey ()Ljava/lang/String;
+	public final fun getBaseUrl ()Ljava/lang/String;
+	public final fun getCacheControl ()Ljava/lang/String;
+	public final fun getHttpReferer ()Ljava/lang/String;
+	public final fun getLogprobs ()Ljava/lang/Boolean;
+	public final fun getManifoldMemory ()LDefaults/ManifoldMemoryConfiguration;
+	public final fun getMinP ()Ljava/lang/Double;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getOpenRouterTitle ()Ljava/lang/String;
+	public final fun getParallelToolCalls ()Ljava/lang/Boolean;
+	public final fun getPipeCount ()I
+	public final fun getPlugins ()Ljava/util/List;
+	public final fun getProviderPreferences ()Lenv/ProviderPreferences;
+	public final fun getReasoningEffort ()Ljava/lang/String;
+	public final fun getRepetitionPenalty ()Ljava/lang/Double;
+	public final fun getResponseFormat ()Lenv/ResponseFormat;
+	public final fun getServiceTier ()Ljava/lang/String;
+	public final fun getSessionId ()Ljava/lang/String;
+	public final fun getStructuredOutputs ()Ljava/lang/Boolean;
+	public final fun getTopA ()Ljava/lang/Double;
+	public final fun getTopK ()Ljava/lang/Integer;
+	public final fun getTopLogprobs ()Ljava/lang/Integer;
+	public final fun getUser ()Ljava/lang/String;
+	public final fun getVerbosity ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun setApiKey (Ljava/lang/String;)V
+	public final fun setBaseUrl (Ljava/lang/String;)V
+	public final fun setCacheControl (Ljava/lang/String;)V
+	public final fun setHttpReferer (Ljava/lang/String;)V
+	public final fun setLogprobs (Ljava/lang/Boolean;)V
+	public final fun setManifoldMemory (LDefaults/ManifoldMemoryConfiguration;)V
+	public final fun setMinP (Ljava/lang/Double;)V
+	public final fun setModel (Ljava/lang/String;)V
+	public final fun setOpenRouterTitle (Ljava/lang/String;)V
+	public final fun setParallelToolCalls (Ljava/lang/Boolean;)V
+	public final fun setPipeCount (I)V
+	public final fun setPlugins (Ljava/util/List;)V
+	public final fun setProviderPreferences (Lenv/ProviderPreferences;)V
+	public final fun setReasoningEffort (Ljava/lang/String;)V
+	public final fun setRepetitionPenalty (Ljava/lang/Double;)V
+	public final fun setResponseFormat (Lenv/ResponseFormat;)V
+	public final fun setServiceTier (Ljava/lang/String;)V
+	public final fun setSessionId (Ljava/lang/String;)V
+	public final fun setStructuredOutputs (Ljava/lang/Boolean;)V
+	public final fun setTopA (Ljava/lang/Double;)V
+	public final fun setTopK (Ljava/lang/Integer;)V
+	public final fun setTopLogprobs (Ljava/lang/Integer;)V
+	public final fun setUser (Ljava/lang/String;)V
+	public final fun setVerbosity (Ljava/lang/String;)V
+	public fun toString ()Ljava/lang/String;
+	public fun validate ()Z
+}
+
+public abstract class Defaults/ProviderConfiguration {
+	public abstract fun validate ()Z
+}
+
+public final class Defaults/PumpStationDefaults {
+	public static final field INSTANCE LDefaults/PumpStationDefaults;
+	public final fun recommendedKillSwitchConfig ()LDefaults/KillSwitchConfig;
+	public final fun recommendedMemoryConfig ()Lkotlin/Pair;
+	public final fun withCodex (LDefaults/CodexConfiguration;Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStation;
+	public static synthetic fun withCodex$default (LDefaults/PumpStationDefaults;LDefaults/CodexConfiguration;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun withOpenRouter (LDefaults/OpenRouterConfiguration;Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStation;
+	public static synthetic fun withOpenRouter$default (LDefaults/PumpStationDefaults;LDefaults/OpenRouterConfiguration;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStation;
+}
+
+public final class Defaults/TrustedRegistrySourceConfiguration {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;ZZLjava/lang/String;Ljava/util/List;Ljava/util/List;Lcom/TTT/P2P/P2PTrustedRegistryAdmissionPolicy;Ljava/lang/Boolean;Ljava/lang/Long;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;ZZLjava/lang/String;Ljava/util/List;Ljava/util/List;Lcom/TTT/P2P/P2PTrustedRegistryAdmissionPolicy;Ljava/lang/Boolean;Ljava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Lcom/TTT/P2P/P2PTrustedRegistryAdmissionPolicy;
+	public final fun component11 ()Ljava/lang/Boolean;
+	public final fun component12 ()Ljava/lang/Long;
+	public final fun component2 ()Lcom/TTT/P2P/P2PTransport;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Z
+	public final fun component6 ()Z
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ljava/util/List;
+	public final fun component9 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;ZZLjava/lang/String;Ljava/util/List;Ljava/util/List;Lcom/TTT/P2P/P2PTrustedRegistryAdmissionPolicy;Ljava/lang/Boolean;Ljava/lang/Long;)LDefaults/TrustedRegistrySourceConfiguration;
+	public static synthetic fun copy$default (LDefaults/TrustedRegistrySourceConfiguration;Ljava/lang/String;Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;ZZLjava/lang/String;Ljava/util/List;Ljava/util/List;Lcom/TTT/P2P/P2PTrustedRegistryAdmissionPolicy;Ljava/lang/Boolean;Ljava/lang/Long;ILjava/lang/Object;)LDefaults/TrustedRegistrySourceConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAdmissionPolicy ()Lcom/TTT/P2P/P2PTrustedRegistryAdmissionPolicy;
+	public final fun getAuthBody ()Ljava/lang/String;
+	public final fun getAutoPullOnRegister ()Z
+	public final fun getCategories ()Ljava/util/List;
+	public final fun getIncludeInAutoRefresh ()Z
+	public final fun getMinimumRemainingLeaseMillis ()Ljava/lang/Long;
+	public final fun getRequireVerificationEvidence ()Ljava/lang/Boolean;
+	public final fun getSourceId ()Ljava/lang/String;
+	public final fun getTags ()Ljava/util/List;
+	public final fun getTextQuery ()Ljava/lang/String;
+	public final fun getTransport ()Lcom/TTT/P2P/P2PTransport;
+	public final fun getTransportAuthBody ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun setAdmissionPolicy (Lcom/TTT/P2P/P2PTrustedRegistryAdmissionPolicy;)V
+	public final fun setAuthBody (Ljava/lang/String;)V
+	public final fun setAutoPullOnRegister (Z)V
+	public final fun setCategories (Ljava/util/List;)V
+	public final fun setIncludeInAutoRefresh (Z)V
+	public final fun setMinimumRemainingLeaseMillis (Ljava/lang/Long;)V
+	public final fun setRequireVerificationEvidence (Ljava/lang/Boolean;)V
+	public final fun setSourceId (Ljava/lang/String;)V
+	public final fun setTags (Ljava/util/List;)V
+	public final fun setTextQuery (Ljava/lang/String;)V
+	public final fun setTransport (Lcom/TTT/P2P/P2PTransport;)V
+	public final fun setTransportAuthBody (Ljava/lang/String;)V
+	public fun toString ()Ljava/lang/String;
+	public final fun validate ()Z
+}
+
+public final class Defaults/providers/OpenRouterDefaults {
+	public static final field INSTANCE LDefaults/providers/OpenRouterDefaults;
+	public final fun createManagerPipeline (LDefaults/OpenRouterConfiguration;)Lcom/TTT/Pipeline/Pipeline;
+	public final fun createManifold (LDefaults/OpenRouterConfiguration;)Lcom/TTT/Pipeline/Manifold;
+	public final fun createOpenRouterPipe (LDefaults/OpenRouterConfiguration;)LopenrouterPipe/OpenRouterPipe;
+	public final fun createWorkerPipe (LDefaults/OpenRouterConfiguration;)LopenrouterPipe/OpenRouterPipe;
+}
+
+public final class Defaults/reasoning/ReasoningBuilder {
+	public static final field INSTANCE LDefaults/reasoning/ReasoningBuilder;
+	public final fun assignDefaults (LDefaults/reasoning/ReasoningSettings;Lcom/TTT/Structs/PipeSettings;Lcom/TTT/Pipe/Pipe;)V
+	public final fun reasonWithBedrock (LDefaults/BedrockConfiguration;LDefaults/reasoning/ReasoningSettings;Lcom/TTT/Structs/PipeSettings;)Lcom/TTT/Pipe/Pipe;
+	public final fun reasonWithGenericOpenAI (LDefaults/GenericOpenAIConfiguration;LDefaults/reasoning/ReasoningSettings;Lcom/TTT/Structs/PipeSettings;)Lcom/TTT/Pipe/Pipe;
+	public final fun reasonWithOllama (LDefaults/OllamaConfiguration;LDefaults/reasoning/ReasoningSettings;Lcom/TTT/Structs/PipeSettings;)Lcom/TTT/Pipe/Pipe;
+	public final fun reasonWithOpenRouter (LDefaults/OpenRouterConfiguration;LDefaults/reasoning/ReasoningSettings;Lcom/TTT/Structs/PipeSettings;)Lcom/TTT/Pipe/Pipe;
+}
+
+public final class Defaults/reasoning/ReasoningDepth : java/lang/Enum {
+	public static final field High LDefaults/reasoning/ReasoningDepth;
+	public static final field Low LDefaults/reasoning/ReasoningDepth;
+	public static final field Med LDefaults/reasoning/ReasoningDepth;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)LDefaults/reasoning/ReasoningDepth;
+	public static fun values ()[LDefaults/reasoning/ReasoningDepth;
+}
+
+public final class Defaults/reasoning/ReasoningDuration : java/lang/Enum {
+	public static final field Long LDefaults/reasoning/ReasoningDuration;
+	public static final field Med LDefaults/reasoning/ReasoningDuration;
+	public static final field Short LDefaults/reasoning/ReasoningDuration;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)LDefaults/reasoning/ReasoningDuration;
+	public static fun values ()[LDefaults/reasoning/ReasoningDuration;
+}
+
+public final class Defaults/reasoning/ReasoningInjector : java/lang/Enum {
+	public static final field AfterUserPrompt LDefaults/reasoning/ReasoningInjector;
+	public static final field AfterUserPromptWithConverse LDefaults/reasoning/ReasoningInjector;
+	public static final field AsContext LDefaults/reasoning/ReasoningInjector;
+	public static final field BeforeUserPrompt LDefaults/reasoning/ReasoningInjector;
+	public static final field BeforeUserPromptWithConverse LDefaults/reasoning/ReasoningInjector;
+	public static final field SystemPrompt LDefaults/reasoning/ReasoningInjector;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)LDefaults/reasoning/ReasoningInjector;
+	public static fun values ()[LDefaults/reasoning/ReasoningInjector;
+}
+
+public final class Defaults/reasoning/ReasoningMethod : java/lang/Enum {
+	public static final field BestIdea LDefaults/reasoning/ReasoningMethod;
+	public static final field ChainOfDraft LDefaults/reasoning/ReasoningMethod;
+	public static final field ComprehensivePlan LDefaults/reasoning/ReasoningMethod;
+	public static final field ExplicitCot LDefaults/reasoning/ReasoningMethod;
+	public static final field RolePlay LDefaults/reasoning/ReasoningMethod;
+	public static final field SemanticDecompression LDefaults/reasoning/ReasoningMethod;
+	public static final field StructuredCot LDefaults/reasoning/ReasoningMethod;
+	public static final field processFocusedCot LDefaults/reasoning/ReasoningMethod;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)LDefaults/reasoning/ReasoningMethod;
+	public static fun values ()[LDefaults/reasoning/ReasoningMethod;
+}
+
+public final class Defaults/reasoning/ReasoningPrompts {
+	public static final field INSTANCE LDefaults/reasoning/ReasoningPrompts;
+	public final fun bestIdeaPrompt (LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;)Ljava/lang/String;
+	public static synthetic fun bestIdeaPrompt$default (LDefaults/reasoning/ReasoningPrompts;LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;ILjava/lang/Object;)Ljava/lang/String;
+	public final fun chainOfThoughtSystemPrompt (LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;LDefaults/reasoning/ReasoningMethod;)Ljava/lang/String;
+	public static synthetic fun chainOfThoughtSystemPrompt$default (LDefaults/reasoning/ReasoningPrompts;LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;LDefaults/reasoning/ReasoningMethod;ILjava/lang/Object;)Ljava/lang/String;
+	public final fun comprehensivePlanPrompt (LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;)Ljava/lang/String;
+	public static synthetic fun comprehensivePlanPrompt$default (LDefaults/reasoning/ReasoningPrompts;LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;ILjava/lang/Object;)Ljava/lang/String;
+	public final fun rolePlayPrompt (Ljava/lang/String;LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;)Ljava/lang/String;
+	public static synthetic fun rolePlayPrompt$default (LDefaults/reasoning/ReasoningPrompts;Ljava/lang/String;LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;ILjava/lang/Object;)Ljava/lang/String;
+	public final fun selectDepth (LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningMethod;)Ljava/lang/String;
+	public final fun selectDuration (LDefaults/reasoning/ReasoningDuration;LDefaults/reasoning/ReasoningMethod;)Ljava/lang/String;
+	public final fun semanticDecompressionPrompt (LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;)Ljava/lang/String;
+	public static synthetic fun semanticDecompressionPrompt$default (LDefaults/reasoning/ReasoningPrompts;LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;ILjava/lang/Object;)Ljava/lang/String;
+}
+
+public final class Defaults/reasoning/ReasoningSettings {
+	public fun <init> ()V
+	public fun <init> (LDefaults/reasoning/ReasoningMethod;LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;Ljava/lang/String;LDefaults/reasoning/ReasoningInjector;ILjava/util/Map;Ljava/util/Map;ZZZ)V
+	public synthetic fun <init> (LDefaults/reasoning/ReasoningMethod;LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;Ljava/lang/String;LDefaults/reasoning/ReasoningInjector;ILjava/util/Map;Ljava/util/Map;ZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()LDefaults/reasoning/ReasoningMethod;
+	public final fun component10 ()Z
+	public final fun component11 ()Z
+	public final fun component2 ()LDefaults/reasoning/ReasoningDepth;
+	public final fun component3 ()LDefaults/reasoning/ReasoningDuration;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()LDefaults/reasoning/ReasoningInjector;
+	public final fun component6 ()I
+	public final fun component7 ()Ljava/util/Map;
+	public final fun component8 ()Ljava/util/Map;
+	public final fun component9 ()Z
+	public final fun copy (LDefaults/reasoning/ReasoningMethod;LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;Ljava/lang/String;LDefaults/reasoning/ReasoningInjector;ILjava/util/Map;Ljava/util/Map;ZZZ)LDefaults/reasoning/ReasoningSettings;
+	public static synthetic fun copy$default (LDefaults/reasoning/ReasoningSettings;LDefaults/reasoning/ReasoningMethod;LDefaults/reasoning/ReasoningDepth;LDefaults/reasoning/ReasoningDuration;Ljava/lang/String;LDefaults/reasoning/ReasoningInjector;ILjava/util/Map;Ljava/util/Map;ZZZILjava/lang/Object;)LDefaults/reasoning/ReasoningSettings;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDepth ()LDefaults/reasoning/ReasoningDepth;
+	public final fun getDuration ()LDefaults/reasoning/ReasoningDuration;
+	public final fun getFocusPoints ()Ljava/util/Map;
+	public final fun getInjectFooterPrompt ()Z
+	public final fun getInjectMiddlePrompt ()Z
+	public final fun getNumberOfRounds ()I
+	public final fun getReasoningInjector ()LDefaults/reasoning/ReasoningInjector;
+	public final fun getReasoningMethod ()LDefaults/reasoning/ReasoningMethod;
+	public final fun getReinforceSystemPrompt ()Z
+	public final fun getRoleCharacter ()Ljava/lang/String;
+	public final fun getRoundDirectives ()Ljava/util/Map;
+	public fun hashCode ()I
+	public final fun setDepth (LDefaults/reasoning/ReasoningDepth;)V
+	public final fun setDuration (LDefaults/reasoning/ReasoningDuration;)V
+	public final fun setFocusPoints (Ljava/util/Map;)V
+	public final fun setInjectFooterPrompt (Z)V
+	public final fun setInjectMiddlePrompt (Z)V
+	public final fun setNumberOfRounds (I)V
+	public final fun setReasoningInjector (LDefaults/reasoning/ReasoningInjector;)V
+	public final fun setReasoningMethod (LDefaults/reasoning/ReasoningMethod;)V
+	public final fun setReinforceSystemPrompt (Z)V
+	public final fun setRoleCharacter (Ljava/lang/String;)V
+	public final fun setRoundDirectives (Ljava/util/Map;)V
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class Defaults/reasoning/test/ChainOfDraftTestKt {
+	public static final fun main ()V
+	public static synthetic fun main ([Ljava/lang/String;)V
+}
+
+public final class Defaults/reasoning/test/ReasoningDepthDurationValidationTest {
+	public static final field INSTANCE LDefaults/reasoning/test/ReasoningDepthDurationValidationTest;
+	public static final field TEST_PROMPT Ljava/lang/String;
+	public static final fun main ([Ljava/lang/String;)V
+	public final fun printExpectedBehaviors ()V
+	public final fun testChainOfThoughtPromptGeneration ()V
+	public final fun testDepthConstraints ()V
+	public final fun testDurationConstraints ()V
+	public final fun testOtherPromptGeneration ()V
+	public final fun testReasoningBuilderIntegration ()V
+}
+
+public final class Defaults/util/ManifoldDefaultsUtilKt {
+	public static final fun preInitEntryPipe (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun transformEntryPipe (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class examples/openrouter/DefaultsExampleKt {
+	public static final fun main ()V
+	public static synthetic fun main ([Ljava/lang/String;)V
+}
+
+public final class examples/pumpstation/PumpStationOpenRouterExampleKt {
+	public static final fun main ()V
+	public static synthetic fun main ([Ljava/lang/String;)V
+}
