@@ -651,7 +651,8 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
                 val result = dispatcher.executeRequest(pcpData!!, pcpSchema!!)
                 if (result.success)
                 {
-                    val pcpResult = MultimodalContent(text = result.output)
+                    val pcpResult = (result.nativeOutput as? MultimodalContent)
+                        ?: MultimodalContent(text = result.output)
                     pcpResult.metadata["pcpOutput"] = result.output
                     outputCaptureFunction?.invoke(pcpResult)
                     return pcpResult
@@ -724,7 +725,8 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
                 val result = dispatcher.executeRequest(pcpData!!, pcpSchema!!)
                 if (result.success)
                 {
-                    val pcpResult = MultimodalContent(text = result.output)
+                    val pcpResult = (result.nativeOutput as? MultimodalContent)
+                        ?: MultimodalContent(text = result.output)
                     pcpResult.metadata["pcpOutput"] = result.output
                     outputCaptureFunction?.invoke(pcpResult)
                     return pcpResult

@@ -39,6 +39,16 @@ data class PcpRequestResult(
     val error: String? = null,
     val outputBuffer: BufferedOutput? = null
 )
+{
+    /**
+     * Native return value available to in-process TPipe callers.
+     *
+     * This value is intentionally transient: arbitrary native objects cannot be represented by
+     * the PCP wire format and must not alter the serialized result contract.
+     */
+    @kotlinx.serialization.Transient
+    var nativeOutput: Any? = null
+}
 
 /**
  * Result of executing multiple PCP requests.

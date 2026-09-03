@@ -58,6 +58,21 @@ class PcpFunctionHandler : PcpExecutor
     private suspend fun executeSecure(request: PcPRequest, context: PcpContext): PcpRequestResult
     {
         val functionResponse = handleFunctionRequest(request)
+        val nativeOutput = if(functionResponse.returnValueKey.isEmpty())
+        {
+            null
+        }
+        else
+        {
+            try
+            {
+                returnValueHandler.getReturnValue(functionResponse.returnValueKey)
+            }
+            finally
+            {
+                returnValueHandler.clearReturnValue(functionResponse.returnValueKey)
+            }
+        }
         
         return PcpRequestResult(
             success = functionResponse.success,
@@ -65,7 +80,9 @@ class PcpFunctionHandler : PcpExecutor
             executionTimeMs = functionResponse.executionTimeMs,
             transport = Transport.Tpipe,
             error = functionResponse.error
-        )
+        ).apply {
+            this.nativeOutput = nativeOutput
+        }
     }
     
     /**

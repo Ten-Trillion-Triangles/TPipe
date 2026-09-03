@@ -6265,11 +6265,13 @@ public final class com/TTT/PipeContextProtocol/PcpRequestResult {
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getError ()Ljava/lang/String;
 	public final fun getExecutionTimeMs ()J
+	public final fun getNativeOutput ()Ljava/lang/Object;
 	public final fun getOutput ()Ljava/lang/String;
 	public final fun getOutputBuffer ()Lcom/TTT/PipeContextProtocol/BufferedOutput;
 	public final fun getSuccess ()Z
 	public final fun getTransport ()Lcom/TTT/PipeContextProtocol/Transport;
 	public fun hashCode ()I
+	public final fun setNativeOutput (Ljava/lang/Object;)V
 	public fun toString ()Ljava/lang/String;
 }
 

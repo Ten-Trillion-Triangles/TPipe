@@ -1,8 +1,12 @@
 package com.TTT.PipeContextProtocol
 
+import com.TTT.Pipe.BinaryContent
+import com.TTT.Pipe.MultimodalContent
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -50,6 +54,23 @@ class NativeFunctionBindingTest
     fun assignRole(user: String, level: AccessLevel = AccessLevel.READ): String
     {
         return "$user:${level.name}"
+    }
+
+    /** Native value used to verify object return propagation through the dispatcher. */
+    data class NativePayload(val message: String)
+
+    /** Native function used to verify primitive return propagation through the dispatcher. */
+    fun returnInteger(): Int = 42
+
+    /** Native function used to verify object return propagation through the dispatcher. */
+    fun returnObject(): NativePayload = NativePayload("native payload")
+
+    /** Native function used to verify multimodal return propagation through the dispatcher. */
+    fun returnMultimodal(): MultimodalContent
+    {
+        return MultimodalContent(text = "image metadata").apply {
+            addBinary(byteArrayOf(4, 5, 6), "image/png", "image.png")
+        }
     }
     
     @Test
@@ -255,6 +276,98 @@ class NativeFunctionBindingTest
             // Clean up
             handler.clearStoredReturnValues()
             FunctionRegistry.clear()
+        }
+    }
+
+    @Test
+    fun testDispatcherExposesNativePrimitiveReturn()
+    {
+        runBlocking {
+            FunctionRegistry.clear()
+            try
+            {
+                FunctionRegistry.registerFunction("returnInteger", ::returnInteger)
+                val result = PcpExecutionDispatcher().executeRequest(
+                    nativeReturnRequest("returnInteger"),
+                    nativeReturnContext("returnInteger")
+                )
+
+                assertTrue(result.success)
+                assertEquals("42", result.output)
+                assertEquals(42, result.nativeOutput)
+            }
+            finally
+            {
+                FunctionRegistry.clear()
+            }
+        }
+    }
+
+    @Test
+    fun testDispatcherExposesNativeObjectReturn()
+    {
+        runBlocking {
+            FunctionRegistry.clear()
+            try
+            {
+                FunctionRegistry.registerFunction("returnObject", ::returnObject)
+                val result = PcpExecutionDispatcher().executeRequest(
+                    nativeReturnRequest("returnObject"),
+                    nativeReturnContext("returnObject")
+                )
+
+                assertTrue(result.success)
+                val nativePayload = assertIs<NativePayload>(result.nativeOutput)
+                assertEquals("native payload", nativePayload.message)
+            }
+            finally
+            {
+                FunctionRegistry.clear()
+            }
+        }
+    }
+
+    @Test
+    fun testDispatcherExposesNativeMultimodalReturn()
+    {
+        runBlocking {
+            FunctionRegistry.clear()
+            try
+            {
+                FunctionRegistry.registerFunction("returnMultimodal", ::returnMultimodal)
+                val result = PcpExecutionDispatcher().executeRequest(
+                    nativeReturnRequest("returnMultimodal"),
+                    nativeReturnContext("returnMultimodal")
+                )
+
+                assertTrue(result.success)
+                val nativeContent = assertIs<MultimodalContent>(result.nativeOutput)
+                assertEquals("image metadata", nativeContent.text)
+                val binary = assertIs<BinaryContent.Bytes>(nativeContent.binaryContent.single())
+                assertContentEquals(byteArrayOf(4, 5, 6), binary.data)
+            }
+            finally
+            {
+                FunctionRegistry.clear()
+            }
+        }
+    }
+
+    private fun nativeReturnRequest(functionName: String): PcPRequest
+    {
+        return PcPRequest(
+            tPipeContextOptions = TPipeContextOptions().apply {
+                this.functionName = functionName
+            }
+        )
+    }
+
+    private fun nativeReturnContext(functionName: String): PcpContext
+    {
+        return PcpContext().apply {
+            addTPipeOption(TPipeContextOptions().apply {
+                this.functionName = functionName
+            })
         }
     }
 }

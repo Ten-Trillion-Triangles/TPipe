@@ -2,6 +2,7 @@ package com.TTT.Pipeline
 
 import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.P2PInterface
+import com.TTT.Pipe.BinaryContent
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.FunctionRegistry
 import com.TTT.PipeContextProtocol.PcPRequest
@@ -11,6 +12,7 @@ import com.TTT.Util.serialize
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertContentEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -283,6 +285,14 @@ class PathObjectStandaloneDslTest
     /** PCP function used to verify standalone path execution. */
     fun standalonePcpEcho(value: String): String = "pcp:$value"
 
+    /** PCP function used to verify that native multimodal returns remain intact. */
+    fun standalonePcpMultimodal(): MultimodalContent
+    {
+        return MultimodalContent(text = "screenshot metadata").apply {
+            addBinary(byteArrayOf(1, 2, 3), "image/png", "screenshot.png")
+        }
+    }
+
     @Test
     fun standalonePathObjectExecutesPcpRequestFromContentText()
     {
@@ -306,6 +316,66 @@ class PathObjectStandaloneDslTest
             assertEquals("pcp:value", result.text)
             assertEquals("pcp:value", result.metadata["pcpOutput"])
             assertSame(result, captured)
+        }
+        finally
+        {
+            FunctionRegistry.clear()
+        }
+    }
+
+    @Test
+    fun standalonePathObjectPreservesMultimodalPcpReturn()
+    {
+        FunctionRegistry.clear()
+        try
+        {
+            val path = pathObject("standalone-pcp-multimodal") {}
+            path.bindFunction("standalonePcpMultimodal", ::standalonePcpMultimodal)
+
+            val request = PcPRequest(
+                tPipeContextOptions = TPipeContextOptions().apply {
+                    functionName = "standalonePcpMultimodal"
+                }
+            )
+            val input = MultimodalContent(text = "execute this screenshot request:\n${serialize(request, encodedefault = true)}")
+            val result = runBlocking { path.executeLocal(input) }
+
+            assertEquals("screenshot metadata", result.text)
+            assertEquals(1, result.binaryContent.size)
+            val binary = result.binaryContent.single() as BinaryContent.Bytes
+            assertContentEquals(byteArrayOf(1, 2, 3), binary.data)
+            assertEquals("image/png", binary.mimeType)
+            assertEquals("screenshot.png", binary.filename)
+        }
+        finally
+        {
+            FunctionRegistry.clear()
+        }
+    }
+
+    @Test
+    fun stationAwarePathObjectPreservesMultimodalPcpReturn()
+    {
+        FunctionRegistry.clear()
+        try
+        {
+            val path = pathObject("station-aware-pcp-multimodal") {}
+            path.bindFunction("standalonePcpMultimodal", ::standalonePcpMultimodal)
+
+            val request = PcPRequest(
+                tPipeContextOptions = TPipeContextOptions().apply {
+                    functionName = "standalonePcpMultimodal"
+                }
+            )
+            val input = MultimodalContent(text = "execute this screenshot request:\n${serialize(request, encodedefault = true)}")
+            val result = runBlocking { path.execute(input, PumpStation(), null, "") }
+
+            assertEquals("screenshot metadata", result.text)
+            assertEquals(1, result.binaryContent.size)
+            val binary = result.binaryContent.single() as BinaryContent.Bytes
+            assertContentEquals(byteArrayOf(1, 2, 3), binary.data)
+            assertEquals("image/png", binary.mimeType)
+            assertEquals("screenshot.png", binary.filename)
         }
         finally
         {

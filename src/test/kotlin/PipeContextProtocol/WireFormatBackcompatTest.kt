@@ -2,6 +2,7 @@ package com.TTT.PipeContextProtocol
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
@@ -77,5 +78,26 @@ class WireFormatBackcompatTest
         assertEquals("stdout-text", deserialized.outputBuffer!!.stdout)
         assertEquals("stderr-text", deserialized.outputBuffer!!.stderr)
         assertEquals(23L, deserialized.outputBuffer!!.totalBytes)
+    }
+
+    @Test
+    fun nativeOutputRemainsInProcessOnly()
+    {
+        val original = PcpRequestResult(
+            success = true,
+            output = "native-result",
+            executionTimeMs = 42L,
+            transport = Transport.Tpipe
+        ).apply {
+            nativeOutput = mapOf("key" to "value")
+        }
+
+        val json = com.TTT.Util.serialize(original)
+        val deserialized = com.TTT.Util.deserialize<PcpRequestResult>(json)!!
+
+        assertFalse(json.contains("nativeOutput"))
+        assertEquals("native-result", deserialized.output)
+        assertEquals(Transport.Tpipe, deserialized.transport)
+        assertNull(deserialized.nativeOutput)
     }
 }

@@ -464,9 +464,19 @@ data class PcpRequestResult(
     val output: String,
     val executionTimeMs: Long,
     val transport: Transport,
-    val error: String? = null
-)
+    val error: String? = null,
+    val outputBuffer: BufferedOutput? = null
+) {
+    @Transient
+    var nativeOutput: Any? = null
+}
 ```
+
+`nativeOutput` is an in-process-only side channel for TPipe callers. It exposes the actual native
+return object, including multimodal values, without changing the serialized PCP response. It is
+transient by design and is unavailable after a transport or serialization boundary. Direct
+`PcpFunctionHandler.handleFunctionRequest()` callers may continue using its `returnValueKey` for
+the existing handler-local retrieval behavior.
 
 ### PcpExecutionResult
 
