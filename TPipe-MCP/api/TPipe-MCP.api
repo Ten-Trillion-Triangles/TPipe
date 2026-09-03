@@ -1,0 +1,790 @@
+public final class com/TTT/MCP/Bridge/McpBridgeMain {
+	public static final field INSTANCE Lcom/TTT/MCP/Bridge/McpBridgeMain;
+	public static final fun main ([Ljava/lang/String;)V
+}
+
+public final class com/TTT/MCP/Bridge/McpBridgeMainKt {
+	public static final fun mcpmain ([Ljava/lang/String;)V
+}
+
+public final class com/TTT/MCP/Bridge/McpJsonBuilder {
+	public fun <init> ()V
+	public final fun buildMcpJson (Lcom/TTT/MCP/Models/McpRequest;)Ljava/lang/String;
+	public final fun buildMcpJsonFromPcp (Lcom/TTT/PipeContextProtocol/PcpContext;)Ljava/lang/String;
+}
+
+public final class com/TTT/MCP/Bridge/McpJsonParser {
+	public fun <init> ()V
+	public final fun extractPrompts (Lkotlinx/serialization/json/JsonObject;)Ljava/util/List;
+	public final fun extractResourceTemplates (Lkotlinx/serialization/json/JsonObject;)Ljava/util/List;
+	public final fun extractResources (Lkotlinx/serialization/json/JsonObject;)Ljava/util/List;
+	public final fun extractTools (Lkotlinx/serialization/json/JsonObject;)Ljava/util/List;
+	public final fun parseJson (Ljava/lang/String;)Lcom/TTT/MCP/Models/McpRequest;
+	public final fun validateMcpStructure (Lkotlinx/serialization/json/JsonObject;)Z
+}
+
+public final class com/TTT/MCP/Bridge/McpProtocolHandler {
+	public static final field Companion Lcom/TTT/MCP/Bridge/McpProtocolHandler$Companion;
+	public static final field METHOD_INITIALIZE Ljava/lang/String;
+	public static final field METHOD_NOTIFICATIONS_INITIALIZED Ljava/lang/String;
+	public static final field METHOD_PROMPTS_GET Ljava/lang/String;
+	public static final field METHOD_PROMPTS_LIST Ljava/lang/String;
+	public static final field METHOD_RESOURCES_LIST Ljava/lang/String;
+	public static final field METHOD_RESOURCES_READ Ljava/lang/String;
+	public static final field METHOD_ROOTS_LIST Ljava/lang/String;
+	public static final field METHOD_SAMPLING_CREATE Ljava/lang/String;
+	public static final field METHOD_SHUTDOWN Ljava/lang/String;
+	public static final field METHOD_TOOLS_CALL Ljava/lang/String;
+	public static final field METHOD_TOOLS_LIST Ljava/lang/String;
+	public static final field PROTOCOL_VERSION Ljava/lang/String;
+	public static final field RATE_LIMIT_ERROR_CODE I
+	public fun <init> (Lcom/TTT/PipeContextProtocol/PcpContext;Lcom/TTT/MCP/Server/McpToolRegistry;Lcom/TTT/MCP/Server/McpResourceProvider;Lcom/TTT/MCP/Server/McpPromptProvider;Lcom/TTT/MCP/Server/McpRootsProvider;Lcom/TTT/MCP/Server/McpSamplingHandler;Lio/modelcontextprotocol/kotlin/sdk/types/Implementation;Lio/modelcontextprotocol/kotlin/sdk/types/ServerCapabilities;)V
+	public synthetic fun <init> (Lcom/TTT/PipeContextProtocol/PcpContext;Lcom/TTT/MCP/Server/McpToolRegistry;Lcom/TTT/MCP/Server/McpResourceProvider;Lcom/TTT/MCP/Server/McpPromptProvider;Lcom/TTT/MCP/Server/McpRootsProvider;Lcom/TTT/MCP/Server/McpSamplingHandler;Lio/modelcontextprotocol/kotlin/sdk/types/Implementation;Lio/modelcontextprotocol/kotlin/sdk/types/ServerCapabilities;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getServerState ()Lcom/TTT/MCP/Bridge/McpProtocolHandler$ServerState;
+	public final fun route (Lcom/TTT/MCP/Models/JsonRpcRequest;)Lcom/TTT/MCP/Models/JsonRpcResponse;
+}
+
+public final class com/TTT/MCP/Bridge/McpProtocolHandler$Companion {
+}
+
+public final class com/TTT/MCP/Bridge/McpProtocolHandler$RateLimitConfig {
+	public fun <init> ()V
+	public fun <init> (ZI)V
+	public synthetic fun <init> (ZIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()I
+	public final fun copy (ZI)Lcom/TTT/MCP/Bridge/McpProtocolHandler$RateLimitConfig;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Bridge/McpProtocolHandler$RateLimitConfig;ZIILjava/lang/Object;)Lcom/TTT/MCP/Bridge/McpProtocolHandler$RateLimitConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBurstSize ()I
+	public final fun getEnabled ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/MCP/Bridge/McpProtocolHandler$ServerState : java/lang/Enum {
+	public static final field INITIALIZING Lcom/TTT/MCP/Bridge/McpProtocolHandler$ServerState;
+	public static final field READY Lcom/TTT/MCP/Bridge/McpProtocolHandler$ServerState;
+	public static final field SHUTTING_DOWN Lcom/TTT/MCP/Bridge/McpProtocolHandler$ServerState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/MCP/Bridge/McpProtocolHandler$ServerState;
+	public static fun values ()[Lcom/TTT/MCP/Bridge/McpProtocolHandler$ServerState;
+}
+
+public final class com/TTT/MCP/Bridge/McpToPcpConverter {
+	public fun <init> ()V
+	public final fun convert (Lcom/TTT/MCP/Models/McpRequest;)Lcom/TTT/PipeContextProtocol/PcpContext;
+}
+
+public final class com/TTT/MCP/Bridge/PcpBuilder {
+	public fun <init> ()V
+	public final fun addStdioCommand (Ljava/lang/String;Ljava/util/List;Ljava/util/List;)Lcom/TTT/MCP/Bridge/PcpBuilder;
+	public final fun addTPipeFunction (Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;)Lcom/TTT/MCP/Bridge/PcpBuilder;
+	public final fun buildPcpContext ()Lcom/TTT/PipeContextProtocol/PcpContext;
+}
+
+public final class com/TTT/MCP/Bridge/PcpToMcpConverter {
+	public fun <init> ()V
+	public final fun convert (Lcom/TTT/PipeContextProtocol/PcpContext;)Lcom/TTT/MCP/Models/McpRequest;
+}
+
+public final class com/TTT/MCP/Extensions/PcpAccessorKt {
+	public static final fun getPcpContext (Lcom/TTT/Pipe/Pipe;)Lcom/TTT/PipeContextProtocol/PcpContext;
+}
+
+public final class com/TTT/MCP/Extensions/PipeExtensionsKt {
+	public static final fun convertAndApplyMcp (Lcom/TTT/Pipe/Pipe;Ljava/lang/String;)Lcom/TTT/MCP/Models/ConversionResult;
+	public static final fun convertPcpToMcp (Lcom/TTT/Pipe/Pipe;)Lcom/TTT/MCP/Models/ConversionResult;
+	public static final fun exportToMcp (Lcom/TTT/Pipe/Pipe;)Ljava/lang/String;
+	public static final fun setMcpContext (Lcom/TTT/Pipe/Pipe;Ljava/lang/String;)Lcom/TTT/Pipe/Pipe;
+}
+
+public final class com/TTT/MCP/Models/ConversionResult {
+	public static final field Companion Lcom/TTT/MCP/Models/ConversionResult$Companion;
+	public fun <init> (ZLcom/TTT/PipeContextProtocol/PcpContext;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (ZLcom/TTT/PipeContextProtocol/PcpContext;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Lcom/TTT/PipeContextProtocol/PcpContext;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (ZLcom/TTT/PipeContextProtocol/PcpContext;Ljava/util/List;Ljava/util/List;)Lcom/TTT/MCP/Models/ConversionResult;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/ConversionResult;ZLcom/TTT/PipeContextProtocol/PcpContext;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/TTT/MCP/Models/ConversionResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getErrors ()Ljava/util/List;
+	public final fun getPcpContext ()Lcom/TTT/PipeContextProtocol/PcpContext;
+	public final fun getSuccess ()Z
+	public final fun getWarnings ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/ConversionResult$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/ConversionResult$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/ConversionResult;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/ConversionResult;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/ConversionResult$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/JsonRpcBatchRequest {
+	public static final field Companion Lcom/TTT/MCP/Models/JsonRpcBatchRequest$Companion;
+	public fun <init> (Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Lcom/TTT/MCP/Models/JsonRpcBatchRequest;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/JsonRpcBatchRequest;Ljava/util/List;ILjava/lang/Object;)Lcom/TTT/MCP/Models/JsonRpcBatchRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRequests ()Ljava/util/List;
+	public fun hashCode ()I
+	public final fun isNotificationBatch ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/JsonRpcBatchRequest$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/JsonRpcBatchRequest$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/JsonRpcBatchRequest;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/JsonRpcBatchRequest;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/JsonRpcBatchRequest$Companion {
+	public final fun fromJson (Ljava/lang/String;)Lcom/TTT/MCP/Models/JsonRpcBatchRequest;
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/JsonRpcBatchResponse {
+	public static final field Companion Lcom/TTT/MCP/Models/JsonRpcBatchResponse$Companion;
+	public fun <init> (Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Lcom/TTT/MCP/Models/JsonRpcBatchResponse;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/JsonRpcBatchResponse;Ljava/util/List;ILjava/lang/Object;)Lcom/TTT/MCP/Models/JsonRpcBatchResponse;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getResponses ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/JsonRpcBatchResponse$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/JsonRpcBatchResponse$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/JsonRpcBatchResponse;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/JsonRpcBatchResponse;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/JsonRpcBatchResponse$Companion {
+	public final fun from (Ljava/util/List;)Lcom/TTT/MCP/Models/JsonRpcBatchResponse;
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/JsonRpcError {
+	public static final field Companion Lcom/TTT/MCP/Models/JsonRpcError$Companion;
+	public fun <init> (ILjava/lang/String;Lkotlinx/serialization/json/JsonElement;)V
+	public synthetic fun <init> (ILjava/lang/String;Lkotlinx/serialization/json/JsonElement;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun copy (ILjava/lang/String;Lkotlinx/serialization/json/JsonElement;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/JsonRpcError;ILjava/lang/String;Lkotlinx/serialization/json/JsonElement;ILjava/lang/Object;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCode ()I
+	public final fun getData ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/JsonRpcError$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/JsonRpcError$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/JsonRpcError;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/JsonRpcError$Companion {
+	public final fun internalError (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public static synthetic fun internalError$default (Lcom/TTT/MCP/Models/JsonRpcError$Companion;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;ILjava/lang/Object;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public final fun invalidParams (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public static synthetic fun invalidParams$default (Lcom/TTT/MCP/Models/JsonRpcError$Companion;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;ILjava/lang/Object;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public final fun invalidRequest (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public static synthetic fun invalidRequest$default (Lcom/TTT/MCP/Models/JsonRpcError$Companion;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;ILjava/lang/Object;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public final fun methodNotFound (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public static synthetic fun methodNotFound$default (Lcom/TTT/MCP/Models/JsonRpcError$Companion;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;ILjava/lang/Object;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public final fun parseError (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public static synthetic fun parseError$default (Lcom/TTT/MCP/Models/JsonRpcError$Companion;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;ILjava/lang/Object;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+	public final fun serverError (ILjava/lang/String;Lkotlinx/serialization/json/JsonElement;)Lcom/TTT/MCP/Models/JsonRpcError;
+	public static synthetic fun serverError$default (Lcom/TTT/MCP/Models/JsonRpcError$Companion;ILjava/lang/String;Lkotlinx/serialization/json/JsonElement;ILjava/lang/Object;)Lcom/TTT/MCP/Models/JsonRpcError;
+}
+
+public final class com/TTT/MCP/Models/JsonRpcErrorCode {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/JsonRpcErrorCode;
+	public static final field INTERNAL_ERROR I
+	public static final field INVALID_PARAMS I
+	public static final field INVALID_REQUEST I
+	public static final field METHOD_NOT_FOUND I
+	public static final field PARSE_ERROR I
+	public static final field SERVER_ERROR_MAX I
+	public static final field SERVER_ERROR_MIN I
+}
+
+public final class com/TTT/MCP/Models/JsonRpcRequest {
+	public static final field Companion Lcom/TTT/MCP/Models/JsonRpcRequest$Companion;
+	public fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)V
+	public synthetic fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Lkotlinx/serialization/json/JsonObject;
+	public final fun copy (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)Lcom/TTT/MCP/Models/JsonRpcRequest;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/JsonRpcRequest;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;ILjava/lang/Object;)Lcom/TTT/MCP/Models/JsonRpcRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getJsonrpc ()Ljava/lang/String;
+	public final fun getMethod ()Ljava/lang/String;
+	public final fun getParams ()Lkotlinx/serialization/json/JsonObject;
+	public fun hashCode ()I
+	public final fun isNotification ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/JsonRpcRequest$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/JsonRpcRequest$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/JsonRpcRequest;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/JsonRpcRequest;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/JsonRpcRequest$Companion {
+	public final fun fromJson (Ljava/lang/String;)Lcom/TTT/MCP/Models/JsonRpcRequest;
+	public final fun fromJsonElement (Lkotlinx/serialization/json/JsonElement;)Lcom/TTT/MCP/Models/JsonRpcRequest;
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/JsonRpcResponse {
+	public static final field Companion Lcom/TTT/MCP/Models/JsonRpcResponse$Companion;
+	public fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Lkotlinx/serialization/json/JsonObject;Lcom/TTT/MCP/Models/McpJsonRpcError;)V
+	public synthetic fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Lkotlinx/serialization/json/JsonObject;Lcom/TTT/MCP/Models/McpJsonRpcError;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun component3 ()Lkotlinx/serialization/json/JsonObject;
+	public final fun component4 ()Lcom/TTT/MCP/Models/McpJsonRpcError;
+	public final fun copy (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Lkotlinx/serialization/json/JsonObject;Lcom/TTT/MCP/Models/McpJsonRpcError;)Lcom/TTT/MCP/Models/JsonRpcResponse;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/JsonRpcResponse;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Lkotlinx/serialization/json/JsonObject;Lcom/TTT/MCP/Models/McpJsonRpcError;ILjava/lang/Object;)Lcom/TTT/MCP/Models/JsonRpcResponse;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getError ()Lcom/TTT/MCP/Models/McpJsonRpcError;
+	public final fun getId ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getJsonrpc ()Ljava/lang/String;
+	public final fun getResult ()Lkotlinx/serialization/json/JsonObject;
+	public fun hashCode ()I
+	public final fun isError ()Z
+	public final fun isSuccess ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/JsonRpcResponse$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/JsonRpcResponse$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/JsonRpcResponse;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/JsonRpcResponse;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/JsonRpcResponse$Companion {
+	public final fun error (Lkotlinx/serialization/json/JsonElement;Lcom/TTT/MCP/Models/JsonRpcError;)Lcom/TTT/MCP/Models/JsonRpcResponse;
+	public final fun error (Lkotlinx/serialization/json/JsonElement;Lcom/TTT/MCP/Models/McpJsonRpcError;)Lcom/TTT/MCP/Models/JsonRpcResponse;
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+	public final fun success (Lkotlinx/serialization/json/JsonElement;Lkotlinx/serialization/json/JsonObject;)Lcom/TTT/MCP/Models/JsonRpcResponse;
+	public static synthetic fun success$default (Lcom/TTT/MCP/Models/JsonRpcResponse$Companion;Lkotlinx/serialization/json/JsonElement;Lkotlinx/serialization/json/JsonObject;ILjava/lang/Object;)Lcom/TTT/MCP/Models/JsonRpcResponse;
+}
+
+public final class com/TTT/MCP/Models/McpAnnotations {
+	public static final field Companion Lcom/TTT/MCP/Models/McpAnnotations$Companion;
+	public fun <init> ()V
+	public fun <init> (Ljava/util/List;Ljava/lang/Double;)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/lang/Double;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/lang/Double;
+	public final fun copy (Ljava/util/List;Ljava/lang/Double;)Lcom/TTT/MCP/Models/McpAnnotations;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/McpAnnotations;Ljava/util/List;Ljava/lang/Double;ILjava/lang/Object;)Lcom/TTT/MCP/Models/McpAnnotations;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAudience ()Ljava/util/List;
+	public final fun getPriority ()Ljava/lang/Double;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/McpAnnotations$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/McpAnnotations$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/McpAnnotations;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/McpAnnotations;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpAnnotations$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpIcon {
+	public static final field Companion Lcom/TTT/MCP/Models/McpIcon$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/MCP/Models/McpIcon;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/McpIcon;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/MCP/Models/McpIcon;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getSrc ()Ljava/lang/String;
+	public final fun getType ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/McpIcon$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/McpIcon$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/McpIcon;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/McpIcon;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpIcon$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpJsonRpcError {
+	public static final field Companion Lcom/TTT/MCP/Models/McpJsonRpcError$Companion;
+	public fun <init> (ILjava/lang/String;Lkotlinx/serialization/json/JsonElement;)V
+	public synthetic fun <init> (ILjava/lang/String;Lkotlinx/serialization/json/JsonElement;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun copy (ILjava/lang/String;Lkotlinx/serialization/json/JsonElement;)Lcom/TTT/MCP/Models/McpJsonRpcError;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/McpJsonRpcError;ILjava/lang/String;Lkotlinx/serialization/json/JsonElement;ILjava/lang/Object;)Lcom/TTT/MCP/Models/McpJsonRpcError;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCode ()I
+	public final fun getData ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/McpJsonRpcError$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/McpJsonRpcError$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/McpJsonRpcError;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/McpJsonRpcError;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpJsonRpcError$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpJsonRpcRequest {
+	public static final field Companion Lcom/TTT/MCP/Models/McpJsonRpcRequest$Companion;
+	public fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)V
+	public synthetic fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Lkotlinx/serialization/json/JsonObject;
+	public final fun copy (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)Lcom/TTT/MCP/Models/McpJsonRpcRequest;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/McpJsonRpcRequest;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;ILjava/lang/Object;)Lcom/TTT/MCP/Models/McpJsonRpcRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getJsonrpc ()Ljava/lang/String;
+	public final fun getMethod ()Ljava/lang/String;
+	public final fun getParams ()Lkotlinx/serialization/json/JsonObject;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/McpJsonRpcRequest$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/McpJsonRpcRequest$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/McpJsonRpcRequest;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/McpJsonRpcRequest;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpJsonRpcRequest$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpJsonRpcResponse {
+	public static final field Companion Lcom/TTT/MCP/Models/McpJsonRpcResponse$Companion;
+	public fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Lkotlinx/serialization/json/JsonObject;Lcom/TTT/MCP/Models/McpJsonRpcError;)V
+	public synthetic fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Lkotlinx/serialization/json/JsonObject;Lcom/TTT/MCP/Models/McpJsonRpcError;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun component3 ()Lkotlinx/serialization/json/JsonObject;
+	public final fun component4 ()Lcom/TTT/MCP/Models/McpJsonRpcError;
+	public final fun copy (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Lkotlinx/serialization/json/JsonObject;Lcom/TTT/MCP/Models/McpJsonRpcError;)Lcom/TTT/MCP/Models/McpJsonRpcResponse;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/McpJsonRpcResponse;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Lkotlinx/serialization/json/JsonObject;Lcom/TTT/MCP/Models/McpJsonRpcError;ILjava/lang/Object;)Lcom/TTT/MCP/Models/McpJsonRpcResponse;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getError ()Lcom/TTT/MCP/Models/McpJsonRpcError;
+	public final fun getId ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getJsonrpc ()Ljava/lang/String;
+	public final fun getResult ()Lkotlinx/serialization/json/JsonObject;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/McpJsonRpcResponse$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/McpJsonRpcResponse$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/McpJsonRpcResponse;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/McpJsonRpcResponse;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpJsonRpcResponse$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpPrompt {
+	public static final field Companion Lcom/TTT/MCP/Models/McpPrompt$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Lcom/TTT/MCP/Models/McpAnnotations;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Lcom/TTT/MCP/Models/McpAnnotations;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Lcom/TTT/MCP/Models/McpAnnotations;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Lcom/TTT/MCP/Models/McpAnnotations;)Lcom/TTT/MCP/Models/McpPrompt;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/McpPrompt;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Lcom/TTT/MCP/Models/McpAnnotations;ILjava/lang/Object;)Lcom/TTT/MCP/Models/McpPrompt;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAnnotations ()Lcom/TTT/MCP/Models/McpAnnotations;
+	public final fun getArguments ()Ljava/util/List;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/McpPrompt$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/McpPrompt$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/McpPrompt;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/McpPrompt;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpPrompt$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpPromptArgument {
+	public static final field Companion Lcom/TTT/MCP/Models/McpPromptArgument$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Z)Lcom/TTT/MCP/Models/McpPromptArgument;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/McpPromptArgument;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)Lcom/TTT/MCP/Models/McpPromptArgument;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getRequired ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/McpPromptArgument$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/McpPromptArgument$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/McpPromptArgument;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/McpPromptArgument;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpPromptArgument$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpRequest {
+	public static final field Companion Lcom/TTT/MCP/Models/McpRequest$Companion;
+	public fun <init> ()V
+	public fun <init> (Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;)Lcom/TTT/MCP/Models/McpRequest;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/McpRequest;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/TTT/MCP/Models/McpRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPrompts ()Ljava/util/List;
+	public final fun getResourceTemplates ()Ljava/util/List;
+	public final fun getResources ()Ljava/util/List;
+	public final fun getTools ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/McpRequest$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/McpRequest$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/McpRequest;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/McpRequest;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpRequest$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpResource {
+	public static final field Companion Lcom/TTT/MCP/Models/McpResource$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/MCP/Models/McpAnnotations;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/MCP/Models/McpAnnotations;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Lcom/TTT/MCP/Models/McpAnnotations;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/MCP/Models/McpAnnotations;)Lcom/TTT/MCP/Models/McpResource;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/McpResource;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/MCP/Models/McpAnnotations;ILjava/lang/Object;)Lcom/TTT/MCP/Models/McpResource;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAnnotations ()Lcom/TTT/MCP/Models/McpAnnotations;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getMimeType ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getUri ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/McpResource$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/McpResource$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/McpResource;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/McpResource;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpResource$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpResourceTemplate {
+	public static final field Companion Lcom/TTT/MCP/Models/McpResourceTemplate$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/MCP/Models/McpAnnotations;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/MCP/Models/McpAnnotations;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Lcom/TTT/MCP/Models/McpAnnotations;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/MCP/Models/McpAnnotations;)Lcom/TTT/MCP/Models/McpResourceTemplate;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/McpResourceTemplate;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/MCP/Models/McpAnnotations;ILjava/lang/Object;)Lcom/TTT/MCP/Models/McpResourceTemplate;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAnnotations ()Lcom/TTT/MCP/Models/McpAnnotations;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getMimeType ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getUriTemplate ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/McpResourceTemplate$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/McpResourceTemplate$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/McpResourceTemplate;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/McpResourceTemplate;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpResourceTemplate$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpTool {
+	public static final field Companion Lcom/TTT/MCP/Models/McpTool$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;Lkotlinx/serialization/json/JsonObject;Ljava/util/List;Lcom/TTT/MCP/Models/McpAnnotations;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;Lkotlinx/serialization/json/JsonObject;Ljava/util/List;Lcom/TTT/MCP/Models/McpAnnotations;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lkotlinx/serialization/json/JsonObject;
+	public final fun component4 ()Lkotlinx/serialization/json/JsonObject;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Lcom/TTT/MCP/Models/McpAnnotations;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;Lkotlinx/serialization/json/JsonObject;Ljava/util/List;Lcom/TTT/MCP/Models/McpAnnotations;)Lcom/TTT/MCP/Models/McpTool;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Models/McpTool;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;Lkotlinx/serialization/json/JsonObject;Ljava/util/List;Lcom/TTT/MCP/Models/McpAnnotations;ILjava/lang/Object;)Lcom/TTT/MCP/Models/McpTool;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAnnotations ()Lcom/TTT/MCP/Models/McpAnnotations;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getIcons ()Ljava/util/List;
+	public final fun getInputSchema ()Lkotlinx/serialization/json/JsonObject;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getOutputSchema ()Lkotlinx/serialization/json/JsonObject;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/MCP/Models/McpTool$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/MCP/Models/McpTool$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/MCP/Models/McpTool;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/MCP/Models/McpTool;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Models/McpTool$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/MCP/Server/McpBridgeHttpHost {
+	public static final field INSTANCE Lcom/TTT/MCP/Server/McpBridgeHttpHost;
+	public final fun run (ILjava/lang/String;Ljava/lang/String;)V
+	public static synthetic fun run$default (Lcom/TTT/MCP/Server/McpBridgeHttpHost;ILjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)V
+}
+
+public final class com/TTT/MCP/Server/McpBridgeServerHost {
+	public fun <init> (Ljava/lang/String;Lio/modelcontextprotocol/kotlin/sdk/types/ServerCapabilities;Lio/modelcontextprotocol/kotlin/sdk/types/Implementation;)V
+	public synthetic fun <init> (Ljava/lang/String;Lio/modelcontextprotocol/kotlin/sdk/types/ServerCapabilities;Lio/modelcontextprotocol/kotlin/sdk/types/Implementation;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getPcpContext ()Lcom/TTT/PipeContextProtocol/PcpContext;
+	public final fun getServer ()Lio/modelcontextprotocol/kotlin/sdk/server/Server;
+	public final fun handleRequest (Lcom/TTT/MCP/Models/JsonRpcRequest;)Lcom/TTT/MCP/Models/JsonRpcResponse;
+	public final fun runLoop (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun runOnce (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun shutdown ()V
+}
+
+public final class com/TTT/MCP/Server/McpBridgeStdioHost {
+	public static final field INSTANCE Lcom/TTT/MCP/Server/McpBridgeStdioHost;
+	public final fun runLoop ()V
+	public final fun runOnce ()V
+}
+
+public final class com/TTT/MCP/Server/McpResourceProvider {
+	public fun <init> (Lcom/TTT/PipeContextProtocol/PcpContext;)V
+	public final fun listResources ()Lio/modelcontextprotocol/kotlin/sdk/types/ListResourcesResult;
+	public final fun readResource (Ljava/lang/String;)Lio/modelcontextprotocol/kotlin/sdk/types/ReadResourceResult;
+}
+
+public final class com/TTT/MCP/Server/McpResourceSubscriptionManager {
+	public fun <init> (Lio/modelcontextprotocol/kotlin/sdk/server/Server;Lcom/TTT/PipeContextProtocol/PcpContext;)V
+	public final fun close ()V
+	public final fun getOnResourceChangedCallback ()Lkotlin/jvm/functions/Function2;
+	public final fun listSubscriptions ()Ljava/util/List;
+	public final fun setOnResourceChangedCallback (Lkotlin/jvm/functions/Function2;)V
+	public final fun setResourceChangedHandler (Lkotlin/jvm/functions/Function2;)V
+	public final fun subscribeResource (Ljava/lang/String;)Ljava/lang/String;
+	public final fun unsubscribeResource (Ljava/lang/String;)Z
+}
+
+public final class com/TTT/MCP/Server/McpResourceSubscriptionManager$ResourceSubscription {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/nio/file/WatchService;Ljava/nio/file/WatchKey;JLjava/nio/file/Path;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/nio/file/WatchService;Ljava/nio/file/WatchKey;JLjava/nio/file/Path;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/nio/file/WatchService;
+	public final fun component4 ()Ljava/nio/file/WatchKey;
+	public final fun component5 ()J
+	public final fun component6 ()Ljava/nio/file/Path;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/nio/file/WatchService;Ljava/nio/file/WatchKey;JLjava/nio/file/Path;)Lcom/TTT/MCP/Server/McpResourceSubscriptionManager$ResourceSubscription;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Server/McpResourceSubscriptionManager$ResourceSubscription;Ljava/lang/String;Ljava/lang/String;Ljava/nio/file/WatchService;Ljava/nio/file/WatchKey;JLjava/nio/file/Path;ILjava/lang/Object;)Lcom/TTT/MCP/Server/McpResourceSubscriptionManager$ResourceSubscription;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getParentPath ()Ljava/nio/file/Path;
+	public final fun getSubscribedAt ()J
+	public final fun getSubscriptionId ()Ljava/lang/String;
+	public final fun getUri ()Ljava/lang/String;
+	public final fun getWatchKey ()Ljava/nio/file/WatchKey;
+	public final fun getWatchService ()Ljava/nio/file/WatchService;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/MCP/Server/McpResourceSubscriptionManager$Subscription {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;J)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()J
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;J)Lcom/TTT/MCP/Server/McpResourceSubscriptionManager$Subscription;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Server/McpResourceSubscriptionManager$Subscription;Ljava/lang/String;Ljava/lang/String;JILjava/lang/Object;)Lcom/TTT/MCP/Server/McpResourceSubscriptionManager$Subscription;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getSubscribedAt ()J
+	public final fun getSubscriptionId ()Ljava/lang/String;
+	public final fun getUri ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/MCP/Server/McpRootsProvider {
+	public static final field Companion Lcom/TTT/MCP/Server/McpRootsProvider$Companion;
+	public fun <init> (Lcom/TTT/PipeContextProtocol/PcpContext;)V
+	public final fun listRoots ()Lio/modelcontextprotocol/kotlin/sdk/types/ListRootsResult;
+}
+
+public final class com/TTT/MCP/Server/McpRootsProvider$Companion {
+}
+
+public final class com/TTT/MCP/Server/McpSamplingHandler {
+	public static final field Companion Lcom/TTT/MCP/Server/McpSamplingHandler$Companion;
+	public fun <init> (Lcom/TTT/Pipe/Pipe;)V
+	public final fun handleSamplingCreate-IoAF18A (Lcom/TTT/MCP/Models/JsonRpcRequest;)Ljava/lang/Object;
+}
+
+public final class com/TTT/MCP/Server/McpSamplingHandler$Companion {
+}

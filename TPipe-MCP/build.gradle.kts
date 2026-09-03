@@ -69,6 +69,14 @@ tasks.processResources {
 tasks.named<Jar>("jar") {
     archiveClassifier.set("all")
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    // Embedded module descriptors make Kotlin K2 treat the fat JAR as a
+    // malformed module path and can misattribute standard-library packages.
+    exclude("module-info.class")
+    exclude("META-INF/versions/**/module-info.class")
+    // The production TPipe backend does not use the legacy JSR adapter. Keep
+    // the MCP fat JAR free of its provider classes and service bridge too.
+    exclude("kotlin/script/experimental/jvmhost/jsr223/**")
+    exclude("org/jetbrains/kotlin/cli/common/repl/*Jsr223*")
     manifest {
         attributes["Main-Class"] = "com.TTT.MCP.Bridge.McpBridgeMain"
     }

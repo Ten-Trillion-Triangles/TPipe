@@ -8,27 +8,33 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Pins the contract for `KotlinExecutor` against the JSR-223 scripting runtime.
- * The Kotlin 2.3 readiness sweep is anchored here because the kotlinx-scripting
- * runtime depends on language-version features that change between compiler
- * minors; any regression in script discovery, evaluation, exception reporting,
- * timeout enforcement, or the security gate surfaces here first.
+ * Pins the public contract for [KotlinExecutor] independently of its internal
+ * scripting backend.
  */
 class KotlinScriptingContractTest
 {
     @Test
     fun `script with timeoutMs=200 and a non-terminating while loop returns timeout error within bound`() = runBlocking {
-        val executor = KotlinExecutor()
-        val request = PcPRequest(argumentsOrFunctionParams = listOf("while (true) { }"))
-        val context = PcpContext().apply { kotlinOptions.timeoutMs = 200 }
         val start = System.currentTimeMillis()
-        val result = executor.execute(request, context)
+        val process = ProcessBuilder(
+            javaExecutable(),
+            "-cp",
+            System.getProperty("java.class.path"),
+            KotlinTimeoutProbeMain::class.java.name
+        ).redirectErrorStream(true).start()
+        val completed = process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+        if(!completed)
+        {
+            process.destroyForcibly()
+        }
+        val output = process.inputStream.bufferedReader().readText()
         val elapsed = System.currentTimeMillis() - start
-        assertFalse(result.success)
-        assertNotNull(result.error)
-        assertTrue(result.error!!.contains("timed out", ignoreCase = true),
-            "expected timeout error, got: ${result.error}")
-        assertTrue(elapsed < 5_000L, "executor took ${elapsed}ms — timeout not enforced")
+        assertTrue(completed, "timeout probe did not exit: $output")
+        assertTrue(output.contains("timed out", ignoreCase = true),
+            "expected timeout error, got: $output")
+        assertTrue(timeoutProbeElapsed(output) < 1_500L,
+            "executor-reported timeout elapsed time exceeded the bound: $output")
+        assertTrue(elapsed < 5_000L, "executor took ${elapsed}ms — timeout probe did not exit")
     }
 
     @Test
@@ -48,8 +54,8 @@ class KotlinScriptingContractTest
         )
         val result = executor.execute(request, PcpContext())
         assertFalse(result.success)
-        assertNotNull(result.error)
-        assertTrue(result.error!!.contains("boom"),
+        val error = assertNotNull(result.error)
+        assertTrue(error.contains("boom"),
             "Expected error message to propagate; got: ${result.error}")
     }
 
@@ -61,8 +67,8 @@ class KotlinScriptingContractTest
         val context = PcpContext()  // default: allowReflection = false
         val result = executor.execute(request, context)
         assertFalse(result.success)
-        assertNotNull(result.error)
-        assertTrue(result.error!!.contains("Reflection"),
+        val error = assertNotNull(result.error)
+        assertTrue(error.contains("Reflection"),
             "Expected Reflection error; got: ${result.error}")
     }
 
@@ -75,8 +81,8 @@ class KotlinScriptingContractTest
         val context = PcpContext()  // default: allowClassLoaderAccess = false
         val result = executor.execute(request, context)
         assertFalse(result.success)
-        assertNotNull(result.error)
-        assertTrue(result.error!!.contains("ClassLoader"),
+        val error = assertNotNull(result.error)
+        assertTrue(error.contains("ClassLoader"),
             "Expected ClassLoader error; got: ${result.error}")
     }
 
@@ -97,15 +103,30 @@ class KotlinScriptingContractTest
     }
 
     @Test
-    fun `default kts engine is available on the classpath`() = runBlocking {
-        // Sanity check: the kotlin-scripting-jsr223 dependency is on the test
-        // classpath, so ScriptEngineManager.getEngineByExtension("kts") must succeed.
+    fun `internal Kotlin scripting backend is available`() = runBlocking {
         val executor = KotlinExecutor()
         val request = PcPRequest(
             argumentsOrFunctionParams = listOf("\"hello\"")
         )
         val result = executor.execute(request, PcpContext())
         assertTrue(result.success,
-            "Default kts engine should be available; got error=${result.error}")
+            "Internal Kotlin scripting backend should be available; got error=${result.error}")
+    }
+
+    private fun javaExecutable(): String
+    {
+        return java.nio.file.Path.of(
+            System.getProperty("java.home"),
+            "bin",
+            if(System.getProperty("os.name").contains("Windows")) "java.exe" else "java"
+        ).toString()
+    }
+
+    private fun timeoutProbeElapsed(output: String): Long
+    {
+        return output.substringAfter("|elapsedMs=", missingDelimiterValue = "")
+            .trim()
+            .toLongOrNull()
+            ?: error("Timeout probe did not report elapsed time: $output")
     }
 }

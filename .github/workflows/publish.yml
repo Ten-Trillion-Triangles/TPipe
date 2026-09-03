@@ -26,6 +26,26 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Validate Kotlin scripting compatibility
+        run: >-
+          ./gradlew checkKotlinAbi
+          --no-daemon --console=plain
+
+      - name: Run Kotlin scripting compatibility tests
+        run: >-
+          ./gradlew :test
+          --tests "com.TTT.PipeContextProtocol.Kotlin*"
+          --tests "com.TTT.PipeContextProtocol.scripting.*"
+          --tests "com.TTT.PipeContextProtocol.StdioAndKotlinExecutorEndToEndTest"
+          -PtestHeapSize=2g --no-daemon --console=plain
+
+      - name: Validate packaging and independent consumers
+        run: >-
+          ./gradlew kotlinScriptingThinJarSmoke
+          kotlinScriptingShadowJarSmoke kotlinJsrAbsenceCheck
+          consumerCompatibilityTest
+          --no-daemon --console=plain
+
       - name: Build jars
         run: ./gradlew assemble --no-daemon
 

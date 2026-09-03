@@ -156,12 +156,12 @@ object PcpInstructionGenerator
 KOTLIN SCRIPT EXECUTION:
 - Put Kotlin code in argumentsOrFunctionParams array
 - Each element is a line or block of code
-- Use println() to return output
-- Code runs in JVM via script engine
+- Return the desired value as the final expression
+- Code runs in JVM via the TPipe Kotlin scripting host
 - Example:
   {
     "kotlinContextOptions": {},
-    "argumentsOrFunctionParams": ["val x = 10", "val y = 20", "println(x + y)"]
+    "argumentsOrFunctionParams": ["val x = 10", "val y = 20", "x + y"]
   }
         """.trimIndent()
     }

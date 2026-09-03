@@ -1,0 +1,15 @@
+[
+  {"id":"numeric","source":"2 + 2","mode":"result"},
+  {"id":"boolean","source":"true && !false","mode":"result"},
+  {"id":"string","source":"\"hello\"","mode":"result"},
+  {"id":"collection","source":"listOf(1, 2, 3).sum()","mode":"result"},
+  {"id":"multiline","source":"val x = 6\nval y = 7\nx * y","mode":"result"},
+  {"id":"unit","source":"Unit","mode":"unit"},
+  {"id":"null","source":"null","mode":"null"},
+  {"id":"fully-qualified","source":"kotlin.math.max(2, 4)","mode":"result"},
+  {"id":"unicode","source":"\"héllo 🌍\"","mode":"result"},
+  {"id":"large-text","source":"\"x\".repeat(64)","mode":"result"},
+  {"id":"compile-failure","source":"val broken: = 1","mode":"compile-failure"},
+  {"id":"runtime-failure","source":"throw IllegalStateException(\"boom\")","mode":"runtime-failure"},
+  {"id":"security","source":"java.lang.System.exit(0)","mode":"security"}
+]

@@ -61,14 +61,15 @@ class StdioAndKotlinExecutorEndToEndTest
             // should flip to expect success.
             if(result.success)
             {
-                val first = result.results?.firstOrNull()
-                assertNotNull(first, "Stdio host result should include a result entry; got: $output")
-                assertEquals("hello world", first!!.output)
+                val first = assertNotNull(
+                    result.results.firstOrNull(),
+                    "Stdio host result should include a result entry; got: $output"
+                )
+                assertEquals("hello world", first.output)
             }
             else
             {
-                val allErrors: List<String> = (result.errors ?: emptyList()) +
-                    (result.results?.mapNotNull { it.error } ?: emptyList())
+                val allErrors: List<String> = result.errors + result.results.mapNotNull { it.error }
                 val hasWhitelistError = allErrors.any {
                     it.contains("not in context whitelist") ||
                         it.contains("Function execution not enabled")
@@ -86,15 +87,24 @@ class StdioAndKotlinExecutorEndToEndTest
     }
 
     @Test
-    fun `KotlinExecutor with default context returns a non-success result when the script exceeds the timeout`() = runBlocking {
-        val executor = KotlinExecutor()
-        val request = PcPRequest(argumentsOrFunctionParams = listOf("Thread.sleep(Long.MAX_VALUE)"))
-        val context = PcpContext().apply { kotlinOptions.timeoutMs = 100 }
-        val result = executor.execute(request, context)
-        assertFalse(result.success)
-        assertNotNull(result.error)
-        assertTrue(result.error!!.contains("timed out", ignoreCase = true),
-            "Expected timeout error; got: ${result.error}")
+    fun `KotlinExecutor timeout probe returns a non-success result without poisoning the test JVM`() = runBlocking {
+        val process = ProcessBuilder(
+            javaExecutable(),
+            "-cp",
+            System.getProperty("java.class.path"),
+            KotlinTimeoutProbeMain::class.java.name
+        ).redirectErrorStream(true).start()
+        val completed = process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+        if(!completed)
+        {
+            process.destroyForcibly()
+        }
+        val output = process.inputStream.bufferedReader().readText()
+        assertTrue(completed, "timeout probe did not exit: $output")
+        assertTrue(output.contains("timed out", ignoreCase = true),
+            "Expected timeout error; got: $output")
+        val elapsed = timeoutProbeElapsed(output)
+        assertTrue(elapsed < 1_500L, "timeout probe took ${elapsed}ms — timeout not enforced")
     }
 
     @Test
@@ -124,5 +134,22 @@ class StdioAndKotlinExecutorEndToEndTest
         assertEquals(true, results.success, "Dispatcher should succeed: ${results.errors}")
         assertEquals(1, results.results.size)
         assertEquals("echoed:alpha", results.results.first().output)
+    }
+
+    private fun javaExecutable(): String
+    {
+        return java.nio.file.Path.of(
+            System.getProperty("java.home"),
+            "bin",
+            if(System.getProperty("os.name").contains("Windows")) "java.exe" else "java"
+        ).toString()
+    }
+
+    private fun timeoutProbeElapsed(output: String): Long
+    {
+        return output.substringAfter("|elapsedMs=", missingDelimiterValue = "")
+            .trim()
+            .toLongOrNull()
+            ?: error("Timeout probe did not report elapsed time: $output")
     }
 }

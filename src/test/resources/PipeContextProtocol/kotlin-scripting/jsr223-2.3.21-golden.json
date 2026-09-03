@@ -1,0 +1,15 @@
+[
+  {"id":"numeric","success":true,"output":"Result: 4","stdout":"","stderr":""},
+  {"id":"boolean","success":true,"output":"Result: true","stdout":"","stderr":""},
+  {"id":"string","success":true,"output":"Result: hello","stdout":"","stderr":""},
+  {"id":"collection","success":true,"output":"Result: 6","stdout":"","stderr":""},
+  {"id":"multiline","success":true,"output":"Result: 42","stdout":"","stderr":""},
+  {"id":"unit","success":true,"output":"","stdout":"","stderr":""},
+  {"id":"null","success":true,"output":"","stdout":"","stderr":""},
+  {"id":"fully-qualified","success":true,"output":"Result: 4","stdout":"","stderr":""},
+  {"id":"unicode","success":true,"output":"Result: héllo 🌍","stdout":"","stderr":""},
+  {"id":"large-text","success":true,"output":"Result: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","stdout":"","stderr":""},
+  {"id":"compile-failure","success":false,"output":"","stdout":"","stderr":"","errorPrefix":"Kotlin execution failed:"},
+  {"id":"runtime-failure","success":false,"output":"","stdout":"","stderr":"","errorPrefix":"Kotlin execution failed:"},
+  {"id":"security","success":false,"output":"","stdout":"","stderr":"","errorPrefix":"Kotlin security validation failed:"}
+]

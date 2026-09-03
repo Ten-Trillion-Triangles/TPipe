@@ -10,28 +10,22 @@ class KotlinExecutorTimeoutTest
 {
     @Test
     fun whileTrueLoopTerminatesAtTimeoutMs() = runBlocking {
-        val executor = KotlinExecutor()
-        val request = PcPRequest(
-            argumentsOrFunctionParams = listOf("while (true) { }")
-        )
-        val context = PcpContext().apply {
-            kotlinOptions.timeoutMs = 500
-        }
-
-        val start = System.currentTimeMillis()
-        val result = executor.execute(request, context)
-        val elapsed = System.currentTimeMillis() - start
-
-        assertEquals(false, result.success)
-        assertNotNull(result.error)
-        assertTrue(result.error!!.contains("timed out", ignoreCase = true),
-            "expected timeout error, got: ${result.error}")
-        // Termination must be bounded by timeout + small overhead.
-        // The engine thread is daemon, so an infinite loop in the script
-        // doesn't block JVM exit — it just spins until the test process
-        // terminates.
-        assertTrue(elapsed < 5_000L, "executor took ${elapsed}ms — timeout not enforced")
+        val output = runTimeoutProbe()
+        assertTrue(output.contains("timed out", ignoreCase = true),
+            "expected timeout error, got: $output")
+        assertTrue(timeoutProbeElapsed(output) < 1_500L,
+            "executor-reported timeout elapsed time exceeded the bound: $output")
         Unit
+    }
+
+    @Test
+    fun sleepingScriptReturnsTimeoutAt100ms() = runBlocking {
+        val output = runTimeoutProbe("sleep")
+        assertTrue(output.contains("timed out", ignoreCase = true),
+            "Expected timeout error; got: $output")
+        assertTrue(output.contains("100ms"), "Expected the 100ms timeout: $output")
+        assertTrue(timeoutProbeElapsed(output) < 1_500L,
+            "executor-reported timeout elapsed time exceeded the bound: $output")
     }
 
     @Test
@@ -60,5 +54,44 @@ class KotlinExecutorTimeoutTest
         // println — kotlin.io is not exported to the host classpath).
         assertEquals("Result: 4", result.output)
         Unit
+    }
+
+    private fun javaExecutable(): String
+    {
+        return java.nio.file.Path.of(
+            System.getProperty("java.home"),
+            "bin",
+            if(System.getProperty("os.name").contains("Windows")) "java.exe" else "java"
+        ).toString()
+    }
+
+    private fun runTimeoutProbe(vararg arguments: String): String
+    {
+        val start = System.currentTimeMillis()
+        val process = ProcessBuilder(
+            javaExecutable(),
+            "-cp",
+            System.getProperty("java.class.path"),
+            KotlinTimeoutProbeMain::class.java.name,
+            *arguments
+        ).redirectErrorStream(true).start()
+        val completed = process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+        if(!completed)
+        {
+            process.destroyForcibly()
+        }
+        val output = process.inputStream.bufferedReader().readText()
+        val elapsed = System.currentTimeMillis() - start
+        assertTrue(completed, "timeout probe did not exit: $output")
+        assertTrue(elapsed < 5_000L, "executor took ${elapsed}ms — timeout not enforced")
+        return output
+    }
+
+    private fun timeoutProbeElapsed(output: String): Long
+    {
+        return output.substringAfter("|elapsedMs=", missingDelimiterValue = "")
+            .trim()
+            .toLongOrNull()
+            ?: error("Timeout probe did not report elapsed time: $output")
     }
 }

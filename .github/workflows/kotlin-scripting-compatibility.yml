@@ -1,0 +1,62 @@
+name: Kotlin Scripting Compatibility
+
+on:
+  pull_request:
+    paths:
+      - "build.gradle.kts"
+      - "gradle/**"
+      - "src/main/kotlin/PipeContextProtocol/**"
+      - "src/test/kotlin/PipeContextProtocol/**"
+      - "src/test/resources/PipeContextProtocol/kotlin-scripting/**"
+      - "compatibility-tests/**"
+      - "TPipe-MCP/**"
+      - ".github/workflows/kotlin-scripting-compatibility.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "build.gradle.kts"
+      - "gradle/**"
+      - "src/main/kotlin/PipeContextProtocol/**"
+      - "src/test/kotlin/PipeContextProtocol/**"
+      - "src/test/resources/PipeContextProtocol/kotlin-scripting/**"
+      - "compatibility-tests/**"
+      - "TPipe-MCP/**"
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 24
+        uses: actions/setup-java@v4
+        with:
+          java-version: "24"
+          distribution: temurin
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Check ABI
+        run: ./gradlew checkKotlinAbi --no-daemon --console=plain
+
+      - name: Run focused Kotlin PCP tests
+        run: >-
+          ./gradlew :test
+          --tests "com.TTT.PipeContextProtocol.Kotlin*"
+          --tests "com.TTT.PipeContextProtocol.scripting.*"
+          --tests "com.TTT.PipeContextProtocol.StdioAndKotlinExecutorEndToEndTest"
+          -PtestHeapSize=2g --no-daemon --console=plain
+
+      - name: Run packaging and dependency gates
+        run: >-
+          ./gradlew kotlinScriptingThinJarSmoke
+          kotlinScriptingShadowJarSmoke kotlinJsrAbsenceCheck
+          --no-daemon --console=plain
+
+      - name: Run independent consumers
+        run: ./gradlew consumerCompatibilityTest --no-daemon --console=plain
+
+      - name: Build all modules
+        run: ./gradlew build -x test -PtestHeapSize=2g --no-daemon --console=plain
