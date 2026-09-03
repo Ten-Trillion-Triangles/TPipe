@@ -970,13 +970,13 @@ open class BedrockPipe : Pipe()
 
         if(callback != null)
         {
+            streamingCallbackManager?.removeCallback(callback)
             this.streamingCallback = callback
-            propagateStreamingCallback(callback)
+            addCallbackToDescendants(callback)
         }
 
-        // Recursion to all descendants is handled uniformly by
-        // propagateStreamingCallback — showReasoning no longer gates traversal
-        // because the generic recursion already covers every configured child.
+        // Descendant recursion starts below this pipe so this callback uses
+        // only the legacy parent-side delivery path.
         @Suppress("UNUSED_PARAMETER")
         val unused = showReasoning
 
@@ -1026,26 +1026,75 @@ open class BedrockPipe : Pipe()
      *                            and branch pipes. Defaults to true.
      * @param propagateToReasoning Whether to propagate to the reasoning pipe.
      *                             Defaults to true.
+     * @param registerThis Internal recursion flag used when visiting a
+     *                     descendant BedrockPipe.
      */
     private fun addCallbackToDescendants(
         callback: suspend (String) -> Unit,
         propagateToChildren: Boolean = true,
         propagateToReasoning: Boolean = true,
+        visited: MutableSet<String> = mutableSetOf(),
+        registerThis: Boolean = false,
     )
     {
+        if(!visited.add(pipeId)) return
+
+        if(registerThis)
+        {
+            if(streamingCallback !== callback)
+            {
+                obtainStreamingCallbackManager().addCallback(callback)
+            }
+            setStreamingEnabled(true)
+        }
+
         if(propagateToChildren)
         {
             listOfNotNull(validatorPipe, transformationPipe, branchPipe).forEach { child ->
-                child.obtainStreamingCallbackManager().addCallback(callback)
-                (child as? BedrockPipe)?.addCallbackToDescendants(callback, propagateToChildren, propagateToReasoning)
+                if(child is BedrockPipe)
+                {
+                    child.addCallbackToDescendants(
+                        callback,
+                        propagateToChildren,
+                        propagateToReasoning,
+                        visited,
+                        true,
+                    )
+                }
+                else
+                {
+                    child.propagateStreamingCallback(
+                        callback,
+                        visited,
+                        propagateToChildren,
+                        propagateToReasoning,
+                    )
+                }
             }
         }
 
         if(propagateToReasoning)
         {
             reasoningPipe?.let { reasoning ->
-                reasoning.obtainStreamingCallbackManager().addCallback(callback)
-                (reasoning as? BedrockPipe)?.addCallbackToDescendants(callback, propagateToChildren, propagateToReasoning)
+                if(reasoning is BedrockPipe)
+                {
+                    reasoning.addCallbackToDescendants(
+                        callback,
+                        propagateToChildren,
+                        propagateToReasoning,
+                        visited,
+                        true,
+                    )
+                }
+                else
+                {
+                    reasoning.propagateStreamingCallback(
+                        callback,
+                        visited,
+                        propagateToChildren,
+                        propagateToReasoning,
+                    )
+                }
             }
         }
     }
@@ -1080,6 +1129,7 @@ open class BedrockPipe : Pipe()
         propagateToChildren: Boolean = true,
         propagateToReasoning: Boolean = true,
     ): BedrockPipe {
+        streamingCallbackManager?.removeCallback(callback)
         this.streamingCallback = callback
         this.streamingEnabled = true
         addCallbackToDescendants(callback, propagateToChildren, propagateToReasoning)
@@ -1114,6 +1164,7 @@ open class BedrockPipe : Pipe()
         propagateToReasoning: Boolean = true,
     ): BedrockPipe {
         val wrapped: suspend (String) -> Unit = { chunk -> callback(chunk) }
+        streamingCallbackManager?.removeCallback(wrapped)
         this.streamingCallback = wrapped
         this.streamingEnabled = true
         addCallbackToDescendants(wrapped, propagateToChildren, propagateToReasoning)

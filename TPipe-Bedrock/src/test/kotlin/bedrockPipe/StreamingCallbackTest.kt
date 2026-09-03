@@ -282,6 +282,55 @@ class StreamingCallbackTest
     }
 
     @Test
+    fun testEnableStreamingCallbackEmitsToParentOnce()
+    {
+        runBlocking {
+            val received = mutableListOf<String>()
+            val callback: suspend (String) -> Unit = { chunk -> received.add(chunk) }
+            val pipe = TestBedrockPipe()
+
+            pipe.enableStreaming(callback)
+            pipe.testEmit("from-parent")
+
+            assertEquals(listOf("from-parent"), received)
+        }
+    }
+
+    @Test
+    fun testEnableStreamingCallbackDoesNotDuplicateExistingChildCallback()
+    {
+        runBlocking {
+            val received = mutableListOf<String>()
+            val callback: suspend (String) -> Unit = { chunk -> received.add(chunk) }
+            val child = TestBedrockPipe()
+            val parent = TestBedrockPipe()
+            parent.setTransformationPipe(child)
+
+            child.enableStreaming(callback)
+            parent.enableStreaming(callback)
+            child.testEmit("from-child")
+
+            assertEquals(listOf("from-child"), received)
+        }
+    }
+
+    @Test
+    fun testEnableStreamingCallbackDoesNotDuplicateExistingManagerCallback()
+    {
+        runBlocking {
+            val received = mutableListOf<String>()
+            val callback: suspend (String) -> Unit = { chunk -> received.add(chunk) }
+            val pipe = TestBedrockPipe()
+
+            pipe.propagateStreamingCallback(callback)
+            pipe.enableStreaming(callback)
+            pipe.testEmit("from-manager")
+
+            assertEquals(listOf("from-manager"), received)
+        }
+    }
+
+    @Test
     fun testDisableStreamingClearsDescendants()
     {
         runBlocking {

@@ -80,6 +80,29 @@ class BedrockPipeStreamingCallbacksLiveTest
     }
 
     @Test
+    fun testEnableStreamingCallbackMatchesReturnedTextOnLiveCall()
+    {
+        val received = mutableListOf<String>()
+        val pipe = BedrockPipe().setRegion("us-east-2")
+        pipe.setModel("amazon.nova-lite-v1:0")
+        pipe.enableStreaming(suspend { chunk: String -> received.add(chunk) })
+
+        val returnedText = runBlocking {
+            pipe.init()
+            pipe.generateText("Respond with exactly STREAM_MARKER and nothing else.")
+        }
+
+        assertTrue(returnedText.isNotEmpty(), "Live streaming call returned no text")
+        assertTrue(received.isNotEmpty(), "Live streaming callback received no chunks")
+        assertTrue(
+            received.joinToString("") == returnedText,
+            "Callback deltas must reconstruct the returned text exactly; " +
+                "returned=${returnedText.replace("\n", "\\n")}, " +
+                "callback=${received.joinToString("").replace("\n", "\\n")}"
+        )
+    }
+
+    @Test
     fun testDisableStreamingClearsDescendantsOnLiveCall()
     {
         val parentReceived = mutableListOf<String>()
