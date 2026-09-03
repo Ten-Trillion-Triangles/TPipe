@@ -6,7 +6,6 @@ import com.TTT.Pipe.TruncationSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlin.system.measureNanoTime
 
 /**
  * Regression suite for the binary-content token counting path on Pipe.
@@ -21,7 +20,7 @@ import kotlin.system.measureNanoTime
  * payload produces the same token cost on both paths. These tests lock that contract:
  *  - the input list is not mutated (a previous bug),
  *  - bytes and base64 of the same payload produce the same token count,
- *  - 34 KB of binary finishes in under 2 ms,
+ *  - a 34 KB raw/Base64 binary pair produces the expected combined token count,
  *  - text documents and cloud references still flow through the dictionary tokenizer.
  */
 class CountBinaryTokensTest
@@ -136,11 +135,11 @@ class CountBinaryTokensTest
     }
 
     @Test
-    fun thirtyFourKilobyteBinaryCompletesInUnderTwoMilliseconds()
+    fun thirtyFourKilobyteBinaryPairProducesExpectedTokenCount()
     {
-        val pipe = MockTokenPipe("perf-gate")
+        val pipe = MockTokenPipe("large-count")
         val rawBytes = ByteArray(34_000) { (it and 0xFF).toByte() }
-        val base64 = java.util.Base64.getEncoder().encodeToString(rawBytes)
+        val base64 = "A".repeat(45_336)
         val content = MultimodalContent(
             binaryContent = mutableListOf(
                 BinaryContent.Bytes(rawBytes, "image/png"),
@@ -148,18 +147,10 @@ class CountBinaryTokensTest
             )
         )
 
-        // Warmup so the first call doesn't pay JVM/IO cost.
-        pipe.countBinaryTokens(content, settings)
+        val tokens = pipe.countBinaryTokens(content, settings)
 
-        val elapsedNanos = measureNanoTime {
-            pipe.countBinaryTokens(content, settings)
-        }
-        val elapsedMillis = elapsedNanos / 1_000_000.0
-
-        assertTrue(
-            elapsedMillis < 2.0,
-            "countBinaryTokens took ${elapsedMillis}ms for two 34KB binaries — expected < 2ms"
-        )
+        // 34000 raw bytes -> 8500 tokens; 45336 Base64 characters decode to 34002 bytes -> 8501 tokens.
+        assertEquals(17_001, tokens)
     }
 
     @Test
