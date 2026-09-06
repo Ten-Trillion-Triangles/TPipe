@@ -114,7 +114,7 @@ class Splitter: P2PInterface
         {
             for (pipeline in activatorValue.pipelines)
             {
-                pipeline.setStreamingCallbackRecursive(callback)
+                pipeline.setStreamingCallbackForSession(callback)
             }
         }
     }
@@ -128,6 +128,8 @@ class Splitter: P2PInterface
             }
         }
     }
+
+    override fun supportsStreamingCallbackRemoval(): Boolean = true
 
     override fun clearStreamingCallbacksRecursive()
     {

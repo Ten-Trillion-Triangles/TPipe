@@ -643,9 +643,9 @@ class DistributionGrid : P2PInterface
 
     override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
     {
-        entryPipeline?.setStreamingCallbackRecursive(callback)
-        judgePipeline?.setStreamingCallbackRecursive(callback)
-        workerPipelines?.forEach { it.setStreamingCallbackRecursive(callback) }
+        entryPipeline?.setStreamingCallbackForSession(callback)
+        judgePipeline?.setStreamingCallbackForSession(callback)
+        workerPipelines?.forEach { it.setStreamingCallbackForSession(callback) }
     }
     override fun removeStreamingCallbackRecursive(callback: suspend (String) -> Unit)
     {
@@ -653,6 +653,8 @@ class DistributionGrid : P2PInterface
         judgePipeline?.removeStreamingCallbackRecursive(callback)
         workerPipelines?.forEach { it.removeStreamingCallbackRecursive(callback) }
     }
+
+    override fun supportsStreamingCallbackRemoval(): Boolean = true
 
     override fun clearStreamingCallbacksRecursive()
     {

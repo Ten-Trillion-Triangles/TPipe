@@ -275,7 +275,7 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
 
     override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
     {
-        internalAgent?.setStreamingCallbackRecursive(callback)
+        internalAgent?.setStreamingCallbackForSession(callback)
     }
 
     override fun clearStreamingCallbacksRecursive()
@@ -287,6 +287,8 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     {
         internalAgent?.removeStreamingCallbackRecursive(callback)
     }
+
+    override fun supportsStreamingCallbackRemoval(): Boolean = true
 
     override suspend fun abortRecursive()
     {
@@ -2822,21 +2824,21 @@ private fun pathKey(name: String): String = name.lowercase()
             {
                 retainedStreamingCallbacks.add(callback)
             }
-            judgeAgent?.setStreamingCallbackRecursive(callback)
-            dispatchAgent?.setStreamingCallbackRecursive(callback)
-            interventionAgent?.setStreamingCallbackRecursive(callback)
-            healthAgent?.setStreamingCallbackRecursive(callback)
-            lorebookAgent?.setStreamingCallbackRecursive(callback)
-            summaryAgent?.setStreamingCallbackRecursive(callback)
-            goalAgent?.setStreamingCallbackRecursive(callback)
-            preInitAgent?.setStreamingCallbackRecursive(callback)
-            pathSafetyAgent?.setStreamingCallbackRecursive(callback)
+            judgeAgent?.setStreamingCallbackForSession(callback)
+            dispatchAgent?.setStreamingCallbackForSession(callback)
+            interventionAgent?.setStreamingCallbackForSession(callback)
+            healthAgent?.setStreamingCallbackForSession(callback)
+            lorebookAgent?.setStreamingCallbackForSession(callback)
+            summaryAgent?.setStreamingCallbackForSession(callback)
+            goalAgent?.setStreamingCallbackForSession(callback)
+            preInitAgent?.setStreamingCallbackForSession(callback)
+            pathSafetyAgent?.setStreamingCallbackForSession(callback)
             for (slot in additionalHarnessAgentSlots)
             {
-                slot.agent?.setStreamingCallbackRecursive(callback)
+                slot.agent?.setStreamingCallbackForSession(callback)
             }
-            pathList.values.forEach { it.setStreamingCallbackRecursive(callback) }
-            reservePaths.values.forEach { it.setStreamingCallbackRecursive(callback) }
+            pathList.values.forEach { it.setStreamingCallbackForSession(callback) }
+            reservePaths.values.forEach { it.setStreamingCallbackForSession(callback) }
             activeForegroundChild.get()?.station
         }
         activeChild?.setStreamingCallbackRecursive(callback)
@@ -2866,6 +2868,8 @@ private fun pathKey(name: String): String = name.lowercase()
         }
         activeChild?.removeStreamingCallbackRecursive(callback)
     }
+
+    override fun supportsStreamingCallbackRemoval(): Boolean = true
 
     override fun clearStreamingCallbacksRecursive()
     {

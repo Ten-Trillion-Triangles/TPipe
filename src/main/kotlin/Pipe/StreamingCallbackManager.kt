@@ -46,9 +46,12 @@ class StreamingCallbackManager(
         // pipe's setStreamingCallback and once via child propagation), we
         // don't want it firing twice. Without this, chunks appear in the
         // terminal as exact duplicates interleaved (e.g. "HelloHello").
-        if(callbacks.none { it === callback })
+        synchronized(callbacks)
         {
-            callbacks.add(callback)
+            if(callbacks.none { it === callback })
+            {
+                callbacks.add(callback)
+            }
         }
     }
 
@@ -101,9 +104,12 @@ class StreamingCallbackManager(
      */
     fun addCompleteCallback(callback: suspend () -> Unit)
     {
-        if(completionCallbacks.none { it === callback })
+        synchronized(completionCallbacks)
         {
-            completionCallbacks.add(callback)
+            if(completionCallbacks.none { it === callback })
+            {
+                completionCallbacks.add(callback)
+            }
         }
     }
 

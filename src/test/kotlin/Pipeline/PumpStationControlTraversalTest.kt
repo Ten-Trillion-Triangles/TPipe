@@ -25,10 +25,25 @@ private class SessionStreamingFake : P2PInterface
         callbacks.removeIf { it === callback }
     }
 
+    override fun supportsStreamingCallbackRemoval(): Boolean = true
+
     suspend fun emit(chunk: String)
     {
         callbacks.forEach { it(chunk) }
     }
+}
+
+private class LegacyStreamingFake : P2PInterface
+{
+    override var killSwitch: KillSwitch? = null
+    private val callbacks = java.util.concurrent.CopyOnWriteArrayList<suspend (String) -> Unit>()
+
+    override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        callbacks.add(callback)
+    }
+
+    fun callbackCount(): Int = callbacks.size
 }
 
 private class AbortTrackingFake : P2PInterface
@@ -315,6 +330,27 @@ class PumpStationControlTraversalTest
             {
                 session.close()
             }
+        }
+    }
+
+    @Test
+    fun sessionDoesNotPropagateIntoLegacyP2PWithoutCallbackRemovalSupport()
+    {
+        val legacy = LegacyStreamingFake()
+        val root = PumpStation()
+        root.addPath(PathObject().apply {
+            pathName = "legacy"
+            setInternalAgent(legacy)
+        })
+
+        val session = root.openSession("legacy-session")
+        try
+        {
+            assertEquals(0, legacy.callbackCount())
+        }
+        finally
+        {
+            session.close()
         }
     }
 

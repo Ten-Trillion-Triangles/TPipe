@@ -1,6 +1,7 @@
 package com.TTT.Pipeline
 
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.P2P.P2PInterface
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.sync.Mutex
@@ -8,6 +9,26 @@ import kotlinx.coroutines.sync.withLock
 import java.util.IdentityHashMap
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
+
+/** Marks the callback owned by [PumpStationSession] for compatibility-aware propagation. */
+internal interface SessionStreamingCallbackMarker
+
+/**
+ * Propagate a session callback only to implementations that expose the
+ * callback-specific removal contract. Ordinary developer callbacks retain the
+ * legacy propagation behaviour, including propagation to third-party P2P
+ * implementations that predate the removal method.
+ */
+internal fun P2PInterface.setStreamingCallbackForSession(callback: suspend (String) -> Unit)
+{
+    if (
+        callback !is SessionStreamingCallbackMarker ||
+        supportsStreamingCallbackRemoval()
+    )
+    {
+        setStreamingCallbackRecursive(callback)
+    }
+}
 
 /**
  * Retained UI/runtime facade for one PumpStation execution.
@@ -20,9 +41,22 @@ class PumpStationSession internal constructor(
     val sessionId: String = UUID.randomUUID().toString()
 ) : AutoCloseable
 {
+    private class StationStreamingCallback(
+        private val session: PumpStationSession,
+        private val station: PumpStation,
+        private val pathChain: List<String>
+    ) : suspend (String) -> Unit, SessionStreamingCallbackMarker
+    {
+        override suspend fun invoke(chunk: String)
+        {
+            session.publishStream(station, pathChain, chunk)
+        }
+    }
+
     private data class Attachment(
         val station: PumpStation,
         val pathChain: List<String>,
+        val streamingCallback: suspend (String) -> Unit,
         val eventSubscription: AutoCloseable,
         val childSubscription: AutoCloseable
     )
@@ -38,18 +72,21 @@ class PumpStationSession internal constructor(
     )
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    private val streamingCallback: suspend (String) -> Unit = { chunk ->
+    private fun callbackFor(station: PumpStation, pathChain: List<String>): suspend (String) -> Unit =
+        StationStreamingCallback(this, station, pathChain.toList())
+
+    private fun publishStream(station: PumpStation, pathChain: List<String>, chunk: String)
+    {
         if (!closed.get())
         {
-            val route = root.getActiveControlRoute()
             publish { nextSequence ->
                 PumpStationSessionStreamUpdate(
                     sequence = nextSequence,
                     sessionId = sessionId,
                     source = PumpStationSessionSource(
-                        runId = route.targetRunId,
-                        depth = route.depth,
-                        pathChain = route.pathChain.toList()
+                        runId = station.getTaskState().runId,
+                        depth = pathChain.size,
+                        pathChain = pathChain.toList()
                     ),
                     chunk = chunk
                 )
@@ -62,8 +99,9 @@ class PumpStationSession internal constructor(
 
     init
     {
-        root.setStreamingCallbackRecursive(streamingCallback)
-        attachStation(root, emptyList())
+        val rootCallback = callbackFor(root, emptyList())
+        root.setStreamingCallbackRecursive(rootCallback)
+        attachStation(root, emptyList(), streamingCallback = rootCallback)
     }
 
     /** Execute content while preserving one in-flight execution per session. */
@@ -141,9 +179,8 @@ class PumpStationSession internal constructor(
             current.forEach {
                 it.eventSubscription.close()
                 it.childSubscription.close()
-                it.station.removeStreamingCallbackRecursive(streamingCallback)
+                it.station.removeStreamingCallbackRecursive(it.streamingCallback)
             }
-            root.removeStreamingCallbackRecursive(streamingCallback)
         }
         updateChannel.close()
     }
@@ -163,7 +200,8 @@ class PumpStationSession internal constructor(
         station: PumpStation,
         pathChain: List<String>,
         expectedParent: PumpStation? = null,
-        expectedPathName: String? = null
+        expectedPathName: String? = null,
+        streamingCallback: suspend (String) -> Unit = callbackFor(station, pathChain)
     ): Boolean
     {
         val reserved = synchronized(attachmentLock)
@@ -208,15 +246,23 @@ class PumpStationSession internal constructor(
             childSubscription = station.addActiveChildListener { pathName, child ->
                 if (child != null)
                 {
+                    val childPathChain = pathChain + pathName
+                    val childCallback = callbackFor(child, childPathChain)
                     val shouldAttach = synchronized(attachmentLock)
                     {
-                        if (closed.get() || !station.isActiveForegroundChild(pathName, child))
+                        if (
+                            closed.get() ||
+                            !station.isActiveForegroundChild(pathName, child) ||
+                            attachments.containsKey(child) ||
+                            attachingStations.contains(child)
+                        )
                         {
                             false
                         }
                         else
                         {
-                            child.setStreamingCallbackRecursive(streamingCallback)
+                            child.removeStreamingCallbackRecursive(streamingCallback)
+                            child.setStreamingCallbackRecursive(childCallback)
                             true
                         }
                     }
@@ -224,13 +270,16 @@ class PumpStationSession internal constructor(
                     {
                         synchronized(attachmentLock)
                         {
-                            val childAttached = attachStation(child, pathChain + pathName, station, pathName)
-                            if (
-                                !childAttached &&
-                                (closed.get() || !station.isActiveForegroundChild(pathName, child))
+                            val childAttached = attachStation(
+                                child,
+                                childPathChain,
+                                station,
+                                pathName,
+                                childCallback
                             )
+                            if (!childAttached)
                             {
-                                child.removeStreamingCallbackRecursive(streamingCallback)
+                                child.removeStreamingCallbackRecursive(childCallback)
                             }
                         }
                     }
@@ -252,6 +301,7 @@ class PumpStationSession internal constructor(
                     attachments[station] = Attachment(
                         station = station,
                         pathChain = pathChain,
+                        streamingCallback = streamingCallback,
                         eventSubscription = requireNotNull(eventSubscription),
                         childSubscription = requireNotNull(childSubscription)
                     )
@@ -289,7 +339,7 @@ class PumpStationSession internal constructor(
             matches.forEach {
                 it.eventSubscription.close()
                 it.childSubscription.close()
-                it.station.removeStreamingCallbackRecursive(streamingCallback)
+                it.station.removeStreamingCallbackRecursive(it.streamingCallback)
             }
         }
     }

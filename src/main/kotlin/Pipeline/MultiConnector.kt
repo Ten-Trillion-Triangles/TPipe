@@ -132,7 +132,7 @@ class MultiConnector : P2PInterface
     {
         for (connector in connectors)
         {
-            connector.setStreamingCallbackRecursive(callback)
+            connector.setStreamingCallbackForSession(callback)
         }
     }
     override fun removeStreamingCallbackRecursive(callback: suspend (String) -> Unit)
@@ -142,6 +142,8 @@ class MultiConnector : P2PInterface
             connector.removeStreamingCallbackRecursive(callback)
         }
     }
+
+    override fun supportsStreamingCallbackRemoval(): Boolean = true
 
     override fun clearStreamingCallbacksRecursive()
     {

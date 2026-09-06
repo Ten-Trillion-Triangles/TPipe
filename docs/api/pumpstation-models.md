@@ -341,7 +341,7 @@ Captured fields cover the four `taskState` fields that a turn's in-flight work c
 
 ### PumpStationInterruptConfiguration
 
-`src/main/kotlin/Pipeline/PumpStationSteeringModels.kt` — Configuration block set via `pumpStation { interruptPolicy { ... } }`. Holds the initial interrupts queued at construction time. Unlike steering, there is no persistent overlay.
+`src/main/kotlin/Pipeline/PumpStationDsl.kt` — Configuration block set via `pumpStation { interruptPolicy { ... } }`. Holds the initial interrupts queued at construction time. Unlike steering, there is no persistent overlay.
 
 ```kotlin
 data class PumpStationInterruptConfiguration(

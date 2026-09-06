@@ -41,8 +41,7 @@ class PumpStationLoopGuardResetTest
             if (event is LoopGuardTripped && event.guard == "maxConsecutiveSamePath") {
                 val consecutiveStr = event.detail.substringAfter("consecutive=")
                     .substringBefore(",")
-                // Observer fires twice per event (emit + finalization drain),
-                // dedupe by (turnIndex, timestamp) per oracle pitfall #1.
+                // The observer receives each publication once through the funnel.
                 val key = event.turnIndex to event.timestamp.toInt()
                 if (seen.add(key)) {
                     trips.add(event.turnIndex to consecutiveStr.toInt())

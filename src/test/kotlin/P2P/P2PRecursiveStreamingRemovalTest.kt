@@ -1,6 +1,10 @@
 package com.TTT.P2P
 
 import com.TTT.Pipe.Pipe
+import com.TTT.Pipe.StreamingCallbackManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -12,6 +16,21 @@ import kotlin.test.assertTrue
  */
 class P2PRecursiveStreamingRemovalTest
 {
+    @Test
+    fun callbackRegistrationIsIdentityDeduplicatedUnderConcurrency()
+    {
+        runBlocking {
+            val manager = StreamingCallbackManager()
+            val callback: suspend (String) -> Unit = {}
+            coroutineScope {
+                repeat(100) {
+                    launch(Dispatchers.Default) { manager.addCallback(callback) }
+                }
+            }
+            assertEquals(1, manager.callbackCount())
+        }
+    }
+
     private class FakePipe : Pipe()
     {
         override fun truncateModuleContext(): Pipe = this

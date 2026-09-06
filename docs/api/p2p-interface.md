@@ -177,6 +177,7 @@ The recursive methods share one shape:
 | `setPipeSettingsRecursively(settings: PipeSettings)` | Apply pipe settings to every descendant pipe | `applyPipeSettings` |
 | `setStreamingCallbackRecursive(callback: suspend (String) -> Unit)` | Register a per-chunk streaming callback on every leaf pipe | `propagateStreamingCallback` |
 | `removeStreamingCallbackRecursive(callback: suspend (String) -> Unit)` | Remove only that callback by identity without disabling other callbacks | callback-manager removal and provider legacy-field cleanup |
+| `supportsStreamingCallbackRemoval()` | Report whether callback-specific removal is supported | `true` for TPipe implementations; `false` by default for legacy P2P implementations |
 | `enableStallDetectorRecursive(config, callback)` | Enable stall detection on every leaf pipe | `propagateStallDetection` |
 | `setConverseRoleRecursive(role: ConverseRole)` | Set converse role on every leaf pipe | `setConverseRole` |
 | `suspend abortRecursive()` | Abort every leaf pipe's current execution | `abort` (delegates to `propagateAbortRecursively`) |

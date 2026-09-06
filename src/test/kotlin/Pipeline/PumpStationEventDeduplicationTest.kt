@@ -12,17 +12,29 @@ class PumpStationEventDeduplicationTest
     @Test
     fun normalLifecyclePublishesStartAndCompletionThroughTheSameFunnel()
     {
+        val dispatch = Pipeline().apply {
+            add(ScriptedTestPipe(response = """{"pathName":"finish","pathSchema":"{}"}"""))
+        }
         val station = PumpStation()
+            .setMaxHarnessTurns(2)
+            .setDispatchAgent(dispatch)
+        station.addPath(PathObject().apply {
+            pathName = "finish"
+            setExecutionFunction { _, _, _, _ ->
+                MultimodalContent(text = "done").apply { passPipeline = true }
+            }
+        })
         val events = mutableListOf<PumpStationEvent>()
         station.setRunIdForTest("normal-lifecycle")
         station.setEventObserver(events::add)
 
         runBlocking {
-            station.runPreInitPhase(MultimodalContent(text = "input"))
-            station.runFinalizationPhase()
+            station.executeLocal(MultimodalContent(text = "input"))
         }
 
         assertEquals(1, events.filterIsInstance<HarnessStarted>().size)
+        assertEquals(1, events.filterIsInstance<PathStarted>().size)
+        assertEquals(1, events.filterIsInstance<PathCompleted>().size)
         assertEquals(1, events.filterIsInstance<HarnessCompleted>().size)
         assertTrue(events.indexOfFirst { it is HarnessStarted } < events.indexOfFirst { it is HarnessCompleted })
     }

@@ -111,7 +111,7 @@ class Connector : P2PInterface
     {
         for (pipeline in branches.values)
         {
-            pipeline.setStreamingCallbackRecursive(callback)
+            pipeline.setStreamingCallbackForSession(callback)
         }
     }
     override fun removeStreamingCallbackRecursive(callback: suspend (String) -> Unit)
@@ -121,6 +121,8 @@ class Connector : P2PInterface
             pipeline.removeStreamingCallbackRecursive(callback)
         }
     }
+
+    override fun supportsStreamingCallbackRemoval(): Boolean = true
 
     override fun clearStreamingCallbacksRecursive()
     {

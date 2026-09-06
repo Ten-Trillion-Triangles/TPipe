@@ -18,9 +18,9 @@ import kotlin.test.assertTrue
  * so we can assert on the presence/absence of [JudgeStarted] / [JudgeCompleted] / [JudgeSkipped]
  * for each turn.
  *
- * Note on event delivery: the harness intentionally emits each event to the synchronous
- * observer twice (once at emit, once at finalization drain) so the test counts UNIQUE events
- * by their (turnIndex, timestamp) tuple rather than raw list size.
+ * Note on event delivery: the harness emits each event once through the
+ * synchronous publication funnel. The helper still collapses by
+ * (turnIndex, timestamp) so assertions stay focused on logical events.
  *
  * Note on path names: the harness's path lookup is case-insensitive, but [addPath] stores
  * paths by their original case, so mixed-case path names (e.g. "signalDone") can fail to
@@ -51,9 +51,8 @@ class PumpStationFlagTriggeredJudgeTest
     }
 
     /**
-     * The harness emits every event to the synchronous observer twice (once at emit, once
-     * at finalization drain). Collapse duplicates by (turnIndex, timestamp) so the tests
-     * see the logical stream the developer would experience.
+     * Collapse by (turnIndex, timestamp) so assertions stay focused on logical
+     * events even if a future observer implementation changes delivery.
      */
     private fun <T : PumpStationEvent> uniqueBy(events: List<T>): List<T>
     {

@@ -2216,6 +2216,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
         )
     }
 
+    override fun supportsStreamingCallbackRemoval(): Boolean = true
+
     /**
      * Enables stall detection on this pipe and recurses into every child pipe
      * (validator, transformation, branch, reasoning). Mirrors the propagation

@@ -120,6 +120,14 @@ interface P2PInterface
     fun removeStreamingCallbackRecursive(callback: suspend (String) -> Unit) {}
 
     /**
+     * Whether [removeStreamingCallbackRecursive] is implemented by this
+     * object. Legacy P2P implementations inherit `false`, allowing retained
+     * session callbacks to avoid entering an object that cannot later remove
+     * them.
+     */
+    fun supportsStreamingCallbackRemoval(): Boolean = false
+
+    /**
      * Removes recursively propagated streaming callbacks and disables streaming
      * on every descendant that supports it.
      *

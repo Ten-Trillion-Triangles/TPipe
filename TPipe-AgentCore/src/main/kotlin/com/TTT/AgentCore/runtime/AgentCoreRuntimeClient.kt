@@ -539,13 +539,18 @@ class AgentCoreRuntimeAgent(
 
     override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
     {
-        if (callbacks.none { it === callback }) callbacks.add(callback)
+        synchronized(callbacks)
+        {
+            if (callbacks.none { it === callback }) callbacks.add(callback)
+        }
     }
 
     override fun removeStreamingCallbackRecursive(callback: suspend (String) -> Unit)
     {
         callbacks.removeIf { it === callback }
     }
+
+    override fun supportsStreamingCallbackRemoval(): Boolean = true
 
     override fun clearStreamingCallbacksRecursive()
     {

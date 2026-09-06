@@ -45,8 +45,7 @@ class PumpStationPathTimeoutTest
 
         station.setEventObserver { event ->
             if (event is PathFailed) {
-                // Observer fires twice per event (emit + finalization drain);
-                // dedupe by (turnIndex, timestamp) per oracle pitfall #1.
+                // Each event is delivered once through the publication funnel.
                 val key = event.turnIndex to event.timestamp
                 if (seen.add(key)) {
                     captured.add(event)

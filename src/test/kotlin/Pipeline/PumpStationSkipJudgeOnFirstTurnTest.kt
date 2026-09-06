@@ -54,9 +54,9 @@ class PumpStationSkipJudgeOnFirstTurnTest
     }
 
     /**
-     * The harness intentionally emits every event to the synchronous observer twice (once at
-     * emit, once at finalization drain). Collapse duplicates by (turnIndex, timestamp) so
-     * the tests see the logical stream the developer would experience.
+     * The harness emits each event once through the synchronous publication
+     * funnel. Collapse by (turnIndex, timestamp) so assertions stay focused on
+     * logical events.
      */
     private fun <T : PumpStationEvent> uniqueBy(events: List<T>): List<T>
     {
