@@ -5,6 +5,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Thread-safe interrupt queue used by the harness loop to receive out-of-band
@@ -29,8 +30,15 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class PumpStationInterruptService
 {
+    private data class SequencedInterrupt(
+        val sequence: Long,
+        val content: MultimodalContent
+    )
+
     private val mutex = Mutex()
-    private val oneShotQueues: MutableMap<PumpStationPausePhase, Channel<MultimodalContent>> = ConcurrentHashMap()
+    private val oneShotQueues: MutableMap<PumpStationPausePhase, Channel<SequencedInterrupt>> = ConcurrentHashMap()
+    private val nextBoundaryQueue = Channel<SequencedInterrupt>(capacity = Channel.UNLIMITED)
+    private val nextSequence = AtomicLong()
 
     /**
      * Enqueue an interrupt for [phase]. Thread-safe. May be called from any
@@ -40,9 +48,23 @@ class PumpStationInterruptService
     {
         mutex.withLock {
             val channel = oneShotQueues.getOrPut(phase) { Channel(capacity = Channel.UNLIMITED) }
-            channel.send(content)
+            channel.send(sequenced(content))
         }
     }
+
+    /**
+     * Enqueue an interrupt for the next boundary reached, regardless of its
+     * eventual [PumpStationPausePhase].
+     */
+    suspend fun enqueueNextBoundary(content: MultimodalContent)
+    {
+        mutex.withLock {
+            nextBoundaryQueue.send(sequenced(content))
+        }
+    }
+
+    private fun sequenced(content: MultimodalContent): SequencedInterrupt =
+        SequencedInterrupt(nextSequence.getAndIncrement(), content)
 
     /**
      * Drain the first entry for [phase] and return it. Returns null if the
@@ -53,7 +75,7 @@ class PumpStationInterruptService
     {
         mutex.withLock {
             val channel = oneShotQueues[phase] ?: return null
-            return channel.tryReceive().getOrNull()
+            return channel.tryReceive().getOrNull()?.content
         }
     }
 
@@ -72,7 +94,7 @@ class PumpStationInterruptService
                 val result = channel.tryReceive()
                 if (result.isSuccess)
                 {
-                    drained.add(result.getOrThrow())
+                    drained.add(result.getOrThrow().content)
                 }
                 else
                 {
@@ -84,6 +106,42 @@ class PumpStationInterruptService
     }
 
     /**
+     * Drain all explicit interrupts for [phase] and all next-boundary
+     * interrupts in their global enqueue order. Both queues are consumed
+     * atomically with respect to producers.
+     */
+    internal suspend fun drainAllForBoundary(phase: PumpStationPausePhase): List<MultimodalContent>
+    {
+        val drained = mutableListOf<SequencedInterrupt>()
+        mutex.withLock {
+            drainInto(oneShotQueues[phase], drained)
+            drainInto(nextBoundaryQueue, drained)
+            drained.sortBy { it.sequence }
+        }
+        return drained.map { it.content }
+    }
+
+    private fun drainInto(
+        channel: Channel<SequencedInterrupt>?,
+        target: MutableList<SequencedInterrupt>
+    )
+    {
+        if (channel == null) return
+        while (true)
+        {
+            val result = channel.tryReceive()
+            if (result.isSuccess)
+            {
+                target.add(result.getOrThrow())
+            }
+            else
+            {
+                return
+            }
+        }
+    }
+
+    /**
      * Count pending entries for [phase]. Returns 0 if no channel exists.
      * Approximate — uses a non-destructive tryReceive round-trip. For test
      * and observability use only.
@@ -91,7 +149,7 @@ class PumpStationInterruptService
     fun queueDepth(phase: PumpStationPausePhase): Int
     {
         val channel = oneShotQueues[phase] ?: return 0
-        val temp = mutableListOf<MultimodalContent>()
+        val temp = mutableListOf<SequencedInterrupt>()
         while (true)
         {
             val r = channel.tryReceive()

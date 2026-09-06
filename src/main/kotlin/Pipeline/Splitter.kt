@@ -118,6 +118,16 @@ class Splitter: P2PInterface
             }
         }
     }
+    override fun removeStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        for (activatorValue in activatorKeys.values)
+        {
+            for (pipeline in activatorValue.pipelines)
+            {
+                pipeline.removeStreamingCallbackRecursive(callback)
+            }
+        }
+    }
 
     override fun clearStreamingCallbacksRecursive()
     {

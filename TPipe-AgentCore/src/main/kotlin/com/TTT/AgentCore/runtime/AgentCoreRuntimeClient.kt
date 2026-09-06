@@ -38,6 +38,7 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.collect
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.UUID
 
 /** Signs one outgoing AgentCore Runtime HTTP request. */
@@ -518,7 +519,7 @@ class AgentCoreRuntimeAgent(
         contextProtocol = ContextProtocol.none,
         supportedContentTypes = mutableListOf(SupportedContentTypes.text)
     )
-    private var callback: (suspend (String) -> Unit)? = null
+    private val callbacks = CopyOnWriteArrayList<suspend (String) -> Unit>()
 
     override var killSwitch: com.TTT.P2P.KillSwitch? = null
 
@@ -538,32 +539,29 @@ class AgentCoreRuntimeAgent(
 
     override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
     {
-        this.callback = callback
+        if (callbacks.none { it === callback }) callbacks.add(callback)
+    }
+
+    override fun removeStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        callbacks.removeIf { it === callback }
     }
 
     override fun clearStreamingCallbacksRecursive()
     {
-        callback = null
+        callbacks.clear()
     }
 
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse
     {
-        return try
-        {
-            val input = request.prompt.text
-            val invocation = callback?.let { sink ->
-                client.invokeStreaming(input, onChunk = sink)
-            } ?: client.invoke(input)
-            P2PResponse(
-                output = invocation.outputContent ?: invocation.output.let { value -> MultimodalContent(text = value) }
-            )
-        }
-
-        finally
-        {
-            // A runtime adapter may be reused directly, outside the HTTP host.
-            // Do not retain a caller-owned callback across requests.
-            clearStreamingCallbacksRecursive()
-        }
+        val input = request.prompt.text
+        val invocation = callbacks.takeIf { it.isNotEmpty() }?.let { sinks ->
+            client.invokeStreaming(input, onChunk = { chunk ->
+                sinks.forEach { sink -> sink(chunk) }
+            })
+        } ?: client.invoke(input)
+        return P2PResponse(
+            output = invocation.outputContent ?: invocation.output.let { value -> MultimodalContent(text = value) }
+        )
     }
 }

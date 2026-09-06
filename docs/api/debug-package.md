@@ -21,14 +21,21 @@ The Debug package provides comprehensive tracing, monitoring, and analysis capab
 
 Configuration object for tracing behavior.
 
+The default export directory is resolved from `TPipeConfig.getTraceDir()` when
+the configuration is constructed, so configure `TPipeConfig.configDir` and
+`TPipeConfig.instanceID` first. Passing `exportPath` explicitly remains a
+caller-owned override.
+
 ```kotlin
+import com.TTT.Config.TPipeConfig
+
 data class TraceConfig(
     val enabled: Boolean = false,
     val maxHistory: Int = 1000,
     val outputFormat: TraceFormat = TraceFormat.CONSOLE,
     val detailLevel: TraceDetailLevel = TraceDetailLevel.NORMAL,
     val autoExport: Boolean = false,
-    val exportPath: String = "~/.TPipe-Debug/traces/",
+    val exportPath: String = TPipeConfig.getTraceDir(),
     val includeContext: Boolean = true,
     val includeMetadata: Boolean = true,
     val mergeSplitterTraces: Boolean = true
@@ -42,7 +49,8 @@ data class TraceConfig(
 **`outputFormat`** - Default format for trace exports (JSON, HTML, MARKDOWN, CONSOLE)
 **`detailLevel`** - Level of detail to capture (MINIMAL, NORMAL, VERBOSE, DEBUG)
 **`autoExport`** - Automatically export traces after pipeline completion
-**`exportPath`** - Directory path for automatic trace exports
+**`exportPath`** - Directory path for automatic trace exports. By default this is the active
+instance's `TPipeConfig.getTraceDir()`; an explicit path remains a caller-owned override.
 **`includeContext`** - Include context snapshots in trace events
 **`includeMetadata`** - Include metadata in trace events
 **`mergeSplitterTraces`** - If true, Splitter child pipelines broadcast events to the Splitter's trace. If false, they trace independently.

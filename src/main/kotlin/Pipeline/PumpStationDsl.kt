@@ -4,6 +4,7 @@ import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
+import com.TTT.Config.TPipeConfig
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Debug.TraceFormat
@@ -1214,6 +1215,12 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         val steeringService = steeringConfiguration?.let { PumpStationSteeringService(it) }
             ?: PumpStationSteeringService()
         val station = PumpStation(steeringService = steeringService)
+            .setSteeringTargetMode(
+                steeringConfiguration?.targetMode ?: PumpStationControlTargetMode.DeepestActive
+            )
+            .setInterruptTargetMode(
+                interruptConfiguration?.targetMode ?: PumpStationControlTargetMode.DeepestActive
+            )
 
         // Seed the interrupt service with the configured initial queue.
         // The service is created in PumpStation's primary constructor as an
@@ -2188,8 +2195,12 @@ class PumpStationTracingDsl
 
     /**
      * Enable automatic file export after each run.
+     *
+     * @param enabled Whether automatic export is enabled.
+     * @param path Destination directory; defaults to the active instance's trace directory.
+     * @return This DSL for method chaining.
      */
-    fun autoExport(enabled: Boolean = true, path: String = "~/.TPipe-Debug/traces/"): PumpStationTracingDsl
+    fun autoExport(enabled: Boolean = true, path: String = TPipeConfig.getTraceDir()): PumpStationTracingDsl
     {
         config = config.copy(autoExport = enabled, exportPath = path)
         return this
@@ -2256,6 +2267,9 @@ class SteeringPolicyBuilder
     private val persistentOverlays: MutableMap<PumpStationPausePhase, MultimodalContent> = mutableMapOf()
     private val oneShotInstructions: MutableMap<PumpStationPausePhase, MutableList<MultimodalContent>> = mutableMapOf()
 
+    /** Routing mode for momentary steering controls. */
+    var targetMode: PumpStationControlTargetMode = PumpStationControlTargetMode.DeepestActive
+
     /**
      * Set a persistent overlay for [phase]. The instruction fires on every occurrence
      * of [phase] until replaced by another `persistentOverlay` call or cleared at runtime.
@@ -2300,7 +2314,8 @@ class SteeringPolicyBuilder
     {
         return PumpStationSteeringConfiguration(
             initialPersistentOverlays = persistentOverlays.toMap(),
-            initialOneShotInstructions = oneShotInstructions.mapValues { it.value.toList() }
+            initialOneShotInstructions = oneShotInstructions.mapValues { it.value.toList() },
+            targetMode = targetMode
         )
     }
 }
@@ -2315,6 +2330,19 @@ class SteeringPolicyBuilder
 data class PumpStationInterruptConfiguration(
     val initialQueue: Map<PumpStationPausePhase, List<MultimodalContent>> = emptyMap()
 )
+{
+    /** Routing mode for momentary controls created from this configuration. */
+    var targetMode: PumpStationControlTargetMode = PumpStationControlTargetMode.DeepestActive
+
+    /** Constructor that adds target routing without changing the original data-class ABI. */
+    constructor(
+        initialQueue: Map<PumpStationPausePhase, List<MultimodalContent>>,
+        targetMode: PumpStationControlTargetMode
+    ) : this(initialQueue)
+    {
+        this.targetMode = targetMode
+    }
+}
 
 /**
  * DSL block for seeding [PumpStationInterruptService] at construction time.
@@ -2332,6 +2360,9 @@ data class PumpStationInterruptConfiguration(
 @PumpStationDslMarker
 class PumpStationInterruptPolicyBuilder
 {
+    /** Routing mode for momentary interrupt controls. */
+    var targetMode: PumpStationControlTargetMode = PumpStationControlTargetMode.DeepestActive
+
     /**
      * Initial queue, exposed as a MutableMap so the DSL caller can use both
      * the function-call form (`initialQueue(phase, contents)`) and the
@@ -2351,7 +2382,8 @@ class PumpStationInterruptPolicyBuilder
     internal fun build(): PumpStationInterruptConfiguration
     {
         return PumpStationInterruptConfiguration(
-            initialQueue = initialQueue.toMap()
+            initialQueue = initialQueue.toMap(),
+            targetMode = targetMode
         )
     }
 }

@@ -8,6 +8,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.http.content.OutgoingContent
 import kotlinx.coroutines.runBlocking
+import com.TTT.P2P.P2PRequest
 import com.TTT.Pipe.MultimodalContent
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -88,6 +89,70 @@ class AgentCoreRuntimeClientTest
 
             finally
             {
+                httpClient.close()
+            }
+        }
+    }
+
+    @Test
+    fun agentPreservesCallbacksAcrossRequestsAndRemovesOnlyTheIdenticalCallback()
+    {
+        runBlocking {
+            var streamingRequests = 0
+            val httpClient = HttpClient(MockEngine { request ->
+                if(request.headers["Accept"] == ContentType.Text.EventStream.toString())
+                {
+                    streamingRequests++
+                    val streamBody = "data: ${AgentCoreRuntimeJson.encodeStreamEvent(AgentCoreStreamEvent(text = "chunk-$streamingRequests"))}\n\n" +
+                        "data: ${AgentCoreRuntimeJson.encodeStreamEvent(AgentCoreStreamEvent(done = true))}\n\n"
+                    respond(
+                        content = streamBody,
+                        status = HttpStatusCode.OK,
+                        headers = headersOf("Content-Type", ContentType.Text.EventStream.toString())
+                    )
+                }
+                else
+                {
+                    respond(
+                        content = AgentCoreRuntimeJson.encodeResponse(
+                            AgentCoreInvocationResponse(output = "final", sessionId = "session")
+                        ),
+                        status = HttpStatusCode.OK,
+                        headers = headersOf("Content-Type", ContentType.Application.Json.toString())
+                    )
+                }
+            })
+            val client = AgentCoreRuntimeClient(
+                AgentCoreRuntimeClientConfig("http://runtime"),
+                httpClient
+            )
+            try
+            {
+                val sessionChunks = mutableListOf<String>()
+                val developerChunks = mutableListOf<String>()
+                val sessionCallback: suspend (String) -> Unit = { chunk -> sessionChunks += chunk }
+                val developerCallback: suspend (String) -> Unit = { chunk -> developerChunks += chunk }
+                val agent = AgentCoreRuntimeAgent(client)
+
+                agent.setStreamingCallbackRecursive(sessionCallback)
+                agent.setStreamingCallbackRecursive(developerCallback)
+                agent.executeP2PRequest(P2PRequest(prompt = MultimodalContent("input")))
+                agent.executeP2PRequest(P2PRequest(prompt = MultimodalContent("input")))
+
+                agent.removeStreamingCallbackRecursive({ chunk -> sessionChunks += "different:$chunk" })
+                agent.removeStreamingCallbackRecursive(developerCallback)
+                agent.executeP2PRequest(P2PRequest(prompt = MultimodalContent("input")))
+
+                agent.removeStreamingCallbackRecursive(sessionCallback)
+                agent.executeP2PRequest(P2PRequest(prompt = MultimodalContent("input")))
+
+                assertEquals(listOf("chunk-1", "chunk-2", "chunk-3"), sessionChunks)
+                assertEquals(listOf("chunk-1", "chunk-2"), developerChunks)
+                assertEquals(3, streamingRequests)
+            }
+            finally
+            {
+                client.close()
                 httpClient.close()
             }
         }

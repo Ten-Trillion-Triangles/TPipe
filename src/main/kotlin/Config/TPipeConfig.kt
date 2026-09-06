@@ -44,11 +44,21 @@ object TPipeConfig
         return "${getMemoryDir()}/todo"
     }
 
+    /**
+     * Return the per-instance directory where TPipe stores debug data.
+     *
+     * @return The debug directory below [getTPipeConfigDir].
+     */
     fun getDebugDir() : String
     {
-        return "${configDir}/debug"
+        return "${getTPipeConfigDir()}/debug"
     }
 
+    /**
+     * Return the per-instance directory where execution traces are stored.
+     *
+     * @return The trace directory below [getDebugDir].
+     */
     fun getTraceDir() : String
     {
         return "${getDebugDir()}/trace"

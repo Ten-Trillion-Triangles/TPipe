@@ -5,6 +5,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Thread-safe steering instruction store used by the harness loop to inject
@@ -24,9 +25,16 @@ class PumpStationSteeringService(
     initialConfiguration: PumpStationSteeringConfiguration = PumpStationSteeringConfiguration()
 )
 {
+    private data class SequencedOneShot(
+        val sequence: Long,
+        val content: MultimodalContent
+    )
+
     private val mutex = Mutex()
-    private val oneShotQueues: MutableMap<PumpStationPausePhase, Channel<MultimodalContent>> = ConcurrentHashMap()
+    private val oneShotQueues: MutableMap<PumpStationPausePhase, Channel<SequencedOneShot>> = ConcurrentHashMap()
+    private val nextBoundaryQueue = Channel<SequencedOneShot>(capacity = Channel.UNLIMITED)
     private val persistentOverlays: MutableMap<PumpStationPausePhase, MultimodalContent> = ConcurrentHashMap()
+    private val nextSequence = AtomicLong()
 
     init
     {
@@ -35,9 +43,12 @@ class PumpStationSteeringService(
         // Seed initial one-shot queues from configuration
         initialConfiguration.initialOneShotInstructions.forEach { (phase, contents) ->
             val channel = oneShotQueues.getOrPut(phase) { Channel(capacity = Channel.UNLIMITED) }
-            contents.forEach { channel.trySend(it) }
+            contents.forEach { channel.trySend(sequenced(it)) }
         }
     }
+
+    private fun sequenced(content: MultimodalContent): SequencedOneShot =
+        SequencedOneShot(nextSequence.getAndIncrement(), content)
 
     /**
      * Enqueue a one-shot instruction. It fires at the next occurrence of [phase],
@@ -47,7 +58,18 @@ class PumpStationSteeringService(
     {
         mutex.withLock {
             val channel = oneShotQueues.getOrPut(phase) { Channel(capacity = Channel.UNLIMITED) }
-            channel.send(content)
+            channel.send(sequenced(content))
+        }
+    }
+
+    /**
+     * Enqueue a one-shot instruction for the next boundary reached, regardless
+     * of which [PumpStationPausePhase] that boundary represents.
+     */
+    suspend fun enqueueNextBoundary(content: MultimodalContent)
+    {
+        mutex.withLock {
+            nextBoundaryQueue.send(sequenced(content))
         }
     }
 
@@ -93,7 +115,7 @@ class PumpStationSteeringService(
                     val result = channel.tryReceive()
                     if (result.isSuccess)
                     {
-                        drained.add(result.getOrThrow())
+                        drained.add(result.getOrThrow().content)
                     }
                     else
                     {
@@ -103,6 +125,46 @@ class PumpStationSteeringService(
             }
         }
         return drained
+    }
+
+    /**
+     * Drain the persistent overlay for [phase], followed by explicit-phase and
+     * next-boundary one-shots in their global enqueue order. The explicit and
+     * next-boundary queues are consumed atomically with respect to producers.
+     */
+    internal suspend fun drainForBoundary(phase: PumpStationPausePhase): List<MultimodalContent>
+    {
+        val drained = mutableListOf<MultimodalContent>()
+        mutex.withLock {
+            persistentOverlays[phase]?.let { drained.add(it) }
+
+            val oneShots = mutableListOf<SequencedOneShot>()
+            drainInto(oneShotQueues[phase], oneShots)
+            drainInto(nextBoundaryQueue, oneShots)
+            oneShots.sortBy { it.sequence }
+            drained.addAll(oneShots.map { it.content })
+        }
+        return drained
+    }
+
+    private fun drainInto(
+        channel: Channel<SequencedOneShot>?,
+        target: MutableList<SequencedOneShot>
+    )
+    {
+        if (channel == null) return
+        while (true)
+        {
+            val result = channel.tryReceive()
+            if (result.isSuccess)
+            {
+                target.add(result.getOrThrow())
+            }
+            else
+            {
+                return
+            }
+        }
     }
 
     /**

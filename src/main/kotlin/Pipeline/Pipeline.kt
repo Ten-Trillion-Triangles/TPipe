@@ -465,6 +465,13 @@ class Pipeline : P2PInterface
             pipe.propagateStreamingCallback(callback)
         }
     }
+    override fun removeStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        for (pipe in getPipes())
+        {
+            pipe.removeStreamingCallbackRecursive(callback)
+        }
+    }
     override fun clearStreamingCallbacksRecursive()
     {
         for(pipe in getPipes())

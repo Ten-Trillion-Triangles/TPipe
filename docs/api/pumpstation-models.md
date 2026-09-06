@@ -347,7 +347,24 @@ Captured fields cover the four `taskState` fields that a turn's in-flight work c
 data class PumpStationInterruptConfiguration(
     val initialQueue: Map<PumpStationPausePhase, List<MultimodalContent>> = emptyMap()
 )
+{
+    var targetMode: PumpStationControlTargetMode = PumpStationControlTargetMode.DeepestActive
+
+    constructor(
+        initialQueue: Map<PumpStationPausePhase, List<MultimodalContent>>,
+        targetMode: PumpStationControlTargetMode
+    ) : this(initialQueue)
+    {
+        this.targetMode = targetMode
+    }
+}
 ```
+
+The original one-field primary constructor remains unchanged for source and
+serialization compatibility. `targetMode` is an additive body property, and
+the secondary constructor is a convenience overload; generated `copy()`,
+`equals()`, and `hashCode()` therefore intentionally cover only
+`initialQueue`.
 
 ### PumpStationInterruptPolicyBuilder
 
@@ -358,6 +375,7 @@ data class PumpStationInterruptConfiguration(
 class PumpStationInterruptPolicyBuilder
 {
     val initialQueue: MutableMap<PumpStationPausePhase, List<MultimodalContent>> = mutableMapOf()
+    var targetMode: PumpStationControlTargetMode = PumpStationControlTargetMode.DeepestActive
 
     fun initialQueue(phase: PumpStationPausePhase, contents: List<MultimodalContent>)
     {
@@ -366,12 +384,43 @@ class PumpStationInterruptPolicyBuilder
 
     internal fun build(): PumpStationInterruptConfiguration
     {
-        return PumpStationInterruptConfiguration(initialQueue = initialQueue.toMap())
+        return PumpStationInterruptConfiguration(initialQueue = initialQueue.toMap()).apply {
+            targetMode = this@PumpStationInterruptPolicyBuilder.targetMode
+        }
     }
 }
 ```
 
 Both function-call form `initialQueue(phase, contents)` and indexer form `initialQueue[BeforeJudge] = listOf(...)` are supported.
+
+### PumpStationSteeringConfiguration
+
+`src/main/kotlin/Pipeline/PumpStationSteeringModels.kt` preserves the original
+two-field primary constructor:
+
+```kotlin
+data class PumpStationSteeringConfiguration(
+    val initialPersistentOverlays: Map<PumpStationPausePhase, MultimodalContent> = emptyMap(),
+    val initialOneShotInstructions: Map<PumpStationPausePhase, List<MultimodalContent>> = emptyMap()
+)
+{
+    var targetMode: PumpStationControlTargetMode = PumpStationControlTargetMode.DeepestActive
+
+    constructor(
+        initialPersistentOverlays: Map<PumpStationPausePhase, MultimodalContent>,
+        initialOneShotInstructions: Map<PumpStationPausePhase, List<MultimodalContent>>,
+        targetMode: PumpStationControlTargetMode
+    ) : this(initialPersistentOverlays, initialOneShotInstructions)
+    {
+        this.targetMode = targetMode
+    }
+}
+```
+
+As with interrupt configuration, `targetMode` is deliberately outside the
+primary data-class constructor so existing generated methods and serialized
+fields remain compatible. The steering DSL copies its value onto the body
+property when it builds the configuration.
 
 ### InterruptOverflowDropped (event)
 
@@ -391,6 +440,77 @@ data class InterruptOverflowDropped(
 ```
 
 `firstDroppedText` is truncated to 200 characters to keep the event payload bounded. Operators use this event to detect when a caller is firing more interrupts than the harness can process and the overflow is being silently absorbed. See `TraceEventType.PUMP_STATION_INTERRUPT_OVERFLOW_DROPPED` for the trace-side mirror.
+
+
+## Interactive Control and Session Models
+
+### PumpStationControlTargetMode
+
+`Pipeline/PumpStationControlModels.kt`:
+
+```kotlin
+enum class PumpStationControlTargetMode {
+    Local,
+    DeepestActive
+}
+```
+
+`DeepestActive` is the default for momentary `steer`, `steerNow`, `interrupt`,
+and `interruptNow` calls. It follows the active blocking foreground child
+chain. `Local` keeps those controls on the station where they were invoked.
+
+### PumpStationControlRoute
+
+```kotlin
+data class PumpStationControlRoute(
+    val targetRunId: String,
+    val depth: Int,
+    val pathChain: List<String>,
+    val cycleDetected: Boolean = false
+)
+```
+
+The route is a value-only snapshot; it never exposes live PumpStation
+references. `cycleDetected` is set when route traversal encounters an already
+visited station and the snapshot stops at the last valid target.
+
+### PumpStationSessionSource and PumpStationSessionUpdate
+
+`Pipeline/PumpStationSessionModels.kt` defines the attribution shared by every
+session update and the two update variants:
+
+```kotlin
+data class PumpStationSessionSource(
+    val runId: String,
+    val depth: Int,
+    val pathChain: List<String>
+)
+
+sealed interface PumpStationSessionUpdate {
+    val sequence: Long
+    val sessionId: String
+    val source: PumpStationSessionSource
+}
+
+data class PumpStationSessionEventUpdate(
+    override val sequence: Long,
+    override val sessionId: String,
+    override val source: PumpStationSessionSource,
+    val event: PumpStationEvent
+) : PumpStationSessionUpdate
+
+data class PumpStationSessionStreamUpdate(
+    override val sequence: Long,
+    override val sessionId: String,
+    override val source: PumpStationSessionSource,
+    val chunk: String
+) : PumpStationSessionUpdate
+```
+
+`sequence` is monotonic across both event and stream producers within one
+session. `pathChain` describes the active blocking foreground route; exact leaf
+attribution for simultaneous async/background streams is intentionally outside
+this model.
 
 
 ## Task State and Sealed Events
@@ -766,6 +886,9 @@ The `revealWhen` predicate on a `PathObject` is typed as this alias. The receive
 | `PumpStationEvent` (sealed interface) and all event subtypes | `Pipeline/PumpStationModels.kt` |
 | `PumpStationTaskState` | `Pipeline/PumpStationModels.kt` |
 | `PumpStationFailurePolicy`, `PumpStationSnapshot`, `StashEntry`, `PathLimitExceededResult` | `Pipeline/PumpStationModels.kt` |
+| `PumpStationControlTargetMode`, `PumpStationControlRoute` | `Pipeline/PumpStationControlModels.kt` |
+| `PumpStationSessionSource`, `PumpStationSessionUpdate` and variants | `Pipeline/PumpStationSessionModels.kt` |
+| `PumpStationSession` | `Pipeline/PumpStationSession.kt` |
 | `TurnResult`, `HarnessAgentSlot`, `FlagCheckResult`, `MemorySnapshot`, `DispatchOutput`, `JudgeVerdict` | `Pipeline/PumpStationModels.kt` |
 | `PendingTurnEntry`, `AsyncTurnAppended` | `Pipeline/PumpStationModels.kt` |
 | `WarningCode`, `ExitMechanism`, `ReservePathRevealPredicate` | `Pipeline/PumpStationModels.kt` |

@@ -254,7 +254,8 @@ pumpStation("name") {
         maxHistory(1000)
         outputFormat(TraceFormat.HTML)
         detailLevel(TraceDetailLevel.STANDARD)
-        autoExport(enabled = true, path = "~/.tpipe-traces/")
+        // Defaults to TPipeConfig.getTraceDir(), scoped by configDir and instanceID.
+        autoExport(enabled = true)
         includeContext(true)
         includeMetadata(true)
     }
@@ -423,7 +424,27 @@ station.clearSteering(PumpStationPausePhase.BeforeJudge)
 val entries: List<MultimodalContent> = station.drainSteeringForPhase(PumpStationPausePhase.BeforeJudge)
 ```
 
-All three are `suspend` extensions on `PumpStation`; the underlying `PumpStationSteeringService` uses a `Mutex` plus per-phase `Channel<MultimodalContent>` for thread safety. See [Steering: Mid-Loop Context Injection](../containers/pumpstation.md#steering-mid-loop-context-injection) in the container doc for the full design.
+These APIs are `suspend` extensions on `PumpStation`; the underlying `PumpStationSteeringService` uses a `Mutex` plus bounded semantic queues for thread safety. See [Steering: Mid-Loop Context Injection](../containers/pumpstation.md#steering-mid-loop-context-injection) in the container doc for the full design.
+
+### Interactive target routing and next-boundary controls
+
+Momentary controls target `DeepestActive` by default. The station follows the
+strongly-held foreground child chain created by blocking `PathObject` execution
+and stops at the deepest active station. Async/background paths and `MultiPath`
+fan-out do not become the implicit interactive target. Use `Local` when a
+station must keep controls on itself:
+
+```kotlin
+station.setSteeringTargetMode(PumpStationControlTargetMode.Local)
+station.setInterruptTargetMode(PumpStationControlTargetMode.Local)
+val route: PumpStationControlRoute = station.getActiveControlRoute()
+```
+
+`steerNow(...)` and `interruptNow(...)` enqueue a message for the next reached
+phase boundary without sampling the current phase. The boundary consumer
+atomically merges explicit-phase and next-boundary entries, preserving enqueue
+order. `interruptNow` keeps the normal snapshot rewind and overflow-to-steering
+behavior.
 
 ### Interrupt: rewind and restart the turn
 
@@ -440,7 +461,7 @@ station.interrupt(
 station.interrupt(PumpStationPausePhase.AfterDispatch, "stop and pivot")
 ```
 
-Both are `suspend` extensions on `PumpStation`. The underlying `PumpStationInterruptService` is a thread-safe per-phase FIFO queue (`Mutex` plus `Channel<MultimodalContent>` plus `ConcurrentHashMap`). The `interruptService` property exposes the service for inspection:
+Both are `suspend` extensions on `PumpStation`. The underlying `PumpStationInterruptService` is a thread-safe per-phase FIFO queue with a separate next-boundary queue. The `interruptService` property exposes the service for inspection:
 
 ```kotlin
 val pending = station.interruptService.queueDepth(PumpStationPausePhase.BeforeJudge)
@@ -457,6 +478,39 @@ The first interrupt queued for a phase becomes the active rewind target. Subsequ
 | User pressed the stop button | | yes |
 | Watchdog decided a path is looping | | yes |
 | Framework sent a new instruction that must preempt the in-flight turn | | yes |
+
+### PumpStationSession
+
+`openSession(sessionId)` returns a retained facade for a root station. Its
+`updates` receive channel combines root and nested foreground events with
+streamed text chunks. Every update has a monotonic `sequence`, `sessionId`, and
+value-only source attribution (`runId`, `depth`, and `pathChain`).
+
+```kotlin
+val session = station.openSession("ui-session")
+try {
+    val execution = async { session.execute(input) }
+    session.steerNow("prioritize the user's latest instruction")
+    session.interruptNow("stop and reconsider")
+    session.updates.consumeEach { update -> render(update) }
+    execution.await()
+} finally {
+    session.close()
+}
+```
+
+Session execution is serialized per session. Controls and `abort()` bypass the
+execution mutex, so a UI can steer or interrupt a blocked execution. Closing a
+session removes only its event and recursive streaming registrations; it does
+not abort the station.
+
+### Event publication
+
+`emitEvent(...)` is the single PumpStation event funnel. The legacy observer
+from `setEventObserver`, additive observers from `addEventObserver`, and the
+trace mirror each receive one synchronous publication. There is no observer
+replay queue and no value-based deduplication. Close the `AutoCloseable`
+returned by `addEventObserver` to remove only that registration.
 
 
 ## Cross-References

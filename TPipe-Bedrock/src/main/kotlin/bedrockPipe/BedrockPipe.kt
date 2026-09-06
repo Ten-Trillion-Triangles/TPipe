@@ -1022,6 +1022,93 @@ open class BedrockPipe : Pipe()
     }
 
     /**
+     * Removes one callback from Bedrock's legacy callback field and all
+     * recursively propagated callback managers.
+     *
+     * The legacy field is compared by reference so removing one session's
+     * callback cannot clear a different callback with equivalent behavior.
+     * Streaming remains enabled because other callbacks may still be active.
+     * The traversal mirrors [addCallbackToDescendants], including cycle
+     * protection and propagation gates for child and reasoning pipes.
+     *
+     * @param callback Suspendable callback to remove
+     */
+    override fun removeStreamingCallbackRecursivelyInternal(
+        callback: suspend (String) -> Unit,
+        visited: MutableSet<String>,
+        propagateToChildren: Boolean,
+        propagateToReasoning: Boolean,
+    )
+    {
+        if(!visited.add(pipeId)) return
+
+        if(streamingCallback === callback)
+        {
+            streamingCallback = null
+        }
+        removeCallbackFromManagerByIdentity(callback)
+
+        if(propagateToChildren)
+        {
+            listOfNotNull(validatorPipe, transformationPipe, branchPipe).forEach { child ->
+                if(child is BedrockPipe)
+                {
+                    child.removeStreamingCallbackRecursivelyInternal(
+                        callback,
+                        visited,
+                        propagateToChildren,
+                        propagateToReasoning,
+                    )
+                }
+                else
+                {
+                    child.removeStreamingCallbackRecursively(
+                        callback,
+                        visited,
+                        propagateToChildren,
+                        propagateToReasoning,
+                    )
+                }
+            }
+        }
+
+        if(propagateToReasoning)
+        {
+            reasoningPipe?.let { reasoning ->
+                if(reasoning is BedrockPipe)
+                {
+                    reasoning.removeStreamingCallbackRecursivelyInternal(
+                        callback,
+                        visited,
+                        propagateToChildren,
+                        propagateToReasoning,
+                    )
+                }
+                else
+                {
+                    reasoning.removeStreamingCallbackRecursively(
+                        callback,
+                        visited,
+                        propagateToChildren,
+                        propagateToReasoning,
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Removes a callback manager entry only when the stored function object is
+     * the requested callback instance.
+     */
+    private fun removeCallbackFromManagerByIdentity(callback: suspend (String) -> Unit)
+    {
+        val manager = streamingCallbackManager ?: return
+        val registered = manager.getCallbacks().firstOrNull { it === callback } ?: return
+        manager.removeCallback(registered)
+    }
+
+    /**
      * Adds a streaming callback to descendant pipes (validator, transformation,
      * branch, reasoning) without registering on this pipe's own manager.
      *

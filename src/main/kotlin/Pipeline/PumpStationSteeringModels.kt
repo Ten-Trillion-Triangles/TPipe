@@ -33,3 +33,17 @@ data class PumpStationSteeringConfiguration(
     val initialPersistentOverlays: Map<PumpStationPausePhase, MultimodalContent> = emptyMap(),
     val initialOneShotInstructions: Map<PumpStationPausePhase, List<MultimodalContent>> = emptyMap()
 )
+{
+    /** Routing mode for momentary controls created from this configuration. */
+    var targetMode: PumpStationControlTargetMode = PumpStationControlTargetMode.DeepestActive
+
+    /** Constructor that adds target routing without changing the original data-class ABI. */
+    constructor(
+        initialPersistentOverlays: Map<PumpStationPausePhase, MultimodalContent>,
+        initialOneShotInstructions: Map<PumpStationPausePhase, List<MultimodalContent>>,
+        targetMode: PumpStationControlTargetMode
+    ) : this(initialPersistentOverlays, initialOneShotInstructions)
+    {
+        this.targetMode = targetMode
+    }
+}

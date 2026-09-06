@@ -1,5 +1,7 @@
 package com.TTT.Debug
 
+import com.TTT.Config.TPipeConfig
+
 class TracingBuilder
 {
     private var config = TraceConfig()
@@ -24,7 +26,14 @@ class TracingBuilder
         return this
     }
     
-    fun autoExport(enabled: Boolean = true, path: String = "~/.TPipe-Debug/traces/"): TracingBuilder {
+    /**
+     * Enable automatic trace export.
+     *
+     * @param enabled Whether automatic export is enabled.
+     * @param path Destination directory; defaults to the active instance's trace directory.
+     * @return This builder for method chaining.
+     */
+    fun autoExport(enabled: Boolean = true, path: String = TPipeConfig.getTraceDir()): TracingBuilder {
         config = config.copy(autoExport = enabled, exportPath = path)
         return this
     }

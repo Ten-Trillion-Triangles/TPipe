@@ -205,6 +205,29 @@ class StreamingCallbackTest
     }
 
     @Test
+    fun testCallbackSpecificRemovalUsesIdentityAndPreservesOtherCallbacks()
+    {
+        runBlocking {
+            val received = mutableListOf<String>()
+            val pipe = TestBedrockPipe()
+            val child = TestBedrockPipe()
+            pipe.setTransformationPipe(child)
+
+            val registered: suspend (String) -> Unit = { chunk -> received += "registered:$chunk" }
+            val different: suspend (String) -> Unit = { chunk -> received += "different:$chunk" }
+
+            pipe.setStreamingCallback(registered)
+            pipe.obtainStreamingCallbackManager().addCallback(different)
+            pipe.removeStreamingCallbackRecursive(registered)
+
+            pipe.testEmit("parent")
+            child.testEmit("child")
+
+            assertEquals(listOf("different:parent"), received)
+        }
+    }
+
+    @Test
     fun testBuilderPatternChaining()
     {
         runBlocking {

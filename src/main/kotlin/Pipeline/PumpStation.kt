@@ -43,6 +43,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -280,6 +281,30 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
     override fun clearStreamingCallbacksRecursive()
     {
         internalAgent?.clearStreamingCallbacksRecursive()
+    }
+
+    override fun removeStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        internalAgent?.removeStreamingCallbackRecursive(callback)
+    }
+
+    override suspend fun abortRecursive()
+    {
+        internalAgent?.abortRecursive()
+    }
+
+    /** Abort a path-owned PumpStation while sharing the caller's cycle guard. */
+    internal suspend fun abortOwnedAgentRecursive(visited: MutableSet<PumpStation>)
+    {
+        val agent = internalAgent ?: return
+        if (agent is PumpStation)
+        {
+            agent.abortRecursiveInternal(visited)
+        }
+        else
+        {
+            agent.abortRecursive()
+        }
     }
 
     /**
@@ -638,7 +663,8 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
         content: MultimodalContent,
         station: PumpStation,
         turnHistory: ConverseHistory?,
-        turnSummary: String
+        turnSummary: String,
+        registerAsInteractiveControlPath: Boolean = true
     ): MultimodalContent
     {
         // Priority 1: PCP function — dispatch to PcpExecutionDispatcher if a function is named
@@ -679,7 +705,22 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
         if (internalAgent != null)
         {
             internalAgent!!.setParentInterface(station)
-            val internalResult = internalAgent!!.executeLocal(content)
+            val child = internalAgent as? PumpStation
+            val internalResult = try
+            {
+                if (child != null && registerAsInteractiveControlPath)
+                {
+                    station.activateForegroundChild(pathName, child)
+                }
+                internalAgent!!.executeLocal(content)
+            }
+            finally
+            {
+                if (child != null && registerAsInteractiveControlPath)
+                {
+                    station.clearForegroundChild(pathName, child)
+                }
+            }
             outputCaptureFunction?.invoke(internalResult)
             return internalResult
         }
@@ -689,8 +730,23 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
         {
             val agent = agentBuilderFunction!!.invoke(null)
             agent.setParentInterface(station)
-            agent.P2PInit()
-            val builderResult = agent.executeLocal(content)
+            val child = agent as? PumpStation
+            val builderResult = try
+            {
+                if (child != null && registerAsInteractiveControlPath)
+                {
+                    station.activateForegroundChild(pathName, child)
+                }
+                agent.P2PInit()
+                agent.executeLocal(content)
+            }
+            finally
+            {
+                if (child != null && registerAsInteractiveControlPath)
+                {
+                    station.clearForegroundChild(pathName, child)
+                }
+            }
             outputCaptureFunction?.invoke(builderResult)
             return builderResult
         }
@@ -845,6 +901,24 @@ class PumpStation(
     steeringService: PumpStationSteeringService = PumpStationSteeringService()
 ) : P2PInterface
 {
+    private data class ActiveForegroundChild(
+        val pathName: String,
+        val station: PumpStation
+    )
+
+    private val activeForegroundChild = java.util.concurrent.atomic.AtomicReference<ActiveForegroundChild?>(null)
+    private val activeExecutionJob = java.util.concurrent.atomic.AtomicReference<Job?>(null)
+    private val activeChildListeners = java.util.concurrent.CopyOnWriteArrayList<
+        (String, PumpStation?) -> Unit
+    >()
+    private val retainedStreamingCallbacks = java.util.concurrent.CopyOnWriteArrayList<suspend (String) -> Unit>()
+    private val streamingCallbackLock = Any()
+
+    @Volatile
+    private var steeringTargetMode = PumpStationControlTargetMode.DeepestActive
+
+    @Volatile
+    private var interruptTargetMode = PumpStationControlTargetMode.DeepestActive
     //=====================================KillSwitch (Group O)========================================================
     /**
      * Backing field for the [P2PInterface.killSwitch] override. The custom setter propagates the
@@ -896,6 +970,114 @@ class PumpStation(
      */
     val interruptService: PumpStationInterruptService = PumpStationInterruptService()
 
+    private data class ResolvedControlTarget(
+        val station: PumpStation,
+        val route: PumpStationControlRoute
+    )
+
+    private fun resolveControlTarget(mode: PumpStationControlTargetMode): ResolvedControlTarget
+    {
+        var target = this
+        val pathChain = mutableListOf<String>()
+        val visited = java.util.Collections.newSetFromMap(
+            java.util.IdentityHashMap<PumpStation, Boolean>()
+        )
+        var cycleDetected = false
+        visited.add(this)
+
+        if (mode == PumpStationControlTargetMode.DeepestActive)
+        {
+            while (true)
+            {
+                val active = target.activeForegroundChild.get() ?: break
+                if (!visited.add(active.station))
+                {
+                    cycleDetected = true
+                    break
+                }
+                pathChain.add(active.pathName)
+                target = active.station
+            }
+        }
+
+        return ResolvedControlTarget(
+            station = target,
+            route = PumpStationControlRoute(
+                targetRunId = target.taskState.runId,
+                depth = pathChain.size,
+                pathChain = pathChain.toList(),
+                cycleDetected = cycleDetected
+            )
+        )
+    }
+
+    /** Return a value-only snapshot of the current foreground control route. */
+    fun getActiveControlRoute(): PumpStationControlRoute =
+        resolveControlTarget(PumpStationControlTargetMode.DeepestActive).route
+
+    private suspend fun enqueueSteerLocal(phase: PumpStationPausePhase, content: MultimodalContent)
+    {
+        steeringService.enqueueOneShot(phase, content)
+    }
+
+    private suspend fun enqueueInterruptLocal(phase: PumpStationPausePhase, content: MultimodalContent)
+    {
+        interruptService.enqueue(phase, content)
+    }
+
+    /** Register a foreground child and propagate callbacks retained by this station. */
+    internal fun activateForegroundChild(pathName: String, child: PumpStation)
+    {
+        val previous = synchronized(streamingCallbackLock) {
+            val previous = activeForegroundChild.getAndSet(ActiveForegroundChild(pathName, child))
+            retainedStreamingCallbacks.forEach { callback ->
+                child.setStreamingCallbackRecursive(callback)
+            }
+            previous
+        }
+        if (previous != null && (previous.pathName != pathName || previous.station !== child))
+        {
+            activeChildListeners.forEach { listener -> listener(previous.pathName, null) }
+        }
+        activeChildListeners.forEach { listener -> listener(pathName, child) }
+    }
+
+    /** Clear only the child instance that was registered for [pathName]. */
+    internal fun clearForegroundChild(pathName: String, child: PumpStation)
+    {
+        val cleared = synchronized(streamingCallbackLock)
+        {
+            val current = activeForegroundChild.get()
+            current != null &&
+                current.pathName == pathName &&
+                current.station === child &&
+                activeForegroundChild.compareAndSet(current, null)
+        }
+        if (cleared)
+        {
+            activeChildListeners.forEach { listener -> listener(pathName, null) }
+        }
+    }
+
+    /** Return whether [child] is still the exact active child for [pathName]. */
+    internal fun isActiveForegroundChild(pathName: String, child: PumpStation): Boolean
+    {
+        val current = activeForegroundChild.get()
+        return current != null && current.pathName == pathName && current.station === child
+    }
+
+    /** Open a retained control and update session for this PumpStation. */
+    fun openSession(sessionId: String = java.util.UUID.randomUUID().toString()): PumpStationSession =
+        PumpStationSession(this, sessionId)
+
+    /** Subscribe to foreground child activation/deactivation for session aggregation. */
+    internal fun addActiveChildListener(listener: (String, PumpStation?) -> Unit): AutoCloseable
+    {
+        activeChildListeners.add(listener)
+        activeForegroundChild.get()?.let { current -> listener(current.pathName, current.station) }
+        return AutoCloseable { activeChildListeners.remove(listener) }
+    }
+
 //=====================================Steering Runtime API (Group S)=================================================
 
 /**
@@ -911,7 +1093,7 @@ class PumpStation(
  */
 suspend fun steer(phase: PumpStationPausePhase, content: MultimodalContent)
 {
-    steeringService.enqueueOneShot(phase, content)
+    resolveControlTarget(steeringTargetMode).station.enqueueSteerLocal(phase, content)
 }
 
 /**
@@ -936,6 +1118,28 @@ suspend fun steerPersistent(phase: PumpStationPausePhase, content: MultimodalCon
 {
     steeringService.setPersistent(phase, content)
 }
+
+/** Enqueue a one-shot steer for the next boundary reached by the resolved target. */
+suspend fun steerNow(content: MultimodalContent)
+{
+    resolveControlTarget(steeringTargetMode).station.steeringService.enqueueNextBoundary(content)
+}
+
+/** Convenience string overload for [steerNow]. */
+suspend fun steerNow(text: String)
+{
+    steerNow(MultimodalContent(text = text))
+}
+
+/** Set the routing mode for momentary steering controls. */
+fun setSteeringTargetMode(mode: PumpStationControlTargetMode): PumpStation
+{
+    steeringTargetMode = mode
+    return this
+}
+
+/** Read the routing mode for momentary steering controls. */
+fun getSteeringTargetMode(): PumpStationControlTargetMode = steeringTargetMode
 
 /**
  * Convenience overload accepting a plain text string. Constructs a MultimodalContent
@@ -984,6 +1188,21 @@ suspend fun clearSteering(phase: PumpStationPausePhase)
 suspend fun drainSteeringForPhase(phase: PumpStationPausePhase): List<MultimodalContent>
 {
     val drained = steeringService.drainForPhase(phase)
+    return stampSteeringEntries(phase, drained)
+}
+
+/** Drain explicit and next-boundary steering entries atomically at a real boundary. */
+internal suspend fun drainSteeringForBoundary(phase: PumpStationPausePhase): List<MultimodalContent>
+{
+    val drained = steeringService.drainForBoundary(phase)
+    return stampSteeringEntries(phase, drained)
+}
+
+private fun PumpStation.stampSteeringEntries(
+    phase: PumpStationPausePhase,
+    drained: List<MultimodalContent>
+): List<MultimodalContent>
+{
     val now = System.currentTimeMillis()
     return drained.mapIndexed { index, content ->
         val isPersistent = if (index == 0 && steeringService.hasPersistentOverlay(phase)) {
@@ -1036,7 +1255,7 @@ suspend fun drainSteeringForPhase(phase: PumpStationPausePhase): List<Multimodal
  */
 suspend fun interrupt(phase: PumpStationPausePhase, content: MultimodalContent)
 {
-    interruptService.enqueue(phase, content)
+    resolveControlTarget(interruptTargetMode).station.enqueueInterruptLocal(phase, content)
 }
 
 /**
@@ -1047,6 +1266,28 @@ suspend fun interrupt(phase: PumpStationPausePhase, text: String)
 {
     interrupt(phase, MultimodalContent(text = text))
 }
+
+/** Enqueue an interrupt for the next boundary reached by the resolved target. */
+suspend fun interruptNow(content: MultimodalContent)
+{
+    resolveControlTarget(interruptTargetMode).station.interruptService.enqueueNextBoundary(content)
+}
+
+/** Convenience string overload for [interruptNow]. */
+suspend fun interruptNow(text: String)
+{
+    interruptNow(MultimodalContent(text = text))
+}
+
+/** Set the routing mode for momentary interrupt controls. */
+fun setInterruptTargetMode(mode: PumpStationControlTargetMode): PumpStation
+{
+    interruptTargetMode = mode
+    return this
+}
+
+/** Read the routing mode for momentary interrupt controls. */
+fun getInterruptTargetMode(): PumpStationControlTargetMode = interruptTargetMode
 
 //======================================Properties======================================================================
 
@@ -1754,12 +1995,6 @@ private fun pathKey(name: String): String = name.lowercase()
     val failurePolicy = PumpStationFailurePolicy()
 
     /**
-     * Background event queue for async events from background paths, lorebook, and summary agents.
-     * The foreground loop drains this queue at safe phase boundaries.
-     */
-    private val backgroundEventQueue = Channel<PumpStationEvent>(Channel.UNLIMITED)
-
-    /**
      * Monotonic sequence counter assigned to every [PendingTurnEntry] at enqueue time.
      * Async paths and async harness agents pull a [seq] from this counter, so the
      * foreground drain can sort pending entries by [seq] even when out-of-order
@@ -1842,16 +2077,24 @@ private fun pathKey(name: String): String = name.lowercase()
     private var asyncJobsScopedToStation: Boolean = true
 
     /**
-     * Optional test observability hook. When set, every [PumpStationEvent] emitted via [emitEvent]
-     * is also dispatched synchronously to this observer. Used by tests to assert on event flow
-     * without having to drain the [backgroundEventQueue] channel.
+     * Optional test/developer observability hook. The atomic holder preserves the legacy
+     * replacement semantics of [setEventObserver] while allowing event publication to cross
+     * coroutine/thread boundaries safely.
      */
     @kotlinx.serialization.Transient
-    private var eventObserver: ((PumpStationEvent) -> Unit)? = null
+    private val eventObserver = java.util.concurrent.atomic.AtomicReference<((PumpStationEvent) -> Unit)?>(null)
+
+    private data class EventObserverRegistration(
+        val callback: (PumpStationEvent) -> Unit
+    )
+
+    /** Additive event subscriptions owned by callers such as [PumpStationSession]. */
+    @kotlinx.serialization.Transient
+    private val eventObservers = java.util.concurrent.CopyOnWriteArrayList<EventObserverRegistration>()
 
     /**
      * When true, the harness emits events to the global [PipeTracer] (in addition to the in-process
-     * event queue and observer hook) so a trace can be exported via [getTraceReport] and visualized
+     * observer hooks) so a trace can be exported via [getTraceReport] and visualized
      * by [com.TTT.Debug.TraceVisualizer].
      */
     private var tracingEnabled: Boolean = false
@@ -2300,14 +2543,9 @@ private fun pathKey(name: String): String = name.lowercase()
 
         harnessIsReady = true
 
-        // Emit HarnessStarted event
-        val event = HarnessStarted(
-            runId = runId,
-            turnIndex = 0,
-            phase = PumpStationPhase.PreInit,
-            originalInput = taskState.originalInput
-        )
-        backgroundEventQueue.trySend(event)
+        // HarnessStarted is published by runPreInitPhase after the execution input
+        // has been installed. P2PInit only prepares runtime state and must not
+        // publish a second lifecycle event.
     }
 
     /**
@@ -2487,19 +2725,28 @@ private fun pathKey(name: String): String = name.lowercase()
      */
     override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
     {
-        implementationPlanLifecycleGuard.beginExecution()
+        val executionJob = currentCoroutineContext()[Job]
+        val previousExecutionJob = activeExecutionJob.getAndSet(executionJob)
         try
         {
-            if(!harnessIsReady) P2PInit()
-            runPreInitPhase(content)
-            val trip = runHarnessLoop()
-            val result = runFinalizationPhase()
-            if(trip != null) throw trip
-            return result
+            implementationPlanLifecycleGuard.beginExecution()
+            try
+            {
+                if(!harnessIsReady) P2PInit()
+                runPreInitPhase(content)
+                val trip = runHarnessLoop()
+                val result = runFinalizationPhase()
+                if(trip != null) throw trip
+                return result
+            }
+            finally
+            {
+                implementationPlanLifecycleGuard.endExecution()
+            }
         }
         finally
         {
-            implementationPlanLifecycleGuard.endExecution()
+            activeExecutionJob.compareAndSet(executionJob, previousExecutionJob)
         }
     }
 
@@ -2525,7 +2772,7 @@ private fun pathKey(name: String): String = name.lowercase()
         val nestedInput = nestedUsage?.first
         val nestedOutput = nestedUsage?.second?.first
         val nestedTotal = nestedUsage?.second?.second
-        backgroundEventQueue.trySend(NestedP2PCompleted(
+        emitEvent(NestedP2PCompleted(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
             pathName = parentPathName,
@@ -2569,25 +2816,64 @@ private fun pathKey(name: String): String = name.lowercase()
 
     override fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit)
     {
-        judgeAgent?.setStreamingCallbackRecursive(callback)
-        dispatchAgent?.setStreamingCallbackRecursive(callback)
-        interventionAgent?.setStreamingCallbackRecursive(callback)
-        healthAgent?.setStreamingCallbackRecursive(callback)
-        lorebookAgent?.setStreamingCallbackRecursive(callback)
-        summaryAgent?.setStreamingCallbackRecursive(callback)
-        goalAgent?.setStreamingCallbackRecursive(callback)
-        preInitAgent?.setStreamingCallbackRecursive(callback)
-        pathSafetyAgent?.setStreamingCallbackRecursive(callback)
-        for (slot in additionalHarnessAgentSlots)
+        val activeChild = synchronized(streamingCallbackLock)
         {
-            slot.agent?.setStreamingCallbackRecursive(callback)
+            if (retainedStreamingCallbacks.none { it === callback })
+            {
+                retainedStreamingCallbacks.add(callback)
+            }
+            judgeAgent?.setStreamingCallbackRecursive(callback)
+            dispatchAgent?.setStreamingCallbackRecursive(callback)
+            interventionAgent?.setStreamingCallbackRecursive(callback)
+            healthAgent?.setStreamingCallbackRecursive(callback)
+            lorebookAgent?.setStreamingCallbackRecursive(callback)
+            summaryAgent?.setStreamingCallbackRecursive(callback)
+            goalAgent?.setStreamingCallbackRecursive(callback)
+            preInitAgent?.setStreamingCallbackRecursive(callback)
+            pathSafetyAgent?.setStreamingCallbackRecursive(callback)
+            for (slot in additionalHarnessAgentSlots)
+            {
+                slot.agent?.setStreamingCallbackRecursive(callback)
+            }
+            pathList.values.forEach { it.setStreamingCallbackRecursive(callback) }
+            reservePaths.values.forEach { it.setStreamingCallbackRecursive(callback) }
+            activeForegroundChild.get()?.station
         }
-        pathList.values.forEach { it.setStreamingCallbackRecursive(callback) }
-        reservePaths.values.forEach { it.setStreamingCallbackRecursive(callback) }
+        activeChild?.setStreamingCallbackRecursive(callback)
+    }
+
+    override fun removeStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        val activeChild = synchronized(streamingCallbackLock)
+        {
+            retainedStreamingCallbacks.removeIf { it === callback }
+            judgeAgent?.removeStreamingCallbackRecursive(callback)
+            dispatchAgent?.removeStreamingCallbackRecursive(callback)
+            interventionAgent?.removeStreamingCallbackRecursive(callback)
+            healthAgent?.removeStreamingCallbackRecursive(callback)
+            lorebookAgent?.removeStreamingCallbackRecursive(callback)
+            summaryAgent?.removeStreamingCallbackRecursive(callback)
+            goalAgent?.removeStreamingCallbackRecursive(callback)
+            preInitAgent?.removeStreamingCallbackRecursive(callback)
+            pathSafetyAgent?.removeStreamingCallbackRecursive(callback)
+            for (slot in additionalHarnessAgentSlots)
+            {
+                slot.agent?.removeStreamingCallbackRecursive(callback)
+            }
+            pathList.values.forEach { it.removeStreamingCallbackRecursive(callback) }
+            reservePaths.values.forEach { it.removeStreamingCallbackRecursive(callback) }
+            activeForegroundChild.get()?.station
+        }
+        activeChild?.removeStreamingCallbackRecursive(callback)
     }
 
     override fun clearStreamingCallbacksRecursive()
     {
+        val activeChild = synchronized(streamingCallbackLock)
+        {
+            retainedStreamingCallbacks.clear()
+            activeForegroundChild.get()?.station
+        }
         judgeAgent?.clearStreamingCallbacksRecursive()
         dispatchAgent?.clearStreamingCallbacksRecursive()
         interventionAgent?.clearStreamingCallbacksRecursive()
@@ -2603,6 +2889,7 @@ private fun pathKey(name: String): String = name.lowercase()
         }
         pathList.values.forEach { it.clearStreamingCallbacksRecursive() }
         reservePaths.values.forEach { it.clearStreamingCallbacksRecursive() }
+        activeChild?.clearStreamingCallbacksRecursive()
     }
 
     override fun enableStallDetectorRecursive(
@@ -2627,19 +2914,46 @@ private fun pathKey(name: String): String = name.lowercase()
 
     override suspend fun abortRecursive()
     {
-        judgeAgent?.abortRecursive()
-        dispatchAgent?.abortRecursive()
-        interventionAgent?.abortRecursive()
-        healthAgent?.abortRecursive()
-        lorebookAgent?.abortRecursive()
-        summaryAgent?.abortRecursive()
-        goalAgent?.abortRecursive()
-        preInitAgent?.abortRecursive()
-        pathSafetyAgent?.abortRecursive()
+        abortRecursiveInternal(
+            java.util.Collections.newSetFromMap(java.util.IdentityHashMap<PumpStation, Boolean>())
+        )
+    }
+
+    internal suspend fun abortRecursiveInternal(visited: MutableSet<PumpStation>)
+    {
+        if (!visited.add(this)) return
+
+        // Cancelling the active execution job stops a root session execution even when it
+        // is suspended inside a custom pre-init function or a phase callback. Child-agent
+        // traversal below remains necessary for independently owned descendant jobs.
+        activeExecutionJob.get()?.cancel()
+
+        suspend fun abort(agent: P2PInterface?)
+        {
+            when (agent)
+            {
+                is PumpStation -> agent.abortRecursiveInternal(visited)
+                null -> Unit
+                else -> agent.abortRecursive()
+            }
+        }
+
+        abort(judgeAgent)
+        abort(dispatchAgent)
+        abort(interventionAgent)
+        abort(healthAgent)
+        abort(lorebookAgent)
+        abort(summaryAgent)
+        abort(goalAgent)
+        abort(preInitAgent)
+        abort(pathSafetyAgent)
         for (slot in additionalHarnessAgentSlots)
         {
-            slot.agent?.abortRecursive()
+            abort(slot.agent)
         }
+        pathList.values.forEach { it.abortOwnedAgentRecursive(visited) }
+        reservePaths.values.forEach { it.abortOwnedAgentRecursive(visited) }
+        activeForegroundChild.get()?.station?.abortRecursiveInternal(visited)
     }
 
     override fun enablePipeTimeoutRecursive(
@@ -2756,13 +3070,12 @@ private fun pathKey(name: String): String = name.lowercase()
     }
 
     /**
-     * Emits a PumpStation event. Called by inner PathObject to emit events
-     * from within path execution without needing backgroundEventQueue visibility.
+     * Emits a PumpStation event through the single publication path.
      */
     private fun emitEvent(event: PumpStationEvent)
     {
-        backgroundEventQueue.trySend(event)
-        eventObserver?.invoke(event)
+        eventObserver.get()?.invoke(event)
+        eventObservers.forEach { it.callback(event) }
         // Mirror to the global PipeTracer when tracing is enabled. The funnel is implemented
         // in PumpStationHelpers.kt and is no-op when tracingEnabled is false, so the cost is a
         // single null check on the hot path.
@@ -2929,14 +3242,9 @@ private fun pathKey(name: String): String = name.lowercase()
 
     //=====================================Group M accessors========================================================
     // Internal accessors so PumpStationLoop.kt extension functions (Group M: main
-    // loop wiring) can read the private [preInitAgent], [eventObserver],
-    // [backgroundEventQueue], and [maxTurns] fields. These fields are read
-    // by runPreInitPhase/runFinalizationPhase/runHarnessLoop/runTurn and
-    // drainBackgroundEventQueue.
+    // loop wiring) can read the private [preInitAgent] and [maxTurns] fields.
 
     internal val preInitAgentInternal get() = preInitAgent
-    internal val eventObserverInternal get() = eventObserver
-    internal val backgroundEventQueueInternal get() = backgroundEventQueue
     internal val maxTurnsInternal get() = maxTurns
 
     //=====================================Group O accessors========================================================
@@ -2972,7 +3280,7 @@ private fun pathKey(name: String): String = name.lowercase()
     // by external observers. tripKillSwitch() marks the harness as tripped and
     // also sets taskState so the loop exits on the next checkPauseGuards() call.
     // forceHalt() additionally wakes any suspended loop via notifyResume() and
-    // emits a HarnessFailed event on the background event queue.
+    // emits a HarnessFailed event through the synchronous event funnel.
 
     /**
      * Trip the kill switch. The harness will halt on the next checkPauseGuards() call.
@@ -2996,14 +3304,14 @@ private fun pathKey(name: String): String = name.lowercase()
      * Force the harness to halt. Use this as an emergency exit from a paused state.
      * Sets [PumpStationTaskState.exitReason], marks the task as [PumpStationStatus.Failed],
      * notifies the suspended loop to wake up and exit, and emits a [HarnessFailed] event
-     * on the [backgroundEventQueue].
+     * through the normal event publication path.
      */
     suspend fun forceHalt(reason: PumpStationExitReason)
     {
         taskState.exitReason = reason
         taskState.status = PumpStationStatus.Failed
         notifyResume()
-        backgroundEventQueueInternal.trySend(HarnessFailed(
+        emitEventInternal(HarnessFailed(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
             error = PumpStationError.KillSwitchTripped,
@@ -3017,9 +3325,13 @@ private fun pathKey(name: String): String = name.lowercase()
      * PumpStationLoop.kt extension functions can call it from the runPathFlow
      * phase helper. Preserves the existing private visibility for outside callers.
      */
-    internal suspend fun invokePathInternal(path: PathObject, input: MultimodalContent): MultimodalContent
+    internal suspend fun invokePathInternal(
+        path: PathObject,
+        input: MultimodalContent,
+        registerAsInteractiveControlPath: Boolean = true
+    ): MultimodalContent
     {
-        return invokePath(path, input)
+        return invokePath(path, input, registerAsInteractiveControlPath)
     }
 
     /**
@@ -3032,8 +3344,19 @@ private fun pathKey(name: String): String = name.lowercase()
      */
     fun setEventObserver(observer: ((PumpStationEvent) -> Unit)?): PumpStation
     {
-        this.eventObserver = observer
+        this.eventObserver.set(observer)
         return this
+    }
+
+    /**
+     * Registers an additive event observer without replacing the legacy observer.
+     * The returned handle removes only this registration when closed.
+     */
+    fun addEventObserver(observer: (PumpStationEvent) -> Unit): AutoCloseable
+    {
+        val registration = EventObserverRegistration(observer)
+        eventObservers.add(registration)
+        return AutoCloseable { eventObservers.removeIf { it === registration } }
     }
     /**
      * Registers a richer [externalContextProvider] that receives the current
@@ -3246,7 +3569,7 @@ private fun pathKey(name: String): String = name.lowercase()
         harnessIsReady = true
 
         // Emit HarnessResumed event
-        backgroundEventQueue.trySend(HarnessResumed(
+        emitEventInternal(HarnessResumed(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
             phase = taskState.phase
@@ -3315,7 +3638,7 @@ private fun pathKey(name: String): String = name.lowercase()
         pausePhases = emptySet()
 
         // Emit HarnessResumed event
-        backgroundEventQueue.trySend(HarnessResumed(
+        emitEventInternal(HarnessResumed(
             runId = taskState.runId,
             turnIndex = taskState.turnIndex,
             phase = taskState.phase
@@ -3383,7 +3706,11 @@ private fun pathKey(name: String): String = name.lowercase()
      */
     internal var pathSafetyLastVerdict: PathSafetyVerdict? = null
 
-    private suspend fun invokePath(path: PathObject, input: MultimodalContent): MultimodalContent
+    private suspend fun invokePath(
+        path: PathObject,
+        input: MultimodalContent,
+        registerAsInteractiveControlPath: Boolean = true
+    ): MultimodalContent
     {
         val pathName = path.pathName
         val riskLevel = path.riskLevel
@@ -3613,7 +3940,7 @@ private fun pathKey(name: String): String = name.lowercase()
         taskState.currentPathName = pathName
         val result = try
         {
-            path.execute(input, this, turnHistory, turnSummary)
+            path.execute(input, this, turnHistory, turnSummary, registerAsInteractiveControlPath)
         }
         catch(e: Exception)
         {

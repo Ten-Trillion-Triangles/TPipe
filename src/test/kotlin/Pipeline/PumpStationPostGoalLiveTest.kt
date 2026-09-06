@@ -569,8 +569,7 @@ class PumpStationPostGoalLiveTest
                 val result = station.executeLocal(
                     MultimodalContent(text = "Run the post-goal hook harness.")
                 )
-                // Drain background events so the trace HTML captures the full stream.
-                station.drainBackgroundEventQueue()
+                // Events are published synchronously before trace export.
                 // getTraceReport triggers TraceConfig.autoExport and writes the pump station HTML.
                 station.getTraceReport(TraceFormat.HTML)
                 exportAgentTraces(testName)

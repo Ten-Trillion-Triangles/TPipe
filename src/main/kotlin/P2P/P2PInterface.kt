@@ -109,6 +109,17 @@ interface P2PInterface
     fun setStreamingCallbackRecursive(callback: suspend (String) -> Unit) {}
 
     /**
+     * Removes one recursively propagated streaming callback from this interface
+     * and any descendants that support callback-specific removal.
+     *
+     * The default is intentionally empty so existing P2P implementations remain
+     * source-compatible.
+     *
+     * @param callback Suspendable callback to remove
+     */
+    fun removeStreamingCallbackRecursive(callback: suspend (String) -> Unit) {}
+
+    /**
      * Removes recursively propagated streaming callbacks and disables streaming
      * on every descendant that supports it.
      *

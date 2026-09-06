@@ -169,13 +169,14 @@ All methods have sensible defaults enabling implementing classes to selectively 
 
 A uniform pattern across P2PInterface: each `*Recursive` method drills the entire agent tree (containers, then leaf pipes) and applies the same operation at every node. This propagates settings to descendants even across multi-level compositions (Pipeline-in-Pipeline, Manifold-with-Containers-in-Pipelines, PumpStation-with-mixed-agents).
 
-The seven methods share one shape:
+The recursive methods share one shape:
 
 | Method | Purpose | Pipe-side leaf handler |
 |--------|---------|----------------------|
 | `setTokenBudgetRecursive(budget: TokenBudgetSettings)` | Apply token budget to every descendant pipe | `setTokenBudget` |
 | `setPipeSettingsRecursively(settings: PipeSettings)` | Apply pipe settings to every descendant pipe | `applyPipeSettings` |
 | `setStreamingCallbackRecursive(callback: suspend (String) -> Unit)` | Register a per-chunk streaming callback on every leaf pipe | `propagateStreamingCallback` |
+| `removeStreamingCallbackRecursive(callback: suspend (String) -> Unit)` | Remove only that callback by identity without disabling other callbacks | callback-manager removal and provider legacy-field cleanup |
 | `enableStallDetectorRecursive(config, callback)` | Enable stall detection on every leaf pipe | `propagateStallDetection` |
 | `setConverseRoleRecursive(role: ConverseRole)` | Set converse role on every leaf pipe | `setConverseRole` |
 | `suspend abortRecursive()` | Abort every leaf pipe's current execution | `abort` (delegates to `propagateAbortRecursively`) |

@@ -190,7 +190,7 @@ internal fun PumpStation.notifyResume()
  */
 internal suspend fun PumpStation.injectSteeringForPhase(phase: PumpStationPausePhase)
 {
-    val entries = drainSteeringForPhase(phase)
+    val entries = drainSteeringForBoundary(phase)
     entries.forEach { entry ->
         turnHistory.add(ConverseData(role = ConverseRole.harness, content = entry))
         // Emit one trace event per drained entry so the visualizer can render
@@ -239,7 +239,9 @@ internal suspend fun PumpStation.injectInterruptForPhase(
     snapshot: PumpStationInterruptSnapshot
 )
 {
-    val first = interruptService.drainForPhase(phase) ?: return
+    val eligible = interruptService.drainAllForBoundary(phase)
+    if (eligible.isEmpty()) return
+    val first = eligible.first()
 
     // Stamp the canonical interrupt envelope onto the entry before it goes
     // out to the catch handler. The envelope uses the `interrupt` key so the
@@ -279,7 +281,7 @@ internal suspend fun PumpStation.injectInterruptForPhase(
     // service has no one-shot channel and no persistent overlay for the phase,
     // the entries are silently dropped AND an InterruptOverflowDropped event
     // is emitted for observability (operator-confirmed requirement).
-    val overflow = interruptService.drainAllForPhase(phase)
+    val overflow = eligible.drop(1)
     var droppedCount = 0
     var firstDroppedText: String? = null
     overflow.forEach { extra ->
@@ -909,7 +911,9 @@ private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalConte
     launchOn.launch {
         try
         {
-            val result = semaphore.withPermit { invokePathInternal(path, input) }
+            val result = semaphore.withPermit {
+                invokePathInternal(path, input, registerAsInteractiveControlPath = false)
+            }
             val entry = PendingTurnEntry(
                 seq = seq,
                 turnIndex = turnIndexSnapshot,
@@ -2829,9 +2833,8 @@ internal suspend fun PumpStation.runPostGoalHook(inputContent: MultimodalContent
 //=========================================Group M: Main Loop Wiring================================================
 // The keystone methods that wire all phase helpers into a single harness loop.
 // runPreInitPhase runs once at the start, runHarnessLoop drives the turn loop,
-// runTurn runs a single iteration, runFinalizationPhase emits completion/failure
-// and returns the final content, and drainBackgroundEventQueue flushes queued
-// events to the synchronous observer.
+// runTurn runs a single iteration, and runFinalizationPhase emits
+// completion/failure before returning the final content.
 
 //=========================================Pre-Init Phase===========================================================
 
@@ -3140,7 +3143,7 @@ internal fun PumpStation.pruneRawTurnHistory()
 //=========================================Finalization Phase======================================================
 
 /**
- * Finalization phase. Drains any pending background events, awaits in-flight
+ * Finalization phase. Awaits in-flight
  * background jobs (bounded by [memoryUpdateTimeoutMs]), and runs a final
  * compaction if the context fill ratio is still above [compactionThreshold].
  * Emits either [HarnessCompleted] or [HarnessFailed] based on whether
@@ -3179,7 +3182,6 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
     //    here for backward compatibility with any pre-substrate callers
     //    that joined via backgroundJobs.forEach.
     cancelAsyncJobs()
-    drainBackgroundEventQueue()
     withTimeoutOrNull(memoryUpdateTimeoutMsInternal) {
         backgroundJobs.forEach { it.join() }
     }
@@ -3258,31 +3260,6 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
     // lastPathResult (e.g. tests that wire paths without going through invokePath).
     return taskState.lastPathResult ?: (taskState.latestContent ?: MultimodalContent())
 }
-
-//=========================================Background Event Drain=================================================
-
-/**
- * Drain all events currently buffered in [backgroundEventQueue] and dispatch
- * each to the synchronous [eventObserver]. Runs synchronously (no coroutine
- * suspension) so it can be called from the finalization phase on the same
- * thread that produced the events.
- */
-internal fun PumpStation.drainBackgroundEventQueue()
-{
-    val observer = eventObserverInternal ?: return
-    while (true)
-{
-        val result = backgroundEventQueueInternal.tryReceive()
-        if (result.isSuccess)
-{
-            observer(result.getOrThrow())
-        } else
-        {
-            break
-        }
-    }
-}
-
 
 /**
  * Read token usage from a [P2PInterface] when it is a [Pipeline]. Returns null for opaque

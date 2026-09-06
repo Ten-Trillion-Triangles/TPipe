@@ -172,8 +172,8 @@ tasks.test {
 }
 
 // =====================================================================
-// CodeArtifact publishing — Startup edition. Same shape as the Community
-// block on main, but with Startup-specific POM name and default repo URL.
+// CodeArtifact publishing — Community edition. The Startup branch keeps its
+// own Startup-specific POM name, description, and repository URL.
 // Internal `com.TTT:1.0.0` stays for inter-module resolution. Consumer-
 // facing published coord is `com.github.ten-trillion-triangles:TPipe:<version>`.
 // =====================================================================
@@ -185,8 +185,8 @@ publishing {
             artifactId = "TPipe"
             version = (project.findProperty("publishVersion") as String?) ?: project.version.toString()
             pom {
-                name.set("TPipe (Startup)")
-                description.set("TPipe - Agent Operating Environment for LLM orchestration - Startup tier")
+                name.set("TPipe (Community)")
+                description.set("TPipe - Agent Operating Environment for LLM orchestration - Community tier")
             }
             from(components["java"])
             artifact(tasks.named("licenseJar"))

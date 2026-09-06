@@ -1,5 +1,7 @@
 package com.TTT.Debug
 
+import com.TTT.Config.TPipeConfig
+
 /**
  * Defines configuration settings for TPipe's tracing system.
  * @param enabled Whether tracing is enabled or not.
@@ -7,7 +9,8 @@ package com.TTT.Debug
  * @param outputFormat The format in which traces should be outputted.
  * @param detailLevel The level of detail to include in the trace output.
  * @param autoExport Whether to automatically export traces to a file.
- * @param exportPath The path where traces should be exported.
+ * @param exportPath The path where traces should be exported. The default is the active
+ * instance's [TPipeConfig.getTraceDir].
  * @param includeContext Whether to include context information in the trace output.
  * @param includeMetadata Whether to include metadata information in the trace output.
  */
@@ -17,7 +20,7 @@ data class TraceConfig(
     val outputFormat: TraceFormat = TraceFormat.CONSOLE,
     val detailLevel: TraceDetailLevel = TraceDetailLevel.NORMAL,
     val autoExport: Boolean = false,
-    val exportPath: String = "~/.TPipe-Debug/traces/",
+    val exportPath: String = TPipeConfig.getTraceDir(),
 
     val includeContext: Boolean = true,
     val includeMetadata: Boolean = true,

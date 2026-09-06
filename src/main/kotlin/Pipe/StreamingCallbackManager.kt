@@ -2,6 +2,7 @@ package com.TTT.Pipe
 
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Execution mode for streaming callbacks.
@@ -30,8 +31,8 @@ class StreamingCallbackManager(
     var onError: ((Exception, String) -> Unit)? = null
 )
 {
-    private val callbacks = mutableListOf<suspend (String) -> Unit>()
-    private val completionCallbacks = mutableListOf<suspend () -> Unit>()
+    private val callbacks = CopyOnWriteArrayList<suspend (String) -> Unit>()
+    private val completionCallbacks = CopyOnWriteArrayList<suspend () -> Unit>()
 
     /**
      * Adds a callback to the manager.
@@ -45,7 +46,7 @@ class StreamingCallbackManager(
         // pipe's setStreamingCallback and once via child propagation), we
         // don't want it firing twice. Without this, chunks appear in the
         // terminal as exact duplicates interleaved (e.g. "HelloHello").
-        if(!callbacks.contains(callback))
+        if(callbacks.none { it === callback })
         {
             callbacks.add(callback)
         }
@@ -66,7 +67,7 @@ class StreamingCallbackManager(
      */
     fun removeCallback(callback: suspend (String) -> Unit): Boolean
     {
-        return callbacks.remove(callback)
+        return callbacks.removeIf { it === callback }
     }
 
     /**
@@ -100,7 +101,7 @@ class StreamingCallbackManager(
      */
     fun addCompleteCallback(callback: suspend () -> Unit)
     {
-        if(!completionCallbacks.contains(callback))
+        if(completionCallbacks.none { it === callback })
         {
             completionCallbacks.add(callback)
         }
@@ -114,7 +115,7 @@ class StreamingCallbackManager(
      */
     fun removeCompleteCallback(callback: suspend () -> Unit): Boolean
     {
-        return completionCallbacks.remove(callback)
+        return completionCallbacks.removeIf { it === callback }
     }
 
     /**

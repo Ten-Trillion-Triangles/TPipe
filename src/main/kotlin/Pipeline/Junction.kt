@@ -358,6 +358,14 @@ class Junction : P2PInterface
             binding.component.setStreamingCallbackRecursive(callback)
         }
     }
+    override fun removeStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        moderatorBinding?.component?.removeStreamingCallbackRecursive(callback)
+        for (binding in participantBindings)
+        {
+            binding.component.removeStreamingCallbackRecursive(callback)
+        }
+    }
 
     override fun clearStreamingCallbacksRecursive()
     {

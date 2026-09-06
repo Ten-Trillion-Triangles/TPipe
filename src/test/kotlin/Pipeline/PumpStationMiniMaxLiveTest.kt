@@ -1416,15 +1416,8 @@ class PumpStationMiniMaxLiveTest
             val result = station.executeLocal(
                 MultimodalContent(text = "Research the following topic: $RESEARCH_TOPIC")
             )
-            // Bug fix 2026-07-07: drain the backgroundEventQueue BEFORE exporting the
-            // trace. Background agents (healthAgent, summaryAgent, goalAgent,
-            // lorebookAgent, interventionAgent) emit events asynchronously after
-            // runFinalizationPhase returns; if getTraceReport runs while events are
-            // still buffered, the rendered HTML trace may omit the most recent
-            // events ("trace EOF cuts off some stub runs"). drainBackgroundEventQueue
-            // (PumpStationLoop.kt:2693) flushes every buffered event to the
-            // synchronous observer so the trace export below sees the full stream.
-            station.drainBackgroundEventQueue()
+            // Events are published synchronously through PumpStation's central
+            // publication path, so trace export observes the complete stream.
             // getTraceReport triggers TraceConfig.autoExport (writes the pump station
             // HTML to ${TPipeConfig.getTraceDir()}/PumpStation/pumpstation-<runId12>.html).
             // Must be called in both success and failure paths so the trace artifacts
@@ -1914,4 +1907,3 @@ path actually needs.
 JEP 444 (Virtual Threads), kotlinx.coroutines documentation, MiniMax
 engineering blog, "The State of Server-Side Concurrency in 2026".
 """.trimIndent()
-

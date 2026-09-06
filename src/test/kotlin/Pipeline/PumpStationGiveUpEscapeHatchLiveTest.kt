@@ -185,8 +185,7 @@ class PumpStationGiveUpEscapeHatchLiveTest
 
         assertNotNull(result.text, "live-01: executeLocal returned null text")
 
-        // Drain background events so the trace HTML captures the full stream.
-        station.drainBackgroundEventQueue()
+        // Events are published synchronously before trace export.
         station.getTraceReport(TraceFormat.HTML)
         exportAgentTraces("live-01-giveup-escape")
 

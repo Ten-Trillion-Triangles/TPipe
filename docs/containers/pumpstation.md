@@ -1130,13 +1130,12 @@ The judge saying `isComplete: true` is **not** a terminal signal. It is a transi
 
 ### Finalization: `runFinalizationPhase`
 
-After the while loop exits, `runFinalizationPhase` runs once. It drains any pending async results (merging them into `turnHistory` with `AsyncTurnAppended` events), then cancels the station's `asyncScope` so async coroutines cannot outlive `executeLocal`, then drains background events, runs a final compaction if the fill ratio is still above `compactionThreshold`, emits either `HarnessCompleted` or `HarnessFailed`, and returns the harness's deliverable.
+After the while loop exits, `runFinalizationPhase` runs once. It drains any pending async results (merging them into `turnHistory` with `AsyncTurnAppended` events), then cancels the station's `asyncScope` so async coroutines cannot outlive `executeLocal`, runs a final compaction if the fill ratio is still above `compactionThreshold`, emits either `HarnessCompleted` or `HarnessFailed`, and returns the harness's deliverable. PumpStation events are published synchronously through one funnel; finalization does not replay an event queue.
 
 ```kotlin
 internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent {
     drainPendingAsyncResults()
     cancelAsyncJobs(asyncJobGracePeriodMs)
-    drainBackgroundEventQueue()
     if (contextFillRatio() > compactionThreshold) runCompactionPhase()
 
     val isFailure = taskState.lastError in listOf(
@@ -1522,7 +1521,7 @@ Four flags govern whether an async result is captured into `turnHistory`:
 
 ### Cancellation Lifecycle
 
-`runFinalizationPhase` calls `drainPendingAsyncResults()` first, then `cancelAsyncJobs()`, then `drainBackgroundEventQueue()` last (so trace events fired during cancellation still flush). `cancelAsyncJobs` honors `asyncJobGracePeriodMs`:
+`runFinalizationPhase` calls `drainPendingAsyncResults()` first, then `cancelAsyncJobs()`. Events emitted during cancellation are delivered synchronously through the PumpStation event funnel. `cancelAsyncJobs` honors `asyncJobGracePeriodMs`:
 
 - **`null` (the default)**: the wait is unbounded. `cancelAsyncJobs` yields once so any in-flight suspend point can make progress, then cancels `asyncScope`. Long-running async paths (e.g. an async path that wraps a multi-minute LLM call) are not artificially timeboxed.
 - **A millisecond value**: the wait is bounded by `withTimeoutOrNull(gracePeriodMs) { yield() }`. Coroutines that do not finish within the window are cancelled; their partial results are NOT merged into `turnHistory`.
@@ -1707,13 +1706,58 @@ This envelope is namespaced under `"steering"` and merges with any existing `Mul
 ### How It Works
 
 1. **Producer side** (`steer` / `steerPersistent` / `clearSteering` / DSL `steeringPolicy` block): writes to `PumpStationSteeringService`, a thread-safe store using `Mutex` + `Channel` + `ConcurrentHashMap`.
-2. **Consumer side** (harness loop at each phase boundary): calls `pumpStation.drainSteeringForPhase(phase)`, which:
+2. **Consumer side** (harness loop at each phase boundary): calls the boundary drain, which:
    - Combines persistent overlay (if set) + one-shot queue (FIFO)
+   - Merges explicit-phase and `steerNow` entries by enqueue sequence
    - Stamps each entry with the canonical `metadata["steering"]` envelope
    - Returns a `List<MultimodalContent>` ready for `turnHistory.add()`
 3. **Loop wiring**: `injectSteeringForPhase(phase)` wraps the drain + append, sitting at the right semantic boundary in `PumpStationLoop.kt` (see Phase Boundaries table above).
 
 The loop is never halted, never signaled, never awaited. Concurrent `steer()` calls are safe under the service's `Mutex`.
+
+### Interactive Target Routing and Next-Boundary Controls
+
+Momentary `steer`, `steerNow`, `interrupt`, and `interruptNow` controls target
+`PumpStationControlTargetMode.DeepestActive` by default. A blocking foreground
+`PathObject` records its nested PumpStation while the path is executing, so a
+root control follows the active path chain to the deepest station. Async and
+`MultiPath` work is intentionally excluded from this implicit route. Use
+`Local` independently for steering or interrupts when controls must remain at
+the calling station:
+
+```kotlin
+station.setSteeringTargetMode(PumpStationControlTargetMode.Local)
+station.setInterruptTargetMode(PumpStationControlTargetMode.Local)
+```
+
+`steerNow(...)` and `interruptNow(...)` enqueue phase-agnostic one-shot entries.
+The loop consumes them atomically at the next phase boundary reached by the
+resolved target; neither API samples the current phase or preempts an in-flight
+provider request. `interruptNow` preserves normal snapshot rewind and
+interrupt-overflow-to-steering behavior. Persistent steering overlays remain
+owned by the station where they were configured.
+
+### Event Publication and PumpStationSession
+
+Every PumpStation event is published synchronously through one funnel. The
+legacy `setEventObserver` callback, additive `addEventObserver` subscriptions,
+and tracing each receive one publication; finalization does not replay an event
+queue and no value-based event deduplication is performed. An additive
+subscription is removed with its returned `AutoCloseable`.
+
+`openSession(sessionId)` creates a UI/runtime facade with a monotonic update
+sequence and an unlimited `updates` channel. It attaches to the root and the
+active foreground child chain, and its `execute` call is serialized per
+session. Controls and `abort()` bypass that execution mutex, allowing a UI to
+steer or interrupt a blocked execution. Closing a session removes only its own
+event and callback registrations and does not abort the station. Stream update
+source attribution is a snapshot of the active route at callback time; streams
+from simultaneous async/background branches are not source-exact.
+
+Session callbacks are propagated through the recursive P2P removal contract,
+including provider-specific callback fields and dynamically created nested
+PumpStations. Callback removal is identity-based, so developer-owned event and
+stream observers survive session teardown.
 
 ### Reference Locations
 
@@ -1858,9 +1902,9 @@ This envelope is namespaced under `"interrupt"` and merges with any existing `Mu
 
 ### How It Works
 
-1. **Producer side** (`interrupt` / DSL `interruptPolicy` block): writes to `PumpStationInterruptService`, a thread-safe store using `Mutex` + per-phase `Channel<MultimodalContent>` + `ConcurrentHashMap`.
+1. **Producer side** (`interrupt` / `interruptNow` / DSL `interruptPolicy` block): writes to `PumpStationInterruptService`, a thread-safe store with explicit-phase and next-boundary queues.
 2. **Consumer side** (harness loop at each phase boundary): calls `pumpStation.injectInterruptForPhase(phase, snapshot)`, which:
-   - Drains the first entry for the phase (or no-op if empty)
+   - Drains eligible explicit-phase and next-boundary entries in enqueue order (or no-op if empty)
    - Forwards overflow entries to the steering service (or drops them with an `InterruptOverflowDropped` event)
    - Stamps the entry with the canonical `metadata["interrupt"]` envelope
    - Throws `PumpStationInterruptException(stamped, snapshot)`
@@ -1984,7 +2028,8 @@ val station = pumpStation("name") {
     tracing {
         enabled()
         outputFormat(TraceFormat.HTML)
-        autoExport(enabled = true, path = "~/.tpipe-traces/")
+        // Defaults to TPipeConfig.getTraceDir(), scoped by configDir and instanceID.
+        autoExport(enabled = true)
     }
 }
 ```

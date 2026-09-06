@@ -76,8 +76,9 @@ private fun contentPreview(content: MultimodalContent?): Pair<String, Int>
  * point for trace emission. The visualizer reads its `turnIndex` from the trace event metadata,
  * so each event carries a consistent `turnIndex` regardless of where it was emitted.
  *
- * This helper does NOT replace the in-process `backgroundEventQueue` emission — it runs in
- * addition to it, so test observers and the live UI both keep working.
+ * This helper is called by PumpStation's single event publication funnel after
+ * in-process observers have been notified, so tracing and runtime observers see
+ * the same publication exactly once.
  */
 internal fun PumpStation.tracePumpStationEvent(event: PumpStationEvent)
 {

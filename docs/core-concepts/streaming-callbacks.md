@@ -326,6 +326,24 @@ pipe.streamingCallbacks {
 
 Both parameters are independent. Setting both to `false` means the callback fires only on the pipe where it was registered — neither the parent's children nor the reasoning pipe receive it.
 
+### Callback-specific recursive removal
+
+`P2PInterface.removeStreamingCallbackRecursive(callback)` removes only the
+identical callback object from a container and its descendants. It does not
+disable streaming or clear callbacks owned by other sessions or developers:
+
+```kotlin
+val sessionCallback: suspend (String) -> Unit = { chunk -> render(chunk) }
+pipe.setStreamingCallbackRecursive(sessionCallback)
+// Later, without disturbing other callbacks:
+pipe.removeStreamingCallbackRecursive(sessionCallback)
+```
+
+The traversal is cycle-safe across `Pipe` graphs and forwards through TPipe
+containers and provider-specific legacy callback fields. Callback managers use
+stable emission snapshots, so a session can detach while a stream is emitting
+without invalidating the current iteration.
+
 ## Disabling Streaming
 
 Disable streaming and clear all callbacks:

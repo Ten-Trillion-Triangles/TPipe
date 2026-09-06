@@ -2098,6 +2098,81 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
+     * Removes one streaming callback from this pipe and every descendant pipe.
+     *
+     * The traversal mirrors [propagateStreamingCallback], including its cycle
+     * guard and child-propagation flags. Removing a callback does not disable
+     * streaming because another callback may still be registered on the pipe.
+     *
+     * @param callback Suspendable callback to remove
+     * @param visited Internal — tracks already-walked pipes to prevent cycles
+     * @param propagateToChildren Whether to visit validator, transformation, and branch pipes
+     * @param propagateToReasoning Whether to visit the reasoning pipe
+     */
+    fun removeStreamingCallbackRecursively(
+        callback: suspend (String) -> Unit,
+        visited: MutableSet<String> = mutableSetOf(),
+        propagateToChildren: Boolean = true,
+        propagateToReasoning: Boolean = true,
+    )
+    {
+        removeStreamingCallbackRecursivelyInternal(
+            callback,
+            visited,
+            propagateToChildren,
+            propagateToReasoning
+        )
+    }
+
+    /**
+     * Shared virtual traversal used by the public callback-removal entry point.
+     * Provider pipes override this hook to clear provider-specific callback
+     * fields while retaining the same cycle-safe traversal state.
+     */
+    protected open fun removeStreamingCallbackRecursivelyInternal(
+        callback: suspend (String) -> Unit,
+        visited: MutableSet<String>,
+        propagateToChildren: Boolean,
+        propagateToReasoning: Boolean,
+    )
+    {
+        if(pipeId in visited) return
+        visited.add(pipeId)
+
+        streamingCallbackManager?.removeCallback(callback)
+
+        if(propagateToChildren)
+        {
+            listOfNotNull(validatorPipe, transformationPipe, branchPipe).forEach { child ->
+                if(child.pipeId !in visited)
+                {
+                    child.removeStreamingCallbackRecursivelyInternal(
+                        callback,
+                        visited,
+                        propagateToChildren,
+                        propagateToReasoning
+                    )
+                }
+            }
+        }
+
+        if(propagateToReasoning)
+        {
+            reasoningPipe?.let { reasoning ->
+                if(reasoning.pipeId !in visited)
+                {
+                    reasoning.removeStreamingCallbackRecursivelyInternal(
+                        callback,
+                        visited,
+                        propagateToChildren,
+                        propagateToReasoning
+                    )
+                }
+            }
+        }
+    }
+
+    /**
      * Clears streamed-output callbacks from this pipe and all descendant pipes.
      *
      * @param visited Internal cycle guard for shared child references.
@@ -2129,6 +2204,16 @@ abstract class Pipe : P2PInterface, ProviderInterface
     override fun clearStreamingCallbacksRecursive()
     {
         clearStreamingCallbacksRecursively()
+    }
+
+    override fun removeStreamingCallbackRecursive(callback: suspend (String) -> Unit)
+    {
+        removeStreamingCallbackRecursivelyInternal(
+            callback,
+            mutableSetOf(),
+            propagateToChildren = true,
+            propagateToReasoning = true
+        )
     }
 
     /**

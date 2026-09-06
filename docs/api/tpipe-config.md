@@ -60,6 +60,9 @@ Unique identifier for this TPipe instance.
 
 **Purpose:** Prevents multiple TPipe applications from interfering with each other's stored data. Each instance gets its own subdirectory under `configDir`.
 
+All TPipe-managed directories are rooted at `${configDir}/${instanceID}`. Configure both
+properties before constructing pipes, memory stores, or default trace configurations.
+
 **Customization:**
 ```kotlin
 // Set unique ID for this application
@@ -146,15 +149,16 @@ val todoPath = TPipeConfig.getTodoListDir()
 
 Returns the directory where debug data is stored.
 
-**Returns:** `"${configDir}/debug"`
+**Returns:** `"${getTPipeConfigDir()}/debug"`
 
 **Example:**
 ```kotlin
 val debugPath = TPipeConfig.getDebugDir()
-// Returns: "/home/user/.tpipe/debug"
+// Returns: "/home/user/.tpipe/TPipe-Default/debug"
 ```
 
-**Purpose:** Root directory for debug-related output. Note that debug data is stored at the `configDir` level, not per-instance, allowing debug data to be shared across instances if needed.
+**Purpose:** Per-instance root directory for debug-related output. Debug data is isolated from other
+instances unless they use the same `instanceID` under the same `configDir`.
 
 ---
 
@@ -167,10 +171,11 @@ Returns the directory where execution traces are stored.
 **Example:**
 ```kotlin
 val tracePath = TPipeConfig.getTraceDir()
-// Returns: "/home/user/.tpipe/debug/trace"
+// Returns: "/home/user/.tpipe/TPipe-Default/debug/trace"
 ```
 
-**Purpose:** Storage location for pipe and pipeline execution traces. Trace files are written here when tracing is enabled.
+**Purpose:** Per-instance storage location for pipe and pipeline execution traces. Trace files are
+written here when tracing is enabled.
 
 ---
 
