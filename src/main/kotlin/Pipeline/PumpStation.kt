@@ -8,6 +8,7 @@ import com.TTT.Context.MetadataBank
 import com.TTT.Context.MiniBank
 import com.TTT.Context.TodoList
 import com.TTT.Context.TodoListTask
+import com.TTT.Enums.PumpStationGoalHistorySource
 import com.TTT.Enums.PumpStationHistoryTransport
 import com.TTT.Enums.PumpStationLatestContentPosition
 import com.TTT.P2P.KillSwitch
@@ -1892,6 +1893,12 @@ private fun pathKey(name: String): String = name.lowercase()
     private var historyTransport = PumpStationHistoryTransport.TextOnly
 
     /**
+     * Controls which retained history is supplied to goal validation.
+     * Defaults to the curated turn history for predictable prompt size.
+     */
+    private var goalHistorySource = PumpStationGoalHistorySource.Curated
+
+    /**
      * Controls whether the latest prior agent output is injected into dispatch text.
      */
     private var latestContentInjectionEnabled = true
@@ -2941,6 +2948,7 @@ private fun pathKey(name: String): String = name.lowercase()
     internal val maxTurnHistorySizeInternal get() = maxTurnHistorySize
     internal val maxRawTurnHistorySizeInternal get() = maxRawTurnHistorySize
     internal val historyTransportInternal get() = historyTransport
+    internal val goalHistorySourceInternal get() = goalHistorySource
     internal val latestContentInjectionEnabledInternal get() = latestContentInjectionEnabled
     internal val latestContentPositionInternal get() = latestContentPosition
     internal val deduplicateLatestContentAgainstHistoryInternal get() = deduplicateLatestContentAgainstHistory
@@ -4441,6 +4449,23 @@ private fun pathKey(name: String): String = name.lowercase()
         this.historyTransport = transport
         return this
     }
+
+    /**
+     * Selects the retained history supplied to the goal-validation agent.
+     *
+     * @param source Curated turn history or the full retained raw history.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setGoalHistorySource(source: PumpStationGoalHistorySource): PumpStation
+    {
+        this.goalHistorySource = source
+        return this
+    }
+
+    /**
+     * Returns the history source configured for goal validation.
+     */
+    fun getGoalHistorySource(): PumpStationGoalHistorySource = goalHistorySource
 
     /**
      * Sets whether latest prior agent output is injected into dispatch text.

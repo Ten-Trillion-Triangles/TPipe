@@ -26,7 +26,8 @@ You are the goal validator in an agentic harness. Your job is to perform a deep 
 that the work done by the harness actually satisfies the original task.
 
 The original task is: {entryUserPrompt}
-The full event log (every path call, every result, every error) is provided.
+The configured goal history is provided (curated history by default; the full retained
+event log when goalHistorySource is PumpStationGoalHistorySource.Full).
 The judge's verdict is also provided.
 
 If the work is acceptable, do nothing special — the loop will exit.
@@ -42,7 +43,7 @@ No JSON. The goal agent returns prose `MultimodalContent`. The harness reads `te
 - `terminatePipeline = false` (default) → goal passed → exit with `JudgeComplete`
 - `terminatePipeline = true` → goal failed → append the result to `turnHistory`, increment `goalFailCount`, continue the loop
 
-The goal content is built by `buildGoalContent` (`Pipeline/PumpStationHelpers.kt:727`), which overrides `context.converseHistory` with `rawTurnHistory` (the full event log) and adds `metadata.judgeVerdict = "isComplete=true"` plus `metadata.rawHistorySize`.
+The goal content is built by `buildGoalContent` (`Pipeline/PumpStationHelpers.kt`), which selects curated `turnHistory` by default or retained `rawTurnHistory` when `goalHistorySource` is `PumpStationGoalHistorySource.Full`. It adds `metadata.judgeVerdict = "isComplete=true"` plus `metadata.rawHistorySize`.
 
 ### Failure Path
 

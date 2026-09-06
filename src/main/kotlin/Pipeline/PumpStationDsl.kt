@@ -7,6 +7,7 @@ import com.TTT.Context.MiniBank
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Debug.TraceFormat
+import com.TTT.Enums.PumpStationGoalHistorySource
 import com.TTT.Enums.PumpStationHistoryTransport
 import com.TTT.Enums.PumpStationLatestContentPosition
 import com.TTT.P2P.KillSwitch
@@ -522,6 +523,9 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
 
     /** History representation supplied to PumpStation agents. */
     var historyTransport: PumpStationHistoryTransport = PumpStationHistoryTransport.TextOnly
+
+    /** History source supplied to the goal-validation agent. */
+    var goalHistorySource: PumpStationGoalHistorySource = PumpStationGoalHistorySource.Curated
 
     /** Whether latest prior agent output is injected into dispatch text. */
     var latestContentInjectionEnabled: Boolean = true
@@ -1120,6 +1124,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         maxGoalFailAttempts = source.maxGoalFailAttempts
         maxRawTurnHistorySize = source.maxRawTurnHistorySize
         historyTransport = source.historyTransport
+        goalHistorySource = source.goalHistorySource
         latestContentInjectionEnabled = source.latestContentInjectionEnabled
         latestContentPosition = source.latestContentPosition
         deduplicateLatestContentAgainstHistory = source.deduplicateLatestContentAgainstHistory
@@ -1312,6 +1317,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setMaxGoalFailAttempts(maxGoalFailAttempts)
             .setMaxRawTurnHistorySize(maxRawTurnHistorySize)
             .setHistoryTransport(historyTransport)
+            .setGoalHistorySource(goalHistorySource)
             .setLatestContentInjectionEnabled(latestContentInjectionEnabled)
             .setLatestContentPosition(latestContentPosition)
             .setDeduplicateLatestContentAgainstHistory(deduplicateLatestContentAgainstHistory)
@@ -2512,6 +2518,11 @@ class PromptConfigurationBlock(private val builder: PumpStationBuilder<*>)
     var historyTransport: PumpStationHistoryTransport
         get() = builder.historyTransport
         set(value) { builder.historyTransport = value }
+
+    /** History source used by goal validation; defaults to curated history. */
+    var goalHistorySource: PumpStationGoalHistorySource
+        get() = builder.goalHistorySource
+        set(value) { builder.goalHistorySource = value }
 
     /** Whether latest prior agent output is injected into dispatch text. */
     var latestContentInjectionEnabled: Boolean

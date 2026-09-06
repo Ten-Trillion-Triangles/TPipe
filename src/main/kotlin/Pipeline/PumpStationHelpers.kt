@@ -6,6 +6,7 @@ import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceEvent
 import com.TTT.Debug.TraceEventType
 import com.TTT.Debug.TracePhase
+import com.TTT.Enums.PumpStationGoalHistorySource
 import com.TTT.Enums.PumpStationHistoryTransport
 import com.TTT.Enums.PumpStationLatestContentPosition
 import com.TTT.Pipe.MultimodalContent
@@ -997,13 +998,29 @@ internal fun PumpStation.buildDispatchContent(): MultimodalContent
 }
 
 /**
- * Build the MultimodalContent for the goal agent from the raw event history.
+ * Resolve the history selected for goal validation.
  *
- * @return Goal-validation content using raw history and the configured transport.
+ * @return The curated or full retained history selected by the station.
  */
-internal fun PumpStation.buildGoalContent(): MultimodalContent
+private fun PumpStation.goalHistoryForValidation(): ConverseHistory
 {
-    val base = buildTurnContent(rawTurnHistory)
+    return when(goalHistorySourceInternal)
+    {
+        PumpStationGoalHistorySource.Curated -> turnHistory
+        PumpStationGoalHistorySource.Full -> rawTurnHistory
+    }
+}
+
+/**
+ * Build the MultimodalContent for goal validation.
+ *
+ * @param history Explicit history override used by the no-goal post-goal path
+ * to preserve its existing raw-history contract.
+ * @return Goal-validation content using the selected history and transport.
+ */
+internal fun PumpStation.buildGoalContent(history: ConverseHistory = goalHistoryForValidation()): MultimodalContent
+{
+    val base = buildTurnContent(history)
     base.metadata["judgeVerdict"] = "isComplete=true"
     base.metadata["rawHistorySize"] = rawTurnHistory.history.size
     return base

@@ -2736,7 +2736,7 @@ internal suspend fun PumpStation.runExitFlow(turnSnapshot: PumpStationInterruptS
     injectSteeringForPhase(PumpStationPausePhase.BeforeGoalValidation)
     if (goalAgent == null)
 {
-        val exitContent = buildGoalContent()
+        val exitContent = buildGoalContent(rawTurnHistory)
         return runPostGoalHook(exitContent)
     }
 

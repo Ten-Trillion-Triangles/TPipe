@@ -183,6 +183,7 @@ pumpStation("name") {
     setMaxRawTurnHistorySize(1000)
     promptConfiguration {
         historyTransport = PumpStationHistoryTransport.TextOnly
+        goalHistorySource = PumpStationGoalHistorySource.Curated
         latestContentInjectionEnabled = true
         latestContentPosition = PumpStationLatestContentPosition.Suffix
         deduplicateLatestContentAgainstHistory = true
@@ -308,15 +309,16 @@ Stores the normalized plan in the staged builder. The value is copied during bui
 | Property | Type | Default | Description |
 |---|---|---|---|
 | `historyTransport` | `PumpStationHistoryTransport` | `TextOnly` | Selects text, structured-context, or dual history transport. |
+| `goalHistorySource` | `PumpStationGoalHistorySource` | `Curated` | Selects curated `turnHistory` or full retained `rawTurnHistory` for goal validation. |
 | `latestContentInjectionEnabled` | `Boolean` | `true` | Enables latest prior agent output in dispatch text. |
 | `latestContentPosition` | `PumpStationLatestContentPosition` | `Suffix` | Selects `Prefix`, `BeforeHistory`, `AfterHistory`, or `Suffix`. |
 | `deduplicateLatestContentAgainstHistory` | `Boolean` | `true` | Suppresses exact latest-output duplicates already present in turn history. |
 
-The equivalent `PumpStation` methods are `setHistoryTransport(...)`, `setLatestContentInjectionEnabled(...)`, `setLatestContentPosition(...)`, and `setDeduplicateLatestContentAgainstHistory(...)`.
+The equivalent `PumpStation` methods are `setHistoryTransport(...)`, `setGoalHistorySource(...)`, `setLatestContentInjectionEnabled(...)`, `setLatestContentPosition(...)`, and `setDeduplicateLatestContentAgainstHistory(...)`.
 
 ### Prompt Transport Enums
 
-`PumpStationHistoryTransport` and `PumpStationLatestContentPosition` live in `src/main/kotlin/Enums/`. `TextOnly` and `Suffix` are the defaults because they preserve one provider-facing history representation and a stable dispatch prefix.
+`PumpStationHistoryTransport`, `PumpStationGoalHistorySource`, and `PumpStationLatestContentPosition` live in `src/main/kotlin/Enums/`. `TextOnly`, `Curated`, and `Suffix` are the defaults because they preserve one provider-facing history representation, keep goal prompts context-managed by default, and provide a stable dispatch prefix. `Full` selects the retained raw event history for goal validation.
 
 
 ## Async Substrate

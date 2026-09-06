@@ -2,17 +2,21 @@ package com.TTT.Pipeline
 
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseRole
+import com.TTT.Enums.PumpStationGoalHistorySource
 import com.TTT.Enums.PumpStationHistoryTransport
 import com.TTT.Enums.PumpStationLatestContentPosition
 import com.TTT.Pipe.MultimodalContent
+import kotlinx.coroutines.runBlocking
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
+import java.util.concurrent.atomic.AtomicReference
 
 /**
- * RED coverage for PumpStation prompt transport and latest-output placement.
+ * Coverage for PumpStation prompt transport, goal-history selection, and
+ * latest-output placement.
  */
 class PumpStationPromptConfigurationTest
 {
@@ -75,17 +79,95 @@ class PumpStationPromptConfigurationTest
     }
 
     @Test
-    fun goalContentSerializesRawHistoryThroughSelectedTransport()
+    fun goalAgentReceivesCuratedHistoryByDefault()
     {
-        val station = PumpStation()
+        val goalAgent = MockP2PAgent()
+        val station = PumpStation().setGoalAgent(goalAgent)
         addHistory(station, "CuratedHistoryCanary")
         addRawHistory(station, "RawHistoryCanary")
 
-        val content = station.buildGoalContent()
+        runBlocking {
+            station.runExitFlow(station.takeInterruptSnapshot())
+        }
 
-        assertTrue(content.text.contains("RawHistoryCanary"))
-        assertFalse(content.text.contains("CuratedHistoryCanary"))
+        val content = goalAgent.callLog.single()
+        assertTrue(content.text.contains("CuratedHistoryCanary"))
+        assertFalse(content.text.contains("RawHistoryCanary"))
         assertTrue(content.context.converseHistory.history.isEmpty())
+    }
+
+    @Test
+    fun goalAgentCanReceiveFullHistory()
+    {
+        val goalAgent = MockP2PAgent()
+        val station = PumpStation()
+            .setGoalAgent(goalAgent)
+            .setGoalHistorySource(PumpStationGoalHistorySource.Full)
+        addHistory(station, "FullModeCuratedCanary")
+        addRawHistory(station, "FullModeRawCanary")
+
+        runBlocking {
+            station.runExitFlow(station.takeInterruptSnapshot())
+        }
+
+        val content = goalAgent.callLog.single()
+        assertTrue(content.text.contains("FullModeRawCanary"))
+        assertFalse(content.text.contains("FullModeCuratedCanary"))
+    }
+
+    @Test
+    fun fullGoalHistoryUsesStructuredContextWhenConfigured()
+    {
+        val goalAgent = MockP2PAgent()
+        val station = PumpStation()
+            .setGoalAgent(goalAgent)
+            .setGoalHistorySource(PumpStationGoalHistorySource.Full)
+            .setHistoryTransport(PumpStationHistoryTransport.ContextOnly)
+        addHistory(station, "ContextModeCuratedCanary")
+        addRawHistory(station, "ContextModeRawCanary")
+
+        runBlocking {
+            station.runExitFlow(station.takeInterruptSnapshot())
+        }
+
+        val content = goalAgent.callLog.single()
+        assertFalse(content.text.contains("ContextModeRawCanary"))
+        assertEquals(1, content.context.converseHistory.history.size)
+        assertEquals("ContextModeRawCanary", content.context.converseHistory.history.single().content.text)
+    }
+
+    @Test
+    fun goalHistorySourceDoesNotChangeRegularTurnContent()
+    {
+        val station = PumpStation()
+            .setGoalHistorySource(PumpStationGoalHistorySource.Full)
+        addHistory(station, "RegularTurnCuratedCanary")
+        addRawHistory(station, "RegularTurnRawCanary")
+
+        val content = station.buildTurnContent()
+
+        assertTrue(content.text.contains("RegularTurnCuratedCanary"))
+        assertFalse(content.text.contains("RegularTurnRawCanary"))
+    }
+
+    @Test
+    fun noGoalPostGoalInputRetainsRawHistory()
+    {
+        val capturedContent = AtomicReference<MultimodalContent?>()
+        val station = PumpStation().setPostGoalFunction { content, _ ->
+            capturedContent.set(content)
+            content
+        }
+        addHistory(station, "PostGoalCuratedCanary")
+        addRawHistory(station, "PostGoalRawCanary")
+
+        runBlocking {
+            station.runExitFlow(station.takeInterruptSnapshot())
+        }
+
+        val content = requireNotNull(capturedContent.get())
+        assertTrue(content.text.contains("PostGoalRawCanary"))
+        assertFalse(content.text.contains("PostGoalCuratedCanary"))
     }
 
     @Test
@@ -168,9 +250,11 @@ class PumpStationPromptConfigurationTest
         val station = PumpStation()
 
         assertSame(station, station.setHistoryTransport(PumpStationHistoryTransport.ContextOnly))
+        assertSame(station, station.setGoalHistorySource(PumpStationGoalHistorySource.Full))
         assertSame(station, station.setLatestContentInjectionEnabled(false))
         assertSame(station, station.setLatestContentPosition(PumpStationLatestContentPosition.Prefix))
         assertSame(station, station.setDeduplicateLatestContentAgainstHistory(false))
+        assertEquals(PumpStationGoalHistorySource.Full, station.getGoalHistorySource())
     }
 
     @Test
@@ -180,6 +264,7 @@ class PumpStationPromptConfigurationTest
             dispatchAgent = Pipeline()
             promptConfiguration {
                 historyTransport = PumpStationHistoryTransport.ContextOnly
+                goalHistorySource = PumpStationGoalHistorySource.Full
                 latestContentInjectionEnabled = false
                 latestContentPosition = PumpStationLatestContentPosition.Prefix
                 deduplicateLatestContentAgainstHistory = false
@@ -197,5 +282,6 @@ class PumpStationPromptConfigurationTest
         assertFalse(content.text.contains("DslHistoryCanary"))
         assertFalse(content.text.contains("DslLatestCanary"))
         assertEquals(1, content.context.converseHistory.history.size)
+        assertEquals(PumpStationGoalHistorySource.Full, station.getGoalHistorySource())
     }
 }

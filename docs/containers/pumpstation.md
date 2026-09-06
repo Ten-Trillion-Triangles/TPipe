@@ -242,7 +242,7 @@ PumpStation builds each judge, dispatch, and goal input through `buildTurnConten
 | `PumpStationHistoryTransport.ContextOnly` | Phase text only | Structured history | No |
 | `PumpStationHistoryTransport.TextAndContext` | Serialized history | Structured history | No |
 
-The default avoids paying for duplicate history representations. `buildGoalContent()` passes `rawTurnHistory` through the same selected mode, so the goal agent sees the raw event log consistently.
+The default avoids paying for duplicate history representations. Goal validation separately uses `goalHistorySource`, which defaults to `PumpStationGoalHistorySource.Curated` and supplies the curated `turnHistory`. Set it to `PumpStationGoalHistorySource.Full` when the goal agent must inspect the complete retained `rawTurnHistory`. The selected source is passed through the same `historyTransport` mode. This setting does not change judge/dispatch history or the post-goal input contracts.
 
 Dispatch input can include the latest prior agent output from `taskState.latestContent`. The controls are:
 
@@ -258,6 +258,7 @@ Configure the settings through fluent methods or the DSL:
 val station = pumpStation("research") {
     promptConfiguration {
         historyTransport = PumpStationHistoryTransport.TextOnly
+        goalHistorySource = PumpStationGoalHistorySource.Curated
         latestContentInjectionEnabled = true
         latestContentPosition = PumpStationLatestContentPosition.Suffix
         deduplicateLatestContentAgainstHistory = true
@@ -265,7 +266,7 @@ val station = pumpStation("research") {
 }
 ```
 
-The same configuration is available through `setHistoryTransport(...)`, `setLatestContentInjectionEnabled(...)`, `setLatestContentPosition(...)`, and `setDeduplicateLatestContentAgainstHistory(...)` on `PumpStation`.
+The same configuration is available through `setHistoryTransport(...)`, `setGoalHistorySource(...)`, `setLatestContentInjectionEnabled(...)`, `setLatestContentPosition(...)`, and `setDeduplicateLatestContentAgainstHistory(...)` on `PumpStation`.
 
 ### Implementation Plan Guidance
 
@@ -386,7 +387,7 @@ A path receives a `MultimodalContent` and returns a `MultimodalContent`. There i
 
 **What the goal agent receives:**
 
-A `MultimodalContent` built by `buildGoalContent()`. This is the same shape as the judge/dispatch content but the `context.converseHistory` is overridden with `rawTurnHistory` (the full event log, not the curated turn history), and `metadata` includes `judgeVerdict` and `rawHistorySize`. The text is `turnSummary + "Verify the work was done."`. The full event log is included so the goal agent can do thorough deep verification.
+A `MultimodalContent` built by `buildGoalContent()`. This is the same shape as the judge/dispatch content, with the history selected by `goalHistorySource`: `Curated` uses `turnHistory`, while `Full` uses the complete retained `rawTurnHistory`. The selected history is transported according to `historyTransport`, and `metadata` includes `judgeVerdict` and `rawHistorySize`. The text is `turnSummary + "Verify the work was done."`.
 
 **What the goal agent must output:**
 
@@ -409,9 +410,9 @@ The post-goal surface fires after a successful exit through `runExitFlow` — ev
 
 **What the post-goal agent receives:**
 
-A `MultimodalContent` built by `buildPrunedHistoryContent()` — the same shape judge and dispatch see. The text includes the inline `[CONVERSATION HISTORY]` block, the original input prefix, and the `turnSummary` if one exists. The `context.converseHistory` stays on the pruned `turnHistory` (not the full event log — that is what `buildGoalContent()` does for the goal agent's deep verification, which is the goal agent's job, not the post-goal surface's).
+A `MultimodalContent` built by `buildPrunedHistoryContent()` — the same shape judge and dispatch see. The text includes the inline `[CONVERSATION HISTORY]` block, the original input prefix, and the `turnSummary` if one exists. The `context.converseHistory` stays on the pruned `turnHistory`. The post-goal surface is independent of `goalHistorySource`: that setting controls only the configured goal-validation agent.
 
-This is the canonical input shape regardless of whether `goalAgent` is configured. With no `goalAgent`, the no-goal-agent branch in `runExitFlow` calls `runPostGoalHook(buildGoalContent())` (the goal-content helper that uses `rawTurnHistory`); with `goalAgent` configured and passing, the goal-agent-passed branch calls `runPostGoalHook(buildPrunedHistoryContent())`. Either way, the post-goal agent sees the full run context — never the goal agent's verdict-shaped output.
+This is the canonical input shape regardless of whether `goalAgent` is configured. With no `goalAgent`, the no-goal-agent branch in `runExitFlow` calls `runPostGoalHook` with raw history; with `goalAgent` configured and passing, the goal-agent-passed branch calls `runPostGoalHook(buildPrunedHistoryContent())`. The `goalHistorySource` setting applies only while validating a configured goal agent and does not alter either post-goal contract.
 
 **What the post-goal agent must output:**
 
@@ -441,9 +442,9 @@ pumpStation("example") {
 
 | Configuration | Post-goal fires? | Input source |
 |---------------|------------------|--------------|
-| Judge `isComplete=true`, no goal agent | yes | `buildGoalContent()` (rawTurnHistory) |
+| Judge `isComplete=true`, no goal agent | yes | `buildGoalContent(rawTurnHistory)` |
 | Judge `isComplete=true`, goal agent passes | yes | `buildPrunedHistoryContent()` (pruned turnHistory) |
-| Path `passPipeline=true`, no goal agent | yes | `buildGoalContent()` (rawTurnHistory) |
+| Path `passPipeline=true`, no goal agent | yes | `buildGoalContent(rawTurnHistory)` |
 | Path `passPipeline=true`, goal agent passes | yes | `buildPrunedHistoryContent()` (pruned turnHistory) |
 | Goal agent fails repeatedly (`maxGoalFailAttempts` exceeded) | NO | n/a — halts via `GoalValidationFailed` |
 | Path `terminatePipeline=true` direct halt | NO | n/a — halts via `TerminateSignal` |
@@ -764,6 +765,7 @@ The `pumpStation { }` builder supports these top-level blocks and setters.
 | `maxTurns`               | `Int`                                      | `50`    | Canonical setter. `maxHarnessTurns` is a delegating alias. |
 | `maxGoalFailAttempts`    | `Int`                                      | `3`     | Max consecutive goal-validation failures before `GoalValidationFailed` exit. |
 | `maxRawTurnHistorySize`  | `Int?`                                     | `null`  | Cap on `rawTurnHistory.history`; null disables. |
+| `goalHistorySource`      | `PumpStationGoalHistorySource`             | `Curated` | History supplied to goal validation: curated `turnHistory` or full retained `rawTurnHistory`. |
 | `blowoutThreshold`       | `Double`                                   | `0.9`   | Context-window fill ratio that triggers blowout detection. |
 | `memoryUpdateTimeoutMs`  | `Long`                                     | `30_000L` | Timeout in ms for memory phase to await in-flight background jobs. |
 | `maxBlowoutRecoveries`   | `Int`                                      | `3`     | Max blowout recovery attempts before forced halt. |
@@ -1096,7 +1098,7 @@ internal suspend fun PumpStation.runExitFlow(turnSnapshot: PumpStationInterruptS
     injectInterruptForPhase(PumpStationPausePhase.BeforeGoalValidation, turnSnapshot)
     injectSteeringForPhase(PumpStationPausePhase.BeforeGoalValidation)
     if (goalAgent == null) {
-        val exitContent = buildGoalContent()
+        val exitContent = buildGoalContent(rawTurnHistory)
         return runPostGoalHook(exitContent)
     }
 
