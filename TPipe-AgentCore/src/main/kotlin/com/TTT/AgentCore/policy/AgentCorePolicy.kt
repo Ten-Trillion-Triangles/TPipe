@@ -163,19 +163,36 @@ class AgentCorePolicyAdmin(private val client: BedrockAgentCoreControlClient)
      * @return The updated Gateway response.
      */
     suspend fun bindGateway(binding: AgentCoreGatewayPolicyBinding): UpdateGatewayResponse =
-        client.updateGateway(
-            UpdateGatewayRequest {
-                gatewayIdentifier = binding.gatewayIdentifier
-                policyEngineConfiguration {
-                    arn = binding.policyEngineIdentifier
-                    mode = when(binding.mode)
-                    {
-                        AgentCorePolicyMode.LOG_ONLY -> GatewayPolicyEngineMode.LogOnly
-                        AgentCorePolicyMode.ENFORCE -> GatewayPolicyEngineMode.Enforce
+        client.getGateway(
+            GetGatewayRequest { gatewayIdentifier = binding.gatewayIdentifier }
+        ).let { gateway ->
+            client.updateGateway(
+                UpdateGatewayRequest {
+                    gatewayIdentifier = binding.gatewayIdentifier
+                    name = gateway.name
+                    description = gateway.description
+                    roleArn = requireNotNull(gateway.roleArn) {
+                        "Gateway '${binding.gatewayIdentifier}' has no execution role ARN."
+                    }
+                    authorizerType = gateway.authorizerType
+                    authorizerConfiguration = gateway.authorizerConfiguration
+                    protocolConfiguration = gateway.protocolConfiguration
+                    customTransformConfiguration = gateway.customTransformConfiguration
+                    interceptorConfigurations = gateway.interceptorConfigurations
+                    kmsKeyArn = gateway.kmsKeyArn
+                    exceptionLevel = gateway.exceptionLevel
+                    wafConfiguration = gateway.wafConfiguration
+                    policyEngineConfiguration {
+                        arn = binding.policyEngineIdentifier
+                        mode = when(binding.mode)
+                        {
+                            AgentCorePolicyMode.LOG_ONLY -> GatewayPolicyEngineMode.LogOnly
+                            AgentCorePolicyMode.ENFORCE -> GatewayPolicyEngineMode.Enforce
+                        }
                     }
                 }
-            }
-        )
+            )
+        }
 }
 
 /** Build Policy administration from shared clients. */

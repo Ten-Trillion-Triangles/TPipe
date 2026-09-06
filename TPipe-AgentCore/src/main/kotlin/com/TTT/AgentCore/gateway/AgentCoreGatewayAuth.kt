@@ -159,7 +159,11 @@ class AgentCoreGatewaySigV4Auth(
                     val low = rawPath[index + 2].digitToIntOrNull(16)
                     if(high != null && low != null)
                     {
-                        append('%')
+                        // AgentCore's runtime URL contains an ARN that is
+                        // percent-encoded on the wire. SigV4 canonical URI
+                        // normalization encodes that percent sign again, as
+                        // reflected by the AWS SDK canonical request.
+                        append("%25")
                         append("0123456789ABCDEF"[high])
                         append("0123456789ABCDEF"[low])
                         index += 3

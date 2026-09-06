@@ -12,6 +12,7 @@ import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
 import io.modelcontextprotocol.kotlin.sdk.server.StdioServerTransport
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay
 import kotlinx.io.asSink
@@ -82,8 +83,30 @@ class McpBridgeServerHost(
                     description = tool.description ?: "",
                     inputSchema = tool.inputSchema
                 ) { request ->
-                    val arguments = request.params.arguments?.toMap()?.mapValues { it.value.toString() } ?: emptyMap()
+                    val arguments = request.params.arguments?.toMap()?.mapValues { (_, value) ->
+                        (value as? JsonPrimitive)?.content ?: value.toString()
+                    } ?: emptyMap()
                     toolRegistry.callTool(request.params.name, arguments)
+                }
+            }
+
+            resourceProvider.listResources().resources.forEach { resource ->
+                addResource(
+                    uri = resource.uri,
+                    name = resource.name,
+                    description = resource.description ?: "",
+                    mimeType = resource.mimeType ?: "text/plain"
+                ) { request ->
+                    resourceProvider.readResource(request.params.uri)
+                }
+            }
+
+            promptProvider.listPrompts().forEach { prompt ->
+                addPrompt(prompt) { request ->
+                    val arguments = request.params.arguments
+                        ?.mapValues { (_, value) -> value.toString() }
+                        ?: emptyMap()
+                    promptProvider.getPrompt(request.params.name, arguments)
                 }
             }
         }

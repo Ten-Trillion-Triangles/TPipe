@@ -48,6 +48,7 @@ dependencies {
     implementation("io.ktor:ktor-server-websockets:3.3.3")
     implementation("io.ktor:ktor-client-core:3.3.3")
     implementation("io.ktor:ktor-client-cio:3.3.3")
+    implementation("io.ktor:ktor-client-websockets:3.3.3")
 
     implementation("io.opentelemetry:opentelemetry-api:1.54.1")
     implementation("io.opentelemetry:opentelemetry-sdk:1.54.1")

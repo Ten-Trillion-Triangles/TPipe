@@ -95,6 +95,8 @@ fun interface McpRemoteRequestSigner {
  * @param requestTimeoutMillis Request timeout in milliseconds.
  * @param connectTimeoutMillis Connection timeout in milliseconds.
  * @param socketTimeoutMillis Socket timeout in milliseconds.
+ * @param protocolVersion Optional protocol version header for gateways with a
+ *        pinned MCP version.
  */
 data class McpRemoteClientConfig(
     val endpoint: String,
@@ -107,7 +109,8 @@ data class McpRemoteClientConfig(
     val requestSigner: McpRemoteRequestSigner? = null,
     val requestTimeoutMillis: Long? = 60_000L,
     val connectTimeoutMillis: Long? = 10_000L,
-    val socketTimeoutMillis: Long? = 60_000L
+    val socketTimeoutMillis: Long? = 60_000L,
+    val protocolVersion: String? = null
 )
 
 /**
@@ -221,6 +224,7 @@ class McpRemoteClient(
     suspend fun connect() = connectionMutex.withLock {
         if(!connected)
         {
+            transport.protocolVersion = config.protocolVersion
             client.connect(transport)
             connected = true
         }

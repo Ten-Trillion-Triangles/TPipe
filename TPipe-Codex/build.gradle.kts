@@ -1,8 +1,11 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.authentication.http.BasicAuthentication
 
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
+    `maven-publish`
 }
 
 java {
@@ -44,5 +47,52 @@ tasks.test {
     testLogging {
         events("passed", "skipped", "failed", "standardOut", "standardError")
         showStandardStreams = true
+    }
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            groupId = "com.github.ten-trillion-triangles"
+            artifactId = "TPipe-Codex"
+            version = (project.findProperty("publishVersion") as String?) ?: project.version.toString()
+            from(components["java"])
+            pom.withXml {
+                val dependencies = asNode().children().filterIsInstance<groovy.util.Node>()
+                    .firstOrNull { node -> node.name().toString() == "dependencies" }
+                dependencies?.children()?.filterIsInstance<groovy.util.Node>()?.forEach { dependency ->
+                    val groupId = dependency.children().filterIsInstance<groovy.util.Node>()
+                        .firstOrNull { node -> node.name().toString() == "groupId" }
+                    if(groupId?.text() == "com.TTT")
+                    {
+                        groupId.setValue("com.github.ten-trillion-triangles")
+                        dependency.children().filterIsInstance<groovy.util.Node>()
+                            .firstOrNull { node -> node.name().toString() == "version" }
+                            ?.setValue(version)
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = "CodeArtifact"
+            val repositoryUrl = (project.findProperty("codeArtifactRepoUrl") as String?)
+                ?: "https://tpipe-521369004927.d.codeartifact.us-east-1.amazonaws.com/maven/tpipe-startup-maven/"
+            url = uri(repositoryUrl)
+            authentication {
+                create<BasicAuthentication>("basic")
+            }
+            credentials {
+                username = "aws"
+                password = providers.environmentVariable("CODEARTIFACT_AUTH_TOKEN")
+                    .orElse(providers.gradleProperty("codeArtifactAuthToken"))
+                    .getOrElse("")
+            }
+        }
+        maven {
+            name = "CompatibilityRepository"
+            url = uri(rootProject.layout.buildDirectory.dir("compatibility-maven"))
+        }
     }
 }

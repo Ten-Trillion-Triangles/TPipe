@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 
 /**
@@ -231,6 +232,18 @@ object AgentCoreRuntimeJson {
         put("status", value.status)
         put("time_of_last_update", value.timeOfLastUpdate)
     }.toString()
+
+    /** Decode the health response returned by the runtime host. */
+    fun decodePing(value: String): AgentCorePingResponse
+    {
+        val json = Json.parseToJsonElement(value).jsonObject
+        return AgentCorePingResponse(
+            status = json["status"]?.jsonPrimitive?.content.orEmpty(),
+            timeOfLastUpdate = json["time_of_last_update"]?.jsonPrimitive?.long
+                ?: json["timeOfLastUpdate"]?.jsonPrimitive?.long
+                ?: 0L
+        )
+    }
 
     /** Encode one streamed text event.
      *

@@ -418,11 +418,14 @@ class AgentCoreMemoryBackend internal constructor(
                         records = batch.map { id -> MemoryRecordDeleteInput { memoryRecordId = id } }
                     }
                 )
-                if(response.failedRecords.isNotEmpty())
+                val nonIdempotentFailures = response.failedRecords.filterNot { failed ->
+                    failed.errorMessage?.contains("not found", ignoreCase = true) == true
+                }
+                if(nonIdempotentFailures.isNotEmpty())
                 {
                     throw AgentCoreMemoryBackendException(
                         operation = "batch delete",
-                        failures = response.failedRecords.map { failed ->
+                        failures = nonIdempotentFailures.map { failed ->
                             AgentCoreMemoryRecordFailure(
                                 recordId = failed.memoryRecordId,
                                 status = failed.status.toString(),

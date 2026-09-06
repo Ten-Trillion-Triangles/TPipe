@@ -44,7 +44,7 @@ class McpResourceProvider(private val pcpContext: PcpContext) {
         val resources = pcpContext.stdioOptions.map { option ->
             Resource(
                 uri = mapCommandToUri(option.command, option.args),
-                name = option.command,
+                name = resourceName(option),
                 description = option.description.takeIf { it.isNotBlank() },
                 mimeType = inferMimeType(option.command),
                 annotations = null
@@ -199,5 +199,18 @@ class McpResourceProvider(private val pcpContext: PcpContext) {
             "curl" -> "application/json"
             else -> null
         }
+    }
+
+    private fun resourceName(option: StdioContextOptions): String {
+        val marker = "ResourceName:"
+        val description = option.description
+        if(description.startsWith(marker))
+        {
+            return description.removePrefix(marker)
+                .substringBefore(" Description:")
+                .trim()
+                .ifBlank { option.command }
+        }
+        return option.command
     }
 }

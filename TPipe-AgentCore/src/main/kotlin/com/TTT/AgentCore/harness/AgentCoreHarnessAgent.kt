@@ -8,6 +8,7 @@ import com.TTT.Pipe.MultimodalContent
 import com.TTT.P2P.P2PInterface
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PResponse
+import java.util.UUID
 
 /**
  * P2P adapter for an external AgentCore Harness worker. Harness remains an
@@ -30,7 +31,7 @@ class AgentCoreHarnessAgent(
     constructor(
         client: AgentCoreHarnessClient,
         harnessArn: String,
-        runtimeSessionId: (P2PRequest) -> String? = { null }
+        runtimeSessionId: (P2PRequest) -> String? = { UUID.randomUUID().toString() }
     ) : this(worker = { request ->
         val outputs = client.invoke(
             InvokeHarnessRequest {

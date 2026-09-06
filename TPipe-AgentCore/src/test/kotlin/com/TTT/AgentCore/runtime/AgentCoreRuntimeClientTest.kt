@@ -6,6 +6,7 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.http.content.OutgoingContent
 import kotlinx.coroutines.runBlocking
 import com.TTT.Pipe.MultimodalContent
 import org.junit.jupiter.api.Test
@@ -177,6 +178,51 @@ class AgentCoreRuntimeClientTest
 
             finally
             {
+                httpClient.close()
+            }
+        }
+    }
+
+    @Test
+    fun signsTheExactCanonicalRuntimeRequestBodyOnEveryHttpInvocation()
+    {
+        runBlocking {
+            var signedBody = ""
+            var receivedAuthorization = ""
+            val httpClient = HttpClient(MockEngine { request ->
+                receivedAuthorization = request.headers["Authorization"].orEmpty()
+                val body = (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
+                assertEquals(signedBody, body)
+                respond(
+                    content = AgentCoreRuntimeJson.encodeResponse(
+                        AgentCoreInvocationResponse(output = "signed", sessionId = "session")
+                    ),
+                    status = HttpStatusCode.OK,
+                    headers = headersOf("Content-Type", ContentType.Application.Json.toString())
+                )
+            })
+            val runtimeClient = AgentCoreRuntimeClient(
+                AgentCoreRuntimeClientConfig(
+                    endpoint = "https://runtime.example",
+                    requestSigner = AgentCoreRuntimeRequestSigner { url, method, headers, body ->
+                        assertEquals("https://runtime.example/invocations", url)
+                        assertEquals("POST", method)
+                        assertEquals("application/json", headers["Content-Type"])
+                        signedBody = body.decodeToString()
+                        mapOf("Authorization" to "test-signature")
+                    }
+                ),
+                httpClient
+            )
+            try
+            {
+                assertEquals("signed", runtimeClient.invoke("exact-body").output)
+                assertEquals("test-signature", receivedAuthorization)
+                assertTrue(signedBody.contains("exact-body"))
+            }
+            finally
+            {
+                runtimeClient.close()
                 httpClient.close()
             }
         }

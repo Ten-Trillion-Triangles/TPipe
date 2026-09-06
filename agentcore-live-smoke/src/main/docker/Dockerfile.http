@@ -1,0 +1,11 @@
+FROM --platform=linux/arm64 eclipse-temurin:24-jre
+
+WORKDIR /opt/tpipe
+COPY agentcore-live-smoke-all.jar /opt/tpipe/agentcore-live-smoke-all.jar
+
+ENV TPIPE_AGENTCORE_PROTOCOL=HTTP
+ENV TPIPE_AGENTCORE_BIND_ADDRESS=0.0.0.0
+ENV TPIPE_AGENTCORE_PORT=8080
+
+EXPOSE 8080
+ENTRYPOINT ["java", "-cp", "/opt/tpipe/agentcore-live-smoke-all.jar", "com.TTT.AgentCore.LiveSmoke.LiveSmokeRuntimeMainKt"]
